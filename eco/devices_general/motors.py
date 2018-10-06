@@ -35,15 +35,15 @@ def _keywordChecker(kw_key_list_tups):
 class MotorRecord:
     def __init__(self,pvname, name=None, elog=None, 
             alias_fields={
-                'readback'='RBV',
-                'user_offset' = 'OFF'}):
+                'readback':'RBV',
+                'user_offset':'OFF'}):
         self.Id = pvname
         self._motor = _Motor(pvname)
         self._elog = elog
         self.name = name
         self.alias = Alias(name)
         for an,af in alias_fields.items():
-            self.alias.add_children(Alias('readback',channel='.'.join(Id,af))
+            self.alias.add_children(Alias(an,channel='.'.join([pvname,af]),channeltype='CA'))
         self._currentChange = None
 
 

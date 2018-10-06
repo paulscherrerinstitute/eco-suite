@@ -33,15 +33,17 @@ class Alias:
                     ta["alias"] = self.alias + ta["alias"]
                     aa.append(ta)
 
-    def add_children(self, *args):
-        self.children.append(find_aliases(args))
+    def add_children(self,*args):
+        self.children.append(find_aliases(*args))
 
 
 def find_aliases(*args):
     o = []
     for obj in args:
-        if hasattr(obj, "alias"):
-            o.append(obj.alias)
+        if isinstance(obj,Alias):
+            o.append(obj)
+        if hasattr(obj,'alias'):
+            obj = obj.alias
     return tuple(o)
 
 
