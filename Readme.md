@@ -16,3 +16,6 @@ eco consists of mutiple python modules strucrured in main classes
 -- separated into different groups 
 - configurations of multiple devices into instruments
 
+
+[Device representation.pdf](https://github.com/paulscherrerinstitute/eco/files/2453401/Device.representation.pdf)
+
