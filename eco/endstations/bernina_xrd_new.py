@@ -1,11 +1,13 @@
 import sys
+
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord
 from epics import PV
 from ..aliases import Alias
 
+
 class XRD:
-    def __init__(self,name=None,Id=None,configuration=[]):
+    def __init__(self, name=None, Id=None, configuration=[]):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
@@ -13,36 +15,33 @@ class XRD:
         self.name = name
         self.alias = Alias(name)
 
-
-            
         ### motors heavy load table ###
-        self.xhl = MotorRecord(Id+':MOT_TBL_TX',name='xhl')
-        self.zhl = MotorRecord(Id+':MOT_TBL_TZ',name='zhl')
-        self.yhl = MotorRecord(Id+':MOT_TBL_TY',name='yhl')
+        self.xhl = MotorRecord(Id + ":MOT_TBL_TX", name="xhl")
+        self.zhl = MotorRecord(Id + ":MOT_TBL_TZ", name="zhl")
+        self.yhl = MotorRecord(Id + ":MOT_TBL_TY", name="yhl")
         try:
-            self.rxhl = MotorRecord(Id+':MOT_TBL_RX',name='rxhl')
+            self.rxhl = MotorRecord(Id + ":MOT_TBL_RX", name="rxhl")
         except:
-            print ('GPS.pitch not found')
+            print("GPS.pitch not found")
             pass
         try:
-            self.ryhl = MotorRecord(Id+':MOT_TBL_RY',name='rxhl')
+            self.ryhl = MotorRecord(Id + ":MOT_TBL_RY", name="rxhl")
         except:
-            print ('GPS.roll not found')
+            print("GPS.roll not found")
             pass
 
         ### motors heavy load gonio base ###
-        self.omega = MotorRecord(Id+':MOT_MY_RYTH',name='omega')
-        self.tnu = MotorRecord(Id+':MOT_HEX_TX',name='tnu')
-        self.nu = MotorRecord(Id+':MOT_HEX_RX',name='nu')
-        self.gamma = MotorRecord(Id+':MOT_NY_RY2TH', name='gam')
-        self.delta = MotorRecord(Id+':MOT_DT_RX2TH', name='del')
-        self.xbase = MotorRecord(Id+':MOT_TX')
-        self.ybase = MotorRecord(Id+':MOT_TY')
-        
+        self.omega = MotorRecord(Id + ":MOT_MY_RYTH", name="omega")
+        self.tnu = MotorRecord(Id + ":MOT_HEX_TX", name="tnu")
+        self.nu = MotorRecord(Id + ":MOT_HEX_RX", name="nu")
+        self.gamma = MotorRecord(Id + ":MOT_NY_RY2TH", name="gam")
+        self.delta = MotorRecord(Id + ":MOT_DT_RX2TH", name="del")
+        self.xbase = MotorRecord(Id + ":MOT_TX")
+        self.ybase = MotorRecord(Id + ":MOT_TY")
+
         ### motors XRD arm ###
-        self.tdet = MotorRecord(Id+':MOT_D_T')
-        self.tpol = MotorRecord(Id+':MOT_P_T')
-        
+        self.tdet = MotorRecord(Id + ":MOT_D_T")
+        self.tpol = MotorRecord(Id + ":MOT_P_T")
 
         self.hex_x = PV("SARES20-HEX_PI:POSI-X")
         self.hex_y = PV("SARES20-HEX_PI:POSI-Y")
@@ -51,32 +50,26 @@ class XRD:
         self.hex_v = PV("SARES20-HEX_PI:POSI-V")
         self.hex_w = PV("SARES20-HEX_PI:POSI-W")
 
-
-        
-
-
-
     def __repr__(self):
         s = "**Heavy Load**\n"
         motors = "xmu mu tth xbase ybase".split()
         for motor in motors:
-            s+= " - %s %.4f\n"%(motor,getattr(self,motor).wm())
+            s += " - %s %.4f\n" % (motor, getattr(self, motor).wm())
 
-        s+= " - xhl %.4f\n"%(self.xhl.wm())
-        s+= " - yhl %.4f\n"%(self.yhl.wm())
-        s+= " - zhl %.4f\n"%(self.zhl.wm())
-        s+= " - th %.4f\n"%(self.th.wm())
-        s+= "\n"
+        s += " - xhl %.4f\n" % (self.xhl.wm())
+        s += " - yhl %.4f\n" % (self.yhl.wm())
+        s += " - zhl %.4f\n" % (self.zhl.wm())
+        s += " - th %.4f\n" % (self.th.wm())
+        s += "\n"
 
-        s+= "**Gonio**\n"
+        s += "**Gonio**\n"
         motors = "xmu mu tth delta det_z cam_z xbase ybase".split()
         for motor in motors:
-            s+= " - %s %.4f\n"%(motor,getattr(self,motor).wm())
-        s+= "\n"
+            s += " - %s %.4f\n" % (motor, getattr(self, motor).wm())
+        s += "\n"
 
-        s+= "**Hexapod**\n"
+        s += "**Hexapod**\n"
         motors = "x y z u v w".split()
         for motor in motors:
-            s+= " - hex_%s %.4f\n"%(motor,getattr(self,"hex_"+motor).get())
+            s += " - hex_%s %.4f\n" % (motor, getattr(self, "hex_" + motor).get())
         return s
-        

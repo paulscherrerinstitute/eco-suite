@@ -6,10 +6,11 @@
 basic device object defined
 """
 from epics.ca import poll
-from epics.pv  import get_pv
+from epics.pv import get_pv
 import time
 
-no_attrs = ['_ipython_display_']
+no_attrs = ["_ipython_display_"]
+
 
 class Device(object):
     """A simple collection of related PVs, sharing a common prefix
@@ -101,16 +102,24 @@ class Device(object):
     """
 
     _prefix = None
-    _delim = ''
+    _delim = ""
     _pvs = {}
     _init = False
     _aliases = {}
     _mutable = True
-    _nonpvs = ('_prefix', '_pvs', '_delim', '_init', '_aliases',
-               '_mutable', '_nonpvs')
-    def __init__(self, prefix='', attrs=None,
-                 nonpvs=None, delim='', timeout=None,
-                 mutable=True, aliases={}, with_poll=True):
+    _nonpvs = ("_prefix", "_pvs", "_delim", "_init", "_aliases", "_mutable", "_nonpvs")
+
+    def __init__(
+        self,
+        prefix="",
+        attrs=None,
+        nonpvs=None,
+        delim="",
+        timeout=None,
+        mutable=True,
+        aliases={},
+        with_poll=True,
+    ):
 
         self._nonpvs = list(self._nonpvs)
         self._delim = delim
@@ -125,14 +134,12 @@ class Device(object):
 
         if attrs is not None:
             for attr in attrs:
-                self.PV(attr, connect=False,
-                        connection_timeout=timeout)
+                self.PV(attr, connect=False, connection_timeout=timeout)
 
         if aliases:
             for attr in aliases.values():
                 if attrs is None or attr not in attrs:
-                    self.PV(attr, connect=False,
-                            connection_timeout=timeout)
+                    self.PV(attr, connect=False, connection_timeout=timeout)
 
         if with_poll:
             poll()
@@ -181,8 +188,7 @@ class Device(object):
         up to a supplied timeout value"""
         thispv = self.PV(attr)
         thispv.wait_for_connection()
-        return thispv.put(value, wait=wait, use_complete=use_complete,
-                          timeout=timeout)
+        return thispv.put(value, wait=wait, use_complete=use_complete, timeout=timeout)
 
     def get(self, attr, as_string=False, count=None):
         """get an attribute value,
@@ -195,15 +201,14 @@ class Device(object):
         out = {}
         for key in self._pvs:
             out[key] = self._pvs[key].get()
-            if  (self._pvs[key].count > 1 and
-                 'char' == self._pvs[key].type):
+            if self._pvs[key].count > 1 and "char" == self._pvs[key].type:
                 out[key] = self._pvs[key].get(as_string=True)
         return out
 
     def restore_state(self, state):
         """restore a dictionary of the values, as saved from save_state"""
         for key, val in state.items():
-            if key in self._pvs and  'write' in self._pvs[key].access:
+            if key in self._pvs and "write" in self._pvs[key].access:
                 self._pvs[key].put(val)
 
     def write_state(self, fname, state=None):
@@ -213,42 +218,43 @@ class Device(object):
         Note that this only writes data for PVs with write-access, and count=1 (except CHAR """
         if state is None:
             state = self.save_state()
-        out = ["#Device Saved State for %s, prefx='%s': %s\n" % (self.__class__.__name__,
-                                                                 self._prefix, time.ctime())]
+        out = [
+            "#Device Saved State for %s, prefx='%s': %s\n"
+            % (self.__class__.__name__, self._prefix, time.ctime())
+        ]
         for key in sorted(state.keys()):
-            if (key in self._pvs and
-                'write' in self._pvs[key].access and
-                (1 == self._pvs[key].count or
-                 'char' == self._pvs[key].type)):
+            if (
+                key in self._pvs
+                and "write" in self._pvs[key].access
+                and (1 == self._pvs[key].count or "char" == self._pvs[key].type)
+            ):
                 out.append("%s  %s\n" % (key, state[key]))
-        fout = open(fname, 'w')
+        fout = open(fname, "w")
         fout.writelines(out)
         fout.close()
 
-
     def read_state(self, fname, restore=False):
         """read state from file, optionally restore it"""
-        finp = open(fname, 'r')
+        finp = open(fname, "r")
         textlines = finp.readlines()
         finp.close()
         state = {}
         for line in textlines:
-            if line.startswith('#'):
+            if line.startswith("#"):
                 continue
-            key, strval =  line[:-1].split(' ', 1)
+            key, strval = line[:-1].split(" ", 1)
             if key in self._pvs:
                 dtype = self._pvs[key].type
                 count = self._pvs[key].count
                 val = strval
-                if dtype in ('double', 'float'):
+                if dtype in ("double", "float"):
                     val = float(val)
-                elif dtype in ('int', 'long', 'short', 'enum'):
+                elif dtype in ("int", "long", "short", "enum"):
                     val = int(val)
                 state[key] = val
         if restore:
             self.restore_state(state)
         return state
-
 
     def get_all(self):
         """return a dictionary of the values of all
@@ -266,7 +272,6 @@ class Device(object):
         """remove a callback function to an attribute PV"""
         self.PV(attr).remove_callback(index=index)
 
-
     def __getattr__(self, attr):
         if attr in self._aliases:
             attr = self._aliases[attr]
@@ -275,13 +280,12 @@ class Device(object):
             return self.get(attr)
         elif attr in self.__dict__:
             return self.__dict__[attr]
-        elif self._init and self._mutable and not attr.startswith('__'):
+        elif self._init and self._mutable and not attr.startswith("__"):
             pv = self.PV(attr, connect=True)
             if pv.connected:
                 return pv.get()
 
-        raise AttributeError('%s has no attribute %s' % (self.__class__.__name__,
-                                                         attr))
+        raise AttributeError("%s has no attribute %s" % (self.__class__.__name__, attr))
 
     def __setattr__(self, attr, val):
         if attr in self._aliases:
@@ -291,37 +295,39 @@ class Device(object):
             self.__dict__[attr] = val
         elif attr in self._pvs:
             self.put(attr, val)
-        elif self._init and self._mutable and not attr.startswith('__'):
+        elif self._init and self._mutable and not attr.startswith("__"):
             try:
                 self.PV(attr)
                 self.put(attr, val)
             except:
-                raise AttributeError('%s has no attribute %s' % (self.__class__.__name__,
-                                                                 attr))
+                raise AttributeError(
+                    "%s has no attribute %s" % (self.__class__.__name__, attr)
+                )
         elif attr in self.__dict__:
             self.__dict__[attr] = val
         elif self._init:
-            raise AttributeError('%s has no attribute %s' % (self.__class__.__name__,
-                                                             attr))
+            raise AttributeError(
+                "%s has no attribute %s" % (self.__class__.__name__, attr)
+            )
 
-#    def __dir__(self):
-#        # there's no cleaner method to do this until Python 3.3
-#        all_attrs = set(list(self._aliases.keys()) + list(self._pvs.keys()) +
-#                        list(self._nonpvs) + 
-#                        list(self.__dict__.keys()) + dir(Device))
-#        return list(sorted(all_attrs))
+    #    def __dir__(self):
+    #        # there's no cleaner method to do this until Python 3.3
+    #        all_attrs = set(list(self._aliases.keys()) + list(self._pvs.keys()) +
+    #                        list(self._nonpvs) +
+    #                        list(self.__dict__.keys()) + dir(Device))
+    #        return list(sorted(all_attrs))
 
     def __repr__(self):
         "string representation"
         pref = self._prefix
-        if pref.endswith('.'):
+        if pref.endswith("."):
             pref = pref[:-1]
         return "<Device '%s' %i attributes>" % (pref, len(self._pvs))
 
-
     def pv_property(attr, as_string=False, wait=False, timeout=10.0):
-        return property(lambda self:     \
-                        self.get(attr, as_string=as_string),
-                        lambda self,val: \
-                        self.put(attr, val, wait=wait, timeout=timeout),
-                        None, None)
+        return property(
+            lambda self: self.get(attr, as_string=as_string),
+            lambda self, val: self.put(attr, val, wait=wait, timeout=timeout),
+            None,
+            None,
+        )

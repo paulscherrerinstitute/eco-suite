@@ -76,32 +76,36 @@ class Proxy(with_metaclass(_ProxyMetaType)):
       * calls ``__factory__``, saves result to ``__target__`` and returns said result.
     """
 
-    __slots__ = '__target__', '__factory__'
+    __slots__ = "__target__", "__factory__"
 
     def __init__(self, factory):
-        object.__setattr__(self, '__factory__', factory)
+        object.__setattr__(self, "__factory__", factory)
 
     @property
-    def __wrapped__(self, __getattr__=object.__getattribute__, __setattr__=object.__setattr__,
-                    __delattr__=object.__delattr__):
+    def __wrapped__(
+        self,
+        __getattr__=object.__getattribute__,
+        __setattr__=object.__setattr__,
+        __delattr__=object.__delattr__,
+    ):
         try:
-            return __getattr__(self, '__target__')
+            return __getattr__(self, "__target__")
         except AttributeError:
             try:
-                factory = __getattr__(self, '__factory__')
+                factory = __getattr__(self, "__factory__")
             except AttributeError:
                 raise ValueError("Proxy hasn't been initiated: __factory__ is missing.")
             target = factory()
-            __setattr__(self, '__target__', target)
+            __setattr__(self, "__target__", target)
             return target
 
     @__wrapped__.deleter
     def __wrapped__(self, __delattr__=object.__delattr__):
-        __delattr__(self, '__target__')
+        __delattr__(self, "__target__")
 
     @__wrapped__.setter
     def __wrapped__(self, target, __setattr__=object.__setattr__):
-        __setattr__(self, '__target__', target)
+        __setattr__(self, "__target__", target)
 
     @property
     def __name__(self):
@@ -134,29 +138,32 @@ class Proxy(with_metaclass(_ProxyMetaType)):
         return str(self.__wrapped__)
 
     if PY3:
+
         def __bytes__(self):
             return bytes(self.__wrapped__)
 
     def __repr__(self, __getattr__=object.__getattribute__):
         try:
-            target = __getattr__(self, '__target__')
+            target = __getattr__(self, "__target__")
         except AttributeError:
-            return '<%s at 0x%x with factory %r>' % (
-                type(self).__name__, id(self),
-                self.__factory__
+            return "<%s at 0x%x with factory %r>" % (
+                type(self).__name__,
+                id(self),
+                self.__factory__,
             )
         else:
-#            return '<%s at 0x%x wrapping %r at 0x%x with factory %r>' % (
-#                type(self).__name__, id(self),
-#                target, id(target),
-#                self.__factory__
-#            )
-            return '%r' % (target)
+            #            return '<%s at 0x%x wrapping %r at 0x%x with factory %r>' % (
+            #                type(self).__name__, id(self),
+            #                target, id(target),
+            #                self.__factory__
+            #            )
+            return "%r" % (target)
 
     def __reversed__(self):
         return reversed(self.__wrapped__)
 
     if PY3:
+
         def __round__(self):
             return round(self.__wrapped__)
 
@@ -194,7 +201,7 @@ class Proxy(with_metaclass(_ProxyMetaType)):
             setattr(self.__wrapped__, name, value)
 
     def __getattr__(self, name):
-        if name in ('__wrapped__', '__factory__'):
+        if name in ("__wrapped__", "__factory__"):
             raise AttributeError(name)
         else:
             return getattr(self.__wrapped__, name)
@@ -357,6 +364,7 @@ class Proxy(with_metaclass(_ProxyMetaType)):
         return int(self.__wrapped__)
 
     if PY2:
+
         def __long__(self):
             return long(self.__wrapped__)  # flake8: noqa
 

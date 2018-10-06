@@ -6,7 +6,7 @@ class Changer:
         self.target = target
         self._changer = changer
         self._stopper = stopper
-        self._thread = Thread(target=self._changer,args=(target,))
+        self._thread = Thread(target=self._changer, args=(target,))
         if not hold:
             self._thread.start()
 
@@ -18,11 +18,12 @@ class Changer:
 
     def status(self):
         if self._thread.ident is None:
-            return 'waiting'
+            return "waiting"
         else:
             if self._thread.isAlive:
-                return 'changing'
+                return "changing"
             else:
-                return 'done'
+                return "done"
+
     def stop(self):
         self._stopper()
