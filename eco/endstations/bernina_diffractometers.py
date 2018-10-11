@@ -6,6 +6,11 @@ from epics import PV
 from ..aliases import Alias
 
 
+def addMotorRecordToSelf(self,name=None, Id=None):
+    self.__dict__[name] = MotorRecord(Id, name=name)
+    self.alias.append(self.__dict__[name].alias)
+
+
 class XRD:
     def __init__(self, name=None, Id=None, configuration=[]):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
@@ -17,40 +22,41 @@ class XRD:
         
         
         ### motors base platform ###
-        self.xbase = MotorRecord(Id + ":MOT_TX", name="xbase")
-        self.ybase = MotorRecord(Id + ":MOT_TY", name="ybase")
-        self.rxbase = MotorRecord(Id + ":MOT_RX", name="rxbase")
-        self.omega = MotorRecord(Id + ":MOT_MY_RYTH", name="omega")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_TX", name="xbase")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_TY", name="ybase")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_RX", name="rxbase")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="omega")
+  
         
         ### motors XRD detector arm ###
-        self.gamma = MotorRecord(Id + ":MOT_NY_RY2TH", name="gam")
-        self.delta = MotorRecord(Id + ":MOT_DT_RX2TH", name="del")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_NY_RY2TH", name="gamma")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_DT_RX2TH", name="delta")
 
         ### motors XRD area detector branch ###
-        self.tdet = MotorRecord(Id + ":MOT_D_T", name="tdet")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_D_T", name="tdet")
 
         ### motors XRD polarisation analyzer branch ###
-        self.tpol = MotorRecord(Id + ":MOT_P_T", name="tpol")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_P_T", name="tpol")
         #missing: slits of flight tube
 
         ### motors heavy load goniometer ###
-        self.xhl = MotorRecord(Id + ":MOT_TBL_TX", name="xhl")
-        self.zhl = MotorRecord(Id + ":MOT_TBL_TZ", name="zhl")
-        self.yhl = MotorRecord(Id + ":MOT_TBL_TY", name="yhl")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TX", name="xhl")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TZ", name="zhl")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TY", name="yhl")
         try:
-            self.rxhl = MotorRecord(Id + ":MOT_TBL_RX", name="rxhl")
+            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_RX", name="rxhl")
         except:
-            print("GPS.pitch not found")
+            print("XRD.rxhl not found")
             pass
         try:
-            self.ryhl = MotorRecord(Id + ":MOT_TBL_RY", name="rxhl")
+            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_RY", name="rzhl")
         except:
-            print("GPS.roll not found")
+            print("XRD.rzhl not found")
             pass
 
         ### motors nu table ###
-        self.tnu = MotorRecord(Id + ":MOT_HEX_TX", name="tnu")
-        self.nu = MotorRecord(Id + ":MOT_HEX_RX", name="nu")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_TX", name="teta")
+        addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_RX", name="eta")
 
         ### motors PI hexapod ###
         self.hex_x = PV("SARES20-HEX_PI:POSI-X")

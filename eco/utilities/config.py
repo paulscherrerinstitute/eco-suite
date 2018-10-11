@@ -62,6 +62,12 @@ def initFromConfigList(config_list, lazy=False):
     return op
 
 
+class Exp:
+    def __init__(self,module):
+        pass
+
+
+
 def loadConfig(fina):
     with open(fina, "r") as f:
         return json.load(f)

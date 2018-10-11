@@ -17,7 +17,7 @@ class Alias:
         ), f"Alias {subalias.alias} exists already!"
         self.children.append(subalias)
 
-    def get_all(self):
+    def get_all(self,joiner='.'):
         aa = []
         if self.channel:
             ta = {}
@@ -30,11 +30,11 @@ class Alias:
             for tc in self.children:
                 taa = tc.get_all()
                 for ta in taa:
-                    ta["alias"] = self.alias + ta["alias"]
-                    aa.append(ta)
+                    aa.append({'alias':joiner.join([self.alias,ta['alias']]),'channel':ta['channel'], 'channeltype':ta['channeltype']})
+        return aa
 
-    def add_children(self, *args):
-        self.children.append(find_aliases(*args))
+#    def add_children(self, *args):
+#        self.children.append(find_aliases(*args))
 
 
 def find_aliases(*args):
@@ -54,6 +54,7 @@ class Namespace:
         self._path = path
         self.name = path.stem
         self.data = None
+        self._modified = False
 
     def read_file(self):
         with self._path.open("r") as fp:
@@ -85,6 +86,21 @@ class Namespace:
             with self._path.open("w") as fp:
                 json.dump(self.data, fp)
                 self._modified = False
+
+    def get_info(self, alias=None, channel=None):
+        assert alias or channel, "Either search alias or channel needs to be defined!"
+        assert not(alias and channel), "Only either search alias or channel can be defined"
+        if alias:
+            if alias in self.aliases:
+                return self.data[self.aliases.index(alias)]
+            else:
+                return None
+        if channel:
+            if channel in self.channels:
+                return self.data[self.channels.index(channel)]
+            else:
+                return None
+            
 
 
 class NamespaceCollection:

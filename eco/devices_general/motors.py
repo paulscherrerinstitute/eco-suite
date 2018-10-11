@@ -46,7 +46,7 @@ class MotorRecord:
         self.name = name
         self.alias = Alias(name)
         for an, af in alias_fields.items():
-            self.alias.add_children(
+            self.alias.append(
                 Alias(an, channel=".".join([pvname, af]), channeltype="CA")
             )
         self._currentChange = None

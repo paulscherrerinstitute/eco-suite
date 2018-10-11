@@ -188,12 +188,12 @@ components = [
     #            'kwargs': {}
     #            },
     {
-        "args": ["SARES21-XRD"],
+        "args": [],
         "name": "xrd",
         "z_und": 142,
         "desc": "Xray diffractometer",
-        "type": "eco.endstations.bernina_xrd:XRD",
-        "kwargs": {},
+        "type": "eco.endstations.bernina_diffractometers:XRD",
+        "kwargs": {'Id':"SARES21-XRD"},
     },
     {
         "args": ["SARES20-PROF142-M1"],
