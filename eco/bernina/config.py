@@ -242,6 +242,20 @@ components = [
         "type": "eco.acquisition.ioxos_data:Ioxostools",
         "kwargs": {"channel_list": Component("ioxos_channel_list")},
     },
+    {
+        "args": [],
+        "name": "daq",
+        "desc": "server based acquisition",
+        "type": "eco.devices_general.detectors:DIAClient",
+        "kwargs": {'instrument':"bernina", 'api_address':"http://sf-daq-1:10000", 'pgroup':'p17571'},
+    },
+    {
+        "args": [],
+        "name": "scans",
+        "desc": "server based acquisition",
+        "type": "eco.acquisition.scan:Scans",
+        "kwargs": {'data_base_dir':"scan_data",'scan_info_dir':"/sf/bernina/data/s/res/scan_info",'default_counters':[Component('daq')],'checker':None,'scan_directories':True},
+    },
 ]
 
 

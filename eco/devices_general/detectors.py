@@ -145,17 +145,21 @@ class DiodeDigitizer:
 class DIAClient:
     def __init__(
         self,
-        Id,
+        name=None,
         instrument=None,
+        pgroup = None,
         api_address="http://sf-daq-2:10000",
         jf_name="JF_1.5M",
     ):
-        self.Id = Id
+        self.name = name
         self._api_address = api_address
         self.client = DetectorIntegrationClient(api_address)
         print("\nDetector Integration API on %s" % api_address)
         # No pgroup by default
-        self.pgroup = 0
+        if pgroup:
+            self.pgroup = int(''.join([s for s in pgroup if s.isdigit()]))
+        else:
+            self.pgroup = None
         self.n_frames = 100
         self.jf_name = jf_name
         self.pede_file = ""

@@ -49,16 +49,39 @@ def init_device(type_string, name, args=[], kwargs={}, verbose=True, lazy=True):
             # print(sys.exc_info())
         raise expt
 
+def replaceComponent(inp, dict_all):
+    if isinstance(inp,list):
+        outp = []
+        for ta in inp:
+            if isinstance(ta, Component):
+                outp.append(dict_all[ta.name])
+            elif isinstance(ta,dict) or isinstance(ta,list):
+                outp.append(replaceComponent(ta,dict_all))
+            else:
+                outp.append(ta)
+    elif isinstance(inp,dict):
+        outp ={}
+        for tk,ta in inp.items():
+            if isinstance(ta, Component):
+                outp[tk] = dict_all[ta.name]
+            elif isinstance(ta,dict) or isinstance(ta,list):
+                outp[tk] = replaceComponent(ta,dict_all)
+            else:
+                outp[tk] = ta
+    else:
+        return inp
+    return outp
+
 
 def initFromConfigList(config_list, lazy=False):
     op = {}
     for td in config_list:
-        args = [op[ta.name] if isinstance(ta, Component) else ta for ta in td["args"]]
-        kwargs = {
-            tkwk: op[tkwv.name] if isinstance(tkwv, Component) else tkwv
-            for tkwk, tkwv in td["kwargs"].items()
-        }
-        op[td["name"]] = init_device(td["type"], td["name"], args, kwargs, lazy=lazy)
+        # args = [op[ta.name] if isinstance(ta, Component) else ta for ta in td["args"]]
+        # kwargs = {
+            # tkwk: op[tkwv.name] if isinstance(tkwv, Component) else tkwv
+            # for tkwk, tkwv in td["kwargs"].items()
+        # }
+        op[td["name"]] = init_device(td["type"], td["name"], replaceComponent(td["args"],op), replaceComponent(td["kwargs"],op), lazy=lazy)
     return op
 
 
