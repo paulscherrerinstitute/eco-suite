@@ -17,7 +17,7 @@ class Alias:
         ), f"Alias {subalias.alias} exists already!"
         self.children.append(subalias)
 
-    def get_all(self,joiner='.'):
+    def get_all(self, joiner="."):
         aa = []
         if self.channel:
             ta = {}
@@ -30,8 +30,15 @@ class Alias:
             for tc in self.children:
                 taa = tc.get_all()
                 for ta in taa:
-                    aa.append({'alias':joiner.join([self.alias,ta['alias']]),'channel':ta['channel'], 'channeltype':ta['channeltype']})
+                    aa.append(
+                        {
+                            "alias": joiner.join([self.alias, ta["alias"]]),
+                            "channel": ta["channel"],
+                            "channeltype": ta["channeltype"],
+                        }
+                    )
         return aa
+
 
 #    def add_children(self, *args):
 #        self.children.append(find_aliases(*args))
@@ -89,7 +96,9 @@ class Namespace:
 
     def get_info(self, alias=None, channel=None):
         assert alias or channel, "Either search alias or channel needs to be defined!"
-        assert not(alias and channel), "Only either search alias or channel can be defined"
+        assert not (
+            alias and channel
+        ), "Only either search alias or channel can be defined"
         if alias:
             if alias in self.aliases:
                 return self.data[self.aliases.index(alias)]
@@ -100,7 +109,6 @@ class Namespace:
                 return self.data[self.channels.index(channel)]
             else:
                 return None
-            
 
 
 class NamespaceCollection:

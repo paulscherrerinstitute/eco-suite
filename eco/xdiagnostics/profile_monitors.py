@@ -14,10 +14,10 @@ class Pprm:
         self._led = PV(self.Id + ":LED")
         self.target = EnumWrapper(self.Id + ":PROBE_SP")
 
-    def movein(self,target=1):
+    def movein(self, target=1):
         self.target.set(target)
 
-    def moveout(self,target=0):
+    def moveout(self, target=0):
         self.target.set(target)
 
     def illuminate(self, value=None):

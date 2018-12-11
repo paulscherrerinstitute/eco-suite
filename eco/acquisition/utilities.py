@@ -33,8 +33,7 @@ class Acquisition:
         self._stopper()
 
 
-
-def getPVchecker(pvname,config_file=None):
+def getPVchecker(pvname, config_file=None):
     checkerPV = PV(pvname)
 
     def checker_function(limits):
@@ -52,21 +51,22 @@ def getPVchecker(pvname,config_file=None):
     return checker
 
 
-
 def checker_function(limits):
     cv = checkerPV.get()
-    if cv>limits[0] and cv<limits[1]:
+    if cv > limits[0] and cv < limits[1]:
         return True
     else:
-        print(f'Gas detector intensity {cv} outside limits {limits} !')
+        print(f"Gas detector intensity {cv} outside limits {limits} !")
         return False
 
+
 class Checker_obj:
-    def __init__(self,PV):
+    def __init__(self, PV):
         self.PV = PV
         self.data = []
-    def append_to_data(self,**kwargs):
-        self.data.append(kwargs['value'])
+
+    def append_to_data(self, **kwargs):
+        self.data.append(kwargs["value"])
 
     def clear_and_start_counting(self):
         self.data = []
@@ -75,12 +75,12 @@ class Checker_obj:
     def stopcounting(self):
         self.PV.clear_callbacks()
 
-    def stop_and_analyze(self,limits,fraction_min):
+    def stop_and_analyze(self, limits, fraction_min):
         self.stopcounting()
         data = np.asarray(self.data)
-        good = np.logical_and(data>np.min(limits),data<np.max(limits))
-        fraction = good.sum()/len(good)
-        print(f'Gas detector intensity was {fraction*100}% inside limits {limits},')
-        print(f'given limit was {fraction_min*100}%.')
-        
-        return fraction>=fraction_min
+        good = np.logical_and(data > np.min(limits), data < np.max(limits))
+        fraction = good.sum() / len(good)
+        print(f"Gas detector intensity was {fraction*100}% inside limits {limits},")
+        print(f"given limit was {fraction_min*100}%.")
+
+        return fraction >= fraction_min

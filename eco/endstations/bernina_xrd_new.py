@@ -14,14 +14,13 @@ class XRD:
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        
-        
+
         ### motors base platform ###
         self.xbase = MotorRecord(Id + ":MOT_TX", name="xbase")
         self.ybase = MotorRecord(Id + ":MOT_TY", name="ybase")
         self.rxbase = MotorRecord(Id + ":MOT_RX", name="rxbase")
         self.omega = MotorRecord(Id + ":MOT_MY_RYTH", name="omega")
-        
+
         ### motors XRD detector arm ###
         self.gamma = MotorRecord(Id + ":MOT_NY_RY2TH", name="gam")
         self.delta = MotorRecord(Id + ":MOT_DT_RX2TH", name="del")
@@ -31,7 +30,7 @@ class XRD:
 
         ### motors XRD polarisation analyzer branch ###
         self.tpol = MotorRecord(Id + ":MOT_P_T", name="tpol")
-        #missing: slits of flight tube
+        # missing: slits of flight tube
 
         ### motors heavy load goniometer ###
         self.xhl = MotorRecord(Id + ":MOT_TBL_TX", name="xhl")

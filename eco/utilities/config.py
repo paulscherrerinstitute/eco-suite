@@ -1,5 +1,6 @@
 import json
 import importlib
+from pathlib import Path
 import sys
 from colorama import Fore as _color
 from functools import partial
@@ -49,23 +50,24 @@ def init_device(type_string, name, args=[], kwargs={}, verbose=True, lazy=True):
             # print(sys.exc_info())
         raise expt
 
+
 def replaceComponent(inp, dict_all):
-    if isinstance(inp,list):
+    if isinstance(inp, list):
         outp = []
         for ta in inp:
             if isinstance(ta, Component):
                 outp.append(dict_all[ta.name])
-            elif isinstance(ta,dict) or isinstance(ta,list):
-                outp.append(replaceComponent(ta,dict_all))
+            elif isinstance(ta, dict) or isinstance(ta, list):
+                outp.append(replaceComponent(ta, dict_all))
             else:
                 outp.append(ta)
-    elif isinstance(inp,dict):
-        outp ={}
-        for tk,ta in inp.items():
+    elif isinstance(inp, dict):
+        outp = {}
+        for tk, ta in inp.items():
             if isinstance(ta, Component):
                 outp[tk] = dict_all[ta.name]
-            elif isinstance(ta,dict) or isinstance(ta,list):
-                outp[tk] = replaceComponent(ta,dict_all)
+            elif isinstance(ta, dict) or isinstance(ta, list):
+                outp[tk] = replaceComponent(ta, dict_all)
             else:
                 outp[tk] = ta
     else:
@@ -78,17 +80,61 @@ def initFromConfigList(config_list, lazy=False):
     for td in config_list:
         # args = [op[ta.name] if isinstance(ta, Component) else ta for ta in td["args"]]
         # kwargs = {
-            # tkwk: op[tkwv.name] if isinstance(tkwv, Component) else tkwv
-            # for tkwk, tkwv in td["kwargs"].items()
+        # tkwk: op[tkwv.name] if isinstance(tkwv, Component) else tkwv
+        # for tkwk, tkwv in td["kwargs"].items()
         # }
-        op[td["name"]] = init_device(td["type"], td["name"], replaceComponent(td["args"],op), replaceComponent(td["kwargs"],op), lazy=lazy)
+        op[td["name"]] = init_device(
+            td["type"],
+            td["name"],
+            replaceComponent(td["args"], op),
+            replaceComponent(td["kwargs"], op),
+            lazy=lazy,
+        )
     return op
 
 
-class Exp:
-    def __init__(self,module):
-        pass
+class ExperimentConfiguration:
+    """Configuration collector object collecting important settings for arbitrary use, 
+    linking to one or few standard config files in the file system. Sould also be used 
+    for config file writing."""
 
+    def __init__(self, configFile, name=None):
+        self.name = name
+        self.configFile = Path(configFile)
+        self._config = {}
+        if self.configFile:
+            self.readConfigFile()
+
+    def readConfigFile(self):
+        self._config = loadConfig(self.configFile)
+        assert (
+            type(self._config) is dict
+        ), f"Problem reading {self.configFile} json file, seems not to be a valid dictionary structure!"
+        self.__dict__.update(self._config)
+
+    def __setitem__(self, key, item):
+        self._config[key] = item
+        self.__dict__.update(self._config)
+        self.saveConfigFile()
+
+    def __getitem__(self, key):
+        return self._config[key]
+
+    def saveConfigFile(self, filename=None, force=False):
+        if not filename:
+            filename = self.configFile
+        if (not force) and filename.exists():
+            if (
+                not input(
+                    f"File {filename.absolute().as_posix()} exists,\n would you like to overwrite? (y/n)"
+                ).strip()
+                == "y"
+            ):
+                return
+        writeConfig(filename, self._config)
+
+    def __repr__(self):
+        return str(self._config)
 
 
 def loadConfig(fina):

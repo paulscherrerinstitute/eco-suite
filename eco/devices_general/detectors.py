@@ -147,7 +147,7 @@ class DIAClient:
         self,
         name=None,
         instrument=None,
-        pgroup = None,
+        pgroup=None,
         api_address="http://sf-daq-2:10000",
         jf_name="JF_1.5M",
     ):
@@ -157,7 +157,7 @@ class DIAClient:
         print("\nDetector Integration API on %s" % api_address)
         # No pgroup by default
         if pgroup:
-            self.pgroup = int(''.join([s for s in pgroup if s.isdigit()]))
+            self.pgroup = int("".join([s for s in pgroup if s.isdigit()]))
         else:
             self.pgroup = None
         self.n_frames = 100
@@ -239,8 +239,8 @@ class DIAClient:
             "general/process": __name__,
             "general/created": str(datetime.now()),
             "general/instrument": self.instrument,
-            #'Npulses':100,
-            #'channels': default_channels_list
+            # 'Npulses':100,
+            # 'channels': default_channels_list
         }
 
     #        self.default_channels_list = jungfrau_utils.load_default_channel_list()
@@ -294,7 +294,7 @@ class DIAClient:
         self, n_frames, analyze=True, n_bad_modules=0, update_config=True
     ):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
-            run as jungfrau_utils_run,
+            run as jungfrau_utils_run
         )
 
         directory = "/sf/%s/data/p%d/raw/JF_pedestal/" % (self.instrument, self.pgroup)

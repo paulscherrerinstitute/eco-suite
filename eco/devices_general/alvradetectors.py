@@ -553,8 +553,8 @@ class DIAClient:
             "general/process": __name__,
             "general/created": str(datetime.now()),
             "general/instrument": self.instrument,
-            #'Npulses':100,
-            #'channels': default_channels_list
+            # 'Npulses':100,
+            # 'channels': default_channels_list
         }
 
     #        self.default_channels_list = jungfrau_utils.load_default_channel_list()
@@ -608,7 +608,7 @@ class DIAClient:
         self, n_frames, analyze=True, n_bad_modules=0, update_config=True
     ):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
-            run as jungfrau_utils_run,
+            run as jungfrau_utils_run
         )
 
         directory = "/sf/%s/data/p%d/raw" % (self.instrument, self.pgroup)

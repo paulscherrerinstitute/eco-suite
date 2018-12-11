@@ -6,7 +6,7 @@ from epics import PV
 from ..aliases import Alias
 
 
-def addMotorRecordToSelf(self,name=None, Id=None):
+def addMotorRecordToSelf(self, name=None, Id=None):
     self.__dict__[name] = MotorRecord(Id, name=name)
     self.alias.append(self.__dict__[name].alias)
 
@@ -19,15 +19,13 @@ class XRD:
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        
-        
+
         ### motors base platform ###
         addMotorRecordToSelf(self, Id=Id + ":MOT_TX", name="xbase")
         addMotorRecordToSelf(self, Id=Id + ":MOT_TY", name="ybase")
         addMotorRecordToSelf(self, Id=Id + ":MOT_RX", name="rxbase")
         addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="omega")
-  
-        
+
         ### motors XRD detector arm ###
         addMotorRecordToSelf(self, Id=Id + ":MOT_NY_RY2TH", name="gamma")
         addMotorRecordToSelf(self, Id=Id + ":MOT_DT_RX2TH", name="delta")
@@ -37,7 +35,7 @@ class XRD:
 
         ### motors XRD polarisation analyzer branch ###
         addMotorRecordToSelf(self, Id=Id + ":MOT_P_T", name="tpol")
-        #missing: slits of flight tube
+        # missing: slits of flight tube
 
         ### motors heavy load goniometer ###
         addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TX", name="xhl")

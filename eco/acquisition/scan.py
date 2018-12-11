@@ -4,9 +4,10 @@ import json
 import numpy as np
 from time import sleep
 import traceback
+from pathlib import Path
 
 
-class ScanSimple:
+class Scan:
     def __init__(
         self,
         adjustables,
@@ -60,6 +61,8 @@ class ScanSimple:
         return fina
 
     def doNextStep(self, step_info=None, verbose=True):
+        for call in self.callbacks_start_step:
+            call()
         if self.checker:
             while not self.checker["checker_call"](
                 *self.checker["args"], **self.checker["kwargs"]
@@ -96,6 +99,7 @@ class ScanSimple:
             ta.wait()
         if verbose:
             print("Done with acquisition")
+
         if self.checker:
             if not self.checker["checker_call"](
                 *self.checker["args"], **self.checker["kwargs"]
@@ -155,7 +159,18 @@ class Scans:
         scan_directories=False,
     ):
         self.data_base_dir = data_base_dir
+        scan_info_dir = Path(scan_info_dir)
+        if not scan_info_dir.exists():
+            print(
+                f"NB! Path {scan_info_dir.absolute().as_posix()} does not exist, will try to create it..."
+            )
+            scan_info_dir.mkdir()
+            print(f"Successfully created {scan_info_dir.absolute().as_posix()}")
+            scan_info_dir.chmod(775)
+            print(f"Successfully changed permissions to 775")
+
         self.scan_info_dir = scan_info_dir
+        self.filename_generator = RunFilenameGenerator(self.scan_info_dir)
         self._default_counters = default_counters
         self.checker = checker
         self._scan_directories = scan_directories
@@ -167,13 +182,14 @@ class Scans:
         end_pos,
         N_intervals,
         N_pulses,
-        file_name=None,
+        file_name="",
         start_immediately=True,
         step_info=None,
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         values = [[tp] for tp in positions]
-        s = ScanSimple(
+        file_name = self.filename_generator.get_nextrun_filename(file_name)
+        s = Scan(
             [adjustable],
             values,
             self._default_counters,
@@ -195,13 +211,14 @@ class Scans:
         end_pos,
         N_intervals,
         N_pulses,
-        file_name=None,
+        file_name="",
         start_immediately=True,
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         current = adjustable.get_current_value()
         values = [[tp + current] for tp in positions]
-        s = ScanSimple(
+        file_name = self.filename_generator.get_nextrun_filename(file_name)
+        s = Scan(
             [adjustable],
             values,
             self._default_counters,
@@ -227,13 +244,14 @@ class Scans:
         adjustable,
         posList,
         N_pulses,
-        file_name=None,
+        file_name="",
         start_immediately=True,
         step_info=None,
     ):
         positions = posList
         values = [[tp] for tp in positions]
-        s = ScanSimple(
+        file_name = self.filename_generator.get_nextrun_filename(file_name)
+        s = Scan(
             [adjustable],
             values,
             self._default_counters,
@@ -247,3 +265,35 @@ class Scans:
         if start_immediately:
             s.scanAll(step_info=step_info)
         return s
+
+
+class RunFilenameGenerator:
+    def __init__(self, path, prefix="run", Ndigits=4, separator="_", suffix="json"):
+        self.separator = separator
+        self.prefix = prefix
+        self.Ndigits = Ndigits
+        self.path = Path(path)
+        self.suffix = suffix
+
+    def get_existing_runnumbers(self):
+        fl = self.path.glob(
+            self.prefix + self.Ndigits * "[0-9]" + self.separator + "*." + self.suffix
+        )
+        fl = [tf for tf in fl if tf.is_file()]
+        runnos = [int(tf.split(self.prefix)[1].split(self.separator)[0]) for tf in fl]
+        return runnos
+
+    def get_nextrun_filename(self, name):
+        runnos = self.get_existing_runnumbers()
+        if runnos:
+            runno = max(runnos) + 1
+        else:
+            runno = 0
+        return (
+            self.prefix
+            + "{{:0{:d}d}}".format(self.Ndigits).format(runno)
+            + self.separator
+            + name
+            + "."
+            + self.suffix
+        )

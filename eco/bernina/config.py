@@ -11,9 +11,19 @@
 # if arg or kwarg is of type eco.utilities.Component (dummy class)
 # this indicates that an earlier initialized object is used
 # (e.g. from same configuration).
-from ..utilities.config import Component, Alias, init_device, initFromConfigList
+from ..utilities.config import (
+    Component,
+    Alias,
+    init_device,
+    initFromConfigList,
+    ExperimentConfiguration,
+)
 
 _eco_lazy_init = False
+
+config = ExperimentConfiguration(
+    "/sf/bernina/config/exp/bernina_config_eco.json", name="bernina_config"
+)
 
 components = [
     #        {
@@ -193,7 +203,7 @@ components = [
         "z_und": 142,
         "desc": "Xray diffractometer",
         "type": "eco.endstations.bernina_diffractometers:XRD",
-        "kwargs": {'Id':"SARES21-XRD"},
+        "kwargs": {"Id": "SARES21-XRD"},
     },
     {
         "args": ["SARES20-PROF142-M1"],
@@ -247,14 +257,24 @@ components = [
         "name": "daq",
         "desc": "server based acquisition",
         "type": "eco.devices_general.detectors:DIAClient",
-        "kwargs": {'instrument':"bernina", 'api_address':"http://sf-daq-1:10000", 'pgroup':'p17571'},
+        "kwargs": {
+            "instrument": "bernina",
+            "api_address": "http://sf-daq-1:10000",
+            "pgroup": "p17571",
+        },
     },
     {
         "args": [],
         "name": "scans",
         "desc": "server based acquisition",
         "type": "eco.acquisition.scan:Scans",
-        "kwargs": {'data_base_dir':"scan_data",'scan_info_dir':"/sf/bernina/data/s/res/scan_info",'default_counters':[Component('daq')],'checker':None,'scan_directories':True},
+        "kwargs": {
+            "data_base_dir": "scan_data",
+            "scan_info_dir": f"/sf/bernina/data/{config.pgroup}/res/scan_info",
+            "default_counters": [Component("daq")],
+            "checker": None,
+            "scan_directories": True,
+        },
     },
 ]
 
