@@ -1,5 +1,6 @@
 from ..devices_general.utilities import Changer
 from epics import PV
+from ..aliases import Alias
 
 
 _status_messages = {
@@ -20,10 +21,14 @@ _status_messages = {
 
 
 class DelayStage:
-    def __init__(self, stage):
+
+    
+    
+    def __init__(self, stage, name=None):
         self._stage = stage
         self.delay_stage_offset = 0.0
-        self.name = self._stage.name
+        self.name = name
+        self.alias = Alias(name)
         self.Id = self._stage.Id
         self._elog = self._stage._elog
 

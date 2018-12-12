@@ -226,7 +226,7 @@ components = [
         "name": "las",
         "z_und": 142,
         "desc": "Experiment laser optics",
-        "type": "eco.loptics.bernina_experiment_dev:Laser_Exp",
+        "type": "eco.loptics.bernina_experiment:Laser_Exp",
         "kwargs": {"Id":"SLAAR21-LMOT"},
     },
     {

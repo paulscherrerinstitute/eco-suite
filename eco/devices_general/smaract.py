@@ -10,6 +10,24 @@ from ..aliases import Alias
 
 _guiTypes = ['xdm']
 
+_status_messages = {
+    -13 : "invalid value (cannot convert to float).  Move not attempted.",
+    -12 : "target value outside soft limits.         Move not attempted.",
+    -11 : "drive PV is not connected:                Move not attempted.",
+    -8 : "move started, but timed-out.",
+    -7 : "move started, timed-out, but appears done.",
+    -5 : "move started, unexpected return value from PV.put()",
+    -4 : "move-with-wait finished, soft limit violation seen",
+    -3 : "move-with-wait finished, hard limit violation seen",
+     0 : "move-with-wait finish OK.",
+     0 : "move-without-wait executed, not cpmfirmed",
+     1 : "move-without-wait executed, move confirmed",
+     3 : "move-without-wait finished, hard limit violation seen",
+     4 : "move-without-wait finished, soft limit violation seen",
+     }
+
+
+
 def _keywordChecker(kw_key_list_tups):
     for tkw,tkey,tlist in kw_key_list_tups:
         assert tkey in tlist, "Keyword %s should be one of %s"%(tkw,tlist)
@@ -64,7 +82,8 @@ class SmarActRecord:
         self._rbv = SmarAct(Id+':MOTRBV')
         self._hlm = SmarAct(Id+':HLM')
         self._llm = SmarAct(Id+':LLM')
-        self._status = SmarAct(Id+':STATUS')
+        self._statusstg = SmarAct(Id+':STATUS')
+        self._status = []
         self._set_pos = SmarAct(Id+':SET_POS')
         self._stop = SmarAct(Id+':STOP')
         self._hold = SmarAct(Id+':HOLD')
@@ -75,7 +94,7 @@ class SmarActRecord:
         self.alias = Alias(name)
         for an, af in alias_fields.items():
             self.alias.append(
-                    Alias(an, channel=".".join([pvname, af]), channeltype="CA"
+                    Alias(an, channel=".".join([self.Id, af]), channeltype="CA"
                 ))
 
 
@@ -84,13 +103,18 @@ class SmarActRecord:
     def changeTo(self, value, hold=False, check=True):
         """ Adjustable convention"""
 
-        mover = lambda value: self.move(\
-                value, ignore_limits=(not check),
-                wait=True)
+        def changer(value):
+            self._status = self.move(value, ignore_limits=(not check), wait=True)
+            self._status_message = _status_messages[self._status]
+            if not self._status == 0:
+                print(self._status_message)
+        #mover = lambda value: self.move(\
+        #        value, ignore_limits=(not check),
+        #        wait=True)
         return Changer(
                 target=value,
                 parent=self,
-                mover=mover,
+                changer=changer,
                 hold=hold,
                 stopper=self._stop.put('PROC', 1))
 
@@ -160,7 +184,7 @@ class SmarActRecord:
             return TIMEOUT
 
         if 1 == stat:
-            s0 = self._status.get('VAL')
+            s0 = self._statusstg.get('VAL')
             s1 = s0
             t0 = time.time()
             t1 = t0 + min(10.0, timeout) # should be moving by now
@@ -169,15 +193,15 @@ class SmarActRecord:
             if wait or confirm_move:
                 while time.time() <= thold and s1 == 3:
                     ca.poll(evt=1.e-2)
-                    s1 = self._status.get('VAL')
+                    s1 = self._statusstg.get('VAL')
                 while time.time() <= t1 and s1 == 0:
                     ca.poll(evt=1.e-2)
-                    s1 = self._status.get('VAL')
+                    s1 = self._statusstg.get('VAL')
                 if s1 == 4:
                     if wait:
                         while time.time() <= tout and s1 == 4:
                             ca.poll(evt=1.e-2)
-                            s1 = self._status.get('VAL')
+                            s1 = self._statusstg.get('VAL')
                         if s1 == 3 or s1 == 4:
                             if time.time() > tout:
                                 return TIMEOUT
