@@ -222,12 +222,12 @@ components = [
         "kwargs": {},
     },
     {
-        "args": ["SLAAR21-LMOT"],
+        "args": [],
         "name": "las",
         "z_und": 142,
         "desc": "Experiment laser optics",
-        "type": "eco.loptics.bernina_experiment:Laser_Exp",
-        "kwargs": {},
+        "type": "eco.loptics.bernina_experiment_dev:Laser_Exp",
+        "kwargs": {"Id":"SLAAR21-LMOT"},
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],

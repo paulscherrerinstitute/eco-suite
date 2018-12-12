@@ -39,7 +39,7 @@ class Bernina_XEYE:
     def __init__(self, Id, bshost=None, bsport=None):
         self.Id = Id
         try:
-            self.zoom = MotorRecord("SARES20-EXP:MOT_ZOOM.VAL")
+            self.zoom = MotorRecord("SARES20-EXP:MOT_NAV_Z")
         except:
             print("X-Ray eye zoom motor not found")
             pass
