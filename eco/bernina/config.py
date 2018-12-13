@@ -189,14 +189,14 @@ components = [
         "type": "eco.xoptics.KBhor:KBhor",
         "kwargs": {},
     },
-    #        {
-    #            'args'  : ['SARES22-GPS'],
-    #            'name'  : 'gps',
-    #            'z_und' : 142,
-    #            'desc'  : 'General purpose station',
-    #            'type'  : 'eco.endstations.bernina_gps:GPS',
-    #            'kwargs': {}
-    #            },
+    {
+        "args": [],
+        "name": "gps",
+        "z_und": 142,
+        "desc": "General purpose station",
+        "type": "eco.endstations.bernina_diffractometers:GPS",
+        "kwargs": {"Id": "SARES22-GPS", "configuration": config.gps_config},
+    },
     {
         "args": [],
         "name": "xrd",
@@ -206,12 +206,28 @@ components = [
         "kwargs": {"Id": "SARES21-XRD"},
     },
     {
-        "args": ["SARES20-PROF142-M1"],
+        "args": [],
         "name": "xeye",
         "z_und": 142,
         "desc": "Mobile X-ray eye in Bernina hutch",
         "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
-        "kwargs": {"bshost": "sf-daqsync-01.psi.ch", "bsport": 11173},
+        "kwargs": {
+            "bshost": "sf-daqsync-01.psi.ch",
+            "bsport": 11151,
+            "Id": "SARES20-PROF142-M1",
+        },
+    },
+    {
+        "args": [],
+        "name": "qioptic",
+        "z_und": 142,
+        "desc": "Qioptic sample viewer in Bernina hutch",
+        "type": "eco.endstations.bernina_cameras:Qioptic",
+        "kwargs": {
+            "bshost": "sf-daqsync-01.psi.ch",
+            "bsport": 11149,
+            "Id": "SARES20-PROF142-M2",
+        },
     },
     {
         "args": ["SLAAR02-TSPL-EPL"],
@@ -227,7 +243,7 @@ components = [
         "z_und": 142,
         "desc": "Experiment laser optics",
         "type": "eco.loptics.bernina_experiment:Laser_Exp",
-        "kwargs": {"Id":"SLAAR21-LMOT"},
+        "kwargs": {"Id": "SLAAR21-LMOT"},
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],
@@ -256,11 +272,14 @@ components = [
         "args": [],
         "name": "daq",
         "desc": "server based acquisition",
-        "type": "eco.devices_general.detectors:DIAClient",
+        "type": "eco.acquisition.dia:DIAClient",
         "kwargs": {
             "instrument": "bernina",
-            "api_address": "http://sf-daq-1:10000",
-            "pgroup": "p17571",
+            "api_address": "http://sf-daq-swissmx:10000",
+            "pgroup": config.pgroup,
+            "pedestal_filename": config.jf_pedestal_file,
+            "gain_path": config.jf_gain_path,
+            "config_default": config.daq_dia_config,
         },
     },
     {

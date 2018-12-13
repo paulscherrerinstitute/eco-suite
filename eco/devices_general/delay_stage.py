@@ -21,9 +21,6 @@ _status_messages = {
 
 
 class DelayStage:
-
-    
-    
     def __init__(self, stage, name=None):
         self._stage = stage
         self.delay_stage_offset = 0.0
