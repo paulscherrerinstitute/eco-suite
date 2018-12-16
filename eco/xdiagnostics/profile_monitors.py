@@ -1,9 +1,15 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
+from ..aliases import Alias
 
 # from ..devices_general.epics_wrappers import EnumSelector
 from epics import PV
 from ..eco_epics.utilities_epics import EnumWrapper
+
+
+def addMotorRecordToSelf(self, Id=None, name=None):
+    self.__dict__[name] = MotorRecord(Id, name=name)
+    self.alias.append(self.__dict__[name].alias)
 
 
 class Pprm:
@@ -36,10 +42,13 @@ class Pprm:
 
 
 class Bernina_XEYE:
-    def __init__(self, Id, bshost=None, bsport=None):
+    def __init__(self, Id, bshost=None, bsport=None, name=None):
+        self.alias = Alias(name)
+
         self.Id = Id
         try:
-            self.zoom = MotorRecord("SARES20-EXP:MOT_NAV_Z")
+            addMotorRecordToSelf(self, Id="SARES20-EXP:MOT_NAV_Z", name="zoom")
+
         except:
             print("X-Ray eye zoom motor not found")
             pass
@@ -51,6 +60,18 @@ class Bernina_XEYE:
 
         if bshost:
             self.camBS = CameraBS(host=bshost, port=bsport)
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****Xeye motor positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    def __repr__(self):
+        return self.get_adjustable_positions_str()
 
 
 #        self._led = PV(self.Id+':LED')

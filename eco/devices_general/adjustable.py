@@ -11,7 +11,7 @@ def _keywordChecker(kw_key_list_tups):
 
 class ValueRdback:
     def __init__(self, pv_value, pv_readback, name=None, elog=None):
-        self.Id = pvname
+        self.Id = pv_value
         self._PV_value = PV(pv_value)
         self._PV_readback = PV(pv_readback)
         self._elog = elog

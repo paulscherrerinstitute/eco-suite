@@ -44,7 +44,6 @@ class Scan:
             "scan_step_info": [],
         }
         self.scan_info_filename = os.path.join(self.scan_info_dir, fina)
-        self.scan_info_filename += "_scan_info.json"
         self._scan_directories = scan_directories
         self.checker = checker
         self.initial_values = []
@@ -54,15 +53,15 @@ class Scan:
             print("Initial value of %s : %g" % (adj.name, tv))
 
     def get_filename(self, stepNo, Ndigits=4):
-        fina = os.path.join(self.basepath, self.fina)
+        fina = os.path.join(self.basepath, Path(self.fina).stem)
         if self._scan_directories:
             fina = os.path.join(fina, self.fina)
         fina += "_step%04d" % stepNo
         return fina
 
     def doNextStep(self, step_info=None, verbose=True):
-        for call in self.callbacks_start_step:
-            call()
+        # for call in self.callbacks_start_step:
+            # call()
         if self.checker:
             while not self.checker["checker_call"](
                 *self.checker["args"], **self.checker["kwargs"]
@@ -280,7 +279,7 @@ class RunFilenameGenerator:
             self.prefix + self.Ndigits * "[0-9]" + self.separator + "*." + self.suffix
         )
         fl = [tf for tf in fl if tf.is_file()]
-        runnos = [int(tf.split(self.prefix)[1].split(self.separator)[0]) for tf in fl]
+        runnos = [int(tf.name.split(self.prefix)[1].split(self.separator)[0]) for tf in fl]
         return runnos
 
     def get_nextrun_filename(self, name):
