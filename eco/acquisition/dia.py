@@ -42,6 +42,7 @@ class DIAClient:
         if instrument is None:
             print("ERROR: please configure the instrument parameter in DIAClient")
         self.update_config()
+        self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
 
     def update_config(self,):
         self.writer_config.update({
@@ -204,6 +205,9 @@ class DIAClient:
     def wait_for_status(self, *args, **kwargs):
         return self.client.wait_for_status(*args, **kwargs)
 
+    def get_active_clients(self):
+        return self.client.get_clients_enabled()
+
     def acquire(self, file_name=None, Npulses=100, JF_factor=1, bsread_padding=0):
         """
         JF_factor?
@@ -261,11 +265,12 @@ class DIAClient:
                 if stat["status"] == "IntegrationStatus.DETECTOR_STOPPED":
                     done = True
                 sleep(0.1)
+        outputfilenames = [f'{file_name_JF}.{tcli.upper()}.h5' for tcli in self.active_clients]
 
         return Acquisition(
             acquire=acquire,
             acquisition_kwargs={
-                "file_names": [file_name_bsread, file_name_JF],
+                "file_names": outputfilenames,
                 "Npulses": Npulses,
             },
             hold=False,
