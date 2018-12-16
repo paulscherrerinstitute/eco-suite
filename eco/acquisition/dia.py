@@ -45,7 +45,7 @@ class DIAClient:
 
     def update_config(self,):
         self.writer_config.update({
-            "output_file": "/sf/%s/data/p%d/raw/test_data.h5"
+            "output_file": "/sf/%s/data/p%d/raw/test_data"
             % (self.instrument, self.pgroup),
             "user_id": self.pgroup,
             "n_frames": self.n_frames,
@@ -53,7 +53,6 @@ class DIAClient:
             "general/process": __name__,
             "general/created": str(datetime.now()),
             "general/instrument": self.instrument,
-            # "general/correction": "test"
         })
 
         self.backend_config.update({
@@ -90,15 +89,13 @@ class DIAClient:
 
 
         self.bsread_config.update({
-            "output_file": "/sf/%s/data/p%d/raw/test_bsread.h5"
+            "output_file": "/sf/%s/data/p%d/raw/test_bsread"
             % (self.instrument, self.pgroup),
             "user_id": self.pgroup,
             "general/user": str(self.pgroup),
             "general/process": __name__,
             "general/created": str(datetime.now()),
             "general/instrument": self.instrument,
-            # 'Npulses':100,
-            # 'channels': default_channels_list
         })
 
     #        self.default_channels_list = jungfrau_utils.load_default_channel_list()
@@ -217,12 +214,12 @@ class DIAClient:
         if file_name is None:
             # FIXME /dev/null crashes the data taking (h5py can't close /dev/null and crashes)
             print("Not saving any data, as file_name is not set")
-            file_name_JF = file_rootdir + "DelMe" + "_JF1p5M.h5"
-            file_name_bsread = file_rootdir + "DelMe" + ".h5"
+            file_name_JF = file_rootdir + "DelMe"
+            file_name_bsread = file_rootdir + "DelMe"
         else:
             # FIXME hardcoded
-            file_name_JF = file_rootdir + file_name + "_JF1p5M.h5"
-            file_name_bsread = file_rootdir + file_name + ".h5"
+            file_name_JF = file_rootdir + file_name
+            file_name_bsread = file_rootdir + file_name
 
         if self.pgroup == 0:
             raise ValueError("Please use set_pgroup() to set a pgroup value.")

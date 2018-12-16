@@ -134,7 +134,7 @@ class ExperimentConfiguration:
         writeConfig(filename, self._config)
 
     def __repr__(self):
-        return str(self._config)
+        return json.dumps(self._config,indent=4)
 
 
 def loadConfig(fina):

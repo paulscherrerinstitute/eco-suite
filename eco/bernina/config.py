@@ -279,7 +279,7 @@ components = [
             "pgroup": config.pgroup,
             "pedestal_filename": config.jf_pedestal_file,
             "gain_path": config.jf_gain_path,
-            "config_default": config.daq_dia_config,
+            # "config_default": config.daq_dia_config,
         },
     },
     {
