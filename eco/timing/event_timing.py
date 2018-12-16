@@ -51,7 +51,7 @@ class MasterEventSystem:
     def __init__(self,pvname,name=None):
         self.name = name
         self.pvname = pvname
-        self._pvs = {}yy
+        self._pvs = {}
 
     def _get_pv(self,pvname):
         if not pvname in self._pvs:
@@ -105,8 +105,9 @@ class MasterEventSystem:
 
 
 class EvrPulser:
-    def __init__(self,pvname,name=None):
-        self.pvname = pvname
+    def __init__(self,pvname_evr,pulser_number,name=None):
+        self.pvname_evr = pvname_evr
+        self.pulser_number = pulser_number
         self.name = name
         self._pvs = {}
 
@@ -147,6 +148,23 @@ class EvrOutput:
     def __init__(self,pvname,name=None):
         self.pvname = pvname
         self.name = name
+        self.pulsers = None
+        self._update_connected_pulsers()
+    
+    def _get_pv(self,pvname):
+        if not pvname in self._pvs:
+            self._pvs[pvname] = PV(pvname)
+        return self._pvs[pvname]
+
+    def _update_connected_pulsers(self):
+        self._get_pv()
+
+        self.pulsers = ()
+
+    def get_status(self):
+        pass
+
+
 
 
 
