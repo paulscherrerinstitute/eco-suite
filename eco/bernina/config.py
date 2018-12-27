@@ -16,12 +16,12 @@ from ..utilities.config import (
     Alias,
     init_device,
     initFromConfigList,
-    ExperimentConfiguration,
+    Configuration,
 )
 
 _eco_lazy_init = False
 
-config = ExperimentConfiguration(
+config = Configuration(
     "/sf/bernina/config/exp/bernina_config_eco.json", name="bernina_config"
 )
 

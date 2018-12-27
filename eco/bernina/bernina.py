@@ -1,16 +1,18 @@
 from ..utilities.config import initFromConfigList
 from epics import PV
-from .config import components, config
 from .. import ecocnf
 from ..aliases import NamespaceCollection
+import logging
 
-itglobals = globals()
+from .config import components, config
+_namespace = globals()
+_scope_name = 'bernina'
 
 alias_namespaces = NamespaceCollection()
 
 
 for key, value in initFromConfigList(components, lazy=ecocnf.startup_lazy).items():
-    globals()[key] = value
+    _namespace[key] = value
 
     if not ecocnf.startup_lazy:
         try:
@@ -21,3 +23,23 @@ for key, value in initFromConfigList(components, lazy=ecocnf.startup_lazy).items
         except:
             pass
     alias_namespaces.bernina.store()
+
+
+def initDevice(name):
+    if name=='all':
+        logging.info(f'initializing all components from {_scope_name}.')
+        name = list(components.keys())
+    if not name in components.keys():
+        raise KeyError(f'Could not find {name} in configuration!')
+    if type(name) is list:
+        for tname in name:
+            initDevice(tname)
+    else:
+        initFromConfigList
+    
+
+
+
+
+
+

@@ -51,6 +51,17 @@ def init_device(type_string, name, args=[], kwargs={}, verbose=True, lazy=True):
         raise expt
 
 
+def get_dependencies(inp):
+    outp = []
+    if isinstance(inp, dict):
+        inp = inp.values()
+    for ta in inp:
+        if isinstance(ta, Component):
+            outp.append(ta.name)
+        elif isinstance(ta, dict) or isinstance(ta, list):
+            outp.append(get_dependencies(ta))
+    return outp
+
 def replaceComponent(inp, dict_all):
     if isinstance(inp, list):
         outp = []
@@ -74,7 +85,6 @@ def replaceComponent(inp, dict_all):
         return inp
     return outp
 
-
 def initFromConfigList(config_list, lazy=False):
     op = {}
     for td in config_list:
@@ -93,7 +103,7 @@ def initFromConfigList(config_list, lazy=False):
     return op
 
 
-class ExperimentConfiguration:
+class Configuration:
     """Configuration collector object collecting important settings for arbitrary use, 
     linking to one or few standard config files in the file system. Sould also be used 
     for config file writing."""
@@ -144,7 +154,7 @@ def loadConfig(fina):
 
 def writeConfig(fina, obj):
     with open(fina, "w") as f:
-        json.dump(obj, f)
+        json.dump(obj, f,indent=4)
 
 
 def parseChannelListFile(fina):
