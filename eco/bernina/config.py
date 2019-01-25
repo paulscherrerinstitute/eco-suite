@@ -59,6 +59,7 @@ components = [
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
         "args": ["SARFE10-OATT053"],
         "kwargs": {},
+        "z_und": 53,
         "desc": "Attenuator in Front End",
     },
     {
@@ -92,6 +93,24 @@ components = [
         "z_und": 94,
         "desc": "Profile monitor after Mirror 1",
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
+    },
+    {
+        "name": "mirr1",
+        "args": [],
+        "kwargs": {},
+        "z_und": 92,
+        "desc": "Vertical offset mirror 1",
+        "type": "eco.xoptics.offsetMirrors:OffsetMirror",
+        "kwargs": {"Id": "SAROP21-OOMV092"},
+    },
+    {
+        "name": "mirr2",
+        "args": [],
+        "kwargs": {},
+        "z_und": 96,
+        "desc": "Vertical offset mirror 2",
+        "type": "eco.xoptics.offsetMirrors:OffsetMirror",
+        "kwargs": {"Id": "SAROP21-OOMV096"},
     },
     {
         "name": "mono",
@@ -214,7 +233,7 @@ components = [
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
-            "Id": "SARES20-PROF142-M1",
+            "Id": "SARES20-PROF142-M3",
         },
     },
     {
@@ -227,6 +246,18 @@ components = [
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
             "Id": "SARES20-PROF142-M2",
+        },
+    },
+    {
+        "args": [],
+        "name": "cams142_C1",
+        "z_und": 142,
+        "desc": "Sigma objective",
+        "type": "eco.endstations.bernina_cameras:Sigma",
+        "kwargs": {
+            "bshost": "sf-daqsync-01.psi.ch",
+            "bsport": 11149,
+            "Id": "SARES20-CAMS142-C1",
         },
     },
     {
@@ -295,6 +326,13 @@ components = [
             "scan_directories": True,
         },
     },
+    {
+        "args": [],
+        "name": "lxt",
+        "desc": "laser timing with pockels cells and phase shifter",
+        "type": "eco.timing.lasertiming:Lxt",
+        "kwargs": {}
+    },
 ]
 
 
@@ -323,16 +361,6 @@ components_old = {
         "alias": "MirrAlv1",
         "z_und": 64,
         "desc": "Horizontal mirror Alvra 1",
-    },
-    "SAROP21-OOMV092": {
-        "alias": "Mirr1",
-        "z_und": 92,
-        "desc": "Vertical offset Mirror 1",
-    },
-    "SAROP21-OOMV096": {
-        "alias": "Mirr2",
-        "z_und": 96,
-        "desc": "Vertical offset mirror 2",
     },
     "SAROP21-PSCR097": {
         "alias": "ProfMirr2",

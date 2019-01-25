@@ -109,8 +109,8 @@ class SmarActRecord:
         def changer(value):
             self._status = self.move(value, ignore_limits=(not check), wait=True)
             self._status_message = _status_messages[self._status]
-            if not self._status == 0:
-                print(self._status_message)
+            #if not self._status == 0:
+                #print(self._status_message)
 
         # mover = lambda value: self.move(\
         #        value, ignore_limits=(not check),

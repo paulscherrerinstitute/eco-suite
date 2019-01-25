@@ -3,7 +3,7 @@ from epics import PV
 from .config import components, config
 from .. import ecocnf
 from ..aliases import NamespaceCollection
-
+from ..devices_general.pv_adjustable import PvRecord
 itglobals = globals()
 
 alias_namespaces = NamespaceCollection()

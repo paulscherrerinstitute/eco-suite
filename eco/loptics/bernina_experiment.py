@@ -90,19 +90,19 @@ class Laser_Exp:
             pass
 
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB2", name="eos_gonio")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB2", name="pump_x")
         except:
             print("No Smaract EOSGonio")
             pass
 
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB1", name="eos_x")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB1", name="pump_gonio")
         except:
             print("No Smaract EOSx")
             pass
 
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB16", name="thz_rot")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB16", name="pump_rot")
             # self.thz_rot = User_to_motor(self._thz_rot,180./35.7,0.)
         except:
             print("No Smaract THzrot")
