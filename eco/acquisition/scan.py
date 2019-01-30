@@ -20,6 +20,7 @@ class Scan:
         checker=None,
         scan_directories=False,
         callbackStartStep=None,
+        checker_sleep_time = .2
     ):
         self.Nsteps = len(values)
         self.pulses_per_step = Npulses
@@ -47,6 +48,8 @@ class Scan:
         self._scan_directories = scan_directories
         self.checker = checker
         self.initial_values = []
+        self._checker_sleep_time = checker_sleep_time
+        print(f'Scan info in file {self.scan_info_filename}.')
         for adj in self.adjustables:
             tv = adj.get_current_value()
             self.initial_values.append(adj.get_current_value())
@@ -63,11 +66,10 @@ class Scan:
         # for call in self.callbacks_start_step:
             # call()
         if self.checker:
-            while not self.checker["checker_call"](
-                *self.checker["args"], **self.checker["kwargs"]
-            ):
+            while not self.checker.check_now():
                 print("Condition checker is not happy, waiting for OK conditions.")
-                sleep(self.checker["wait_time"])
+                sleep(self._checker_sleep_time)
+            self.checker.clear_and_start_counting()
 
         if not len(self.values_todo) > 0:
             return False
@@ -100,9 +102,7 @@ class Scan:
             print("Done with acquisition")
 
         if self.checker:
-            if not self.checker["checker_call"](
-                *self.checker["args"], **self.checker["kwargs"]
-            ):
+            if not self.checker.stop_and_analyze():
                 return True
         if callable(step_info):
             tstepinfo = step_info()

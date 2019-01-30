@@ -129,6 +129,14 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     {
+        "name": "xp",
+        "args": [],
+        "kwargs": {"Id": "SAROP21-OPPI103", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
+        "z_und": 103,
+        "desc": "X-ray pulse picker",
+        "type": "eco.xoptics.pp:Pulsepick"
+    },
+    {
         "name": "monOpt",
         "z_und": 133,
         "desc": "Intensity/position monitor after Optics hutch",
@@ -207,6 +215,14 @@ components = [
         "desc": "Horizontally focusing Bernina KB mirror",
         "type": "eco.xoptics.KBhor:KBhor",
         "kwargs": {},
+    },
+    {
+        "name": "slitKb",
+        "args": [],
+        "kwargs": {"Id": "SARES20"},
+        "z_und": 141,
+        "desc": "Slits behind Kb",
+        "type": "eco.xoptics.slits:SlitBladesJJ",
     },
     {
         "args": [],
@@ -308,10 +324,18 @@ components = [
             "instrument": "bernina",
             "api_address": "http://sf-daq-swissmx:10000",
             "pgroup": config.pgroup,
-            "pedestal_filename": config.jf_pedestal_file,
+            'pedestal_directory':config.jf_pedestal_directory,
             "gain_path": config.jf_gain_path,
             "config_default": config.daq_dia_config,
+            'jf_channels':config.jf_channels,
         },
+    },
+    {
+        "args": [config.checker_PV, config.checker_thresholds, config.checker_fractionInThreshold], #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
+        "name": "checker",
+        "desc": "checker functions for data acquisition",
+        "type": "eco.acquisition.checkers:CheckerCA",
+        "kwargs": {}
     },
     {
         "args": [],
@@ -322,7 +346,7 @@ components = [
             "data_base_dir": "scan_data",
             "scan_info_dir": f"/sf/bernina/data/{config.pgroup}/res/scan_info",
             "default_counters": [Component("daq")],
-            "checker": None,
+            "checker": Component("checker"),
             "scan_directories": True,
         },
     },

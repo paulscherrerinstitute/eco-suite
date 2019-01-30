@@ -3,6 +3,7 @@ from datetime import datetime
 from ..acquisition.utilities import Acquisition
 from detector_integration_api import DetectorIntegrationClient
 import os
+from pathlib import Path
 
 
 class DIAClient:
@@ -13,8 +14,9 @@ class DIAClient:
         pgroup=None,
         gain_path="",
         pedestal_filename="",
+        pedestal_directory="",
         api_address="http://sf-daq-2:10000",
-        jf_name="JF_1.5M",
+        jf_channels=[],
         n_frames_default=100,
         config_default = None
     ):
@@ -36,8 +38,9 @@ class DIAClient:
         else:
             self.pgroup = None
         self.n_frames = n_frames_default
-        self.jf_name = jf_name
+        self.jf_channels = jf_channels
         self.pede_file = pedestal_filename
+        self.pedestal_directory = pedestal_directory
         self.gain_path = gain_path
         self.instrument = instrument
         if instrument is None:
@@ -46,6 +49,7 @@ class DIAClient:
         self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
 
     def update_config(self,):
+        self.get_last_pedestal()
         self.writer_config.update({
             "output_file": "/sf/%s/data/p%d/raw/test_data"
             % (self.instrument, self.pgroup),
@@ -148,8 +152,7 @@ class DIAClient:
                 sleep(time_interval)
 
     def take_pedestal(
-        self, n_frames=1000, analyze=True, n_bad_modules=0, update_config=True
-    ):
+        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
             run as jungfrau_utils_run
         )
@@ -171,16 +174,37 @@ class DIAClient:
             self.detector_config["exptime"],
             n_frames,
             1,
-            analyze,
+            analyze_locally,
             n_bad_modules,
             self.instrument,
-            #self.jf_name,
         )
+        if analyze:
+            pedestals_taken = Path(directory).glob(filename+'*')
+            print('Analysis of pedestal data is outsourced to batch farm, user credentials required.')
+            user = input('enter user name for analysis on sf batch farm: ')
+            commandstr = [f'ssh {user}@sf-cn-1 source /sf/{self.instrument}/bin/anaconda_env']
+            for ped in pedestals_taken:
+                commandstr.append(f'sbatch jungfrau_create_pedestals --filename {ped.as_posix()} --directory {res_dir} --verbosity 4')
+            os.system('\;'.join(commandstr))
 
-        if update_config:
-            self.pede_file = res_dir + filename
-            print("Pedestal file updated to %s" % self.pede_file)
-        return self.pede_file
+    def get_last_pedestal(self):
+        p = Path(self.pedestal_directory)
+        allpedestals = [(datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5')]
+        completepedestals = []
+        for pedtime in set([tt for tt,tf in allpedestals]):
+            tpedset = [pedtime,[]]
+            try:
+                for channel in self.jf_channels:
+                    tpedset[1].append([tf for tt,tf in allpedestals if (tt==pedtime and channel in tf.as_posix())][0])
+                if len(tpedset[1])==len(self.jf_channels):
+                    completepedestals.append(tpedset)
+            except:
+                pass
+        # print(completepedestals)
+        f = max(*completepedestals)[1][0]
+
+        # dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
+        self.pede_file = (f.parent / Path(f.stem.split('.')[0])).as_posix()
 
     def start(self):
         self.client.start()

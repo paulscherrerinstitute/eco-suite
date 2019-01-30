@@ -4,25 +4,37 @@ from time import sleep
 import numpy as np
 from ..devices_general.motors import MotorRecord
 
+from ..aliases import Alias
 
-class Pulse_Picker:
-    def __init__(self, Id):
+
+def addMotorRecordToSelf(self, name=None, Id=None):
+    try:
+        self.__dict__[name] = MotorRecord(Id, name=name)
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print("Warning! Could not find motor {name} (Id:{Id})")
+
+class Pulsepick:
+    def __init__(self, Id=None, evrout=None, name=None):
+        self.name = name
+        self.alias = Alias(name)
+        self.evrout = evrout
+
         self.Id = Id
-        self.Idmotor = "SAROP21-OPPI103"
         self._start = PV(Id + ":seq0Ctrl-Start-I")
         self._stop = PV(Id + ":seq0Ctrl-Stop-I")
         self._cycles = PV(Id + ":seq0Ctrl-Cycles-I")
-        self._openclose = PV("SGE-CPCW-72-EVR0:Pul0-Polarity-Sel")
-        self.x = MotorRecord(self.Idmotor + ":MOTOR_X1")
-        self.y = MotorRecord(self.Idmotor + ":MOTOR_Y1")
+        self._openclose = PV(self.evrout)
+        addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_X1", name="x")
+        addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_Y1", name="y")
 
     def movein(self):
-        self.x.changeTo(10)
-        self.y.changeTo(-0.471)
+        self.x.changeTo(4.45)
+        self.y.changeTo(-0.9)
 
     def moveout(self):
-        self.x.changeTo(0)
-        self.y.changeTo(-0.471)
+        self.x.changeTo(-5)
+        self.y.changeTo(-0.9)
 
     def open(self):
         self._openclose.put(1)
