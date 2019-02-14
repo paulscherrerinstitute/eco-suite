@@ -31,27 +31,43 @@ class Laser_Exp:
         self.alias = Alias(name)
 
         # Waveplate and Delay stage
-        addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp")
         try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="_eos_delay")
+            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp_bright_field")
+            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp")
+        except:
+            print('No wp found')
+
+        try:
+            addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="_spatialenc_df_delaystg")
             addDelayStageToSelf(
-                self, stage=self.__dict__["_eos_delay"], name="eos_delay"
+                self, stage=self.__dict__["_spatialenc_df_delaystg"], name="spatialenc_df_delay"
             )
         except:
             print("No eos delay stage")
             pass
         try:
             addMotorRecordToSelf(
-                self, Id=self.Id + "-M522:MOTOR_1", name="_thz_delaystg"
+                self, Id=self.Id + "-M522:MOTOR_1", name="_spatialenc_bf_delaystg"
             )
             addDelayStageToSelf(
-                self, self.__dict__["_thz_delaystg"], name="spatialenc_delay"
+                self, self.__dict__["_spatialenc_bf_delaystg"], name="spatialenc_bf_delay"
             )
             # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
         except:
             print("No thz delay stage")
             pass
 
+        try:
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M553:MOT", name="_spatialenc_both_delaystg"
+            )
+            addDelayStageToSelf(
+                self, self.__dict__["_spatialenc_both_delaystg"], name="spatialenc_both_delay"
+            )
+            # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
+        except:
+            print("No thz delay stage")
+            pass
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')
@@ -82,7 +98,7 @@ class Laser_Exp:
         # SmarAct ID
         ### Mirrors used in the experiment ###
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB18", name="spatialenc_rot")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB18", name="spatialenc_bf_rot")
             # self._eos_rot = SmarActRecord(self.IdSA+'-ESB18')
             # self.eos_rot = User_to_motor(self._eos_rot,180./35.7,0.)
         except:
@@ -122,13 +138,13 @@ class Laser_Exp:
             pass
 
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB6", name="spatialenc_gon")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB6", name="spatialenc_bf_gon")
             # self.par_x = SmarActRecord(self.IdSA+'-ESB6')
         except:
             print("No Smaract ParX")
             pass
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB3", name="par_z")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB3", name="spatialenc_df_lens")
         except:
             print("No Smaract ParZ")
             pass

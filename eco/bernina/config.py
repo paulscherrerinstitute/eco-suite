@@ -322,7 +322,7 @@ components = [
         "type": "eco.acquisition.dia:DIAClient",
         "kwargs": {
             "instrument": "bernina",
-            "api_address": "http://sf-daq-swissmx:10000",
+            "api_address": "http://sf-daq-bernina:10000",
             "pgroup": config.pgroup,
             'pedestal_directory':config.jf_pedestal_directory,
             "gain_path": config.jf_gain_path,
@@ -360,6 +360,8 @@ components = [
 ]
 
 
+
+#### OLD STUFF TO BE TRANSFERRED OR DELETED ####
 components_old = {
     "SARFE10-OPSH044": {
         "alias": "ShutUnd",
