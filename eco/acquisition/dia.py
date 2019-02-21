@@ -49,7 +49,10 @@ class DIAClient:
         self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
 
     def update_config(self,):
-        self.get_last_pedestal()
+        try:
+            self.get_last_pedestal()
+        except:
+            print('Did not find a previous config file')
         self.writer_config.update({
             "output_file": "/sf/%s/data/p%d/raw/test_data"
             % (self.instrument, self.pgroup),

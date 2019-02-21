@@ -32,25 +32,25 @@ class Laser_Exp:
 
         # Waveplate and Delay stage
         try:
-            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp_bright_field")
-            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp")
+            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="pump_wp")
+            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="tt_wp")
         except:
             print('No wp found')
 
         try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="_spatialenc_df_delaystg")
+            addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg")
             addDelayStageToSelf(
-                self, stage=self.__dict__["_spatialenc_df_delaystg"], name="spatialenc_df_delay"
+                self, stage=self.__dict__["_pump_delaystg"], name="pump_delay"
             )
         except:
             print("No eos delay stage")
             pass
         try:
             addMotorRecordToSelf(
-                self, Id=self.Id + "-M522:MOTOR_1", name="_spatialenc_bf_delaystg"
+                self, Id=self.Id + "-M522:MOTOR_1", name="_tt_delaystg"
             )
             addDelayStageToSelf(
-                self, self.__dict__["_spatialenc_bf_delaystg"], name="spatialenc_bf_delay"
+                self, self.__dict__["_tt_delaystg"], name="tt_delay"
             )
             # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
         except:
@@ -59,10 +59,10 @@ class Laser_Exp:
 
         try:
             addMotorRecordToSelf(
-                self, Id=self.Id + "-M553:MOT", name="_spatialenc_both_delaystg"
+                self, Id=self.Id + "-M553:MOT", name="_exp_delaystg"
             )
             addDelayStageToSelf(
-                self, self.__dict__["_spatialenc_both_delaystg"], name="spatialenc_both_delay"
+                self, self.__dict__["_exp_delaystg"], name="exp_delay"
             )
             # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
         except:
@@ -98,7 +98,7 @@ class Laser_Exp:
         # SmarAct ID
         ### Mirrors used in the experiment ###
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB18", name="spatialenc_bf_rot")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB18", name="tt_rot")
             # self._eos_rot = SmarActRecord(self.IdSA+'-ESB18')
             # self.eos_rot = User_to_motor(self._eos_rot,180./35.7,0.)
         except:
@@ -138,7 +138,7 @@ class Laser_Exp:
             pass
 
         try:
-            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB6", name="spatialenc_bf_gon")
+            addSmarActRecordToSelf(self, Id=self.IdSA + "-ESB6", name="tt_gon")
             # self.par_x = SmarActRecord(self.IdSA+'-ESB6')
         except:
             print("No Smaract ParX")
