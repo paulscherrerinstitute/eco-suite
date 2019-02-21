@@ -297,6 +297,11 @@ components = [
     },
 ]
 
+try:
+    components.append(config.components)
+except:
+    print('Could not append components from config.')
+
 
 components_old = {
     "SARFE10-OPSH044": {

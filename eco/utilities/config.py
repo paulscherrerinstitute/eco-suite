@@ -170,3 +170,12 @@ def parseChannelListFile(fina):
                     if not d[0] == "#":
                         out.append(d.strip())
     return out
+
+
+def append_to_path(*args):
+    for targ in args:
+        sys.path.append(targ)
+
+def prepend_to_path(*args):
+    for targ in args:
+        sys.path.insert(0,targ)
