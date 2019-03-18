@@ -120,11 +120,11 @@ class Configuration:
         assert (
             type(self._config) is dict
         ), f"Problem reading {self.configFile} json file, seems not to be a valid dictionary structure!"
-        self.__dict__.update(self._config)
+        # self.__dict__.update(self._config)
 
     def __setitem__(self, key, item):
         self._config[key] = item
-        self.__dict__.update(self._config)
+        # self.__dict__.update(self._config)
         self.saveConfigFile()
 
     def __getitem__(self, key):
@@ -142,6 +142,9 @@ class Configuration:
             ):
                 return
         writeConfig(filename, self._config)
+
+    def _ipython_key_completions_(self):
+        return list(self._config.keys())
 
     def __repr__(self):
         return json.dumps(self._config,indent=4)
