@@ -47,12 +47,13 @@ class DIAClient:
             print("ERROR: please configure the instrument parameter in DIAClient")
         self.update_config()
         self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
+        self.jf_channels = list(x for x in self.active_clients if x != 'bsread')
 
     def update_config(self,):
-        try:
-            self.get_last_pedestal()
-        except:
-            print('Did not find a previous config file')
+        #try:
+        self.get_last_pedestal()
+        #except:
+        #    print('Did not find a pedestal file in %s'%(self.pedestal_directory))
         self.writer_config.update({
             "output_file": "/sf/%s/data/p%d/raw/test_data"
             % (self.instrument, self.pgroup),
@@ -160,12 +161,13 @@ class DIAClient:
             run as jungfrau_utils_run
         )
 
-        directory = "/sf/%s/data/p%d/raw/JF_pedestal/" % (self.instrument, self.pgroup)
+        directory = "/sf/%s/data/p%d/raw/JF_pedestals/" % (self.instrument, self.pgroup)
 
         res_dir = directory.replace("/raw/", "/res/")
         if not os.path.exists(res_dir):
             print("Directory %s not existing, creating it" % res_dir)
             os.makedirs(res_dir)
+            os.chmod(res_dir, 0o775)
         filename = "pedestal_%s" % datetime.now().strftime("%Y%m%d_%H%M")
         period = 0.04
         jungfrau_utils_run(
@@ -191,6 +193,8 @@ class DIAClient:
             os.system('\;'.join(commandstr))
 
     def get_last_pedestal(self):
+        self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
+        self.jf_channels = list(x for x in self.active_clients if x != 'bsread')
         p = Path(self.pedestal_directory)
         allpedestals = [(datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5')]
         completepedestals = []
@@ -201,14 +205,16 @@ class DIAClient:
                     tpedset[1].append([tf for tt,tf in allpedestals if (tt==pedtime and channel in tf.as_posix())][0])
                 if len(tpedset[1])==len(self.jf_channels):
                     completepedestals.append(tpedset)
+                else:
+                    print('Number of pedestal files %4f not number of JFs %4f'%(len(tpedset[1]), len(self.jf_channels)))
+                    return
             except:
                 pass
-        # print(completepedestals)
-        f = max(*completepedestals)[1][0]
-
-        # dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
-        self.pede_file = (f.parent / Path(f.stem.split('.')[0])).as_posix()
-
+        if len(completepedestals)>0:
+            f = max(*completepedestals)[1][0]
+            #dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
+            self.pede_file = (f.parent / Path(f.stem.split('.')[0])).as_posix()
+    
     def start(self):
         self.client.start()
         print("start acquisition")
