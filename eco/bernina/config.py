@@ -322,7 +322,8 @@ components = [
         "type": "eco.acquisition.dia:DIAClient",
         "kwargs": {
             "instrument": "bernina",
-            "api_address": "http://sf-daq-bernina:10000",
+            #"api_address": "http://sf-daq-3:10000",
+            "api_address": config["daq_address"],
             "pgroup": config.pgroup,
             'pedestal_directory':config.jf_pedestal_directory,
             "gain_path": config.jf_gain_path,
