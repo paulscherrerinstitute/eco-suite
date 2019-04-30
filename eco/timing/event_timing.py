@@ -230,18 +230,47 @@ class EventReceiver:
 
 
 class CTA_sequencer:
-    def __init__(self, Id, name=None):
+    def __init__(self, Id, name=None, master_frequency=100):
         self._cta = CtaLib(Id)
         self.sequence_local = []
+        self.synced = False
+        self._master_frequency = master_frequency
+
 
     def get_sequence(self):
-        pass
+
+        self.synced = True
+
+    def get_start_config(self,set_params=True):
+        cfg = self._cta.get_start_config()
+        if set_params:
+            self._start_immediately =  cfg['mode']
+            self.start_divisor =  cfg['divisor']
+            self.start_offset =  cfg['offset']
+        else:
+            return cfg
+
+    def set_start_config(self,divisor, offset):
+        if divisor==1 and offset ==0:
+            mode = 0
+        else:
+            mode = 1
+        self._cta.set_start_config(config={'mode':mode, 'modulo':modulo, 'offset':offset})
 
     def append_line(self,code,pulse_delay):
         self.sequence_local.append((code,pulse_delay))
+        self.synced = False
+
+    def set_repetitions(self,n_rep):
+        """Set the number of sequence repetitions, 0 is infinite repetitions"""
+        ntim = int(n_rep>0)
+        self._cta.set_repetition_config(config={'mode': self._cta.RepetitionMode.NTIMES(ntim), 'n': N})
 
     def start(self):
-        pass
+        s._cta.start()
+
+    def stop(self):
+        s._cta.stop()
 
         
 
