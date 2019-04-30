@@ -211,8 +211,8 @@ class DIAClient:
             except:
                 pass
         if len(completepedestals)>0:
-            f = max(*completepedestals)[1][0]
-            #dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
+            #f = max(*completepedestals)[1][0]
+            dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
             self.pede_file = (f.parent / Path(f.stem.split('.')[0])).as_posix()
     
     def start(self):

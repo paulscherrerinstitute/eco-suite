@@ -22,7 +22,7 @@ from ..utilities.config import (
 _eco_lazy_init = False
 
 config = ExperimentConfiguration(
-    "/sf/bernina/config/exp/bernina_config_eco.json", name="bernina_config"
+    "/sf/bernina/config/eco/bernina_config_eco.json", name="bernina_config"
 )
 
 components = [
@@ -131,7 +131,7 @@ components = [
     {
         "name": "xp",
         "args": [],
-        "kwargs": {"Id": "SAROP21-OPPI103", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
+        "kwargs": {"Id": "SAROP21-OPPI103", "IdCTA": "SAR-CCTA-ESB", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
         "z_und": 103,
         "desc": "X-ray pulse picker",
         "type": "eco.xoptics.pp:Pulsepick"

@@ -15,15 +15,16 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         print("Warning! Could not find motor {name} (Id:{Id})")
 
 class Pulsepick:
-    def __init__(self, Id=None, evrout=None, name=None):
+    def __init__(self, Id=None, IdCTA = None, evrout=None, name=None):
         self.name = name
         self.alias = Alias(name)
         self.evrout = evrout
 
         self.Id = Id
-        self._start = PV(Id + ":seq0Ctrl-Start-I")
-        self._stop = PV(Id + ":seq0Ctrl-Stop-I")
-        self._cycles = PV(Id + ":seq0Ctrl-Cycles-I")
+        self.IdCTA = IdCTA
+        self._start = PV(self.IdCTA + ":seq0Ctrl-Start-I")
+        self._stop = PV(self.IdCTA + ":seq0Ctrl-Stop-I")
+        self._cycles = PV(self.IdCTA + ":seq0Ctrl-Cycles-I")
         self._openclose = PV(self.evrout)
         addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_X1", name="x")
         addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_Y1", name="y")
