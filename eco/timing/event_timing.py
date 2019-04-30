@@ -2,6 +2,8 @@ from epics import PV
 from ..aliases import Alias
 from ..utilities.lazy_proxy import Proxy
 
+from cta_lib import CtaLib
+
 # EVR output mapping
 evr_mapping = {
     0: "Pulser 0",
@@ -225,3 +227,21 @@ class EventReceiver:
     def __init__(self, pvname, name=None):
         self.name = name
         self.pvname = pvname
+
+
+class CTA_sequencer:
+    def __init__(self, Id, name=None):
+        self._cta = CtaLib(Id)
+        self.sequence_local = []
+
+    def get_sequence(self):
+        pass
+
+    def append_line(self,code,pulse_delay):
+        self.sequence_local.append((code,pulse_delay))
+
+    def start(self):
+        pass
+
+        
+
