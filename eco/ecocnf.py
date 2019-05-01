@@ -14,7 +14,7 @@ scopes = [
 
 
 
-settings = Configuration(Path.home() / '.ecorc', name='eco_startup_settings')
+# settings = Configuration(Path.home() / '.ecorc', name='eco_startup_settings')
 
 
 

@@ -93,12 +93,16 @@ def initFromConfigList(config_list, lazy=False):
         # tkwk: op[tkwv.name] if isinstance(tkwv, Component) else tkwv
         # for tkwk, tkwv in td["kwargs"].items()
         # }
+        try:
+            tlazy = td['lazy']
+        except:
+            tlazy = lazy
         op[td["name"]] = init_device(
             td["type"],
             td["name"],
             replaceComponent(td["args"], op),
             replaceComponent(td["kwargs"], op),
-            lazy=lazy,
+            lazy=tlazy,
         )
     return op
 

@@ -22,7 +22,7 @@ from ..utilities.config import (
 _eco_lazy_init = False
 
 config = Configuration(
-    "/sf/bernina/config/exp/bernina_config_eco.json", name="bernina_config"
+    "/sf/bernina/config/eco/bernina_config_eco.json", name="bernina_config"
 )
 
 components = [
@@ -32,6 +32,13 @@ components = [
     #            'args'  : ['all','the','requires','args'],
     #            'kwargs': {}
     #            }
+    {
+        "type": "eco.utilities.config:append_to_path",
+        "args": config["path_exp"],
+        "name": "path_exp",
+        "kwargs": {},
+        "lazy": False
+        },
     {
         "name": "elog",
         "type": "eco.utilities.elog:Elog",
@@ -230,7 +237,7 @@ components = [
         "z_und": 142,
         "desc": "General purpose station",
         "type": "eco.endstations.bernina_diffractometers:GPS",
-        "kwargs": {"Id": "SARES22-GPS", "configuration": config.gps_config},
+        "kwargs": {"Id": "SARES22-GPS", "configuration": config['gps_config']},
     },
     {
         "args": [],
@@ -323,15 +330,15 @@ components = [
         "kwargs": {
             "instrument": "bernina",
             "api_address": "http://sf-daq-bernina:10000",
-            "pgroup": config.pgroup,
-            'pedestal_directory':config.jf_pedestal_directory,
-            "gain_path": config.jf_gain_path,
-            "config_default": config.daq_dia_config,
-            'jf_channels':config.jf_channels,
+            "pgroup": config['pgroup'],
+            'pedestal_directory':config['jf_pedestal_directory'],
+            "gain_path": config['jf_gain_path'],
+            "config_default": config['daq_dia_config'],
+            'jf_channels':config['jf_channels'],
         },
     },
     {
-        "args": [config.checker_PV, config.checker_thresholds, config.checker_fractionInThreshold], #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
+        "args": [config['checker_PV'], config['checker_thresholds'], config['checker_fractionInThreshold']], #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
         "name": "checker",
         "desc": "checker functions for data acquisition",
         "type": "eco.acquisition.checkers:CheckerCA",
@@ -344,7 +351,7 @@ components = [
         "type": "eco.acquisition.scan:Scans",
         "kwargs": {
             "data_base_dir": "scan_data",
-            "scan_info_dir": f"/sf/bernina/data/{config.pgroup}/res/scan_info",
+            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
             "default_counters": [Component("daq")],
             "checker": Component("checker"),
             "scan_directories": True,
@@ -357,10 +364,18 @@ components = [
         "type": "eco.timing.lasertiming:Lxt",
         "kwargs": {}
     },
+    {
+        "args": ['SAR-CCTA-ESB'],
+        "name": "seq",
+        "desc": "sequencer timing application (CTA)",
+        "type": "eco.timing.event_timing:CTA_sequencer",
+        "kwargs": {}
+    },
 ]
 
 try:
-    components.append(config.components)
+    components.extend(config['components'])
+    print('Did append additional components!')
 except:
     print('Could not append components from config.')
 
