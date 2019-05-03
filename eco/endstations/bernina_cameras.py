@@ -1,6 +1,6 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
-from ..devices_general.pv_adjustable import PvRecord
+from ..devices_general.adjustable import PvRecord
 from ..aliases import Alias
 
 # from ..devices_general.epics_wrappers import EnumSelector

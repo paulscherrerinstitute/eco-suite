@@ -78,9 +78,9 @@ def main():
             shell.enable_matplotlib()
             shell()
         else:
-            from IPython import embed
+            from IPython import start_ipython
 
-            embed()
+            start_ipython()
 
 
 if __name__ == "__main__":
