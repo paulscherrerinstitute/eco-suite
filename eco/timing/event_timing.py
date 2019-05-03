@@ -186,9 +186,8 @@ class MasterEventSystem:
 
 
 class EvrPulser:
-    def __init__(self,pvname_evr,pulser_number,name=None):
-        self.pvname_evr = pvname_evr
-        self.pulser_number = pulser_number
+    def __init__(self, pv_base, outputs=None, name=None):
+        self.pv_base = pv_base
         self.name = name
         self._pvs = {}
 
@@ -199,31 +198,31 @@ class EvrPulser:
 
     def get_delay(self):
         """ in seconds """
-        return self._get_pv(f"{self.pvname}-Delay-RB").get() / int(1e6)
+        return self._get_pv(f"{self.pv_base}-Delay-RB").get() / int(1e6)
 
     def set_delay(self, value):
         """ in seconds """
-        return self._get_pv(f"{self.pvname}-Delay-SP").set(value * int(1e6))
+        return self._get_pv(f"{self.pv_base}-Delay-SP").put(value * int(1e6))
 
     def get_width(self):
         """ in seconds """
-        return self._get_pv(f"{self.pvname}-Width-RB").get() / int(1e6)
+        return self._get_pv(f"{self.pv_base}-Width-RB").get() / int(1e6)
 
     def set_width(self, value):
         """ in seconds """
-        return self._get_pv(f"{self.pvname}-Width-SP").set(value * int(1e6))
+        return self._get_pv(f"{self.pv_base}-Width-SP").put(value * int(1e6))
 
     def get_evtcode(self):
-        return self._get_pv(f"{self.pvname}-Evt-Trig0-SP").get()
+        return self._get_pv(f"{self.pv_base}-Evt-Trig0-SP").get()
 
     def set_evtcode(self, value):
-        return self._get_pv(f"{self.pvname}-Evt-Trig0-SP").set(value)
+        return self._get_pv(f"{self.pv_base}-Evt-Trig0-SP").put(value)
 
     def get_polarity(self):
-        return self._get_pv(f"{self.pvname}-Polarity-Sel").get()
+        return self._get_pv(f"{self.pv_base}-Polarity-Sel").get()
 
     def set_polarity(self, value):
-        return self._get_pv(f"{self.pvname}-Polarity-Sel").set(value)
+        return self._get_pv(f"{self.pv_base}-Polarity-Sel").put(value)
 
 
 class EvrOutput:
@@ -246,13 +245,14 @@ class EvrOutput:
     def get_status(self):
         pass
 
-
-
-
 class EventReceiver:
-    def __init__(self, pvname, name=None):
+    def __init__(self, pvname, n_pulsers=24, n_output_front=8, n_output_rear=16, name=None):
         self.name = name
         self.pvname = pvname
+        pulsers = []
+        for n in range(n_pulsers):
+            pulsers.append(EvrPulser(f'{self.pvname}:Pul{n}'))
+        self.pulsers = tuple(pulsers)
 
 
 class CTA_sequencer:

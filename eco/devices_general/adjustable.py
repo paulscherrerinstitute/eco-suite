@@ -3,6 +3,30 @@ from threading import Thread
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
+from enum import IntEnum, auto
+
+
+
+
+# wrappers for adjustables >>>>>>>>>>>
+def default_representation(Obj):
+    def get_name(Obj):
+        if Obj.name:
+            return Obj.name
+        else:
+            return Obj.Id
+
+    def get_repr(Obj):
+        return f"{Obj._get_name()} is at: {repr(Obj.get_current_value())}"
+        if Obj.name:
+            return Obj.name
+        else:
+            return Obj.Id
+
+    Obj._get_name = get_name
+    Obj.__repr__  = get_repr
+    return Obj
+# wrappers for adjustables <<<<<<<<<<<
 
 
 def _keywordChecker(kw_key_list_tups):
@@ -95,4 +119,49 @@ class PvRecord:
 
     def __repr__(self):
         return "%s is at: %s"%(self.Id,self.get_current_value())
+
+
+
+@default_representation
+class PvEnum:
+    def __init__(self,pvname,name=None):
+        self.Id = pvname
+        self._pv = PV(pvname)
+        self.name = name
+        self.enum_strs = self._pv.enum_strs
+        if name:
+            enumname = self.name
+        else:
+            enumname = self.Id
+        self.PvEnum = IntEnum(enumname,{tstr:n for n,tstr in enumerate(self.enum_strs)})
+    
+    def validate(self,value):
+        if type(value) is str:
+            return self.PvEnum.__members__[value]
+        else:
+            return self.PvEnum(value)
+    
+    def get_current_value(self):
+        return self.validate(self._pv.get())
+
+    def changeTo(self, value, hold=False):
+        """ Adjustable convention"""
+        value = self.validate(value)
+
+        changer = lambda value: self._pv.put(value,wait=True)
+        return Changer(
+                target=value,
+                parent=self,
+                changer=changer,
+                hold=hold,
+                stopper=None)
+
+
+
+
+        
+
+
+
+
 
