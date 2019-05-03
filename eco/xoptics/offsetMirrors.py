@@ -2,7 +2,6 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import ValueRdback
 
 from epics import PV
 from ..aliases import Alias

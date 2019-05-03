@@ -371,6 +371,13 @@ components = [
         "type": "eco.timing.event_timing:CTA_sequencer",
         "kwargs": {}
     },
+    {
+        "args": ['SIN-TIMAST-TMA'],
+        "name": "event_master",
+        "desc": "SwissFEL timing master information",
+        "type": "eco.timing.event_timing:MasterEventSystem",
+        "kwargs": {}
+    },
 ]
 
 try:
