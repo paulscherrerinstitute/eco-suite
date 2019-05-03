@@ -1,13 +1,9 @@
-import subprocess
-from threading import Thread
 from epics import PV
+import os
+import numpy as np
+import time
 from .utilities import Changer
 from ..aliases import Alias
-
-
-def _keywordChecker(kw_key_list_tups):
-    for tkw, tkey, tlist in kw_key_list_tups:
-        assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
 
 class PvRecord:
@@ -95,4 +91,8 @@ class PvRecord:
 
     def __repr__(self):
         return "%s is at: %s"%(self.Id,self.get_current_value())
+
+
+
+
 

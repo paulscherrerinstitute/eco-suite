@@ -1,4 +1,5 @@
 from epics import PV
+import numpy as np
 
 
 class CheckerCA:
@@ -28,10 +29,10 @@ class CheckerCA:
     def stop_and_analyze(self):
         self.stopcounting()
         data = np.asarray(self.data)
-        good = np.logical_and(data > self.thresholds[0], data < thresholds[1])
+        good = np.logical_and(data > self.thresholds[0], data < self.thresholds[1])
         fraction = good.sum() / len(good)
-        print(f"Checker: {fraction*100}% inside limits {limits},")
-        print(f"         given limit was {fraction_min*100}%.")
+        print(f"Checker: {fraction*100}% inside limits {self.thresholds},")
+        print(f"         given limit was {self.required_fraction*100}%.")
         return fraction >= self.required_fraction
 
 

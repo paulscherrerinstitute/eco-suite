@@ -1,7 +1,7 @@
 import logging
 import json
 from pathlib import Path
-from .eco.utilities.config import Configuration
+from .utilities.config import Configuration
 
 startup_lazy = False
 
@@ -14,7 +14,7 @@ scopes = [
 
 
 
-settings = Configuration(Path.home() / '.ecorc', name='eco_startup_settings')
+# settings = Configuration(Path.home() / '.ecorc', name='eco_startup_settings')
 
 
 

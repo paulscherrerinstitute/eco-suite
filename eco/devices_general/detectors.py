@@ -3,9 +3,9 @@ from epics import caget
 from epics import PV
 from ..eco_epics.utilities_epics import EnumWrapper
 
-from cam_server import PipelineClient
-from cam_server.utils import get_host_port_from_stream_address
-from bsread import source, SUB
+# from cam_server import PipelineClient
+# from cam_server.utils import get_host_port_from_stream_address
+# from bsread import source, SUB
 import subprocess
 import h5py
 from time import sleep
@@ -37,8 +37,8 @@ class CameraCA:
         return self.px_width
 
     def get_data(self):
-        w = self.get_px_width()
-        h = self.get_px_height()
+        w = int(self.get_px_width())
+        h = int(self.get_px_height())
         numpix = int(caget(self.Id + ":FPICTURE.NORD"))
         i = caget(self.Id + ":FPICTURE", count=numpix)
         return i.reshape(h, w)

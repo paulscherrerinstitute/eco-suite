@@ -22,7 +22,7 @@ from ..utilities.config import (
 _eco_lazy_init = False
 
 config = Configuration(
-    "/sf/bernina/config/exp/bernina_config_eco.json", name="bernina_config"
+    "/sf/bernina/config/eco/bernina_config_eco.json", name="bernina_config"
 )
 
 components = [
@@ -32,6 +32,13 @@ components = [
     #            'args'  : ['all','the','requires','args'],
     #            'kwargs': {}
     #            }
+    {
+        "type": "eco.utilities.config:append_to_path",
+        "args": config["path_exp"],
+        "name": "path_exp",
+        "kwargs": {},
+        "lazy": False
+        },
     {
         "name": "elog",
         "type": "eco.utilities.elog:Elog",
@@ -59,6 +66,7 @@ components = [
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
         "args": ["SARFE10-OATT053"],
         "kwargs": {},
+        "z_und": 53,
         "desc": "Attenuator in Front End",
     },
     {
@@ -94,6 +102,24 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     {
+        "name": "mirr1",
+        "args": [],
+        "kwargs": {},
+        "z_und": 92,
+        "desc": "Vertical offset mirror 1",
+        "type": "eco.xoptics.offsetMirrors:OffsetMirror",
+        "kwargs": {"Id": "SAROP21-OOMV092"},
+    },
+    {
+        "name": "mirr2",
+        "args": [],
+        "kwargs": {},
+        "z_und": 96,
+        "desc": "Vertical offset mirror 2",
+        "type": "eco.xoptics.offsetMirrors:OffsetMirror",
+        "kwargs": {"Id": "SAROP21-OOMV096"},
+    },
+    {
         "name": "mono",
         "args": ["SAROP21-ODCM098"],
         "kwargs": {},
@@ -108,6 +134,14 @@ components = [
         "z_und": 102,
         "desc": "Profile monitor after Monochromator",
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
+    },
+    {
+        "name": "xp",
+        "args": [],
+        "kwargs": {"Id": "SAROP21-OPPI103", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
+        "z_und": 103,
+        "desc": "X-ray pulse picker",
+        "type": "eco.xoptics.pp:Pulsepick"
     },
     {
         "name": "monOpt",
@@ -190,12 +224,20 @@ components = [
         "kwargs": {},
     },
     {
+        "name": "slitKb",
+        "args": [],
+        "kwargs": {"Id": "SARES20"},
+        "z_und": 141,
+        "desc": "Slits behind Kb",
+        "type": "eco.xoptics.slits:SlitBladesJJ",
+    },
+    {
         "args": [],
         "name": "gps",
         "z_und": 142,
         "desc": "General purpose station",
         "type": "eco.endstations.bernina_diffractometers:GPS",
-        "kwargs": {"Id": "SARES22-GPS", "configuration": config.gps_config},
+        "kwargs": {"Id": "SARES22-GPS", "configuration": config['gps_config']},
     },
     {
         "args": [],
@@ -214,7 +256,7 @@ components = [
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
-            "Id": "SARES20-PROF142-M1",
+            "Id": "SARES20-PROF142-M3",
         },
     },
     {
@@ -227,6 +269,18 @@ components = [
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
             "Id": "SARES20-PROF142-M2",
+        },
+    },
+    {
+        "args": [],
+        "name": "cams142_C1",
+        "z_und": 142,
+        "desc": "Sigma objective",
+        "type": "eco.endstations.bernina_cameras:Sigma",
+        "kwargs": {
+            "bshost": "sf-daqsync-01.psi.ch",
+            "bsport": 11149,
+            "Id": "SARES20-CAMS142-C1",
         },
     },
     {
@@ -275,12 +329,20 @@ components = [
         "type": "eco.acquisition.dia:DIAClient",
         "kwargs": {
             "instrument": "bernina",
-            "api_address": "http://sf-daq-swissmx:10000",
-            "pgroup": config.pgroup,
-            "pedestal_filename": config.jf_pedestal_file,
-            "gain_path": config.jf_gain_path,
-            "config_default": config.daq_dia_config,
+            "api_address": "http://sf-daq-bernina:10000",
+            "pgroup": config['pgroup'],
+            'pedestal_directory':config['jf_pedestal_directory'],
+            "gain_path": config['jf_gain_path'],
+            "config_default": config['daq_dia_config'],
+            'jf_channels':config['jf_channels'],
         },
+    },
+    {
+        "args": [config['checker_PV'], config['checker_thresholds'], config['checker_fractionInThreshold']], #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
+        "name": "checker",
+        "desc": "checker functions for data acquisition",
+        "type": "eco.acquisition.checkers:CheckerCA",
+        "kwargs": {}
     },
     {
         "args": [],
@@ -289,15 +351,44 @@ components = [
         "type": "eco.acquisition.scan:Scans",
         "kwargs": {
             "data_base_dir": "scan_data",
-            "scan_info_dir": f"/sf/bernina/data/{config.pgroup}/res/scan_info",
+            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
             "default_counters": [Component("daq")],
-            "checker": None,
+            "checker": Component("checker"),
             "scan_directories": True,
         },
     },
+    {
+        "args": [],
+        "name": "lxt",
+        "desc": "laser timing with pockels cells and phase shifter",
+        "type": "eco.timing.lasertiming:Lxt",
+        "kwargs": {}
+    },
+    {
+        "args": ['SAR-CCTA-ESB'],
+        "name": "seq",
+        "desc": "sequencer timing application (CTA)",
+        "type": "eco.timing.event_timing:CTA_sequencer",
+        "kwargs": {}
+    },
+    {
+        "args": ['SIN-TIMAST-TMA'],
+        "name": "event_master",
+        "desc": "SwissFEL timing master information",
+        "type": "eco.timing.event_timing:MasterEventSystem",
+        "kwargs": {}
+    },
 ]
 
+try:
+    components.extend(config['components'])
+    print('Did append additional components!')
+except:
+    print('Could not append components from config.')
 
+
+
+#### OLD STUFF TO BE TRANSFERRED OR DELETED ####
 components_old = {
     "SARFE10-OPSH044": {
         "alias": "ShutUnd",
@@ -323,16 +414,6 @@ components_old = {
         "alias": "MirrAlv1",
         "z_und": 64,
         "desc": "Horizontal mirror Alvra 1",
-    },
-    "SAROP21-OOMV092": {
-        "alias": "Mirr1",
-        "z_und": 92,
-        "desc": "Vertical offset Mirror 1",
-    },
-    "SAROP21-OOMV096": {
-        "alias": "Mirr2",
-        "z_und": 96,
-        "desc": "Vertical offset mirror 2",
     },
     "SAROP21-PSCR097": {
         "alias": "ProfMirr2",

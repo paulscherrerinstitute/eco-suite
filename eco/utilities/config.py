@@ -93,12 +93,16 @@ def initFromConfigList(config_list, lazy=False):
         # tkwk: op[tkwv.name] if isinstance(tkwv, Component) else tkwv
         # for tkwk, tkwv in td["kwargs"].items()
         # }
+        try:
+            tlazy = td['lazy']
+        except:
+            tlazy = lazy
         op[td["name"]] = init_device(
             td["type"],
             td["name"],
             replaceComponent(td["args"], op),
             replaceComponent(td["kwargs"], op),
-            lazy=lazy,
+            lazy=tlazy,
         )
     return op
 
@@ -120,11 +124,11 @@ class Configuration:
         assert (
             type(self._config) is dict
         ), f"Problem reading {self.configFile} json file, seems not to be a valid dictionary structure!"
-        self.__dict__.update(self._config)
+        # self.__dict__.update(self._config)
 
     def __setitem__(self, key, item):
         self._config[key] = item
-        self.__dict__.update(self._config)
+        # self.__dict__.update(self._config)
         self.saveConfigFile()
 
     def __getitem__(self, key):
@@ -142,6 +146,9 @@ class Configuration:
             ):
                 return
         writeConfig(filename, self._config)
+
+    def _ipython_key_completions_(self):
+        return list(self._config.keys())
 
     def __repr__(self):
         return json.dumps(self._config,indent=4)
@@ -170,3 +177,12 @@ def parseChannelListFile(fina):
                     if not d[0] == "#":
                         out.append(d.strip())
     return out
+
+
+def append_to_path(*args):
+    for targ in args:
+        sys.path.append(targ)
+
+def prepend_to_path(*args):
+    for targ in args:
+        sys.path.insert(0,targ)

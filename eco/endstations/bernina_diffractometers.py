@@ -2,7 +2,6 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import ValueRdback
 
 from epics import PV
 from ..aliases import Alias
@@ -30,7 +29,7 @@ class GPS:
             addMotorRecordToSelf(self, Id=Id + ":MOT_TX", name="xbase")
             addMotorRecordToSelf(self, Id=Id + ":MOT_TY", name="ybase")
             addMotorRecordToSelf(self, Id=Id + ":MOT_RX", name="rxbase")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="omega")
+            addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="alpha")
 
             ### motors XRD detector arm ###
             addMotorRecordToSelf(self, Id=Id + ":MOT_NY_RY2TH", name="gamma")
@@ -48,6 +47,7 @@ class GPS:
             self.hex_u = PV("SARES20-HEX_PI:POSI-U")
             self.hex_v = PV("SARES20-HEX_PI:POSI-V")
             self.hex_w = PV("SARES20-HEX_PI:POSI-W")
+
 
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###
