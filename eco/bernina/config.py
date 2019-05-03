@@ -138,7 +138,7 @@ components = [
     {
         "name": "xp",
         "args": [],
-        "kwargs": {"Id": "SAROP21-OPPI103", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
+        "kwargs": {"Id": "SAROP21-OPPI103", "IdCTA": "SAR-CCTA-ESB", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
         "z_und": 103,
         "desc": "X-ray pulse picker",
         "type": "eco.xoptics.pp:Pulsepick"
