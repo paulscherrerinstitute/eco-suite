@@ -13,6 +13,34 @@ from threading import Thread
 from datetime import datetime
 
 from ..acquisition.utilities import Acquisition
+from ..aliases import Alias
+
+
+class PvDataStream:
+    def __init__(self,Id,name=None):
+        self.Id = Id
+        self._pv = PV(Id)
+        self.name = name
+        self.alias = Alias(self.name, channel=self.Id, channeltype='CA')
+
+
+    def accumulate(self,n_buffer):
+        self._accumulate = {'n_buffer':n_buffer, 'ix':0, 'n_cb':-1}
+        self._pv.callbacks.pop(self._accumulate['n_cb'],None)
+        self._data = np.squeeze(np.zeros([n_buffer*2,self._pv.count]))*np.nan
+
+        def addData(**kw):
+            self._accumulate['ix'] = (self._accumulate['ix'] + 1) % self._accumulate['n_buffer']
+            self._data[self._accumulate['ix']::self._accumulate['n_buffer']] = kw['value']
+
+        self._accumulate['n_cb'] = self._pv.add_callback(addData)
+
+    def get_data(self):
+        return self._data[self._accumulate['ix']+1:self._accumulate['ix']+1+self._accumulate['n_buffer']]
+
+    data = property(get_data)
+
+
 
 
 _cameraArrayTypes = ["monochrome", "rgb"]
