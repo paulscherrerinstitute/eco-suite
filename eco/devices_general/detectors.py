@@ -27,7 +27,7 @@ class PvDataStream:
     def accumulate(self,n_buffer):
         self._accumulate = {'n_buffer':n_buffer, 'ix':0, 'n_cb':-1}
         self._pv.callbacks.pop(self._accumulate['n_cb'],None)
-        self._data = np.squeeze(np.zeros([n_buffer*2,self._pv.nelm]))*np.nan
+        self._data = np.squeeze(np.zeros([n_buffer*2,self._pv.count]))*np.nan
 
         def addData(**kw):
             self._accumulate['ix'] = (self._accumulate['ix'] + 1) % self._accumulate['n_buffer']
