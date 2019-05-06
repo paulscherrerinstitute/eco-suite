@@ -378,6 +378,14 @@ components = [
         "type": "eco.timing.event_timing:MasterEventSystem",
         "kwargs": {}
     },
+    {
+        "args": ['SARES20-CVME-01-EVR0'],
+        "name": "evr_bernina",
+        "desc": "Bernina event receiver",
+        "type": "eco.timing.event_timing:EventReceiver",
+        "kwargs": {},
+        "lazy": False
+    },
 ]
 
 try:
