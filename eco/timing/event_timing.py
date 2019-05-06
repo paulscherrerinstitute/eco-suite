@@ -1,7 +1,7 @@
 from epics import PV
 from ..aliases import Alias
 from ..utilities.lazy_proxy import Proxy
-
+from ..devices_general.adjustable import PvEnum
 from cta_lib import CtaLib
 
 # EVR output mapping
@@ -190,6 +190,7 @@ class EvrPulser:
         self.pv_base = pv_base
         self.name = name
         self._pvs = {}
+        self.polarity = PvEnum(f"{self.pv_base}-Polarity-Sel",name='polarity')
 
     def _get_pv(self, pvname):
         if not pvname in self._pvs:
@@ -225,22 +226,33 @@ class EvrPulser:
         return self._get_pv(f"{self.pv_base}-Polarity-Sel").put(value)
 
 
+
+
 class EvrOutput:
-    def __init__(self, pvname, name=None):
-        self.pvname = pvname
+    def __init__(self, pv_base, name=None):
+        self.pv_base = pv_base
         self.name = name
-        self.pulsers = None
-        self._update_connected_pulsers()
+        self._pulsers = None
+        # self._update_connected_pulsers()
+        self.pulsers_numbers = (PvEnum(f'{self.pv_base}_SNUMPD',name='pulserA'),PvEnum(f'{self.pv_base}_SNUMPD2',name='pulserB'))
+
+    def _get_pulserA(self):
+        return self._pulsers[self.pulsers_numbers[0].get_current_value()]
+    pulserA = property(_get_pulserA)
+
+    def _get_pulserB(self):
+        return self._pulsers[self.pulsers_numbers[1].get_current_value()]
+    pulserB = property(_get_pulserB)
     
     def _get_pv(self,pvname):
         if not pvname in self._pvs:
             self._pvs[pvname] = PV(pvname)
         return self._pvs[pvname]
 
-    def _update_connected_pulsers(self):
-        self._get_pv()
+    # def _update_connected_pulsers(self):
+        # self._get_pv()
 
-        self.pulsers = ()
+        # self.pulsers = ()
 
     def get_status(self):
         pass
@@ -253,6 +265,13 @@ class EventReceiver:
         for n in range(n_pulsers):
             pulsers.append(EvrPulser(f'{self.pvname}:Pul{n}'))
         self.pulsers = tuple(pulsers)
+        outputs = []
+        for n in range(n_output_front):
+            outputs.append(EvrOutput(f'{self.pvname}:FrontUnivOut{n}',name=f'output_front{n}'))
+        for to in outputs:
+            to._pulsers = self.pulsers
+        self.outputs = outputs
+        
 
 
 class CTA_sequencer:

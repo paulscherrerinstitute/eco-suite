@@ -26,6 +26,34 @@ def default_representation(Obj):
     Obj._get_name = get_name
     Obj.__repr__  = get_repr
     return Obj
+
+def spec_convenience(Adj):
+    # spec-inspired convenience methods
+    def mv(self,value):
+        self._currentChange = self.changeTo(value)
+    def wm(self,*args,**kwargs):
+        return self.get_current_value(*args,**kwargs)
+    def mvr(self,value,*args,**kwargs):
+
+        if(self.get_moveDone == 1):
+            startvalue = self.get_current_value(readback=True,*args,**kwargs)
+        else:
+            startvalue = self.get_current_value(readback=False,*args,**kwargs)
+        self._currentChange = self.changeTo(value+startvalue,*args,**kwargs)
+    def wait(self):
+        self._currentChange.wait()
+    
+    def call(self, value):
+        self._currentChange = self.changeTo(value)
+
+    Adj.mv  = mv
+    Adj.wm  = wm
+    Adj.mvr = mvr
+    Adj.wait = wait
+    Adj.__call__ = call
+
+    return Adj
+
 # wrappers for adjustables <<<<<<<<<<<
 
 
@@ -123,6 +151,7 @@ class PvRecord:
 
 
 @default_representation
+@spec_convenience
 class PvEnum:
     def __init__(self,pvname,name=None):
         self.Id = pvname
@@ -134,6 +163,7 @@ class PvEnum:
         else:
             enumname = self.Id
         self.PvEnum = IntEnum(enumname,{tstr:n for n,tstr in enumerate(self.enum_strs)})
+        self.alias = Alias(name,channel=self.Id,channeltype='CA')
     
     def validate(self,value):
         if type(value) is str:
