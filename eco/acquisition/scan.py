@@ -163,9 +163,9 @@ class Scans:
                 f"NB! Path {scan_info_dir.absolute().as_posix()} does not exist, will try to create it..."
             )
             scan_info_dir.mkdir()
-            print(f"Successfully created {scan_info_dir.absolute().as_posix()}")
-            scan_info_dir.chmod(775)
-            print(f"Successfully changed permissions to 775")
+            print(f"Tried to create {scan_info_dir.absolute().as_posix()}")
+            scan_info_dir.chmod(0o775)
+            print(f"Tried to change permissions to 775")
 
         self.scan_info_dir = scan_info_dir
         self.filename_generator = RunFilenameGenerator(self.scan_info_dir)
