@@ -304,7 +304,7 @@ class CTA_sequencer:
             mode = 0
         else:
             mode = 1
-        self._cta.set_start_config(config={'mode':mode, 'modulo':modulo, 'offset':offset})
+        self._cta.set_start_config(config={'mode':self._cta.StartMode(mode), 'modulo':divisor, 'offset':offset})
 
     def reset_local_sequence(self):
         self.sequence_local = {}
