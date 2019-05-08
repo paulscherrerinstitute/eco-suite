@@ -138,10 +138,11 @@ components = [
     {
         "name": "xp",
         "args": [],
-        "kwargs": {"Id": "SAROP21-OPPI103", "IdCTA": "SAR-CCTA-ESB", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
+        "kwargs": {"Id": "SAROP21-OPPI103","evronoff": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP", "evrsrc": "SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP"},
         "z_und": 103,
         "desc": "X-ray pulse picker",
-        "type": "eco.xoptics.pp:Pulsepick"
+        "type": "eco.xoptics.pp:Pulsepick",
+        "lazy": False
     },
     {
         "name": "monOpt",
