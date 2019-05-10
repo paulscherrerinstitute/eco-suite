@@ -13,10 +13,11 @@ from .utilities import Acquisition
 class BStools:
     def __init__(
         self, default_channel_list={"listname": []}, default_file_path="%s", elog=None
-    ):
+    , name=None):
         self._default_file_path = default_file_path
         self._default_channel_list = default_channel_list
         self._elog = elog
+        self.name = name
 
     def avail(self, *args, **kwargs):
         return dispatcher.get_current_channels(*args, **kwargs)
@@ -73,12 +74,12 @@ class BStools:
                 return
         if not channel_list:
             print(
-                "No channels specified, using default list '%s' instead."
-                % list(self._default_channel_list.keys())[0]
+                "No channels specified, using all lists instead."
             )
-            channel_list = self._default_channel_list[
-                list(self._default_channel_list.keys())[0]
-            ]
+            channel_list = []
+            for tlist in self._default_channel_list.values():
+                channel_list.extend(tlist)
+            print(channel_list)
 
         source = dispatcher.request_stream(channel_list)
         mode = zmq.SUB

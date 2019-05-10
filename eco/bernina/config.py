@@ -387,6 +387,30 @@ components = [
         "kwargs": {},
         "lazy": False
     },
+    {
+        "args": ['/sf/bernina/config/channel_lists/default_channel_list'],
+        "name": "bernina_default_channels_bs",
+        "desc": "Bernina default bsread channels",
+        "type": "eco.utilities.config:parseChannelListFile",
+        "kwargs": {},
+        "lazy": False
+    },
+    {
+        "args": ['/sf/bernina/config/channel_lists/channel_list_PSSS_projection'],
+        "name": "channels_spectrometer_projection",
+        "desc": "",
+        "type": "eco.utilities.config:parseChannelListFile",
+        "kwargs": {},
+        "lazy": False
+    },
+    {
+        "args": [],
+        "name": "bs_daq",
+        "desc": "bs daq writer (locally!)",
+        "type": "eco.acquisition.bs_data:BStools",
+        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('bernina_default_channels_bs'),'channels_spectrometer_projection':Component('channels_spectrometer_projection')}},
+        "lazy": False
+    },
 ]
 
 try:
