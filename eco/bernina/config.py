@@ -309,19 +309,22 @@ components = [
         "kwargs": {},
     },
     {
-        "args": ["/sf/bernina/config/channel_lists/default_channel_list_ioxos"],
-        "name": "ioxos_channel_list",
-        "desc": "ioxos channel list",
+        "args": ["/sf/bernina/config/channel_lists/default_channel_list_epics"],
+        "name": "epics_channel_list",
+        "desc": "epics channel list",
         "type": "eco.utilities.config:parseChannelListFile",
         "kwargs": {},
     },
     {
         "args": [],
-        "name": "ioxosdaq",
+        "name": "epics_daq",
         "z_und": 142,
-        "desc": "ioxos acquisition",
-        "type": "eco.acquisition.ioxos_data:Ioxostools",
-        "kwargs": {"channel_list": Component("ioxos_channel_list")},
+        "desc": "epics data acquisition",
+        "type": "eco.acquisition.epics_data:Epicstools",
+        "kwargs": {
+            "channel_list": Component("epics_channel_list"),
+            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/", 
+        },
     },
     {
         "args": [],
@@ -336,6 +339,7 @@ components = [
             "gain_path": config['jf_gain_path'],
             "config_default": config['daq_dia_config'],
             'jf_channels':config['jf_channels'],
+            "default_file_path": None
         },
     },
     {
@@ -354,6 +358,19 @@ components = [
             "data_base_dir": "scan_data",
             "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
             "default_counters": [Component("daq")],
+            "checker": Component("checker"),
+            "scan_directories": True,
+        },
+    },
+    {
+        "args": [],
+        "name": "epics_scans",
+        "desc": "epics non beam synchronous based acquisition",
+        "type": "eco.acquisition.scan:Scans",
+        "kwargs": {
+            "data_base_dir": "scan_data",
+            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/scan_info",
+            "default_counters": [Component("epics_daq")],
             "checker": Component("checker"),
             "scan_directories": True,
         },

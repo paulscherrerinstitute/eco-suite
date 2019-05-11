@@ -159,13 +159,21 @@ class Scans:
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
         if not scan_info_dir.exists():
-            print(
-                f"NB! Path {scan_info_dir.absolute().as_posix()} does not exist, will try to create it..."
-            )
-            scan_info_dir.mkdir()
+            print(f"Path {scan_info_dir.absolute().as_posix()} does not exist, will try to create it...")
+            scan_info_dir.mkdir(parents=True)
             print(f"Tried to create {scan_info_dir.absolute().as_posix()}")
             scan_info_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")
+
+        for counter in default_counters:
+            if counter._default_file_path is not None:
+                data_dir = Path( counter._default_file_path + self.data_base_dir )
+                if not data_dir.exists():
+                    print(f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it...")
+                    data_dir.mkdir(parents=True)
+                    print(f"Tried to create {data_dir.absolute().as_posix()}")
+                    data_dir.chmod(0o775)
+                    print(f"Tried to change permissions to 775")
 
         self.scan_info_dir = scan_info_dir
         self.filename_generator = RunFilenameGenerator(self.scan_info_dir)
