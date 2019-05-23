@@ -246,7 +246,7 @@ components = [
         "z_und": 142,
         "desc": "Xray diffractometer",
         "type": "eco.endstations.bernina_diffractometers:XRD",
-        "kwargs": {"Id": "SARES21-XRD"},
+        "kwargs": {"Id": "SARES21-XRD", "configuration": config['xrd_config']},
     },
     {
         "args": [],
