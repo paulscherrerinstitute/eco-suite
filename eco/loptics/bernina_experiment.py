@@ -60,17 +60,31 @@ class Laser_Exp:
             print("No eos delay stage")
             pass
 
-        addMotorRecordToSelf(
-            self, Id=self.Id + "-M523:MOTOR_1", name="delay_glob_stg"
-        )
-        self.delay_glob = DelayTime(self.delay_glob_stg,name="delay_glob")
-        self.alias.append(self.delay_glob.alias)
+        try:
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg"
+            )
+            self.delay_eos = DelayTime(self.delay_eos_stg,name="delay_eos")
+            self.alias.append(self.delay_eos.alias)
+        except:
+            print("Problems initializing global delay stage")
 
-            # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
-        # except:
-            # print("Problems initializing global delay stage")
-            # pass
-
+        try:
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M522:MOTOR_1", name="delay_tt_stg"
+            )
+            self.delay_tt = DelayTime(self.delay_tt_stg,name="delay_tt")
+            self.alias.append(self.delay_tt.alias)
+        except:
+            print("Problems initializing global delay stage")
+        try:
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M523:MOTOR_1", name="delay_glob_stg"
+            )
+            self.delay_glob = DelayTime(self.delay_glob_stg,name="delay_glob")
+            self.alias.append(self.delay_glob.alias)
+        except:
+            print("Problems initializing global delay stage")
         try:
             addMotorRecordToSelf(
                 self, Id=self.Id + "-M522:MOTOR_1", name="_tt_delaystg"

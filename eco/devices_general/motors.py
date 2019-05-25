@@ -207,7 +207,7 @@ class ChangerOld:
         if self._thread.ident is None:
             return "waiting"
         else:
-            if self._isAlive:
+            if self._thread.isAlive:
                 return "changing"
             else:
                 return "done"

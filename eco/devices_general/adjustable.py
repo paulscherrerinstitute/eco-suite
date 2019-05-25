@@ -31,15 +31,20 @@ def spec_convenience(Adj):
     # spec-inspired convenience methods
     def mv(self,value):
         self._currentChange = self.changeTo(value)
+        return self._currentChange
     def wm(self,*args,**kwargs):
         return self.get_current_value(*args,**kwargs)
     def mvr(self,value,*args,**kwargs):
-
-        if(self.get_moveDone == 1):
-            startvalue = self.get_current_value(readback=True,*args,**kwargs)
+        if hasattr(self,'_currentChange'):
+            if not self._currentChange.status() == 'done':
+                startvalue = self._currentChange.target
+        elif hasattr(self,'get_moveDone'):
+            if (self.get_moveDone == 1):
+                startvalue = self.get_current_value(readback=True,*args,**kwargs)
         else:
-            startvalue = self.get_current_value(readback=False,*args,**kwargs)
+            startvalue = self.get_current_value(*args,**kwargs)
         self._currentChange = self.changeTo(value+startvalue,*args,**kwargs)
+        return self._currentChange
     def wait(self):
         self._currentChange.wait()
     
@@ -210,6 +215,8 @@ class AdjustableVirtual:
 
     def changeTo(self,value,hold=False):
         vals = self._foo_set_target_value(value)
+        if not hasattr(vals,'__iter__'):
+            vals = (vals,)
         def changer(value):
             self._active_changers = [adj.changeTo(val,hold=False) for val,adj in zip(vals,self._adjustables)]
             for tc in self._active_changers:
@@ -217,12 +224,8 @@ class AdjustableVirtual:
         def stopper():
             for tc in self._active_changers:
                 tc.stop()
-        return Changer(
-                target=value,
-                parent=self,
-                changer=changer,
-                hold=hold,
-                stopper=stopper)
+        self._currentChange = Changer(target=value,parent=self,changer=changer,hold=hold,stopper=stopper)
+        return self._currentChange
 
     def get_current_value(self):
         return self._foo_get_current_value(*[adj.get_current_value() for adj in self._adjustables])
