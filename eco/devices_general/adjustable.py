@@ -155,7 +155,7 @@ class PvRecord:
 
 
 
-@default_representation
+# @default_representation
 @spec_convenience
 class PvEnum:
     def __init__(self,pvname,name=None):
@@ -190,6 +190,24 @@ class PvEnum:
                 changer=changer,
                 hold=hold,
                 stopper=None)
+    def __repr__(self):
+        if not self.name:
+            name = self.Id
+        else:
+            name = self.name
+        cv = self.get_current_value()
+        s = f"{name} (enum) at value: {cv}" +'\n'
+        s+= "{:<5}{:<5}{:<}\n".format("Num.","Sel.","Name")
+        # s+= '_'*40+'\n'
+        for name,val in self.PvEnum.__members__.items():
+            if val==cv:
+                sel = 'x'
+            else:
+                sel = ' '
+            s+= "{:>4}   {}  {}\n".format(val,sel,name)
+        return s
+
+
 
 
 @default_representation

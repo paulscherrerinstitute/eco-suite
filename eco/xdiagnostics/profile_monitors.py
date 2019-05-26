@@ -1,6 +1,7 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..aliases import Alias
+from ..devices_general.adjustable import PvEnum
 
 # from ..devices_general.epics_wrappers import EnumSelector
 from epics import PV
@@ -13,31 +14,29 @@ def addMotorRecordToSelf(self, Id=None, name=None):
 
 
 class Pprm:
-    def __init__(self, Id):
+    def __init__(self, Id, name=None):
         self.Id = Id
-        self.targetY = MotorRecord(Id + ":MOTOR_PROBE")
+        self.name = name
+        self.target_pos = MotorRecord(Id + ":MOTOR_PROBE",name='target_pos')
         self.cam = CameraCA(Id)
-        self._led = PV(self.Id + ":LED")
-        self.target = EnumWrapper(self.Id + ":PROBE_SP")
+        self.led = PvEnum(self.Id + ":LED",name='led')
+        self.target = PvEnum(self.Id + ":PROBE_SP", name='target')
+        if name:
+            self.alias = Alias(name)
+            self.alias.append(self.target_pos.alias)
+            self.alias.append(self.target.alias)
+            self.alias.append(self.led.alias)
 
     def movein(self, target=1):
-        self.target.set(target)
+        self.target.changeTo(target)
 
     def moveout(self, target=0):
-        self.target.set(target)
+        self.target.changeTo(target)
 
-    def illuminate(self, value=None):
-        if value:
-            self._led.put(value)
-        else:
-            self._led.put(not self.get_illumination_state())
-
-    def get_illumination_state(self):
-        return bool(self._led.get())
 
     def __repr__(self):
-        s = "**Profile Monitor**\n"
-        s += "Target: %s" % (self.target.get_name())
+        s = f"**Profile Monitor {self.name}**\n"
+        s += f"Target in beam: {self.target.get_current_value().name}\n"
         return s
 
 
