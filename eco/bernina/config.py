@@ -70,6 +70,14 @@ components = [
         "desc": "Attenuator in Front End",
     },
     {
+        "name": "monUnd",
+        "z_und": 53,
+        "desc": "Intensity/position monitor after Optics hutch",
+        "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
+        "args": ["SARFE10-PBPS053"],
+        "kwargs": {},
+    },
+    {
         "name": "profFE",
         "args": ["SARFE10-PPRM064"],
         "kwargs": {},

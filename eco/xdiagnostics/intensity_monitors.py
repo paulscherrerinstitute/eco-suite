@@ -1,7 +1,8 @@
 from ..devices_general.motors import MotorRecord
 from ..eco_epics.utilities_epics import EnumWrapper
 from ..devices_general.detectors import FeDigitizer
-
+from ..devices_general.adjustable import PvEnum
+from ..aliases import Alias
 
 class GasDetector:
     def __init__(self):
@@ -19,35 +20,47 @@ class SolidTargetDetectorPBPS:
         ch_left=15,
         ch_right=14,
         elog=None,
+        name=None
     ):
         self.Id = Id
-        self.x_diode = MotorRecord(Id + ":MOTOR_X1", elog=elog)
-        self.y_diode = MotorRecord(Id + ":MOTOR_Y1", elog=elog)
-        self.y_target = MotorRecord(Id + ":MOTOR_PROBE", elog=elog)
-        self.target = EnumWrapper(Id + ":PROBE_SP", elog=elog)
+        self.name = name
+        self.diode_x = MotorRecord(Id + ":MOTOR_X1", name='diode_x')
+        self.diode_y = MotorRecord(Id + ":MOTOR_Y1", name='diode_y')
+        self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name='target_pos')
+        self.target = PvEnum(Id + ":PROBE_SP", name='target')
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
             self.diode_down = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_down))
             self.diode_left = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_left))
             self.diode_right = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_right))
 
+        if self.name:
+            self.alias = Alias(name)
+            self.alias.append(self.diode_x.alias)
+            self.alias.append(self.diode_y.alias)
+            self.alias.append(self.target_pos.alias)
+            self.alias.append(self.target.alias)
+
     def __repr__(self):
-        s = "**Intensity  monitor**\n\n"
+        s = f"**Intensity  monitor {self.name}**\n\n"
 
-        s += "Target: " + (self.target.get_name()) + "\n\n"
+        s += f"Target in: {self.target.get_current_value().name}\n\n"
+        try:
+            sd = "**Biasd voltage**\n"
+            sd += " - Diode up: %.4f\n" % (sdelf.diode_up.get_biasd())
+            sd += " - Diode down: %.4f\n" % (sdelf.diode_down.get_biasd())
+            sd += " - Diode left: %.4f\n" % (sdelf.diode_left.get_biasd())
+            sd += " - Diode right: %.4f\n" % (sdelf.diode_right.get_biasd())
+            sd += "\n"
 
-        s += "**Bias voltage**\n"
-        s += " - Diode up: %.4f\n" % (self.diode_up.get_bias())
-        s += " - Diode down: %.4f\n" % (self.diode_down.get_bias())
-        s += " - Diode left: %.4f\n" % (self.diode_left.get_bias())
-        s += " - Diode right: %.4f\n" % (self.diode_right.get_bias())
-        s += "\n"
-
-        s += "**Gain**\n"
-        s += " - Diode up: %i\n" % (self.diode_up.gain.get())
-        s += " - Diode down: %i\n" % (self.diode_down.gain.get())
-        s += " - Diode left: %i\n" % (self.diode_left.gain.get())
-        s += " - Diode right: %i\n" % (self.diode_right.gain.get())
+            sd += "**Gain**\n"
+            sd += " - Diode up: %i\n" % (sdelf.diode_up.gain.get())
+            sd += " - Diode down: %i\n" % (sdelf.diode_down.gain.get())
+            sd += " - Diode left: %i\n" % (sdelf.diode_left.gain.get())
+            sd += " - Diode right: %i\n" % (sdelf.diode_right.gain.get())
+            s+=sd
+        except:
+            pass
         return s
 
     def set_gains(self, value):
