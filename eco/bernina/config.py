@@ -299,6 +299,7 @@ components = [
         "desc": "Experiment laser optics",
         "type": "eco.loptics.bernina_experiment:Laser_Exp",
         "kwargs": {"Id": "SLAAR21-LMOT", "smar_config": config["las_smar_config"]},
+        "lazy":False,
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],

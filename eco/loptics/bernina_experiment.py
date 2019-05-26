@@ -35,6 +35,25 @@ class DelayTime(AdjustableVirtual):
     def _s_to_mm(self,s):
         return s*self._group_velo*1e3/self._passes*self._direction
 
+class DelayCompensation(AdjustableVirtual):
+    """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for 
+    getting the current value."""
+    def __init__(self,adjustables,directions,set_current_value=True,name=None):
+        self._directions = directions
+        AdjustableVirtual.__init__(self,adjustables,self._from_values,self._calc_values,set_current_value=set_current_value,name=name)
+
+
+    def _calc_values(self,value):
+        return tuple(tdir*value for tdir in self._directions)
+
+    def _from_values(self,*args):
+        positions = [ta*tdir for ta,tdir in zip(args,self._directions)]
+        return positions[0]
+
+        
+
+        tuple(tdir*value for tdir in self._directions)
+
 class Laser_Exp:
     def __init__(self, Id=None, name=None, smar_config=None):
         self.Id = Id
@@ -56,18 +75,19 @@ class Laser_Exp:
             addDelayStageToSelf(
                 self, stage=self.__dict__["_pump_delaystg"], name="pump_delay"
             )
-        except:
+        except Exception as expt:
             print("No eos delay stage")
-            pass
+            print(expt)
 
-        try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg"
-            )
-            self.delay_eos = DelayTime(self.delay_eos_stg,name="delay_eos")
-            self.alias.append(self.delay_eos.alias)
-        except:
-            print("Problems initializing global delay stage")
+        # try:
+        addMotorRecordToSelf(
+            self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg"
+        )
+        self.delay_eos = DelayTime(self.delay_eos_stg,name="delay_eos")
+        self.alias.append(self.delay_eos.alias)
+        # except Exception as expt:
+            # print("Problems initializing eos delay stage")
+            # print(expt)
 
         try:
             addMotorRecordToSelf(
@@ -85,29 +105,11 @@ class Laser_Exp:
             self.alias.append(self.delay_glob.alias)
         except:
             print("Problems initializing global delay stage")
-        try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M522:MOTOR_1", name="_tt_delaystg"
-            )
-            addDelayStageToSelf(
-                self, self.__dict__["_tt_delaystg"], name="tt_delay"
-            )
-            # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
-        except:
-            print("No thz delay stage")
-            pass
-
-        try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M553:MOT", name="_exp_delaystg"
-            )
-            addDelayStageToSelf(
-                self, self.__dict__["_exp_delaystg"], name="exp_delay"
-            )
-            # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
-        except:
-            print("No thz delay stage")
-            pass
+        
+        # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions. 
+        self.delay_lxtt = DelayCompensation([self.delay_glob,self.delay_tt], [-1,1],name='delay_lxtt')
+        self.alias.append(self.delay_lxtt.alias)
+        
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')
