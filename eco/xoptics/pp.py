@@ -15,16 +15,15 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         print("Warning! Could not find motor {name} (Id:{Id})")
 
 class Pulsepick:
-    def __init__(self, Id=None, evrout=None, name=None):
+    def __init__(self, Id=None, evronoff=None, evrsrc=None, name=None):
         self.name = name
         self.alias = Alias(name)
-        self.evrout = evrout
+        self.evrsrc = evrsrc
+        self.evronoff = evronoff
 
         self.Id = Id
-        self._start = PV(Id + ":seq0Ctrl-Start-I")
-        self._stop = PV(Id + ":seq0Ctrl-Stop-I")
-        self._cycles = PV(Id + ":seq0Ctrl-Cycles-I")
-        self._openclose = PV(self.evrout)
+        self._openclose = PV(self.evronoff)
+        self._evrsrc = PV(self.evrsrc)
         addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_X1", name="x")
         addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_Y1", name="y")
 
@@ -38,45 +37,17 @@ class Pulsepick:
 
     def open(self):
         self._openclose.put(1)
+        self._evrsrc.put(62)
         print("Opened Pulse Picker")
 
     def close(self):
         self._openclose.put(0)
+        self._evrsrc.put(63)
         print("Closed Pulse Picker")
 
-    def stop(self):
-        self._stop.put(0)
-        print("Stopped Pulse Picker")
 
-    def start(self):
-        self._start.put(0)
-        print("Started Pulse Picker")
+    def trigger(self):
+        self._openclose.put(1)
+        self._evrsrc.put(0)
+        print("Set Pulse Picker to trigger (src 0 and output On)")
 
-    def cycles(self, n):
-        self._cycles.put(n)
-
-    def scan(self, adj, targetlist, sleeptime=0.1):
-        self.stop()
-        for target in targetlist:
-            changer = adj.changeTo(target)
-            changer.wait()
-            print("Adjustable position {}".format(adj.get_current_value()))
-            self.start()
-            sleep(sleeptime)
-            self.stop()
-        print("done")
-
-    def scan2(self, adj1, adj2, targetlist1, targetlist2, sleeptime=0.1):
-        self.stop()
-        for n in range(len(targetlist1)):
-            changer1 = adj1.changeTo(targetlist1[n])
-            changer2 = adj2.changeTo(targetlist2[n])
-            changer2.wait()
-            print(
-                "Adjustable 1 position {}".format(adj1.get_current_value()),
-                "Adjustable 2 position {}".format(adj2.get_current_value()),
-            )
-            self.start()
-            sleep(sleeptime)
-            self.stop()
-        print("done")

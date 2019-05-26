@@ -1,16 +1,27 @@
 from ..devices_general.motors import MotorRecord
 from epics import PV
+from time import sleep
+from ..aliases import Alias
+from ..devices_general.adjustable import PvEnum
 
 
 class AttenuatorAramis:
-    def __init__(self, Id):
+    def __init__(self, Id, E_min=1500, sleeptime=1, name=None, set_limits=[-52,2]):
         self.Id = Id
+        self.E_min = E_min
         self._pv_status_str = PV(self.Id + ":MOT2TRANS.VALD")
         self._pv_status_int = PV(self.Id + ":IDX_RB")
-        pass
+        self._sleeptime = sleeptime
+        self.name = name
+        self.alias = Alias(name)
+        self.motors = [MotorRecord(f'SAROP21-OATT135:MOTOR_{n+1}',name=f'motor{n+1}') for n in range(6)]
+        for n,mot in enumerate(self.motors):
+            self.__dict__[f'motor_{n+1}'] = mot
+            self.alias.append(mot.alias)
+            if set_limits:
+                mot.set_limits(set_limits)
 
-    def __call__(self):
-        pass
+
 
     def __str__(self):
         pass
@@ -19,9 +30,13 @@ class AttenuatorAramis:
         pass
 
     def updateE(self, energy=None):
-        if energy == None:
+        while not energy:
             energy = PV("SARUN03-UIND030:FELPHOTENE").value
             energy = energy * 1000
+            if energy < self.E_min:
+                energy = None
+                print(f'Machine photon energy is below {self.E_min} - waiting for the machine to recover')
+                sleep(self._sleeptime)
         PV(self.Id + ":ENERGY").put(energy)
         print("Set energy to %s eV" % energy)
         return

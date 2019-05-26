@@ -138,10 +138,11 @@ components = [
     {
         "name": "xp",
         "args": [],
-        "kwargs": {"Id": "SAROP21-OPPI103", "evrout": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP"},
+        "kwargs": {"Id": "SAROP21-OPPI103","evronoff": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP", "evrsrc": "SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP"},
         "z_und": 103,
         "desc": "X-ray pulse picker",
-        "type": "eco.xoptics.pp:Pulsepick"
+        "type": "eco.xoptics.pp:Pulsepick",
+        "lazy": False
     },
     {
         "name": "monOpt",
@@ -245,7 +246,7 @@ components = [
         "z_und": 142,
         "desc": "Xray diffractometer",
         "type": "eco.endstations.bernina_diffractometers:XRD",
-        "kwargs": {"Id": "SARES21-XRD"},
+        "kwargs": {"Id": "SARES21-XRD", "configuration": config['xrd_config']},
     },
     {
         "args": [],
@@ -297,7 +298,7 @@ components = [
         "z_und": 142,
         "desc": "Experiment laser optics",
         "type": "eco.loptics.bernina_experiment:Laser_Exp",
-        "kwargs": {"Id": "SLAAR21-LMOT"},
+        "kwargs": {"Id": "SLAAR21-LMOT", "smar_config": config["las_smar_config"]},
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],
@@ -308,19 +309,22 @@ components = [
         "kwargs": {},
     },
     {
-        "args": ["/sf/bernina/config/channel_lists/default_channel_list_ioxos"],
-        "name": "ioxos_channel_list",
-        "desc": "ioxos channel list",
+        "args": ["/sf/bernina/config/channel_lists/default_channel_list_epics"],
+        "name": "epics_channel_list",
+        "desc": "epics channel list",
         "type": "eco.utilities.config:parseChannelListFile",
         "kwargs": {},
     },
     {
         "args": [],
-        "name": "ioxosdaq",
+        "name": "epics_daq",
         "z_und": 142,
-        "desc": "ioxos acquisition",
-        "type": "eco.acquisition.ioxos_data:Ioxostools",
-        "kwargs": {"channel_list": Component("ioxos_channel_list")},
+        "desc": "epics data acquisition",
+        "type": "eco.acquisition.epics_data:Epicstools",
+        "kwargs": {
+            "channel_list": Component("epics_channel_list"),
+            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/", 
+        },
     },
     {
         "args": [],
@@ -329,12 +333,13 @@ components = [
         "type": "eco.acquisition.dia:DIAClient",
         "kwargs": {
             "instrument": "bernina",
-            "api_address": "http://sf-daq-bernina:10000",
+            "api_address": config["daq_address"],
             "pgroup": config['pgroup'],
             'pedestal_directory':config['jf_pedestal_directory'],
             "gain_path": config['jf_gain_path'],
             "config_default": config['daq_dia_config'],
             'jf_channels':config['jf_channels'],
+            "default_file_path": None
         },
     },
     {
@@ -353,6 +358,19 @@ components = [
             "data_base_dir": "scan_data",
             "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
             "default_counters": [Component("daq")],
+            "checker": Component("checker"),
+            "scan_directories": True,
+        },
+    },
+    {
+        "args": [],
+        "name": "epics_scans",
+        "desc": "epics non beam synchronous based acquisition",
+        "type": "eco.acquisition.scan:Scans",
+        "kwargs": {
+            "data_base_dir": "scan_data",
+            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/scan_info",
+            "default_counters": [Component("epics_daq")],
             "checker": Component("checker"),
             "scan_directories": True,
         },
@@ -384,6 +402,30 @@ components = [
         "desc": "Bernina event receiver",
         "type": "eco.timing.event_timing:EventReceiver",
         "kwargs": {},
+        "lazy": False
+    },
+    {
+        "args": ['/sf/bernina/config/channel_lists/default_channel_list'],
+        "name": "bernina_default_channels_bs",
+        "desc": "Bernina default bsread channels",
+        "type": "eco.utilities.config:parseChannelListFile",
+        "kwargs": {},
+        "lazy": False
+    },
+    {
+        "args": ['/sf/bernina/config/channel_lists/channel_list_PSSS_projection'],
+        "name": "channels_spectrometer_projection",
+        "desc": "",
+        "type": "eco.utilities.config:parseChannelListFile",
+        "kwargs": {},
+        "lazy": False
+    },
+    {
+        "args": [],
+        "name": "bs_daq",
+        "desc": "bs daq writer (locally!)",
+        "type": "eco.acquisition.bs_data:BStools",
+        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('bernina_default_channels_bs'),'channels_spectrometer_projection':Component('channels_spectrometer_projection')}},
         "lazy": False
     },
 ]

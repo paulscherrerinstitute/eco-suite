@@ -31,15 +31,20 @@ def spec_convenience(Adj):
     # spec-inspired convenience methods
     def mv(self,value):
         self._currentChange = self.changeTo(value)
+        return self._currentChange
     def wm(self,*args,**kwargs):
         return self.get_current_value(*args,**kwargs)
     def mvr(self,value,*args,**kwargs):
-
-        if(self.get_moveDone == 1):
-            startvalue = self.get_current_value(readback=True,*args,**kwargs)
+        if hasattr(self,'_currentChange'):
+            if not self._currentChange.status() == 'done':
+                startvalue = self._currentChange.target
+        elif hasattr(self,'get_moveDone'):
+            if (self.get_moveDone == 1):
+                startvalue = self.get_current_value(readback=True,*args,**kwargs)
         else:
-            startvalue = self.get_current_value(readback=False,*args,**kwargs)
+            startvalue = self.get_current_value(*args,**kwargs)
         self._currentChange = self.changeTo(value+startvalue,*args,**kwargs)
+        return self._currentChange
     def wait(self):
         self._currentChange.wait()
     
@@ -187,6 +192,58 @@ class PvEnum:
                 stopper=None)
 
 
+@default_representation
+@spec_convenience
+class AdjustableVirtual:
+    def __init__(self,adjustables,foo_get_current_value,foo_set_target_value,set_current_value=False,name=None):
+        self.name = name
+        self.alias = Alias(name)
+        for adj in adjustables:
+            try:
+                self.alias.append(adj.alias)
+            except:
+                print(f'could not find alias in {adj}')
+                pass
+        self._adjustables = adjustables
+        self._foo_set_target_value = foo_set_target_value
+        self._foo_get_current_value = foo_get_current_value
+        self._set_current_value = set_current_value
+        if set_current_value:
+            for adj in self._adjustables:
+                if not hasattr(adj,'set_current_value'):
+                    raise Exception(f'No set_current_value method found in {adj}')
+
+    def changeTo(self,value,hold=False):
+        vals = self._foo_set_target_value(value)
+        if not hasattr(vals,'__iter__'):
+            vals = (vals,)
+        def changer(value):
+            self._active_changers = [adj.changeTo(val,hold=False) for val,adj in zip(vals,self._adjustables)]
+            for tc in self._active_changers:
+                tc.wait()
+        def stopper():
+            for tc in self._active_changers:
+                tc.stop()
+        self._currentChange = Changer(target=value,parent=self,changer=changer,hold=hold,stopper=stopper)
+        return self._currentChange
+
+    def get_current_value(self):
+        return self._foo_get_current_value(*[adj.get_current_value() for adj in self._adjustables])
+
+    def set_current_value(self,value):
+        if not self._set_current_value:
+            raise NotImplementedError('There is no value setting implemented for this virtual adjuster!')
+        else:
+            vals = self._foo_set_target_value(value)
+            for adj,val in zip(self._adjustables,vals):
+                adj.set_current_value(val)
+
+
+
+        
+
+
+        
 
 
         

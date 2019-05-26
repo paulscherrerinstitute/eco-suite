@@ -18,7 +18,8 @@ class DIAClient:
         api_address="http://sf-daq-2:10000",
         jf_channels=[],
         n_frames_default=100,
-        config_default = None
+        config_default = None,
+        default_file_path = None
     ):
         if config_default:
             for cnf,cnfdict in config_default.items():
@@ -30,6 +31,7 @@ class DIAClient:
             self.bsread_config = {}
 
         self.name = name
+        self._default_file_path = default_file_path
         self._api_address = api_address
         self.client = DetectorIntegrationClient(api_address)
         print("\nDetector Integration API on %s" % api_address)

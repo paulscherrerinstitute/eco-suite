@@ -6,32 +6,32 @@ import data_api as api
 import datetime
 from threading import Thread
 from time import sleep
-
+from pathlib import Path
 from .utilities import Acquisition
 
 
-class Ioxostools:
+class Epicstools:
     def __init__(
         self,
         default_channel_list={"listname": []},
         default_file_path="%s",
         elog=None,
-        sleeptime=0.0305,
         channel_list=None,
     ):
-        self.sleeptime = sleeptime
         self._default_file_path = default_file_path
         self._default_channel_list = default_channel_list
         self._elog = elog
         self.channels = []
+
+
         if not channel_list:
+
             print(
-                "No channels specified, using default list '%s' instead."
-                % list(self._default_channel_list.keys())[0]
+                "No channels specified, using all lists instead."
             )
-            self.channel_list = self._default_channel_list[
-                list(self._default_channel_list.keys())[0]
-            ]
+            channel_list = []
+            for tlist in self._default_channel_list.values():
+                channel_list.extend(tlist)
         else:
             self.channel_list = channel_list
         for channel in self.channel_list:
@@ -42,12 +42,10 @@ class Ioxostools:
         fina=None,
         channel_list=None,
         N_pulses=None,
-        default_path=True,
         queue_size=100,
     ):
         channel_list = self.channel_list
-        if default_path:
-            fina = self._default_file_path % fina
+
 
         if os.path.isfile(fina):
             print("!!! File %s already exists, would you like to delete it?" % fina)
@@ -75,28 +73,36 @@ class Ioxostools:
         def cb_getdata(ch=None, m=0, *args, **kwargs):
             data[m][counters[m]] = kwargs["value"]
             counters[m] = counters[m] + 1
-            if counters[m] == N_pulses - 1:
+            if counters[m] == N_pulses:
                 ch.clear_callbacks()
 
         for (m, channel) in enumerate(channels):
             channel.add_callback(callback=cb_getdata, ch=channel, m=m)
         while True:
-            sleep(0.01)
+            sleep(0.005)
             if np.mean(counters) == N_pulses - 1:
                 break
 
-        # for n in range(N_pulses):
-        #    channelvals = []
-
-        #    sleep(self.sleeptime)
 
         f = h5py.File(name=fina, mode="w")
         for (n, channel) in enumerate(channel_list):
-            f.create_dataset(name=channel, data=data[n])
+            dat = f.create_group(name = channel)
+            dat.create_dataset(name = 'data', data=data[n])
+            dat.create_dataset(name = 'pulse_id', data = np.arange(N_pulses)) 
         return data
 
-    def acquire(self, file_name=None, Npulses=100):
+    def acquire(self, file_name=None, Npulses=100, default_path=True):
         file_name += ".h5"
+        if default_path:
+            file_name = self._default_file_path + file_name
+        data_dir = Path(os.path.dirname(file_name))
+        
+        if not data_dir.exists():
+            print(f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it...")
+            data_dir.mkdir(parents=True)
+            print(f"Tried to create {data_dir.absolute().as_posix()}")
+            data_dir.chmod(0o775)
+            print(f"Tried to change permissions to 775")
 
         def acquire():
             self.h5(fina=file_name, N_pulses=Npulses)

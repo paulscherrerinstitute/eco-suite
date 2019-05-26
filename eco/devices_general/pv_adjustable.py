@@ -4,7 +4,7 @@ import numpy as np
 import time
 from .utilities import Changer
 from ..aliases import Alias
-
+from time import sleep
 
 class PvRecord:
     def __init__(
@@ -12,6 +12,7 @@ class PvRecord:
         pvsetname,
         pvreadbackname = None,
         accuracy = None,
+        sleeptime = 0,
         name=None,
         elog=None,
     ):
@@ -21,6 +22,7 @@ class PvRecord:
         self.Id = pvsetname
         self.name = name
         self.alias = Alias(name)
+        self.sleeptime = sleeptime
 #        for an, af in alias_fields.items():
 #            self.alias.append(
 #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
@@ -51,6 +53,8 @@ class PvRecord:
         if self.accuracy is not None:
             if( np.abs(self.get_current_value(readback=False)-self.get_current_value(readback=True)) > self.accuracy ): 
                 movedone = 0
+        else:
+            sleep(self.sleeptime)
         return movedone
 
 
