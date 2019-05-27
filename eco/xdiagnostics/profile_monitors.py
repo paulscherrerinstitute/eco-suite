@@ -1,6 +1,6 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
-from ..aliases import Alias
+from ..aliases import Alias, append_object_to_object
 from ..devices_general.adjustable import PvEnum
 
 # from ..devices_general.epics_wrappers import EnumSelector
@@ -41,16 +41,11 @@ class Pprm:
 
 
 class Bernina_XEYE:
-    def __init__(self, Id, bshost=None, bsport=None, name=None):
+    def __init__(self, zoomstage_pv=None,bshost=None, bsport=None, name=None):
         self.alias = Alias(name)
-
-        self.Id = Id
-        try:
-            addMotorRecordToSelf(self, Id="SARES20-EXP:MOT_NAV_Z", name="zoom")
-
-        except:
-            print("X-Ray eye zoom motor not found")
-            pass
+        self.name = name
+        if zoomstage_pv:
+            append_object_to_object(self,MotorRecord,zoomstage_pv,name='zoom')
         try:
             self.cam = CameraCA(Id)
         except:

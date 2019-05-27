@@ -1,7 +1,7 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.adjustable import PvRecord
-from ..aliases import Alias
+from ..aliases import Alias,append_object_to_object
 
 # from ..devices_general.epics_wrappers import EnumSelector
 from epics import PV
@@ -19,16 +19,15 @@ def addPvRecordToSelf(self, name=None, pvsetname=None, pvreadbackname = None, ac
 
 
 class Sigma:
-    def __init__(self, Id, bshost=None, bsport=None, name=None):
+    def __init__(self, zoomstage_pvs = {'set_value':'SARES20-OPSI:MOT_SP','readback':'SEARES20-OPSI:MOT_RB'}, bshost=None, bsport=None, name=None):
         self.alias = Alias(name)
 
-        self.Id = Id
+        self.name = name
         
-        addPvRecordToSelf(self, name="zoom", pvsetname="SARES20-OPSI:MOT_SP", pvreadbackname = "SARES20-OPSI:MOT_RB")
+        append_object_to_object
+        if zoomstage_pvs:
+            append_object_to_object(self, PvRecord, name="zoom", pvsetname=zoomstage_pvs['set_value'], pvreadbackname = zoomstage_pvs['readback'])
 
-        #except:
-        #    print("Sigma zoom motor not found")
-        #    pass
         try:
             self.cam = CameraCA(Id)
         except:
@@ -52,17 +51,15 @@ class Sigma:
 
 
 
-class Qioptic:
-    def __init__(self, Id, bshost=None, bsport=None, name=None):
+class Qioptiq:
+    def __init__(self, zoomstage_pv=None, bshost=None, bsport=None, name=None):
         self.alias = Alias(name)
 
-        self.Id = Id
-        try:
-            addMotorRecordToSelf(self, Id="SARES20-EXP:MOT_QIOPT_Z", name="zoom")
+        self.name = name
 
-        except:
-            print("Qioptic zoom motor not found")
-            pass
+        if zoomstage_pv:
+            append_object_to_object(self,MotorRecord,zoomstage_pv, name="zoom")
+
         try:
             addMotorRecordToSelf(self, Id="SARES20-EXP:MOT_QIOPT_F", name="focus")
 
