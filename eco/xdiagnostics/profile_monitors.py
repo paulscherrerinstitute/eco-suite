@@ -41,13 +41,13 @@ class Pprm:
 
 
 class Bernina_XEYE:
-    def __init__(self, zoomstage_pv=None,bshost=None, bsport=None, name=None):
+    def __init__(self, camera_pv=None, zoomstage_pv=None,bshost=None, bsport=None, name=None):
         self.alias = Alias(name)
         self.name = name
         if zoomstage_pv:
             append_object_to_object(self,MotorRecord,zoomstage_pv,name='zoom')
         try:
-            self.cam = CameraCA(Id)
+            self.cam = CameraCA(camera_pv)
         except:
             print("X-Ray eye Cam not found")
             pass

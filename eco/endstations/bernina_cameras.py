@@ -19,7 +19,7 @@ def addPvRecordToSelf(self, name=None, pvsetname=None, pvreadbackname = None, ac
 
 
 class Sigma:
-    def __init__(self, zoomstage_pvs = {'set_value':'SARES20-OPSI:MOT_SP','readback':'SEARES20-OPSI:MOT_RB'}, bshost=None, bsport=None, name=None):
+    def __init__(self, camera_pv=None, zoomstage_pvs = {'set_value':'SARES20-OPSI:MOT_SP','readback':'SEARES20-OPSI:MOT_RB'}, bshost=None, bsport=None, name=None):
         self.alias = Alias(name)
 
         self.name = name
@@ -29,7 +29,7 @@ class Sigma:
             append_object_to_object(self, PvRecord, name="zoom", pvsetname=zoomstage_pvs['set_value'], pvreadbackname = zoomstage_pvs['readback'])
 
         try:
-            self.cam = CameraCA(Id)
+            self.cam = CameraCA(camera_pv)
         except:
             print("Sigma Cam not found")
             pass
@@ -52,7 +52,7 @@ class Sigma:
 
 
 class Qioptiq:
-    def __init__(self, zoomstage_pv=None, bshost=None, bsport=None, name=None):
+    def __init__(self, camera_pv=None, zoomstage_pv=None, bshost=None, bsport=None, name=None):
         self.alias = Alias(name)
 
         self.name = name
@@ -67,7 +67,7 @@ class Qioptiq:
             print("Qioptic focus motor not found")
             pass
         try:
-            self.cam = CameraCA(Id)
+            self.cam = CameraCA(camera_pv)
         except:
             print("Qioptic Cam not found")
             pass

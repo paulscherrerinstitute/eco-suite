@@ -264,6 +264,7 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
         "kwargs": {
             "zoomstage_pv": config["xeye"]["zoomstage_pv"],
+            "camera_pv":config["xeye"]["camera_pv"],
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
         },
@@ -278,6 +279,7 @@ components = [
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
             "zoomstage_pv": config['cams_qioptiq']['zoomstage_pv'],
+            "camera_pv":config["cams_qioptiq"]["camera_pv"],
         },
     },
     {
@@ -289,6 +291,7 @@ components = [
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
+            "camera_pv":config["cams_sigma"]["camera_pv"],
         },
     },
     {
