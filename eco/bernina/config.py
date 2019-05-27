@@ -263,33 +263,32 @@ components = [
         "desc": "Mobile X-ray eye in Bernina hutch",
         "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
         "kwargs": {
+            "zoomstage_pv": config["xeye"]["zoomstage_pv"],
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
-            "Id": "SARES20-PROF142-M3",
         },
     },
     {
         "args": [],
-        "name": "qioptic",
+        "name": "cams_qioptiq",
         "z_und": 142,
         "desc": "Qioptic sample viewer in Bernina hutch",
-        "type": "eco.endstations.bernina_cameras:Qioptic",
+        "type": "eco.endstations.bernina_cameras:Qioptiq",
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
-            "Id": "SARES20-PROF142-M2",
+            "zoomstage_pv": config['cams_qioptiq']['zoomstage_pv'],
         },
     },
     {
         "args": [],
-        "name": "cams142_C1",
+        "name": "cams_sigma",
         "z_und": 142,
         "desc": "Sigma objective",
         "type": "eco.endstations.bernina_cameras:Sigma",
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
-            "Id": "SARES20-CAMS142-C1",
         },
     },
     {
