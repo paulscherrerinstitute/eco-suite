@@ -417,8 +417,16 @@ components = [
     },
     {
         "args": ['/sf/bernina/config/channel_lists/default_channel_list'],
-        "name": "bernina_default_channels_bs",
-        "desc": "Bernina default bsread channels",
+        "name": "default_channel_list",
+        "desc": "Bernina default channels, used in daq",
+        "type": "eco.utilities.config:parseChannelListFile",
+        "kwargs": {},
+        "lazy": False
+    },
+    {
+        "args": ['/sf/bernina/config/channel_lists/default_channel_list_bs'],
+        "name": "default_channel_list_bs",
+        "desc": "Bernina default bs channels, used by bs_daq",
         "type": "eco.utilities.config:parseChannelListFile",
         "kwargs": {},
         "lazy": False
@@ -436,7 +444,7 @@ components = [
         "name": "bs_daq",
         "desc": "bs daq writer (locally!)",
         "type": "eco.acquisition.bs_data:BStools",
-        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('bernina_default_channels_bs'),'channels_spectrometer_projection':Component('channels_spectrometer_projection')}},
+        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('default_channel_list_bs')}},
         "lazy": False
     },
 ]

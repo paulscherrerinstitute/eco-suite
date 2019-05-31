@@ -1,7 +1,8 @@
 from bsread import Source
-from bsread.h5 import receive
+from bsread.h5 import receive, process_message_compact
 from bsread.avail import dispatcher
 import zmq
+import mflow
 import os
 import data_api as api
 import datetime
@@ -61,6 +62,7 @@ class BStools:
         N_pulses=None,
         default_path=True,
         queue_size=100,
+        compact_format=False,
     ):
         if default_path:
             fina = self._default_file_path % fina
@@ -80,10 +82,15 @@ class BStools:
             for tlist in self._default_channel_list.values():
                 channel_list.extend(tlist)
             print(channel_list)
+        if compact_format:
+            message_processor = process_message_compact
+        else:
+            message_processor = None
 
         source = dispatcher.request_stream(channel_list)
-        mode = zmq.SUB
-        receive(source, fina, queue_size=queue_size, mode=mode, n_messages=N_pulses)
+        #mode = zmq.SUB # old default, was changes 2019-05-31
+        mode = mflow.PULL
+        receive(source, fina, queue_size=queue_size, mode=mode, n_messages=N_pulses,message_processor=message_processor)
 
     def db(
         self,
