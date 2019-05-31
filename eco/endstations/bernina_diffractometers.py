@@ -90,7 +90,8 @@ class XRD:
             addMotorRecordToSelf(self, Id=Id + ":MOT_TX", name="xbase")
             addMotorRecordToSelf(self, Id=Id + ":MOT_TY", name="ybase")
             addMotorRecordToSelf(self, Id=Id + ":MOT_RX", name="rxbase")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="omega")
+            addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="alpha")
+
 
         if "arm" in self.configuration:
             ### motors XRD detector arm ###
@@ -124,8 +125,8 @@ class XRD:
 
         if "phi_table" in self.configuration:
             ### motors nu table ###
-            addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_TX", name="teta")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_RX", name="eta")
+            addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_TX", name="tphi")
+            addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_RX", name="phi")
 
         if "phi_hex" in self.configuration:
             ### motors PI hexapod ###
