@@ -181,6 +181,15 @@ class Scans:
         self.checker = checker
         self._scan_directories = scan_directories
 
+    def a2scan(self,adjustable0,start0_pos,end0_pos,adjustable1,start1_pos,end1_pos,N_intervals,N_pulses,file_name=None,start_immediately=True, step_info = None):
+        positions0 = np.linspace(start0_pos,end0_pos,N_intervals+1)
+        positions1 = np.linspace(start1_pos,end1_pos,N_intervals+1)
+        values = [[tp0,tp1] for tp0,tp1 in zip(positions0,positions1)]
+        s = Scan([adjustable0, adjustable1],values,self._default_counters,file_name,Npulses=N_pulses,basepath=self.data_base_dir,scan_info_dir=self.scan_info_dir,checker=self.checker,scan_directories=self._scan_directories)
+        if start_immediately:
+            s.scanAll(step_info=step_info)
+        return s
+
     def ascan(
         self,
         adjustable,

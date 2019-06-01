@@ -27,6 +27,7 @@ class DelayTime(AdjustableVirtual):
         self._direction = direction
         self._group_velo = 299798458 #m/s 
         self._passes = passes
+        self.Id = stage.Id + '_delay'
         AdjustableVirtual.__init__(self,[stage],self._mm_to_s,self._s_to_mm,set_current_value=set_current_value,name=name)
 
     def _mm_to_s(self,mm):
