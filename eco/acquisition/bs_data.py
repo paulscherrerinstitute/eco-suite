@@ -62,7 +62,7 @@ class BStools:
         N_pulses=None,
         default_path=True,
         queue_size=100,
-        compact_format=True,
+        compact_format=False,
     ):
 
         if os.path.isfile(fina):
