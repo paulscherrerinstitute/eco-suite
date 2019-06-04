@@ -41,6 +41,7 @@ class DelayCompensation(AdjustableVirtual):
     getting the current value."""
     def __init__(self,adjustables,directions,set_current_value=True,name=None):
         self._directions = directions
+        self.Id = name
         AdjustableVirtual.__init__(self,adjustables,self._from_values,self._calc_values,set_current_value=set_current_value,name=name)
 
 
@@ -108,7 +109,7 @@ class Laser_Exp:
             print("Problems initializing global delay stage")
         
         # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions. 
-        self.delay_lxtt = DelayCompensation([self.delay_glob,self.delay_tt], [-1,1],name='delay_lxtt')
+        self.delay_lxtt = DelayCompensation([self.delay_glob,self.delay_tt], [1,-1],name='delay_lxtt')
         self.alias.append(self.delay_lxtt.alias)
         
         # compressor
