@@ -55,6 +55,7 @@ class SlitBlades:
         string2 = "pos: (%g,%g) mm" % (self.get_ho(), self.get_vo())
         return "\n".join((string1, string2))
 
+
 class SlitBladesJJ:
     def __init__(self, Id, name=None, elog=None):
         self.Id = Id
@@ -71,10 +72,10 @@ class SlitBladesJJ:
         return -(self._y2.get_current_value() - self._y1.get_current_value())
 
     def get_ho(self):
-        return ((self._x1.get_current_value() + self._x2.get_current_value()) / 2)
+        return (self._x1.get_current_value() + self._x2.get_current_value()) / 2
 
     def get_vo(self):
-        return ((self._y1.get_current_value() + self._y2.get_current_value()) / 2)
+        return (self._y1.get_current_value() + self._y2.get_current_value()) / 2
 
     def set_hg(self, value):
         ho = self.get_ho()
@@ -108,6 +109,7 @@ class SlitBladesJJ:
         string1 = "gap: (%g,%g) mm" % (self.get_hg(), self.get_vg())
         string2 = "pos: (%g,%g) mm" % (self.get_ho(), self.get_vo())
         return "\n".join((string1, string2))
+
 
 class SlitFourBlades:
     def __init__(self, Id, name=None, elog=None):

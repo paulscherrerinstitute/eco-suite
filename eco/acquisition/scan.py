@@ -19,7 +19,7 @@ class Scan:
         checker=None,
         scan_directories=False,
         callbackStartStep=None,
-        checker_sleep_time = .2
+        checker_sleep_time=0.2,
     ):
         self.Nsteps = len(values)
         self.pulses_per_step = Npulses
@@ -48,7 +48,7 @@ class Scan:
         self.checker = checker
         self.initial_values = []
         self._checker_sleep_time = checker_sleep_time
-        print(f'Scan info in file {self.scan_info_filename}.')
+        print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
             tv = adj.get_current_value()
             self.initial_values.append(adj.get_current_value())
@@ -63,7 +63,7 @@ class Scan:
 
     def doNextStep(self, step_info=None, verbose=True):
         # for call in self.callbacks_start_step:
-            # call()
+        # call()
         if self.checker:
             while not self.checker.check_now():
                 print("Condition checker is not happy, waiting for OK conditions.")
@@ -159,7 +159,9 @@ class Scans:
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
         if not scan_info_dir.exists():
-            print(f"Path {scan_info_dir.absolute().as_posix()} does not exist, will try to create it...")
+            print(
+                f"Path {scan_info_dir.absolute().as_posix()} does not exist, will try to create it..."
+            )
             scan_info_dir.mkdir(parents=True)
             print(f"Tried to create {scan_info_dir.absolute().as_posix()}")
             scan_info_dir.chmod(0o775)
@@ -167,9 +169,11 @@ class Scans:
 
         for counter in default_counters:
             if counter._default_file_path is not None:
-                data_dir = Path( counter._default_file_path + self.data_base_dir )
+                data_dir = Path(counter._default_file_path + self.data_base_dir)
                 if not data_dir.exists():
-                    print(f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it...")
+                    print(
+                        f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it..."
+                    )
                     data_dir.mkdir(parents=True)
                     print(f"Tried to create {data_dir.absolute().as_posix()}")
                     data_dir.chmod(0o775)
@@ -181,13 +185,37 @@ class Scans:
         self.checker = checker
         self._scan_directories = scan_directories
 
-    def a2scan(self,adjustable0,start0_pos,end0_pos,adjustable1,start1_pos,end1_pos,N_intervals,N_pulses,file_name=None,counters=[], start_immediately=True, step_info = None):
-        positions0 = np.linspace(start0_pos,end0_pos,N_intervals+1)
-        positions1 = np.linspace(start1_pos,end1_pos,N_intervals+1)
-        values = [[tp0,tp1] for tp0,tp1 in zip(positions0,positions1)]
+    def a2scan(
+        self,
+        adjustable0,
+        start0_pos,
+        end0_pos,
+        adjustable1,
+        start1_pos,
+        end1_pos,
+        N_intervals,
+        N_pulses,
+        file_name=None,
+        counters=[],
+        start_immediately=True,
+        step_info=None,
+    ):
+        positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
+        positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
+        values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
         if not counters:
             counters = self._default_counters
-        s = Scan([adjustable0, adjustable1],values,self.counters,file_name,Npulses=N_pulses,basepath=self.data_base_dir,scan_info_dir=self.scan_info_dir,checker=self.checker,scan_directories=self._scan_directories)
+        s = Scan(
+            [adjustable0, adjustable1],
+            values,
+            self.counters,
+            file_name,
+            Npulses=N_pulses,
+            basepath=self.data_base_dir,
+            scan_info_dir=self.scan_info_dir,
+            checker=self.checker,
+            scan_directories=self._scan_directories,
+        )
         if start_immediately:
             s.scanAll(step_info=step_info)
         return s
@@ -302,7 +330,9 @@ class RunFilenameGenerator:
             self.prefix + self.Ndigits * "[0-9]" + self.separator + "*." + self.suffix
         )
         fl = [tf for tf in fl if tf.is_file()]
-        runnos = [int(tf.name.split(self.prefix)[1].split(self.separator)[0]) for tf in fl]
+        runnos = [
+            int(tf.name.split(self.prefix)[1].split(self.separator)[0]) for tf in fl
+        ]
         return runnos
 
     def get_nextrun_filename(self, name):

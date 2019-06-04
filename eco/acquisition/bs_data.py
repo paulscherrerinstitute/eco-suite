@@ -13,8 +13,12 @@ from .utilities import Acquisition
 
 class BStools:
     def __init__(
-        self, default_channel_list={"listname": []}, default_file_path="%s", elog=None
-    , name=None):
+        self,
+        default_channel_list={"listname": []},
+        default_file_path="%s",
+        elog=None,
+        name=None,
+    ):
         self._default_file_path = default_file_path
         self._default_channel_list = default_channel_list
         self._elog = elog
@@ -79,9 +83,7 @@ class BStools:
             path_as_path.parent.mkdir()
 
         if not channel_list:
-            print(
-                "No channels specified, using all lists instead."
-            )
+            print("No channels specified, using all lists instead.")
             channel_list = []
             for tlist in self._default_channel_list.values():
                 channel_list.extend(tlist)
@@ -95,13 +97,20 @@ class BStools:
         mode = zmq.SUB
         try:
             print(f"message proc is {message_processor}")
-            receive(source, fina, queue_size=queue_size, mode=mode, n_messages=N_pulses, message_processor=message_processor)
+            receive(
+                source,
+                fina,
+                queue_size=queue_size,
+                mode=mode,
+                n_messages=N_pulses,
+                message_processor=message_processor,
+            )
         except KeyboardInterrupt:
             # KeyboardInterrupt is thrown if the receiving is terminated via ctrl+c
             # As we don't want to see a stacktrace then catch this exception
             pass
         finally:
-            print('Closing stream')
+            print("Closing stream")
             dispatcher.remove_stream(source)
 
     def db(
@@ -153,7 +162,7 @@ class BStools:
 
     def acquire(self, file_name=None, Npulses=100):
         file_name += ".h5"
-        
+
         if self._default_file_path:
             file_name = self._default_file_path % file_name
 

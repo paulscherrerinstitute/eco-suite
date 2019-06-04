@@ -16,9 +16,7 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 
 class OffsetMirror:
-    def __init__(
-        self, name=None, Id=None, alias_namespace=None
-    ):
+    def __init__(self, name=None, Id=None, alias_namespace=None):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
@@ -27,7 +25,6 @@ class OffsetMirror:
         addMotorRecordToSelf(self, Id=Id + ":W_Y", name="y")
         addMotorRecordToSelf(self, Id=Id + ":W_RX", name="rx")
         addMotorRecordToSelf(self, Id=Id + ":W_RZ", name="rz")
-
 
     def out(self):
         pass

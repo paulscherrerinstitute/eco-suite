@@ -48,7 +48,6 @@ class GPS:
             self.hex_v = PV("SARES20-HEX_PI:POSI-V")
             self.hex_w = PV("SARES20-HEX_PI:POSI-W")
 
-
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###
             addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TX", name="xhl")
@@ -75,7 +74,7 @@ class GPS:
 
 
 class XRD:
-    def __init__(self, name=None, Id=None, configuration=['base']):
+    def __init__(self, name=None, Id=None, configuration=["base"]):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
@@ -91,7 +90,6 @@ class XRD:
             addMotorRecordToSelf(self, Id=Id + ":MOT_TY", name="ybase")
             addMotorRecordToSelf(self, Id=Id + ":MOT_RX", name="rxbase")
             addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="alpha")
-
 
         if "arm" in self.configuration:
             ### motors XRD detector arm ###

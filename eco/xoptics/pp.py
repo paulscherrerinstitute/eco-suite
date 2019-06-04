@@ -14,6 +14,7 @@ def addMotorRecordToSelf(self, name=None, Id=None):
     except:
         print("Warning! Could not find motor {name} (Id:{Id})")
 
+
 class Pulsepick:
     def __init__(self, Id=None, evronoff=None, evrsrc=None, name=None):
         self.name = name
@@ -45,9 +46,7 @@ class Pulsepick:
         self._evrsrc.put(63)
         print("Closed Pulse Picker")
 
-
     def trigger(self):
         self._openclose.put(1)
         self._evrsrc.put(0)
         print("Set Pulse Picker to trigger (src 0 and output On)")
-

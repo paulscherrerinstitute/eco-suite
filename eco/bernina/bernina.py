@@ -5,8 +5,9 @@ from ..aliases import NamespaceCollection
 import logging
 
 from .config import components, config
+
 _namespace = globals()
-_scope_name = 'bernina'
+_scope_name = "bernina"
 
 alias_namespaces = NamespaceCollection()
 
@@ -26,20 +27,13 @@ for key, value in initFromConfigList(components, lazy=ecocnf.startup_lazy).items
 
 
 def initDevice(name):
-    if name=='all':
-        logging.info(f'initializing all components from {_scope_name}.')
+    if name == "all":
+        logging.info(f"initializing all components from {_scope_name}.")
         name = list(components.keys())
     if not name in components.keys():
-        raise KeyError(f'Could not find {name} in configuration!')
+        raise KeyError(f"Could not find {name} in configuration!")
     if type(name) is list:
         for tname in name:
             initDevice(tname)
     else:
         initFromConfigList
-    
-
-
-
-
-
-

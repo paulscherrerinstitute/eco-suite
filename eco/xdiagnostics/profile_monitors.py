@@ -17,10 +17,10 @@ class Pprm:
     def __init__(self, Id, name=None):
         self.Id = Id
         self.name = name
-        self.target_pos = MotorRecord(Id + ":MOTOR_PROBE",name='target_pos')
+        self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name="target_pos")
         self.cam = CameraCA(Id)
-        self.led = PvEnum(self.Id + ":LED",name='led')
-        self.target = PvEnum(self.Id + ":PROBE_SP", name='target')
+        self.led = PvEnum(self.Id + ":LED", name="led")
+        self.target = PvEnum(self.Id + ":PROBE_SP", name="target")
         if name:
             self.alias = Alias(name)
             self.alias.append(self.target_pos.alias)
@@ -33,7 +33,6 @@ class Pprm:
     def moveout(self, target=0):
         self.target.changeTo(target)
 
-
     def __repr__(self):
         s = f"**Profile Monitor {self.name}**\n"
         s += f"Target in beam: {self.target.get_current_value().name}\n"
@@ -41,11 +40,13 @@ class Pprm:
 
 
 class Bernina_XEYE:
-    def __init__(self, camera_pv=None, zoomstage_pv=None,bshost=None, bsport=None, name=None):
+    def __init__(
+        self, camera_pv=None, zoomstage_pv=None, bshost=None, bsport=None, name=None
+    ):
         self.alias = Alias(name)
         self.name = name
         if zoomstage_pv:
-            append_object_to_object(self,MotorRecord,zoomstage_pv,name='zoom')
+            append_object_to_object(self, MotorRecord, zoomstage_pv, name="zoom")
         try:
             self.cam = CameraCA(camera_pv)
         except:

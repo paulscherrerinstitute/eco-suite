@@ -1,7 +1,7 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.adjustable import PvRecord
-from ..aliases import Alias,append_object_to_object
+from ..aliases import Alias, append_object_to_object
 
 # from ..devices_general.epics_wrappers import EnumSelector
 from epics import PV
@@ -12,21 +12,41 @@ def addMotorRecordToSelf(self, Id=None, name=None):
     self.__dict__[name] = MotorRecord(Id, name=name)
     self.alias.append(self.__dict__[name].alias)
 
-def addPvRecordToSelf(self, name=None, pvsetname=None, pvreadbackname = None, accuracy = None):
-    self.__dict__[name] = PvRecord(name=name, pvsetname=pvsetname, pvreadbackname = pvreadbackname , accuracy = accuracy)
+
+def addPvRecordToSelf(
+    self, name=None, pvsetname=None, pvreadbackname=None, accuracy=None
+):
+    self.__dict__[name] = PvRecord(
+        name=name, pvsetname=pvsetname, pvreadbackname=pvreadbackname, accuracy=accuracy
+    )
     self.alias.append(self.__dict__[name].alias)
 
 
-
 class Sigma:
-    def __init__(self, camera_pv=None, zoomstage_pvs = {'set_value':'SARES20-OPSI:MOT_SP','readback':'SEARES20-OPSI:MOT_RB'}, bshost=None, bsport=None, name=None):
+    def __init__(
+        self,
+        camera_pv=None,
+        zoomstage_pvs={
+            "set_value": "SARES20-OPSI:MOT_SP",
+            "readback": "SEARES20-OPSI:MOT_RB",
+        },
+        bshost=None,
+        bsport=None,
+        name=None,
+    ):
         self.alias = Alias(name)
 
         self.name = name
-        
+
         append_object_to_object
         if zoomstage_pvs:
-            append_object_to_object(self, PvRecord, name="zoom", pvsetname=zoomstage_pvs['set_value'], pvreadbackname = zoomstage_pvs['readback'])
+            append_object_to_object(
+                self,
+                PvRecord,
+                name="zoom",
+                pvsetname=zoomstage_pvs["set_value"],
+                pvreadbackname=zoomstage_pvs["readback"],
+            )
 
         try:
             self.cam = CameraCA(camera_pv)
@@ -50,15 +70,16 @@ class Sigma:
         return self.get_adjustable_positions_str()
 
 
-
 class Qioptiq:
-    def __init__(self, camera_pv=None, zoomstage_pv=None, bshost=None, bsport=None, name=None):
+    def __init__(
+        self, camera_pv=None, zoomstage_pv=None, bshost=None, bsport=None, name=None
+    ):
         self.alias = Alias(name)
 
         self.name = name
 
         if zoomstage_pv:
-            append_object_to_object(self,MotorRecord,zoomstage_pv, name="zoom")
+            append_object_to_object(self, MotorRecord, zoomstage_pv, name="zoom")
 
         try:
             addMotorRecordToSelf(self, Id="SARES20-EXP:MOT_QIOPT_F", name="focus")

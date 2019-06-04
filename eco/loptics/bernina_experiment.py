@@ -23,38 +23,52 @@ def addDelayStageToSelf(self, stage=None, name=None):
 
 
 class DelayTime(AdjustableVirtual):
-    def __init__(self,stage,direction=1,passes=2,set_current_value=True,name=None):
+    def __init__(self, stage, direction=1, passes=2, set_current_value=True, name=None):
         self._direction = direction
-        self._group_velo = 299798458 #m/s 
+        self._group_velo = 299798458  # m/s
         self._passes = passes
-        self.Id = stage.Id + '_delay'
-        AdjustableVirtual.__init__(self,[stage],self._mm_to_s,self._s_to_mm,set_current_value=set_current_value,name=name)
+        self.Id = stage.Id + "_delay"
+        AdjustableVirtual.__init__(
+            self,
+            [stage],
+            self._mm_to_s,
+            self._s_to_mm,
+            set_current_value=set_current_value,
+            name=name,
+        )
 
-    def _mm_to_s(self,mm):
-        return mm*1e-3*self._passes/self._group_velo*self._direction
+    def _mm_to_s(self, mm):
+        return mm * 1e-3 * self._passes / self._group_velo * self._direction
 
-    def _s_to_mm(self,s):
-        return s*self._group_velo*1e3/self._passes*self._direction
+    def _s_to_mm(self, s):
+        return s * self._group_velo * 1e3 / self._passes * self._direction
+
 
 class DelayCompensation(AdjustableVirtual):
     """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for 
     getting the current value."""
-    def __init__(self,adjustables,directions,set_current_value=True,name=None):
+
+    def __init__(self, adjustables, directions, set_current_value=True, name=None):
         self._directions = directions
         self.Id = name
-        AdjustableVirtual.__init__(self,adjustables,self._from_values,self._calc_values,set_current_value=set_current_value,name=name)
+        AdjustableVirtual.__init__(
+            self,
+            adjustables,
+            self._from_values,
+            self._calc_values,
+            set_current_value=set_current_value,
+            name=name,
+        )
 
+    def _calc_values(self, value):
+        return tuple(tdir * value for tdir in self._directions)
 
-    def _calc_values(self,value):
-        return tuple(tdir*value for tdir in self._directions)
-
-    def _from_values(self,*args):
-        positions = [ta*tdir for ta,tdir in zip(args,self._directions)]
+    def _from_values(self, *args):
+        positions = [ta * tdir for ta, tdir in zip(args, self._directions)]
         return positions[0]
 
-        
+        tuple(tdir * value for tdir in self._directions)
 
-        tuple(tdir*value for tdir in self._directions)
 
 class Laser_Exp:
     def __init__(self, Id=None, name=None, smar_config=None):
@@ -70,10 +84,12 @@ class Laser_Exp:
             addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="pump_wp")
             addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="tt_wp")
         except:
-            print('No wp found')
+            print("No wp found")
 
         try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg")
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg"
+            )
             addDelayStageToSelf(
                 self, stage=self.__dict__["_pump_delaystg"], name="pump_delay"
             )
@@ -82,20 +98,18 @@ class Laser_Exp:
             print(expt)
 
         # try:
-        addMotorRecordToSelf(
-            self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg"
-        )
-        self.delay_eos = DelayTime(self.delay_eos_stg,name="delay_eos")
+        addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg")
+        self.delay_eos = DelayTime(self.delay_eos_stg, name="delay_eos")
         self.alias.append(self.delay_eos.alias)
         # except Exception as expt:
-            # print("Problems initializing eos delay stage")
-            # print(expt)
+        # print("Problems initializing eos delay stage")
+        # print(expt)
 
         try:
             addMotorRecordToSelf(
                 self, Id=self.Id + "-M522:MOTOR_1", name="delay_tt_stg"
             )
-            self.delay_tt = DelayTime(self.delay_tt_stg,name="delay_tt")
+            self.delay_tt = DelayTime(self.delay_tt_stg, name="delay_tt")
             self.alias.append(self.delay_tt.alias)
         except:
             print("Problems initializing global delay stage")
@@ -103,15 +117,17 @@ class Laser_Exp:
             addMotorRecordToSelf(
                 self, Id=self.Id + "-M523:MOTOR_1", name="delay_glob_stg"
             )
-            self.delay_glob = DelayTime(self.delay_glob_stg,name="delay_glob")
+            self.delay_glob = DelayTime(self.delay_glob_stg, name="delay_glob")
             self.alias.append(self.delay_glob.alias)
         except:
             print("Problems initializing global delay stage")
-        
-        # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions. 
-        self.delay_lxtt = DelayCompensation([self.delay_glob,self.delay_tt], [1,-1],name='delay_lxtt')
+
+        # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions.
+        self.delay_lxtt = DelayCompensation(
+            [self.delay_glob, self.delay_tt], [1, -1], name="delay_lxtt"
+        )
         self.alias.append(self.delay_lxtt.alias)
-        
+
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')
@@ -144,9 +160,13 @@ class Laser_Exp:
 
         for smar_name, smar_address in self.smar_config.items():
             try:
-                addSmarActRecordToSelf(self, Id=(self.IdSA + smar_address), name=smar_name)
+                addSmarActRecordToSelf(
+                    self, Id=(self.IdSA + smar_address), name=smar_name
+                )
             except:
-                print("Loading %s SmarAct motor in bernina laser conifg failed")%(smar_name)
+                print("Loading %s SmarAct motor in bernina laser conifg failed") % (
+                    smar_name
+                )
                 pass
 
     def get_adjustable_positions_str(self):
@@ -160,6 +180,7 @@ class Laser_Exp:
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
+
 
 class Laser_Exp_old:
     def __init__(self, Id=None, name=None, smar_config=None):
@@ -175,10 +196,12 @@ class Laser_Exp_old:
             addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="pump_wp")
             addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="tt_wp")
         except:
-            print('No wp found')
+            print("No wp found")
 
         try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg")
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg"
+            )
             addDelayStageToSelf(
                 self, stage=self.__dict__["_pump_delaystg"], name="pump_delay"
             )
@@ -189,21 +212,15 @@ class Laser_Exp_old:
             addMotorRecordToSelf(
                 self, Id=self.Id + "-M522:MOTOR_1", name="_tt_delaystg"
             )
-            addDelayStageToSelf(
-                self, self.__dict__["_tt_delaystg"], name="tt_delay"
-            )
+            addDelayStageToSelf(self, self.__dict__["_tt_delaystg"], name="tt_delay")
             # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
         except:
             print("No thz delay stage")
             pass
 
         try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M553:MOT", name="_exp_delaystg"
-            )
-            addDelayStageToSelf(
-                self, self.__dict__["_exp_delaystg"], name="exp_delay"
-            )
+            addMotorRecordToSelf(self, Id=self.Id + "-M553:MOT", name="_exp_delaystg")
+            addDelayStageToSelf(self, self.__dict__["_exp_delaystg"], name="exp_delay")
             # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
         except:
             print("No thz delay stage")
@@ -240,9 +257,13 @@ class Laser_Exp_old:
 
         for smar_name, smar_address in self.smar_config.items():
             try:
-                addSmarActRecordToSelf(self, Id=(self.IdSA + smar_address), name=smar_name)
+                addSmarActRecordToSelf(
+                    self, Id=(self.IdSA + smar_address), name=smar_name
+                )
             except:
-                print("Loading %s SmarAct motor in bernina laser conifg failed")%(smar_name)
+                print("Loading %s SmarAct motor in bernina laser conifg failed") % (
+                    smar_name
+                )
                 pass
 
     def get_adjustable_positions_str(self):

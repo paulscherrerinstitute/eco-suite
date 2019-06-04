@@ -109,8 +109,8 @@ class SmarActRecord:
         def changer(value):
             self._status = self.move(value, ignore_limits=(not check), wait=True)
             self._status_message = _status_messages[self._status]
-            #if not self._status == 0:
-                #print(self._status_message)
+            # if not self._status == 0:
+            # print(self._status_message)
 
         # mover = lambda value: self.move(\
         #        value, ignore_limits=(not check),
@@ -205,15 +205,15 @@ class SmarActRecord:
             tout = t0 + timeout
             if wait or confirm_move:
                 while time.time() <= thold and s1 == 3:
-                    ca.poll(evt=1.e-2)
+                    ca.poll(evt=1.0e-2)
                     s1 = self._statusstg.get("VAL")
                 while time.time() <= t1 and s1 == 0:
-                    ca.poll(evt=1.e-2)
+                    ca.poll(evt=1.0e-2)
                     s1 = self._statusstg.get("VAL")
                 if s1 == 4:
                     if wait:
                         while time.time() <= tout and s1 == 4:
-                            ca.poll(evt=1.e-2)
+                            ca.poll(evt=1.0e-2)
                             s1 = self._statusstg.get("VAL")
                         if s1 == 3 or s1 == 4:
                             if time.time() > tout:
@@ -225,7 +225,7 @@ class SmarActRecord:
                                     and time.time() <= tout
                                     and abs(self._rbv.get("VAL") - val) >= twv
                                 ):
-                                    ca.poll(evt=1.e-2)
+                                    ca.poll(evt=1.0e-2)
                                 return DONE_OK
                     else:
                         return MOVE_BEGUN_CONFIRMED

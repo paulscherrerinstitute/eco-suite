@@ -6,8 +6,6 @@ from ..aliases import Alias
 from enum import IntEnum, auto
 
 
-
-
 # wrappers for adjustables >>>>>>>>>>>
 def default_representation(Obj):
     def get_name(Obj):
@@ -24,40 +22,45 @@ def default_representation(Obj):
             return Obj.Id
 
     Obj._get_name = get_name
-    Obj.__repr__  = get_repr
+    Obj.__repr__ = get_repr
     return Obj
+
 
 def spec_convenience(Adj):
     # spec-inspired convenience methods
-    def mv(self,value):
+    def mv(self, value):
         self._currentChange = self.changeTo(value)
         return self._currentChange
-    def wm(self,*args,**kwargs):
-        return self.get_current_value(*args,**kwargs)
-    def mvr(self,value,*args,**kwargs):
-        if hasattr(self,'_currentChange'):
-            if not self._currentChange.status() == 'done':
+
+    def wm(self, *args, **kwargs):
+        return self.get_current_value(*args, **kwargs)
+
+    def mvr(self, value, *args, **kwargs):
+        if hasattr(self, "_currentChange"):
+            if not self._currentChange.status() == "done":
                 startvalue = self._currentChange.target
-        elif hasattr(self,'get_moveDone'):
-            if (self.get_moveDone == 1):
-                startvalue = self.get_current_value(readback=True,*args,**kwargs)
+        elif hasattr(self, "get_moveDone"):
+            if self.get_moveDone == 1:
+                startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
-            startvalue = self.get_current_value(*args,**kwargs)
-        self._currentChange = self.changeTo(value+startvalue,*args,**kwargs)
+            startvalue = self.get_current_value(*args, **kwargs)
+        self._currentChange = self.changeTo(value + startvalue, *args, **kwargs)
         return self._currentChange
+
     def wait(self):
         self._currentChange.wait()
-    
+
     def call(self, value):
         self._currentChange = self.changeTo(value)
 
-    Adj.mv  = mv
-    Adj.wm  = wm
+    Adj.mv = mv
+    Adj.wm = wm
     Adj.mvr = mvr
     Adj.wait = wait
     Adj.__call__ = call
 
     return Adj
+
 
 # wrappers for adjustables <<<<<<<<<<<
 
@@ -69,25 +72,20 @@ def _keywordChecker(kw_key_list_tups):
 
 class PvRecord:
     def __init__(
-        self,
-        pvsetname,
-        pvreadbackname = None,
-        accuracy = None,
-        name=None,
-        elog=None,
+        self, pvsetname, pvreadbackname=None, accuracy=None, name=None, elog=None
     ):
 
-#        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
-#    ):
+        #        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
+        #    ):
         self.Id = pvsetname
         self.name = name
         self.alias = Alias(name)
-#        for an, af in alias_fields.items():
-#            self.alias.append(
-#                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
-#            )
+        #        for an, af in alias_fields.items():
+        #            self.alias.append(
+        #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
+        #            )
 
-        self._pv = PV(self.Id) 
+        self._pv = PV(self.Id)
         self._currentChange = None
         self.accuracy = accuracy
 
@@ -96,69 +94,68 @@ class PvRecord:
         else:
             self._pvreadback = PV(pvreadbackname)
 
-
-    def get_current_value(self, readback=True,): 
+    def get_current_value(self, readback=True):
         if readback:
             currval = self._pvreadback.get()
         if not readback:
             currval = self._pv.get()
         return currval
- 
 
     def get_moveDone(self):
         """ Adjustable convention"""
         """ 0: moving 1: move done"""
-        movedone = 1 
+        movedone = 1
         if self.accuracy is not None:
-            if( np.abs(self.get_current_value(readback=False)-self.get_current_value(readback=True)) > self.accuracy ): 
+            if (
+                np.abs(
+                    self.get_current_value(readback=False)
+                    - self.get_current_value(readback=True)
+                )
+                > self.accuracy
+            ):
                 movedone = 0
         return movedone
 
-
-    def move(self,value): 
-        self._pv.put(value) 
+    def move(self, value):
+        self._pv.put(value)
         time.sleep(0.1)
-        while( self.get_moveDone() == 0 ): 
-                time.sleep(0.1)
-
+        while self.get_moveDone() == 0:
+            time.sleep(0.1)
 
     def changeTo(self, value, hold=False):
         """ Adjustable convention"""
 
-        changer = lambda value: self.move(\
-                value)
+        changer = lambda value: self.move(value)
         return Changer(
-                target=value,
-                parent=self,
-                changer=changer,
-                hold=hold,
-                stopper=None)
-
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
 
     # spec-inspired convenience methods
-    def mv(self,value):
+    def mv(self, value):
         self._currentChange = self.changeTo(value)
-    def wm(self,*args,**kwargs):
-        return self.get_current_value(*args,**kwargs)
-    def mvr(self,value,*args,**kwargs):
 
-        if(self.get_moveDone == 1):
-            startvalue = self.get_current_value(readback=True,*args,**kwargs)
+    def wm(self, *args, **kwargs):
+        return self.get_current_value(*args, **kwargs)
+
+    def mvr(self, value, *args, **kwargs):
+
+        if self.get_moveDone == 1:
+            startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
-            startvalue = self.get_current_value(readback=False,*args,**kwargs)
-        self._currentChange = self.changeTo(value+startvalue,*args,**kwargs)
+            startvalue = self.get_current_value(readback=False, *args, **kwargs)
+        self._currentChange = self.changeTo(value + startvalue, *args, **kwargs)
+
     def wait(self):
         self._currentChange.wait()
 
     def __repr__(self):
-        return "%s is at: %s"%(self.Id,self.get_current_value())
-
+        return "%s is at: %s" % (self.Id, self.get_current_value())
 
 
 # @default_representation
 @spec_convenience
 class PvEnum:
-    def __init__(self,pvname,name=None):
+    def __init__(self, pvname, name=None):
         self.Id = pvname
         self._pv = PV(pvname)
         self.name = name
@@ -167,15 +164,17 @@ class PvEnum:
             enumname = self.name
         else:
             enumname = self.Id
-        self.PvEnum = IntEnum(enumname,{tstr:n for n,tstr in enumerate(self.enum_strs)})
-        self.alias = Alias(name,channel=self.Id,channeltype='CA')
-    
-    def validate(self,value):
+        self.PvEnum = IntEnum(
+            enumname, {tstr: n for n, tstr in enumerate(self.enum_strs)}
+        )
+        self.alias = Alias(name, channel=self.Id, channeltype="CA")
+
+    def validate(self, value):
         if type(value) is str:
             return self.PvEnum.__members__[value]
         else:
             return self.PvEnum(value)
-    
+
     def get_current_value(self):
         return self.validate(self._pv.get())
 
@@ -183,44 +182,47 @@ class PvEnum:
         """ Adjustable convention"""
         value = self.validate(value)
 
-        changer = lambda value: self._pv.put(value,wait=True)
+        changer = lambda value: self._pv.put(value, wait=True)
         return Changer(
-                target=value,
-                parent=self,
-                changer=changer,
-                hold=hold,
-                stopper=None)
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+
     def __repr__(self):
         if not self.name:
             name = self.Id
         else:
             name = self.name
         cv = self.get_current_value()
-        s = f"{name} (enum) at value: {cv}" +'\n'
-        s+= "{:<5}{:<5}{:<}\n".format("Num.","Sel.","Name")
+        s = f"{name} (enum) at value: {cv}" + "\n"
+        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
         # s+= '_'*40+'\n'
-        for name,val in self.PvEnum.__members__.items():
-            if val==cv:
-                sel = 'x'
+        for name, val in self.PvEnum.__members__.items():
+            if val == cv:
+                sel = "x"
             else:
-                sel = ' '
-            s+= "{:>4}   {}  {}\n".format(val,sel,name)
+                sel = " "
+            s += "{:>4}   {}  {}\n".format(val, sel, name)
         return s
-
-
 
 
 @default_representation
 @spec_convenience
 class AdjustableVirtual:
-    def __init__(self,adjustables,foo_get_current_value,foo_set_target_value,set_current_value=False,name=None):
+    def __init__(
+        self,
+        adjustables,
+        foo_get_current_value,
+        foo_set_target_value,
+        set_current_value=False,
+        name=None,
+    ):
         self.name = name
         self.alias = Alias(name)
         for adj in adjustables:
             try:
                 self.alias.append(adj.alias)
             except:
-                print(f'could not find alias in {adj}')
+                print(f"could not find alias in {adj}")
                 pass
         self._adjustables = adjustables
         self._foo_set_target_value = foo_set_target_value
@@ -228,45 +230,42 @@ class AdjustableVirtual:
         self._set_current_value = set_current_value
         if set_current_value:
             for adj in self._adjustables:
-                if not hasattr(adj,'set_current_value'):
-                    raise Exception(f'No set_current_value method found in {adj}')
+                if not hasattr(adj, "set_current_value"):
+                    raise Exception(f"No set_current_value method found in {adj}")
 
-    def changeTo(self,value,hold=False):
+    def changeTo(self, value, hold=False):
         vals = self._foo_set_target_value(value)
-        if not hasattr(vals,'__iter__'):
+        if not hasattr(vals, "__iter__"):
             vals = (vals,)
+
         def changer(value):
-            self._active_changers = [adj.changeTo(val,hold=False) for val,adj in zip(vals,self._adjustables)]
+            self._active_changers = [
+                adj.changeTo(val, hold=False)
+                for val, adj in zip(vals, self._adjustables)
+            ]
             for tc in self._active_changers:
                 tc.wait()
+
         def stopper():
             for tc in self._active_changers:
                 tc.stop()
-        self._currentChange = Changer(target=value,parent=self,changer=changer,hold=hold,stopper=stopper)
+
+        self._currentChange = Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=stopper
+        )
         return self._currentChange
 
     def get_current_value(self):
-        return self._foo_get_current_value(*[adj.get_current_value() for adj in self._adjustables])
+        return self._foo_get_current_value(
+            *[adj.get_current_value() for adj in self._adjustables]
+        )
 
-    def set_current_value(self,value):
+    def set_current_value(self, value):
         if not self._set_current_value:
-            raise NotImplementedError('There is no value setting implemented for this virtual adjuster!')
+            raise NotImplementedError(
+                "There is no value setting implemented for this virtual adjuster!"
+            )
         else:
             vals = self._foo_set_target_value(value)
-            for adj,val in zip(self._adjustables,vals):
+            for adj, val in zip(self._adjustables, vals):
                 adj.set_current_value(val)
-
-
-
-        
-
-
-        
-
-
-        
-
-
-
-
-

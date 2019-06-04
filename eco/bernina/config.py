@@ -37,8 +37,8 @@ components = [
         "args": config["path_exp"],
         "name": "path_exp",
         "kwargs": {},
-        "lazy": False
-        },
+        "lazy": False,
+    },
     {
         "name": "elog",
         "type": "eco.utilities.elog:Elog",
@@ -146,11 +146,15 @@ components = [
     {
         "name": "xp",
         "args": [],
-        "kwargs": {"Id": "SAROP21-OPPI103","evronoff": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP", "evrsrc": "SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP"},
+        "kwargs": {
+            "Id": "SAROP21-OPPI103",
+            "evronoff": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP",
+            "evrsrc": "SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP",
+        },
         "z_und": 103,
         "desc": "X-ray pulse picker",
         "type": "eco.xoptics.pp:Pulsepick",
-        "lazy": False
+        "lazy": False,
     },
     {
         "name": "monOpt",
@@ -246,7 +250,7 @@ components = [
         "z_und": 142,
         "desc": "General purpose station",
         "type": "eco.endstations.bernina_diffractometers:GPS",
-        "kwargs": {"Id": "SARES22-GPS", "configuration": config['gps_config']},
+        "kwargs": {"Id": "SARES22-GPS", "configuration": config["gps_config"]},
     },
     {
         "args": [],
@@ -254,7 +258,7 @@ components = [
         "z_und": 142,
         "desc": "Xray diffractometer",
         "type": "eco.endstations.bernina_diffractometers:XRD",
-        "kwargs": {"Id": "SARES21-XRD", "configuration": config['xrd_config']},
+        "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
     },
     {
         "args": [],
@@ -264,7 +268,7 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
         "kwargs": {
             "zoomstage_pv": config["xeye"]["zoomstage_pv"],
-            "camera_pv":config["xeye"]["camera_pv"],
+            "camera_pv": config["xeye"]["camera_pv"],
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
         },
@@ -278,8 +282,8 @@ components = [
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
-            "zoomstage_pv": config['cams_qioptiq']['zoomstage_pv'],
-            "camera_pv":config["cams_qioptiq"]["camera_pv"],
+            "zoomstage_pv": config["cams_qioptiq"]["zoomstage_pv"],
+            "camera_pv": config["cams_qioptiq"]["camera_pv"],
         },
     },
     {
@@ -291,7 +295,7 @@ components = [
         "kwargs": {
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11149,
-            "camera_pv":config["cams_sigma"]["camera_pv"],
+            "camera_pv": config["cams_sigma"]["camera_pv"],
         },
     },
     {
@@ -309,7 +313,7 @@ components = [
         "desc": "Experiment laser optics",
         "type": "eco.loptics.bernina_experiment:Laser_Exp",
         "kwargs": {"Id": "SLAAR21-LMOT", "smar_config": config["las_smar_config"]},
-        "lazy":False,
+        "lazy": False,
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],
@@ -334,7 +338,7 @@ components = [
         "type": "eco.acquisition.epics_data:Epicstools",
         "kwargs": {
             "channel_list": Component("epics_channel_list"),
-            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/", 
+            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/",
         },
     },
     {
@@ -345,20 +349,24 @@ components = [
         "kwargs": {
             "instrument": "bernina",
             "api_address": config["daq_address"],
-            "pgroup": config['pgroup'],
-            'pedestal_directory':config['jf_pedestal_directory'],
-            "gain_path": config['jf_gain_path'],
-            "config_default": config['daq_dia_config'],
-            'jf_channels':config['jf_channels'],
-            "default_file_path": None
+            "pgroup": config["pgroup"],
+            "pedestal_directory": config["jf_pedestal_directory"],
+            "gain_path": config["jf_gain_path"],
+            "config_default": config["daq_dia_config"],
+            "jf_channels": config["jf_channels"],
+            "default_file_path": None,
         },
     },
     {
-        "args": [config['checker_PV'], config['checker_thresholds'], config['checker_fractionInThreshold']], #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
+        "args": [
+            config["checker_PV"],
+            config["checker_thresholds"],
+            config["checker_fractionInThreshold"],
+        ],  #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
         "name": "checker",
         "desc": "checker functions for data acquisition",
         "type": "eco.acquisition.checkers:CheckerCA",
-        "kwargs": {}
+        "kwargs": {},
     },
     {
         "args": [],
@@ -391,70 +399,74 @@ components = [
         "name": "lxt",
         "desc": "laser timing with pockels cells and phase shifter",
         "type": "eco.timing.lasertiming:Lxt",
-        "kwargs": {}
+        "kwargs": {},
     },
     {
-        "args": ['SAR-CCTA-ESB'],
+        "args": ["SAR-CCTA-ESB"],
         "name": "seq",
         "desc": "sequencer timing application (CTA)",
         "type": "eco.timing.event_timing:CTA_sequencer",
-        "kwargs": {}
+        "kwargs": {},
     },
     {
-        "args": ['SIN-TIMAST-TMA'],
+        "args": ["SIN-TIMAST-TMA"],
         "name": "event_master",
         "desc": "SwissFEL timing master information",
         "type": "eco.timing.event_timing:MasterEventSystem",
-        "kwargs": {}
+        "kwargs": {},
     },
     {
-        "args": ['SARES20-CVME-01-EVR0'],
+        "args": ["SARES20-CVME-01-EVR0"],
         "name": "evr_bernina",
         "desc": "Bernina event receiver",
         "type": "eco.timing.event_timing:EventReceiver",
         "kwargs": {},
-        "lazy": False
+        "lazy": False,
     },
     {
-        "args": ['/sf/bernina/config/channel_lists/default_channel_list'],
+        "args": ["/sf/bernina/config/channel_lists/default_channel_list"],
         "name": "default_channel_list",
         "desc": "Bernina default channels, used in daq",
         "type": "eco.utilities.config:parseChannelListFile",
         "kwargs": {},
-        "lazy": False
+        "lazy": False,
     },
     {
-        "args": ['/sf/bernina/config/channel_lists/default_channel_list_bs'],
+        "args": ["/sf/bernina/config/channel_lists/default_channel_list_bs"],
         "name": "default_channel_list_bs",
         "desc": "Bernina default bs channels, used by bs_daq",
         "type": "eco.utilities.config:parseChannelListFile",
         "kwargs": {},
-        "lazy": False
+        "lazy": False,
     },
     {
-        "args": ['/sf/bernina/config/channel_lists/channel_list_PSSS_projection'],
+        "args": ["/sf/bernina/config/channel_lists/channel_list_PSSS_projection"],
         "name": "channels_spectrometer_projection",
         "desc": "",
         "type": "eco.utilities.config:parseChannelListFile",
         "kwargs": {},
-        "lazy": False
+        "lazy": False,
     },
     {
         "args": [],
         "name": "bs_daq",
         "desc": "bs daq writer (locally!)",
         "type": "eco.acquisition.bs_data:BStools",
-        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('default_channel_list_bs')}, "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s"},
-        "lazy": False
+        "kwargs": {
+            "default_channel_list": {
+                "bernina_default_channels_bs": Component("default_channel_list_bs")
+            },
+            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
+        },
+        "lazy": False,
     },
 ]
 
 try:
-    components.extend(config['components'])
-    print('Did append additional components!')
+    components.extend(config["components"])
+    print("Did append additional components!")
 except:
-    print('Could not append components from config.')
-
+    print("Could not append components from config.")
 
 
 #### OLD STUFF TO BE TRANSFERRED OR DELETED ####

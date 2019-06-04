@@ -18,12 +18,12 @@ class DIAClient:
         api_address="http://sf-daq-2:10000",
         jf_channels=[],
         n_frames_default=100,
-        config_default = None,
-        default_file_path = None
+        config_default=None,
+        default_file_path=None,
     ):
         if config_default:
-            for cnf,cnfdict in config_default.items():
-                self.__dict__[cnf+'_config'] = cnfdict
+            for cnf, cnfdict in config_default.items():
+                self.__dict__[cnf + "_config"] = cnfdict
         else:
             self.writer_config = {}
             self.backend_config = {}
@@ -48,32 +48,36 @@ class DIAClient:
         if instrument is None:
             print("ERROR: please configure the instrument parameter in DIAClient")
         self.update_config()
-        self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
-        self.jf_channels = list(x for x in self.active_clients if x != 'bsread')
+        self.active_clients = list(self.get_active_clients()["clients_enabled"].keys())
+        self.jf_channels = list(x for x in self.active_clients if x != "bsread")
 
     def update_config(self,):
-        #try:
+        # try:
         self.get_last_pedestal()
-        #except:
+        # except:
         #    print('Did not find a pedestal file in %s'%(self.pedestal_directory))
-        self.writer_config.update({
-            "output_file": "/sf/%s/data/p%d/raw/test_data"
-            % (self.instrument, self.pgroup),
-            "user_id": self.pgroup,
-            "n_frames": self.n_frames,
-            "general/user": str(self.pgroup),
-            "general/process": __name__,
-            "general/created": str(datetime.now()),
-            "general/instrument": self.instrument,
-        })
+        self.writer_config.update(
+            {
+                "output_file": "/sf/%s/data/p%d/raw/test_data"
+                % (self.instrument, self.pgroup),
+                "user_id": self.pgroup,
+                "n_frames": self.n_frames,
+                "general/user": str(self.pgroup),
+                "general/process": __name__,
+                "general/created": str(datetime.now()),
+                "general/instrument": self.instrument,
+            }
+        )
 
-        self.backend_config.update({
-            "n_frames": self.n_frames,
-            "bit_depth": 16,
-            "gain_corrections_filename": self.gain_path, 
-            # FIXME: HARDCODED!!!
-            "is_HG0": False,
-        })
+        self.backend_config.update(
+            {
+                "n_frames": self.n_frames,
+                "bit_depth": 16,
+                "gain_corrections_filename": self.gain_path,
+                # FIXME: HARDCODED!!!
+                "is_HG0": False,
+            }
+        )
 
         if self.pede_file != "":
             self.backend_config["gain_corrections_filename"] = self.gain_path
@@ -89,26 +93,29 @@ class DIAClient:
             self.backend_config["pede_corrections_filename"] = ""
             self.backend_config["activate_corrections_preview"] = False
 
-        self.detector_config.update({
-            "timing": "trigger",
-            # FIXME: HARDCODED
-            "exptime": 0.000010,
-            "cycles": self.n_frames,
-            # "delay"  : 0.001992,
-            "frames": 1,
-            "dr": 16,
-        })
+        self.detector_config.update(
+            {
+                "timing": "trigger",
+                # FIXME: HARDCODED
+                "exptime": 0.000_010,
+                "cycles": self.n_frames,
+                # "delay"  : 0.001992,
+                "frames": 1,
+                "dr": 16,
+            }
+        )
 
-
-        self.bsread_config.update({
-            "output_file": "/sf/%s/data/p%d/raw/test_bsread"
-            % (self.instrument, self.pgroup),
-            "user_id": self.pgroup,
-            "general/user": str(self.pgroup),
-            "general/process": __name__,
-            "general/created": str(datetime.now()),
-            "general/instrument": self.instrument,
-        })
+        self.bsread_config.update(
+            {
+                "output_file": "/sf/%s/data/p%d/raw/test_bsread"
+                % (self.instrument, self.pgroup),
+                "user_id": self.pgroup,
+                "general/user": str(self.pgroup),
+                "general/process": __name__,
+                "general/created": str(datetime.now()),
+                "general/instrument": self.instrument,
+            }
+        )
 
     #        self.default_channels_list = jungfrau_utils.load_default_channel_list()
 
@@ -158,9 +165,10 @@ class DIAClient:
                 sleep(time_interval)
 
     def take_pedestal(
-        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0):
+        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0
+    ):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
-            run as jungfrau_utils_run
+            run as jungfrau_utils_run,
         )
 
         directory = "/sf/%s/data/p%d/raw/JF_pedestals/" % (self.instrument, self.pgroup)
@@ -186,37 +194,60 @@ class DIAClient:
             self.instrument,
         )
         if analyze:
-            pedestals_taken = Path(directory).glob(filename+'*')
-            print('Analysis of pedestal data is outsourced to batch farm, user credentials required.')
-            user = input('enter user name for analysis on sf batch farm: ')
-            commandstr = [f'ssh {user}@sf-cn-1 source /sf/{self.instrument}/bin/anaconda_env']
+            pedestals_taken = Path(directory).glob(filename + "*")
+            print(
+                "Analysis of pedestal data is outsourced to batch farm, user credentials required."
+            )
+            user = input("enter user name for analysis on sf batch farm: ")
+            commandstr = [
+                f"ssh {user}@sf-cn-1 source /sf/{self.instrument}/bin/anaconda_env"
+            ]
             for ped in pedestals_taken:
-                commandstr.append(f'sbatch jungfrau_create_pedestals --filename {ped.as_posix()} --directory {res_dir} --verbosity 4')
-            os.system('\;'.join(commandstr))
+                commandstr.append(
+                    f"sbatch jungfrau_create_pedestals --filename {ped.as_posix()} --directory {res_dir} --verbosity 4"
+                )
+            os.system("\;".join(commandstr))
 
     def get_last_pedestal(self):
-        self.active_clients = list(self.get_active_clients()['clients_enabled'].keys())
-        self.jf_channels = list(x for x in self.active_clients if x != 'bsread')
+        self.active_clients = list(self.get_active_clients()["clients_enabled"].keys())
+        self.jf_channels = list(x for x in self.active_clients if x != "bsread")
         p = Path(self.pedestal_directory)
-        allpedestals = [(datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5')]
+        allpedestals = [
+            (
+                datetime.strptime(
+                    f.stem.split("pedestal_")[1].split(".")[0], "%Y%m%d_%H%M"
+                ),
+                f,
+            )
+            for f in p.glob("*.h5")
+        ]
         completepedestals = []
-        for pedtime in set([tt for tt,tf in allpedestals]):
-            tpedset = [pedtime,[]]
+        for pedtime in set([tt for tt, tf in allpedestals]):
+            tpedset = [pedtime, []]
             try:
                 for channel in self.jf_channels:
-                    tpedset[1].append([tf for tt,tf in allpedestals if (tt==pedtime and channel in tf.as_posix())][0])
-                if len(tpedset[1])==len(self.jf_channels):
+                    tpedset[1].append(
+                        [
+                            tf
+                            for tt, tf in allpedestals
+                            if (tt == pedtime and channel in tf.as_posix())
+                        ][0]
+                    )
+                if len(tpedset[1]) == len(self.jf_channels):
                     completepedestals.append(tpedset)
                 else:
-                    print('Number of pedestal files %4f not number of JFs %4f'%(len(tpedset[1]), len(self.jf_channels)))
+                    print(
+                        "Number of pedestal files %4f not number of JFs %4f"
+                        % (len(tpedset[1]), len(self.jf_channels))
+                    )
                     return
             except:
                 pass
-        if len(completepedestals)>0:
+        if len(completepedestals) > 0:
             f = max(completepedestals)[1][0]
-            #dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
-            self.pede_file = (f.parent / Path(f.stem.split('.')[0])).as_posix()
-    
+            # dtim,f = max((datetime.strptime(f.stem.split('pedestal_')[1].split('.')[0],"%Y%m%d_%H%M"),f) for f in p.glob('*.h5'))
+            self.pede_file = (f.parent / Path(f.stem.split(".")[0])).as_posix()
+
     def start(self):
         self.client.start()
         print("start acquisition")
@@ -296,14 +327,14 @@ class DIAClient:
                 if stat["status"] == "IntegrationStatus.DETECTOR_STOPPED":
                     done = True
                 sleep(0.1)
-        outputfilenames = [f'{file_name_JF}.{tcli.upper()}.h5' for tcli in self.active_clients]
+
+        outputfilenames = [
+            f"{file_name_JF}.{tcli.upper()}.h5" for tcli in self.active_clients
+        ]
 
         return Acquisition(
             acquire=acquire,
-            acquisition_kwargs={
-                "file_names": outputfilenames,
-                "Npulses": Npulses,
-            },
+            acquisition_kwargs={"file_names": outputfilenames, "Npulses": Npulses},
             hold=False,
         )
 

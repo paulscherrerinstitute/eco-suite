@@ -62,6 +62,7 @@ def get_dependencies(inp):
             outp.append(get_dependencies(ta))
     return outp
 
+
 def replaceComponent(inp, dict_all):
     if isinstance(inp, list):
         outp = []
@@ -85,6 +86,7 @@ def replaceComponent(inp, dict_all):
         return inp
     return outp
 
+
 def initFromConfigList(config_list, lazy=False):
     op = {}
     for td in config_list:
@@ -94,7 +96,7 @@ def initFromConfigList(config_list, lazy=False):
         # for tkwk, tkwv in td["kwargs"].items()
         # }
         try:
-            tlazy = td['lazy']
+            tlazy = td["lazy"]
         except:
             tlazy = lazy
         op[td["name"]] = init_device(
@@ -151,7 +153,7 @@ class Configuration:
         return list(self._config.keys())
 
     def __repr__(self):
-        return json.dumps(self._config,indent=4)
+        return json.dumps(self._config, indent=4)
 
 
 def loadConfig(fina):
@@ -161,7 +163,7 @@ def loadConfig(fina):
 
 def writeConfig(fina, obj):
     with open(fina, "w") as f:
-        json.dump(obj, f,indent=4)
+        json.dump(obj, f, indent=4)
 
 
 def parseChannelListFile(fina):
@@ -183,6 +185,7 @@ def append_to_path(*args):
     for targ in args:
         sys.path.append(targ)
 
+
 def prepend_to_path(*args):
     for targ in args:
-        sys.path.insert(0,targ)
+        sys.path.insert(0, targ)

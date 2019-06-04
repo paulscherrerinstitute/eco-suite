@@ -4,6 +4,7 @@ from ..devices_general.detectors import FeDigitizer
 from ..devices_general.adjustable import PvEnum
 from ..aliases import Alias
 
+
 class GasDetector:
     def __init__(self):
         pass
@@ -20,14 +21,14 @@ class SolidTargetDetectorPBPS:
         ch_left=15,
         ch_right=14,
         elog=None,
-        name=None
+        name=None,
     ):
         self.Id = Id
         self.name = name
-        self.diode_x = MotorRecord(Id + ":MOTOR_X1", name='diode_x')
-        self.diode_y = MotorRecord(Id + ":MOTOR_Y1", name='diode_y')
-        self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name='target_pos')
-        self.target = PvEnum(Id + ":PROBE_SP", name='target')
+        self.diode_x = MotorRecord(Id + ":MOTOR_X1", name="diode_x")
+        self.diode_y = MotorRecord(Id + ":MOTOR_Y1", name="diode_y")
+        self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name="target_pos")
+        self.target = PvEnum(Id + ":PROBE_SP", name="target")
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
             self.diode_down = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_down))
@@ -58,7 +59,7 @@ class SolidTargetDetectorPBPS:
             sd += " - Diode down: %i\n" % (sdelf.diode_down.gain.get())
             sd += " - Diode left: %i\n" % (sdelf.diode_left.gain.get())
             sd += " - Diode right: %i\n" % (sdelf.diode_right.gain.get())
-            s+=sd
+            s += sd
         except:
             pass
         return s

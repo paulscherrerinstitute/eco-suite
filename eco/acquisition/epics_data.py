@@ -23,12 +23,9 @@ class Epicstools:
         self._elog = elog
         self.channels = []
 
-
         if not channel_list:
 
-            print(
-                "No channels specified, using all lists instead."
-            )
+            print("No channels specified, using all lists instead.")
             channel_list = []
             for tlist in self._default_channel_list.values():
                 channel_list.extend(tlist)
@@ -37,15 +34,8 @@ class Epicstools:
         for channel in self.channel_list:
             self.channels.append(PV(channel))
 
-    def h5(
-        self,
-        fina=None,
-        channel_list=None,
-        N_pulses=None,
-        queue_size=100,
-    ):
+    def h5(self, fina=None, channel_list=None, N_pulses=None, queue_size=100):
         channel_list = self.channel_list
-
 
         if os.path.isfile(fina):
             print("!!! File %s already exists, would you like to delete it?" % fina)
@@ -83,12 +73,11 @@ class Epicstools:
             if np.mean(counters) == N_pulses - 1:
                 break
 
-
         f = h5py.File(name=fina, mode="w")
         for (n, channel) in enumerate(channel_list):
-            dat = f.create_group(name = channel)
-            dat.create_dataset(name = 'data', data=data[n])
-            dat.create_dataset(name = 'pulse_id', data = np.arange(N_pulses)) 
+            dat = f.create_group(name=channel)
+            dat.create_dataset(name="data", data=data[n])
+            dat.create_dataset(name="pulse_id", data=np.arange(N_pulses))
         return data
 
     def acquire(self, file_name=None, Npulses=100, default_path=True):
@@ -96,9 +85,11 @@ class Epicstools:
         if default_path:
             file_name = self._default_file_path + file_name
         data_dir = Path(os.path.dirname(file_name))
-        
+
         if not data_dir.exists():
-            print(f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it...")
+            print(
+                f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it..."
+            )
             data_dir.mkdir(parents=True)
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
