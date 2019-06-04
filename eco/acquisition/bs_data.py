@@ -154,8 +154,8 @@ class BStools:
     def acquire(self, file_name=None, Npulses=100):
         file_name += ".h5"
         
-        if default_path:
-            fina = self._default_file_path % fina
+        if self._default_file_path:
+            file_name = self._default_file_path % file_name
 
         def acquire():
             self.h5(fina=file_name, N_pulses=Npulses)
