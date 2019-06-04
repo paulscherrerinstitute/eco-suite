@@ -7,7 +7,7 @@ import os
 import data_api as api
 import datetime
 from threading import Thread
-
+from pathlib import Path
 from .utilities import Acquisition
 
 
@@ -62,7 +62,7 @@ class BStools:
         N_pulses=None,
         default_path=True,
         queue_size=100,
-        compact_format=False,
+        compact_format=True,
     ):
         if default_path:
             fina = self._default_file_path % fina
@@ -74,6 +74,12 @@ class BStools:
                 os.remove(fina)
             else:
                 return
+
+        path_as_path = Path(fina)
+
+        if not path_as_path.parent.exists():
+            path_as_path.parent.mkdir()
+
         if not channel_list:
             print(
                 "No channels specified, using all lists instead."
@@ -88,9 +94,17 @@ class BStools:
             message_processor = None
 
         source = dispatcher.request_stream(channel_list)
-        #mode = zmq.SUB # old default, was changes 2019-05-31
-        mode = mflow.PULL
-        receive(source, fina, queue_size=queue_size, mode=mode, n_messages=N_pulses,message_processor=message_processor)
+        mode = zmq.SUB
+        try:
+            print(f"message proc is {message_processor}")
+            receive(source, fina, queue_size=queue_size, mode=mode, n_messages=N_pulses, message_processor=message_processor)
+        except KeyboardInterrupt:
+            # KeyboardInterrupt is thrown if the receiving is terminated via ctrl+c
+            # As we don't want to see a stacktrace then catch this exception
+            pass
+        finally:
+            print('Closing stream')
+            dispatcher.remove_stream(source)
 
     def db(
         self,
