@@ -444,7 +444,7 @@ components = [
         "name": "bs_daq",
         "desc": "bs daq writer (locally!)",
         "type": "eco.acquisition.bs_data:BStools",
-        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('default_channel_list_bs')}},
+        "kwargs": {'default_channel_list':{'bernina_default_channels_bs':Component('default_channel_list_bs')}, "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s"},
         "lazy": False
     },
 ]
