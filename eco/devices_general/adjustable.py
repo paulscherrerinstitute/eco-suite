@@ -72,8 +72,7 @@ class ValueInRange:
 
     def get_str(self,value):
         frac = (value-self.start_value)/(self.end_value-self.start_value)
-        print(frac)
-        return f"{self.start_value:{self._fmt}}" + self.get_unit_str() + self.bar_str(frac)+f"{self.end_value:{self._fmt}}"
+        return f"{self.start_value:{self._fmt}}"+ self.get_unit_str() + "|" + self.bar_str(frac) + "|" + f"{self.end_value:{self._fmt}}" + self.get_unit_str()
 
     def get_unit_str(self):
         if not self.unit:
@@ -87,7 +86,7 @@ class ValueInRange:
         if 0<frac and frac<=1:
             whole = int(self.bar_width//(1/frac))
             part  = int((frac*self.bar_width-whole)//(1/(len(blocks)-1)))
-            return whole*blocks[-1]+blocks[part]+(self.bar_width-whole-1)*blocks[0]
+            return colorama.Fore.GREEN+whole*blocks[-1]+blocks[part]+(self.bar_width-whole-1)*blocks[0]+colorama.Fore.RESET
         elif frac==0:
             return self.bar_width*blocks[0]
         elif frac<0:

@@ -22,7 +22,7 @@ class AttenuatorAramis:
             self.__dict__[f"motor_{n+1}"] = mot
             self.alias.append(mot.alias)
             if set_limits:
-                mot.set_limits(set_limits)
+                mot.set_limits(*set_limits)
 
     def __str__(self):
         pass

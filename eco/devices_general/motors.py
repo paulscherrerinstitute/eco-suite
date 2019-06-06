@@ -4,7 +4,8 @@ from threading import Thread
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
-from .adjustable import spec_convenience
+from .adjustable import spec_convenience,ValueInRange
+import colorama
 
 _MotorRocordStandardProperties = {}
 _posTypes = ["user", "dial", "raw"]
@@ -128,17 +129,20 @@ class MotorRecord:
         """ 0: moving 1: move done"""
         return PV(str(self.Id + ".DMOV")).value
 
-    def set_limits(self, values, posType="user", relative_to_present=False):
-        """ Adjustable convention"""
+    def set_limits(self, low_limit, high_limit, posType="user", relative_to_present=False):
+        """ 
+        set limits. usage: set_limits(low_limit, high_limit)
+        
+        """
         _keywordChecker([("posType", posType, _posTypes)])
         ll_name, hl_name = "LLM", "HLM"
         if posType is "dial":
             ll_name, hl_name = "DLLM", "DHLM"
         if relative_to_present:
             v = self.get_current_value(posType=posType)
-            values = [v + values[0], v + values[1]]
-        self._motor.put(ll_name, values[0])
-        self._motor.put(hl_name, values[1])
+            values = [v + low_limit, v + high_limit]
+        self._motor.put(ll_name, low_limit)
+        self._motor.put(hl_name, high_limit)
 
     def get_limits(self, posType="user"):
         """ Adjustable convention"""
@@ -163,7 +167,15 @@ class MotorRecord:
         return "Motor is at %s" % self.wm()
 
     def __repr__(self):
-        return self.__str__()
+        #""" return short info for the current motor"""
+        s =  f"{self.name}"
+        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_current_value(posType='dial'):1.6g})"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
+        s +=  f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
+        s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
+        s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
+        return s
 
     def __call__(self, value):
         self._currentChange = self.changeTo(value)
