@@ -4,6 +4,7 @@ from threading import Thread
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
+from .adjustable import spec_convenience
 
 _MotorRocordStandardProperties = {}
 _posTypes = ["user", "dial", "raw"]
@@ -31,7 +32,7 @@ def _keywordChecker(kw_key_list_tups):
     for tkw, tkey, tlist in kw_key_list_tups:
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
-
+@spec_convenience
 class MotorRecord:
     def __init__(
         self,
@@ -156,26 +157,6 @@ class MotorRecord:
         cmd.append("motorx_more.ui")
         # os.system(' '.join(cmd))
         return subprocess.Popen(" ".join(cmd), shell=True)
-
-    # epics motor record specific methods
-
-    # spec-inspired convenience methods
-    def mv(self, value):
-        self._currentChange = self.changeTo(value)
-
-    def wm(self, *args, **kwargs):
-        return self.get_current_value(*args, **kwargs)
-
-    def mvr(self, value, *args, **kwargs):
-
-        if self.get_moveDone == 1:
-            startvalue = self.get_current_value(readback=True, *args, **kwargs)
-        else:
-            startvalue = self.get_current_value(readback=False, *args, **kwargs)
-        self._currentChange = self.changeTo(value + startvalue, *args, **kwargs)
-
-    def wait(self):
-        self._currentChange.wait()
 
     # return string with motor value as variable representation
     def __str__(self):

@@ -4,6 +4,7 @@ from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
 from enum import IntEnum, auto
+import colorama
 
 
 # wrappers for adjustables >>>>>>>>>>>
@@ -36,11 +37,9 @@ def spec_convenience(Adj):
         return self.get_current_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
-        if hasattr(self, "_currentChange"):
-            if not self._currentChange.status() == "done":
+        if hasattr(self, "_currentChange") and self._currentChange and not (self._currentChange.status() == "done"):
                 startvalue = self._currentChange.target
-        elif hasattr(self, "get_moveDone"):
-            if self.get_moveDone == 1:
+        elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
                 startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
             startvalue = self.get_current_value(*args, **kwargs)
@@ -61,6 +60,62 @@ def spec_convenience(Adj):
 
     return Adj
 
+
+class ValueInRange:
+    def __init__(self,start_value,end_value,bar_width=30,unit='', fmt = "1.5g"):
+        self.start_value = start_value
+        self.end_value = end_value
+        self.unit = unit
+        self.bar_width = bar_width
+        self._blocks = ' ▏▎▍▌▋▊▉█'
+        self._fmt = fmt
+
+    def get_str(self,value):
+        frac = (value-self.start_value)/(self.end_value-self.start_value)
+        print(frac)
+        return f"{self.start_value:{self._fmt}}" + self.get_unit_str() + self.bar_str(frac)+f"{self.end_value:{self._fmt}}"
+
+    def get_unit_str(self):
+        if not self.unit:
+            return ''
+        else:
+            return ' '+self.unit
+
+
+    def bar_str(self,frac):
+        blocks = self._blocks
+        if 0<frac and frac<=1:
+            whole = int(self.bar_width//(1/frac))
+            part  = int((frac*self.bar_width-whole)//(1/(len(blocks)-1)))
+            return whole*blocks[-1]+blocks[part]+(self.bar_width-whole-1)*blocks[0]
+        elif frac==0:
+            return self.bar_width*blocks[0]
+        elif frac<0:
+            return colorama.Fore.RED+'<'*self.bar_width+colorama.Fore.RESET
+        elif frac>1:
+            return colorama.Fore.RED+'>'*self.bar_width+colorama.Fore.RESET
+
+
+
+def update_moves(Adj):
+    # spec-inspired convenience methods
+
+    def mv(self, value):
+        self._currentChange = self.changeTo(value)
+        return self._currentChange
+
+    def wm(self, *args, **kwargs):
+        return self.get_current_value(*args, **kwargs)
+
+    def mvr(self, value, *args, **kwargs):
+        if hasattr(self, "_currentChange") and self._currentChange and not (self._currentChange.status() == "done"):
+                startvalue = self._currentChange.target
+        elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
+                startvalue = self.get_current_value(readback=True, *args, **kwargs)
+        else:
+            startvalue = self.get_current_value(*args, **kwargs)
+        self._currentChange = self.changeTo(value + startvalue, *args, **kwargs)
+        return self._currentChange
 
 # wrappers for adjustables <<<<<<<<<<<
 
