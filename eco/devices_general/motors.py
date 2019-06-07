@@ -4,7 +4,7 @@ from threading import Thread
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
-from .adjustable import spec_convenience,ValueInRange,update_changes,AdjustableError
+from .adjustable import spec_convenience, ValueInRange, update_changes, AdjustableError
 import colorama
 
 _MotorRocordStandardProperties = {}
@@ -33,6 +33,7 @@ def _keywordChecker(kw_key_list_tups):
     for tkw, tkey, tlist in kw_key_list_tups:
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
+
 @spec_convenience
 @update_changes
 class MotorRecord:
@@ -53,7 +54,6 @@ class MotorRecord:
                 Alias(an, channel=".".join([pvname, af]), channeltype="CA")
             )
         self._currentChange = None
-
 
     # Conventional methods and properties for all Adjustable objects
     def changeTo(self, value, hold=False, check=True):
@@ -105,7 +105,7 @@ class MotorRecord:
             return self._motor.set_position(value, dial=True)
         if posType == "raw":
             return self._motor.set_position(value, raw=True)
-    
+
     def get_precision(self):
         """ Adjustable convention"""
         pass
@@ -133,7 +133,9 @@ class MotorRecord:
         """ 0: moving 1: move done"""
         return PV(str(self.Id + ".DMOV")).value
 
-    def set_limits(self, low_limit, high_limit, posType="user", relative_to_present=False):
+    def set_limits(
+        self, low_limit, high_limit, posType="user", relative_to_present=False
+    ):
         """ 
         set limits. usage: set_limits(low_limit, high_limit)
         
@@ -148,14 +150,14 @@ class MotorRecord:
         self._motor.put(ll_name, low_limit)
         self._motor.put(hl_name, high_limit)
 
-    def add_value_callback(self,callback,index=None):
-        return self._motor.get_pv('RBV').add_callback(callback=callback,index=index)
-        
-    def clear_value_callback(self,index=None):
+    def add_value_callback(self, callback, index=None):
+        return self._motor.get_pv("RBV").add_callback(callback=callback, index=index)
+
+    def clear_value_callback(self, index=None):
         if index:
-            self._motor.get_pv('RBV').remove_callback(index)
+            self._motor.get_pv("RBV").remove_callback(index)
         else:
-            self._motor.get_pv('RBV').clear_callbacks()
+            self._motor.get_pv("RBV").clear_callbacks()
 
     def get_limits(self, posType="user"):
         """ Adjustable convention"""
@@ -180,11 +182,11 @@ class MotorRecord:
         return "Motor is at %s" % self.wm()
 
     def __repr__(self):
-        #""" return short info for the current motor"""
-        s =  f"{self.name}"
+        # """ return short info for the current motor"""
+        s = f"{self.name}"
         s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_current_value(posType='dial'):1.6g})"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
-        s +=  f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
+        s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
         s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
         s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
