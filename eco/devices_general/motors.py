@@ -4,7 +4,7 @@ from threading import Thread
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
-from .adjustable import spec_convenience,ValueInRange
+from .adjustable import spec_convenience,ValueInRange,update_changes,AdjustableError
 import colorama
 
 _MotorRocordStandardProperties = {}
@@ -34,6 +34,7 @@ def _keywordChecker(kw_key_list_tups):
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
 @spec_convenience
+@update_changes
 class MotorRecord:
     def __init__(
         self,
@@ -53,6 +54,7 @@ class MotorRecord:
             )
         self._currentChange = None
 
+
     # Conventional methods and properties for all Adjustable objects
     def changeTo(self, value, hold=False, check=True):
         """ Adjustable convention"""
@@ -60,7 +62,9 @@ class MotorRecord:
         def changer(value):
             self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
             self._status_message = _status_messages[self._status]
-            if not self._status == 0:
+            if self._status < 0:
+                raise AdjustableError(self._status_message)
+            elif self._status == 0:
                 print(self._status_message)
 
         #        changer = lambda value: self._motor.move(\
@@ -101,7 +105,7 @@ class MotorRecord:
             return self._motor.set_position(value, dial=True)
         if posType == "raw":
             return self._motor.set_position(value, raw=True)
-
+    
     def get_precision(self):
         """ Adjustable convention"""
         pass
@@ -143,6 +147,15 @@ class MotorRecord:
             values = [v + low_limit, v + high_limit]
         self._motor.put(ll_name, low_limit)
         self._motor.put(hl_name, high_limit)
+
+    def add_value_callback(self,callback,index=None):
+        return self._motor.get_pv('RBV').add_callback(callback=callback,index=index)
+        
+    def clear_value_callback(self,index=None):
+        if index:
+            self._motor.get_pv('RBV').remove_callback(index)
+        else:
+            self._motor.get_pv('RBV').clear_callbacks()
 
     def get_limits(self, posType="user"):
         """ Adjustable convention"""

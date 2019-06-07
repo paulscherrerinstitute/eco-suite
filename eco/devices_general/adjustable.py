@@ -7,6 +7,11 @@ from enum import IntEnum, auto
 import colorama
 
 
+# exceptions
+class AdjustableError(Exception):
+    pass
+
+
 # wrappers for adjustables >>>>>>>>>>>
 def default_representation(Obj):
     def get_name(Obj):
@@ -16,7 +21,7 @@ def default_representation(Obj):
             return Obj.Id
 
     def get_repr(Obj):
-        return f"{Obj._get_name()} is at: {repr(Obj.get_current_value())}"
+        return f"{Obj._get_name()} is at: {Obj.get_current_value()}"
         if Obj.name:
             return Obj.name
         else:
@@ -49,14 +54,28 @@ def spec_convenience(Adj):
     def wait(self):
         self._currentChange.wait()
 
-    def call(self, value):
-        self._currentChange = self.changeTo(value)
+    def call(self, value=None):
+        if not value:
+            self._currentChange = self.changeTo(value)
+            return self._currentChange
+        else:
+            return self.get_current_value()
+
+    def umv(self,*args,**kwargs):
+        self.update_change(*args,**kwargs)
+
+    def umvr(self,*args,**kwargs):
+        self.update_change_relative(*args,**kwargs)
 
     Adj.mv = mv
     Adj.wm = wm
     Adj.mvr = mvr
     Adj.wait = wait
     Adj.__call__ = call
+    if hasattr(Adj,'update_change'):
+        Adj.umv = umv
+        Adj.umvr = umvr
+
 
     return Adj
 
@@ -71,7 +90,10 @@ class ValueInRange:
         self._fmt = fmt
 
     def get_str(self,value):
-        frac = (value-self.start_value)/(self.end_value-self.start_value)
+        if self.start_value == self.end_value:
+            frac = 1
+        else:
+            frac = (value-self.start_value)/(self.end_value-self.start_value)
         return f"{self.start_value:{self._fmt}}"+ self.get_unit_str() + "|" + self.bar_str(frac) + "|" + f"{self.end_value:{self._fmt}}" + self.get_unit_str()
 
     def get_unit_str(self):
@@ -96,25 +118,42 @@ class ValueInRange:
 
 
 
-def update_moves(Adj):
-    # spec-inspired convenience methods
+def update_changes(Adj):
+    
+    def get_position_str(start,end,value):
+        s = ValueInRange(start,end,bar_width=30,unit='', fmt = "1.5g").get_str(value)
+        return colorama.Style.BRIGHT+ f"{value:1.5}".rjust(10)+colorama.Style.RESET_ALL+'  '+s+2*"\t"
 
-    def mv(self, value):
-        self._currentChange = self.changeTo(value)
+    def update_change(self, value):
+        start = self.get_current_value()
+        print(f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}\n")
+        print(get_position_str(start,value,start),end='\r')
+        try:
+            def cbfoo(**kwargs):print(get_position_str(start,value,kwargs['value']),end='\r')
+            cb_id = self.add_value_callback(cbfoo)
+            self._currentChange = self.changeTo(value)
+            self._currentChange.wait()
+        except KeyboardInterrupt:
+            self._currentChange.stop()
+            print(f'\nAborted change at (~) {self.get_current_value():1.5g}')
+        finally:
+            self.clear_value_callback(cb_id)
         return self._currentChange
 
-    def wm(self, *args, **kwargs):
-        return self.get_current_value(*args, **kwargs)
 
-    def mvr(self, value, *args, **kwargs):
+    def update_change_relative(self, value, *args, **kwargs):
         if hasattr(self, "_currentChange") and self._currentChange and not (self._currentChange.status() == "done"):
                 startvalue = self._currentChange.target
         elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
                 startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
             startvalue = self.get_current_value(*args, **kwargs)
-        self._currentChange = self.changeTo(value + startvalue, *args, **kwargs)
+        self._currentChange = self.update_change(value + startvalue, *args, **kwargs)
         return self._currentChange
+    Adj.update_change = update_change
+    Adj.update_change_relative = update_change_relative
+
+    return Adj
 
 # wrappers for adjustables <<<<<<<<<<<
 
