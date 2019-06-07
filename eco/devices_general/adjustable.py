@@ -59,7 +59,7 @@ def spec_convenience(Adj):
         self._currentChange.wait()
 
     def call(self, value=None):
-        if not value:
+        if value:
             self._currentChange = self.changeTo(value)
             return self._currentChange
         else:
