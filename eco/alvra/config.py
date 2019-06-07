@@ -14,7 +14,7 @@ aliases = {
         "alias": "slitUnd",
         "z_und": 44,
         "desc": "Slit after Undulator",
-        "eco_type": "xoptics.slits.SlitFourBlades",
+        "eco_type": "xoptics.slits.SlitFourBlades_old",
     },
     "SARFE10-PBIG050": {
         "alias": "gasMon",
@@ -76,7 +76,7 @@ aliases = {
         "alias": "slitSwitch",
         "z_und": 104,
         "desc": "Slit in Optics hutch after Photon switchyard and before Alvra mono",
-        "eco_type": "xoptics.slits.SlitBlades",
+        "eco_type": "xoptics.slits.SlitBlades_old",
     },
     "SAROP11-ODCM105": {
         "alias": "mono",
@@ -157,7 +157,7 @@ aliases = {
         "alias": "slitAttExp",
         "z_und": 120,
         "desc": "Slits behind attenuator",
-        "eco_type": "xoptics.slits.SlitPosWidth",
+        "eco_type": "xoptics.slits.SlitPosWidth_old",
     },
     "SAROP11-OLAS120": {
         "alias": "refLaser",

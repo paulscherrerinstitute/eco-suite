@@ -56,7 +56,7 @@ components = [
     },
     {
         "name": "slitUnd",
-        "type": "eco.xoptics.slits:SlitFourBlades",
+        "type": "eco.xoptics.slits:SlitFourBlades_old",
         "args": ["SARFE10-OAPU044"],
         "kwargs": {},
         "desc": "Slit after Undulator",
@@ -95,6 +95,14 @@ components = [
     },
     {
         "name": "slitSwitch",
+        "z_und": 92,
+        "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
+        "type": "eco.xoptics.slits:SlitBlades_old",
+        "args": ["SAROP21-OAPU092"],
+        "kwargs": {},
+    },
+    {
+        "name": "slitSwitch_test",
         "z_und": 92,
         "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
         "type": "eco.xoptics.slits:SlitBlades",
@@ -194,7 +202,7 @@ components = [
         "kwargs": {},
         "z_und": 136,
         "desc": "Slits behind attenuator",
-        "type": "eco.xoptics.slits:SlitPosWidth",
+        "type": "eco.xoptics.slits:SlitPosWidth_old",
     },
     {
         "name": "monAtt",
@@ -242,7 +250,7 @@ components = [
         "kwargs": {"Id": "SARES20"},
         "z_und": 141,
         "desc": "Slits behind Kb",
-        "type": "eco.xoptics.slits:SlitBladesJJ",
+        "type": "eco.xoptics.slits:SlitBladesJJ_old",
     },
     {
         "args": [],

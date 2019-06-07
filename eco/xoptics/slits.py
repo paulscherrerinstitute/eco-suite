@@ -1,7 +1,54 @@
 from ..devices_general.motors import MotorRecord
-
+from ..devices_general.adjustable import AdjustableVirtual
+from ..aliases import Alias,append_object_to_object
 
 class SlitBlades:
+    def __init__(self, pvname, name=None, elog=None):
+        self.name = name
+        self.Id = pvname
+        self.alias = Alias(name)
+        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_X1",name='right')
+        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_X2",name='left')
+        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_Y1",name='down')
+        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_Y2",name='up')
+    
+        def getgap(xn,xp): return xp-xn
+        def getpos(xn,xp): return (xn+xp)/2
+        def setwidth(x):
+            return tuple([tx + self.hpos.get_current_value() for tx in [-x/2,x/2]])
+        def setheight(x):
+            return tuple([tx + self.vpos.get_current_value() for tx in [-x/2,x/2]])
+        def sethpos(x):
+            return tuple([tx + self.hgap.get_current_value() for tx in [-x/2,x/2]])
+        def setvpos(x):
+            return tuple([tx + self.vgap.get_current_value() for tw in [-x/2,x/2]])
+
+        append_object_to_object(self,AdjustableVirtual,[self.right,self.left],getgap,setwidth,set_current_value=True,name='hgap')
+        append_object_to_object(self,AdjustableVirtual,[self.down,self.up],getgap,setheight,set_current_value=True,name='vgap')
+        append_object_to_object(self,AdjustableVirtual,[self.right,self.left],getpos,sethpos,set_current_value=True,name='hpos')
+        append_object_to_object(self,AdjustableVirtual,[self.down,self.up],getpos,setvpos,set_current_value=True,name='vpos')
+
+    def  __call__(self,*args):
+        if len(args)==0:
+            return self.hpos.get_current_value(),self.vpos.get_current_value(),self.hgap.get_current_value(),self.vgap.get_current_value()
+        elif len(args)==1:
+            self.hgap.changeTo(args[0])
+            self.vgap.changeTo(args[0])
+        elif len(args)==2:
+            self.hgap.changeTo(args[0])
+            self.vgap.changeTo(args[1])
+        elif len(args)==4:
+            self.hpos.changeTo(args[0])
+            self.vpos.changeTo(args[1])
+            self.hgap.changeTo(args[2])
+            self.vgap.changeTo(args[3])
+        else:
+            raise Exception('wrong number of input arguments!')
+
+
+
+
+class SlitBlades_old:
     def __init__(self, Id, name=None, elog=None):
         self.Id = Id
         self.name = name
@@ -56,7 +103,7 @@ class SlitBlades:
         return "\n".join((string1, string2))
 
 
-class SlitBladesJJ:
+class SlitBladesJJ_old:
     def __init__(self, Id, name=None, elog=None):
         self.Id = Id
         self.name = name
@@ -111,7 +158,7 @@ class SlitBladesJJ:
         return "\n".join((string1, string2))
 
 
-class SlitFourBlades:
+class SlitFourBlades_old:
     def __init__(self, Id, name=None, elog=None):
         self.Id = Id
         self.name = name
@@ -181,7 +228,7 @@ class SlitFourBlades:
         return self.__str__()
 
 
-class SlitPosWidth:
+class SlitPosWidth_old:
     def __init__(self, Id, name=None, elog=None):
         self.Id = Id
         self.name = name
