@@ -22,8 +22,8 @@ _status_messages = {
     -4: "move-with-wait finished, soft limit violation seen",
     -3: "move-with-wait finished, hard limit violation seen",
     0: "move-with-wait finish OK.",
-    0: "move-without-wait executed, not confirmed",
-    1: "move-without-wait executed, move confirmed",
+    1: "move-without-wait executed, not confirmed",
+    2: "move-without-wait executed, move confirmed",
     3: "move-without-wait finished, hard limit violation seen",
     4: "move-without-wait finished, soft limit violation seen",
 }
@@ -64,7 +64,7 @@ class MotorRecord:
             self._status_message = _status_messages[self._status]
             if self._status < 0:
                 raise AdjustableError(self._status_message)
-            elif self._status == 0:
+            elif self._status > 0:
                 print("\n")
                 print(self._status_message)
 
