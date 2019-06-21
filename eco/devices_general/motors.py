@@ -147,7 +147,8 @@ class MotorRecord:
             ll_name, hl_name = "DLLM", "DHLM"
         if relative_to_present:
             v = self.get_current_value(posType=posType)
-            values = [v + low_limit, v + high_limit]
+            low_limit = v + low_limit
+            high_limit = v + high_limit
         self._motor.put(ll_name, low_limit)
         self._motor.put(hl_name, high_limit)
 
