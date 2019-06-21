@@ -68,7 +68,8 @@ class BStools:
         queue_size=100,
         compact_format=False,
     ):
-
+        N_pulses *=1
+        N_pulses+=200
         if os.path.isfile(fina):
             print("!!! File %s already exists, would you like to delete it?" % fina)
             if input("(y/n)") == "y":
@@ -162,7 +163,7 @@ class BStools:
 
     def acquire(self, file_name=None, Npulses=100):
         file_name += ".h5"
-
+        Npulses +=100
         if self._default_file_path:
             file_name = self._default_file_path % file_name
 
