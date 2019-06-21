@@ -15,7 +15,7 @@ class AttenuatorAramis:
         self.name = name
         self.alias = Alias(name)
         self.motors = [
-            MotorRecord(f"SAROP21-OATT135:MOTOR_{n+1}", name=f"motor{n+1}")
+            MotorRecord(f"{self.Id}:MOTOR_{n+1}", name=f"motor{n+1}")
             for n in range(6)
         ]
         for n, mot in enumerate(self.motors):
