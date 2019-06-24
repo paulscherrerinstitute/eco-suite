@@ -5,6 +5,7 @@ from .utilities import Changer
 from ..aliases import Alias
 from enum import IntEnum, auto
 import colorama
+import time
 
 
 # exceptions
