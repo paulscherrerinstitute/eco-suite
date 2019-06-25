@@ -1,5 +1,6 @@
 from ..devices_general.motors import MotorRecord
 from epics import PV
+from ..aliases import Alias, append_object_to_object
 
 
 class RefLaser_Aramis:

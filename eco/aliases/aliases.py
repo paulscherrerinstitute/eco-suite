@@ -1,14 +1,17 @@
 import os
 from pathlib import Path
 import json
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Alias:
-    def __init__(self, alias, channel=None, channeltype=None):
+    def __init__(self, alias, channel=None, channeltype=None, parent=None):
         self.alias = alias
         self.channel = channel
         self.channeltype = channeltype
         self.children = []
+        self.parent = parent
 
     def append(self, subalias):
         assert type(subalias) is Alias, "You can only append aliases to aliases!"
@@ -16,6 +19,10 @@ class Alias:
             subalias.alias in [tc.alias for tc in self.children]
         ), f"Alias {subalias.alias} exists already!"
         self.children.append(subalias)
+        if subalias.parent is None:
+            subalias.parent = self
+        else:
+            logger.warning('parent of alias has been defined already')
 
     def get_all(self, joiner="."):
         aa = []
@@ -38,6 +45,18 @@ class Alias:
                         }
                     )
         return aa
+
+    def get_full_name(self,joiner="."):
+        name = [self.alias]
+        parent = self.parent
+        while not parent == None:
+            name.append(parent.alias)
+            parent = parent.__dict__.get('parent',None)
+        if joiner:
+            return joiner.join(reversed(name))
+        else:
+            return name
+
 
 
 #    def add_children(self, *args):
