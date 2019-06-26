@@ -20,7 +20,7 @@ class Changer:
         if self._thread.ident is None:
             return "waiting"
         else:
-            if self._thread.isAlive:
+            if self._thread.is_alive():
                 return "changing"
             else:
                 return "done"
