@@ -48,22 +48,31 @@ class AttenuatorAramis:
         self.updateE(energy)
         PV(self.Id + ":3RD_HARM_SP").put(0)
         PV(self.Id + ":TRANS_SP").put(value)
-        pass
 
     def set_transmission_third_harmonic(self, value, energy=None):
         self.updateE(energy)
         PV(self.Id + ":3RD_HARM_SP").put(1)
         PV(self.Id + ":TRANS_SP").put(value)
-        pass
 
     def setE(self):
         pass
 
-    def get_transmission(self):
+    def get_transmission(self,verbose=True):
         tFun = PV(self.Id + ":TRANS_RB").value
         tTHG = PV(self.Id + ":TRANS3EDHARM_RB").value
-        print("Transmission Fundamental: %s THG: %s" % (tFun, tTHG))
+        if verbose:
+            print("Transmission Fundamental: %s THG: %s" % (tFun, tTHG))
         return tFun, tTHG
+
+    def get_current_value(self,*args,**kwargs):
+        return self.get_transmission(*args,verbose=False,**kwargs)[0]
+
+    def changeTo(self,value,sleeptime=10,hold=False):
+        def changer(value):
+            self.set_transmission(value)
+            time.sleep(sleeptime)
+        return Changer(target=value, parent=self, changer=changer, hold=hold)
+
 
     def get_status(self):
         s_str = self._pv_status_str.get(as_string=True)

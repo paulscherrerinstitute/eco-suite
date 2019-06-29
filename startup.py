@@ -78,6 +78,7 @@ def main():
 
             shell = InteractiveShellEmbed()
             shell.enable_matplotlib()
+            shell.enable_pylab()
             shell()
         else:
             from IPython import start_ipython

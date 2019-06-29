@@ -429,7 +429,7 @@ components = [
         "desc": "Bernina event receiver",
         "type": "eco.timing.event_timing:EventReceiver",
         "kwargs": {},
-        "lazy": False,
+        "lazy": True,
     },
     {
         "args": ["/sf/bernina/config/channel_lists/default_channel_list"],

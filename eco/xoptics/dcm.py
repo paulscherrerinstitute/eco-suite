@@ -6,7 +6,7 @@ import numpy as np
 
 
 class Double_Crystal_Mono:
-    def __init__(self, Id):
+    def __init__(self, Id, name=None):
         self.Id = Id
         self.theta = MotorRecord(Id + ":RX12")
         self.x = MotorRecord(Id + ":TX12")
@@ -14,7 +14,7 @@ class Double_Crystal_Mono:
         self.roll1 = MotorRecord(Id + ":RZ1")
         self.roll2 = MotorRecord(Id + ":RZ2")
         self.pitch2 = MotorRecord(Id + ":RX2")
-
+        self.name = name
         self.energy_rbk = PV(Id + ":ENERGY")
         self.energy_sp = PV(Id + ":ENERGY_SP")
         self.moving = PV(Id + ":MOVING")
