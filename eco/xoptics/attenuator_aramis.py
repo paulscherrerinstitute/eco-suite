@@ -1,6 +1,7 @@
 from ..devices_general.motors import MotorRecord
 from epics import PV
 from time import sleep
+from ..devices_general.utilities import Changer
 from ..aliases import Alias
 from ..devices_general.adjustable import PvEnum
 
