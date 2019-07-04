@@ -124,7 +124,7 @@ class Laser_Exp:
 
         # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions.
         self.delay_lxtt = DelayCompensation(
-            [self.delay_glob, self.delay_tt], [1, -1], name="delay_lxtt"
+            [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
         )
         self.alias.append(self.delay_lxtt.alias)
 

@@ -7,7 +7,7 @@ from ..devices_general.adjustable import PvEnum
 
 
 class AttenuatorAramis:
-    def __init__(self, Id, E_min=1500, sleeptime=1, name=None, set_limits=[-52, 2]):
+    def __init__(self, Id, E_min=1500, sleeptime=1, name=None, set_limits=[-52, 2],pulse_picker=None):
         self.Id = Id
         self.E_min = E_min
         self._pv_status_str = PV(self.Id + ":MOT2TRANS.VALD")
@@ -15,6 +15,7 @@ class AttenuatorAramis:
         self._sleeptime = sleeptime
         self.name = name
         self.alias = Alias(name)
+        self.pulse_picker = pulse_picker
         self.motors = [
             MotorRecord(f"{self.Id}:MOTOR_{n+1}", name=f"motor{n+1}")
             for n in range(6)
@@ -71,7 +72,9 @@ class AttenuatorAramis:
     def changeTo(self,value,sleeptime=10,hold=False):
         def changer(value):
             self.set_transmission(value)
-            time.sleep(sleeptime)
+            sleep(sleeptime)
+            if self.pulse_picker:
+                self.pulse_picker.open()
         return Changer(target=value, parent=self, changer=changer, hold=hold)
 
 

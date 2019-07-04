@@ -183,7 +183,7 @@ components = [
     {
         "name": "att",
         "args": ["SAROP21-OATT135"],
-        "kwargs": {},
+        "kwargs": {'pulse_picker':Component('xp')},
         "z_und": 135,
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",

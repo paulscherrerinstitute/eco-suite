@@ -4,6 +4,9 @@ from ..acquisition.utilities import Acquisition
 from detector_integration_api import DetectorIntegrationClient
 import os
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DIAClient:
