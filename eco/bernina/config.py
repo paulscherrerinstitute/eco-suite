@@ -197,6 +197,15 @@ components = [
         "type": "eco.xoptics.reflaser:RefLaser_Aramis",
     },
     {
+        "name": "slitAtt_test",
+        "args": ["SAROP21-OAPU136"],
+        "kwargs": {},
+        "z_und": 136,
+        "desc": "Slits behind attenuator",
+        "type": "eco.xoptics.slits:SlitPosWidth",
+        "lazy":False,
+    },
+    {
         "name": "slitAtt",
         "args": ["SAROP21-OAPU136"],
         "kwargs": {},
@@ -244,14 +253,14 @@ components = [
         "type": "eco.xoptics.KBhor:KBhor",
         "kwargs": {},
     },
-    {
-        "name": "slitKb",
-        "args": [],
-        "kwargs": {"Id": "SARES20"},
-        "z_und": 141,
-        "desc": "Slits behind Kb",
-        "type": "eco.xoptics.slits:SlitBladesJJ_old",
-    },
+    # {
+        # "name": "slitKb",
+        # "args": [],
+        # "kwargs": {"Id": "SARES20"},
+        # "z_und": 141,
+        # "desc": "Slits behind Kb",
+        # "type": "eco.xoptics.slits:SlitBladesJJ_old",
+    # },
     {
         "args": [],
         "name": "gps",

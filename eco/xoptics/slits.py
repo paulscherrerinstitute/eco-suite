@@ -1,6 +1,7 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.adjustable import AdjustableVirtual
 from ..aliases import Alias, append_object_to_object
+from functools import partial
 
 
 class SlitBlades:
@@ -100,7 +101,7 @@ class SlitPosWidth:
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_W", name="hgap")
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_H", name="vgap")
 
-        def getup(pos,gap):
+        def getblade(pos,gap,direction=1):
             return pos + direction*gap/2
 
         def setblade(bde,pos,gap,direction=1):
@@ -127,38 +128,38 @@ class SlitPosWidth:
         append_object_to_object(
             self,
             AdjustableVirtual,
-            [self.right, self.left],
-            getgap,
-            setwidth,
+            [self.vpos, self.vgap],
+            partial(getblade,direction=1),
+            partial(setblade,direction=1),
             set_current_value=True,
-            name="hgap",
+            name="up"
         )
         append_object_to_object(
             self,
             AdjustableVirtual,
-            [self.down, self.up],
-            getgap,
-            setheight,
+            [self.vpos, self.vgap],
+            partial(getblade,direction=-1),
+            partial(setblade,direction=-1),
             set_current_value=True,
-            name="vgap",
+            name="down"
         )
         append_object_to_object(
             self,
             AdjustableVirtual,
-            [self.right, self.left],
-            getpos,
-            sethpos,
+            [self.hpos, self.hgap],
+            partial(getblade,direction=1),
+            partial(setblade,direction=1),
             set_current_value=True,
-            name="hpos",
+            name="left"
         )
         append_object_to_object(
             self,
             AdjustableVirtual,
-            [self.down, self.up],
-            getpos,
-            setvpos,
+            [self.hpos, self.hgap],
+            partial(getblade,direction=-1),
+            partial(setblade,direction=-1),
             set_current_value=True,
-            name="vpos",
+            name="right"
         )
 
     def __call__(self, *args):
