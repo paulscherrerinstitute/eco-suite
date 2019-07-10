@@ -6,6 +6,9 @@ from colorama import Fore as _color
 from functools import partial
 from .lazy_proxy import Proxy
 from ..aliases import Alias
+import getpass
+import colorama
+import socket
 
 
 class Component:
@@ -166,6 +169,17 @@ def writeConfig(fina, obj):
         json.dump(obj, f, indent=4)
 
 
+class ChannelList(list):
+    def __init__(self,*args,**kwargs):
+        self.file_name = kwargs.pop("file_name")
+        # list.__init__(*args,**kwargs)
+        self.load()
+
+    def load(self):
+        self.clear()
+        self.extend(parseChannelListFile(self.file_name))
+
+
 def parseChannelListFile(fina):
     out = []
     with open(fina, "r") as f:
@@ -189,3 +203,30 @@ def append_to_path(*args):
 def prepend_to_path(*args):
     for targ in args:
         sys.path.insert(0, targ)
+
+class Terminal:
+    def __init__(self,title='🐍eco',scope=None):
+        self.title = title
+        self.scope = scope
+
+    @property
+    def user(self):
+        return getpass.getuser()
+
+    @property
+    def host(self):
+        return socket.gethostname()
+
+    @property
+    def user(self):
+        return getpass.getuser()
+
+    def get_string(self):
+        s = f'{self.title}'
+        if self.scope:
+            s +=f'-{self.scope}'
+        s += f' ({self.user}@{self.host})'
+        return s
+
+    def set_title(self,extension=''):
+        print(colorama.ansi.set_title(self.get_string()+extension))

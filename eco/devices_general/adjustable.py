@@ -6,6 +6,10 @@ from ..aliases import Alias
 from enum import IntEnum, auto
 import colorama
 import time
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 # exceptions
@@ -339,16 +343,18 @@ class AdjustableVirtual:
         foo_get_current_value,
         foo_set_target_value,
         set_current_value=False,
+        append_aliases=False,
         name=None,
     ):
         self.name = name
         self.alias = Alias(name)
-        for adj in adjustables:
-            try:
-                self.alias.append(adj.alias)
-            except:
-                print(f"could not find alias in {adj}")
-                pass
+        if append_aliases:
+            for adj in adjustables:
+                try:
+                    self.alias.append(adj.alias)
+                except Exception as e:
+                    logger.warning(f"could not find alias in {adj}")
+                    print(str(e))
         self._adjustables = adjustables
         self._foo_set_target_value = foo_set_target_value
         self._foo_get_current_value = foo_get_current_value

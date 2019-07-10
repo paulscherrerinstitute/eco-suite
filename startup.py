@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from eco import ecocnf
+from eco.utilities.config import Terminal
 
 
 def main():
@@ -52,6 +53,8 @@ def main():
         "                       ___ _______\n                      / -_) __/ _ \ \n Experiment Control   \__/\__/\___/ \n\n"
     )
 
+    term = Terminal(scope=scope)
+
     if scope:
         # import importlib
         # eco = importlib.import_module('eco')
@@ -71,6 +74,7 @@ def main():
         # now drag them in
         # globals().update({k: getattr(mdl, k) for k in names})
 
+    term.set_title()
     if arguments.shell:
         if arguments.pylab:
             import matplotlib.pyplot as plt

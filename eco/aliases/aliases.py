@@ -22,7 +22,8 @@ class Alias:
         if subalias.parent is None:
             subalias.parent = self
         else:
-            logger.warning('parent of alias has been defined already')
+            print(subalias.parent)
+            logger.warning(f'parent of alias {subalias.alias} has been defined already {subalias.parent.alias}.')
 
     def get_all(self, joiner="."):
         aa = []
