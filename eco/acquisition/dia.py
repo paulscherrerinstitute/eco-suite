@@ -304,7 +304,8 @@ class DIAClient:
                     #    'n_messages': n_frames
                 }
             )
-            # self.backend_config.update({
+            self.backend_config.update({
+                'run_name': file_name_JF})
             #    'n_frames': n_frames})
             self.bsread_config.update(
                 {
