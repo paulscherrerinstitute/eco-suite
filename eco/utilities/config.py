@@ -205,7 +205,7 @@ def prepend_to_path(*args):
         sys.path.insert(0, targ)
 
 class Terminal:
-    def __init__(self,title='🐍eco',scope=None):
+    def __init__(self,title='eco',scope=None):
         self.title = title
         self.scope = scope
 

@@ -7,6 +7,7 @@ from enum import IntEnum, auto
 import colorama
 import time
 import logging
+import datetime
 
 
 logger = logging.getLogger(__name__)
@@ -20,17 +21,17 @@ class AdjustableError(Exception):
 # wrappers for adjustables >>>>>>>>>>>
 def default_representation(Obj):
     def get_name(Obj):
-        if Obj.name:
+        if Obj.alias:
+            return Obj.alias.get_full_name()
+        elif Obj.name:
             return Obj.name
         else:
             return Obj.Id
 
     def get_repr(Obj):
-        return f"{Obj._get_name()} is at: {Obj.get_current_value()}"
-        if Obj.name:
-            return Obj.name
-        else:
-            return Obj.Id
+        s = datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
+        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{Obj.get_current_value():g}{colorama.Style.RESET_ALL}"
+        return s
 
     Obj._get_name = get_name
     Obj.__repr__ = get_repr

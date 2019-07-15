@@ -181,9 +181,6 @@ class MotorRecord:
 
     # return string with motor value as variable representation
     def __str__(self):
-        return "Motor is at %s" % self.wm()
-
-    def __repr__(self):
         # """ return short info for the current motor"""
         s = f"{self.name}"
         s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_current_value(posType='dial'):1.6g})"
@@ -193,6 +190,10 @@ class MotorRecord:
         s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
         return s
+
+    def __repr__(self):
+        print(str(self))
+        return object.__repr__(self)
 
     def __call__(self, value):
         self._currentChange = self.changeTo(value)
