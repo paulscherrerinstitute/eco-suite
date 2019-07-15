@@ -26,14 +26,3 @@ for key, value in initFromConfigList(components, lazy=ecocnf.startup_lazy).items
     alias_namespaces.bernina.store()
 
 
-def initDevice(name):
-    if name == "all":
-        logging.info(f"initializing all components from {_scope_name}.")
-        name = list(components.keys())
-    if not name in components.keys():
-        raise KeyError(f"Could not find {name} in configuration!")
-    if type(name) is list:
-        for tname in name:
-            initDevice(tname)
-    else:
-        initFromConfigList

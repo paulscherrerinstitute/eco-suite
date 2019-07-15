@@ -4,6 +4,14 @@ from ..aliases import Alias, append_object_to_object
 from functools import partial
 
 
+def addSlitRepr(Slitobj):
+    def repr(self):
+        s = f"pos ({self.hpos.get_current_value():6.3f},{self.vpos.get_current_value():6.3f}), gap ({self.hgap.get_current_value():6.3f},{self.vgap.get_current_value():6.3f})"
+        return s
+    Slitobj.__repr__ =  repr
+    return Slitobj
+
+@addSlitRepr
 class SlitBlades:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
@@ -13,6 +21,10 @@ class SlitBlades:
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X2", name="left")
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y1", name="down")
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y2", name="up")
+        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec")
+        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec")
+        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec")
+        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec")
 
         def getgap(xn, xp):
             return xp - xn
@@ -91,6 +103,7 @@ class SlitBlades:
         else:
             raise Exception("wrong number of input arguments!")
 
+@addSlitRepr
 class SlitPosWidth:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
