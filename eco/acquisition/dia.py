@@ -332,8 +332,10 @@ class DIAClient:
                     done = True
                 sleep(0.1)
 
+            self.client.stop() 
+
         outputfilenames = [
-            f"{file_name_JF}.{tcli.upper()}.h5" for tcli in self.active_clients
+            f"{file_name_JF}.{tcli.upper()}.h5" for tcli in self.active_clients+['camera'] # DIRTY HACK 
         ]
 
         return Acquisition(

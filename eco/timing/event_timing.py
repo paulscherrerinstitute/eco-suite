@@ -3,6 +3,7 @@ from ..aliases import Alias
 from ..utilities.lazy_proxy import Proxy
 from ..devices_general.adjustable import PvEnum
 from cta_lib import CtaLib
+from numbers import Number
 
 # EVR output mapping
 evr_mapping = {
@@ -185,6 +186,21 @@ class MasterEventSystem:
         """ in s"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_period(Id) / 1000
+
+    def get_evt_code_status(self,codes=None):
+        if not codes:
+            codes = sorted(eventcodes)
+        if isinstance(codes,Number):
+            codes = [codes]
+        s = []
+        for c in codes:
+            s.append(f'{c:3d}: delay = {self.get_evtcode_delay(c)*1e6:9.3f} us; frequency: {self.get_evtcode_frequency(c):5.1f} Hz; Desc.: {self.get_evtcode_description(c)}')
+        return s
+
+    def status(self,codes=None):
+        print('\n'.join(self.get_evt_code_status(codes)))
+
+
 
 
 class EvrPulser:

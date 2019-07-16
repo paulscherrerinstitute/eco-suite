@@ -24,7 +24,11 @@ class PvDataStream:
         self.alias = Alias(self.name, channel=self.Id, channeltype="CA")
 
     def accumulate(self, n_buffer):
-        self._accumulate = {"n_buffer": n_buffer, "ix": 0, "n_cb": -1}
+        if not hasattr(self,'_accumulate'):
+            self._accumulate = {"n_buffer": n_buffer, "ix": 0, "n_cb": -1}
+        else:
+            self._accumulate['n_buffer'] = n_buffer
+            self._accumulate['ix'] = 0
         self._pv.callbacks.pop(self._accumulate["n_cb"], None)
         self._data = np.squeeze(np.zeros([n_buffer * 2, self._pv.count])) * np.nan
 
