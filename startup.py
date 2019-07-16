@@ -77,17 +77,26 @@ def main():
     term.set_title()
     if arguments.shell:
         if arguments.pylab:
-            import matplotlib.pyplot as plt
-            from IPython.terminal.embed import InteractiveShellEmbed
+            print('start pylab with %pylab')
+            from IPython import embed
+            embed()
+            # from IPython.terminal.embed import InteractiveShellEmbed
+            # shell = InteractiveShellEmbed()
+            # shell.enable_matplotlib()
+            # shell(dummy=True)
+            # shell.dummy_mode=True
+            # shell.enable_pylab()
 
-            shell = InteractiveShellEmbed()
-            shell.enable_matplotlib()
-            shell.enable_pylab()
-            shell()
+            # shell(arg)
+            # shell()
+            shell.magic("pylab")
+            print('made it here')
+            # shell.dummy_mode=False
+            # shell()
+
         else:
-            from IPython import start_ipython
-
-            start_ipython()
+            from IPython import embed
+            embed()
 
 
 if __name__ == "__main__":
