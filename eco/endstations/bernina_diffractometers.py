@@ -2,9 +2,10 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord
+from ..devices_general.adjustable import PvRecord
 
 from epics import PV
-from ..aliases import Alias
+from ..aliases import Alias,append_object_to_object
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -128,12 +129,12 @@ class XRD:
 
         if "phi_hex" in self.configuration:
             ### motors PI hexapod ###
-            self.hex_x = PV("SARES20-HEX_PI:POSI-X")
-            self.hex_y = PV("SARES20-HEX_PI:POSI-Y")
-            self.hex_z = PV("SARES20-HEX_PI:POSI-Z")
-            self.hex_u = PV("SARES20-HEX_PI:POSI-U")
-            self.hex_v = PV("SARES20-HEX_PI:POSI-V")
-            self.hex_w = PV("SARES20-HEX_PI:POSI-W")
+            append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-X",pvreadbackname="SARES20-HEX_PI:POSI-X",name='xhex')
+            append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-Y",pvreadbackname="SARES20-HEX_PI:POSI-Y",name='yhex')
+            append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-Z",pvreadbackname="SARES20-HEX_PI:POSI-Z",name='zhex')
+            append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-U",pvreadbackname="SARES20-HEX_PI:POSI-U",name='uhex')
+            append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-V",pvreadbackname="SARES20-HEX_PI:POSI-V",name='vhex')
+            append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-W",pvreadbackname="SARES20-HEX_PI:POSI-W",name='whex')
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
