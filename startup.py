@@ -80,19 +80,6 @@ def main():
             print('start pylab with %pylab')
             from IPython import embed
             embed()
-            # from IPython.terminal.embed import InteractiveShellEmbed
-            # shell = InteractiveShellEmbed()
-            # shell.enable_matplotlib()
-            # shell(dummy=True)
-            # shell.dummy_mode=True
-            # shell.enable_pylab()
-
-            # shell(arg)
-            # shell()
-            shell.magic("pylab")
-            print('made it here')
-            # shell.dummy_mode=False
-            # shell()
 
         else:
             from IPython import embed

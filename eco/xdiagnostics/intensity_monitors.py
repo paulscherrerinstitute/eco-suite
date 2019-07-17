@@ -1,14 +1,15 @@
 from ..devices_general.motors import MotorRecord
 from ..eco_epics.utilities_epics import EnumWrapper
-from ..devices_general.detectors import FeDigitizer
+from ..devices_general.detectors import FeDigitizer,PvDataStream
 from ..devices_general.adjustable import PvEnum
 from ..aliases import Alias,append_object_to_object
-
+from epics import PV
 
 
 class GasDetector:
     def __init__(self):
         pass
+
 
 
 class SolidTargetDetectorPBPS_new:
@@ -24,12 +25,15 @@ class SolidTargetDetectorPBPS_new:
         ch_right=14,
         elog=None,
         name=None,
+        calc=None,
+        calc_calib={},
+
     ):
         self.name = name
         self.pvname = pvname
         self.alias = Alias(name)
-        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_X1", name="diode_x")
-        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_Y1", name="diode_y")
+        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_X1", name="diodes_x")
+        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_Y1", name="diodes_y")
         append_object_to_object(self,MotorRecord,pvname + ":MOTOR_PROBE", name="target_y")
         append_object_to_object(self,PvEnum,pvname + ":PROBE_SP", name="target")
         if VME_crate:
@@ -38,15 +42,18 @@ class SolidTargetDetectorPBPS_new:
             self.diode_left = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_left))
             self.diode_right = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_right))
 
-        if self.name:
-            self.alias = Alias(name)
-            self.alias.append(self.diode_x.alias)
-            self.alias.append(self.diode_y.alias)
-            self.alias.append(self.target_pos.alias)
-            self.alias.append(self.target.alias)
 
         if channels:
-            self.channels['up']
+            append_object_to_object(self,PvDataStream,channels['up'], name="signal_up")
+            append_object_to_object(self,PvDataStream,channels['down'], name="signal_down")
+            append_object_to_object(self,PvDataStream,channels['left'], name="signal_left")
+            append_object_to_object(self,PvDataStream,channels['right'], name="signal_right")
+
+        if calc:
+            append_object_to_object(self,PvDataStream,calc['itot'], name="intensity")
+            append_object_to_object(self,PvDataStream,calc['xpos'], name="xpos")
+            append_object_to_object(self,PvDataStream,calc['ypos'], name="ypos")
+
 
     def __repr__(self):
         s = f"**Intensity  monitor {self.name}**\n\n"

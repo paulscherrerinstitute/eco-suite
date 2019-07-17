@@ -1,21 +1,25 @@
 from threading import Thread
 from epics import PV
+from asyncio import Future
 
 
 class Acquisition:
     def __init__(
-        self, parent=None, acquire=None, acquisition_kwargs={}, hold=True, stopper=None
+            self, parent=None, acquire=lambda:None, acquisition_kwargs={}, hold=True, stopper=None, get_result=lambda:None
     ):
         self.acquisition_kwargs = acquisition_kwargs
-        self.file_names = acquisition_kwargs["file_names"]
+        for key,val in acquisition_kwargs.items():
+            self.__dict__[key] = val
         self._acquire = acquire
         self._stopper = stopper
         self._thread = Thread(target=self._acquire)
+        self._get_result = get_result
         if not hold:
             self._thread.start()
 
     def wait(self):
         self._thread.join()
+        return self._get_result()
 
     def start(self):
         self._thread.start()
