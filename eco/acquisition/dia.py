@@ -283,10 +283,10 @@ class DIAClient:
         if file_name is None:
             # FIXME /dev/null crashes the data taking (h5py can't close /dev/null and crashes)
             print("Not saving any data, as file_name is not set")
-            file_name_JF = file_rootdir + "DelMe"
-            file_name_bsread = file_rootdir + "DelMe"
-            #file_name_JF = "/dev/null"
-            #file_name_bsread = "/dev/null"
+            #file_name_JF = file_rootdir + "DelMe"
+            #file_name_bsread = file_rootdir + "DelMe"
+            file_name_JF = "/dev/null"
+            file_name_bsread = "/dev/null"
         else:
             # FIXME hardcoded
             file_name_JF = file_rootdir + file_name
