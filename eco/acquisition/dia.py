@@ -168,8 +168,7 @@ class DIAClient:
                 sleep(time_interval)
 
     def take_pedestal(
-        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0
-    ):
+        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0, freq=50):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
             run as jungfrau_utils_run,
         )
@@ -182,7 +181,7 @@ class DIAClient:
             os.makedirs(res_dir)
             os.chmod(res_dir, 0o775)
         filename = "pedestal_%s" % datetime.now().strftime("%Y%m%d_%H%M")
-        period = 0.04
+        period = 1/freq
         jungfrau_utils_run(
             self._api_address,
             filename,

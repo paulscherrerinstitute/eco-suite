@@ -1,9 +1,10 @@
 import os
 import json
 import numpy as np
-from time import sleep
+from time import sleep,time
 import traceback
 from pathlib import Path
+import colorama
 
 
 class Scan:
@@ -65,9 +66,14 @@ class Scan:
         # for call in self.callbacks_start_step:
         # call()
         if self.checker:
+            first_check = time()
+            checker_unhappy = False
             while not self.checker.check_now():
-                print("Condition checker is not happy, waiting for OK conditions.")
+                print(colorama.Fore.RED+f"Condition checker is not happy, waiting for OK conditions since {time()-first_check:5.1f} seconds."+colorama.Fore.RESET,end="\r")
                 sleep(self._checker_sleep_time)
+                checker_unhappy = True
+            if checker_unhappy:
+                print(colorama.Fore.RED+f"Condition checker was not happy and waiting for {time()-first_check:5.1f} seconds."+colorama.Fore.RESET)
             self.checker.clear_and_start_counting()
 
         if not len(self.values_todo) > 0:
