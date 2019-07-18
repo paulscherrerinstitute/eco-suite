@@ -101,6 +101,8 @@ class Laser_Exp:
         addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg")
         self.delay_eos = DelayTime(self.delay_eos_stg, name="delay_eos")
         self.alias.append(self.delay_eos.alias)
+        self.lxt_eos = DelayTime(self.delay_eos_stg, direction=-1,name="lxt_eos")
+        self.alias.append(self.lxt_eos.alias)
         # except Exception as expt:
         # print("Problems initializing eos delay stage")
         # print(expt)
@@ -119,6 +121,8 @@ class Laser_Exp:
             )
             self.delay_glob = DelayTime(self.delay_glob_stg, name="delay_glob")
             self.alias.append(self.delay_glob.alias)
+            self.lxt_glob = DelayTime(self.delay_glob_stg, direction=-1, name="lxt_glob")
+            self.alias.append(self.lxt_glob.alias)
         except:
             print("Problems initializing global delay stage")
 
