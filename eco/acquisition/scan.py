@@ -301,13 +301,8 @@ class Scans:
 
     def ascanList(
         self,
-        adjustable0,
-        start0_pos,
-        end0_pos,
-        adjustable1,
-        start1_pos,
-        end1_pos,
-        N_intervals,
+        adjustable,
+        posList,
         N_pulses,
         file_name=None,
         counters=[],

@@ -6,6 +6,10 @@ from epics import PV
 from ..devices_general.delay_stage import DelayStage
 from ..devices_general.adjustable import AdjustableVirtual
 
+import colorama,datetime
+from pint import UnitRegistry
+ureg = UnitRegistry()
+
 
 def addMotorRecordToSelf(self, Id=None, name=None):
     self.__dict__[name] = MotorRecord(Id, name=name)
@@ -43,6 +47,16 @@ class DelayTime(AdjustableVirtual):
     def _s_to_mm(self, s):
         return s * self._group_velo * 1e3 / self._passes * self._direction
 
+    def __repr__(self):
+        s = ''
+        s += f"{colorama.Style.DIM}"
+        s += datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
+        s += f"{colorama.Style.RESET_ALL}"
+        s += f"{colorama.Style.BRIGHT}{self._get_name()}{colorama.Style.RESET_ALL} at "
+        s += f'{(self.get_current_value()*ureg.second).to_compact():P~6.3f}'
+        s += f"{colorama.Style.RESET_ALL}"
+        return s
+
 
 class DelayCompensation(AdjustableVirtual):
     """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for 
@@ -68,6 +82,16 @@ class DelayCompensation(AdjustableVirtual):
         return positions[0]
 
         tuple(tdir * value for tdir in self._directions)
+    
+    def __repr__(self):
+        s = ''
+        s += f"{colorama.Style.DIM}"
+        s += datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
+        s += f"{colorama.Style.RESET_ALL}"
+        s += f"{colorama.Style.BRIGHT}{self._get_name()}{colorama.Style.RESET_ALL} at "
+        s += f'{(self.get_current_value()*ureg.second).to_compact():P~6.3f}'
+        s += f"{colorama.Style.RESET_ALL}"
+        return s
 
 
 class Laser_Exp:
