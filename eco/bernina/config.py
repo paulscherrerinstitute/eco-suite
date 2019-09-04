@@ -211,7 +211,7 @@ components = [
         "z_und": 136,
         "desc": "Slits behind attenuator",
         "type": "eco.xoptics.slits:SlitPosWidth",
-        "lazy":False,
+        "lazy": True,
     },
     # {
         # "name": "slitAtt",
@@ -338,7 +338,7 @@ components = [
         "desc": "Experiment laser optics",
         "type": "eco.loptics.bernina_experiment:Laser_Exp",
         "kwargs": {"Id": "SLAAR21-LMOT", "smar_config": config["las_smar_config"]},
-        "lazy": False,
+        "lazy": True,
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],

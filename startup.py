@@ -27,7 +27,7 @@ def main():
         "-l", "--lazy", action="store_true", default=False, help="lazy initialisation"
     )
     parser.add_argument(
-        "--shell", type=bool, default=True, help="open eco in ipython shell"
+        "--shell", action="store_true" , default=False, help="open eco in ipython shell"
     )
     parser.add_argument(
         "--pylab", type=bool, default=True, help="open ipython shell in pylab mode"
@@ -75,6 +75,7 @@ def main():
         # globals().update({k: getattr(mdl, k) for k in names})
 
     term.set_title()
+    print(arguments)
     if arguments.shell:
         if arguments.pylab:
             print('start pylab with %pylab')

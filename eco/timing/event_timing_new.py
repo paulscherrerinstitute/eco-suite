@@ -2,6 +2,7 @@ from epics import PV
 from ..aliases import Alias,append_object_to_object
 from ..utilities.lazy_proxy import Proxy
 from ..devices_general.adjustable import PvEnum, PvRecord
+from ..eco_epics.utilities_epics import EpicsString
 from cta_lib import CtaLib
 
 # EVR output mapping
@@ -200,6 +201,7 @@ class EvrPulser:
         append_object_to_object(self,PvRecord,f"{self.pv_base}-Evt-Reset0-SP", name="event_reset")
         append_object_to_object(self,PvRecord,f"{self.pv_base}-Delay-SP", pvreadbackname=f'{self.pv_base}-Delay-RB', name="delay")
         append_object_to_object(self,PvRecord,f"{self.pv_base}-Width-SP", pvreadbackname=f'{self.pv_base}-Width-RB', name="width")
+        self.description = EpicsString(pv_base+'-Name-I')
 
 
 
@@ -215,6 +217,7 @@ class EvrOutput:
             PvEnum(f"{self.pv_base}-Src-Pulse-SP", name="pulserA"),
             PvEnum(f"{self.pv_base}-Src2-Pulse-SP", name="pulserB"),
         )
+        self.description = EpicsString(pv_base+'-Name-I')
 
     def _get_pulserA(self):
         return self._pulsers[self.pulsers_numbers[0].get_current_value()]
@@ -257,7 +260,7 @@ class EventReceiver:
             append_object_to_object(self,EvrOutput,f"{self.pvname}:FrontUnivOut{n}", name=f"output_front{n}")
             outputs.append(self.__dict__[f"output_front{n}"])
         for n in range(n_output_rear):
-            append_object_to_object(self,EvrOutput,f"{self.pvname}:FrontUnivOut{n}", name=f"output_rear{n}")
+            append_object_to_object(self,EvrOutput,f"{self.pvname}:RearUniv{n}", name=f"output_rear{n}")
             outputs.append(self.__dict__[f"output_rear{n}"])
         for to in outputs:
             to._pulsers = self.pulsers

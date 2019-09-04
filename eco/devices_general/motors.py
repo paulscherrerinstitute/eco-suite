@@ -1,4 +1,5 @@
 from ..eco_epics.motor import Motor as _Motor
+from ..eco_epics.utilities_epics import EpicsString
 import subprocess
 from threading import Thread
 from epics import PV
@@ -54,6 +55,7 @@ class MotorRecord:
                 Alias(an, channel=".".join([pvname, af]), channeltype="CA")
             )
         self._currentChange = None
+        self.description = EpicsString(pvname+'.DESC')
 
     # Conventional methods and properties for all Adjustable objects
     def changeTo(self, value, hold=False, check=True):

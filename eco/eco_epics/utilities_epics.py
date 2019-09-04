@@ -62,3 +62,25 @@ class Positioner:
             if tname[0].isnumeric():
                 tname = "v" + tname
             self.__dict__[tname] = func
+
+class EpicsString:
+    def __init__(self,pvname,name=None,elog=None):
+        self.name = name
+        self.pvname = pvname
+        self._pv = PV(pvname)
+        self._elog = elog
+    
+    def get(self):
+        return self._pv.get()
+
+    def set(self,string):
+        self._pv.put(bytes(string,'utf8'))
+
+    def __repr__(self):
+        return self.get()
+
+    def __call__(self,string):
+        self.set(string)
+
+
+
