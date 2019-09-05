@@ -51,8 +51,8 @@ class Scan:
         self._checker_sleep_time = checker_sleep_time
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
-            tv = adj.get_current_value()
-            self.initial_values.append(adj.get_current_value())
+            tv = adj.get_value()
+            self.initial_values.append(adj.get_value())
             print("Initial value of %s : %g" % (adj.name, tv))
 
     def get_filename(self, stepNo, Ndigits=4):
@@ -87,12 +87,12 @@ class Scan:
         ms = []
         fina = self.get_filename(self.nextStep)
         for adj, tv in zip(self.adjustables, values_step):
-            ms.append(adj.changeTo(tv))
+            ms.append(adj.set_target(tv))
         for tm in ms:
             tm.wait()
         readbacks_step = []
         for adj in self.adjustables:
-            readbacks_step.append(adj.get_current_value())
+            readbacks_step.append(adj.get_value())
         if verbose:
             print("Moved variables, now starting acquisition")
         filenames = []
@@ -151,7 +151,7 @@ class Scan:
     def changeToInitialValues(self):
         c = []
         for adj, iv in zip(self.adjustables, self.initial_values):
-            c.append(adj.changeTo(iv))
+            c.append(adj.set_target(iv))
         return c
 
 
@@ -273,7 +273,7 @@ class Scans:
         step_info=None,
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
-        current = adjustable.get_current_value()
+        current = adjustable.get_value()
         values = [[tp + current] for tp in positions]
         file_name = self.filename_generator.get_nextrun_filename(file_name)
         if not counters:

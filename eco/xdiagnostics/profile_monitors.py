@@ -28,14 +28,14 @@ class Pprm:
             self.alias.append(self.led.alias)
 
     def movein(self, target=1):
-        self.target.changeTo(target)
+        self.target.set_target(target)
 
     def moveout(self, target=0):
-        self.target.changeTo(target)
+        self.target.set_target(target)
 
     def __repr__(self):
         s = f"**Profile Monitor {self.name}**\n"
-        s += f"Target in beam: {self.target.get_current_value().name}\n"
+        s += f"Target in beam: {self.target.get_value().name}\n"
         return s
 
 
@@ -60,8 +60,8 @@ class Bernina_XEYE:
         ostr = "*****Xeye motor positions******\n"
 
         for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
+            if hasattr(item, "get_value"):
+                pos = item.get_value()
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 

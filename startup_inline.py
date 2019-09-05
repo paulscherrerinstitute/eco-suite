@@ -2,6 +2,7 @@
 
 from eco import ecocnf
 from eco.utilities.config import Terminal
+import sys 
 
 
 import argparse
@@ -61,8 +62,11 @@ if scope:
     if arguments.lazy:
         ecocnf.startup_lazy = True
     exec(f"import eco.{scope} as {scope}")
+    exec(f"op = {scope}.init()")
+    for tk,tv in op.items():
+        sys.modules['__main__'].__dict__[tk] = tv
     # exec(f'{scope}.init(lazy=ecocnf.startup_lazy)')
-    exec(f"from eco.{scope} import *")
+    # exec(f"from eco.{scope} import *")
     # is there an __all__?  if so respect it
     # if "__all__" in mdl.__dict__:
     #    names = mdl.__dict__["__all__"]

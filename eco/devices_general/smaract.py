@@ -103,7 +103,7 @@ class SmarActRecord:
             )
 
     # Conventional methods and properties for all Adjustable objects
-    def changeTo(self, value, hold=False, check=True):
+    def set_target(self, value, hold=False, check=True):
         """ Adjustable convention"""
 
         def changer(value):
@@ -237,7 +237,7 @@ class SmarActRecord:
                 return MOVE_BEGUN
         return UNKNOWN_ERROR
 
-    def get_current_value(self, readback=True):
+    def get_value(self, readback=True):
         if readback:
             return self._rbv.get("VAL")
         else:
@@ -274,7 +274,7 @@ class SmarActRecord:
     def set_limits(self, values, posType="user", relative_to_present=False):
         """ Adjustable convention"""
         if relative_to_present:
-            v = self.get_current_value()
+            v = self.get_value()
             values = [v - values[0], v - values[1]]
         self._llm.put("VAL", values[0])
         self._hlm.put("VAL", values[1])
@@ -301,14 +301,14 @@ class SmarActRecord:
         return subprocess.Popen(" ".join(cmd), shell=True)
 
     def mv(self, value):
-        self._currentChange = self.changeTo(value)
+        self._currentChange = self.set_target(value)
 
     def wm(self, *args, **kwargs):
-        return self.get_current_value(*args, **kwargs)
+        return self.get_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
-        startvalue = self.get_current_value(readback=True, *args, **kwargs)
-        self._currentChange = self.changeTo(value + startvalue, *args, **kwargs)
+        startvalue = self.get_value(readback=True, *args, **kwargs)
+        self._currentChange = self.set_target(value + startvalue, *args, **kwargs)
 
     def wait(self):
         self._currentChange.wait()
@@ -322,7 +322,7 @@ class SmarActRecord:
         return self.__str__()
 
     def __call__(self, value):
-        self._currentChange = self.changeTo(value)
+        self._currentChange = self.set_target(value)
 
 
 class SmarActDevice(SmarActRecord):

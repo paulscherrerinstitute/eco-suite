@@ -29,12 +29,12 @@ class Pulsepick:
         addMotorRecordToSelf(self, Id=self.Id + ":MOTOR_Y1", name="y")
 
     def movein(self):
-        self.x.changeTo(4.45)
-        self.y.changeTo(-0.9)
+        self.x.set_target(4.45)
+        self.y.set_target(-0.9)
 
     def moveout(self):
-        self.x.changeTo(-5)
-        self.y.changeTo(-0.9)
+        self.x.set_target(-5)
+        self.y.set_target(-0.9)
 
     def open(self):
         self._openclose.put(1)

@@ -66,10 +66,10 @@ class AttenuatorAramis:
             print("Transmission Fundamental: %s THG: %s" % (tFun, tTHG))
         return tFun, tTHG
 
-    def get_current_value(self,*args,**kwargs):
+    def get_value(self,*args,**kwargs):
         return self.get_transmission(*args,verbose=False,**kwargs)[0]
 
-    def changeTo(self,value,sleeptime=10,hold=False):
+    def set_target(self,value,sleeptime=10,hold=False):
         def changer(value):
             self.set_transmission(value)
             sleep(sleeptime)

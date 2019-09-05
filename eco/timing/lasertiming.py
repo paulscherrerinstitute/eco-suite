@@ -240,7 +240,7 @@ class Lxt(object):
         delay = int(idx_pulse) * _OSCILLATOR_PERIOD - phase_shifter
         return -delay
 
-    def changeTo(self, value, hold=False):
+    def set_target(self, value, hold=False):
         """ Adjustable convention"""
 
         changer = lambda value: self.move(value)
@@ -248,7 +248,7 @@ class Lxt(object):
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
 
-    def get_current_value(self):
+    def get_value(self):
         return self.get()
 
     def set_current_value(self, value):

@@ -55,14 +55,14 @@ components = [
         "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
     },
     {
-        "name": "slitUnd",
+        "name": "slit_und",
         "type": "eco.xoptics.slits:SlitFourBlades_old",
         "args": ["SARFE10-OAPU044"],
         "kwargs": {},
         "desc": "Slit after Undulator",
     },
     {
-        "name": "attFE",
+        "name": "att_fe",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
         "args": ["SARFE10-OATT053"],
         "kwargs": {},
@@ -70,7 +70,7 @@ components = [
         "desc": "Attenuator in Front End",
     },
     {
-        "name": "monUnd",
+        "name": "mon_und",
         "z_und": 53,
         "desc": "Intensity/position monitor after Optics hutch",
         "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
@@ -78,7 +78,7 @@ components = [
         "kwargs": {},
     },
     {
-        "name": "profFE",
+        "name": "prof_fe",
         "args": ["SARFE10-PPRM064"],
         "kwargs": {},
         "z_und": 64,
@@ -86,7 +86,7 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     {
-        "name": "profMirrAlv1",
+        "name": "prof_mirr_alv1",
         "args": ["SAROP11-PPRM066"],
         "kwargs": {},
         "z_und": 66,
@@ -102,7 +102,7 @@ components = [
         # "kwargs": {},
     # },
     {
-        "name": "slitSwitch",
+        "name": "slit_switch",
         "z_und": 92,
         "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
         "type": "eco.xoptics.slits:SlitBlades",
@@ -110,7 +110,7 @@ components = [
         "kwargs": {},
     },
     {
-        "name": "profMirr1",
+        "name": "prof_mirr1",
         "args": ["SAROP21-PPRM094"],
         "kwargs": {},
         "z_und": 94,
@@ -144,7 +144,7 @@ components = [
         "type": "eco.xoptics.dcm:Double_Crystal_Mono",
     },
     {
-        "name": "profMono",
+        "name": "prof_mono",
         "args": ["SAROP21-PPRM102"],
         "kwargs": {},
         "z_und": 102,
@@ -165,7 +165,7 @@ components = [
         "lazy": False,
     },
     {
-        "name": "monOpt_old",
+        "name": "mon_opt_old",
         "z_und": 133,
         "desc": "Intensity/position monitor after Optics hutch",
         "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
@@ -173,7 +173,7 @@ components = [
         "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9},
     },
     {
-        "name": "monOpt",
+        "name": "mon_opt",
         "z_und": 133,
         "desc": "Intensity/position monitor after Optics hutch",
         "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
@@ -181,7 +181,7 @@ components = [
         "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9, 'channels':{'up':'SLAAR21-LSCP1-FNS:CH4:VAL_GET','down':'SLAAR21-LSCP1-FNS:CH5:VAL_GET','left':'SLAAR21-LSCP1-FNS:CH6:VAL_GET','right':'SLAAR21-LSCP1-FNS:CH7:VAL_GET'},'calc':{'itot':'SLAAR21-LTIM01-EVR0:CALCI','xpos':'SLAAR21-LTIM01-EVR0:CALCX','ypos':'SLAAR21-LTIM01-EVR0:CALCY'}},
     },
     {
-        "name": "profOpt",
+        "name": "prof_opt",
         "args": ["SAROP21-PPRM133"],
         "kwargs": {},
         "z_und": 133,
@@ -197,7 +197,7 @@ components = [
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
     },
     {
-        "name": "refLaser",
+        "name": "ref_laser",
         "args": ["SAROP21-OLAS136"],
         "kwargs": {},
         "z_und": 136,
@@ -205,7 +205,7 @@ components = [
         "type": "eco.xoptics.reflaser:RefLaser_Aramis",
     },
     {
-        "name": "slitAtt",
+        "name": "slit_att",
         "args": ["SAROP21-OAPU136"],
         "kwargs": {},
         "z_und": 136,
@@ -222,7 +222,7 @@ components = [
         # "type": "eco.xoptics.slits:SlitPosWidth_old",
     # },
     {
-        "name": "monAtt",
+        "name": "mon_att",
         "args": ["SAROP21-PBPS138"],
         "z_und": 138,
         "desc": "Intensity/Position monitor after Attenuator",
@@ -230,7 +230,7 @@ components = [
         "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
     },
     {
-        "name": "detDio",
+        "name": "det_dio",
         "args": ["SAROP21-PDIO138"],
         "z_und": 138,
         "desc": "Diode digitizer for exp data",
@@ -238,7 +238,7 @@ components = [
         "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
     },
     {
-        "name": "profAtt",
+        "name": "prof_att",
         "args": ["SAROP21-PPRM138"],
         "kwargs": {},
         "z_und": 138,
@@ -246,7 +246,7 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     {
-        "name": "kbVer",
+        "name": "kb_ver",
         "args": ["SAROP21-OKBV139"],
         "z_und": 139,
         "desc": "Vertically focusing Bernina KB mirror",
@@ -255,14 +255,14 @@ components = [
     },
     {
         "args": ["SAROP21-OKBH140"],
-        "name": "kbHor",
+        "name": "kb_hor",
         "z_und": 140,
         "desc": "Horizontally focusing Bernina KB mirror",
         "type": "eco.xoptics.KBhor:KBhor",
         "kwargs": {},
     },
     # {
-        # "name": "slitKb",
+        # "name": "slit_kb",
         # "args": [],
         # "kwargs": {"Id": "SARES20"},
         # "z_und": 141,
@@ -325,7 +325,7 @@ components = [
     },
     {
         "args": ["SLAAR02-TSPL-EPL"],
-        "name": "phaseShifter",
+        "name": "phase_shifter",
         "z_und": 142,
         "desc": "Experiment laser phase shifter",
         "type": "eco.devices_general.timing:PhaseShifterAramis",
@@ -342,7 +342,7 @@ components = [
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],
-        "name": "laserShutter",
+        "name": "laser_shutter",
         "z_und": 142,
         "desc": "Laser Shutter",
         "type": "eco.loptics.laser_shutter:laser_shutter",

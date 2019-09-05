@@ -61,8 +61,8 @@ class Sigma:
         ostr = "*****Qioptic motor positions******\n"
 
         for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
+            if hasattr(item, "get_value"):
+                pos = item.get_value()
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 
@@ -100,8 +100,8 @@ class Qioptiq:
         ostr = "*****Qioptic motor positions******\n"
 
         for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
+            if hasattr(item, "get_value"):
+                pos = item.get_value()
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 

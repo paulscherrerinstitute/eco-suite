@@ -155,7 +155,7 @@ class PhaseShifterAramis:
         self._elog = elog
         self.name = name
 
-    def changeTo(self, value, hold=False, check=True):
+    def set_target(self, value, hold=False, check=True):
         """ Adjustable convention"""
 
         mover = lambda value: self._pshifter.move(value)
@@ -165,7 +165,7 @@ class PhaseShifterAramis:
         """ Adjustable convention"""
         pass
 
-    def get_current_value(self, posType="user", readback=True):
+    def get_value(self, posType="user", readback=True):
         """ Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":

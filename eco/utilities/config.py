@@ -66,23 +66,31 @@ def get_dependencies(inp):
     return outp
 
 
-def replaceComponent(inp, dict_all):
+def replaceComponent(inp, dict_all, config_all, lazy=False):
     if isinstance(inp, list):
         outp = []
         for ta in inp:
             if isinstance(ta, Component):
-                outp.append(dict_all[ta.name])
+                if ta.name in dict_all.keys():
+                    outp.append(dict_all[ta.name])
+                else:
+                    ind = [ta.name==tca['name'] for tca in config_all].index(True)
+                    outp.append(initFromConfigList(config_list[ind:ind+1],config_all,lazy=lazy))
             elif isinstance(ta, dict) or isinstance(ta, list):
-                outp.append(replaceComponent(ta, dict_all))
+                outp.append(replaceComponent(ta, dict_all,config_all, lazy=lazy))
             else:
                 outp.append(ta)
     elif isinstance(inp, dict):
         outp = {}
         for tk, ta in inp.items():
             if isinstance(ta, Component):
-                outp[tk] = dict_all[ta.name]
+                if ta.name in dict_all.keys():
+                    outp[tk] = dict_all[ta.name]
+                else:
+                    ind = [tk.name==tca['name'] for tca in config_all].index(True)
+                    outp[tk] = initFromConfigList(config_list[ind:ind+1],config_all,lazy=lazy)
             elif isinstance(ta, dict) or isinstance(ta, list):
-                outp[tk] = replaceComponent(ta, dict_all)
+                outp[tk] = replaceComponent(ta, dict_all, config_all, lazy=lazy)
             else:
                 outp[tk] = ta
     else:
@@ -90,7 +98,7 @@ def replaceComponent(inp, dict_all):
     return outp
 
 
-def initFromConfigList(config_list, lazy=False):
+def initFromConfigList(config_list, config_all, lazy=False):
     op = {}
     for td in config_list:
         # args = [op[ta.name] if isinstance(ta, Component) else ta for ta in td["args"]]
@@ -105,8 +113,8 @@ def initFromConfigList(config_list, lazy=False):
         op[td["name"]] = init_device(
             td["type"],
             td["name"],
-            replaceComponent(td["args"], op),
-            replaceComponent(td["kwargs"], op),
+            replaceComponent(td["args"], op, config_all, lazy=lazy),
+            replaceComponent(td["kwargs"], op, config_all, lazy=lazy),
             lazy=tlazy,
         )
     return op
