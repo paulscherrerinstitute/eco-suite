@@ -189,6 +189,15 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     {
+        "name": "spect_tt",
+        "args": ["SAROP21-PSEN135"],
+        "kwargs": {"reduction_client_address":"http://sf-daqsync-02:12002/"},
+        "z_und": 135,
+        "desc": "Spectral encoding timing diagnostics before Attenuator.",
+        "type": "eco.xdiagnostics.timetools:SpectralEncoder",
+        "lazy":False,
+    },
+    {
         "name": "att",
         "args": ["SAROP21-OATT135"],
         "kwargs": {'pulse_picker':Component('xp')},

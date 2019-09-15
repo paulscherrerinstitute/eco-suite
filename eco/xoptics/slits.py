@@ -42,7 +42,7 @@ class SlitBlades:
             return tuple([tx + self.hgap.get_value() for tx in [-x / 2, x / 2]])
 
         def setvpos(x):
-            return tuple([tx + self.vgap.get_value() for tw in [-x / 2, x / 2]])
+            return tuple([tx + self.vgap.get_value() for tx in [-x / 2, x / 2]])
 
         append_object_to_object(
             self,

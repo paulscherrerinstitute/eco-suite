@@ -318,6 +318,7 @@ class DIAClient:
             self.reset()
             self.set_config()
             # print(self.get_config())
+            self.wait_for_status('IntegrationStatus.CONFIGURED')
             self.client.start()
             done = False
 
@@ -325,12 +326,12 @@ class DIAClient:
                 stat = self.get_status()
                 if stat["status"] == "IntegrationStatus.FINISHED":
                     done = True
-                if stat["status"] == "IntegrationStatus.BSREAD_STILL_RUNNING":
-                    done = True
-                if stat["status"] == "IntegrationStatus.INITIALIZED":
-                    done = True
-                if stat["status"] == "IntegrationStatus.DETECTOR_STOPPED":
-                    done = True
+                # if stat["status"] == "IntegrationStatus.BSREAD_STILL_RUNNING":
+                    # done = True
+                # if stat["status"] == "IntegrationStatus.INITIALIZED":
+                    # done = True
+                # if stat["status"] == "IntegrationStatus.DETECTOR_STOPPED":
+                    # done = True
                 sleep(0.1)
 
             self.client.stop() 

@@ -182,6 +182,16 @@ class Laser_Exp:
         # PSEN delay stages
         # self._psen_delayStg = MotorRecord(self.Id+'')
         # self.psen_delay = DelayStage(self._pump_delayStg)
+        try:
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M561:MOT", name="_psen_delaystg"
+            )
+            addDelayStageToSelf(
+                self, stage=self.__dict__["_psen_delaystg"], name="psen_delay"
+            )
+        except Exception as expt:
+            print("No psen delay stage")
+            print(expt)
 
         # SmarAct ID
         ### Mirrors used in the experiment ###
