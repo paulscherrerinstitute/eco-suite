@@ -58,7 +58,7 @@ class MotorRecord:
         self.description = EpicsString(pvname+'.DESC')
 
     # Conventional methods and properties for all Adjustable objects
-    def set_target(self, value, hold=False, check=True):
+    def set_target_value(self, value, hold=False, check=True):
         """ Adjustable convention"""
 
         def changer(value):
@@ -89,7 +89,7 @@ class MotorRecord:
             self._motor.stop()
         pass
 
-    def get_value(self, posType="user", readback=True):
+    def get_current_value(self, posType="user", readback=True):
         """ Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":
@@ -99,7 +99,7 @@ class MotorRecord:
         if posType == "raw":
             return self._motor.get_position(readback=readback, raw=True)
 
-    def set_current_value(self, value, posType="user"):
+    def reset_current_value_to(self, value, posType="user"):
         """ Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":
@@ -148,7 +148,7 @@ class MotorRecord:
         if posType is "dial":
             ll_name, hl_name = "DLLM", "DHLM"
         if relative_to_present:
-            v = self.get_value(posType=posType)
+            v = self.get_current_value(posType=posType)
             low_limit = v + low_limit
             high_limit = v + high_limit
         self._motor.put(ll_name, low_limit)
@@ -185,10 +185,10 @@ class MotorRecord:
     def __str__(self):
         # """ return short info for the current motor"""
         s = f"{self.name}"
-        s += f"\t@ {colorama.Style.BRIGHT}{self.get_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_value(posType='dial'):1.6g})"
+        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_current_value(posType='dial'):1.6g})"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
         s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
-        s += ValueInRange(*self.get_limits()).get_str(self.get_value())
+        s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
         s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
         return s
@@ -198,7 +198,7 @@ class MotorRecord:
         return object.__repr__(self)
 
     def __call__(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)
 
 
 class ChangerOld:

@@ -30,7 +30,7 @@ def default_representation(Obj):
 
     def get_repr(Obj):
         s = datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
-        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{Obj.get_value():g}{colorama.Style.RESET_ALL}"
+        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{Obj.get_current_value():g}{colorama.Style.RESET_ALL}"
         return s
 
     Obj._get_name = get_name
@@ -41,11 +41,11 @@ def default_representation(Obj):
 def spec_convenience(Adj):
     # spec-inspired convenience methods
     def mv(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)
         return self._currentChange
 
     def wm(self, *args, **kwargs):
-        return self.get_value(*args, **kwargs)
+        return self.get_current_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
         if (
@@ -55,10 +55,10 @@ def spec_convenience(Adj):
         ):
             startvalue = self._currentChange.target
         elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
-            startvalue = self.get_value(readback=True, *args, **kwargs)
+            startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
-            startvalue = self.get_value(*args, **kwargs)
-        self._currentChange = self.set_target(value + startvalue, *args, **kwargs)
+            startvalue = self.get_current_value(*args, **kwargs)
+        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
         return self._currentChange
 
     def wait(self):
@@ -66,10 +66,10 @@ def spec_convenience(Adj):
 
     def call(self, value=None):
         if not value is None:
-            self._currentChange = self.set_target(value)
+            self._currentChange = self.set_target_value(value)
             return self._currentChange
         else:
-            return self.get_value()
+            return self.get_current_value()
 
     def umv(self, *args, **kwargs):
         self.update_change(*args, **kwargs)
@@ -152,7 +152,7 @@ def update_changes(Adj):
         )
 
     def update_change(self, value):
-        start = self.get_value()
+        start = self.get_current_value()
         print(
             f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}\n"
         )
@@ -163,11 +163,11 @@ def update_changes(Adj):
                 print(get_position_str(start, value, kwargs["value"]), end="\r")
 
             cb_id = self.add_value_callback(cbfoo)
-            self._currentChange = self.set_target(value)
+            self._currentChange = self.set_target_value(value)
             self._currentChange.wait()
         except KeyboardInterrupt:
             self._currentChange.stop()
-            print(f"\nAborted change at (~) {self.get_value():1.5g}")
+            print(f"\nAborted change at (~) {self.get_current_value():1.5g}")
         finally:
             self.clear_value_callback(cb_id)
         return self._currentChange
@@ -180,9 +180,9 @@ def update_changes(Adj):
         ):
             startvalue = self._currentChange.target
         elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
-            startvalue = self.get_value(readback=True, *args, **kwargs)
+            startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
-            startvalue = self.get_value(*args, **kwargs)
+            startvalue = self.get_current_value(*args, **kwargs)
         self._currentChange = self.update_change(value + startvalue, *args, **kwargs)
         return self._currentChange
 
@@ -224,7 +224,7 @@ class PvRecord:
         else:
             self._pvreadback = PV(pvreadbackname)
 
-    def get_value(self, readback=True):
+    def get_current_value(self, readback=True):
         if readback:
             currval = self._pvreadback.get()
         if not readback:
@@ -238,8 +238,8 @@ class PvRecord:
         if self.accuracy is not None:
             if (
                 np.abs(
-                    self.get_value(readback=False)
-                    - self.get_value(readback=True)
+                    self.get_current_value(readback=False)
+                    - self.get_current_value(readback=True)
                 )
                 > self.accuracy
             ):
@@ -252,7 +252,7 @@ class PvRecord:
         while self.get_moveDone() == 0:
             time.sleep(0.1)
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         """ Adjustable convention"""
 
         changer = lambda value: self.move(value)
@@ -262,24 +262,24 @@ class PvRecord:
 
     # spec-inspired convenience methods
     def mv(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)
 
     def wm(self, *args, **kwargs):
-        return self.get_value(*args, **kwargs)
+        return self.get_current_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
 
         if self.get_moveDone == 1:
-            startvalue = self.get_value(readback=True, *args, **kwargs)
+            startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
-            startvalue = self.get_value(readback=False, *args, **kwargs)
-        self._currentChange = self.set_target(value + startvalue, *args, **kwargs)
+            startvalue = self.get_current_value(readback=False, *args, **kwargs)
+        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
 
     def wait(self):
         self._currentChange.wait()
 
     def __repr__(self):
-        return "%s is at: %s" % (self.Id, self.get_value())
+        return "%s is at: %s" % (self.Id, self.get_current_value())
 
 
 # @default_representation
@@ -305,10 +305,10 @@ class PvEnum:
         else:
             return self.PvEnum(value)
 
-    def get_value(self):
+    def get_current_value(self):
         return self.validate(self._pv.get())
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         """ Adjustable convention"""
         value = self.validate(value)
 
@@ -322,7 +322,7 @@ class PvEnum:
             name = self.Id
         else:
             name = self.name
-        cv = self.get_value()
+        cv = self.get_current_value()
         s = f"{name} (enum) at value: {cv}" + "\n"
         s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
         # s+= '_'*40+'\n'
@@ -341,8 +341,8 @@ class AdjustableVirtual:
     def __init__(
         self,
         adjustables,
-        foo_get_value,
-        foo_set_target_value,
+        foo_get_current_value,
+        foo_set_target_value_current_value,
         set_current_value=False,
         append_aliases=False,
         name=None,
@@ -357,22 +357,22 @@ class AdjustableVirtual:
                     logger.warning(f"could not find alias in {adj}")
                     print(str(e))
         self._adjustables = adjustables
-        self._foo_set_target_value = foo_set_target_value
-        self._foo_get_value = foo_get_value
+        self._foo_set_target_value_current_value = foo_set_target_value_current_value
+        self._foo_get_current_value = foo_get_current_value
         self._set_current_value = set_current_value
         if set_current_value:
             for adj in self._adjustables:
                 if not hasattr(adj, "set_current_value"):
                     raise Exception(f"No set_current_value method found in {adj}")
 
-    def set_target(self, value, hold=False):
-        vals = self._foo_set_target_value(value)
+    def set_target_value(self, value, hold=False):
+        vals = self._foo_set_target_value_current_value(value)
         if not hasattr(vals, "__iter__"):
             vals = (vals,)
 
         def changer(value):
             self._active_changers = [
-                adj.set_target(val, hold=False)
+                adj.set_target_value(val, hold=False)
                 for val, adj in zip(vals, self._adjustables)
             ]
             for tc in self._active_changers:
@@ -387,9 +387,9 @@ class AdjustableVirtual:
         )
         return self._currentChange
 
-    def get_value(self):
-        return self._foo_get_value(
-            *[adj.get_value() for adj in self._adjustables]
+    def get_current_value(self):
+        return self._foo_get_current_value(
+            *[adj.get_current_value() for adj in self._adjustables]
         )
 
     def set_current_value(self, value):
@@ -398,6 +398,6 @@ class AdjustableVirtual:
                 "There is no value setting implemented for this virtual adjuster!"
             )
         else:
-            vals = self._foo_set_target_value(value)
+            vals = self._foo_set_target_value_current_value(value)
             for adj, val in zip(self._adjustables, vals):
                 adj.set_current_value(val)

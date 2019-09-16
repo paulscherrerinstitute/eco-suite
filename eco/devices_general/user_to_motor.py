@@ -32,9 +32,9 @@ class User_to_motor:
         motor_pos = user / self.conv
         return motor_pos
 
-    def get_value(self):
+    def get_current_value(self):
         """ Adjustable convention"""
-        motor_pos = self._stage.get_value()
+        motor_pos = self._stage.get_current_value()
         motor_pos -= self.offset
         user = motor_pos * self.conv
         return user
@@ -44,20 +44,20 @@ class User_to_motor:
         self._stage.set_current_value(motor_pos)
         return (value, motor_pos)
 
-    def set_target(self, value, hold=False, check=True):
+    def set_target_value(self, value, hold=False, check=True):
         value = self.user_to_motor(value) + self.offset
         user = (value - self.offset) * self.conv
-        return self._stage.set_target(value, hold, check)
+        return self._stage.set_target_value(value, hold, check)
 
     def gui(self, guiType="xdm"):
         return self._stage.gui()
 
     # spec-inspired convenience methods
     def mv(self, value):
-        self._stage._currentChange = self.set_target(value)
+        self._stage._currentChange = self.set_target_value(value)
 
     def wm(self, *args, **kwargs):
-        return self.get_value(*args, **kwargs)
+        return self.get_current_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
         motor_pos = self.user_to_motor(value)
@@ -82,4 +82,4 @@ class User_to_motor:
         return self.__str__()
 
     def __call__(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)

@@ -25,7 +25,7 @@ class Double_Crystal_Mono:
         while abs(self.wait_for_valid_value() - value) > precision:
             sleep(checktime)
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         changer = lambda value: self.move_and_wait(value)
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=self.stop
@@ -34,7 +34,7 @@ class Double_Crystal_Mono:
     def stop(self):
         self._stop.put(1)
 
-    def get_value(self):
+    def get_current_value(self):
         currentenergy = self.energy_rbk.get()
         return currentenergy
 
@@ -53,18 +53,18 @@ class Double_Crystal_Mono:
 
     # spec-inspired convenience methods
     def mv(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)
 
     def wm(self, *args, **kwargs):
-        return self.get_value(*args, **kwargs)
+        return self.get_current_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
 
         if self.get_moveDone == 1:
-            startvalue = self.get_value(*args, **kwargs)
+            startvalue = self.get_current_value(*args, **kwargs)
         else:
-            startvalue = self.get_value(*args, **kwargs)
-        self._currentChange = self.set_target(value + startvalue, *args, **kwargs)
+            startvalue = self.get_current_value(*args, **kwargs)
+        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
 
     def wait(self):
         self._currentChange.wait()
@@ -83,7 +83,7 @@ class Double_Crystal_Mono:
         return self.__str__()
 
     def __call__(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)
 
 
 class EcolEnergy:
@@ -100,7 +100,7 @@ class EcolEnergy:
         self.dmov = PV(dmov)
         self.done = False
 
-    def get_value(self):
+    def get_current_value(self):
         return self.readback.get()
 
     def move_and_wait(self, value, checktime=0.01, precision=2):
@@ -111,13 +111,13 @@ class EcolEnergy:
             sleep(0.3)
 
         self.setter.put(value)
-        while abs(self.get_value() - value) > precision:
+        while abs(self.get_current_value() - value) > precision:
             sleep(checktime)
         while not self.dmov.get():
             # print(self.dmov.get())
             sleep(checktime)
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         changer = lambda value: self.move_and_wait(value)
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None
@@ -133,23 +133,23 @@ class MonoEcolEnergy:
         self.offset = None
         self.MeVperEV = 0.78333
 
-    def get_value(self):
-        return self.dcm.get_value()
+    def get_current_value(self):
+        return self.dcm.get_current_value()
 
     def move_and_wait(self, value):
-        ch = [self.dcm.set_target(value), self.ecol.set_target(self.calcEcol(value))]
+        ch = [self.dcm.set_target_value(value), self.ecol.set_target_value(self.calcEcol(value))]
         for tc in ch:
             tc.wait()
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         changer = lambda value: self.move_and_wait(value)
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=self.dcm.stop
         )
 
     def alignOffsets(self):
-        mrb = self.dcm.get_value()
-        erb = self.ecol.get_value()
+        mrb = self.dcm.get_current_value()
+        erb = self.ecol.get_current_value()
         self.offset = {"dcm": mrb, "ecol": erb}
 
     def calcEcol(self, eV):
@@ -224,7 +224,7 @@ class AlvraDCM_FEL:
         )
         return s
 
-    def get_value(self):
+    def get_current_value(self):
         return self._getEnergy.get()
 
     def move_and_wait(self, value, checktime=0.1, precision=0.5):
@@ -239,7 +239,7 @@ class AlvraDCM_FEL:
         while self._energyChanging == 1:
             sleep(checktime)
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         changer = lambda value: self.move_and_wait(value)
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None

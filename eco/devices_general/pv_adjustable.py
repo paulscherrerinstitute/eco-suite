@@ -38,7 +38,7 @@ class PvRecord:
         else:
             self._pvreadback = PV(pvreadbackname)
 
-    def get_value(self, readback=True):
+    def get_current_value(self, readback=True):
         if readback:
             currval = self._pvreadback.get()
         if not readback:
@@ -52,8 +52,8 @@ class PvRecord:
         if self.accuracy is not None:
             if (
                 np.abs(
-                    self.get_value(readback=False)
-                    - self.get_value(readback=True)
+                    self.get_current_value(readback=False)
+                    - self.get_current_value(readback=True)
                 )
                 > self.accuracy
             ):
@@ -68,7 +68,7 @@ class PvRecord:
         while self.get_moveDone() == 0:
             time.sleep(0.1)
 
-    def set_target(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         """ Adjustable convention"""
 
         changer = lambda value: self.move(value)
@@ -78,21 +78,21 @@ class PvRecord:
 
     # spec-inspired convenience methods
     def mv(self, value):
-        self._currentChange = self.set_target(value)
+        self._currentChange = self.set_target_value(value)
 
     def wm(self, *args, **kwargs):
-        return self.get_value(*args, **kwargs)
+        return self.get_current_value(*args, **kwargs)
 
     def mvr(self, value, *args, **kwargs):
 
         if self.get_moveDone == 1:
-            startvalue = self.get_value(readback=True, *args, **kwargs)
+            startvalue = self.get_current_value(readback=True, *args, **kwargs)
         else:
-            startvalue = self.get_value(readback=False, *args, **kwargs)
-        self._currentChange = self.set_target(value + startvalue, *args, **kwargs)
+            startvalue = self.get_current_value(readback=False, *args, **kwargs)
+        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
 
     def wait(self):
         self._currentChange.wait()
 
     def __repr__(self):
-        return "%s is at: %s" % (self.Id, self.get_value())
+        return "%s is at: %s" % (self.Id, self.get_current_value())
