@@ -270,6 +270,15 @@ components = [
         "type": "eco.xoptics.KBhor:KBhor",
         "kwargs": {},
     },
+    {
+        "name": "spatial_tt",
+        "args": [],
+        "kwargs": {"reduction_client_address":"http://sf-daqsync-02:12003/"},
+        "z_und": 141,
+        "desc": "spatial encoding timing diagnostics before sample.",
+        "type": "eco.xdiagnostics.timetools:SpatialEncoder",
+        "lazy":False,
+    },
     # {
         # "name": "slit_kb",
         # "args": [],
