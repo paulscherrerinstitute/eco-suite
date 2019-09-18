@@ -32,6 +32,7 @@ class DelayTime(AdjustableVirtual):
         self._group_velo = 299798458  # m/s
         self._passes = passes
         self.Id = stage.Id + "_delay"
+        self._stage = stage
         AdjustableVirtual.__init__(
             self,
             [stage],
@@ -57,6 +58,16 @@ class DelayTime(AdjustableVirtual):
         s += f"{colorama.Style.RESET_ALL}"
         return s
 
+    def get_limits(self):
+        return [self._mm_to_s(tl) for tl in self._stage.get_limits()]
+
+    def set_limits(self,low_limit,high_limit):
+        lims_stage = [self._s_to_mm(tl) for tl in [low_limit,high_limit]]
+        lims_stage.sort()
+        self._stage.set_limits(*lims_stage)
+
+
+        return [self._mm_to_s(tl) for tl in self._stage.get_limits()]
 
 class DelayCompensation(AdjustableVirtual):
     """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for 

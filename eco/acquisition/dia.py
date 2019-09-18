@@ -337,7 +337,7 @@ class DIAClient:
             self.client.stop() 
 
         outputfilenames = [
-            f"{file_name_JF}.{tcli.upper()}.h5" for tcli in self.active_clients+['camera'] # DIRTY HACK 
+            f"{file_name_JF}.{tcli.upper()}.h5" for tcli in self.active_clients+['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK 
         ]
 
         return Acquisition(
