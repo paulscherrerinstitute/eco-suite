@@ -256,12 +256,12 @@ class EvrOutput:
         )
 
     def _get_pulserA(self):
-        return self._pulsers[self.pulsers_numbers[0].get_value()]
+        return self._pulsers[self.pulsers_numbers[0].get_current_value()]
 
     pulserA = property(_get_pulserA)
 
     def _get_pulserB(self):
-        return self._pulsers[self.pulsers_numbers[1].get_value()]
+        return self._pulsers[self.pulsers_numbers[1].get_current_value()]
 
     pulserB = property(_get_pulserB)
 

@@ -6,7 +6,7 @@ from functools import partial
 
 def addSlitRepr(Slitobj):
     def repr(self):
-        s = f"pos ({self.hpos.get_value():6.3f},{self.vpos.get_value():6.3f}), gap ({self.hgap.get_value():6.3f},{self.vgap.get_value():6.3f})"
+        s = f"pos ({self.hpos.get_current_value():6.3f},{self.vpos.get_current_value():6.3f}), gap ({self.hgap.get_current_value():6.3f},{self.vgap.get_current_value():6.3f})"
         return s
     Slitobj.__repr__ =  repr
     return Slitobj
@@ -33,16 +33,16 @@ class SlitBlades:
             return (xn + xp) / 2
 
         def setwidth(x):
-            return tuple([tx + self.hpos.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.hpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def setheight(x):
-            return tuple([tx + self.vpos.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def sethpos(x):
-            return tuple([tx + self.hgap.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.hgap.get_current_value() for tx in [-x / 2, x / 2]])
 
         def setvpos(x):
-            return tuple([tx + self.vgap.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.vgap.get_current_value() for tx in [-x / 2, x / 2]])
 
         append_object_to_object(
             self,
@@ -84,22 +84,22 @@ class SlitBlades:
     def __call__(self, *args):
         if len(args) == 0:
             return (
-                self.hpos.get_value(),
-                self.vpos.get_value(),
-                self.hgap.get_value(),
-                self.vgap.get_value(),
+                self.hpos.get_current_value(),
+                self.vpos.get_current_value(),
+                self.hgap.get_current_value(),
+                self.vgap.get_current_value(),
             )
         elif len(args) == 1:
-            self.hgap.set_target(args[0])
-            self.vgap.set_target(args[0])
+            self.hgap.set_target_value(args[0])
+            self.vgap.set_target_value(args[0])
         elif len(args) == 2:
-            self.hgap.set_target(args[0])
-            self.vgap.set_target(args[1])
+            self.hgap.set_target_value(args[0])
+            self.vgap.set_target_value(args[1])
         elif len(args) == 4:
-            self.hpos.set_target(args[0])
-            self.vpos.set_target(args[1])
-            self.hgap.set_target(args[2])
-            self.vgap.set_target(args[3])
+            self.hpos.set_target_value(args[0])
+            self.vpos.set_target_value(args[1])
+            self.hgap.set_target_value(args[2])
+            self.vgap.set_target_value(args[3])
         else:
             raise Exception("wrong number of input arguments!")
 
@@ -127,16 +127,16 @@ class SlitPosWidth:
             return (xn + xp) / 2
 
         def setwidth(x):
-            return tuple([tx + self.hpos.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.hpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def setheight(x):
-            return tuple([tx + self.vpos.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def sethpos(x):
-            return tuple([tx + self.hgap.get_value() for tx in [-x / 2, x / 2]])
+            return tuple([tx + self.hgap.get_current_value() for tx in [-x / 2, x / 2]])
 
         def setvpos(x):
-            return tuple([tx + self.vgap.get_value() for tw in [-x / 2, x / 2]])
+            return tuple([tx + self.vgap.get_current_value() for tw in [-x / 2, x / 2]])
 
         append_object_to_object(
             self,
@@ -178,22 +178,22 @@ class SlitPosWidth:
     def __call__(self, *args):
         if len(args) == 0:
             return (
-                self.hpos.get_value(),
-                self.vpos.get_value(),
-                self.hgap.get_value(),
-                self.vgap.get_value(),
+                self.hpos.get_current_value(),
+                self.vpos.get_current_value(),
+                self.hgap.get_current_value(),
+                self.vgap.get_current_value(),
             )
         elif len(args) == 1:
-            self.hgap.set_target(args[0])
-            self.vgap.set_target(args[0])
+            self.hgap.set_target_value(args[0])
+            self.vgap.set_target_value(args[0])
         elif len(args) == 2:
-            self.hgap.set_target(args[0])
-            self.vgap.set_target(args[1])
+            self.hgap.set_target_value(args[0])
+            self.vgap.set_target_value(args[1])
         elif len(args) == 4:
-            self.hpos.set_target(args[0])
-            self.vpos.set_target(args[1])
-            self.hgap.set_target(args[2])
-            self.vgap.set_target(args[3])
+            self.hpos.set_target_value(args[0])
+            self.vpos.set_target_value(args[1])
+            self.hgap.set_target_value(args[2])
+            self.vgap.set_target_value(args[3])
         else:
             raise Exception("wrong number of input arguments!")
 
@@ -207,39 +207,39 @@ class SlitBlades_old:
         self._y2 = MotorRecord(Id + ":MOTOR_Y2")
 
     def get_hg(self):
-        return self._x2.get_value() - self._x1.get_value()
+        return self._x2.get_current_value() - self._x1.get_current_value()
 
     def get_vg(self):
-        return self._y2.get_value() - self._y1.get_value()
+        return self._y2.get_current_value() - self._y1.get_current_value()
 
     def get_ho(self):
-        return (self._x1.get_value() + self._x2.get_value()) / 2
+        return (self._x1.get_current_value() + self._x2.get_current_value()) / 2
 
     def get_vo(self):
-        return (self._y1.get_value() + self._y2.get_value()) / 2
+        return (self._y1.get_current_value() + self._y2.get_current_value()) / 2
 
     def set_hg(self, value):
         ho = self.get_ho()
-        c1 = self._x1.set_target(ho - value / 2)
-        c2 = self._x2.set_target(ho + value / 2)
+        c1 = self._x1.set_target_value(ho - value / 2)
+        c2 = self._x2.set_target_value(ho + value / 2)
         return c1, c2
 
     def set_vg(self, value):
         vo = self.get_vo()
-        c1 = self._y1.set_target(vo - value / 2)
-        c2 = self._y2.set_target(vo + value / 2)
+        c1 = self._y1.set_target_value(vo - value / 2)
+        c2 = self._y2.set_target_value(vo + value / 2)
         return c1, c2
 
     def set_ho(self, value):
         hg = self.get_hg()
-        c1 = self._x1.set_target(value - hg / 2)
-        c2 = self._x2.set_target(value + hg / 2)
+        c1 = self._x1.set_target_value(value - hg / 2)
+        c2 = self._x2.set_target_value(value + hg / 2)
         return c1, c2
 
     def set_vo(self, value):
         vg = self.get_vg()
-        c1 = self._y1.set_target(value - vg / 2)
-        c2 = self._y2.set_target(value + vg / 2)
+        c1 = self._y1.set_target_value(value - vg / 2)
+        c2 = self._y2.set_target_value(value + vg / 2)
         return c1, c2
 
     def __call__(self, width, height):
@@ -262,39 +262,39 @@ class SlitBladesJJ_old:
         self._y2 = MotorRecord(Id + ":MOT5")
 
     def get_hg(self):
-        return -(self._x2.get_value() - self._x1.get_value())
+        return -(self._x2.get_current_value() - self._x1.get_current_value())
 
     def get_vg(self):
-        return -(self._y2.get_value() - self._y1.get_value())
+        return -(self._y2.get_current_value() - self._y1.get_current_value())
 
     def get_ho(self):
-        return (self._x1.get_value() + self._x2.get_value()) / 2
+        return (self._x1.get_current_value() + self._x2.get_current_value()) / 2
 
     def get_vo(self):
-        return (self._y1.get_value() + self._y2.get_value()) / 2
+        return (self._y1.get_current_value() + self._y2.get_current_value()) / 2
 
     def set_hg(self, value):
         ho = self.get_ho()
-        c1 = self._x1.set_target(ho + value / 2)
-        c2 = self._x2.set_target(ho - value / 2)
+        c1 = self._x1.set_target_value(ho + value / 2)
+        c2 = self._x2.set_target_value(ho - value / 2)
         return c1, c2
 
     def set_vg(self, value):
         vo = self.get_vo()
-        c1 = self._y1.set_target(vo + value / 2)
-        c2 = self._y2.set_target(vo - value / 2)
+        c1 = self._y1.set_target_value(vo + value / 2)
+        c2 = self._y2.set_target_value(vo - value / 2)
         return c1, c2
 
     def set_ho(self, value):
         hg = self.get_hg()
-        c1 = self._x1.set_target(-(-value - hg / 2))
-        c2 = self._x2.set_target(-(-value + hg / 2))
+        c1 = self._x1.set_target_value(-(-value - hg / 2))
+        c2 = self._x2.set_target_value(-(-value + hg / 2))
         return c1, c2
 
     def set_vo(self, value):
         vg = self.get_vg()
-        c1 = self._y1.set_target(value + vg / 2)
-        c2 = self._y2.set_target(value - vg / 2)
+        c1 = self._y1.set_target_value(value + vg / 2)
+        c2 = self._y2.set_target_value(value - vg / 2)
         return c1, c2
 
     def __call__(self, width, height):
@@ -321,47 +321,47 @@ class SlitFourBlades_old:
         self._by2 = MotorRecord(Id + ":MOTOR_BY2")
 
     def get_hg(self):
-        return self._ax2.get_value() - self._ax1.get_value()
+        return self._ax2.get_current_value() - self._ax1.get_current_value()
 
     def get_vg(self):
-        return self._ay2.get_value() - self._ay1.get_value()
+        return self._ay2.get_current_value() - self._ay1.get_current_value()
 
     def get_ho(self):
-        return (self._ax1.get_value() + self._ax2.get_value()) / 2
+        return (self._ax1.get_current_value() + self._ax2.get_current_value()) / 2
 
     def get_vo(self):
-        return (self._ay1.get_value() + self._ay2.get_value()) / 2
+        return (self._ay1.get_current_value() + self._ay2.get_current_value()) / 2
 
     def set_hg(self, value):
         ho = self.get_ho()
-        c1 = self._ax1.set_target(ho - value / 2)
-        c2 = self._ax2.set_target(ho + value / 2)
-        c3 = self._bx1.set_target(ho - value / 2)
-        c4 = self._bx2.set_target(ho + value / 2)
+        c1 = self._ax1.set_target_value(ho - value / 2)
+        c2 = self._ax2.set_target_value(ho + value / 2)
+        c3 = self._bx1.set_target_value(ho - value / 2)
+        c4 = self._bx2.set_target_value(ho + value / 2)
         return c1, c2, c3, c4
 
     def set_vg(self, value):
         vo = self.get_vo()
-        c1 = self._ay1.set_target(vo - value / 2)
-        c2 = self._ay2.set_target(vo + value / 2)
-        c3 = self._by1.set_target(vo - value / 2)
-        c4 = self._by2.set_target(vo + value / 2)
+        c1 = self._ay1.set_target_value(vo - value / 2)
+        c2 = self._ay2.set_target_value(vo + value / 2)
+        c3 = self._by1.set_target_value(vo - value / 2)
+        c4 = self._by2.set_target_value(vo + value / 2)
         return c1, c2, c3, c4
 
     def set_ho(self, value):
         hg = self.get_hg()
-        c1 = self._ax1.set_target(value - hg / 2)
-        c2 = self._ax2.set_target(value + hg / 2)
-        c3 = self._bx1.set_target(value - hg / 2)
-        c4 = self._bx2.set_target(value + hg / 2)
+        c1 = self._ax1.set_target_value(value - hg / 2)
+        c2 = self._ax2.set_target_value(value + hg / 2)
+        c3 = self._bx1.set_target_value(value - hg / 2)
+        c4 = self._bx2.set_target_value(value + hg / 2)
         return c1, c2, c3, c4
 
     def set_vo(self, value):
         vg = self.get_vg()
-        c1 = self._ay1.set_target(value - vg / 2)
-        c2 = self._ay2.set_target(value + vg / 2)
-        c3 = self._by1.set_target(value - vg / 2)
-        c4 = self._by2.set_target(value + vg / 2)
+        c1 = self._ay1.set_target_value(value - vg / 2)
+        c2 = self._ay2.set_target_value(value + vg / 2)
+        c3 = self._by1.set_target_value(value - vg / 2)
+        c4 = self._by2.set_target_value(value + vg / 2)
         return c1, c2, c3, c4
 
     def __call__(self, width, height):
@@ -387,31 +387,31 @@ class SlitPosWidth_old:
         self._ygap = MotorRecord(Id + ":MOTOR_H")
 
     def get_hg(self):
-        return self._xgap.get_value()
+        return self._xgap.get_current_value()
 
     def get_vg(self):
-        return self._ygap.get_value()
+        return self._ygap.get_current_value()
 
     def get_ho(self):
-        return self._xoffs.get_value()
+        return self._xoffs.get_current_value()
 
     def get_vo(self):
-        return self._yoffs.get_value()
+        return self._yoffs.get_current_value()
 
     def set_hg(self, value):
-        c = self._xgap.set_target(value)
+        c = self._xgap.set_target_value(value)
         return c
 
     def set_vg(self, value):
-        c = self._ygap.set_target(value)
+        c = self._ygap.set_target_value(value)
         return c
 
     def set_ho(self, value):
-        c = self._xoffs.set_target(value)
+        c = self._xoffs.set_target_value(value)
         return c
 
     def set_vo(self, value):
-        c = self._yoffs.set_target(value)
+        c = self._yoffs.set_target_value(value)
         return c
 
     def __call__(self, width, height):

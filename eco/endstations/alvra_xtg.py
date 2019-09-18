@@ -23,8 +23,8 @@ class XTG:
         ostr = "*****SmarAct motor positions******\n"
 
         for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_value"):
-                pos = item.get_value()
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
                 ostr += "  " + tkey.ljust(10) + " : % 14g\n" % pos
         return ostr
 

@@ -129,7 +129,7 @@ class SolidTargetDetectorPBPS_new:
     def __repr__(self):
         s = f"**Intensity  monitor {self.name}**\n\n"
 
-        s += f"Target in: {self.target.get_value().name}\n\n"
+        s += f"Target in: {self.target.get_current_value().name}\n\n"
         try:
             sd = "**Biasd voltage**\n"
             sd += " - Diode up: %.4f\n" % (sdelf.diode_up.get_biasd())
@@ -226,7 +226,7 @@ class SolidTargetDetectorPBPS:
     def __repr__(self):
         s = f"**Intensity  monitor {self.name}**\n\n"
 
-        s += f"Target in: {self.target.get_value().name}\n\n"
+        s += f"Target in: {self.target.get_current_value().name}\n\n"
         try:
             sd = "**Biasd voltage**\n"
             sd += " - Diode up: %.4f\n" % (sdelf.diode_up.get_biasd())

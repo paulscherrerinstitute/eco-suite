@@ -54,7 +54,7 @@ class DelayTime(AdjustableVirtual):
         s += datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
         s += f"{colorama.Style.RESET_ALL}"
         s += f"{colorama.Style.BRIGHT}{self._get_name()}{colorama.Style.RESET_ALL} at "
-        s += f'{(self.get_value()*ureg.second).to_compact():P~6.3f}'
+        s += f'{(self.get_current_value()*ureg.second).to_compact():P~6.3f}'
         s += f"{colorama.Style.RESET_ALL}"
         return s
 
@@ -100,7 +100,7 @@ class DelayCompensation(AdjustableVirtual):
         s += datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
         s += f"{colorama.Style.RESET_ALL}"
         s += f"{colorama.Style.BRIGHT}{self._get_name()}{colorama.Style.RESET_ALL} at "
-        s += f'{(self.get_value()*ureg.second).to_compact():P~6.3f}'
+        s += f'{(self.get_current_value()*ureg.second).to_compact():P~6.3f}'
         s += f"{colorama.Style.RESET_ALL}"
         return s
 
@@ -222,8 +222,8 @@ class Laser_Exp:
         ostr = "*****Laser motor positions******\n"
 
         for tkey, item in sorted(self.__dict__.items()):
-            if hasattr(item, "get_value"):
-                pos = item.get_value()
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 
@@ -319,8 +319,8 @@ class Laser_Exp_old:
         ostr = "*****Laser motor positions******\n"
 
         for tkey, item in sorted(self.__dict__.items()):
-            if hasattr(item, "get_value"):
-                pos = item.get_value()
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 
