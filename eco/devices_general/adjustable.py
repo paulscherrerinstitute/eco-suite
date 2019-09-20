@@ -343,7 +343,7 @@ class AdjustableVirtual:
         adjustables,
         foo_get_current_value,
         foo_set_target_value_current_value,
-        set_current_value=False,
+        reset_current_value_to=False,
         append_aliases=False,
         name=None,
     ):
@@ -359,11 +359,11 @@ class AdjustableVirtual:
         self._adjustables = adjustables
         self._foo_set_target_value_current_value = foo_set_target_value_current_value
         self._foo_get_current_value = foo_get_current_value
-        self._set_current_value = set_current_value
-        if set_current_value:
+        self._reset_current_value_to = reset_current_value_to
+        if reset_current_value_to:
             for adj in self._adjustables:
-                if not hasattr(adj, "set_current_value"):
-                    raise Exception(f"No set_current_value method found in {adj}")
+                if not hasattr(adj, "reset_current_value_to"):
+                    raise Exception(f"No reset_current_value_to method found in {adj}")
 
     def set_target_value(self, value, hold=False):
         vals = self._foo_set_target_value_current_value(value)

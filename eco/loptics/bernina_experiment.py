@@ -27,7 +27,7 @@ def addDelayStageToSelf(self, stage=None, name=None):
 
 
 class DelayTime(AdjustableVirtual):
-    def __init__(self, stage, direction=1, passes=2, set_current_value=True, name=None):
+    def __init__(self, stage, direction=1, passes=2, reset_current_value_to=True, name=None):
         self._direction = direction
         self._group_velo = 299798458  # m/s
         self._passes = passes
@@ -38,7 +38,7 @@ class DelayTime(AdjustableVirtual):
             [stage],
             self._mm_to_s,
             self._s_to_mm,
-            set_current_value=set_current_value,
+            reset_current_value_to=reset_current_value_to,
             name=name,
         )
 
@@ -81,7 +81,7 @@ class DelayCompensation(AdjustableVirtual):
             adjustables,
             self._from_values,
             self._calc_values,
-            set_current_value=set_current_value,
+            set_current_value = set_current_value,
             name=name,
         )
 
@@ -162,11 +162,13 @@ class Laser_Exp:
             print("Problems initializing global delay stage")
 
         # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions.
-        self.delay_lxtt = DelayCompensation(
-            [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
-        )
-        self.alias.append(self.delay_lxtt.alias)
-
+        try:
+            self.delay_lxtt = DelayCompensation(
+                [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
+            )
+            self.alias.append(self.delay_lxtt.alias)
+        except: 
+            print('Problems initializing virtual pump delay stage')
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')

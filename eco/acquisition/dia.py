@@ -168,7 +168,7 @@ class DIAClient:
                 sleep(time_interval)
 
     def take_pedestal(
-        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0, freq=50):
+        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0, freq=25):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
             run as jungfrau_utils_run,
         )
