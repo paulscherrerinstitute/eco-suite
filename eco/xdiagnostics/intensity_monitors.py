@@ -56,8 +56,8 @@ class SolidTargetDetectorPBPS_new:
             append_object_to_object(self,PvDataStream,calc['ypos'], name="ypos")
 
     def get_calibration_values(self,seconds=5):
-        self.x_diodes.set_target(0).wait()
-        self.y_diodes.set_target(0).wait()
+        self.x_diodes.set_target_value(0).wait()
+        self.y_diodes.set_target_value(0).wait()
         ds = [self.signal_up, self.signal_down, self.signal_left, self.signal_right]
         aqs = [d.acquire(seconds=seconds) for d in ds]
         data = [aq.wait() for aq in aqs]
@@ -81,28 +81,28 @@ class SolidTargetDetectorPBPS_new:
     def get_calibration_values_position(self,calib_intensities,seconds=5,motion_range=.2):
         self.x_diodes.set_limits(-motion_range/2-.1,+motion_range/2+.1)
         self.y_diodes.set_limits(-motion_range/2-.1,+motion_range/2+.1)
-        self.x_diodes.set_target(0).wait()
-        self.y_diodes.set_target(0).wait()
+        self.x_diodes.set_target_value(0).wait()
+        self.y_diodes.set_target_value(0).wait()
         raw = []
         for pos in [motion_range/2, -motion_range/2]:
-            self.x_diodes.set_target(pos).wait()
+            self.x_diodes.set_target_value(pos).wait()
             aqs = [ts.acquire(seconds=seconds) for ts in [self.signal_left, self.signal_right]]
             vals = [np.mean(aq.wait())*calib for aq,calib in zip(aqs,calib_intensities[0:2])]
             raw.append((vals[0]-vals[1])/(vals[0]+vals[1]))
         grad = motion_range/np.diff(raw)[0]
         # xcalib = [np.diff(calib_intensities[0:2])[0]/np.sum(calib_intensities[0:2]), grad]
         xcalib = [0, grad]
-        self.x_diodes.set_target(0).wait()
+        self.x_diodes.set_target_value(0).wait()
         raw = []
         for pos in [motion_range/2, -motion_range/2]:
-            self.y_diodes.set_target(pos).wait()
+            self.y_diodes.set_target_value(pos).wait()
             aqs = [ts.acquire(seconds=seconds) for ts in [self.signal_up, self.signal_down]]
             vals = [np.mean(aq.wait())*calib for aq,calib in zip(aqs,calib_intensities[2:4])]
             raw.append((vals[0]-vals[1])/(vals[0]+vals[1]))
         grad = motion_range/np.diff(raw)[0]
         # ycalib = [np.diff(calib_intensities[2:4])[0]/np.sum(calib_intensities[2:4]), grad]
         ycalib = [0, grad]
-        self.y_diodes.set_target(0).wait()
+        self.y_diodes.set_target_value(0).wait()
         return xcalib,ycalib
 
     def set_calibration_values_position(self,xcalib,ycalib):

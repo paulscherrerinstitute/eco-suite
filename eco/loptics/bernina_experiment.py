@@ -226,7 +226,13 @@ class Laser_Exp:
         for tkey, item in sorted(self.__dict__.items()):
             if hasattr(item, "get_current_value"):
                 pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+                posdialstr = ''
+                try:
+                    posdial = item.get_current_value(postype = 'dial')
+                    posdialstr = '    dial:  % 14g\n' % posdial
+                except:
+                    pass
+                ostr += "  " + tkey.ljust(18) + " : % 14g\n" % pos + posdialstr
         return ostr
 
     def __repr__(self):
@@ -323,7 +329,13 @@ class Laser_Exp_old:
         for tkey, item in sorted(self.__dict__.items()):
             if hasattr(item, "get_current_value"):
                 pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+                posdialstr = ''
+                try:
+                    posdial = item.get_current_value(postype = 'dial')
+                    posdialstr = '    dial:  % 14g\n' % posdial
+                except:
+                    pass
+                ostr += "  " + tkey.ljust(18) + " : % 14g\n" % pos + posdialstr
         return ostr
 
     def __repr__(self):

@@ -279,14 +279,15 @@ components = [
         "type": "eco.xdiagnostics.timetools:SpatialEncoder",
         "lazy":False,
     },
-    # {
-        # "name": "slit_kb",
-        # "args": [],
-        # "kwargs": {"Id": "SARES20"},
-        # "z_und": 141,
-        # "desc": "Slits behind Kb",
-        # "type": "eco.xoptics.slits:SlitBladesJJ_old",
-    # },
+     {
+         "name": "slit_kb",
+         "args": [],
+         "kwargs": {"pvname": "SARES20-MF1"},
+         "z_und": 141,
+         "desc": "Slits behind Kb",
+         "type": "eco.xoptics.slits:SlitBlades_JJ",
+         #"type": "eco.xoptics.slits:SlitBladesJJ_old",
+     },
     {
         "args": [],
         "name": "gps",
