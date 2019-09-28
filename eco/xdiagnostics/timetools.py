@@ -46,7 +46,7 @@ class SpectralEncoder:
         s = [f"Status {self.name}"]
         s.append(str(self.x_target))
         s.append(str(self.y_target))
-        s.append(f"Data reduction is {self.data_reduction_client.get_status()}")
+        s.append(f"Data reduction is on")
         s.append(f"  roi            {self.roi}")
         s.append(f"  roi_background {self.roi_background}")
         return '\n'.join(s)
@@ -104,7 +104,7 @@ class SpatialEncoder:
         s = [f"Status {self.name}"]
         # s.append(str(self.x_target))
         # s.append(str(self.y_target))
-        s.append(f"Data reduction is {self.data_reduction_client.get_status()}")
+        s.append(f"Data reduction is on")
         s.append(f"  roi            {self.roi}")
         s.append(f"  roi_background {self.roi_background}")
         return '\n'.join(s)
