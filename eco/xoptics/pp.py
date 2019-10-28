@@ -30,11 +30,11 @@ class Pulsepick:
 
     def movein(self):
         self.x.set_target_value(4.45)
-        self.y.set_target_value(-0.9)
+        self.y.set_target_value(-1.75)
 
     def moveout(self):
         self.x.set_target_value(-5)
-        self.y.set_target_value(-0.9)
+        self.y.set_target_value(-1.75)
 
     def open(self):
         self._openclose.put(1)
@@ -43,10 +43,25 @@ class Pulsepick:
 
     def close(self):
         self._openclose.put(0)
-        self._evrsrc.put(63)
+        self._evrsrc.put(62)
         print("Closed Pulse Picker")
 
     def trigger(self):
         self._openclose.put(1)
         self._evrsrc.put(0)
         print("Set Pulse Picker to trigger (src 0 and output On)")
+
+    def get_status(self):
+        stat = self._evrsrc.get()
+        if stat==62 and self._openclose.get()==1:
+                return 'open'
+        if self._openclose.get()==0:
+            return 'closed'
+        else:
+            return 'unknown'
+
+    def __repr__(self):
+        return f'FEL pulse picker state {self.get_status()}.'
+
+
+            

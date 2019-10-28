@@ -5,7 +5,7 @@ import time
 from ..devices_general.utilities import Changer
 
 
-_basefolder = "/sf/bernina/config/eco/offsets"
+_basefolder = "/sf/bernina/config/src/python/eco/timing"
 
 
 def timeToStr(value, n=12):
@@ -128,18 +128,14 @@ class Pockels_trigger(PV):
 _OSCILLATOR_PERIOD = 1 / 71.368704e6
 
 
-class Phase_shifter(PV):
-    """ this class is needed to store the offset in files and read in ps """
+class LaserDelay:
 
-    def __init__(
-        self, pv_basename="SLAAR02-TSPL-EPL", dial_max=14.0056e-9, precision=100e-15
-    ):
-        pvname = pv_basename + ":CURR_DELTA_T"
-        PV.__init__(self, pvname)
-        self._filename = os.path.join(_basefolder, pvname)
-        self._pv_setvalue = PV(pv_basename + ":NEW_DELTA_T")
-        self._pv_execute = PV(pv_basename + ":SET_NEW_PHASE.PROC")
-        self._storage = Storage(pvname)
+    def __init__(self, pv_set='SLAAR02-LTIM-PDLY:DELAY', pv_get='SLAAR-LGEN:DLY_OFFS2', name="xlt_edwin", dial_max=14.0056e-9, precision=100e-15):
+        self.pvnname = pv_basename
+        self._filename = os.path.join(_basefolder, pv_basename)
+        self._pv_setvalue = PV(pv_set)
+        self._pv_getvalue = PV(pv_get)
+        self._storage = Storage(pv_basename)
         self.dial_max = dial_max
         self.retry = precision
 
@@ -148,7 +144,7 @@ class Phase_shifter(PV):
         return self._storage.value
 
     def get_dial(self):
-        return super().get() * 1e-12
+        self._pv_getvalue.get() * 1e-6
 
     def get(self):
         """ convert time to sec """
@@ -163,13 +159,11 @@ class Phase_shifter(PV):
         if accuracy is None:
             accuracy = self.retry
         dial = value + self.offset
-        dial = np.mod(dial, _OSCILLATOR_PERIOD)
         if dial > self.dial_max:
             dial = self.dial_max
         dial_ps = dial * 1e12
         self._pv_setvalue.put(dial_ps)
         time.sleep(0.1)
-        self._pv_execute.put(1)
         # print(accuracy)
         while np.abs(self.get_dial() - dial) > accuracy:
             # print(np.abs(self.get_dial()-dial))

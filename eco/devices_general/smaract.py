@@ -296,7 +296,7 @@ class SmarActRecord:
 
         cmd.append('"P=%s,M=%s"' % (P, M))
         #        #cmd.append('/sf/common/config/qt/motorx_more.ui')
-        cmd.append("ESB_MX_SMARACT_mot_exp.ui")
+        cmd.append("/sf/common/config/qt/ESB_MX_SmarAct_mot_exp.ui")
         #        #os.system(' '.join(cmd))
         return subprocess.Popen(" ".join(cmd), shell=True)
 

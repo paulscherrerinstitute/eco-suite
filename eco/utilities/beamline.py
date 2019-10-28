@@ -19,13 +19,25 @@ class BeamlineSwissfel:
 
     def _print_component_status(self,comp_type,linker='\n'):
         s = self._get_component_status()
-        print linker.join(s)
+        print(linker.join(s))
 
 
             
 
 
 
+class Slits:
+    def __init__(self, slits):
+        self.slits = slits
 
+    def __repr__(self):
+        o = []
+        
+        for s in self.slits:
+            o.append(s.name)
+            tr = s.__repr__()
+            for line in tr.splitlines():
+                o.append('  '+line)
+        return '\n'.join(o)
 
         

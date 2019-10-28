@@ -304,6 +304,17 @@ components = [
         "type": "eco.endstations.bernina_diffractometers:XRD",
         "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
     },
+    
+    {
+        "args": [],
+        "name": "vonHamos",
+        "z_und": 142,
+        "desc": "Kern experiment, von Hamos vertical and horizontal stages ",
+        "type": "eco.devices_general.micos_stage:stage",
+        "kwargs": {
+            "vonHamos_horiz_pv": config["Kern"]["vonHamos_horiz"],
+            "vonHamos_vert_pv": config["Kern"]["vonHamos_vert"],}
+    },
     {
         "args": [],
         "name": "xeye",
@@ -316,6 +327,7 @@ components = [
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
         },
+        
     },
     {
         "args": [],
@@ -502,6 +514,14 @@ components = [
             },
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
+        "lazy": False,
+    },
+    {
+        "args": [[Component('slit_und'),Component('slit_switch'),Component('slit_att'),Component('slit_kb')]],
+        "name": "slits",
+        "desc": "collection of all slits",
+        "type": "eco.utilities.beamline:Slits",
+        "kwargs": {},
         "lazy": False,
     },
 ]
