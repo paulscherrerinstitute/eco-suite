@@ -50,7 +50,7 @@ import sys
 import time
 
 from epics import ca
-from . import device
+from epics import device
 
 
 class MotorLimitException(Exception):
