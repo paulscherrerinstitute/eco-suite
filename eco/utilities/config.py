@@ -237,4 +237,4 @@ class Terminal:
         return s
 
     def set_title(self,extension=''):
-        print(colorama.ansi.set_title(self.get_string()+extension))
+        print(colorama.ansi.set_title("♻️ "+self.get_string()+extension))

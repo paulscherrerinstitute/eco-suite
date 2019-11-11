@@ -66,6 +66,7 @@ class GPS:
         if "hlrxrz" in self.configuration:
             addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_RX", name="rxhl")
             addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_RZ", name="rzhl")
+        
 
     def get_adjustable_positions_str(self):
         ostr = "*****GPS motor positions******\n"
@@ -141,6 +142,17 @@ class XRD:
             append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-U",pvreadbackname="SARES20-HEX_PI:POSI-U",name='uhex')
             append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-V",pvreadbackname="SARES20-HEX_PI:POSI-V",name='vhex')
             append_object_to_object(self,PvRecord,"SARES20-HEX_PI:SET-POSI-W",pvreadbackname="SARES20-HEX_PI:POSI-W",name='whex')
+        
+        if "kappa" in self.configuration:
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_KRX",name='eta')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_KAP",name='kappa')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_KPH",name='phi')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_DTY",name='zkap')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_DTX",name='xkap')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_DTZ",name='ykap')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_DRX",name='rxkap')
+            append_object_to_object(self,MotorRecord,"SARES21-XRD:MOT_KAP_DRZ",name='rykap')
+            
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
