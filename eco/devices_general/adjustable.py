@@ -8,7 +8,7 @@ import colorama
 import time
 import logging
 import datetime
-
+import numpy as np
 
 logger = logging.getLogger(__name__)
 

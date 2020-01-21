@@ -100,7 +100,7 @@ class DIAClient:
             {
                 "timing": "trigger",
                 # FIXME: HARDCODED
-                "exptime": 0.000_010,
+                "exptime": 0.000_005,
                 "cycles": self.n_frames,
                 # "delay"  : 0.001992,
                 "frames": 1,

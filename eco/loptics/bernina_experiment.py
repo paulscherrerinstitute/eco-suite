@@ -172,17 +172,16 @@ class Laser_Exp:
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')
-
         # LAM delay stages
-        addSmarActRecordToSelf(self, Id="SLAAR21-LMTS-LAM11", name="_lam_delay_smarstg")
-        addDelayStageToSelf(
-            self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar"
-        )
+        #addSmarActRecordToSelf(self, Id="SLAAR21-LMTS-LAM11", name="_lam_delay_smarstg")
+        #addDelayStageToSelf(self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar")
         # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
         # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
-
-        addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
-        addDelayStageToSelf(self, self.__dict__["_lam_delaystg"], name="lam_delay")
+        try:
+            addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
+            addDelayStageToSelf(self, self.__dict__["_lam_delaystg"], name="lam_delay") #this try except does not work
+        except: 
+            print('Problems initializing LAM delay stage')
         # self._lam_delayStg = MotorRecord(self.Id+'-M548:MOT')
         # self.lam_delay = DelayStage(self._lam_delayStg)
 
@@ -210,15 +209,16 @@ class Laser_Exp:
         ### Mirrors used in the experiment ###
 
         for smar_name, smar_address in self.smar_config.items():
-            try:
-                addSmarActRecordToSelf(
-                    self, Id=(self.IdSA + smar_address), name=smar_name
-                )
-            except:
-                print("Loading %s SmarAct motor in bernina laser conifg failed") % (
-                    smar_name
-                )
-                pass
+
+            #try:
+            addSmarActRecordToSelf(
+                self, Id=(self.IdSA + smar_address), name=smar_name
+            )
+            #except:
+            #    print("Loading %s SmarAct motor in bernina laser conifg failed") % (
+            #        smar_name
+            #    )
+            #    pass
 
     def get_adjustable_positions_str(self):
         ostr = "*****Laser motor positions******\n"
@@ -291,8 +291,8 @@ class Laser_Exp_old:
         addDelayStageToSelf(
             self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar"
         )
-        # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
-        # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
+        #self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
+        #self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
 
         addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
         addDelayStageToSelf(self, self.__dict__["_lam_delaystg"], name="lam_delay")

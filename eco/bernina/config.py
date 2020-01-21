@@ -317,6 +317,14 @@ components = [
     },
     {
         "args": [],
+        "name": "gasjet",
+        "z_und": 142,
+        "desc": "ToF comm. gasjet",
+        "type": "tof:jet",
+        "kwargs": {}
+    },
+    {
+        "args": [],
         "name": "xeye",
         "z_und": 142,
         "desc": "Mobile X-ray eye in Bernina hutch",
@@ -439,12 +447,12 @@ components = [
     },
     {
         "args": [],
-        "name": "epics_scans",
+        "name": "scans_epics",
         "desc": "epics non beam synchronous based acquisition",
         "type": "eco.acquisition.scan:Scans",
         "kwargs": {
             "data_base_dir": "scan_data",
-            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/scan_info",
+            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
             "default_counters": [Component("epics_daq")],
             "checker": Component("checker"),
             "scan_directories": True,
