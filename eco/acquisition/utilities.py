@@ -5,10 +5,16 @@ from asyncio import Future
 
 class Acquisition:
     def __init__(
-            self, parent=None, acquire=lambda:None, acquisition_kwargs={}, hold=True, stopper=None, get_result=lambda:None
+        self,
+        parent=None,
+        acquire=lambda: None,
+        acquisition_kwargs={},
+        hold=True,
+        stopper=None,
+        get_result=lambda: None,
     ):
         self.acquisition_kwargs = acquisition_kwargs
-        for key,val in acquisition_kwargs.items():
+        for key, val in acquisition_kwargs.items():
             self.__dict__[key] = val
         self._acquire = acquire
         self._stopper = stopper

@@ -129,8 +129,14 @@ _OSCILLATOR_PERIOD = 1 / 71.368704e6
 
 
 class LaserDelay:
-
-    def __init__(self, pv_set='SLAAR02-LTIM-PDLY:DELAY', pv_get='SLAAR-LGEN:DLY_OFFS2', name="xlt_edwin", dial_max=14.0056e-9, precision=100e-15):
+    def __init__(
+        self,
+        pv_set="SLAAR02-LTIM-PDLY:DELAY",
+        pv_get="SLAAR-LGEN:DLY_OFFS2",
+        name="xlt_edwin",
+        dial_max=14.0056e-9,
+        precision=100e-15,
+    ):
         self.pvnname = pv_basename
         self._filename = os.path.join(_basefolder, pv_basename)
         self._pv_setvalue = PV(pv_set)

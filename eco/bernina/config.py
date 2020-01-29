@@ -62,10 +62,26 @@ components = [
         "desc": "Slit after Undulator",
     },
     {
+        "name": "pshut_und",
+        "type": "eco.xoptics.shutters:PhotonShutter",
+        "args": ["SARFE10-OPSH044:REQUEST"],
+        "kwargs": {},
+        "z_und": 44,
+        "desc": "First shutter after Undulators",
+    },
+    {
+        "name": "sshut_opt",
+        "type": "eco.xoptics.shutters:SafetyShutter",
+        "args": ["SGE01-EPKT822:BST1_oeffnen"],
+        "kwargs": {},
+        "z_und": 115,
+        "desc": "Bernina safety shutter",
+    },
+    {
         "name": "att_fe",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
         "args": ["SARFE10-OATT053"],
-        "kwargs": {},
+        "kwargs": {"shutter": Component("pshut_und")},
         "z_und": 53,
         "desc": "Attenuator in Front End",
     },
@@ -94,12 +110,12 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     # {
-        # "name": "slitSwitch",
-        # "z_und": 92,
-        # "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
-        # "type": "eco.xoptics.slits:SlitBlades_old",
-        # "args": ["SAROP21-OAPU092"],
-        # "kwargs": {},
+    # "name": "slitSwitch",
+    # "z_und": 92,
+    # "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
+    # "type": "eco.xoptics.slits:SlitBlades_old",
+    # "args": ["SAROP21-OAPU092"],
+    # "kwargs": {},
     # },
     {
         "name": "slit_switch",
@@ -178,7 +194,21 @@ components = [
         "desc": "Intensity/position monitor after Optics hutch",
         "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
         "args": ["SAROP21-PBPS133"],
-        "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9, 'channels':{'up':'SLAAR21-LSCP1-FNS:CH6:VAL_GET','down':'SLAAR21-LSCP1-FNS:CH7:VAL_GET','left':'SLAAR21-LSCP1-FNS:CH4:VAL_GET','right':'SLAAR21-LSCP1-FNS:CH5:VAL_GET'},'calc':{'itot':'SLAAR21-LTIM01-EVR0:CALCI','xpos':'SLAAR21-LTIM01-EVR0:CALCX','ypos':'SLAAR21-LTIM01-EVR0:CALCY'}},
+        "kwargs": {
+            "VME_crate": "SAROP21-CVME-PBPS1",
+            "link": 9,
+            "channels": {
+                "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+                "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+                "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+                "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+            },
+            "calc": {
+                "itot": "SLAAR21-LTIM01-EVR0:CALCI",
+                "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+                "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+            },
+        },
     },
     {
         "name": "prof_opt",
@@ -191,16 +221,16 @@ components = [
     {
         "name": "spect_tt",
         "args": ["SAROP21-PSEN135"],
-        "kwargs": {"reduction_client_address":"http://sf-daqsync-02:12002/"},
+        "kwargs": {"reduction_client_address": "http://sf-daqsync-01:8889/"},
         "z_und": 135,
         "desc": "Spectral encoding timing diagnostics before Attenuator.",
         "type": "eco.xdiagnostics.timetools:SpectralEncoder",
-        "lazy":False,
+        "lazy": False,
     },
     {
         "name": "att",
         "args": ["SAROP21-OATT135"],
-        "kwargs": {'pulse_picker':Component('xp')},
+        "kwargs": {"shutter": Component("xp")},
         "z_und": 135,
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
@@ -223,12 +253,12 @@ components = [
         "lazy": True,
     },
     # {
-        # "name": "slitAtt",
-        # "args": ["SAROP21-OAPU136"],
-        # "kwargs": {},
-        # "z_und": 136,
-        # "desc": "Slits behind attenuator",
-        # "type": "eco.xoptics.slits:SlitPosWidth_old",
+    # "name": "slitAtt",
+    # "args": ["SAROP21-OAPU136"],
+    # "kwargs": {},
+    # "z_und": 136,
+    # "desc": "Slits behind attenuator",
+    # "type": "eco.xoptics.slits:SlitPosWidth_old",
     # },
     {
         "name": "mon_att",
@@ -273,21 +303,21 @@ components = [
     {
         "name": "spatial_tt",
         "args": [],
-        "kwargs": {"reduction_client_address":"http://sf-daqsync-02:12003/"},
+        "kwargs": {"reduction_client_address": "http://sf-daqsync-02:12003/"},
         "z_und": 141,
         "desc": "spatial encoding timing diagnostics before sample.",
         "type": "eco.xdiagnostics.timetools:SpatialEncoder",
-        "lazy":False,
+        "lazy": False,
     },
-     {
-         "name": "slit_kb",
-         "args": [],
-         "kwargs": {"pvname": "SARES20-MF1"},
-         "z_und": 141,
-         "desc": "Slits behind Kb",
-         "type": "eco.xoptics.slits:SlitBlades_JJ",
-         #"type": "eco.xoptics.slits:SlitBladesJJ_old",
-     },
+    {
+        "name": "slit_kb",
+        "args": [],
+        "kwargs": {"pvname": "SARES20-MF1"},
+        "z_und": 141,
+        "desc": "Slits behind Kb",
+        "type": "eco.xoptics.slits:SlitBlades_JJ",
+        # "type": "eco.xoptics.slits:SlitBladesJJ_old",
+    },
     {
         "args": [],
         "name": "gps",
@@ -304,7 +334,6 @@ components = [
         "type": "eco.endstations.bernina_diffractometers:XRD",
         "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
     },
-    
     {
         "args": [],
         "name": "vonHamos",
@@ -313,7 +342,8 @@ components = [
         "type": "eco.devices_general.micos_stage:stage",
         "kwargs": {
             "vonHamos_horiz_pv": config["Kern"]["vonHamos_horiz"],
-            "vonHamos_vert_pv": config["Kern"]["vonHamos_vert"],}
+            "vonHamos_vert_pv": config["Kern"]["vonHamos_vert"],
+        },
     },
     {
         "args": [],
@@ -321,7 +351,7 @@ components = [
         "z_und": 142,
         "desc": "ToF comm. gasjet",
         "type": "tof:jet",
-        "kwargs": {}
+        "kwargs": {},
     },
     {
         "args": [],
@@ -335,7 +365,6 @@ components = [
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
         },
-        
     },
     {
         "args": [],
@@ -392,7 +421,9 @@ components = [
         "name": "epics_channel_list",
         "desc": "epics channel list",
         "type": "eco.utilities.config:ChannelList",
-        "kwargs": {"file_name":"/sf/bernina/config/channel_lists/default_channel_list_epics"},
+        "kwargs": {
+            "file_name": "/sf/bernina/config/channel_lists/default_channel_list_epics"
+        },
     },
     {
         "args": [],
@@ -492,7 +523,9 @@ components = [
         "name": "default_channel_list",
         "desc": "Bernina default channels, used in daq",
         "type": "eco.utilities.config:ChannelList",
-        "kwargs": {"file_name":"/sf/bernina/config/channel_lists/default_channel_list"},
+        "kwargs": {
+            "file_name": "/sf/bernina/config/channel_lists/default_channel_list"
+        },
         "lazy": False,
     },
     {
@@ -500,7 +533,9 @@ components = [
         "name": "default_channel_list_bs",
         "desc": "Bernina default bs channels, used by bs_daq",
         "type": "eco.utilities.config:ChannelList",
-        "kwargs": {"file_name":"/sf/bernina/config/channel_lists/default_channel_list_bs"},
+        "kwargs": {
+            "file_name": "/sf/bernina/config/channel_lists/default_channel_list_bs"
+        },
         "lazy": False,
     },
     {
@@ -508,7 +543,9 @@ components = [
         "name": "channels_spectrometer_projection",
         "desc": "",
         "type": "eco.utilities.config:ChannelList",
-        "kwargs": {"file_name":"/sf/bernina/config/channel_lists/channel_list_PSSS_projection"},
+        "kwargs": {
+            "file_name": "/sf/bernina/config/channel_lists/channel_list_PSSS_projection"
+        },
         "lazy": False,
     },
     {
@@ -518,14 +555,21 @@ components = [
         "type": "eco.acquisition.bs_data:BStools",
         "kwargs": {
             "default_channel_list": {
-                "bernina_default_channels_bs": Component("default_channel_list_bs")
+                "bernina_default_channels_bs": Component("default_channel_list")
             },
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
         "lazy": False,
     },
     {
-        "args": [[Component('slit_und'),Component('slit_switch'),Component('slit_att'),Component('slit_kb')]],
+        "args": [
+            [
+                Component("slit_und"),
+                Component("slit_switch"),
+                Component("slit_att"),
+                Component("slit_kb"),
+            ]
+        ],
         "name": "slits",
         "desc": "collection of all slits",
         "type": "eco.utilities.beamline:Slits",

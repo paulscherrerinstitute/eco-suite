@@ -74,10 +74,14 @@ def replaceComponent(inp, dict_all, config_all, lazy=False):
                 if ta.name in dict_all.keys():
                     outp.append(dict_all[ta.name])
                 else:
-                    ind = [ta.name==tca['name'] for tca in config_all].index(True)
-                    outp.append(initFromConfigList(config_list[ind:ind+1],config_all,lazy=lazy))
+                    ind = [ta.name == tca["name"] for tca in config_all].index(True)
+                    outp.append(
+                        initFromConfigList(
+                            config_list[ind : ind + 1], config_all, lazy=lazy
+                        )
+                    )
             elif isinstance(ta, dict) or isinstance(ta, list):
-                outp.append(replaceComponent(ta, dict_all,config_all, lazy=lazy))
+                outp.append(replaceComponent(ta, dict_all, config_all, lazy=lazy))
             else:
                 outp.append(ta)
     elif isinstance(inp, dict):
@@ -87,8 +91,10 @@ def replaceComponent(inp, dict_all, config_all, lazy=False):
                 if ta.name in dict_all.keys():
                     outp[tk] = dict_all[ta.name]
                 else:
-                    ind = [tk.name==tca['name'] for tca in config_all].index(True)
-                    outp[tk] = initFromConfigList(config_list[ind:ind+1],config_all,lazy=lazy)
+                    ind = [tk.name == tca["name"] for tca in config_all].index(True)
+                    outp[tk] = initFromConfigList(
+                        config_list[ind : ind + 1], config_all, lazy=lazy
+                    )
             elif isinstance(ta, dict) or isinstance(ta, list):
                 outp[tk] = replaceComponent(ta, dict_all, config_all, lazy=lazy)
             else:
@@ -178,7 +184,7 @@ def writeConfig(fina, obj):
 
 
 class ChannelList(list):
-    def __init__(self,*args,**kwargs):
+    def __init__(self, *args, **kwargs):
         self.file_name = kwargs.pop("file_name")
         # list.__init__(*args,**kwargs)
         self.load()
@@ -212,8 +218,9 @@ def prepend_to_path(*args):
     for targ in args:
         sys.path.insert(0, targ)
 
+
 class Terminal:
-    def __init__(self,title='eco',scope=None):
+    def __init__(self, title="eco", scope=None):
         self.title = title
         self.scope = scope
 
@@ -230,11 +237,11 @@ class Terminal:
         return getpass.getuser()
 
     def get_string(self):
-        s = f'{self.title}'
+        s = f"{self.title}"
         if self.scope:
-            s +=f'-{self.scope}'
-        s += f' ({self.user}@{self.host})'
+            s += f"-{self.scope}"
+        s += f" ({self.user}@{self.host})"
         return s
 
-    def set_title(self,extension=''):
-        print(colorama.ansi.set_title("♻️ "+self.get_string()+extension))
+    def set_title(self, extension=""):
+        print(colorama.ansi.set_title("♻️ " + self.get_string() + extension))

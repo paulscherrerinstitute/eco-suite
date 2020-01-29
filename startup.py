@@ -27,7 +27,7 @@ def main():
         "-l", "--lazy", action="store_true", default=False, help="lazy initialisation"
     )
     parser.add_argument(
-        "--shell", action="store_true" , default=False, help="open eco in ipython shell"
+        "--shell", action="store_true", default=False, help="open eco in ipython shell"
     )
     parser.add_argument(
         "--pylab", type=bool, default=True, help="open ipython shell in pylab mode"
@@ -78,12 +78,14 @@ def main():
     print(arguments)
     if arguments.shell:
         if arguments.pylab:
-            print('start pylab with %pylab')
+            print("start pylab with %pylab")
             from IPython import embed
+
             embed()
 
         else:
             from IPython import embed
+
             embed()
 
 

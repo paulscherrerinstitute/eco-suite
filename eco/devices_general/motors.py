@@ -55,7 +55,7 @@ class MotorRecord:
                 Alias(an, channel=".".join([pvname, af]), channeltype="CA")
             )
         self._currentChange = None
-        self.description = EpicsString(pvname+'.DESC')
+        self.description = EpicsString(pvname + ".DESC")
 
     # Conventional methods and properties for all Adjustable objects
     def set_target_value(self, value, hold=False, check=True):

@@ -16,27 +16,27 @@ _scope_name = "bernina"
 
 alias_namespaces = NamespaceCollection()
 
-def init(*args,lazy=None):
+
+def init(*args, lazy=None):
     if args:
-        allnames = [tc['name'] for tc in components]
+        allnames = [tc["name"] for tc in components]
         comp_toinit = []
         for arg in args:
             if not arg in allnames:
-                raise Exception(f'The component {arg} has no configuration defined!')
+                raise Exception(f"The component {arg} has no configuration defined!")
             else:
                 comp_toinit.append(components[allnames.index(arg)])
     else:
         comp_toinit = components
 
     if lazy is None:
-        lazy=ecocnf.startup_lazy
+        lazy = ecocnf.startup_lazy
 
     op = {}
     for key, value in initFromConfigList(comp_toinit, components, lazy=lazy).items():
         # _namespace[key] = value
         _mod.__dict__[key] = value
-        op[key]= value
-
+        op[key] = value
 
         if not ecocnf.startup_lazy:
             try:

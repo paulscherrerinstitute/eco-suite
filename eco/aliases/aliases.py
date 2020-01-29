@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import json
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,7 +24,9 @@ class Alias:
             subalias.parent = self
         else:
             print(subalias.parent)
-            logger.warning(f'parent of alias {subalias.alias} has been defined already {subalias.parent.alias}.')
+            logger.warning(
+                f"parent of alias {subalias.alias} has been defined already {subalias.parent.alias}."
+            )
 
     def get_all(self, joiner="."):
         aa = []
@@ -47,17 +50,16 @@ class Alias:
                     )
         return aa
 
-    def get_full_name(self,joiner="."):
+    def get_full_name(self, joiner="."):
         name = [self.alias]
         parent = self.parent
         while not parent == None:
             name.append(parent.alias)
-            parent = parent.__dict__.get('parent',None)
+            parent = parent.__dict__.get("parent", None)
         if joiner:
             return joiner.join(reversed(name))
         else:
             return name
-
 
 
 #    def add_children(self, *args):

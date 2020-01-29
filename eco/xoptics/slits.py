@@ -8,8 +8,10 @@ def addSlitRepr(Slitobj):
     def repr(self):
         s = f"pos ({self.hpos.get_current_value():6.3f},{self.vpos.get_current_value():6.3f}), gap ({self.hgap.get_current_value():6.3f},{self.vgap.get_current_value():6.3f})"
         return s
-    Slitobj.__repr__ =  repr
+
+    Slitobj.__repr__ = repr
     return Slitobj
+
 
 @addSlitRepr
 class SlitBlades:
@@ -21,10 +23,18 @@ class SlitBlades:
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X2", name="left")
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y1", name="down")
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y2", name="up")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec")
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec"
+        )
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec"
+        )
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec"
+        )
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec"
+        )
 
         def getgap(xn, xp):
             return xp - xn
@@ -103,6 +113,7 @@ class SlitBlades:
         else:
             raise Exception("wrong number of input arguments!")
 
+
 @addSlitRepr
 class SlitPosWidth:
     def __init__(self, pvname, name=None, elog=None):
@@ -114,14 +125,14 @@ class SlitPosWidth:
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_W", name="hgap")
         append_object_to_object(self, MotorRecord, pvname + ":MOTOR_H", name="vgap")
 
-        def getblade(pos,gap,direction=1):
-            return pos + direction*gap/2
+        def getblade(pos, gap, direction=1):
+            return pos + direction * gap / 2
 
-        def setblade(bde,pos,gap,direction=1):
-            delta = bde-getblade(pos,gap,direction=direction)
-            ngap = gap + direction*delta
-            npos = pos + direction*delta/2
-            return npos,ngap
+        def setblade(bde, pos, gap, direction=1):
+            delta = bde - getblade(pos, gap, direction=direction)
+            ngap = gap + direction * delta
+            npos = pos + direction * delta / 2
+            return npos, ngap
 
         def getpos(xn, xp):
             return (xn + xp) / 2
@@ -142,37 +153,37 @@ class SlitPosWidth:
             self,
             AdjustableVirtual,
             [self.vpos, self.vgap],
-            partial(getblade,direction=1),
-            partial(setblade,direction=1),
+            partial(getblade, direction=1),
+            partial(setblade, direction=1),
             reset_current_value_to=True,
-            name="up"
+            name="up",
         )
         append_object_to_object(
             self,
             AdjustableVirtual,
             [self.vpos, self.vgap],
-            partial(getblade,direction=-1),
-            partial(setblade,direction=-1),
+            partial(getblade, direction=-1),
+            partial(setblade, direction=-1),
             reset_current_value_to=True,
-            name="down"
+            name="down",
         )
         append_object_to_object(
             self,
             AdjustableVirtual,
             [self.hpos, self.hgap],
-            partial(getblade,direction=1),
-            partial(setblade,direction=1),
+            partial(getblade, direction=1),
+            partial(setblade, direction=1),
             reset_current_value_to=True,
-            name="left"
+            name="left",
         )
         append_object_to_object(
             self,
             AdjustableVirtual,
             [self.hpos, self.hgap],
-            partial(getblade,direction=-1),
-            partial(setblade,direction=-1),
+            partial(getblade, direction=-1),
+            partial(setblade, direction=-1),
             reset_current_value_to=True,
-            name="right"
+            name="right",
         )
 
     def __call__(self, *args):
@@ -196,7 +207,6 @@ class SlitPosWidth:
             self.vgap.set_target_value(args[3])
         else:
             raise Exception("wrong number of input arguments!")
-
 
 
 @addSlitRepr

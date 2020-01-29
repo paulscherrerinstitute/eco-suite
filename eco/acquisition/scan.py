@@ -1,10 +1,11 @@
 import os
 import json
 import numpy as np
-from time import sleep,time
+from time import sleep, time
 import traceback
 from pathlib import Path
 import colorama
+from ..devices_general.adjustable import DummyAdjustable
 
 
 class Scan:
@@ -36,7 +37,7 @@ class Scan:
         self.scan_info = {
             "scan_parameters": {
                 "name": [ta.name for ta in adjustables],
-                "Id": [ta.Id for ta in adjustables],
+                "Id": [ta.Id if hasattr(ta, "Id") else "noId" for ta in adjustables],
             },
             "scan_values_all": values,
             "scan_values": [],
@@ -69,11 +70,20 @@ class Scan:
             first_check = time()
             checker_unhappy = False
             while not self.checker.check_now():
-                print(colorama.Fore.RED+f"Condition checker is not happy, waiting for OK conditions since {time()-first_check:5.1f} seconds."+colorama.Fore.RESET,end="\r")
+                print(
+                    colorama.Fore.RED
+                    + f"Condition checker is not happy, waiting for OK conditions since {time()-first_check:5.1f} seconds."
+                    + colorama.Fore.RESET,
+                    end="\r",
+                )
                 sleep(self._checker_sleep_time)
                 checker_unhappy = True
             if checker_unhappy:
-                print(colorama.Fore.RED+f"Condition checker was not happy and waiting for {time()-first_check:5.1f} seconds."+colorama.Fore.RESET)
+                print(
+                    colorama.Fore.RED
+                    + f"Condition checker was not happy and waiting for {time()-first_check:5.1f} seconds."
+                    + colorama.Fore.RESET
+                )
             self.checker.clear_and_start_counting()
 
         if not len(self.values_todo) > 0:
@@ -145,7 +155,7 @@ class Scan:
             tb = "Ended all steps without interruption."
         finally:
             print(tb)
-            if input("Move back to initial values? (y/n)")[0]=='y':
+            if input("Move back to initial values? (y/n)")[0] == "y":
                 self.changeToInitialValues()
 
     def changeToInitialValues(self):
@@ -217,6 +227,38 @@ class Scans:
             [adjustable0, adjustable1],
             values,
             self.counters,
+            file_name,
+            Npulses=N_pulses,
+            basepath=self.data_base_dir,
+            scan_info_dir=self.scan_info_dir,
+            checker=self.checker,
+            scan_directories=self._scan_directories,
+        )
+        if start_immediately:
+            s.scanAll(step_info=step_info)
+        return s
+
+    def acquire(
+        self,
+        N_pulses,
+        N_repetitions=1,
+        file_name="",
+        counters=[],
+        start_immediately=True,
+        step_info=None,
+    ):
+
+        adjustable = DummyAdjustable()
+
+        positions = list(range(N_repetitions))
+        values = [[tp] for tp in positions]
+        file_name = self.filename_generator.get_nextrun_filename(file_name)
+        if not counters:
+            counters = self._default_counters
+        s = Scan(
+            [adjustable],
+            values,
+            counters,
             file_name,
             Npulses=N_pulses,
             basepath=self.data_base_dir,
@@ -363,6 +405,7 @@ class Scans:
         if start_immediately:
             s.scanAll(step_info=step_info)
         return s
+
 
 class RunFilenameGenerator:
     def __init__(self, path, prefix="run", Ndigits=4, separator="_", suffix="json"):

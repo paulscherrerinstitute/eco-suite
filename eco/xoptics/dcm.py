@@ -137,7 +137,10 @@ class MonoEcolEnergy:
         return self.dcm.get_current_value()
 
     def move_and_wait(self, value):
-        ch = [self.dcm.set_target_value(value), self.ecol.set_target_value(self.calcEcol(value))]
+        ch = [
+            self.dcm.set_target_value(value),
+            self.ecol.set_target_value(self.calcEcol(value)),
+        ]
         for tc in ch:
             tc.wait()
 

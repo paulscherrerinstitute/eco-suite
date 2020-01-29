@@ -1,8 +1,8 @@
 from ..devices_general.motors import MotorRecord
 from ..eco_epics.utilities_epics import EnumWrapper
-from ..devices_general.detectors import FeDigitizer,PvDataStream
+from ..devices_general.detectors import FeDigitizer, PvDataStream
 from ..devices_general.adjustable import PvEnum
-from ..aliases import Alias,append_object_to_object
+from ..aliases import Alias, append_object_to_object
 from epics import PV
 import numpy as np
 
@@ -12,14 +12,13 @@ class GasDetector:
         pass
 
 
-
 class SolidTargetDetectorPBPS_new:
     def __init__(
         self,
         pvname,
         VME_crate=None,
         link=None,
-        channels = {},
+        channels={},
         ch_up=12,
         ch_down=13,
         ch_left=15,
@@ -28,34 +27,46 @@ class SolidTargetDetectorPBPS_new:
         name=None,
         calc=None,
         calc_calib={},
-
     ):
         self.name = name
         self.pvname = pvname
         self.alias = Alias(name)
-        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_X1", name="x_diodes")
-        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_Y1", name="y_diodes")
-        append_object_to_object(self,MotorRecord,pvname + ":MOTOR_PROBE", name="target_y")
-        append_object_to_object(self,PvEnum,pvname + ":PROBE_SP", name="target")
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_X1", name="x_diodes"
+        )
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_Y1", name="y_diodes"
+        )
+        append_object_to_object(
+            self, MotorRecord, pvname + ":MOTOR_PROBE", name="target_y"
+        )
+        append_object_to_object(self, PvEnum, pvname + ":PROBE_SP", name="target")
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
             self.diode_down = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_down))
             self.diode_left = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_left))
             self.diode_right = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_right))
 
-
         if channels:
-            append_object_to_object(self,PvDataStream,channels['up'], name="signal_up")
-            append_object_to_object(self,PvDataStream,channels['down'], name="signal_down")
-            append_object_to_object(self,PvDataStream,channels['left'], name="signal_left")
-            append_object_to_object(self,PvDataStream,channels['right'], name="signal_right")
+            append_object_to_object(
+                self, PvDataStream, channels["up"], name="signal_up"
+            )
+            append_object_to_object(
+                self, PvDataStream, channels["down"], name="signal_down"
+            )
+            append_object_to_object(
+                self, PvDataStream, channels["left"], name="signal_left"
+            )
+            append_object_to_object(
+                self, PvDataStream, channels["right"], name="signal_right"
+            )
 
         if calc:
-            append_object_to_object(self,PvDataStream,calc['itot'], name="intensity")
-            append_object_to_object(self,PvDataStream,calc['xpos'], name="xpos")
-            append_object_to_object(self,PvDataStream,calc['ypos'], name="ypos")
+            append_object_to_object(self, PvDataStream, calc["itot"], name="intensity")
+            append_object_to_object(self, PvDataStream, calc["xpos"], name="xpos")
+            append_object_to_object(self, PvDataStream, calc["ypos"], name="ypos")
 
-    def get_calibration_values(self,seconds=5):
+    def get_calibration_values(self, seconds=5):
         self.x_diodes.set_target_value(0).wait()
         self.y_diodes.set_target_value(0).wait()
         ds = [self.signal_up, self.signal_down, self.signal_left, self.signal_right]
@@ -63,68 +74,80 @@ class SolidTargetDetectorPBPS_new:
         data = [aq.wait() for aq in aqs]
         mean = [np.mean(td) for td in data]
         std = [np.std(td) for td in data]
-        norm_diodes = [1/tm/4 for tm in mean]
+        norm_diodes = [1 / tm / 4 for tm in mean]
         return norm_diodes
 
-    def set_calibration_values(self,norm_diodes):
-        #this is now only for bernina when using the ioxos from sla
-        channels = ['SLAAR21-LTIM01-EVR0:CALCI.INPG','SLAAR21-LTIM01-EVR0:CALCI.INPH','SLAAR21-LTIM01-EVR0:CALCI.INPF','SLAAR21-LTIM01-EVR0:CALCI.INPE']
-        for tc,tv in zip(channels,norm_diodes):
-            PV(tc).put(bytes(str(tv),'utf8'))
-        channels = ['SLAAR21-LTIM01-EVR0:CALCX.INPE','SLAAR21-LTIM01-EVR0:CALCX.INPF']
-        for tc,tv in zip(channels,norm_diodes[2:4]):
-            PV(tc).put(bytes(str(tv),'utf8'))
-        channels = ['SLAAR21-LTIM01-EVR0:CALCY.INPE','SLAAR21-LTIM01-EVR0:CALCY.INPF']
-        for tc,tv in zip(channels,norm_diodes[0:2]):
-            PV(tc).put(bytes(str(tv),'utf8'))
+    def set_calibration_values(self, norm_diodes):
+        # this is now only for bernina when using the ioxos from sla
+        channels = [
+            "SLAAR21-LTIM01-EVR0:CALCI.INPG",
+            "SLAAR21-LTIM01-EVR0:CALCI.INPH",
+            "SLAAR21-LTIM01-EVR0:CALCI.INPF",
+            "SLAAR21-LTIM01-EVR0:CALCI.INPE",
+        ]
+        for tc, tv in zip(channels, norm_diodes):
+            PV(tc).put(bytes(str(tv), "utf8"))
+        channels = ["SLAAR21-LTIM01-EVR0:CALCX.INPE", "SLAAR21-LTIM01-EVR0:CALCX.INPF"]
+        for tc, tv in zip(channels, norm_diodes[2:4]):
+            PV(tc).put(bytes(str(tv), "utf8"))
+        channels = ["SLAAR21-LTIM01-EVR0:CALCY.INPE", "SLAAR21-LTIM01-EVR0:CALCY.INPF"]
+        for tc, tv in zip(channels, norm_diodes[0:2]):
+            PV(tc).put(bytes(str(tv), "utf8"))
 
-    def get_calibration_values_position(self,calib_intensities,seconds=5,motion_range=.2):
-        self.x_diodes.set_limits(-motion_range/2-.1,+motion_range/2+.1)
-        self.y_diodes.set_limits(-motion_range/2-.1,+motion_range/2+.1)
+    def get_calibration_values_position(
+        self, calib_intensities, seconds=5, motion_range=0.2
+    ):
+        self.x_diodes.set_limits(-motion_range / 2 - 0.1, +motion_range / 2 + 0.1)
+        self.y_diodes.set_limits(-motion_range / 2 - 0.1, +motion_range / 2 + 0.1)
         self.x_diodes.set_target_value(0).wait()
         self.y_diodes.set_target_value(0).wait()
         raw = []
-        for pos in [motion_range/2, -motion_range/2]:
+        for pos in [motion_range / 2, -motion_range / 2]:
             self.x_diodes.set_target_value(pos).wait()
-            aqs = [ts.acquire(seconds=seconds) for ts in [self.signal_left, self.signal_right]]
-            vals = [np.mean(aq.wait())*calib for aq,calib in zip(aqs,calib_intensities[0:2])]
-            raw.append((vals[0]-vals[1])/(vals[0]+vals[1]))
-        grad = motion_range/np.diff(raw)[0]
+            aqs = [
+                ts.acquire(seconds=seconds)
+                for ts in [self.signal_left, self.signal_right]
+            ]
+            vals = [
+                np.mean(aq.wait()) * calib
+                for aq, calib in zip(aqs, calib_intensities[0:2])
+            ]
+            raw.append((vals[0] - vals[1]) / (vals[0] + vals[1]))
+        grad = motion_range / np.diff(raw)[0]
         # xcalib = [np.diff(calib_intensities[0:2])[0]/np.sum(calib_intensities[0:2]), grad]
         xcalib = [0, grad]
         self.x_diodes.set_target_value(0).wait()
         raw = []
-        for pos in [motion_range/2, -motion_range/2]:
+        for pos in [motion_range / 2, -motion_range / 2]:
             self.y_diodes.set_target_value(pos).wait()
-            aqs = [ts.acquire(seconds=seconds) for ts in [self.signal_up, self.signal_down]]
-            vals = [np.mean(aq.wait())*calib for aq,calib in zip(aqs,calib_intensities[2:4])]
-            raw.append((vals[0]-vals[1])/(vals[0]+vals[1]))
-        grad = motion_range/np.diff(raw)[0]
+            aqs = [
+                ts.acquire(seconds=seconds) for ts in [self.signal_up, self.signal_down]
+            ]
+            vals = [
+                np.mean(aq.wait()) * calib
+                for aq, calib in zip(aqs, calib_intensities[2:4])
+            ]
+            raw.append((vals[0] - vals[1]) / (vals[0] + vals[1]))
+        grad = motion_range / np.diff(raw)[0]
         # ycalib = [np.diff(calib_intensities[2:4])[0]/np.sum(calib_intensities[2:4]), grad]
         ycalib = [0, grad]
         self.y_diodes.set_target_value(0).wait()
-        return xcalib,ycalib
+        return xcalib, ycalib
 
-    def set_calibration_values_position(self,xcalib,ycalib):
-        channels = ['SLAAR21-LTIM01-EVR0:CALCX.INPJ','SLAAR21-LTIM01-EVR0:CALCX.INPI']
+    def set_calibration_values_position(self, xcalib, ycalib):
+        channels = ["SLAAR21-LTIM01-EVR0:CALCX.INPJ", "SLAAR21-LTIM01-EVR0:CALCX.INPI"]
         # txcalib = [-1*xcalib[0],-1*xcalib[1]]
-        for tc,tv in zip(channels,xcalib):
-            PV(tc).put(bytes(str(tv),'utf8'))
-        channels = ['SLAAR21-LTIM01-EVR0:CALCY.INPJ','SLAAR21-LTIM01-EVR0:CALCY.INPI']
-        for tc,tv in zip(channels,ycalib):
-            PV(tc).put(bytes(str(tv),'utf8'))
+        for tc, tv in zip(channels, xcalib):
+            PV(tc).put(bytes(str(tv), "utf8"))
+        channels = ["SLAAR21-LTIM01-EVR0:CALCY.INPJ", "SLAAR21-LTIM01-EVR0:CALCY.INPI"]
+        for tc, tv in zip(channels, ycalib):
+            PV(tc).put(bytes(str(tv), "utf8"))
 
-
-    def calibrate(self,seconds=5):
+    def calibrate(self, seconds=5):
         c = self.get_calibration_values(seconds=seconds)
         self.set_calibration_values(c)
-        xc,yc = self.get_calibration_values_position(c,seconds=seconds)
-        self.set_calibration_values_position(xc,yc)
-
-
-
-
-
+        xc, yc = self.get_calibration_values_position(c, seconds=seconds)
+        self.set_calibration_values_position(xc, yc)
 
     def __repr__(self):
         s = f"**Intensity  monitor {self.name}**\n\n"
@@ -191,6 +214,8 @@ class SolidTargetDetectorPBPS_new:
             print("No diodes configured, can not change any gain!")
 
         # SAROP21-CVME-PBPS:Lnk10Ch15-WD-gain
+
+
 class SolidTargetDetectorPBPS:
     def __init__(
         self,

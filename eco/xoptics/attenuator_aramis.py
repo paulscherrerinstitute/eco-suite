@@ -7,7 +7,9 @@ from ..devices_general.adjustable import PvEnum
 
 
 class AttenuatorAramis:
-    def __init__(self, Id, E_min=1500, sleeptime=1, name=None, set_limits=[-52, 2],pulse_picker=None):
+    def __init__(
+        self, Id, E_min=1500, sleeptime=1, name=None, set_limits=[-52, 2], shutter=None
+    ):
         self.Id = Id
         self.E_min = E_min
         self._pv_status_str = PV(self.Id + ":MOT2TRANS.VALD")
@@ -15,10 +17,9 @@ class AttenuatorAramis:
         self._sleeptime = sleeptime
         self.name = name
         self.alias = Alias(name)
-        self.pulse_picker = pulse_picker
+        self.shutter = shutter
         self.motors = [
-            MotorRecord(f"{self.Id}:MOTOR_{n+1}", name=f"motor{n+1}")
-            for n in range(6)
+            MotorRecord(f"{self.Id}:MOTOR_{n+1}", name=f"motor{n+1}") for n in range(6)
         ]
         for n, mot in enumerate(self.motors):
             self.__dict__[f"motor_{n+1}"] = mot
@@ -59,24 +60,24 @@ class AttenuatorAramis:
     def setE(self):
         pass
 
-    def get_transmission(self,verbose=True):
+    def get_transmission(self, verbose=True):
         tFun = PV(self.Id + ":TRANS_RB").value
         tTHG = PV(self.Id + ":TRANS3EDHARM_RB").value
         if verbose:
             print("Transmission Fundamental: %s THG: %s" % (tFun, tTHG))
         return tFun, tTHG
 
-    def get_current_value(self,*args,**kwargs):
-        return self.get_transmission(*args,verbose=False,**kwargs)[0]
+    def get_current_value(self, *args, **kwargs):
+        return self.get_transmission(*args, verbose=False, **kwargs)[0]
 
-    def set_target_value(self,value,sleeptime=10,hold=False):
+    def set_target_value(self, value, sleeptime=10, hold=False):
         def changer(value):
             self.set_transmission(value)
             sleep(sleeptime)
-            if self.pulse_picker:
-                self.pulse_picker.open()
-        return Changer(target=value, parent=self, changer=changer, hold=hold)
+            if self.shutter:
+                self.shutter.open()
 
+        return Changer(target=value, parent=self, changer=changer, hold=hold)
 
     def get_status(self):
         s_str = self._pv_status_str.get(as_string=True)

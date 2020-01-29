@@ -6,8 +6,9 @@ from epics import PV
 from ..devices_general.delay_stage import DelayStage
 from ..devices_general.adjustable import AdjustableVirtual
 
-import colorama,datetime
+import colorama, datetime
 from pint import UnitRegistry
+
 ureg = UnitRegistry()
 
 
@@ -27,7 +28,9 @@ def addDelayStageToSelf(self, stage=None, name=None):
 
 
 class DelayTime(AdjustableVirtual):
-    def __init__(self, stage, direction=1, passes=2, reset_current_value_to=True, name=None):
+    def __init__(
+        self, stage, direction=1, passes=2, reset_current_value_to=True, name=None
+    ):
         self._direction = direction
         self._group_velo = 299798458  # m/s
         self._passes = passes
@@ -49,25 +52,25 @@ class DelayTime(AdjustableVirtual):
         return s * self._group_velo * 1e3 / self._passes * self._direction
 
     def __repr__(self):
-        s = ''
+        s = ""
         s += f"{colorama.Style.DIM}"
-        s += datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
+        s += datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
         s += f"{colorama.Style.RESET_ALL}"
         s += f"{colorama.Style.BRIGHT}{self._get_name()}{colorama.Style.RESET_ALL} at "
-        s += f'{(self.get_current_value()*ureg.second).to_compact():P~6.3f}'
+        s += f"{(self.get_current_value()*ureg.second).to_compact():P~6.3f}"
         s += f"{colorama.Style.RESET_ALL}"
         return s
 
     def get_limits(self):
         return [self._mm_to_s(tl) for tl in self._stage.get_limits()]
 
-    def set_limits(self,low_limit,high_limit):
-        lims_stage = [self._s_to_mm(tl) for tl in [low_limit,high_limit]]
+    def set_limits(self, low_limit, high_limit):
+        lims_stage = [self._s_to_mm(tl) for tl in [low_limit, high_limit]]
         lims_stage.sort()
         self._stage.set_limits(*lims_stage)
 
-
         return [self._mm_to_s(tl) for tl in self._stage.get_limits()]
+
 
 class DelayCompensation(AdjustableVirtual):
     """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for 
@@ -81,7 +84,7 @@ class DelayCompensation(AdjustableVirtual):
             adjustables,
             self._from_values,
             self._calc_values,
-            set_current_value = set_current_value,
+            set_current_value=set_current_value,
             name=name,
         )
 
@@ -93,14 +96,14 @@ class DelayCompensation(AdjustableVirtual):
         return positions[0]
 
         tuple(tdir * value for tdir in self._directions)
-    
+
     def __repr__(self):
-        s = ''
+        s = ""
         s += f"{colorama.Style.DIM}"
-        s += datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
+        s += datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
         s += f"{colorama.Style.RESET_ALL}"
         s += f"{colorama.Style.BRIGHT}{self._get_name()}{colorama.Style.RESET_ALL} at "
-        s += f'{(self.get_current_value()*ureg.second).to_compact():P~6.3f}'
+        s += f"{(self.get_current_value()*ureg.second).to_compact():P~6.3f}"
         s += f"{colorama.Style.RESET_ALL}"
         return s
 
@@ -136,7 +139,7 @@ class Laser_Exp:
         addMotorRecordToSelf(self, Id=self.Id + "-M521:MOTOR_1", name="delay_eos_stg")
         self.delay_eos = DelayTime(self.delay_eos_stg, name="delay_eos")
         self.alias.append(self.delay_eos.alias)
-        self.lxt_eos = DelayTime(self.delay_eos_stg, direction=-1,name="lxt_eos")
+        self.lxt_eos = DelayTime(self.delay_eos_stg, direction=-1, name="lxt_eos")
         self.alias.append(self.lxt_eos.alias)
         # except Exception as expt:
         # print("Problems initializing eos delay stage")
@@ -156,7 +159,9 @@ class Laser_Exp:
             )
             self.delay_glob = DelayTime(self.delay_glob_stg, name="delay_glob")
             self.alias.append(self.delay_glob.alias)
-            self.lxt_glob = DelayTime(self.delay_glob_stg, direction=-1, name="lxt_glob")
+            self.lxt_glob = DelayTime(
+                self.delay_glob_stg, direction=-1, name="lxt_glob"
+            )
             self.alias.append(self.lxt_glob.alias)
         except:
             print("Problems initializing global delay stage")
@@ -167,21 +172,23 @@ class Laser_Exp:
                 [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
             )
             self.alias.append(self.delay_lxtt.alias)
-        except: 
-            print('Problems initializing virtual pump delay stage')
+        except:
+            print("Problems initializing virtual pump delay stage")
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')
         # LAM delay stages
-        #addSmarActRecordToSelf(self, Id="SLAAR21-LMTS-LAM11", name="_lam_delay_smarstg")
-        #addDelayStageToSelf(self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar")
+        # addSmarActRecordToSelf(self, Id="SLAAR21-LMTS-LAM11", name="_lam_delay_smarstg")
+        # addDelayStageToSelf(self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar")
         # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
         # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
         try:
             addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
-            addDelayStageToSelf(self, self.__dict__["_lam_delaystg"], name="lam_delay") #this try except does not work
-        except: 
-            print('Problems initializing LAM delay stage')
+            addDelayStageToSelf(
+                self, self.__dict__["_lam_delaystg"], name="lam_delay"
+            )  # this try except does not work
+        except:
+            print("Problems initializing LAM delay stage")
         # self._lam_delayStg = MotorRecord(self.Id+'-M548:MOT')
         # self.lam_delay = DelayStage(self._lam_delayStg)
 
@@ -195,9 +202,7 @@ class Laser_Exp:
         # self._psen_delayStg = MotorRecord(self.Id+'')
         # self.psen_delay = DelayStage(self._pump_delayStg)
         try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M561:MOT", name="_psen_delaystg"
-            )
+            addMotorRecordToSelf(self, Id=self.Id + "-M561:MOT", name="_psen_delaystg")
             addDelayStageToSelf(
                 self, stage=self.__dict__["_psen_delaystg"], name="psen_delay"
             )
@@ -210,11 +215,9 @@ class Laser_Exp:
 
         for smar_name, smar_address in self.smar_config.items():
 
-            #try:
-            addSmarActRecordToSelf(
-                self, Id=(self.IdSA + smar_address), name=smar_name
-            )
-            #except:
+            # try:
+            addSmarActRecordToSelf(self, Id=(self.IdSA + smar_address), name=smar_name)
+            # except:
             #    print("Loading %s SmarAct motor in bernina laser conifg failed") % (
             #        smar_name
             #    )
@@ -226,10 +229,10 @@ class Laser_Exp:
         for tkey, item in sorted(self.__dict__.items()):
             if hasattr(item, "get_current_value"):
                 pos = item.get_current_value()
-                posdialstr = ''
+                posdialstr = ""
                 try:
-                    posdial = item.get_current_value(postype = 'dial')
-                    posdialstr = '    dial:  % 14g\n' % posdial
+                    posdial = item.get_current_value(postype="dial")
+                    posdialstr = "    dial:  % 14g\n" % posdial
                 except:
                     pass
                 ostr += "  " + tkey.ljust(18) + " : % 14g\n" % pos + posdialstr
@@ -291,8 +294,8 @@ class Laser_Exp_old:
         addDelayStageToSelf(
             self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar"
         )
-        #self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
-        #self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
+        # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
+        # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
 
         addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
         addDelayStageToSelf(self, self.__dict__["_lam_delaystg"], name="lam_delay")
@@ -329,10 +332,10 @@ class Laser_Exp_old:
         for tkey, item in sorted(self.__dict__.items()):
             if hasattr(item, "get_current_value"):
                 pos = item.get_current_value()
-                posdialstr = ''
+                posdialstr = ""
                 try:
-                    posdial = item.get_current_value(postype = 'dial')
-                    posdialstr = '    dial:  % 14g\n' % posdial
+                    posdial = item.get_current_value(postype="dial")
+                    posdialstr = "    dial:  % 14g\n" % posdial
                 except:
                     pass
                 ostr += "  " + tkey.ljust(18) + " : % 14g\n" % pos + posdialstr

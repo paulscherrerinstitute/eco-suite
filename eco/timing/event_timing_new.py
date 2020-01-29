@@ -1,5 +1,5 @@
 from epics import PV
-from ..aliases import Alias,append_object_to_object
+from ..aliases import Alias, append_object_to_object
 from ..utilities.lazy_proxy import Proxy
 from ..devices_general.adjustable import PvEnum, PvRecord
 from ..eco_epics.utilities_epics import EpicsString
@@ -194,15 +194,34 @@ class EvrPulser:
         self.name = name
         self.alias = Alias(name)
         self._pvs = {}
-        append_object_to_object(self,PvEnum,f"{self.pv_base}-Polarity-Sel", name="polarity")
-        append_object_to_object(self,PvEnum,f"{self.pv_base}-Ena-Sel", name="enable")
-        append_object_to_object(self,PvRecord,f"{self.pv_base}-Evt-Trig0-SP", name="eventcode")
-        append_object_to_object(self,PvRecord,f"{self.pv_base}-Evt-Set0-SP", name="event_set")
-        append_object_to_object(self,PvRecord,f"{self.pv_base}-Evt-Reset0-SP", name="event_reset")
-        append_object_to_object(self,PvRecord,f"{self.pv_base}-Delay-SP", pvreadbackname=f'{self.pv_base}-Delay-RB', name="delay")
-        append_object_to_object(self,PvRecord,f"{self.pv_base}-Width-SP", pvreadbackname=f'{self.pv_base}-Width-RB', name="width")
-        self.description = EpicsString(pv_base+'-Name-I')
-
+        append_object_to_object(
+            self, PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity"
+        )
+        append_object_to_object(self, PvEnum, f"{self.pv_base}-Ena-Sel", name="enable")
+        append_object_to_object(
+            self, PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode"
+        )
+        append_object_to_object(
+            self, PvRecord, f"{self.pv_base}-Evt-Set0-SP", name="event_set"
+        )
+        append_object_to_object(
+            self, PvRecord, f"{self.pv_base}-Evt-Reset0-SP", name="event_reset"
+        )
+        append_object_to_object(
+            self,
+            PvRecord,
+            f"{self.pv_base}-Delay-SP",
+            pvreadbackname=f"{self.pv_base}-Delay-RB",
+            name="delay",
+        )
+        append_object_to_object(
+            self,
+            PvRecord,
+            f"{self.pv_base}-Width-SP",
+            pvreadbackname=f"{self.pv_base}-Width-RB",
+            name="width",
+        )
+        self.description = EpicsString(pv_base + "-Name-I")
 
 
 class EvrOutput:
@@ -212,12 +231,12 @@ class EvrOutput:
         self.alias = Alias(name)
         self._pulsers = None
         # self._update_connected_pulsers()
-        append_object_to_object(self,PvEnum,f"{self.pv_base}-Ena-SP", name="enable")
+        append_object_to_object(self, PvEnum, f"{self.pv_base}-Ena-SP", name="enable")
         self.pulsers_numbers = (
             PvEnum(f"{self.pv_base}-Src-Pulse-SP", name="pulserA"),
             PvEnum(f"{self.pv_base}-Src2-Pulse-SP", name="pulserB"),
         )
-        self.description = EpicsString(pv_base+'-Name-I')
+        self.description = EpicsString(pv_base + "-Name-I")
 
     def _get_pulserA(self):
         return self._pulsers[self.pulsers_numbers[0].get_current_value()]
@@ -252,15 +271,24 @@ class EventReceiver:
         self.pvname = pvname
         pulsers = []
         for n in range(n_pulsers):
-            append_object_to_object(self,EvrPulser,f"{self.pvname}:Pul{n}", name=f"pulser{n}")
+            append_object_to_object(
+                self, EvrPulser, f"{self.pvname}:Pul{n}", name=f"pulser{n}"
+            )
             pulsers.append(self.__dict__[f"pulser{n}"])
         self.pulsers = tuple(pulsers)
         outputs = []
         for n in range(n_output_front):
-            append_object_to_object(self,EvrOutput,f"{self.pvname}:FrontUnivOut{n}", name=f"output_front{n}")
+            append_object_to_object(
+                self,
+                EvrOutput,
+                f"{self.pvname}:FrontUnivOut{n}",
+                name=f"output_front{n}",
+            )
             outputs.append(self.__dict__[f"output_front{n}"])
         for n in range(n_output_rear):
-            append_object_to_object(self,EvrOutput,f"{self.pvname}:RearUniv{n}", name=f"output_rear{n}")
+            append_object_to_object(
+                self, EvrOutput, f"{self.pvname}:RearUniv{n}", name=f"output_rear{n}"
+            )
             outputs.append(self.__dict__[f"output_rear{n}"])
         for to in outputs:
             to._pulsers = self.pulsers

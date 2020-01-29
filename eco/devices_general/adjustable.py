@@ -29,7 +29,7 @@ def default_representation(Obj):
             return Obj.Id
 
     def get_repr(Obj):
-        s = datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')+': '
+        s = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
         s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{Obj.get_current_value():g}{colorama.Style.RESET_ALL}"
         return s
 
@@ -193,6 +193,30 @@ def update_changes(Adj):
 
 
 # wrappers for adjustables <<<<<<<<<<<
+
+
+@spec_convenience
+class DummyAdjustable:
+    def __init__(self, name="no_adjustable"):
+        self.name = name
+        self.current_value = 0
+
+    def get_current_value(self):
+        return self.current_value
+
+    def set_target_value(self, value, hold=False):
+        def changer(value):
+            self.current_value = value
+
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+
+    def __repr__(self):
+        name = self.name
+        cv = self.get_current_value()
+        s = f"{name} at value: {cv}" + "\n"
+        return s
 
 
 def _keywordChecker(kw_key_list_tups):

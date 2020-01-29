@@ -168,7 +168,13 @@ class DIAClient:
                 sleep(time_interval)
 
     def take_pedestal(
-        self, n_frames=1000, analyze=True, analyze_locally=False, n_bad_modules=0, freq=25):
+        self,
+        n_frames=1000,
+        analyze=True,
+        analyze_locally=False,
+        n_bad_modules=0,
+        freq=25,
+    ):
         from jungfrau_utils.scripts.jungfrau_run_pedestals import (
             run as jungfrau_utils_run,
         )
@@ -181,7 +187,7 @@ class DIAClient:
             os.makedirs(res_dir)
             os.chmod(res_dir, 0o775)
         filename = "pedestal_%s" % datetime.now().strftime("%Y%m%d_%H%M")
-        period = 1/freq
+        period = 1 / freq
         jungfrau_utils_run(
             self._api_address,
             filename,
@@ -282,8 +288,8 @@ class DIAClient:
         if file_name is None:
             # FIXME /dev/null crashes the data taking (h5py can't close /dev/null and crashes)
             print("Not saving any data, as file_name is not set")
-            #file_name_JF = file_rootdir + "DelMe"
-            #file_name_bsread = file_rootdir + "DelMe"
+            # file_name_JF = file_rootdir + "DelMe"
+            # file_name_bsread = file_rootdir + "DelMe"
             file_name_JF = "/dev/null"
             file_name_bsread = "/dev/null"
         else:
@@ -305,8 +311,7 @@ class DIAClient:
                     #    'n_messages': n_frames
                 }
             )
-            self.backend_config.update({
-                'run_name': file_name_JF})
+            self.backend_config.update({"run_name": file_name_JF})
             #    'n_frames': n_frames})
             self.bsread_config.update(
                 {
@@ -318,7 +323,7 @@ class DIAClient:
             self.reset()
             self.set_config()
             # print(self.get_config())
-            self.wait_for_status('IntegrationStatus.CONFIGURED')
+            self.wait_for_status("IntegrationStatus.CONFIGURED")
             self.client.start()
             done = False
 
@@ -327,19 +332,20 @@ class DIAClient:
                 if stat["status"] == "IntegrationStatus.FINISHED":
                     done = True
                 # if stat["status"] == "IntegrationStatus.BSREAD_STILL_RUNNING":
-                    # done = True
+                # done = True
                 # if stat["status"] == "IntegrationStatus.INITIALIZED":
-                    # done = True
+                # done = True
                 # if stat["status"] == "IntegrationStatus.DETECTOR_STOPPED":
-                    # done = True
+                # done = True
                 sleep(0.1)
 
-            self.client.stop() 
+            self.client.stop()
 
         outputfilenames = [
-            f"{file_name_JF}.{tcli.upper()}.h5" for tcli in self.active_clients #+['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK 
+            f"{file_name_JF}.{tcli.upper()}.h5"
+            for tcli in self.active_clients  # +['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK
         ]
-        
+
         return Acquisition(
             acquire=acquire,
             acquisition_kwargs={"file_names": outputfilenames, "Npulses": Npulses},
@@ -349,3 +355,8 @@ class DIAClient:
     def wait_done(self):
         self.check_running()
         self.check_still_running()
+
+    def reset_server(self, *args):
+        if not args:
+            args = ["all"]
+        os.system("ssh jf@sf-daq-3 -i ~/.ssh/daq3.key " + " ".join(args))

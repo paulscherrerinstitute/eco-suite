@@ -3,12 +3,12 @@ from epics import caget
 from epics import PV
 from ..eco_epics.utilities_epics import EnumWrapper
 
-# from cam_server import PipelineClient
-# from cam_server.utils import get_host_port_from_stream_address
-# from bsread import source, SUB
+from cam_server import PipelineClient
+from cam_server.utils import get_host_port_from_stream_address
+from bsread import source, SUB
 import subprocess
 import h5py
-from time import sleep,time
+from time import sleep, time
 from threading import Thread
 from datetime import datetime
 
@@ -23,48 +23,61 @@ class PvDataStream:
         self.name = name
         self.alias = Alias(self.name, channel=self.Id, channeltype="CA")
 
-    def collect(self,seconds=None,samples=None):
+    def collect(self, seconds=None, samples=None):
         if (not seconds) and (not samples):
-            raise Exception('Either a time interval or number of samples need to be defined.')
+            raise Exception(
+                "Either a time interval or number of samples need to be defined."
+            )
         try:
-            self._pv.callbacks.pop(self._collection['ix_cb'])
+            self._pv.callbacks.pop(self._collection["ix_cb"])
         except:
             pass
-        self._collection = {'done':False}
+        self._collection = {"done": False}
         self.data_collected = []
         if seconds:
-            self._collection['start_time']= time()
-            self._collection['seconds']= seconds
-            stopcond = lambda: (time() - self._collection['start_time']) > self._collection['seconds']
+            self._collection["start_time"] = time()
+            self._collection["seconds"] = seconds
+            stopcond = (
+                lambda: (time() - self._collection["start_time"])
+                > self._collection["seconds"]
+            )
+
             def addData(**kw):
                 if not stopcond():
-                    self.data_collected.append(kw['value'])
+                    self.data_collected.append(kw["value"])
                 else:
-                    self._pv.callbacks.pop(self._collection['ix_cb'])
-                    self._collection['done'] = True
+                    self._pv.callbacks.pop(self._collection["ix_cb"])
+                    self._collection["done"] = True
+
         elif samples:
-            self._collection['samples'] = samples
-            stopcond = lambda: len(self.data_collected) >= self._collection['samples']
+            self._collection["samples"] = samples
+            stopcond = lambda: len(self.data_collected) >= self._collection["samples"]
+
             def addData(**kw):
-                self.data_collected.append(kw['value'])
+                self.data_collected.append(kw["value"])
                 if stopcond():
-                    self._pv.callbacks.pop(self._collection['ix_cb'])
-                    self._collection['done'] = True
-        self._collection['ix_cb'] = self._pv.add_callback(addData)
-        while not self._collection['done']:
-            sleep(.005)
+                    self._pv.callbacks.pop(self._collection["ix_cb"])
+                    self._collection["done"] = True
+
+        self._collection["ix_cb"] = self._pv.add_callback(addData)
+        while not self._collection["done"]:
+            sleep(0.005)
         return self.data_collected
 
-
-    def acquire(self,hold=False,**kwargs):
-        return Acquisition(acquire=lambda:self.collect(**kwargs), hold=hold, stopper=None, get_result=lambda:self.data_collected)
+    def acquire(self, hold=False, **kwargs):
+        return Acquisition(
+            acquire=lambda: self.collect(**kwargs),
+            hold=hold,
+            stopper=None,
+            get_result=lambda: self.data_collected,
+        )
 
     def accumulate(self, n_buffer):
-        if not hasattr(self,'_accumulate'):
+        if not hasattr(self, "_accumulate"):
             self._accumulate = {"n_buffer": n_buffer, "ix": 0, "n_cb": -1}
         else:
-            self._accumulate['n_buffer'] = n_buffer
-            self._accumulate['ix'] = 0
+            self._accumulate["n_buffer"] = n_buffer
+            self._accumulate["ix"] = 0
         self._pv.callbacks.pop(self._accumulate["n_cb"], None)
         self._data = np.squeeze(np.zeros([n_buffer * 2, self._pv.count])) * np.nan
 

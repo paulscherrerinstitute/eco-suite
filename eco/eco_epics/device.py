@@ -135,13 +135,13 @@ class Device(object):
 
         if attrs is not None:
             for attr in attrs:
-                #self.PV(attr, connect=False, connection_timeout=timeout)
+                # self.PV(attr, connect=False, connection_timeout=timeout)
                 self.PV(attr, connect=False, timeout=timeout)
 
         if aliases:
             for attr in aliases.values():
                 if attrs is None or attr not in attrs:
-                    #self.PV(attr, connect=False, connection_timeout=timeout)
+                    # self.PV(attr, connect=False, connection_timeout=timeout)
                     self.PV(attr, connect=False, timeout=timeout)
 
         if with_poll:

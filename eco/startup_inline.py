@@ -26,7 +26,7 @@ parser.add_argument(
     "-l", "--lazy", action="store_true", default=False, help="lazy initialisation"
 )
 parser.add_argument(
-    "--shell", action="store_true" , default=False, help="open eco in ipython shell"
+    "--shell", action="store_true", default=False, help="open eco in ipython shell"
 )
 parser.add_argument(
     "--pylab", type=bool, default=True, help="open ipython shell in pylab mode"
@@ -41,9 +41,7 @@ if arguments.scopes_available:
     print("{:<15s}{:<15s}{:<15s}".format("module", "name", "facility"))
     for ts in ecocnf.scopes:
         print(
-            " {:<14s} {:<14s} {:<14s}".format(
-                ts["module"], ts["name"], ts["facility"]
-            )
+            " {:<14s} {:<14s} {:<14s}".format(ts["module"], ts["name"], ts["facility"])
         )
 
     return
@@ -75,4 +73,3 @@ if scope:
 
 term.set_title()
 print(arguments)
-
