@@ -359,4 +359,4 @@ class DIAClient:
     def reset_server(self, *args):
         if not args:
             args = ["all"]
-        os.system("ssh jf@sf-daq-3 -i ~/.ssh/daq3.key " + " ".join(args))
+        os.system("ssh jf@sf-daq-3 -t -i ~/.ssh/daq3.key ./services.sh restart " + " ".join(args))
