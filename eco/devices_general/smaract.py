@@ -83,6 +83,7 @@ class SmarActRecord:
     ):
 
         self.Id = Id
+        self._device = Device(Id, delim=":")
         self._drive = SmarAct(Id + ":DRIVE")
         self._rbv = SmarAct(Id + ":MOTRBV")
         self._hlm = SmarAct(Id + ":HLM")

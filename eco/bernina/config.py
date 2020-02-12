@@ -576,6 +576,15 @@ components = [
         "kwargs": {},
         "lazy": False,
     },
+    {
+        "args": [],
+        "name": "thc",
+        "z_und": 142,
+        "desc": "High field THz Chamber",
+        "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
+        "kwargs": {"Id": "SARES23"},
+        "lazy": True,
+    },
 ]
 
 try:
