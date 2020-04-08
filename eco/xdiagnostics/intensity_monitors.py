@@ -103,6 +103,7 @@ class SolidTargetDetectorPBPS_new:
         self.y_diodes.set_target_value(0).wait()
         raw = []
         for pos in [motion_range / 2, -motion_range / 2]:
+            print(pos)
             self.x_diodes.set_target_value(pos).wait()
             aqs = [
                 ts.acquire(seconds=seconds)

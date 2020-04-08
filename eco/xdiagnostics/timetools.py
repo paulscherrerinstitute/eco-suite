@@ -6,7 +6,6 @@ from ..devices_general.delay_stage import DelayStage
 
 # from ..devices_general.adjustable import
 from ..aliases import Alias, append_object_to_object
-from psen_processing import PsenProcessingClient
 from ..loptics.bernina_experiment import DelayTime
 from cam_server import PipelineClient
 
@@ -41,33 +40,33 @@ class SpectralEncoder:
 
         # self.delay = MotorRecord(self.Id + "-M424:MOT")
         # self.delayTime = DelayStage(self.delay)
-        self.data_reduction_client = PsenProcessingClient(
-            address=reduction_client_address
-        )
+        # self.data_reduction_client = PsenProcessingClient(
+            # address=reduction_client_address
+        # )
 
-    @property
-    def roi(self):
-        return self.data_reduction_client.get_roi_signal()
+    # @property
+    # def roi(self):
+        # return self.data_reduction_client.get_roi_signal()
 
-    @roi.setter
-    def roi(self, values):
-        self.data_reduction_client.set_roi_signal(values)
+    # @roi.setter
+    # def roi(self, values):
+        # self.data_reduction_client.set_roi_signal(values)
 
-    @property
-    def roi_background(self):
-        return self.data_reduction_client.get_roi_background()
+    # @property
+    # def roi_background(self):
+        # return self.data_reduction_client.get_roi_background()
 
-    @roi_background.setter
-    def roi_background(self, values):
-        self.data_reduction_client.set_roi_background(values)
+    # @roi_background.setter
+    # def roi_background(self, values):
+        # self.data_reduction_client.set_roi_background(values)
 
     def __repr__(self):
         s = [f"Status {self.name}"]
         s.append(str(self.x_target))
         s.append(str(self.y_target))
-        s.append(f"Data reduction is on")
-        s.append(f"  roi            {self.roi}")
-        s.append(f"  roi_background {self.roi_background}")
+        # s.append(f"Data reduction is on")
+        # s.append(f"  roi            {self.roi}")
+        # s.append(f"  roi_background {self.roi_background}")
         return "\n".join(s)
 
 

@@ -22,6 +22,7 @@ class Scan:
         scan_directories=False,
         callbackStartStep=None,
         checker_sleep_time=0.2,
+        return_at_end='question'
     ):
         self.Nsteps = len(values)
         self.pulses_per_step = Npulses
@@ -49,6 +50,7 @@ class Scan:
         self._scan_directories = scan_directories
         self.checker = checker
         self.initial_values = []
+        self.return_at_end = return_at_end
         self._checker_sleep_time = checker_sleep_time
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
@@ -155,8 +157,14 @@ class Scan:
             tb = "Ended all steps without interruption."
         finally:
             print(tb)
-            if input("Move back to initial values? (y/n)")[0] == "y":
+            if self.return_at_end=='question':
+                if input("Move back to initial values? (y/n)")[0] == "y":
+                    self.changeToInitialValues()
+            elif self.return_at_end:
                 self.changeToInitialValues()
+                print("Moving back to value(s) before scan.")
+            else:
+                print("Staying at final scan value(s)!")
 
     def changeToInitialValues(self):
         c = []
@@ -217,6 +225,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        return_at_end='question',
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
         positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
@@ -246,6 +255,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        return_at_end=True,
     ):
 
         adjustable = DummyAdjustable()
@@ -281,6 +291,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        return_at_end='question',
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         values = [[tp] for tp in positions]
@@ -297,6 +308,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            return_at_end=return_at_end,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -313,6 +325,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        return_at_end='question',
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         current = adjustable.get_current_value()
@@ -330,6 +343,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            return_at_end=return_at_end,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -350,6 +364,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        return_at_end='question',
     ):
         positions = posList
         values = [[tp] for tp in positions]
@@ -366,6 +381,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            return_at_end=return_at_end,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -385,6 +401,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        return_at_end='question',
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
         positions1 = posList
@@ -401,6 +418,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            return_at_end=return_at_end,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)

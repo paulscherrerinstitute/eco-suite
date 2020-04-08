@@ -212,7 +212,7 @@ class DIAClient:
             ]
             for ped in pedestals_taken:
                 commandstr.append(
-                    f"sbatch jungfrau_create_pedestals --filename {ped.as_posix()} --directory {res_dir} --verbosity 4"
+                    f"sbatch jungfrau_create_pedestals --filename {ped.as_posix()} --directory {res_dir}"
                 )
             os.system("\;".join(commandstr))
 
@@ -343,7 +343,7 @@ class DIAClient:
 
         outputfilenames = [
             f"{file_name_JF}.{tcli.upper()}.h5"
-            for tcli in self.active_clients  # +['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK
+            for tcli in self.active_clients  + ['BSREAD.IMAGES'] #['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK
         ]
 
         return Acquisition(
