@@ -523,3 +523,48 @@ class SlitPosWidth_old:
         string1 = "gap: (%g,%g) mm" % (self.get_hg(), self.get_vg())
         string2 = "pos: (%g,%g) mm" % (self.get_ho(), self.get_vo())
         return "\n".join((string1, string2))
+
+
+
+class SlitBladeStages:
+    def __init__(self,
+            up=None,
+            down=None,
+            left=None,
+            right=None,
+            ):
+        self.up = up
+        self.down = down
+        self.left = left
+        self.right = right
+
+    def getwidth(self):
+        return self.left.get_current_value() - self.right.get_current_value()
+    def getheight(self):
+        return self.up.get_current_value() - self.down.get_current_value()
+    def gethpos(self):
+        return (self.left.get_current_value() + self.right.get_current_value())/2
+    def getvpos(self):
+        return (self.up.get_current_value() + self.down.get_current_value())/2
+    
+    def setwidth(self,value):
+        pos = self.gethpos()
+        self.left.set_target_value(pos + value/2)
+        self.right.set_target_value(pos - value/2)
+
+    def setheight(self,value):
+        pos = self.getvpos()
+        self.up.set_target_value(pos + value/2)
+        self.down.set_target_value(pos - value/2)
+
+    def sethpos(self,value):
+        gap = self.getwidth()
+        self.left.set_target_value(value + gap/2)
+        self.right.set_target_value(value - gap/2)
+
+    def setvpos(self,value):
+        gap = self.getheigth()
+        self.up.set_target_value(value + gap/2)
+        self.down.set_target_value(value - gap/2)
+
+        
