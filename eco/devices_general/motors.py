@@ -1,4 +1,5 @@
-from ..eco_epics.motor import Motor as _Motor
+# from ..eco_epics.motor import Motor as _Motor
+from epics.motor import Motor as _Motor
 from ..eco_epics.utilities_epics import EpicsString
 import subprocess
 from threading import Thread

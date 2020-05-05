@@ -1,4 +1,4 @@
-from threading import Thread
+from ..utilities import PropagatingThread
 from epics import PV
 from asyncio import Future
 
@@ -18,7 +18,7 @@ class Acquisition:
             self.__dict__[key] = val
         self._acquire = acquire
         self._stopper = stopper
-        self._thread = Thread(target=self._acquire)
+        self._thread = PropagatingThread(target=self._acquire)
         self._get_result = get_result
         if not hold:
             self._thread.start()

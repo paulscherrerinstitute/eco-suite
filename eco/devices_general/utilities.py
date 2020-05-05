@@ -1,4 +1,5 @@
 from threading import Thread
+from ..utilities import PropagatingThread
 
 
 class Changer:
@@ -6,7 +7,7 @@ class Changer:
         self.target = target
         self._changer = changer
         self._stopper = stopper
-        self._thread = Thread(target=self._changer, args=(target,))
+        self._thread = PropagatingThread(target=self._changer, args=(target,))
         if not hold:
             self._thread.start()
 
