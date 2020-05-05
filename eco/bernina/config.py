@@ -45,7 +45,7 @@ components = [
         "args": ["https://elog-gfa.psi.ch/Bernina"],
         "kwargs": {
             "user": "gac-bernina",
-            "screenshot_directory": "/sf/bernina/config/screenshots",
+            "screenshot_directory": "/tmp",
         },
     },
     {
