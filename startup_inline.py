@@ -75,4 +75,7 @@ if scope:
     # globals().update({k: getattr(mdl, k) for k in names})
 
 term.set_title()
+from IPython import get_ipython                                                                                        
+_ipy = get_ipython()                                                                                                    
+_ipy.Completer.use_jedi = False  
 print(arguments)
