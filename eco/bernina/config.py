@@ -109,14 +109,6 @@ components = [
         "desc": "Profile monitor after Alvra Mirror 1",
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
-    # {
-    # "name": "slitSwitch",
-    # "z_und": 92,
-    # "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
-    # "type": "eco.xoptics.slits:SlitBlades_old",
-    # "args": ["SAROP21-OAPU092"],
-    # "kwargs": {},
-    # },
     {
         "name": "slit_switch",
         "z_und": 92,
@@ -252,14 +244,6 @@ components = [
         "type": "eco.xoptics.slits:SlitPosWidth",
         "lazy": True,
     },
-    # {
-    # "name": "slitAtt",
-    # "args": ["SAROP21-OAPU136"],
-    # "kwargs": {},
-    # "z_und": 136,
-    # "desc": "Slits behind attenuator",
-    # "type": "eco.xoptics.slits:SlitPosWidth_old",
-    # },
     {
         "name": "mon_att",
         "args": ["SAROP21-PBPS138"],
@@ -309,15 +293,15 @@ components = [
         "type": "eco.xdiagnostics.timetools:SpatialEncoder",
         "lazy": False,
     },
-    {
-        "name": "slit_kb",
-        "args": [],
-        "kwargs": {"pvname": "SARES20-MF1"},
-        "z_und": 141,
-        "desc": "Slits behind Kb",
-        "type": "eco.xoptics.slits:SlitBlades_JJ",
-        # "type": "eco.xoptics.slits:SlitBladesJJ_old",
-    },
+    # {
+        # "name": "slit_kb",
+        # "args": [],
+        # "kwargs": {"pvname": "SARES20-MF1"},
+        # "z_und": 141,
+        # "desc": "Slits behind Kb",
+        # "type": "eco.xoptics.slits:SlitBlades_JJ",
+        # # "type": "eco.xoptics.slits:SlitBladesJJ_old",
+    # },
     {
         "args": [],
         "name": "gps",
@@ -562,6 +546,33 @@ components = [
         "lazy": False,
     },
     {
+        "args": [],
+        "name": "thc",
+        "z_und": 142,
+        "desc": "High field THz Chamber",
+        "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
+        "kwargs": {"Id": "SARES23"},
+        "lazy": True,
+    },
+    {
+        "args": ["SARES23-"],
+        "name": "slit_kb",
+        "z_und": 141,
+        "desc": "Upstream diagnostics slits",
+        "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
+        "kwargs": {'right':'ESB1' ,'left':'ESB2', 'up':'ESB17','down':'ESB16'},
+        "lazy": True,
+    },
+    {
+        "args": ["SARES23-"],
+        "name": "slit_cleanup",
+        "z_und": 141,
+        "desc": "Upstream diagnostics slits",
+        "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
+        "kwargs": {'right':'ESB8' ,'left':'ESB9', 'up':'ESB18','down':'ESB3'},
+        "lazy": True,
+    },
+    {
         "args": [
             [
                 Component("slit_und"),
@@ -575,15 +586,6 @@ components = [
         "type": "eco.utilities.beamline:Slits",
         "kwargs": {},
         "lazy": False,
-    },
-    {
-        "args": [],
-        "name": "thc",
-        "z_und": 142,
-        "desc": "High field THz Chamber",
-        "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
-        "kwargs": {"Id": "SARES23"},
-        "lazy": True,
     },
 ]
 
