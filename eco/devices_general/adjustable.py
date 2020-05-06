@@ -40,52 +40,59 @@ def default_representation(Obj):
 
 def spec_convenience(Adj):
     # spec-inspired convenience methods
-    def mv(self, value):
-        self._currentChange = self.set_target_value(value)
-        return self._currentChange
 
     def wm(self, *args, **kwargs):
         return self.get_current_value(*args, **kwargs)
+    Adj.wm = wm
+    if hasattr(Adj, "update_change"):
+        def umv(self, *args, **kwargs):
+            self.update_change(*args, **kwargs)
 
-    def mvr(self, value, *args, **kwargs):
-        if (
-            hasattr(self, "_currentChange")
-            and self._currentChange
-            and not (self._currentChange.status() == "done")
-        ):
-            startvalue = self._currentChange.target
-        elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
-            startvalue = self.get_current_value(readback=True, *args, **kwargs)
-        else:
-            startvalue = self.get_current_value(*args, **kwargs)
-        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
-        return self._currentChange
+        def umvr(self, *args, **kwargs):
+            self.update_change_relative(*args, **kwargs)
+        Adj.mv = umv
+        Adj.mvr = umvr
+        Adj.umv = umv
+        Adj.umvr = umvr
+    else:
+        def mv(self, value):
+            try:
+                self._currentChange = self.set_target_value(value)
+                self._currentChange.wait()
+            except KeyboardInterrupt:
+                self._currentChange.stop()
+            return self._currentChange
 
-    def wait(self):
-        self._currentChange.wait()
+        def mvr(self, value, *args, **kwargs):
+            if (
+                hasattr(self, "_currentChange")
+                and self._currentChange
+                and not (self._currentChange.status() == "done")
+            ):
+                startvalue = self._currentChange.target
+            elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
+                startvalue = self.get_current_value(readback=True, *args, **kwargs)
+            else:
+                startvalue = self.get_current_value(*args, **kwargs)
+            try:
+                self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
+                self._currentChange.wait()
+            except KeyboardInterrupt:
+                self._currentChange.stop()
+            return self._currentChange
+        Adj.mv = mv
+        Adj.mvr = mvr
+
+
 
     def call(self, value=None):
         if not value is None:
-            self._currentChange = self.set_target_value(value)
-            return self._currentChange
+            return self.mv(value)
         else:
-            return self.get_current_value()
+            return self.wm()
 
-    def umv(self, *args, **kwargs):
-        self.update_change(*args, **kwargs)
-
-    def umvr(self, *args, **kwargs):
-        self.update_change_relative(*args, **kwargs)
-
-    Adj.mv = mv
-    Adj.wm = wm
-    Adj.mvr = mvr
-    Adj.wait = wait
     Adj.__call__ = call
-    if hasattr(Adj, "update_change"):
-        Adj.umv = umv
-        Adj.umvr = umvr
-
+    
     return Adj
 
 
@@ -141,6 +148,9 @@ class ValueInRange:
 
 def update_changes(Adj):
     def get_position_str(start, end, value):
+        start = float(start)
+        value = float(value)
+        end = float(end)
         s = ValueInRange(start, end, bar_width=30, unit="", fmt="1.5g").get_str(value)
         return (
             colorama.Style.BRIGHT
@@ -151,25 +161,40 @@ def update_changes(Adj):
             + 2 * "\t"
         )
 
-    def update_change(self, value):
+    def update_change(self, value, elog=None):
         start = self.get_current_value()
         print(
-            f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}\n"
+            f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}"
         )
         print(get_position_str(start, value, start), end="\r")
         try:
+            if hasattr(self,"add_value_callback"): 
+                def cbfoo(**kwargs):
+                    print(get_position_str(start, value, kwargs["value"]), end="\r")
 
-            def cbfoo(**kwargs):
-                print(get_position_str(start, value, kwargs["value"]), end="\r")
-
-            cb_id = self.add_value_callback(cbfoo)
+                cb_id = self.add_value_callback(cbfoo)
             self._currentChange = self.set_target_value(value)
             self._currentChange.wait()
         except KeyboardInterrupt:
             self._currentChange.stop()
             print(f"\nAborted change at (~) {self.get_current_value():1.5g}")
         finally:
-            self.clear_value_callback(cb_id)
+            if hasattr(self,"add_value_callback"): 
+                self.clear_value_callback(cb_id)
+        if elog:
+            if not hasattr(self,'elog'):
+                raise Exception("No elog defined!")
+
+            elog_str = f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}"
+            elog_title = f"Adjusting {self.name}"
+            if type(elog) is str:
+                elog = {'message':elog}
+            elif type(elog) is dict:
+                pass
+            else:
+                elog={}
+            self.elog.post(**elog)
+                
         return self._currentChange
 
     def update_change_relative(self, value, *args, **kwargs):
@@ -196,6 +221,7 @@ def update_changes(Adj):
 
 
 @spec_convenience
+@update_changes
 class DummyAdjustable:
     def __init__(self, name="no_adjustable"):
         self.name = name
