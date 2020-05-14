@@ -41,24 +41,24 @@ class SpectralEncoder:
         # self.delay = MotorRecord(self.Id + "-M424:MOT")
         # self.delayTime = DelayStage(self.delay)
         # self.data_reduction_client = PsenProcessingClient(
-            # address=reduction_client_address
+        # address=reduction_client_address
         # )
 
     # @property
     # def roi(self):
-        # return self.data_reduction_client.get_roi_signal()
+    # return self.data_reduction_client.get_roi_signal()
 
     # @roi.setter
     # def roi(self, values):
-        # self.data_reduction_client.set_roi_signal(values)
+    # self.data_reduction_client.set_roi_signal(values)
 
     # @property
     # def roi_background(self):
-        # return self.data_reduction_client.get_roi_background()
+    # return self.data_reduction_client.get_roi_background()
 
     # @roi_background.setter
     # def roi_background(self, values):
-        # self.data_reduction_client.set_roi_background(values)
+    # self.data_reduction_client.set_roi_background(values)
 
     def __repr__(self):
         s = [f"Status {self.name}"]

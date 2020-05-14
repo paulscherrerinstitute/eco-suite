@@ -16,7 +16,6 @@ class RefLaser_Aramis:
         self.x_rot = MotorRecord(self.Id + ":MOTOR_ROT_X1")
         self.z_rot = MotorRecord(self.Id + ":MOTOR_ROT_Z1")
 
-
     def __call__(self, *args, **kwargs):
         self.set(*args, **kwargs)
 

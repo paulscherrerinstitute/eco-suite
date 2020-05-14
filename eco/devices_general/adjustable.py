@@ -43,18 +43,22 @@ def spec_convenience(Adj):
 
     def wm(self, *args, **kwargs):
         return self.get_current_value(*args, **kwargs)
+
     Adj.wm = wm
     if hasattr(Adj, "update_change"):
+
         def umv(self, *args, **kwargs):
             self.update_change(*args, **kwargs)
 
         def umvr(self, *args, **kwargs):
             self.update_change_relative(*args, **kwargs)
+
         Adj.mv = umv
         Adj.mvr = umvr
         Adj.umv = umv
         Adj.umvr = umvr
     else:
+
         def mv(self, value):
             try:
                 self._currentChange = self.set_target_value(value)
@@ -75,15 +79,16 @@ def spec_convenience(Adj):
             else:
                 startvalue = self.get_current_value(*args, **kwargs)
             try:
-                self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
+                self._currentChange = self.set_target_value(
+                    value + startvalue, *args, **kwargs
+                )
                 self._currentChange.wait()
             except KeyboardInterrupt:
                 self._currentChange.stop()
             return self._currentChange
+
         Adj.mv = mv
         Adj.mvr = mvr
-
-
 
     def call(self, value=None):
         if not value is None:
@@ -92,7 +97,7 @@ def spec_convenience(Adj):
             return self.wm()
 
     Adj.__call__ = call
-    
+
     return Adj
 
 
@@ -168,7 +173,8 @@ def update_changes(Adj):
         )
         print(get_position_str(start, value, start), end="\r")
         try:
-            if hasattr(self,"add_value_callback"): 
+            if hasattr(self, "add_value_callback"):
+
                 def cbfoo(**kwargs):
                     print(get_position_str(start, value, kwargs["value"]), end="\r")
 
@@ -179,22 +185,22 @@ def update_changes(Adj):
             self._currentChange.stop()
             print(f"\nAborted change at (~) {self.get_current_value():1.5g}")
         finally:
-            if hasattr(self,"add_value_callback"): 
+            if hasattr(self, "add_value_callback"):
                 self.clear_value_callback(cb_id)
         if elog:
-            if not hasattr(self,'elog'):
+            if not hasattr(self, "elog"):
                 raise Exception("No elog defined!")
 
             elog_str = f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}"
             elog_title = f"Adjusting {self.name}"
             if type(elog) is str:
-                elog = {'message':elog}
+                elog = {"message": elog}
             elif type(elog) is dict:
                 pass
             else:
-                elog={}
+                elog = {}
             self.elog.post(**elog)
-                
+
         return self._currentChange
 
     def update_change_relative(self, value, *args, **kwargs):

@@ -8,6 +8,8 @@ from .utilities import Changer
 from ..aliases import Alias
 from .adjustable import spec_convenience, ValueInRange, update_changes, AdjustableError
 import colorama
+from ..utilities.KeyPress import KeyPress
+import sys, colorama
 
 _MotorRocordStandardProperties = {}
 _posTypes = ["user", "dial", "raw"]
@@ -200,6 +202,73 @@ class MotorRecord:
 
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
+
+    def _tweak_ioc(self, step_value=None):
+        pv = self._motor.get_pv("TWV")
+        pvf = self._motor.get_pv("TWF")
+        pvr = self._motor.get_pv("TWR")
+        if not step_value:
+            step_value = pv.get()
+        print(f"Tweaking {self.name} at step size {step_value}", end="\r")
+        
+        help = "q = exit; up = step*2; down = step/2, left = neg dir, right = pos dir\n"
+        help = help + "g = go abs, s = set"
+        print(f"tweaking {self.name}")
+        print(help)
+        print(f"Starting at {self.get_current_value()}")
+        step_value = float(step_value)
+        oldstep = 0
+        k = KeyPress()
+        cll = colorama.ansi.clear_line()
+        class Printer:
+            def print(self,**kwargs):
+                print(cll + f"stepsize: {self.stepsize}; current: {kwargs['value']}", end="\r")
+        p = Printer()
+        print(' ')
+        p.stepsize = step_value
+        p.print(value=self.get_current_value())
+        self.add_value_callback(p.print)
+        while k.isq() is False:
+            if oldstep != step_value:
+                p.stepsize = step_value
+                p.print(value=self.get_current_value())
+                oldstep = step_value
+            k.waitkey()
+            if k.isu():
+                step_value= step_value * 2.0
+                pv.put(step_value)
+            elif k.isd():
+                step_value = step_value / 2.0
+                pv.put(step_value)
+            elif k.isr():
+                pvf.put(1)
+            elif k.isl():
+                pvr.put(1)
+            elif k.iskey("g"):
+                print("enter absolute position (char to abort go to)")
+                sys.stdout.flush()
+                v = sys.stdin.readline()
+                try:
+                    v = float(v.strip())
+                    self.set_target_value(v)
+                except:
+                    print("value cannot be converted to float, exit go to mode ...")
+                    sys.stdout.flush()
+            elif k.iskey("s"):
+                print("enter new set value (char to abort setting)")
+                sys.stdout.flush()
+                v = sys.stdin.readline()
+                try:
+                    v = float(v[0:-1])
+                    self.reset_current_value_to(v)
+                except:
+                    print("value cannot be converted to float, exit go to mode ...")
+                    sys.stdout.flush()
+            elif k.isq():
+                break
+            else:
+                print(help)
+        print(f"final position: {self.get_current_value()}")
 
 
 class ChangerOld:

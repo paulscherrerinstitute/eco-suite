@@ -343,7 +343,10 @@ class DIAClient:
 
         outputfilenames = [
             f"{file_name_JF}.{tcli.upper()}.h5"
-            for tcli in self.active_clients  + ['BSREAD.IMAGES'] #['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK
+            for tcli in self.active_clients
+            + [
+                "BSREAD.IMAGES"
+            ]  # ['BSREAD.h5_SARES20-CAMS142-M4','BSREAD.h5_SARES20-CAMS142-M5'] # DIRTY HACK
         ]
 
         return Acquisition(
@@ -359,4 +362,7 @@ class DIAClient:
     def reset_server(self, *args):
         if not args:
             args = ["all"]
-        os.system("ssh jf@sf-daq-3 -t -i ~/.ssh/daq3.key ./services.sh restart " + " ".join(args))
+        os.system(
+            "ssh jf@sf-daq-3 -t -i ~/.ssh/daq3.key ./services.sh restart "
+            + " ".join(args)
+        )

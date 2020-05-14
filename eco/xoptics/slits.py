@@ -525,14 +525,10 @@ class SlitPosWidth_old:
         return "\n".join((string1, string2))
 
 
-
 class SlitBladeStages:
-    def __init__(self,
-            up=None,
-            down=None,
-            left=None,
-            right=None,
-            ):
+    def __init__(
+        self, up=None, down=None, left=None, right=None,
+    ):
         self.up = up
         self.down = down
         self.left = left
@@ -540,31 +536,32 @@ class SlitBladeStages:
 
     def getwidth(self):
         return self.left.get_current_value() - self.right.get_current_value()
+
     def getheight(self):
         return self.up.get_current_value() - self.down.get_current_value()
+
     def gethpos(self):
-        return (self.left.get_current_value() + self.right.get_current_value())/2
+        return (self.left.get_current_value() + self.right.get_current_value()) / 2
+
     def getvpos(self):
-        return (self.up.get_current_value() + self.down.get_current_value())/2
-    
-    def setwidth(self,value):
+        return (self.up.get_current_value() + self.down.get_current_value()) / 2
+
+    def setwidth(self, value):
         pos = self.gethpos()
-        self.left.set_target_value(pos + value/2)
-        self.right.set_target_value(pos - value/2)
+        self.left.set_target_value(pos + value / 2)
+        self.right.set_target_value(pos - value / 2)
 
-    def setheight(self,value):
+    def setheight(self, value):
         pos = self.getvpos()
-        self.up.set_target_value(pos + value/2)
-        self.down.set_target_value(pos - value/2)
+        self.up.set_target_value(pos + value / 2)
+        self.down.set_target_value(pos - value / 2)
 
-    def sethpos(self,value):
+    def sethpos(self, value):
         gap = self.getwidth()
-        self.left.set_target_value(value + gap/2)
-        self.right.set_target_value(value - gap/2)
+        self.left.set_target_value(value + gap / 2)
+        self.right.set_target_value(value - gap / 2)
 
-    def setvpos(self,value):
+    def setvpos(self, value):
         gap = self.getheigth()
-        self.up.set_target_value(value + gap/2)
-        self.down.set_target_value(value - gap/2)
-
-        
+        self.up.set_target_value(value + gap / 2)
+        self.down.set_target_value(value - gap / 2)

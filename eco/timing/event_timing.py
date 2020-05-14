@@ -3,7 +3,8 @@ from ..aliases import Alias
 from ..utilities.lazy_proxy import Proxy
 from ..devices_general.adjustable import PvEnum
 import logging
-logging.getLogger('cta_lib').setLevel(logging.WARNING)
+
+logging.getLogger("cta_lib").setLevel(logging.WARNING)
 from cta_lib import CtaLib
 from numbers import Number
 
@@ -303,7 +304,7 @@ class EventReceiver:
 
 class CTA_sequencer:
     def __init__(self, Id, name=None, master_frequency=100):
-        self._cta = CtaLib(Id,log_level='error')
+        self._cta = CtaLib(Id, log_level="error")
         self.sequence_local = {}
         self.synced = False
         self._master_frequency = master_frequency

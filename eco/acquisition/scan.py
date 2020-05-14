@@ -22,7 +22,7 @@ class Scan:
         scan_directories=False,
         callbackStartStep=None,
         checker_sleep_time=0.2,
-        return_at_end='question'
+        return_at_end="question",
     ):
         self.Nsteps = len(values)
         self.pulses_per_step = Npulses
@@ -157,7 +157,7 @@ class Scan:
             tb = "Ended all steps without interruption."
         finally:
             print(tb)
-            if self.return_at_end=='question':
+            if self.return_at_end == "question":
                 if input("Move back to initial values? (y/n)")[0] == "y":
                     self.changeToInitialValues()
             elif self.return_at_end:
@@ -225,7 +225,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
-        return_at_end='question',
+        return_at_end="question",
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
         positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
@@ -291,7 +291,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
-        return_at_end='question',
+        return_at_end="question",
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         values = [[tp] for tp in positions]
@@ -325,7 +325,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
-        return_at_end='question',
+        return_at_end="question",
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         current = adjustable.get_current_value()
@@ -364,7 +364,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
-        return_at_end='question',
+        return_at_end="question",
     ):
         positions = posList
         values = [[tp] for tp in positions]
@@ -401,7 +401,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
-        return_at_end='question',
+        return_at_end="question",
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
         positions1 = posList

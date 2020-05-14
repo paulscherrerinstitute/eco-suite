@@ -43,10 +43,7 @@ components = [
         "name": "elog",
         "type": "eco.utilities.elog:Elog",
         "args": ["https://elog-gfa.psi.ch/Bernina"],
-        "kwargs": {
-            "user": "gac-bernina",
-            "screenshot_directory": "/tmp",
-        },
+        "kwargs": {"user": "gac-bernina", "screenshot_directory": "/tmp",},
     },
     {
         "name": "screenshot",
@@ -294,13 +291,13 @@ components = [
         "lazy": False,
     },
     # {
-        # "name": "slit_kb",
-        # "args": [],
-        # "kwargs": {"pvname": "SARES20-MF1"},
-        # "z_und": 141,
-        # "desc": "Slits behind Kb",
-        # "type": "eco.xoptics.slits:SlitBlades_JJ",
-        # # "type": "eco.xoptics.slits:SlitBladesJJ_old",
+    # "name": "slit_kb",
+    # "args": [],
+    # "kwargs": {"pvname": "SARES20-MF1"},
+    # "z_und": 141,
+    # "desc": "Slits behind Kb",
+    # "type": "eco.xoptics.slits:SlitBlades_JJ",
+    # # "type": "eco.xoptics.slits:SlitBladesJJ_old",
     # },
     {
         "args": [],
@@ -560,7 +557,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics slits",
         "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {'right':'ESB1' ,'left':'ESB2', 'up':'ESB17','down':'ESB16'},
+        "kwargs": {"right": "ESB1", "left": "ESB2", "up": "ESB17", "down": "ESB16"},
         "lazy": True,
     },
     {
@@ -569,7 +566,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics slits",
         "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {'right':'ESB8' ,'left':'ESB9', 'up':'ESB18','down':'ESB3'},
+        "kwargs": {"right": "ESB8", "left": "ESB9", "up": "ESB18", "down": "ESB3"},
         "lazy": True,
     },
     {
