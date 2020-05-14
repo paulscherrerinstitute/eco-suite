@@ -210,7 +210,7 @@ class MotorRecord:
         if not step_value:
             step_value = pv.get()
         print(f"Tweaking {self.name} at step size {step_value}", end="\r")
-        
+
         help = "q = exit; up = step*2; down = step/2, left = neg dir, right = pos dir\n"
         help = help + "g = go abs, s = set"
         print(f"tweaking {self.name}")
@@ -220,11 +220,16 @@ class MotorRecord:
         oldstep = 0
         k = KeyPress()
         cll = colorama.ansi.clear_line()
+
         class Printer:
-            def print(self,**kwargs):
-                print(cll + f"stepsize: {self.stepsize}; current: {kwargs['value']}", end="\r")
+            def print(self, **kwargs):
+                print(
+                    cll + f"stepsize: {self.stepsize}; current: {kwargs['value']}",
+                    end="\r",
+                )
+
         p = Printer()
-        print(' ')
+        print(" ")
         p.stepsize = step_value
         p.print(value=self.get_current_value())
         self.add_value_callback(p.print)
@@ -235,7 +240,7 @@ class MotorRecord:
                 oldstep = step_value
             k.waitkey()
             if k.isu():
-                step_value= step_value * 2.0
+                step_value = step_value * 2.0
                 pv.put(step_value)
             elif k.isd():
                 step_value = step_value / 2.0
@@ -269,6 +274,9 @@ class MotorRecord:
             else:
                 print(help)
         print(f"final position: {self.get_current_value()}")
+
+    def tweak(self, *args, **kwargs):
+        return self._tweak_ioc(*args, **kwargs)
 
 
 class ChangerOld:
