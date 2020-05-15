@@ -16,6 +16,7 @@ from ..acquisition.utilities import Acquisition
 from ..aliases import Alias
 
 
+
 class PvDataStream:
     def __init__(self, Id, name=None):
         self.Id = Id
@@ -100,6 +101,9 @@ class PvDataStream:
         ]
 
     data = property(get_data)
+
+    def get_current_value(self):
+        return self._pv.get()
 
 
 _cameraArrayTypes = ["monochrome", "rgb"]

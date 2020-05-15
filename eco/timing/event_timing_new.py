@@ -2,8 +2,17 @@ from epics import PV
 from ..aliases import Alias, append_object_to_object
 from ..utilities.lazy_proxy import Proxy
 from ..devices_general.adjustable import PvEnum, PvRecord
+from ..devices_general.detectors import PvDataStream
 from ..eco_epics.utilities_epics import EpicsString
 from cta_lib import CtaLib
+
+
+class TimingSystem:
+    """ This is a wrapper object for the global timing system at SwissFEL"""
+    def __init__(self, pv_master=None,pv_pulse_id=None):
+        self.event_master = MasterEventSystem(pv_master,name='event_master')
+        self.pulse_id = PvDataStream(pv_pulse_id,name="pulse_id")
+        
 
 # EVR output mapping
 evr_mapping = {
@@ -366,3 +375,6 @@ class CTA_sequencer:
 
     def stop(self):
         self._cta.stop()
+
+
+

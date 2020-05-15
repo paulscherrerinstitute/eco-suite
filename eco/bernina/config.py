@@ -52,6 +52,13 @@ components = [
         "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
     },
     {
+        "args": [],
+        "name": "archiver",
+        "desc": "SwisFEL archiver data_buffer",
+        "type": "eco.dbase.archiver:DataApi",
+        "kwargs": {"pv_pulse_id":"SLAAR21-LTIM01-EVR0:RX-PULSEID"},
+    },
+    {
         "name": "slit_und",
         "type": "eco.xoptics.slits:SlitFourBlades_old",
         "args": ["SARFE10-OAPU044"],
@@ -485,10 +492,17 @@ components = [
         "kwargs": {},
     },
     {
+        "args": [],
+        "name": "event_system",
+        "desc": "SwissFEL timing information",
+        "type": "eco.timing.event_timing_new:TimingSystem",
+        "kwargs": {"pv_master":"SIN-TIMAST-TMA","pv_pulse_id":"SLAAR21-LTIM01-EVR0:RX-PULSEID"},
+    },
+    {
         "args": ["SIN-TIMAST-TMA"],
         "name": "event_master",
         "desc": "SwissFEL timing master information",
-        "type": "eco.timing.event_timing:MasterEventSystem",
+        "type": "eco.timing.event_timing_new:MasterEventSystem",
         "kwargs": {},
     },
     {
