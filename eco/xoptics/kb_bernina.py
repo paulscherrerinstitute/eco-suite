@@ -2,8 +2,11 @@ import numpy as np
 from scipy import constants
 
 class KBMirrorBernina:
-    def __init__(self,d_kbver=3350.,d_kbhor=2600.,d_hex=1600.,d_win1=1945.,d_win2=1330.,d_target=1520.,d_att=1420.):
+    def __init__(self,kb_ver=None, kb_hor=None, usd_table=None, d_kbver=3350.,d_kbhor=2600.,d_hex=1600.,d_win1=1945.,d_win2=1330.,d_target=1520.,d_att=1420.):
         """All distances are from sample interaction point at straight beam (no kb deflection), the units are expected in mm"""
+        self.kb_ver = kb_ver
+        self.kb_hor = kb_hor
+        self.usd_table = usd_table
         self.d_kbver = d_kbver
         self.d_kbhor = d_kbhor
         self.d_hex = d_hex

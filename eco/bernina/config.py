@@ -558,11 +558,20 @@ components = [
     },
     {
         "args": [],
-        "name": "thc",
-        "z_und": 142,
-        "desc": "High field THz Chamber",
-        "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
-        "kwargs": {"Id": "SARES23"},
+        "name": "usd_table",
+        "z_und": 141,
+        "desc": "Upstream diagnostics table",
+        "type": "eco.endstations.hexapod:HexapodSymmetrie",
+        "kwargs": {},
+        "lazy": True,
+    },
+    {
+        "args": [],
+        "name": "kb_steering",
+        "z_und": 141,
+        "desc": "",
+        "type": "eco.xoptics.kb_bernina:KBMirrorBernina",
+        "kwargs": {'kb_ver':Component('kb_ver'),'kb_hor':Component('kb_hor'),'usd_table':Component('usd_table')},
         "lazy": True,
     },
     {
@@ -597,6 +606,15 @@ components = [
         "type": "eco.utilities.beamline:Slits",
         "kwargs": {},
         "lazy": False,
+    },
+    {
+        "args": [],
+        "name": "thc",
+        "z_und": 142,
+        "desc": "High field THz Chamber",
+        "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
+        "kwargs": {"Id": "SARES23"},
+        "lazy": True,
     },
 ]
 

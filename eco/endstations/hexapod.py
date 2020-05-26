@@ -22,25 +22,25 @@ class Hexapod_PI:
 class HexapodSymmetrie:
     def __init__(self,pv_master='SARES20-HEXSYM',name='hex_usd'):
         self.name = name
-        self.pvname = ps_master
+        self.pvname = pv_master
         self.coordinate_switch = PvEnum(f'{self.pvname}:MOVE#PARAM:CM',name='hex_usd_coordinate_switch')
         self.pvs_setpos = {
-                'x':PV('{self.pvname}:MOVE#PARAM:X.VAL'),
-                'y':PV('{self.pvname}:MOVE#PARAM:Y.VAL'),
-                'z':PV('{self.pvname}:MOVE#PARAM:Z.VAL'),
-                'rx':PV('{self.pvname}:MOVE#PARAM:RX.VAL'),
-                'ry':PV('{self.pvname}:MOVE#PARAM:RY.VAL'),
-                'rz':PV('{self.pvname}:MOVE#PARAM:RZ.VAL'),
+                'x':PV(f'{self.pvname}:MOVE#PARAM:X.VAL'),
+                'y':PV(f'{self.pvname}:MOVE#PARAM:Y.VAL'),
+                'z':PV(f'{self.pvname}:MOVE#PARAM:Z.VAL'),
+                'rx':PV(f'{self.pvname}:MOVE#PARAM:RX.VAL'),
+                'ry':PV(f'{self.pvname}:MOVE#PARAM:RY.VAL'),
+                'rz':PV(f'{self.pvname}:MOVE#PARAM:RZ.VAL'),
                 }
         self.pvs_getpos = {
-                'x':PV('{self.pvname}:POSMACH.X'),
-                'y':PV('{self.pvname}:POSMACH.Y'),
-                'z':PV('{self.pvname}:POSMACH.Z'),
-                'rx':PV('{self.pvname}:POSMACH.RX'),
-                'ry':PV('{self.pvname}:POSMACH.RY'),
-                'rz':PV('{self.pvname}:POSMACH.RZ'),
+                'x':PV(f'{self.pvname}:POSMACH:X'),
+                'y':PV(f'{self.pvname}:POSMACH:Y'),
+                'z':PV(f'{self.pvname}:POSMACH:Z'),
+                'rx':PV(f'{self.pvname}:POSMACH:RX'),
+                'ry':PV(f'{self.pvname}:POSMACH:RY'),
+                'rz':PV(f'{self.pvname}:POSMACH:RZ'),
                 }
-        self._ctrl_pv = f'{self.pvname}:STATE#PANEL:SET.VAL')
+        self._ctrl_pv = PV(f'{self.pvname}:STATE#PANEL:SET.VAL')
 
     def set_coordinates(self,x,y,z,rx,ry,rz):
         self.pvs_setpos['x'].set(x)
@@ -50,7 +50,7 @@ class HexapodSymmetrie:
         self.pvs_setpos['ry'].set(ry)
         self.pvs_setpos['rz'].set(rz)
     
-    def get_coordinates(self,x,y,z,rx,ry,rz):
+    def get_coordinates(self):
         x = self.pvs_getpos['x'].get()
         y = self.pvs_getpos['y'].get()
         z = self.pvs_getpos['z'].get()
