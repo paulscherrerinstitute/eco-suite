@@ -20,8 +20,9 @@ class Hexapod_PI:
 
 
 class HexapodSymmetrie:
-    def __init__(self,pv_master='SARES20-HEXSYM',name='hex_usd'):
+    def __init__(self,pv_master='SARES20-HEXSYM',name='hex_usd',offset=[0,0,0,0,0,0]):
         self.name = name
+        self.offset = offset
         self.pvname = pv_master
         self.coordinate_switch = PvEnum(f'{self.pvname}:MOVE#PARAM:CM',name='hex_usd_coordinate_switch')
         self.pvs_setpos = {
@@ -43,12 +44,12 @@ class HexapodSymmetrie:
         self._ctrl_pv = PV(f'{self.pvname}:STATE#PANEL:SET.VAL')
 
     def set_coordinates(self,x,y,z,rx,ry,rz):
-        self.pvs_setpos['x'].set(x)
-        self.pvs_setpos['y'].set(y)
-        self.pvs_setpos['z'].set(z)
-        self.pvs_setpos['rx'].set(rx)
-        self.pvs_setpos['ry'].set(ry)
-        self.pvs_setpos['rz'].set(rz)
+        self.pvs_setpos['x'].put(x)
+        self.pvs_setpos['y'].put(y)
+        self.pvs_setpos['z'].put(z)
+        self.pvs_setpos['rx'].put(rx)
+        self.pvs_setpos['ry'].put(ry)
+        self.pvs_setpos['rz'].put(rz)
     
     def get_coordinates(self):
         x = self.pvs_getpos['x'].get()
@@ -60,10 +61,10 @@ class HexapodSymmetrie:
         return x,y,z,rx,ry,rz
 
     def set_control_on(self):
-        self._ctrl_pv.set(3)
+        self._ctrl_pv.put(3)
 
     def set_control_off(self):
-        self._ctrl_pv.set(4)
+        self._ctrl_pv.put(4)
 
     def get_control_state(self):
         stat = self._ctrl_pv.get()
@@ -76,9 +77,24 @@ class HexapodSymmetrie:
         elif stat==11:
             return 'moving'
 
-    def start_move(self,target=None,precision=[.001,.001,.001,.001,.001,.001]):
+    def move_to_coordinates(self,x,y,z,rx,ry,rz,precision=[.001,.001,.001,.001,.001,.001],coordinate_type='absolute',relative_to_eco_offset=True):
+        self.coordinate_switch.set_target_value(coordinate_type).wait()
+        if relative_to_eco_offset:
+            x = x+self.offset[0]
+            y = y+self.offset[1]
+            z = z+self.offset[2]
+            rx = rx+self.offset[3]
+            ry = ry+self.offset[4]
+            rz = rz+self.offset[5]
+        self.set_coordinates(x,y,z,rx,ry,rz)
+        sleep(.1)
+        self.start_move(target=(x,y,z,rx,ry,rz),precision=precision,coordinate_type=coordinate_type)
+
+    def start_move(self,target=None,precision=[.001,.001,.001,.001,.001,.001],coordinate_type='absolute'):
         print('Starting to move... stop with Ctrl-C')
-        self._ctrl_pv.set(11)
+        self.set_control_on()
+        sleep(0.2)
+        self._ctrl_pv.put(11) #this starts moving!
         while 1:
             try:
                 if target:
@@ -91,7 +107,10 @@ class HexapodSymmetrie:
             except KeyboardInterrupt:
                 self.stop_move()
                 print('Motion stopped')
+                break
+        self.set_control_off()
+        sleep(0.05)
 
     def stop_move(self):
-        self._ctrl_pv.set(2)
+        self._ctrl_pv.put(2)
 

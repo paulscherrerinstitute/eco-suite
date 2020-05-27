@@ -52,6 +52,23 @@ class KBMirrorBernina:
         # res['fwhm_kbhor'] = (fwhm_z(self.d_kbhor+z_fochor,w0_hor),fwhm_z(self.d_kbhor+z_focver,w0_ver))
         return res
 
+    def move_hex_for_kb_angles(self,the_kbver,the_kbhor):
+        pos = self.calc_positions(the_kbver,the_kbhor)
+        x = pos['x_hex']
+        y = pos['y_hex']
+        rx = pos['rx_hex']*180/np.pi
+        ry = pos['ry_hex']*180/np.pi
+        z=rz=0.
+        print(f"moving to (x/mm,y/mm,z/mm,rx/°,ry/°,rz/°) = ({x:g},{y:g},{z:g},{rx:g},{ry:g},{rz:g})")
+        if not input("start moving upstream large hexapod? (y/n)")=="y":
+            print("did nothing")
+            return
+        else:
+            self.usd_table.move_to_coordinates(x,y,z,rx,ry,rz)
+
+
+
+
 
 
        

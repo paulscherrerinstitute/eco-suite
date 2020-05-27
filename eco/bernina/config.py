@@ -562,7 +562,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics table",
         "type": "eco.endstations.hexapod:HexapodSymmetrie",
-        "kwargs": {},
+        "kwargs": {'offset':[1.308,0.881,0.,0.027,0.231,0.]},
         "lazy": True,
     },
     {
@@ -613,6 +613,26 @@ components = [
         "z_und": 142,
         "desc": "High field THz Chamber",
         "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
+        "kwargs": {"Id": "SARES23"},
+        "lazy": True,
+    },
+
+    {
+        "args": [],
+        "name": "tht",
+        "z_und": 142,
+        "desc": "High field THz Table",
+        "type": "eco.endstations.bernina_sample_environments:High_field_thz_table",
+        "kwargs": {"Id": "SARES23"},
+        "lazy": True,
+    },
+
+    {
+        "args": [],
+        "name": "eos",
+        "z_und": 142,
+        "desc": "electro optic sampling stages",
+        "type": "eco.endstations.bernina_sample_environments:electro_optic_sampling",
         "kwargs": {"Id": "SARES23"},
         "lazy": True,
     },
