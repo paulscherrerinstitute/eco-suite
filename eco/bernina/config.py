@@ -226,7 +226,7 @@ components = [
     {
         "name": "att",
         "args": ["SAROP21-OATT135"],
-        "kwargs": {"shutter": Component("xp")},
+        "kwargs": {"shutter": Component("xp"),'set_limits':[]},
         "z_und": 135,
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
