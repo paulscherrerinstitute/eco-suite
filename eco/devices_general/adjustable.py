@@ -9,6 +9,8 @@ import time
 import logging
 import datetime
 import numpy as np
+from pathlib import Path
+from json import load, dump
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +23,18 @@ class AdjustableError(Exception):
 # wrappers for adjustables >>>>>>>>>>>
 def default_representation(Obj):
     def get_name(Obj):
-        if Obj.alias:
+        if hasattr(Obj,'alias') and Obj.alias:
             return Obj.alias.get_full_name()
         elif Obj.name:
             return Obj.name
-        else:
+        elif hasattr(Obj,'Id') and Obj.Id:
             return Obj.Id
+        else:
+            return ''
 
     def get_repr(Obj):
         s = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
-        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{Obj.get_current_value():g}{colorama.Style.RESET_ALL}"
+        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{str(Obj.get_current_value())}{colorama.Style.RESET_ALL}"
         return s
 
     Obj._get_name = get_name
@@ -255,7 +259,30 @@ def _keywordChecker(kw_key_list_tups):
     for tkw, tkey, tlist in kw_key_list_tups:
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
+@default_representation
+@spec_convenience
+class AdjustableFS:
+    def __init__(self,file_path,name=None):
+        self.file_path = Path(file_path)
+        self.name = name
 
+    def get_current_value(self):
+        with open(self.file_path,'r') as f:
+            res = load(f)
+        return res['value']
+
+    def _write_value(self,value):
+        with open(self.file_path,'w') as f:
+            dump({'value':value},f)
+
+    def set_target_value(self,value,hold=False):
+        return Changer(
+            target=value, parent=self, changer=self._write_value, hold=hold, stopper=None
+        )
+
+
+
+@spec_convenience
 class PvRecord:
     def __init__(
         self, pvsetname, pvreadbackname=None, accuracy=None, name=None, elog=None
@@ -317,22 +344,22 @@ class PvRecord:
         )
 
     # spec-inspired convenience methods
-    def mv(self, value):
-        self._currentChange = self.set_target_value(value)
+    # def mv(self, value):
+        # self._currentChange = self.set_target_value(value)
 
-    def wm(self, *args, **kwargs):
-        return self.get_current_value(*args, **kwargs)
+    # def wm(self, *args, **kwargs):
+        # return self.get_current_value(*args, **kwargs)
 
-    def mvr(self, value, *args, **kwargs):
+    # def mvr(self, value, *args, **kwargs):
 
-        if self.get_moveDone == 1:
-            startvalue = self.get_current_value(readback=True, *args, **kwargs)
-        else:
-            startvalue = self.get_current_value(readback=False, *args, **kwargs)
-        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
+        # if self.get_moveDone == 1:
+            # startvalue = self.get_current_value(readback=True, *args, **kwargs)
+        # else:
+            # startvalue = self.get_current_value(readback=False, *args, **kwargs)
+        # self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
 
-    def wait(self):
-        self._currentChange.wait()
+    # def wait(self):
+        # self._currentChange.wait()
 
     def __repr__(self):
         return "%s is at: %s" % (self.Id, self.get_current_value())
@@ -399,6 +426,7 @@ class AdjustableVirtual:
         adjustables,
         foo_get_current_value,
         foo_set_target_value_current_value,
+        change_simultaneously=True,
         reset_current_value_to=False,
         append_aliases=False,
         name=None,
@@ -416,6 +444,7 @@ class AdjustableVirtual:
         self._foo_set_target_value_current_value = foo_set_target_value_current_value
         self._foo_get_current_value = foo_get_current_value
         self._reset_current_value_to = reset_current_value_to
+        self._change_simultaneously = change_simultaneously
         if reset_current_value_to:
             for adj in self._adjustables:
                 if not hasattr(adj, "reset_current_value_to"):
@@ -427,12 +456,18 @@ class AdjustableVirtual:
             vals = (vals,)
 
         def changer(value):
-            self._active_changers = [
-                adj.set_target_value(val, hold=False)
-                for val, adj in zip(vals, self._adjustables)
-            ]
-            for tc in self._active_changers:
-                tc.wait()
+            if self._change_simultaneously:
+                self._active_changers = [
+                    adj.set_target_value(val, hold=False)
+                    for val, adj in zip(vals, self._adjustables)
+                ]
+                for tc in self._active_changers:
+                    tc.wait()
+            else:
+
+                for val, adj in zip(vals, self._adjustables):
+                    self._active_changers = [adj.set_target_value(val, hold=False)]
+                    self._active_changers[0].wait()
 
         def stopper():
             for tc in self._active_changers:

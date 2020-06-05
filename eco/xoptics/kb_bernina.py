@@ -17,8 +17,8 @@ class KBMirrorBernina:
 
     def calc_positions(self,the_kbver,the_kbhor):
         """angles in rad"""
-        y_kbhor = np.tan(2*the_kbver) * np.abs(self.d_kbver-self.d_kbhor)
-        rx_kbhor = - 2 * the_kbver
+        y_kbhor =  np.tan(2*the_kbver) * np.abs(self.d_kbver-self.d_kbhor)
+        rx_kbhor =  -2 * the_kbver
         y_hex = np.tan(2*the_kbver) * np.abs(self.d_kbver-self.d_hex)
         x_hex = np.tan(2*the_kbhor) * np.abs(self.d_kbhor-self.d_hex)
         rx_hex = rx_kbhor
@@ -59,6 +59,8 @@ class KBMirrorBernina:
         rx = pos['rx_hex']*180/np.pi
         ry = pos['ry_hex']*180/np.pi
         z=rz=0.
+        ax,ay,az,arx,ary,arz = self.usd_table.get_coordinates()
+        print(f"present upstream large hexapod position is (x/mm,y/mm,z/mm,rx/°,ry/°,rz/°) = ({ax:g},{ay:g},{az:g},{arx:g},{ary:g},{arz:g})")
         print(f"moving to (x/mm,y/mm,z/mm,rx/°,ry/°,rz/°) = ({x:g},{y:g},{z:g},{rx:g},{ry:g},{rz:g})")
         if not input("start moving upstream large hexapod? (y/n)")=="y":
             print("did nothing")

@@ -6,6 +6,8 @@ from ..devices_general.adjustable import PvRecord
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object
+from ..endstations.hexapod import HexapodPI
+from pathlib import Path
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -18,7 +20,7 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 class GPS:
     def __init__(
-        self, name=None, Id=None, configuration=["base"], alias_namespace=None
+        self, name=None, Id=None, configuration=["base"], alias_namespace=None, fina_hex_angle_offset=None
     ):
         self.Id = Id
         self.name = name
@@ -41,55 +43,18 @@ class GPS:
             addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_TX", name="tphi")
 
         if "phi_hex" in self.configuration:
+
             ### motors PI hexapod ###
+            if fina_hex_angle_offset:
+                fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
+
             append_object_to_object(
                 self,
-                PvRecord,
-                "SARES20-HEX_PI:SET-POSI-X",
-                pvreadbackname="SARES20-HEX_PI:POSI-X",
-                name="xhex",
+                HexapodPI,
+                "SARES20-HEX_PI",
+                name="hex",
+                fina_angle_offset = fina_hex_angle_offset
             )
-            append_object_to_object(
-                self,
-                PvRecord,
-                "SARES20-HEX_PI:SET-POSI-Y",
-                pvreadbackname="SARES20-HEX_PI:POSI-Y",
-                name="yhex",
-            )
-            append_object_to_object(
-                self,
-                PvRecord,
-                "SARES20-HEX_PI:SET-POSI-Z",
-                pvreadbackname="SARES20-HEX_PI:POSI-Z",
-                name="zhex",
-            )
-            append_object_to_object(
-                self,
-                PvRecord,
-                "SARES20-HEX_PI:SET-POSI-U",
-                pvreadbackname="SARES20-HEX_PI:POSI-U",
-                name="uhex",
-            )
-            append_object_to_object(
-                self,
-                PvRecord,
-                "SARES20-HEX_PI:SET-POSI-V",
-                pvreadbackname="SARES20-HEX_PI:POSI-V",
-                name="vhex",
-            )
-            append_object_to_object(
-                self,
-                PvRecord,
-                "SARES20-HEX_PI:SET-POSI-W",
-                pvreadbackname="SARES20-HEX_PI:POSI-W",
-                name="whex",
-            )
-            # self.hex_x = PV("SARES20-HEX_PI:POSI-X")
-            # self.hex_y = PV("SARES20-HEX_PI:POSI-Y")
-            # self.hex_z = PV("SARES20-HEX_PI:POSI-Z")
-            # self.hex_u = PV("SARES20-HEX_PI:POSI-U")
-            # self.hex_v = PV("SARES20-HEX_PI:POSI-V")
-            # self.hex_w = PV("SARES20-HEX_PI:POSI-W")
 
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###

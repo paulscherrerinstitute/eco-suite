@@ -232,7 +232,8 @@ class MotorRecord:
         print(" ")
         p.stepsize = step_value
         p.print(value=self.get_current_value())
-        self.add_value_callback(p.print)
+        ind_callback = self.add_value_callback(p.print)
+        pv.put(step_value)
         while k.isq() is False:
             if oldstep != step_value:
                 p.stepsize = step_value
@@ -273,7 +274,9 @@ class MotorRecord:
                 break
             else:
                 print(help)
+        self.clear_value_callback(index=ind_callback)
         print(f"final position: {self.get_current_value()}")
+        print(f"final tweak step: {pv.get()}")
 
     def tweak(self, *args, **kwargs):
         return self._tweak_ioc(*args, **kwargs)

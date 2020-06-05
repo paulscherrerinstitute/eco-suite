@@ -312,7 +312,8 @@ components = [
         "z_und": 142,
         "desc": "General purpose station",
         "type": "eco.endstations.bernina_diffractometers:GPS",
-        "kwargs": {"Id": "SARES22-GPS", "configuration": config["gps_config"]},
+        "kwargs": {"Id": "SARES22-GPS", "configuration": config["gps_config"],"fina_hex_angle_offset":"~/eco/reference_values/hex_pi_angle_offset.json"},
+        "lazy":False,
     },
     {
         "args": [],
@@ -580,7 +581,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics slits",
         "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {"right": "ESB1", "left": "ESB2", "up": "ESB17", "down": "ESB16"},
+        "kwargs": {"right": "LIC4", "left": "LIC3", "up": "LIC2", "down": "LIC1"},
         "lazy": True,
     },
     {
@@ -589,7 +590,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics slits",
         "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {"right": "ESB8", "left": "ESB9", "up": "ESB18", "down": "ESB3"},
+        "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC6", "down": "LIC5"},
         "lazy": True,
     },
     {

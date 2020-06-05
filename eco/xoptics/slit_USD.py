@@ -66,7 +66,7 @@ class Upstream_diagnostic_slits:
         append_object_to_object(
             self,
             AdjustableVirtual,
-            [self.right, self.left],
+            [self.left, self.right],
             getgap,
             setwidth,
             reset_current_value_to=False,
