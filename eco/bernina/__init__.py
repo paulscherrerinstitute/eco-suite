@@ -6,6 +6,11 @@ import logging
 
 from .config import components, config
 import sys
+from .bernina import *
+try:
+    from ..utilities.runtable import Run_Table
+except:
+    print('Initializing of run_table failed')
 
 
 _namespace = globals()
@@ -37,7 +42,6 @@ def init(*args, lazy=None):
         # _namespace[key] = value
         _mod.__dict__[key] = value
         op[key] = value
-
         if not ecocnf.startup_lazy:
             try:
                 for ta in value.alias.get_all():
@@ -47,4 +51,14 @@ def init(*args, lazy=None):
             except:
                 pass
         alias_namespaces.bernina.store()
+    try:
+        run_table = bernina.init(config['pgroup'], alias_namespaces,_mod)
+        _mod.__dict__['rt'] = run_table
+        op['rt'] = run_table
+    except:
+        print('Initializing of run_table failed')
     return op
+
+
+
+

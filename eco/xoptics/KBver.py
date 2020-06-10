@@ -1,27 +1,35 @@
 from ..devices_general.motors import MotorRecord
 from epics import PV
+from ..aliases import Alias, append_object_to_object
 
+def addMotorRecordToSelf(self, Id=None, name=None):
+    try:
+        self.__dict__[name] = MotorRecord(Id, name=name)
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find motor {name} (Id:{Id})")
 
 class KBver:
-    def __init__(self, Id):
+    def __init__(self, Id, name=None):
         self.Id = Id
+        self.alias = Alias(name)
 
-        self.x = MotorRecord(Id + ":W_X")
-        self.y = MotorRecord(Id + ":W_Y")
-        self.pitch = MotorRecord(Id + ":W_RX")
-        self.roll = MotorRecord(Id + ":W_RZ")
-        self.yaw = MotorRecord(Id + ":W_RY")
-        self.bend1 = MotorRecord(Id + ":BU")
-        self.bend2 = MotorRecord(Id + ":BD")
+        addMotorRecordToSelf(self, Id=Id + ":W_X", name='x')
+        addMotorRecordToSelf(self, Id=Id + ":W_Y", name='y')
+        addMotorRecordToSelf(self, Id=Id + ":W_RX", name='pitch')
+        addMotorRecordToSelf(self, Id=Id + ":W_RZ", name='roll')
+        addMotorRecordToSelf(self, Id=Id + ":W_RY", name='yaw')
+        addMotorRecordToSelf(self, Id=Id + ":BU", name='bend1')
+        addMotorRecordToSelf(self, Id=Id + ":BD", name='bend2')
 
         self.mode = PV(Id[:11] + ":MODE").enum_strs[PV(Id[:11] + ":MODE").value]
 
         #### actual motors ###
-        self._Y1 = MotorRecord(Id + ":TY1")
-        self._Y2 = MotorRecord(Id + ":TY2")
-        self._Y3 = MotorRecord(Id + ":TY3")
-        self._X1 = MotorRecord(Id + ":TX1")
-        self._X2 = MotorRecord(Id + ":TX2")
+        addMotorRecordToSelf(self, Id=Id + ":TY1", name='_Y1')
+        addMotorRecordToSelf(self, Id=Id + ":TY2", name='_Y2')
+        addMotorRecordToSelf(self, Id=Id + ":TY3", name='_Y3')
+        addMotorRecordToSelf(self, Id=Id + ":TX1", name='_X1')
+        addMotorRecordToSelf(self, Id=Id + ":TX2", name='_X2')
 
     def __str__(self):
         s = "**Vertical KB mirror**\n"

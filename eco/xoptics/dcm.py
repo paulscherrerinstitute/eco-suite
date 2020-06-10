@@ -1,27 +1,62 @@
 from ..devices_general.motors import MotorRecord
+from ..devices_general.pv_adjustable import PvRecord
 from epics import PV
 from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
+from ..aliases import Alias, append_object_to_object
 
+def addMotorRecordToSelf(self, Id=None, name=None):
+    try:
+        self.__dict__[name] = MotorRecord(Id, name=name)
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find motor {name} (Id:{Id})")
+
+def addPvToSelf(self, Id=None, name=None):
+    try: 
+        self.__dict__[name] = PV(Id)
+        self.alias.append(Alias(name, channel=Id, channeltype='CA'))
+    except:
+        print(f"Warning! Could not find PV {name} (Id:{Id})")
+
+def addPvRecordToSelf(self, 
+        pvsetname, 
+        pvreadbackname=None, 
+        accuracy=None, 
+        sleeptime=0, 
+        name=None
+        ):
+    try:
+        self.__dict__[name] = PvRecord(
+            pvsetname,
+            pvreadbackname=pvreadbackname,
+            accuracy=accuracy,
+            sleeptime=sleeptime,
+            name=name,
+            )
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
 
 class Double_Crystal_Mono:
     def __init__(self, Id, name=None):
         self.Id = Id
-        self.theta = MotorRecord(Id + ":RX12")
-        self.x = MotorRecord(Id + ":TX12")
-        self.gap = MotorRecord(Id + ":T2")
-        self.roll1 = MotorRecord(Id + ":RZ1")
-        self.roll2 = MotorRecord(Id + ":RZ2")
-        self.pitch2 = MotorRecord(Id + ":RX2")
         self.name = name
-        self.energy_rbk = PV(Id + ":ENERGY")
-        self.energy_sp = PV(Id + ":ENERGY_SP")
+        self.alias = Alias(name)
+        addMotorRecordToSelf(self, Id=Id + ":RX12", name='theta')
+        addMotorRecordToSelf(self, Id=Id + ":TX12", name='x')
+        addMotorRecordToSelf(self, Id=Id + ":T2", name='gap')
+        addMotorRecordToSelf(self, Id=Id + ":RZ1", name='roll1')
+        addMotorRecordToSelf(self, Id=Id + ":RZ2", name='roll2')
+        addMotorRecordToSelf(self, Id=Id + ":RX2", name='pitch2')
+        addPvRecordToSelf(self, pvsetname=Id + ":ENERGY_SP", pvreadbackname =Id + ":ENERGY", accuracy= 0.5, name='energy')
         self.moving = PV(Id + ":MOVING")
         self._stop = PV(Id + ":STOP.PROC")
 
+
     def move_and_wait(self, value, checktime=0.01, precision=0.5):
-        self.energy_sp.put(value)
+        self.energy.set_target_value(value)
         while abs(self.wait_for_valid_value() - value) > precision:
             sleep(checktime)
 
@@ -35,17 +70,17 @@ class Double_Crystal_Mono:
         self._stop.put(1)
 
     def get_current_value(self):
-        currentenergy = self.energy_rbk.get()
+        currentenergy = energy.get_current_value()
         return currentenergy
 
     def wait_for_valid_value(self):
         tval = np.nan
         while not np.isfinite(tval):
-            tval = self.energy_rbk.get()
+            tval = self.energy.get_current_value()
         return tval
 
     def set_current_value(self, value):
-        self.energy_sp.put(value)
+        self.energy.set_current_value(value)
 
     def get_moveDone(self):
         inmotion = int(self.moving.get())
@@ -71,12 +106,9 @@ class Double_Crystal_Mono:
 
     def __str__(self):
         s = "**Double crystal monochromator**\n\n"
-        motors = "theta gap x roll1 roll2 pitch2".split()
+        motors = "theta gap x roll1 roll2 pitch2 energy".split()
         for motor in motors:
-            s += " - %s = %.4f\n" % (motor, getattr(self, motor).wm())
-        pvs = "energy_rbk".split()
-        for pv in pvs:
-            s += " - %s = %.4f\n" % (pv, getattr(self, pv).value)
+            s += " - %s = %.4f\n" % (motor, getattr(self, motor).get_current_value())
         return s
 
     def __repr__(self):

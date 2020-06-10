@@ -18,16 +18,10 @@ class PvRecord:
         elog=None,
     ):
 
-        #        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
-        #    ):
         self.Id = pvsetname
         self.name = name
         self.alias = Alias(name)
         self.sleeptime = sleeptime
-        #        for an, af in alias_fields.items():
-        #            self.alias.append(
-        #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
-        #            )
 
         self._pv = PV(self.Id)
         self._currentChange = None
@@ -35,8 +29,15 @@ class PvRecord:
 
         if pvreadbackname is None:
             self._pvreadback = PV(self.Id)
+            alias_fields={"set": pvsetname}
         else:
             self._pvreadback = PV(pvreadbackname)
+            alias_fields={"set": pvsetname, "readback": pvreadbackname}
+
+        for name, ch in alias_fields.items():
+            self.alias.append(
+            Alias(name, channel=ch, channeltype="CA")
+            )
 
     def get_current_value(self, readback=True):
         if readback:
