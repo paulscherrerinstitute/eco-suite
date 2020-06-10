@@ -20,7 +20,12 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 class GPS:
     def __init__(
-        self, name=None, Id=None, configuration=["base"], alias_namespace=None, fina_hex_angle_offset=None
+        self,
+        name=None,
+        Id=None,
+        configuration=["base"],
+        alias_namespace=None,
+        fina_hex_angle_offset=None,
     ):
         self.Id = Id
         self.name = name
@@ -53,7 +58,7 @@ class GPS:
                 HexapodPI,
                 "SARES20-HEX_PI",
                 name="hex",
-                fina_angle_offset = fina_hex_angle_offset
+                fina_angle_offset=fina_hex_angle_offset,
             )
 
         if "hlxz" in self.configuration:

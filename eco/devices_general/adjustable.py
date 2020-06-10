@@ -23,14 +23,14 @@ class AdjustableError(Exception):
 # wrappers for adjustables >>>>>>>>>>>
 def default_representation(Obj):
     def get_name(Obj):
-        if hasattr(Obj,'alias') and Obj.alias:
+        if hasattr(Obj, "alias") and Obj.alias:
             return Obj.alias.get_full_name()
         elif Obj.name:
             return Obj.name
-        elif hasattr(Obj,'Id') and Obj.Id:
+        elif hasattr(Obj, "Id") and Obj.Id:
             return Obj.Id
         else:
-            return ''
+            return ""
 
     def get_repr(Obj):
         s = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
@@ -259,27 +259,31 @@ def _keywordChecker(kw_key_list_tups):
     for tkw, tkey, tlist in kw_key_list_tups:
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
+
 @default_representation
 @spec_convenience
 class AdjustableFS:
-    def __init__(self,file_path,name=None):
+    def __init__(self, file_path, name=None):
         self.file_path = Path(file_path)
         self.name = name
 
     def get_current_value(self):
-        with open(self.file_path,'r') as f:
+        with open(self.file_path, "r") as f:
             res = load(f)
-        return res['value']
+        return res["value"]
 
-    def _write_value(self,value):
-        with open(self.file_path,'w') as f:
-            dump({'value':value},f)
+    def _write_value(self, value):
+        with open(self.file_path, "w") as f:
+            dump({"value": value}, f)
 
-    def set_target_value(self,value,hold=False):
+    def set_target_value(self, value, hold=False):
         return Changer(
-            target=value, parent=self, changer=self._write_value, hold=hold, stopper=None
+            target=value,
+            parent=self,
+            changer=self._write_value,
+            hold=hold,
+            stopper=None,
         )
-
 
 
 @spec_convenience
@@ -345,21 +349,21 @@ class PvRecord:
 
     # spec-inspired convenience methods
     # def mv(self, value):
-        # self._currentChange = self.set_target_value(value)
+    # self._currentChange = self.set_target_value(value)
 
     # def wm(self, *args, **kwargs):
-        # return self.get_current_value(*args, **kwargs)
+    # return self.get_current_value(*args, **kwargs)
 
     # def mvr(self, value, *args, **kwargs):
 
-        # if self.get_moveDone == 1:
-            # startvalue = self.get_current_value(readback=True, *args, **kwargs)
-        # else:
-            # startvalue = self.get_current_value(readback=False, *args, **kwargs)
-        # self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
+    # if self.get_moveDone == 1:
+    # startvalue = self.get_current_value(readback=True, *args, **kwargs)
+    # else:
+    # startvalue = self.get_current_value(readback=False, *args, **kwargs)
+    # self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
 
     # def wait(self):
-        # self._currentChange.wait()
+    # self._currentChange.wait()
 
     def __repr__(self):
         return "%s is at: %s" % (self.Id, self.get_current_value())

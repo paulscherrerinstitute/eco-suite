@@ -134,9 +134,6 @@ class High_field_thz_chamber:
         return self.get_adjustable_positions_str()
 
 
-
-
-
 class High_field_thz_table:
     def __init__(self, name=None, Id=None, alias_namespace=None):
         self.Id = Id
@@ -184,7 +181,6 @@ class High_field_thz_table:
                 "speed": 250,
                 "home_direction": "back",
             },
-
             "mirr1_x": {
                 "id": "-ESB7",
                 "pv_descr": "Motor5:1 near IR mirror x",
@@ -273,9 +269,6 @@ class High_field_thz_table:
         return self.get_adjustable_positions_str()
 
 
-
-
-
 class electro_optic_sampling:
     def __init__(self, name=None, Id=None, alias_namespace=None):
         self.Id = Id
@@ -292,16 +285,16 @@ class electro_optic_sampling:
                 "home_direction": "back",
             },
             "rx": {
-                "id": "-ESB17",
-                "pv_descr": "Motor8:2 EOS prism rx ",
+                "id": "-LIC11",
+                "pv_descr": "Motor6:2 EOS prism rx ",
                 "type": 1,
                 "sensor": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
             "x": {
-                "id": "-ESB18",
-                "pv_descr": "Motor8:3 EOS prism x ",
+                "id": "-LIC10",
+                "pv_descr": "Motor6:1 EOS prism x ",
                 "type": 1,
                 "sensor": 0,
                 "speed": 250,

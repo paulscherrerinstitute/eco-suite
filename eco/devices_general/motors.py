@@ -10,6 +10,18 @@ from .adjustable import spec_convenience, ValueInRange, update_changes, Adjustab
 import colorama
 from ..utilities.KeyPress import KeyPress
 import sys, colorama
+from .. import global_config
+
+if hasattr(global_config, "elog"):
+    elog = global_config.elog
+else:
+    elog = None
+
+if hasattr(global_config, "archiver"):
+    archiver = global_config.archiver
+else:
+    archiver = None
+
 
 _MotorRocordStandardProperties = {}
 _posTypes = ["user", "dial", "raw"]

@@ -6,8 +6,9 @@ import logging
 
 from .config import components, config
 import sys
-from .bernina import *
+
 try:
+    from .bernina import *
     from ..utilities.runtable import Run_Table
 except:
     print('Initializing of run_table failed')

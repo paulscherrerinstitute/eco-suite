@@ -9,10 +9,11 @@ from cta_lib import CtaLib
 
 class TimingSystem:
     """ This is a wrapper object for the global timing system at SwissFEL"""
-    def __init__(self, pv_master=None,pv_pulse_id=None):
-        self.event_master = MasterEventSystem(pv_master,name='event_master')
-        self.pulse_id = PvDataStream(pv_pulse_id,name="pulse_id")
-        
+
+    def __init__(self, pv_master=None, pv_pulse_id=None):
+        self.event_master = MasterEventSystem(pv_master, name="event_master")
+        self.pulse_id = PvDataStream(pv_pulse_id, name="pulse_id")
+
 
 # EVR output mapping
 evr_mapping = {
@@ -375,6 +376,3 @@ class CTA_sequencer:
 
     def stop(self):
         self._cta.stop()
-
-
-

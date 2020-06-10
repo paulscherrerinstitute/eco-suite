@@ -56,7 +56,7 @@ components = [
         "name": "archiver",
         "desc": "SwisFEL archiver data_buffer",
         "type": "eco.dbase.archiver:DataApi",
-        "kwargs": {"pv_pulse_id":"SLAAR21-LTIM01-EVR0:RX-PULSEID"},
+        "kwargs": {"pv_pulse_id": "SLAAR21-LTIM01-EVR0:RX-PULSEID"},
     },
     {
         "name": "slit_und",
@@ -226,7 +226,7 @@ components = [
     {
         "name": "att",
         "args": ["SAROP21-OATT135"],
-        "kwargs": {"shutter": Component("xp"),'set_limits':[]},
+        "kwargs": {"shutter": Component("xp"), "set_limits": []},
         "z_und": 135,
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
@@ -312,8 +312,12 @@ components = [
         "z_und": 142,
         "desc": "General purpose station",
         "type": "eco.endstations.bernina_diffractometers:GPS",
-        "kwargs": {"Id": "SARES22-GPS", "configuration": config["gps_config"],"fina_hex_angle_offset":"~/eco/reference_values/hex_pi_angle_offset.json"},
-        "lazy":False,
+        "kwargs": {
+            "Id": "SARES22-GPS",
+            "configuration": config["gps_config"],
+            "fina_hex_angle_offset": "~/eco/reference_values/hex_pi_angle_offset.json",
+        },
+        "lazy": False,
     },
     {
         "args": [],
@@ -497,7 +501,10 @@ components = [
         "name": "event_system",
         "desc": "SwissFEL timing information",
         "type": "eco.timing.event_timing_new:TimingSystem",
-        "kwargs": {"pv_master":"SIN-TIMAST-TMA","pv_pulse_id":"SLAAR21-LTIM01-EVR0:RX-PULSEID"},
+        "kwargs": {
+            "pv_master": "SIN-TIMAST-TMA",
+            "pv_pulse_id": "SLAAR21-LTIM01-EVR0:RX-PULSEID",
+        },
     },
     {
         "args": ["SIN-TIMAST-TMA"],
@@ -563,7 +570,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics table",
         "type": "eco.endstations.hexapod:HexapodSymmetrie",
-        "kwargs": {'offset':[0.,0.,0.,0.,0.,0.]},
+        "kwargs": {"offset": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]},
         "lazy": True,
     },
     {
@@ -572,7 +579,11 @@ components = [
         "z_und": 141,
         "desc": "",
         "type": "eco.xoptics.kb_bernina:KBMirrorBernina",
-        "kwargs": {'kb_ver':Component('kb_ver'),'kb_hor':Component('kb_hor'),'usd_table':Component('usd_table')},
+        "kwargs": {
+            "kb_ver": Component("kb_ver"),
+            "kb_hor": Component("kb_hor"),
+            "usd_table": Component("usd_table"),
+        },
         "lazy": True,
     },
     {
@@ -617,7 +628,6 @@ components = [
         "kwargs": {"Id": "SARES23"},
         "lazy": True,
     },
-
     {
         "args": [],
         "name": "tht",
@@ -627,7 +637,6 @@ components = [
         "kwargs": {"Id": "SARES23"},
         "lazy": True,
     },
-
     {
         "args": [],
         "name": "eos",

@@ -16,7 +16,6 @@ from ..acquisition.utilities import Acquisition
 from ..aliases import Alias
 
 
-
 class PvDataStream:
     def __init__(self, Id, name=None):
         self.Id = Id
