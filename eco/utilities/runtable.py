@@ -237,7 +237,7 @@ class Run_Table():
     def _parse_parent(self, parent=None):
         if parent == None:
             parent = self.devices
-        exclude = '__ alias namespace config _mod evr'.split()
+        exclude = '__ alias namespace config _mod evr daq scan'.split()
         for key in parent.__dict__.keys():
             if ~np.any([s in key for s in exclude]):
                 if np.all([hasattr(parent.__dict__[key], '__dict__'), hasattr(parent.__dict__[key],'name')]):
