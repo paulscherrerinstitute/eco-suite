@@ -226,7 +226,7 @@ components = [
     {
         "name": "att",
         "args": ["SAROP21-OATT135"],
-        "kwargs": {"shutter": Component("xp")},
+        "kwargs": {"shutter": Component("xp"),'set_limits':[]},
         "z_und": 135,
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
@@ -563,7 +563,7 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics table",
         "type": "eco.endstations.hexapod:HexapodSymmetrie",
-        "kwargs": {'offset':[1.308,0.881,0.,0.027,0.231,0.]},
+        "kwargs": {'offset':[0.,0.,0.,0.,0.,0.]},
         "lazy": True,
     },
     {
@@ -634,6 +634,15 @@ components = [
         "z_und": 142,
         "desc": "electro optic sampling stages",
         "type": "eco.endstations.bernina_sample_environments:electro_optic_sampling",
+        "kwargs": {"Id": "SARES23"},
+        "lazy": True,
+    },
+    {
+        "args": [],
+        "name": "bsen",
+        "z_und": 142,
+        "desc": "bsen targets",
+        "type": "eco.xdiagnostics.bsen_usd:bsen_targets",
         "kwargs": {"Id": "SARES23"},
         "lazy": True,
     },

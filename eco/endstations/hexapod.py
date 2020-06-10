@@ -43,6 +43,7 @@ class HexapodPI:
                     lambda x:self._calc_xyzraw(x,self.y.get_current_value(),self.z.get_current_value()),
                     reset_current_value_to=False,
                     append_aliases=False,
+                    change_simultaneously=False,
                     name='x',
                     )
             self.y = AdjustableVirtual(
@@ -50,6 +51,7 @@ class HexapodPI:
                     lambda xraw,yraw,zraw: self._calc_xyz(xraw,yraw,zraw)[1],
                     lambda y:self._calc_xyzraw(self.x.get_current_value(),y,self.z.get_current_value()),
                     reset_current_value_to=False,
+                    change_simultaneously=False,
                     append_aliases=False,
                     name='y',
                     )
@@ -59,6 +61,7 @@ class HexapodPI:
                     lambda z: self._calc_xyzraw(self.x.get_current_value(),self.y.get_current_value(),z),
                     reset_current_value_to=False,
                     append_aliases=False,
+                    change_simultaneously=False,
                     name='z',
                     )
     @property 
