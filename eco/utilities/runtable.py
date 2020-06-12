@@ -19,8 +19,8 @@ class Run_Table():
         '''
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
-        self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable.h5'
-        self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable.h5'
+        self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable.pkl'
+        self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable.pkl'
         self._add_pvs = add_pvs
         self.devices = devices
         self._spreadsheet_key = '1H0nexCdIbYEOVH0wlQWSrR7E1lV6AL_j7JKd6DCkwLs'

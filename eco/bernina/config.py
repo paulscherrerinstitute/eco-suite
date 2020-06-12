@@ -558,7 +558,7 @@ components = [
         "type": "eco.acquisition.bs_data:BStools",
         "kwargs": {
             "default_channel_list": {
-                "bernina_default_channels_bs": Component("default_channel_list")
+                "bernina_default_channels_bs": Component("default_channel_list_bs")
             },
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
@@ -643,7 +643,9 @@ components = [
         "z_und": 142,
         "desc": "electro optic sampling stages",
         "type": "eco.endstations.bernina_sample_environments:electro_optic_sampling",
-        "kwargs": {"Id": "SARES23"},
+        "kwargs": {"Id": "SARES23",
+            'pgroup':config['pgroup'], 
+            'diode_channels': {'d1': 'SARES20-LSCP9-FNS:CH1:VAL_GET','d2': 'SARES20-LSCP9-FNS:CH2:VAL_GET','diff': 'SARES20-LSCP9-FNS:CH3:VAL_GET'}},
         "lazy": True,
     },
     {

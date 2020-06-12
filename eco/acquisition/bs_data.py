@@ -163,9 +163,19 @@ class BStools:
 
     def acquire(self, file_name=None, Npulses=100):
         file_name += ".h5"
-        Npulses += 100
+
+        #Npulses += 100
         if self._default_file_path:
             file_name = self._default_file_path % file_name
+        data_dir = Path(os.path.dirname(file_name))
+        if not data_dir.exists():
+            print(
+                f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it..."
+            )
+            data_dir.mkdir(parents=True)
+            print(f"Tried to create {data_dir.absolute().as_posix()}")
+            data_dir.chmod(0o775)
+            print(f"Tried to change permissions to 775")
 
         def acquire():
             self.h5(fina=file_name, N_pulses=Npulses)

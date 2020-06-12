@@ -4,12 +4,14 @@ sys.path.append("..")
 from ..devices_general.motors import MotorRecord
 from ..devices_general.smaract import SmarActRecord
 from ..devices_general.adjustable import PvRecord
-
+import numpy as np
 from epics import PV
 from ..aliases import Alias, append_object_to_object
 from time import sleep
-
-
+import escape.parse.swissfel as sf
+from ..bernina import config
+import pylab as plt
+import escape
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
         self.__dict__[name] = MotorRecord(Id, name=name)
@@ -270,11 +272,12 @@ class High_field_thz_table:
 
 
 class electro_optic_sampling:
-    def __init__(self, name=None, Id=None, alias_namespace=None):
+    def __init__(self, name=None, Id=None, alias_namespace=None, pgroup=None, diode_channels=None):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-
+        self.diode_channels = diode_channels
+        self.basepath = f'/sf/bernina/data/{pgroup}/res/scan_info/'
         self.motor_configuration = {
             "ry": {
                 "id": "-ESB16",
@@ -360,5 +363,60 @@ class electro_optic_sampling:
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 
+
+    def loaddata(self, fname, diode_channels=None):
+        data = sf.parseScanEco_v01(self.basepath+fname)
+        print(data)
+        dat = {name: data[ch].data.compute() for name, ch in diode_channels.items()}
+        ch = list(diode_channels.values())[0]
+        xlab = list(data[ch].scan.parameter.keys())[0]
+        x = data[ch].scan.parameter[xlab]['values']
+        shots = len(list(dat.values())[0])//len(x)
+        numsteps = len(list(dat.values())[0])//shots
+        daton = np.ndarray((numsteps,))
+        datoff = np.ndarray((numsteps,))
+        datmean = {name: np.array([ dat[name][n*shots:(n+1)*shots].mean() for n in range(numsteps)]) for name in dat.keys()}
+        return {xlab: x}, datmean, dat
+
+
+    def plotEOS(self,fname,diode_channels=None):
+        if diode_channels is None:
+            diode_channels = self.diode_channels
+        x, datmean, dat = self.loaddata(fname, diode_channels)
+        x_motor, x = list(x.items())[0]
+
+        for name, data in datmean.items():
+            plt.figure()
+            plt.title(name)
+            plt.plot(x, data)
+            plt.xlabel(x_motor)
+
+        #plt.figure('difference')
+        #plt.plot(motors, dat0-dat1)
+        #plt.figure('sum')
+        #plt.clf()
+        #plt.plot(motors, dat0+dat1)
+        #plt.plot(motors, dat0)
+        #plt.plot(motors, dat1)
+    
+        #plt.figure('diff/sum')
+        #plt.plot(motors,  (dat0-dat1)/(dat0+dat1), '-o')
+        return 
+    
+    def calcField(self, DiffoverSum, L = 100e-6, wl = 800e-9, r41 = 0.97e-12, n0 = 3.19):
+        #Parameters: L: GaP thickness, lambda: EOS wavelength, r41: EO coefficient, n0: refractive index of EOS sampling
+        #Field transmission assuming that n(THz) = n(opt)
+        #Angle between THz polarization and (001)
+        alpha = 90./180*np.pi
+        #angle between probe polarization and (001)
+        th = 0./180*np.pi
+        t = 2./(n0+1)
+        geoSens = np.cos(alpha)*np.sin(2*th)+2*np.sin(alpha)*np.cos(2*th)
+        E = np.arcsin(DiffoverSum)*wl / (np.pi*L*r41*n0**3*t)/geoSens
+
+        return E
+     
+    
+    
     def __repr__(self):
         return self.get_adjustable_positions_str()
