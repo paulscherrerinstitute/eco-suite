@@ -26,16 +26,17 @@ class Sigma:
     def __init__(
         self,
         camera_pv=None,
-        zoomstage_pvs={
-            "set_value": "SARES20-OPSI:MOT_SP",
-            "readback": "SEARES20-OPSI:MOT_RB",
-        },
+        zoomstage_pvs={},
         bshost=None,
         bsport=None,
         name=None,
     ):
         self.alias = Alias(name)
 
+#        zoomstage_pvs={
+#            "set_value": "SARES20-OPSI:MOT_SP",
+#            "readback": "SEARES20-OPSI:MOT_RB",
+#        }
         self.name = name
 
         append_object_to_object

@@ -70,7 +70,7 @@ class Double_Crystal_Mono:
         self._stop.put(1)
 
     def get_current_value(self):
-        currentenergy = energy.get_current_value()
+        currentenergy = self.energy.get_current_value()
         return currentenergy
 
     def wait_for_valid_value(self):

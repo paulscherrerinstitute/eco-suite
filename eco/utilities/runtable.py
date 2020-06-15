@@ -13,7 +13,7 @@ from datetime import datetime
 
 
 class Run_Table():
-    def __init__(self, pgroup, alias_namespace, devices, add_pvs={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}):
+    def __init__(self, pgroup, devices=None, alias_namespace=None,  add_pvs={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}):
         '''
         Additional PVs is a dictionary holding additional PVs to be saved to the dataframes
         '''
@@ -22,6 +22,9 @@ class Run_Table():
         self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable.pkl'
         self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable.pkl'
         self._add_pvs = add_pvs
+        if not devices:
+            from eco import bernina
+            devices = bernina
         self.devices = devices
         self._spreadsheet_key = '1H0nexCdIbYEOVH0wlQWSrR7E1lV6AL_j7JKd6DCkwLs'
         self._scope = ['https://spreadsheets.google.com/feeds', 
@@ -30,8 +33,14 @@ class Run_Table():
         self.gc = gspread.authorize(self._credentials)
         self.keys = 'gps thc hex energy transmission hpos vpos hgap vgap shut delay lxt phase_shifter type name scan_motor pulse_id shut att_self att_fe_self las'
         self.key_order = 'metadata time type name scan_motor from to steps gps gps_hex thc las lxt phase_shifter xrd mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission'
+        if not alias_namespace:
+            from eco.aliases import NamespaceCollection
+            alias_namespace = NamespaceCollection().bernina
+        
         self.alias_namespace = alias_namespace
+
         self.adjustables = {}
+        self._parse_parent()
         pd.options.display.max_rows = 999
 
         if os.path.exists(self.alias_file_name):
@@ -63,13 +72,6 @@ class Run_Table():
 
         example 2: query(keys = 'xrd delay name', index = ['p1', 'p2'])
         will return the same columns for the saved positions 1 and 2
-
-        example 3: query(keys = 'xrd delay name', values='name == "(004)_peak"'])
-        will return the same columns for the saved position, which was named (004)_peak
-
-        example 4: query(keys = 'xrd delay name', values='xrd_xbase_readback > 10')
-        will return all runs and positions, during which xrd.xbase was larger than 10.
-        values is the pandas query
         '''
         query_df = self._query_by_keys(keys, df)
         if not values is None:
@@ -113,8 +115,7 @@ class Run_Table():
         run_df = DataFrame([dat.values()], columns=dat.keys(), index=[runno])
         self.alias_df = self.alias_df.append(run_df)
 
-        self._parse_parent()
-        dat = self.adjustables
+        dat = self._get_adjustable_values()
         dat['metadata']= metadata
         dat['metadata']['time'] = datetime.now()
         names = ['device','adjustable']
@@ -135,8 +136,7 @@ class Run_Table():
         pos_df = DataFrame([dat.values()], columns=dat.keys(), index=[f'p{posno}'])
         self.alias_df = self.alias_df.append(pos_df)
 
-        self._parse_parent()
-        dat = self.adjustables
+        dat = self._get_adjustable_values()
         dat['metadata']= {'time':datetime.now(),  'name':name, 'type':'pos'}
         names = ['device','adjustable']
         multiindex = pd.MultiIndex.from_tuples([(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names)
@@ -210,18 +210,23 @@ class Run_Table():
         devs = [ item[0] for item in list(self.adj_df.columns)]
         self.adj_df = self.adj_df[self._orderlist(list(self.adj_df.columns), key_order, orderlist=devs)]
 
-    def get_all_adjustables(self, device, pp_name=None):
+    def _get_adjustable_values(self):
+        dat = {devname: {adjname: adj.get_current_value() for adjname, adj in dev.items()} for devname, dev in self.adjustables.items() }
+        return dat
+
+    def _get_all_adjustables(self, device, pp_name=None):
         if pp_name is not None:
             name = '_'.join([pp_name, device.name])
         else:
             name = device.name
-        self.adjustables[name] = {key: value.get_current_value() for key, value in device.__dict__.items() if hasattr(value, 'get_current_value')}
+        self.adjustables[name] = {key: value for key, value in device.__dict__.items() if hasattr(value, 'get_current_value')}
         if hasattr(device, 'get_current_value'):
-            self.adjustables[name]['_'.join([name, 'self'])]=device.get_current_value()
+            self.adjustables[name]['_'.join([name, 'self'])]=device
+
 
     def _parse_child_instances(self, parent_class, pp_name=None):
         try:
-            self.get_all_adjustables(parent_class, pp_name)
+            self._get_all_adjustables(parent_class, pp_name)
         except:
             print(f'Getting adjustables from {parent_class.name} failed')
             pass

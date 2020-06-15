@@ -7,11 +7,6 @@ import logging
 from .config import components, config
 import sys
 
-try:
-    from .bernina import *
-    from ..utilities.runtable import Run_Table
-except:
-    print('Initializing of run_table failed')
 
 
 _namespace = globals()
@@ -23,6 +18,10 @@ _scope_name = "bernina"
 alias_namespaces = NamespaceCollection()
 
 
+# from ..utilities.runtable import Run_Table
+# def init(pgroup, alias_namespaces, instances):
+    # run_table = Run_Table(pgroup, alias_namespaces.bernina, instances) 
+    # return run_table
 def init(*args, lazy=None):
     if args:
         allnames = [tc["name"] for tc in components]
@@ -52,12 +51,12 @@ def init(*args, lazy=None):
             except:
                 pass
         alias_namespaces.bernina.store()
-    try:
-        run_table = bernina.init(config['pgroup'], alias_namespaces,_mod)
-        _mod.__dict__['rt'] = run_table
-        op['rt'] = run_table
-    except:
-        print('Initializing of run_table failed')
+    # try:
+        # run_table = bernina.init(config['pgroup'], alias_namespaces,_mod)
+        # _mod.__dict__['rt'] = run_table
+        # op['rt'] = run_table
+    # except:
+        # print('Initializing of run_table failed')
     return op
 
 

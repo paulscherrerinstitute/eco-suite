@@ -657,6 +657,14 @@ components = [
         "kwargs": {"Id": "SARES23"},
         "lazy": True,
     },
+    {
+        "args": [config['pgroup']],
+        "name": "run_table",
+        "desc": "run table for data acquisition",
+        "type": "eco.utilities.runtable:Run_Table",
+        "kwargs": {'devices':None, 'alias_namespace': None},
+        "lazy": False,
+    },
 ]
 
 try:
@@ -666,66 +674,3 @@ except:
     print("Could not append components from config.")
 
 
-#### OLD STUFF TO BE TRANSFERRED OR DELETED ####
-components_old = {
-    "SARFE10-OPSH044": {
-        "alias": "ShutUnd",
-        "z_und": 44,
-        "desc": "Photon shutter after Undulator",
-    },
-    "SARFE10-PBIG050": {
-        "alias": "GasMon",
-        "z_und": 50,
-        "desc": "Gas Monitor Intensity",
-    },
-    "SARFE10-PBPS053": {
-        "alias": "MonUnd",
-        "z_und": 44,
-        "desc": "Intensity position monitor after Undulator",
-    },
-    "SARFE10-SBST060": {
-        "alias": "ShutFE",
-        "z_und": 60,
-        "desc": "Photon shutter in the end of Front End",
-    },
-    "SAROP11-OOMH064": {
-        "alias": "MirrAlv1",
-        "z_und": 64,
-        "desc": "Horizontal mirror Alvra 1",
-    },
-    "SAROP21-PSCR097": {
-        "alias": "ProfMirr2",
-        "z_und": 97,
-        "desc": "Profile Monitor after Mirror 2",
-    },
-    "SAROP21-OPPI103": {"alias": "Pick", "z_und": 103, "desc": "X-ray pulse picker"},
-    "SAROP21-BST114": {
-        "alias": "ShutOpt",
-        "z_und": 114,
-        "desc": "Shutter after Optics hutch",
-    },
-    "SAROP21-PALM134": {
-        "alias": "TimTof",
-        "z_und": 134,
-        "desc": "Timing diagnostics THz streaking/TOF",
-    },
-    "SAROP21-PSEN135": {
-        "alias": "TimRef",
-        "z_und": 135,
-        "desc": "Timing diagnostics spectral encoding of ref. index change",
-    }
-    #        'SLAAR21-LMOT' : {
-    #                'alias' : 'Palm',
-    #                'z_und' : 142,
-    #                'desc' : 'Streaking arrival time monitor',
-    #                'eco_type' : 'timing.palm.Palm'},
-    #        'SLAAR21-LMOT' : {
-    #                'alias' : 'Psen',
-    #                'z_und' : 142,
-    #                'desc' : 'Streaking arrival time monitor',
-    #                'eco_type' : 'timing.psen.Psen'}
-    #         = dict(
-    #            alias = ''
-    #            z_und =
-    #            desc = ''},
-}

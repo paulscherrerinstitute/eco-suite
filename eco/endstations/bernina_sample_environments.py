@@ -12,6 +12,7 @@ import escape.parse.swissfel as sf
 from ..bernina import config
 import pylab as plt
 import escape
+from pathlib import Path
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
         self.__dict__[name] = MotorRecord(Id, name=name)
@@ -364,9 +365,11 @@ class electro_optic_sampling:
         return ostr
 
 
-    def loaddata(self, fname, diode_channels=None):
-        data = sf.parseScanEco_v01(self.basepath+fname)
-        print(data)
+    def loaddata(self, runno, diode_channels=None):
+        json_dir = Path(self.basepath)
+        fname = list(json_dir.glob(f'run{runno:04}*'))[0]
+        data = sf.parseScanEco_v01(fname)
+        #print(data)
         dat = {name: data[ch].data.compute() for name, ch in diode_channels.items()}
         ch = list(diode_channels.values())[0]
         xlab = list(data[ch].scan.parameter.keys())[0]
@@ -378,31 +381,92 @@ class electro_optic_sampling:
         datmean = {name: np.array([ dat[name][n*shots:(n+1)*shots].mean() for n in range(numsteps)]) for name in dat.keys()}
         return {xlab: x}, datmean, dat
 
+    def plotEOS_list(self, runlist, what='diff',diode_channels=None, t0_corr=True):
+        '''
+        what = 'diff' the read out from the channel 3 of the balanced diode 
+               'diff/sum'  (diode1 - diode2)/(diode1+diode2)
+        t0_corr: True or False
+                it finds the position the maximum / minimum peak and correct time zero in the time axis  
+        '''
+        fig , ax = plt.subplots(1,2,figsize=(10,5), num='Runlist')
+        ax[1].set_xlabel('Frequency [THz]') 
+        ax[1].set_ylabel('normalized ampl')
+        
+        for rr in runlist:
+           if diode_channels is None:diode_channels = self.diode_channels
+           x, datmean, dat = self.loaddata(rr, diode_channels)
+           x_motor, x = list(x.items())[0]
+           if 'delay' in x_motor:
+              x = np.array(x)*1e12 # covert to ps
+              x_motor = x_motor + ' [ps]'
+           dat1 = datmean['d1']
+           dat2 = datmean['d2']
+           if what == 'diff':
+              diff = datmean['diff']
+           elif what =='diff/sum':
+              diff = (dat1-dat2) / (dat1+dat2)
+           freq , ampl = self.calcFFT(x,diff.T)
+           max_pos = np.argmax(abs(diff))
+           t0_pos = x[int(max_pos)]
+           if t0_corr: x = x - t0_pos       
+           ax[0].plot(x,diff,label=f'Run_{rr}: t0={t0_pos:0.2f}')
+           ax[0].legend()
+           ax[1].plot(freq, ampl)
+        ax[0].set_xlabel(x_motor)
 
-    def plotEOS(self,fname,diode_channels=None):
+
+
+ 
+    def plotEOS(self,runno,diode_channels=None):
         if diode_channels is None:
             diode_channels = self.diode_channels
-        x, datmean, dat = self.loaddata(fname, diode_channels)
+        x, datmean, dat = self.loaddata(runno, diode_channels)
         x_motor, x = list(x.items())[0]
-
-        for name, data in datmean.items():
-            plt.figure()
-            plt.title(name)
-            plt.plot(x, data)
-            plt.xlabel(x_motor)
-
-        #plt.figure('difference')
-        #plt.plot(motors, dat0-dat1)
-        #plt.figure('sum')
-        #plt.clf()
-        #plt.plot(motors, dat0+dat1)
-        #plt.plot(motors, dat0)
-        #plt.plot(motors, dat1)
-    
-        #plt.figure('diff/sum')
-        #plt.plot(motors,  (dat0-dat1)/(dat0+dat1), '-o')
+        if 'delay' in x_motor:
+            x = np.array(x)*1e12 # covert to ps
+            x_motor = x_motor + ' [ps]'
+        fig, ax = plt.subplots(2,2, figsize=(9,7), num=f'Run_{runno}')
+        dat1 = datmean['d1']
+        dat2 = datmean['d2']
+        diff = datmean['diff']
+        diffOverSum = (dat1-dat2) / (dat1+dat2)
+        
+        freq_0 , ampl_0 = self.calcFFT(x,diff.T)
+        
+        freq_1, ampl_1 = self.calcFFT(x,diffOverSum.T)
+        ax[0,0].set_title(f'Run_{runno}')
+        ax[0,0].plot(x,diff,'k-',label = 'Channel3 (diff)')
+        ax[1,0].plot(x,diffOverSum,'r-',label='Diff / Sum ')
+        ax[0,1].plot(x,dat1, label='Diode1')
+        ax[0,1].plot(x,dat2, label='Diode2')
+        ax[0,1].set_xlabel(x_motor)
+        ax[1,1].plot(freq_0, ampl_0, 'k-',label='Channel3(diff)')
+        ax[1,1].plot(freq_1, ampl_1,'r-', label='Diff/Sum')
+        ax[1,1].set_xlabel('Frequency [THz]') 
+        ax[1,1].set_ylabel('normalized ampl')
+        for ii in range(2):
+            ax[ii,0].legend()
+            ax[ii,0].set_xlabel(x_motor)
+            ax[0,ii].legend()
         return 
     
+    def calcFFT(self,x,y,norm=True, lim=[0.1, 15]):
+        # lim: min and max in THz for normalization and plotting 
+        N = x.size
+        T = x[N-1]-x[0]
+        te = x[1] - x[0]
+        fe = 1.0 / te
+        fft_cal = np.fft.fft(y) / N
+        ampl = np.absolute(fft_cal)
+        freq = np.arange(N)/T
+        ind0 = int(np.argmin(abs(freq-lim[0])))
+        ind1 = int(np.argmin(abs(freq-lim[1])))
+        ampl = ampl[ind0:ind1]
+        freq = freq[ind0:ind1]
+        if norm:
+            ampl = ampl / np.max(ampl[2:])
+        return freq, ampl
+
     def calcField(self, DiffoverSum, L = 100e-6, wl = 800e-9, r41 = 0.97e-12, n0 = 3.19):
         #Parameters: L: GaP thickness, lambda: EOS wavelength, r41: EO coefficient, n0: refractive index of EOS sampling
         #Field transmission assuming that n(THz) = n(opt)
@@ -420,3 +484,4 @@ class electro_optic_sampling:
     
     def __repr__(self):
         return self.get_adjustable_positions_str()
+    
