@@ -13,7 +13,7 @@ class RefLaser_Aramis:
 
         self._inpos = inpos
         self._outpos = outpos
-        self.mirrmotor = MotorRecord(self.Id + ":MOTOR_1")
+        self.mirrmotortest = MotorRecord(self.Id + ":MOTOR_1")
 
     def __call__(self, *args, **kwargs):
         self.set(*args, **kwargs)
@@ -28,7 +28,7 @@ class RefLaser_Aramis:
             return "Reflaser status not defined."
 
     def get_status(self):
-        v = self.mirrmotor.get_current_value()
+        v = self.mirrmotortest.get_current_value()
         if abs(v - self._inpos) < 0.2:
             isin = True
         elif abs(v - self._outpos) < 0.2:
@@ -46,9 +46,9 @@ class RefLaser_Aramis:
             else:
                 print("String %s not recognized!" % value)
         if value:
-            self.mirrmotor.set_target_value(self._inpos)
+            self.mirrmotortest.set_target_value(self._inpos)
         else:
-            self.mirrmotor.set_target_value(self._outpos)
+            self.mirrmotortest.set_target_value(self._outpos)
 
     def __repr__(self):
         return self.__str__()
