@@ -16,8 +16,10 @@ class Epicstools:
         default_channel_list={"listname": []},
         default_file_path="%s",
         elog=None,
+        name=None,
         channel_list=None,
     ):
+        self.name = name
         self._default_file_path = default_file_path
         self._default_channel_list = default_channel_list
         self._elog = elog

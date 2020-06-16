@@ -33,6 +33,14 @@ components = [
     #            'kwargs': {}
     #            }
     {
+        "args": [config["pgroup"]],
+        "name": "run_table",
+        "desc": "run table for data acquisition",
+        "type": "eco.utilities.runtable:Run_Table",
+        "kwargs": {"devices": None, "alias_namespace": None},
+        "lazy": False,
+    },
+    {
         "type": "eco.utilities.config:append_to_path",
         "args": config["path_exp"],
         "name": "path_exp",
@@ -467,6 +475,7 @@ components = [
             "default_counters": [Component("daq")],
             "checker": Component("checker"),
             "scan_directories": True,
+            "run_table": Component("run_table"),
         },
     },
     {
@@ -480,6 +489,7 @@ components = [
             "default_counters": [Component("epics_daq")],
             "checker": Component("checker"),
             "scan_directories": True,
+            "run_table": Component("run_table"),
         },
     },
     {
@@ -643,9 +653,15 @@ components = [
         "z_und": 142,
         "desc": "electro optic sampling stages",
         "type": "eco.endstations.bernina_sample_environments:electro_optic_sampling",
-        "kwargs": {"Id": "SARES23",
-            'pgroup':config['pgroup'], 
-            'diode_channels': {'d1': 'SARES20-LSCP9-FNS:CH1:VAL_GET','d2': 'SARES20-LSCP9-FNS:CH2:VAL_GET','diff': 'SARES20-LSCP9-FNS:CH3:VAL_GET'}},
+        "kwargs": {
+            "Id": "SARES23",
+            "pgroup": config["pgroup"],
+            "diode_channels": {
+                "d1": "SARES20-LSCP9-FNS:CH1:VAL_GET",
+                "d2": "SARES20-LSCP9-FNS:CH2:VAL_GET",
+                "diff": "SARES20-LSCP9-FNS:CH3:VAL_GET",
+            },
+        },
         "lazy": True,
     },
     {
@@ -658,12 +674,18 @@ components = [
         "lazy": True,
     },
     {
-        "args": [config['pgroup']],
-        "name": "run_table",
-        "desc": "run table for data acquisition",
-        "type": "eco.utilities.runtable:Run_Table",
-        "kwargs": {'devices':None, 'alias_namespace': None},
-        "lazy": False,
+        "args": [],
+        "name": "daq_new",
+        "desc": "server based acquisition new JF stuff",
+        "type": "eco.acquisition.daq_client:Daq",
+        "kwargs": {
+            "instrument": "bernina",
+            "pgroup": config["pgroup"],
+            "channels_JF": config["jf_channels"],
+            "pulse_id_adj": "SLAAR21-LTIM01-EVR0:RX-PULSEID",
+            "event_master": Component("event_master"),
+            "detectors_event_code": 50,
+        },
     },
 ]
 
@@ -672,5 +694,3 @@ try:
     print("Did append additional components!")
 except:
     print("Could not append components from config.")
-
-

@@ -10,17 +10,19 @@ import gspread_dataframe as gd
 import gspread_formatting as gf
 import gspread_formatting.dataframe as gf_dataframe
 from datetime import datetime
-
+import xlwt
+import openpyxl
 
 class Run_Table():
-    def __init__(self, pgroup, devices=None, alias_namespace=None,  add_pvs={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}):
+    def __init__(self, pgroup, devices=None, alias_namespace=None,  add_pvs={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}, name=None):
         '''
         Additional PVs is a dictionary holding additional PVs to be saved to the dataframes
         '''
+        self.name=name
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
-        self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable.pkl'
-        self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable.pkl'
+        self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable'
+        self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable'
         self._add_pvs = add_pvs
         if not devices:
             from eco import bernina
@@ -31,8 +33,8 @@ class Run_Table():
                        'https://www.googleapis.com/auth/drive']
         self._credentials = ServiceAccountCredentials.from_json_keyfile_name('/sf/bernina/config/src/python/gspread/pandas_push', self._scope)
         self.gc = gspread.authorize(self._credentials)
-        self.keys = 'gps thc hex energy transmission hpos vpos hgap vgap shut delay lxt phase_shifter type name scan_motor pulse_id shut att_self att_fe_self las'
-        self.key_order = 'metadata time type name scan_motor from to steps gps gps_hex thc las lxt phase_shifter xrd mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission'
+        self.keys = 'metadata gps thc hex tht eos energy transmission hpos vpos hgap vgap shut delay lxt pulse_id att_self att_fe_self'
+        self.key_order = 'metadata time name gps gps_hex thc tht eos las lxt phase_shifter xrd mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission'
         if not alias_namespace:
             from eco.aliases import NamespaceCollection
             alias_namespace = NamespaceCollection().bernina
@@ -42,14 +44,7 @@ class Run_Table():
         self.adjustables = {}
         self._parse_parent()
         pd.options.display.max_rows = 999
-
-        if os.path.exists(self.alias_file_name):
-            #self.alias_df = pd.read_hdf(self.alias_file_name, key=None)
-            self.alias_df = pd.read_pickle(self.alias_file_name)
-
-        if os.path.exists(self.adj_file_name):
-            #self.adj_df = pd.read_hdf(self.adj_file_name, key=None)
-            self.adj_df = pd.read_pickle(self.adj_file_name)
+        self.load()
 
     def _query_by_keys(self, keys='', df=None):
         if df is None:
@@ -88,8 +83,7 @@ class Run_Table():
         return filtered_dict
 
     def save(self):
-        data_dir = Path(os.path.dirname(self.alias_file_name))
-
+        data_dir = Path(os.path.dirname(self.alias_file_name+'.pkl'))
         if not data_dir.exists():
             print(
                 f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it..."
@@ -98,10 +92,19 @@ class Run_Table():
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")
-        self.alias_df.to_pickle(self.alias_file_name)
-        self.adj_df.to_pickle(self.adj_file_name)
-        #self.alias_df.to_hdf(self.alias_file_name, key=None)
-        #self.adj_df.to_hdf(self.adj_file_name, key=None)
+        self.alias_df.to_pickle(self.alias_file_name+'.pkl')
+        self.adj_df.to_pickle(self.adj_file_name+'.pkl')
+        self.alias_df.to_hdf(self.alias_file_name+'.h5', key='data')
+        self.adj_df.to_hdf(self.adj_file_name+'.h5', key='data')
+        self.alias_df.to_excel(self.alias_file_name+'.xlsx')
+        self.adj_df.to_excel(self.adj_file_name+'.xlsx')
+
+    def load(self):
+        if os.path.exists(self.alias_file_name+'.pkl'):
+            self.alias_df = pd.read_pickle(self.alias_file_name+'.pkl')
+        if os.path.exists(self.adj_file_name+'.pkl'):
+            self.adj_df = pd.read_pickle(self.adj_file_name+'.pkl')
+
 
     def append_run(self, runno, metadata={'type': 'ascan',
                                           'name': 'phi scan (001)',
@@ -109,6 +112,9 @@ class Run_Table():
                                           'from': 1,
                                           'to': 2,
                                           'steps': 51}):
+        self.load()
+        if len(self.adjustables) == 0:
+            self._parse_parent()
         dat = self._get_values()
         dat.update(metadata)
         dat['time'] = datetime.now()
@@ -126,6 +132,9 @@ class Run_Table():
         self.save() 
 
     def append_pos(self, name=''):
+        self.load()
+        if len(self.adjustables) == 0:
+            self._parse_parent()
         try: 
             posno = int(self.alias_df.query('type == "pos"').index[-1].split('p')[1])+1
         except:

@@ -9,7 +9,7 @@ class RefLaser_Aramis:
         self.elog = elog
         self.name = name
         self.alias = Alias(name)
-        append_object_to_object(self,
+        # append_object_to_object(self,
 
         self._inpos = inpos
         self._outpos = outpos

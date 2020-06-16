@@ -23,8 +23,10 @@ class Scan:
         callbackStartStep=None,
         checker_sleep_time=0.2,
         return_at_end="question",
+        run_table=None,
     ):
         self.Nsteps = len(values)
+        self._run_table = run_table
         self.pulses_per_step = Npulses
         self.adjustables = adjustables
         self.values_todo = values
@@ -57,6 +59,27 @@ class Scan:
             tv = adj.get_current_value()
             self.initial_values.append(adj.get_current_value())
             print("Initial value of %s : %g" % (adj.name, tv))
+        
+        if self._run_table:
+            runname =  os.path.basename(fina).split('.')[0]
+            runno = int(runname.split('run')[1].split('_')[0])
+            metadata = {
+                    "type": "scan",
+                    "name": runname.split('_', 1)[1],
+
+            }
+            for n, adj in enumerate(self.adjustables):
+                metadata.update({
+                    f'scan_motor_{n}': adj.name,
+                    f'from_motor_{n}': self.values_todo[0][n],
+                    f'to_motor_{n}': self.values_todo[-1][n]
+                    })
+            metadata.update({
+                    "steps": len(self.values_todo),
+                    "pulses_per_step": Npulses,
+                    "counters": [daq.name for daq in counterCallers],
+                    })
+            run_table.append_run(runno, metadata=metadata)
 
     def get_filename(self, stepNo, Ndigits=4):
         fina = os.path.join(self.basepath, Path(self.fina).stem)
@@ -181,7 +204,9 @@ class Scans:
         default_counters=[],
         checker=None,
         scan_directories=False,
+        run_table=None,
     ):
+        self._run_table=run_table
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
         if not scan_info_dir.exists():
@@ -242,6 +267,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            run_table=self._run_table,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -275,6 +301,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            run_table=self._run_table,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -309,6 +336,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            run_table=self._run_table,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -344,6 +372,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            run_table=self._run_table,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -382,6 +411,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            run_table=self._run_table,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -419,6 +449,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            run_table=self._run_table,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)

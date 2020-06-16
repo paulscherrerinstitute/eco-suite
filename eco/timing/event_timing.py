@@ -273,7 +273,9 @@ class EvrOutput:
             self._pvs[pvname] = PV(pvname)
         return self._pvs[pvname]
 
-    # def _update_connected_pulsers(self):
+        # def _update_connected_pulsers(self):        event_master=None,
+        detectors_event_code = (None,)
+
     # self._get_pv()
 
     # self.pulsers = ()

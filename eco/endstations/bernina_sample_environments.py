@@ -430,10 +430,11 @@ class electro_optic_sampling:
         dat2 = datmean['d2']
         diff = datmean['diff']
         diffOverSum = (dat1-dat2) / (dat1+dat2)
-        
-        freq_0 , ampl_0 = self.calcFFT(x,diff.T)
-        
-        freq_1, ampl_1 = self.calcFFT(x,diffOverSum.T)
+        if 'delay' in x_motor:
+            freq_0 , ampl_0 = self.calcFFT(x,diff.T)
+            freq_1, ampl_1 = self.calcFFT(x,diffOverSum.T)
+        else:
+            freq_0 = 0; freq_1 =0 ; ampl_0 = 0; ampl_1 = 0
         ax[0,0].set_title(f'Run_{runno}')
         ax[0,0].plot(x,diff,'k-',label = 'Channel3 (diff)')
         ax[1,0].plot(x,diffOverSum,'r-',label='Diff / Sum ')
@@ -448,7 +449,7 @@ class electro_optic_sampling:
             ax[ii,0].legend()
             ax[ii,0].set_xlabel(x_motor)
             ax[0,ii].legend()
-        return 
+        return x,diffOverSum 
     
     def calcFFT(self,x,y,norm=True, lim=[0.1, 15]):
         # lim: min and max in THz for normalization and plotting 

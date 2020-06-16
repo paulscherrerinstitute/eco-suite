@@ -1,0 +1,5 @@
+{
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true,
+    "python.pythonPath": "/sf/bernina/anaconda/bernina_envs/bernina37/bin/python"
+}
