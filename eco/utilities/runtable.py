@@ -191,7 +191,7 @@ class Run_Table():
             keys = keys+' metadata'
             upload_df = self._query_by_keys(keys=keys)
         else:
-            upload_df = self.alias_df
+            upload_df = self.adj_df
         upload_df = upload_df[upload_df['metadata']['type'].str.contains('pos', na=False)]
         gd.set_with_dataframe(self.ws, upload_df, include_index=True, col=2)
         gf_dataframe.format_with_dataframe(self.ws, upload_df, include_index=True, include_column_header=True, col=2)
@@ -222,6 +222,18 @@ class Run_Table():
     def _get_adjustable_values(self):
         dat = {devname: {adjname: adj.get_current_value() for adjname, adj in dev.items()} for devname, dev in self.adjustables.items() }
         return dat
+
+    
+    def subtract_df(self, devs, ind1, ind2): 
+        '''
+        This function is used to subtract one dataframe from another to show changes between entries.
+        devs='thc tht' would show the devices thc and tht and ind1=0, ind2='p0' the difference between
+        run 0 and saved position 0.
+        '''
+        df1 = self.query(devs, [ind1]) 
+        df2 = self.query(devs, [ind2]) 
+        df2.columns = df1.columns 
+        return df1.subtract(df2) 
 
     def _get_all_adjustables(self, device, pp_name=None):
         if pp_name is not None:

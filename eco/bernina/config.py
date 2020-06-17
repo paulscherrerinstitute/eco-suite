@@ -64,7 +64,7 @@ components = [
         "name": "archiver",
         "desc": "SwisFEL archiver data_buffer",
         "type": "eco.dbase.archiver:DataApi",
-        "kwargs": {"pv_pulse_id": "SLAAR21-LTIM01-EVR0:RX-PULSEID"},
+        "kwargs": {"pv_pulse_id": "SARES20-CVME-01-EVR0:RX-PULSEID"},
     },
     {
         "name": "slit_und",
@@ -513,7 +513,7 @@ components = [
         "type": "eco.timing.event_timing_new:TimingSystem",
         "kwargs": {
             "pv_master": "SIN-TIMAST-TMA",
-            "pv_pulse_id": "SLAAR21-LTIM01-EVR0:RX-PULSEID",
+            "pv_pulse_id": "SARES20-CVME-01-EVR0:RX-PULSEID",
         },
     },
     {
@@ -682,7 +682,7 @@ components = [
             "instrument": "bernina",
             "pgroup": config["pgroup"],
             "channels_JF": config["jf_channels"],
-            "pulse_id_adj": "SLAAR21-LTIM01-EVR0:RX-PULSEID",
+            "pulse_id_adj": "SARES20-CVME-01-EVR0:RX-PULSEID",
             "event_master": Component("event_master"),
             "detectors_event_code": 50,
         },
