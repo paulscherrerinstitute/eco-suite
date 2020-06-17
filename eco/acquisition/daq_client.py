@@ -2,6 +2,7 @@ import requests
 from pathlib import Path
 from time import sleep
 from ..devices_general.detectors import PvDataStream
+from ..acquisition.utilities import Acquisition
 
 
 class Daq:
@@ -36,8 +37,20 @@ class Daq:
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
 
-    def acquire(self, file_name=None, Npulses=100, JF_factor=1, bsread_padding=0):
-        pass
+    def acquire(self, file_name=None, Npulses=100):
+        acquisition = Acquisition(
+            acquire=None,
+            acquisition_kwargs={"file_names": outputfilenames, "Npulses": Npulses},
+            hold=False,
+            )
+        def acquire():
+            runno, file_names = acquire_pulses()
+            acquisition.acquisition_kwargs.update({'file_names':file_names})
+            
+        acquisition.set_acquire_foo(acquire)
+        return acquisition
+        
+
 
     def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
         ix = self.start(label=label, **kwargs)

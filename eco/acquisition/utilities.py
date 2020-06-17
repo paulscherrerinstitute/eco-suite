@@ -16,10 +16,14 @@ class Acquisition:
         self.acquisition_kwargs = acquisition_kwargs
         for key, val in acquisition_kwargs.items():
             self.__dict__[key] = val
-        self._acquire = acquire
         self._stopper = stopper
-        self._thread = PropagatingThread(target=self._acquire)
         self._get_result = get_result
+        if acquire:
+            self.set_acquire_foo(acquire,hold=hold)
+    
+    def set_acquire_foo(self,acquire,hold=True):
+        self._acquire = acquire
+        self._thread = PropagatingThread(target=self._acquire)
         if not hold:
             self._thread.start()
 
