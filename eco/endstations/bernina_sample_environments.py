@@ -405,7 +405,11 @@ class electro_optic_sampling:
               diff = datmean['diff']
            elif what =='diff/sum':
               diff = (dat1-dat2) / (dat1+dat2)
-           freq , ampl = self.calcFFT(x,diff.T)
+           if 'delay' in x_motor:
+            freq, ampl= self.calcFFT(x,diff.T)
+  
+           else:
+              freq , ampl = 0,0 
            max_pos = np.argmax(abs(diff))
            t0_pos = x[int(max_pos)]
            if t0_corr: x = x - t0_pos       

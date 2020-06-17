@@ -36,9 +36,14 @@ class Daq:
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
 
-    def acquire(self, Npulses, label=None, wait=True, **kwargs):
+    def acquire(self, file_name=None, Npulses=100, JF_factor=1, bsread_padding=0):
+        pass
+
+    def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
         ix = self.start(label=label, **kwargs)
-        return self.stop(stop_id=ix, wait=wait)
+        return self.stop(
+            stop_id=self.running[ix]["start_id"] + Npulses, acq_ix=ix, wait=wait
+        )
 
     def start(self, label=None, **kwargs):
         start_id = self.pulse_id.get_current_value()
