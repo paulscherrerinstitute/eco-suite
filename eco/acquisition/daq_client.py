@@ -18,6 +18,7 @@ class Daq:
         channels_JF=None,
         channels_BS=None,
         channels_BSCAM=None,
+        name=None,
     ):
         self.channels = {}
         if channels_JF:
@@ -36,21 +37,28 @@ class Daq:
         self.running = []
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
+        self.name = name
 
     def acquire(self, file_name=None, Npulses=100):
+        print(file_name, Npulses)
         acquisition = Acquisition(
-            acquire=None,
-            acquisition_kwargs={"file_names": outputfilenames, "Npulses": Npulses},
-            hold=False,
-            )
-        def acquire():
-            runno, file_names = acquire_pulses()
-            acquisition.acquisition_kwargs.update({'file_names':file_names})
-            
-        acquisition.set_acquire_foo(acquire)
-        return acquisition
-        
+            acquire=None, acquisition_kwargs={"Npulses": Npulses},
+        )
 
+        def acquire():
+            runno, file_names = self.acquire_pulses(
+                Npulses,
+                directory_relative=Path(file_name).parents[0],
+                wait=True,
+                channels_JF=self.channels["channels_JF"].get_current_value(),
+            )
+            acquisition.acquisition_kwargs.update({"file_names": file_names})
+            for key, val in acquisition.acquisition_kwargs.items():
+                acquisition.__dict__[key] = val
+
+        acquisition.set_acquire_foo(acquire, hold=False)
+
+        return acquisition
 
     def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
         ix = self.start(label=label, **kwargs)
@@ -142,9 +150,9 @@ class Daq:
         )
 
         filenames = [
-            (directory_base / Path(filename_format.format(runno))).with_suffix(
-                f".{ext}.h5"
-            )
+            (directory_base / Path(filename_format.format(runno)))
+            .with_suffix(f".{ext}.h5")
+            .as_posix()
             for ext in files_extensions
         ]
 

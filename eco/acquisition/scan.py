@@ -59,26 +59,29 @@ class Scan:
             tv = adj.get_current_value()
             self.initial_values.append(adj.get_current_value())
             print("Initial value of %s : %g" % (adj.name, tv))
-        
-        if self._run_table:
-            runname =  os.path.basename(fina).split('.')[0]
-            runno = int(runname.split('run')[1].split('_')[0])
-            metadata = {
-                    "type": "scan",
-                    "name": runname.split('_', 1)[1],
 
+        if self._run_table:
+            runname = os.path.basename(fina).split(".")[0]
+            runno = int(runname.split("run")[1].split("_")[0])
+            metadata = {
+                "type": "scan",
+                "name": runname.split("_", 1)[1],
             }
             for n, adj in enumerate(self.adjustables):
-                metadata.update({
-                    f'scan_motor_{n}': adj.name,
-                    f'from_motor_{n}': self.values_todo[0][n],
-                    f'to_motor_{n}': self.values_todo[-1][n]
-                    })
-            metadata.update({
+                metadata.update(
+                    {
+                        f"scan_motor_{n}": adj.name,
+                        f"from_motor_{n}": self.values_todo[0][n],
+                        f"to_motor_{n}": self.values_todo[-1][n],
+                    }
+                )
+            metadata.update(
+                {
                     "steps": len(self.values_todo),
                     "pulses_per_step": Npulses,
                     "counters": [daq.name for daq in counterCallers],
-                    })
+                }
+            )
             run_table.append_run(runno, metadata=metadata)
 
     def get_filename(self, stepNo, Ndigits=4):
@@ -130,14 +133,14 @@ class Scan:
             readbacks_step.append(adj.get_current_value())
         if verbose:
             print("Moved variables, now starting acquisition")
-        filenames = []
         acs = []
         for ctr in self.counterCallers:
             acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step)
-            filenames.extend(acq.file_names)
             acs.append(acq)
+        filenames = []
         for ta in acs:
             ta.wait()
+            filenames.extend(ta.file_names)
         if verbose:
             print("Done with acquisition")
 
@@ -206,7 +209,7 @@ class Scans:
         scan_directories=False,
         run_table=None,
     ):
-        self._run_table=run_table
+        self._run_table = run_table
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
         if not scan_info_dir.exists():

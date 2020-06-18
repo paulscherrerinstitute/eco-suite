@@ -66,13 +66,13 @@ components = [
         "type": "eco.dbase.archiver:DataApi",
         "kwargs": {"pv_pulse_id": "SARES20-CVME-01-EVR0:RX-PULSEID"},
     },
-    {
-        "name": "slit_und",
-        "type": "eco.xoptics.slits:SlitFourBlades_old",
-        "args": ["SARFE10-OAPU044"],
-        "kwargs": {},
-        "desc": "Slit after Undulator",
-    },
+    # {
+    #    "name": "slit_und",
+    #    "type": "eco.xoptics.slits:SlitFourBlades_old",
+    #    "args": ["SARFE10-OAPU044"],
+    #    "kwargs": {},
+    #    "desc": "Slit after Undulator",
+    # },
     {
         "name": "pshut_und",
         "type": "eco.xoptics.shutters:PhotonShutter",
@@ -472,7 +472,8 @@ components = [
         "kwargs": {
             "data_base_dir": "scan_data",
             "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
-            "default_counters": [Component("daq")],
+            # "default_counters": [Component("daq")],
+            "default_counters": [],
             "checker": Component("checker"),
             "scan_directories": True,
             "run_table": Component("run_table"),
@@ -528,6 +529,14 @@ components = [
         "name": "evr_bernina",
         "desc": "Bernina event receiver",
         "type": "eco.timing.event_timing:EventReceiver",
+        "kwargs": {},
+        "lazy": True,
+    },
+    {
+        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_JF"],
+        "name": "channels_JF",
+        "desc": "jf detector channels",
+        "type": "eco.devices_general.adjustable:AdjustableFS",
         "kwargs": {},
         "lazy": True,
     },
@@ -614,14 +623,24 @@ components = [
         "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC6", "down": "LIC5"},
         "lazy": True,
     },
+    # {
+    #    "args": [
+    #        [
+    #            Component("slit_und"),
+    #            Component("slit_switch"),
+    #            Component("slit_att"),
+    #            Component("slit_kb"),
+    #        ]
+    #    ],
+    #    "name": "slits",
+    #    "desc": "collection of all slits",
+    #    "type": "eco.utilities.beamline:Slits",
+    #    "kwargs": {},
+    #    "lazy": False,
+    # },
     {
         "args": [
-            [
-                Component("slit_und"),
-                Component("slit_switch"),
-                Component("slit_att"),
-                Component("slit_kb"),
-            ]
+            [Component("slit_switch"), Component("slit_att"), Component("slit_kb"),]
         ],
         "name": "slits",
         "desc": "collection of all slits",
@@ -681,7 +700,7 @@ components = [
         "kwargs": {
             "instrument": "bernina",
             "pgroup": config["pgroup"],
-            "channels_JF": config["jf_channels"],
+            "channels_JF": Component("channels_JF"),
             "pulse_id_adj": "SARES20-CVME-01-EVR0:RX-PULSEID",
             "event_master": Component("event_master"),
             "detectors_event_code": 50,
