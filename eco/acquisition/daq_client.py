@@ -18,6 +18,7 @@ class Daq:
         channels_JF=None,
         channels_BS=None,
         channels_BSCAM=None,
+        channels_CA=None,
         name=None,
     ):
         self.channels = {}
@@ -51,6 +52,8 @@ class Daq:
                 directory_relative=Path(file_name).parents[0],
                 wait=True,
                 channels_JF=self.channels["channels_JF"].get_current_value(),
+                channels_BS=self.channels["channels_BS"].get_current_value(),
+                channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
             )
             acquisition.acquisition_kwargs.update({"file_names": file_names})
             for key, val in acquisition.acquisition_kwargs.items():
@@ -135,7 +138,7 @@ class Daq:
                 files_extensions.append(ch)
         if channels_BSCAM:
             parameters["camera_list"] = channels_BSCAM
-            files_extensions.append("BSREAD.CAMERAS")
+            files_extensions.append("CAMERAS")
         if directory_relative:
             parameters["directory_name"] = directory_relative.as_posix()
 
