@@ -439,7 +439,7 @@ components = [
     },
     {
         "args": [],
-        "name": "daq",
+        "name": "daq_dia_old",
         "desc": "server based acquisition",
         "type": "eco.acquisition.dia:DIAClient",
         "kwargs": {
@@ -463,21 +463,6 @@ components = [
         "desc": "checker functions for data acquisition",
         "type": "eco.acquisition.checkers:CheckerCA",
         "kwargs": {},
-    },
-    {
-        "args": [],
-        "name": "scans",
-        "desc": "server based acquisition",
-        "type": "eco.acquisition.scan:Scans",
-        "kwargs": {
-            "data_base_dir": "scan_data",
-            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
-            # "default_counters": [Component("daq")],
-            "default_counters": [],
-            "checker": Component("checker"),
-            "scan_directories": True,
-            "run_table": Component("run_table"),
-        },
     },
     {
         "args": [],
@@ -718,7 +703,7 @@ components = [
     },
     {
         "args": [],
-        "name": "daq_new",
+        "name": "daq",
         "desc": "server based acquisition new JF stuff",
         "type": "eco.acquisition.daq_client:Daq",
         "kwargs": {
@@ -732,6 +717,21 @@ components = [
             "event_master": Component("event_master"),
             "detectors_event_code": 50,
         },
+    },
+    {
+        "args": [],
+        "name": "scans",
+        "desc": "server based acquisition",
+        "type": "eco.acquisition.scan:Scans",
+        "kwargs": {
+            "data_base_dir": "scan_data",
+            "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
+            "default_counters": [Component("daq")],
+            "checker": Component("checker"),
+            "scan_directories": True,
+            # "run_table": Component("run_table"),
+        },
+        "lazy": False,
     },
 ]
 

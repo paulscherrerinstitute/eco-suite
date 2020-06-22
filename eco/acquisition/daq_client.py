@@ -39,6 +39,7 @@ class Daq:
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
         self.name = name
+        self._default_file_path = None
 
     def acquire(self, file_name=None, Npulses=100):
         print(file_name, Npulses)
