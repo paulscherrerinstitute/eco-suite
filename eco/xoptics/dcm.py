@@ -40,7 +40,7 @@ def addPvRecordToSelf(self,
         print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
 
 class Double_Crystal_Mono:
-    def __init__(self, Id, name=None):
+    def __init__(self, Id, name=None, energy_sp=None, energy_rb=None):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
@@ -50,7 +50,10 @@ class Double_Crystal_Mono:
         addMotorRecordToSelf(self, Id=Id + ":RZ1", name='roll1')
         addMotorRecordToSelf(self, Id=Id + ":RZ2", name='roll2')
         addMotorRecordToSelf(self, Id=Id + ":RX2", name='pitch2')
-        addPvRecordToSelf(self, pvsetname=Id + ":ENERGY_SP", pvreadbackname =Id + ":ENERGY", accuracy= 0.5, name='energy')
+        if energy_sp: 
+            addPvRecordToSelf(self, pvsetname=energy_sp, pvreadbackname =energy_rb, accuracy= 0.5, name='energy')
+        else:
+            addPvRecordToSelf(self, pvsetname=Id + ":ENERGY_SP", pvreadbackname =Id + ":ENERGY", accuracy= 0.2, name='energy')
         self.moving = PV(Id + ":MOVING")
         self._stop = PV(Id + ":STOP.PROC")
 

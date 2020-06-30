@@ -5,12 +5,32 @@ from ..devices_general.smaract import SmarActRecord
 from epics import PV
 from ..devices_general.delay_stage import DelayStage
 from ..devices_general.adjustable import AdjustableVirtual
+from ..devices_general.pv_adjustable import PvRecord
 
 import colorama, datetime
 from pint import UnitRegistry
 
 ureg = UnitRegistry()
 
+
+def addPvRecordToSelf(self, 
+        pvsetname, 
+        pvreadbackname=None, 
+        accuracy=None, 
+        sleeptime=0, 
+        name=None
+        ):
+    try:
+        self.__dict__[name] = PvRecord(
+            pvsetname,
+            pvreadbackname=pvreadbackname,
+            accuracy=accuracy,
+            sleeptime=sleeptime,
+            name=name,
+            )
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
 
 def addMotorRecordToSelf(self, Id=None, name=None):
     self.__dict__[name] = MotorRecord(Id, name=name)
@@ -44,6 +64,8 @@ class DelayTime(AdjustableVirtual):
             reset_current_value_to=reset_current_value_to,
             name=name,
         )
+        addPvRecordToSelf(self, pvsetname="SIN-TIMAST-TMA:Evt-22-Freq-SP", pvreadbackname ="SIN-TIMAST-TMA:Evt-22-Freq-I", accuracy= 0.5, name='frequency_pp')
+        addPvRecordToSelf(self, pvsetname="SIN-TIMAST-TMA:Evt-27-Freq-SP", pvreadbackname ="SIN-TIMAST-TMA:Evt-27-Freq-I", accuracy= 0.5, name='frequency_dark')
 
     def _mm_to_s(self, mm):
         return mm * 1e-3 * self._passes / self._group_velo * self._direction

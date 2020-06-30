@@ -2,6 +2,9 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from pandas import DataFrame
 import pandas as pd
+import warnings
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+import pandas as pd
 import os
 from pathlib import Path
 from epics import PV
@@ -42,6 +45,7 @@ class Run_Table():
         self.alias_namespace = alias_namespace
 
         self.adjustables = {}
+        self.bad_adjustables={}
         self._parse_parent()
         pd.options.display.max_rows = 999
         self.load()
@@ -68,6 +72,8 @@ class Run_Table():
         example 2: query(keys = 'xrd delay name', index = ['p1', 'p2'])
         will return the same columns for the saved positions 1 and 2
         '''
+        if len(keys) >0:
+            keys +=' name'
         query_df = self._query_by_keys(keys, df)
         if not values is None:
             query_df = query_df.query(values)
@@ -160,6 +166,7 @@ class Run_Table():
         keys takes a string of keys separated by a space, e.g. 'gps xrd las'. All columns, which contain 
         any of these strings are uploaded. keys = None defaults to self.keys. keys = '' returns all columns
         '''
+        self.gc = gspread.authorize(self._credentials)
         self.order_df()
         if keys is None:
             keys = self.keys
@@ -182,6 +189,7 @@ class Run_Table():
         keys takes a list of strin All columns, which contain any of these strings are uploaded.
         keys = None defaults to self.keys. keys = [] returns all columns
         '''
+        self.gc = gspread.authorize(self._credentials)
         self.order_df()
         if keys is None:
             keys = self.keys
@@ -220,7 +228,7 @@ class Run_Table():
         self.adj_df = self.adj_df[self._orderlist(list(self.adj_df.columns), key_order, orderlist=devs)]
 
     def _get_adjustable_values(self):
-        dat = {devname: {adjname: adj.get_current_value() for adjname, adj in dev.items()} for devname, dev in self.adjustables.items() }
+        dat = {devname: {adjname: adj.get_current_value() for adjname, adj in dev.items()} for devname, dev in self.good_adjustables.items() }
         return dat
 
     
@@ -236,6 +244,7 @@ class Run_Table():
         return df1.subtract(df2) 
 
     def _get_all_adjustables(self, device, pp_name=None):
+        print(device.name)
         if pp_name is not None:
             name = '_'.join([pp_name, device.name])
         else:
@@ -272,6 +281,27 @@ class Run_Table():
                     #except:
                     #    print(f'Getting adjustables from {key} failed')
                     #    pass
+        self._check_adjustables()
+
+    def _check_adjustables(self):
+        good_adj={}
+        bad_adj={}
+        for device, adjs in self.adjustables.items():
+            good_dev_adj={}
+            bad_dev_adj={}
+            for name, adj in adjs.items():
+                if adj.get_current_value() is None:
+                    bad_dev_adj[name]=adj
+                else:
+                    good_dev_adj[name]=adj
+            if len(good_dev_adj)>0:
+                good_adj[device]=good_dev_adj
+            if len(bad_dev_adj)>0:
+                bad_dev_adj[device]=bad_dev
+            self.good_adjustables = good_adj
+            self.bad_adjustables = bad_adj
+
+
 
     def set_alias_namespace(self, alias_namespace):
         aliases = [s.replace('.', '_') for s in alias_namespace.aliases]

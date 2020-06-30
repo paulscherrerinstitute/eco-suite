@@ -66,13 +66,13 @@ components = [
         "type": "eco.dbase.archiver:DataApi",
         "kwargs": {"pv_pulse_id": "SARES20-CVME-01-EVR0:RX-PULSEID"},
     },
-    # {
-    #    "name": "slit_und",
-    #    "type": "eco.xoptics.slits:SlitFourBlades_old",
-    #    "args": ["SARFE10-OAPU044"],
-    #    "kwargs": {},
-    #    "desc": "Slit after Undulator",
-    # },
+    {
+        "name": "slit_und",
+        "type": "eco.xoptics.slits:SlitFourBlades_old",
+        "args": ["SARFE10-OAPU044"],
+        "kwargs": {},
+        "desc": "Slit after Undulator",
+    },
     {
         "name": "pshut_und",
         "type": "eco.xoptics.shutters:PhotonShutter",
@@ -158,7 +158,10 @@ components = [
     {
         "name": "mono",
         "args": ["SAROP21-ODCM098"],
-        "kwargs": {},
+        "kwargs": {
+            "energy_sp": "SAROP21-ARAMIS:ENERGY_SP",
+            "energy_rb": "SAROP21-ARAMIS:ENERGY",
+        },
         "z_und": 98,
         "desc": "DCM Monochromator",
         "type": "eco.xoptics.dcm:Double_Crystal_Mono",
@@ -254,7 +257,6 @@ components = [
         "z_und": 136,
         "desc": "Slits behind attenuator",
         "type": "eco.xoptics.slits:SlitPosWidth",
-        "lazy": True,
     },
     {
         "name": "mon_att",
@@ -407,7 +409,6 @@ components = [
         "desc": "Experiment laser optics",
         "type": "eco.loptics.bernina_experiment:Laser_Exp",
         "kwargs": {"Id": "SLAAR21-LMOT", "smar_config": config["las_smar_config"]},
-        "lazy": True,
     },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],
@@ -437,22 +438,22 @@ components = [
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/",
         },
     },
-    {
-        "args": [],
-        "name": "daq_dia_old",
-        "desc": "server based acquisition",
-        "type": "eco.acquisition.dia:DIAClient",
-        "kwargs": {
-            "instrument": "bernina",
-            "api_address": config["daq_address"],
-            "pgroup": config["pgroup"],
-            "pedestal_directory": config["jf_pedestal_directory"],
-            "gain_path": config["jf_gain_path"],
-            "config_default": config["daq_dia_config"],
-            "jf_channels": config["jf_channels"],
-            "default_file_path": None,
-        },
-    },
+    # {
+    #     "args": [],
+    #     "name": "daq_dia_old",
+    #     "desc": "server based acquisition",
+    #     "type": "eco.acquisition.dia:DIAClient",
+    #     "kwargs": {
+    #         "instrument": "bernina",
+    #         "api_address": config["daq_address"],
+    #         "pgroup": config["pgroup"],
+    #         "pedestal_directory": config["jf_pedestal_directory"],
+    #         "gain_path": config["jf_gain_path"],
+    #         "config_default": config["daq_dia_config"],
+    #         "jf_channels": config["jf_channels"],
+    #         "default_file_path": None,
+    #     },
+    # },
     {
         "args": [
             config["checker_PV"],
@@ -460,6 +461,17 @@ components = [
             config["checker_fractionInThreshold"],
         ],  #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
         "name": "checker",
+        "desc": "checker functions for data acquisition",
+        "type": "eco.acquisition.checkers:CheckerCA",
+        "kwargs": {},
+    },
+    {
+        "args": [
+            "SARES20-LSCP9-FNS:CH1:VAL_GET",
+            [-100000, 100000],
+            config["checker_fractionInThreshold"],
+        ],  #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
+        "name": "checker_epics",
         "desc": "checker functions for data acquisition",
         "type": "eco.acquisition.checkers:CheckerCA",
         "kwargs": {},
@@ -473,7 +485,7 @@ components = [
             "data_base_dir": "scan_data",
             "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
             "default_counters": [Component("epics_daq")],
-            "checker": Component("checker"),
+            "checker": Component("checker_epics"),
             "scan_directories": True,
             "run_table": Component("run_table"),
         },
@@ -509,21 +521,19 @@ components = [
         "type": "eco.timing.event_timing_new:MasterEventSystem",
         "kwargs": {},
     },
-    {
-        "args": ["SARES20-CVME-01-EVR0"],
-        "name": "evr_bernina",
-        "desc": "Bernina event receiver",
-        "type": "eco.timing.event_timing:EventReceiver",
-        "kwargs": {},
-        "lazy": True,
-    },
+    # {
+    #     "args": ["SARES20-CVME-01-EVR0"],
+    #     "name": "evr_bernina",
+    #     "desc": "Bernina event receiver",
+    #     "type": "eco.timing.event_timing:EventReceiver",
+    #     "kwargs": {},
+    # },
     {
         "args": ["/photonics/home/gac-bernina/eco/configuration/channels_JF"],
         "name": "channels_JF",
         "desc": "jf detector channels",
         "type": "eco.devices_general.adjustable:AdjustableFS",
         "kwargs": {},
-        "lazy": True,
     },
     {
         "args": ["/photonics/home/gac-bernina/eco/configuration/channels_BS"],
@@ -531,7 +541,6 @@ components = [
         "desc": "jf detector channels",
         "type": "eco.devices_general.adjustable:AdjustableFS",
         "kwargs": {},
-        "lazy": True,
     },
     {
         "args": ["/photonics/home/gac-bernina/eco/configuration/channels_BSCAM"],
@@ -539,7 +548,6 @@ components = [
         "desc": "jf detector channels",
         "type": "eco.devices_general.adjustable:AdjustableFS",
         "kwargs": {},
-        "lazy": True,
     },
     {
         "args": ["/photonics/home/gac-bernina/eco/configuration/channels_CA"],
@@ -547,7 +555,6 @@ components = [
         "desc": "jf detector channels",
         "type": "eco.devices_general.adjustable:AdjustableFS",
         "kwargs": {},
-        "lazy": True,
     },
     {
         "args": [],
@@ -599,7 +606,6 @@ components = [
         "desc": "Upstream diagnostics table",
         "type": "eco.endstations.hexapod:HexapodSymmetrie",
         "kwargs": {"offset": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]},
-        "lazy": True,
     },
     {
         "args": [],
@@ -612,7 +618,6 @@ components = [
             "kb_hor": Component("kb_hor"),
             "usd_table": Component("usd_table"),
         },
-        "lazy": True,
     },
     {
         "args": ["SARES23-"],
@@ -621,7 +626,6 @@ components = [
         "desc": "Upstream diagnostics slits",
         "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
         "kwargs": {"right": "LIC4", "left": "LIC3", "up": "LIC2", "down": "LIC1"},
-        "lazy": True,
     },
     {
         "args": ["SARES23-"],
@@ -629,27 +633,16 @@ components = [
         "z_und": 141,
         "desc": "Upstream diagnostics slits",
         "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC6", "down": "LIC5"},
-        "lazy": True,
+        "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC8", "down": "LIC5"},
     },
-    # {
-    #    "args": [
-    #        [
-    #            Component("slit_und"),
-    #            Component("slit_switch"),
-    #            Component("slit_att"),
-    #            Component("slit_kb"),
-    #        ]
-    #    ],
-    #    "name": "slits",
-    #    "desc": "collection of all slits",
-    #    "type": "eco.utilities.beamline:Slits",
-    #    "kwargs": {},
-    #    "lazy": False,
-    # },
     {
         "args": [
-            [Component("slit_switch"), Component("slit_att"), Component("slit_kb"),]
+            [
+                Component("slit_und"),
+                Component("slit_switch"),
+                Component("slit_att"),
+                Component("slit_kb"),
+            ]
         ],
         "name": "slits",
         "desc": "collection of all slits",
@@ -657,6 +650,16 @@ components = [
         "kwargs": {},
         "lazy": False,
     },
+    # {
+    #     "args": [
+    #         [Component("slit_switch"), Component("slit_att"), Component("slit_kb"),]
+    #     ],
+    #     "name": "slits",
+    #     "desc": "collection of all slits",
+    #     "type": "eco.utilities.beamline:Slits",
+    #     "kwargs": {},
+    #     "lazy": False,
+    # },
     {
         "args": [],
         "name": "thc",
@@ -664,7 +667,6 @@ components = [
         "desc": "High field THz Chamber",
         "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
         "kwargs": {"Id": "SARES23"},
-        "lazy": True,
     },
     {
         "args": [],
@@ -673,7 +675,6 @@ components = [
         "desc": "High field THz Table",
         "type": "eco.endstations.bernina_sample_environments:High_field_thz_table",
         "kwargs": {"Id": "SARES23"},
-        "lazy": True,
     },
     {
         "args": [],
@@ -690,7 +691,6 @@ components = [
                 "diff": "SARES20-LSCP9-FNS:CH3:VAL_GET",
             },
         },
-        "lazy": True,
     },
     {
         "args": [],
@@ -699,7 +699,14 @@ components = [
         "desc": "bsen targets",
         "type": "eco.xdiagnostics.bsen_usd:bsen_targets",
         "kwargs": {"Id": "SARES23"},
-        "lazy": True,
+    },
+    {
+        "args": [],
+        "name": "att_usd",
+        "z_und": 142,
+        "desc": "USD attenuator",
+        "type": "eco.xdiagnostics.att_usd:att_usd_targets",
+        "kwargs": {"Id": "SARES23"},
     },
     {
         "args": [],
@@ -729,7 +736,7 @@ components = [
             "default_counters": [Component("daq")],
             "checker": Component("checker"),
             "scan_directories": True,
-            # "run_table": Component("run_table"),
+            "run_table": Component("run_table"),
         },
         "lazy": False,
     },

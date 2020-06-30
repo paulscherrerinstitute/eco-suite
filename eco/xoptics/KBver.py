@@ -11,6 +11,7 @@ def addMotorRecordToSelf(self, Id=None, name=None):
 
 class KBver:
     def __init__(self, Id, name=None):
+        self.name = name
         self.Id = Id
         self.alias = Alias(name)
 

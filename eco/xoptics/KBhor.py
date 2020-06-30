@@ -13,6 +13,7 @@ class KBhor:
     def __init__(self, Id, name=None):
         self.Id = Id
         self.alias=Alias(name)
+        self.name = name
 
         addMotorRecordToSelf(self, Id=Id + ":W_X", name='x')
         addMotorRecordToSelf(self, Id=Id + ":W_Y", name='y')

@@ -405,7 +405,7 @@ class electro_optic_sampling:
               diff = datmean['diff']
            elif what =='diff/sum':
               diff = (dat1-dat2) / (dat1+dat2)
-           if 'delay' in x_motor:
+           if 'delay_eos' in x_motor:
             freq, ampl= self.calcFFT(x,diff.T)
   
            else:
@@ -434,7 +434,7 @@ class electro_optic_sampling:
         dat2 = datmean['d2']
         diff = datmean['diff']
         diffOverSum = (dat1-dat2) / (dat1+dat2)
-        if 'delay' in x_motor:
+        if 'delay_eos' in x_motor:
             freq_0 , ampl_0 = self.calcFFT(x,diff.T)
             freq_1, ampl_1 = self.calcFFT(x,diffOverSum.T)
         else:
