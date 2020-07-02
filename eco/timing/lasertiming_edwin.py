@@ -2,10 +2,18 @@ from epics import PV
 import os
 import numpy as np
 import time
-from ..devices_general.utilities import Changer
+from ..devices_general.adjustable import AdjustableFS, PvRecord, AdjustableVirtual, PvEnum
+from ..aliases import append_object_to_object
 
 
-_basefolder = "/sf/bernina/config/src/python/eco/timing"
+
+class LxtEpics:
+    def __init__(self,pvname='SLAAR02-LTIM-PDLY'):
+        self.pvname = pvname
+        append_object_to_object(self,PvEnum,self.pvname+':SHOTDELAY',name='oscialltor_pulse_offset')
+        append_object_to_object(self,PvEnum,self.pvname+':SHOTMOFFS_ENA',name='modulo_offset_mode')
+
+
 
 
 def timeToStr(value, n=12):

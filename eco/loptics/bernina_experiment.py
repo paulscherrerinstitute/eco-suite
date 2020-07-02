@@ -164,7 +164,7 @@ class Laser_Exp:
         # Waveplate and Delay stage
         try:
             addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp_bsen")
-            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp_thz")
+            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp_eos")
         except:
             print("No wp found")
 
