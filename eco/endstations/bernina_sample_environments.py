@@ -381,7 +381,7 @@ class electro_optic_sampling:
         datmean = {name: np.array([ dat[name][n*shots:(n+1)*shots].mean() for n in range(numsteps)]) for name in dat.keys()}
         return {xlab: x}, datmean, dat
 
-    def plotEOS_list(self, runlist, what='diff',diode_channels=None, t0_corr=True):
+    def plotEOS_list(self, runlist, what='diff',diode_channels=None, t0_corr=True, offset_sub=False):
         '''
         what = 'diff' the read out from the channel 3 of the balanced diode 
                'diff/sum'  (diode1 - diode2)/(diode1+diode2)
@@ -401,15 +401,21 @@ class electro_optic_sampling:
               x_motor = x_motor + ' [ps]'
            dat1 = datmean['d1']
            dat2 = datmean['d2']
+   
+
            if what == 'diff':
               diff = datmean['diff']
+           elif what=='ratio':
+               diff = dat1/dat2
            elif what =='diff/sum':
               diff = (dat1-dat2) / (dat1+dat2)
            if 'delay_eos' in x_motor:
             freq, ampl= self.calcFFT(x,diff.T)
   
            else:
-              freq , ampl = 0,0 
+              freq , ampl = 0,0
+           if offset_sub:
+              diff = diff - np.mean(diff[:5]) 
            max_pos = np.argmax(abs(diff))
            t0_pos = x[int(max_pos)]
            if t0_corr: x = x - t0_pos       

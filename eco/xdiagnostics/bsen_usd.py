@@ -10,6 +10,26 @@ from ..aliases import Alias, append_object_to_object
 from time import sleep
 
 
+def addPvRecordToSelf(self, 
+        pvsetname, 
+        pvreadbackname=None, 
+        accuracy=None, 
+        sleeptime=0, 
+        name=None
+        ):
+    try:
+        self.__dict__[name] = PvRecord(
+            pvsetname,
+            pvreadbackname=pvreadbackname,
+            accuracy=accuracy,
+            sleeptime=sleeptime,
+            name=name,
+            )
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
+
+
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
         self.__dict__[name] = MotorRecord(Id, name=name)
@@ -88,6 +108,13 @@ class bsen_targets:
                         )
                     )
                     mot.put("FRM_BACK.PROC", 1)
+        ## IR beam pointing mirrors
+        try:
+            addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR11:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR11:MOTRBV", accuracy= 10, name='ry')
+            addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR12:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR12:MOTRBV", accuracy= 10, name='rx')
+        except:
+            print("Issue intializing picomotor white light beam pointing mirrors")
+            pass
 
     def get_adjustable_positions_str(self):
         ostr = "*****BSEN target position******\n"

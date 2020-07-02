@@ -737,6 +737,7 @@ components = [
             "checker": Component("checker"),
             "scan_directories": True,
             "run_table": Component("run_table"),
+            "elog":Component("elog"),
         },
         "lazy": False,
     },

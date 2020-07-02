@@ -47,6 +47,28 @@ def addDelayStageToSelf(self, stage=None, name=None):
     self.alias.append(self.__dict__[name].alias)
 
 
+def addPvRecordToSelf(self, 
+        pvsetname, 
+        pvreadbackname=None, 
+        accuracy=None, 
+        sleeptime=0, 
+        name=None
+        ):
+    try:
+        self.__dict__[name] = PvRecord(
+            pvsetname,
+            pvreadbackname=pvreadbackname,
+            accuracy=accuracy,
+            sleeptime=sleeptime,
+            name=name,
+            )
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
+
+
+
+
 class DelayTime(AdjustableVirtual):
     def __init__(
         self, stage, direction=1, passes=2, reset_current_value_to=True, name=None
@@ -141,62 +163,49 @@ class Laser_Exp:
 
         # Waveplate and Delay stage
         try:
-            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="pump_wp")
-            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="tt_wp")
+            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp_bsen")
+            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp_thz")
         except:
             print("No wp found")
 
         try:
             addMotorRecordToSelf(
-                self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg"
+                self, Id=self.Id + "-M521:MOTOR_1", name="_delay_bsen_stg"
             )
             addDelayStageToSelf(
-                self, stage=self.__dict__["_pump_delaystg"], name="pump_delay"
+                self, stage=self.__dict__["_delay_bsen_stg"], name="delay_bsen"
             )
         except Exception as expt:
-            print("No eos delay stage")
+            print("No bsen delay stage")
             print(expt)
 
-        # try:
-        addMotorRecordToSelf(self, Id=self.Id + "-M524:MOTOR_1", name="delay_eos_stg")
-        self.delay_eos = DelayTime(self.delay_eos_stg, name="delay_eos")
-        self.alias.append(self.delay_eos.alias)
-        self.lxt_eos = DelayTime(self.delay_eos_stg, direction=-1, name="lxt_eos")
-        self.alias.append(self.lxt_eos.alias)
-        # except Exception as expt:
-        # print("Problems initializing eos delay stage")
-        # print(expt)
+        addMotorRecordToSelf(self, Id=self.Id + "-M524:MOTOR_1", name="_delay_thz_stg")
+        self.delay_thz = DelayTime(self._delay_thz_stg, name="delay_thz")
+        self.alias.append(self.delay_thz.alias)
 
         try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M522:MOTOR_1", name="delay_tt_stg" )
-            #addMotorRecordToSelf(self, Id=self.Id + "-M524:MOTOR_1", name="delay_eos_stg")
-            self.delay_tt = DelayTime(self.delay_tt_stg, name="delay_tt")
-            #self.delay_eos = DelayTime(self.delay_eos_stg, name="delay_eos")
-            self.alias.append(self.delay_tt.alias)
-            #self.alias.append(self.delay_eos.alias)
+            addMotorRecordToSelf(self, Id=self.Id + "-M522:MOTOR_1", name="_delay_eos_stg" )
+            self.delay_eos = DelayTime(self._delay_eos_stg, name="delay_eos")
+            self.alias.append(self.delay_eos.alias)
         except:
             print("Problems initializing global delay stage")
         try:
             addMotorRecordToSelf(
-                self, Id=self.Id + "-M523:MOTOR_1", name="delay_glob_stg"
+                self, Id=self.Id + "-M523:MOTOR_1", name="_delay_glob_stg"
             )
-            self.delay_glob = DelayTime(self.delay_glob_stg, name="delay_glob")
+            self.delay_glob = DelayTime(self._delay_glob_stg, name="delay_glob")
             self.alias.append(self.delay_glob.alias)
-            self.lxt_glob = DelayTime(
-                self.delay_glob_stg, direction=-1, name="lxt_glob"
-            )
-            self.alias.append(self.lxt_glob.alias)
         except:
             print("Problems initializing global delay stage")
 
         # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions.
-        try:
-            self.delay_lxtt = DelayCompensation(
-                [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
-            )
-            self.alias.append(self.delay_lxtt.alias)
-        except:
-            print("Problems initializing virtual pump delay stage")
+        #try:
+        #    self.delay_lxtt = DelayCompensation(
+        #        [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
+        #    )
+        #    self.alias.append(self.delay_lxtt.alias)
+        #except:
+        #    print("Problems initializing virtual pump delay stage")
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
         # self.compressor = MotorRecord(Id+'-M532:MOT')
@@ -205,19 +214,19 @@ class Laser_Exp:
         # addDelayStageToSelf(self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar")
         # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
         # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
-        try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
-            addDelayStageToSelf(
-                self, self.__dict__["_lam_delaystg"], name="lam_delay"
-            )  # this try except does not work
-        except:
-            print("Problems initializing LAM delay stage")
+        #try:
+        #    addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
+        #    addDelayStageToSelf(
+        #        self, self.__dict__["_lam_delaystg"], name="lam_delay"
+        #    )  # this try except does not work
+        #except:
+        #    print("Problems initializing LAM delay stage")
         # self._lam_delayStg = MotorRecord(self.Id+'-M548:MOT')
         # self.lam_delay = DelayStage(self._lam_delayStg)
 
         # PALM delay stages
-        addMotorRecordToSelf(self, Id=self.Id + "-M552:MOT", name="_palm_delaystg")
-        addDelayStageToSelf(self, self.__dict__["_palm_delaystg"], name="palm_delay")
+        #addMotorRecordToSelf(self, Id=self.Id + "-M552:MOT", name="_palm_delaystg")
+        #addDelayStageToSelf(self, self.__dict__["_palm_delaystg"], name="palm_delay")
         # self._palm_delayStg = MotorRecord(self.Id+'-M552:MOT')
         # self.palm_delay = DelayStage(self._palm_delayStg)
 
@@ -233,18 +242,27 @@ class Laser_Exp:
             print("No psen delay stage")
             print(expt)
 
-        # SmarAct ID
-        ### Mirrors used in the experiment ###
+        ### SmarAct stages used in the experiment ###
+        try:
+            for smar_name, smar_address in self.smar_config.items():
+                addSmarActRecordToSelf(self, Id=(self.IdSA + smar_address), name=smar_name)
+        except Exception as expt:
+            print("Issue with initializing smaract stages from eco smar_config")
+            print(expt)
 
-        for smar_name, smar_address in self.smar_config.items():
-
-            # try:
-            addSmarActRecordToSelf(self, Id=(self.IdSA + smar_address), name=smar_name)
-            # except:
-            #    print("Loading %s SmarAct motor in bernina laser conifg failed") % (
-            #        smar_name
-            #    )
-            #    pass
+        ## IR beam pointing mirrors
+        try:
+            addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR13:MOTRBV", accuracy= 10, name='IR_mirr1_ry')
+            addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR14:MOTRBV", accuracy= 10, name='IR_mirr1_rx')
+        except:
+            print("Issue intializing picomotor IR beam pointing mirrors")
+            pass
+        try:
+            addSmarActRecordToSelf(self, Id='SARES23-LIC12', name='IR_mirr2_rx')
+            addSmarActRecordToSelf(self, Id='SARES23-LIC8', name='IR_mirr2_ry')
+        except:
+            print("Issue intializing SmarAct IR beam pointing mirrors")
+            pass
 
     def get_adjustable_positions_str(self):
         ostr = "*****Laser motor positions******\n"
@@ -265,104 +283,3 @@ class Laser_Exp:
         return self.get_adjustable_positions_str()
 
 
-class Laser_Exp_old:
-    def __init__(self, Id=None, name=None, smar_config=None):
-        self.Id = Id
-        self.IdExp1 = "SARES20-EXP"
-        self.IdSA = "SARES23"
-        self.name = name
-        self.alias = Alias(name)
-        self.smar_config = smar_config
-
-        # Waveplate and Delay stage
-        try:
-            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="pump_wp")
-            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="tt_wp")
-        except:
-            print("No wp found")
-
-        try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M521:MOTOR_1", name="_pump_delaystg"
-            )
-            addDelayStageToSelf(
-                self, stage=self.__dict__["_pump_delaystg"], name="pump_delay"
-            )
-        except:
-            print("No eos delay stage")
-            pass
-        try:
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M522:MOTOR_1", name="_tt_delaystg"
-            )
-            addDelayStageToSelf(self, self.__dict__["_tt_delaystg"], name="tt_delay")
-            # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
-        except:
-            print("No thz delay stage")
-            pass
-
-        try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M553:MOT", name="_exp_delaystg")
-            addDelayStageToSelf(self, self.__dict__["_exp_delaystg"], name="exp_delay")
-            # addDelayStageToSelf(self,self.__dict__["_thz_delaystg"], name="thz_delay")
-        except:
-            print("No thz delay stage")
-            pass
-        # compressor
-        addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
-        # self.compressor = MotorRecord(Id+'-M532:MOT')
-
-        # LAM delay stages
-        addSmarActRecordToSelf(self, Id="SLAAR21-LMTS-LAM11", name="_lam_delay_smarstg")
-        addDelayStageToSelf(
-            self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar"
-        )
-        # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
-        # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
-
-        addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
-        addDelayStageToSelf(self, self.__dict__["_lam_delaystg"], name="lam_delay")
-        # self._lam_delayStg = MotorRecord(self.Id+'-M548:MOT')
-        # self.lam_delay = DelayStage(self._lam_delayStg)
-
-        # PALM delay stages
-        addMotorRecordToSelf(self, Id=self.Id + "-M552:MOT", name="_palm_delaystg")
-        addDelayStageToSelf(self, self.__dict__["_palm_delaystg"], name="palm_delay")
-        # self._palm_delayStg = MotorRecord(self.Id+'-M552:MOT')
-        # self.palm_delay = DelayStage(self._palm_delayStg)
-
-        # PSEN delay stages
-        # self._psen_delayStg = MotorRecord(self.Id+'')
-        # self.psen_delay = DelayStage(self._pump_delayStg)
-
-        # SmarAct ID
-        ### Mirrors used in the experiment ###
-
-        for smar_name, smar_address in self.smar_config.items():
-            try:
-                addSmarActRecordToSelf(
-                    self, Id=(self.IdSA + smar_address), name=smar_name
-                )
-            except:
-                print("Loading %s SmarAct motor in bernina laser conifg failed") % (
-                    smar_name
-                )
-                pass
-
-    def get_adjustable_positions_str(self):
-        ostr = "*****Laser motor positions******\n"
-
-        for tkey, item in sorted(self.__dict__.items()):
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
-                posdialstr = ""
-                try:
-                    posdial = item.get_current_value(postype="dial")
-                    posdialstr = "    dial:  % 14g\n" % posdial
-                except:
-                    pass
-                ostr += "  " + tkey.ljust(18) + " : % 14g\n" % pos + posdialstr
-        return ostr
-
-    def __repr__(self):
-        return self.get_adjustable_positions_str()

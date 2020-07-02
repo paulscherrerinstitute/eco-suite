@@ -6,7 +6,7 @@ import traceback
 from pathlib import Path
 import colorama
 from ..devices_general.adjustable import DummyAdjustable
-
+from IPython import get_ipython
 
 class Scan:
     def __init__(
@@ -24,6 +24,7 @@ class Scan:
         checker_sleep_time=0.2,
         return_at_end="question",
         run_table=None,
+        elog=None,
     ):
         self.Nsteps = len(values)
         self._run_table = run_table
@@ -54,22 +55,24 @@ class Scan:
         self.initial_values = []
         self.return_at_end = return_at_end
         self._checker_sleep_time = checker_sleep_time
+        self._elog = elog
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
             tv = adj.get_current_value()
             self.initial_values.append(adj.get_current_value())
             print("Initial value of %s : %g" % (adj.name, tv))
 
-        if self._run_table:
+        if self._run_table or self._elog:
             runname = os.path.basename(fina).split(".")[0]
             runno = int(runname.split("run")[1].split("_")[0])
             metadata = {
                 "type": "scan",
                 "name": runname.split("_", 1)[1],
+                "scan_info_file": self.scan_info_filename,
             }
             for n, adj in enumerate(self.adjustables):
                 metadata.update(
-                    {
+                    {   
                         f"scan_motor_{n}": adj.name,
                         f"from_motor_{n}": self.values_todo[0][n],
                         f"to_motor_{n}": self.values_todo[-1][n],
@@ -82,7 +85,25 @@ class Scan:
                     "counters": [daq.name for daq in counterCallers],
                 }
             )
-            run_table.append_run(runno, metadata=metadata)
+        
+        if self._elog:
+            try:
+                metadata.update({"scan_command":get_ipython().user_ns['In'][-1]})
+            except:
+                print("Count not retrieve ipython scan command!")
+              
+            message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
+            if 'scan_command' in metadata.keys():
+                message_string += metadata['scan_command'] + '\n'
+            message_string += metadata['scan_info_file'] + '\n'
+            self._elog_id = self._elog.post(
+                message_string,
+                Title=f'Run {runno}: {metadata["name"]}')
+            metadata.update({"elog_message_id":self._elog_id})
+            metadata.update({"elog_post_link":self._elog._log._url+str(self._elog_id)})
+        
+        if self._run_table:
+            self._run_table.append_run(runno, metadata=metadata)
 
     def get_filename(self, stepNo, Ndigits=4):
         fina = os.path.join(self.basepath, Path(self.fina).stem)
@@ -208,6 +229,7 @@ class Scans:
         checker=None,
         scan_directories=False,
         run_table=None,
+        elog=None,
     ):
         self._run_table = run_table
         self.data_base_dir = data_base_dir
@@ -238,6 +260,7 @@ class Scans:
         self._default_counters = default_counters
         self.checker = checker
         self._scan_directories = scan_directories
+        self._elog = elog
 
     def a2scan(
         self,
@@ -271,6 +294,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             run_table=self._run_table,
+            elog = self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -305,6 +329,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             run_table=self._run_table,
+            elog = self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -340,6 +365,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
+            elog = self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -376,6 +402,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
+            elog = self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -415,6 +442,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
+            elog = self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -453,6 +481,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
+            elog = self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
