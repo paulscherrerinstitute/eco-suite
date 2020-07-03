@@ -14,7 +14,7 @@ from ..aliases import append_object_to_object, Alias
 
 
 @spec_convenience
-class LxtEpics:
+class XltEpics:
     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
         self.pvname = pvname
         self.alias = Alias(name)
@@ -79,3 +79,5 @@ class LxtEpics:
             stopper=None,
         )
 
+    def reset_current_value_to(self, value):
+        self.offset.set_target_value((self.get_current_dial_value() - value)).wait()
