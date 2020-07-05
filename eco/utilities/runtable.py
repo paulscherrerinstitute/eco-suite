@@ -72,6 +72,7 @@ class Run_Table():
         example 2: query(keys = 'xrd delay name', index = ['p1', 'p2'])
         will return the same columns for the saved positions 1 and 2
         '''
+        self.load()
         if len(keys) >0:
             keys +=' name'
         query_df = self._query_by_keys(keys, df)
@@ -166,6 +167,7 @@ class Run_Table():
         keys takes a string of keys separated by a space, e.g. 'gps xrd las'. All columns, which contain 
         any of these strings are uploaded. keys = None defaults to self.keys. keys = '' returns all columns
         '''
+        self.load()
         self.gc = gspread.authorize(self._credentials)
         self.order_df()
         if keys is None:
@@ -189,6 +191,7 @@ class Run_Table():
         keys takes a list of strin All columns, which contain any of these strings are uploaded.
         keys = None defaults to self.keys. keys = [] returns all columns
         '''
+        self.load()
         self.gc = gspread.authorize(self._credentials)
         self.order_df()
         if keys is None:
@@ -238,8 +241,10 @@ class Run_Table():
         devs='thc tht' would show the devices thc and tht and ind1=0, ind2='p0' the difference between
         run 0 and saved position 0.
         '''
-        df1 = self.query(devs, [ind1]) 
+        df1 = self.query(devs, [ind1])
+        df1 = df1[[type(val) is not str for val in df1]]
         df2 = self.query(devs, [ind2]) 
+        df2 = df2[[type(val) is not str for val in df2]]
         df2.columns = df1.columns 
         return df1.subtract(df2) 
 

@@ -704,7 +704,7 @@ components = [
         "name": "bsen",
         "z_und": 142,
         "desc": "bsen targets",
-        "type": "eco.xdiagnostics.bsen_usd:bsen_targets",
+        "type": "eco.xdiagnostics.bsen_usd:Bsen",
         "kwargs": {"Id": "SARES23"},
     },
     {
