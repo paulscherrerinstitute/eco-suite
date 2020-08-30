@@ -31,7 +31,7 @@ class Run_Table():
             from eco import bernina
             devices = bernina
         self.devices = devices
-        self._spreadsheet_key = '1H0nexCdIbYEOVH0wlQWSrR7E1lV6AL_j7JKd6DCkwLs'
+        self._spreadsheet_key = '1Y8EKX8k_X7C0qwrQZk24tDcKbXjzYqwTXzQ_MuIBxlA'
         self._scope = ['https://spreadsheets.google.com/feeds', 
                        'https://www.googleapis.com/auth/drive']
         self._credentials = ServiceAccountCredentials.from_json_keyfile_name('/sf/bernina/config/src/python/gspread/pandas_push', self._scope)

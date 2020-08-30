@@ -264,6 +264,44 @@ class Laser_Exp:
             print("Issue intializing SmarAct IR beam pointing mirrors")
             pass
 
+        ## beam pointing offsets
+        try:
+            def set_position_monitor_offsets(cam1_center=[None,None],cam2_center=[None,None]):
+                dims = ['x','y']
+                channels_cam1_xy = [
+                    "SLAAR21-LTIM01-EVR0:CALCS.INPB",
+                    "SARES20-CVME-01-EVR0:CALCI.INPB",
+                ]
+                channels_cam2_xy = [
+                    "SARES20-CVME-01-EVR0:CALCX.INPB",
+                    "SARES20-CVME-01-EVR0:CALCY.INPB",
+                ]
+                print("Old crosshair position cam1")
+                for dim, tc, tv in zip(dims, channels_cam1_xy, cam1_center):
+                    print(f'{dim}: {PV(tc).get()}')
+                    # PV(tc).put(bytes(str(tv), "utf8"))
+                print("Old crosshair position cam2")
+                for dim, tc, tv in zip(dims, channels_cam2_xy, cam2_center):
+                    print(f'{dim}: {PV(tc).get()}')
+                    # PV(tc).put(bytes(str(tv), "utf8"))
+                print("New crosshair position cam1")
+                for dim, tc, tv in zip(dims, channels_cam1_xy, cam1_center):
+                    if not tv:
+                        break
+                    print(f'{dim}: {tv}')
+                    PV(tc).put(bytes(str(tv), "utf8"))
+                print("New crosshair position cam2")
+                for dim, tc, tv in zip(dims, channels_cam2_xy, cam2_center):
+                    if not tv:
+                        break
+                    print(f'{dim}: {tv}')
+                    PV(tc).put(bytes(str(tv), "utf8"))
+            self.set_position_monitor_offsets = set_position_monitor_offsets
+        except:
+            pass
+
+
+
     def get_adjustable_positions_str(self):
         ostr = "*****Laser motor positions******\n"
 

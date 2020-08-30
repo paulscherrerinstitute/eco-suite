@@ -13,6 +13,9 @@ from ..bernina import config
 import pylab as plt
 import escape
 from pathlib import Path
+from eco.devices_general.adjustable import AdjustableVirtual
+
+
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
         self.__dict__[name] = MotorRecord(Id, name=name)
@@ -214,6 +217,32 @@ class High_field_thz_table:
         for name, config in self.motor_configuration.items():
             addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
 
+        
+        addSmarActRecordToSelf(self, Id='SARES23-LIC7', name='polarizer_stg')
+        addSmarActRecordToSelf(self, Id='SARES23-LIC14', name='crystal_stg')
+        addSmarActRecordToSelf(self, Id='SARES23-LIC13', name='wp_stg')
+
+
+        self.polarizer = AdjustableVirtual([self.polarizer_stg],self.pol_get, self.pol_set, name='polarizer')
+        self.crystal = AdjustableVirtual([self.crystal_stg],self.xtal_wp_get, self.xtal_wp_set, name='crystal')
+        self.wp = AdjustableVirtual([self.wp_stg],self.xtal_wp_get, self.xtal_wp_set, name='wp')
+        self.thz_polarization = AdjustableVirtual([self.crystal_stg, self.wp_stg],self.thz_pol_get, self.thz_pol_set, name='thz_polarization')
+
+    def pol_set(self, val):
+        return 204/360*val
+    def pol_get(self, val):
+        return 360/204*val
+
+    def thz_pol_set(self, val):
+        return 1./5*val, 1/2.5*val 
+    def thz_pol_get(self, val, val2):
+        return 5/1.*val
+
+    def xtal_wp_set(self, val):
+        return 1/5.*val
+    def xtal_wp_get(self, val):
+        return 5/1.*val
+
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
             mot = self.__dict__[name]._device
@@ -273,12 +302,14 @@ class High_field_thz_table:
 
 
 class electro_optic_sampling:
-    def __init__(self, name=None, Id=None, alias_namespace=None, pgroup=None, diode_channels=None):
+    def __init__(
+        self, name=None, Id=None, alias_namespace=None, pgroup=None, diode_channels=None
+    ):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
         self.diode_channels = diode_channels
-        self.basepath = f'/sf/bernina/data/{pgroup}/res/scan_info/'
+        self.basepath = f"/sf/bernina/data/{pgroup}/res/scan_info/"
         self.motor_configuration = {
             "ry": {
                 "id": "-ESB16",
@@ -355,6 +386,17 @@ class electro_optic_sampling:
                     )
                     mot.put("FRM_BACK.PROC", 1)
 
+    def fit_funvction(self, t, t0, w, tau):
+        from scipy.special import erf
+
+        tt = t - t0
+        y = (
+            0.5
+            * exp(-(2 * tau * tt - w ** 2) / (2 * tau ** 2))
+            * (1 - erf((-tau * tt + w ** 2) / (sqrt(2) * tau * w)))
+        )
+        return y
+
     def get_adjustable_positions_str(self):
         ostr = "*****EOS motor positions******\n"
 
@@ -364,135 +406,144 @@ class electro_optic_sampling:
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
 
-
     def loaddata(self, runno, diode_channels=None):
         json_dir = Path(self.basepath)
-        fname = list(json_dir.glob(f'run{runno:04}*'))[0]
+        fname = list(json_dir.glob(f"run{runno:04}*"))[0]
         data = sf.parseScanEco_v01(fname)
-        #print(data)
+        # print(data)
         dat = {name: data[ch].data.compute() for name, ch in diode_channels.items()}
         ch = list(diode_channels.values())[0]
         xlab = list(data[ch].scan.parameter.keys())[0]
-        x = data[ch].scan.parameter[xlab]['values']
-        shots = len(list(dat.values())[0])//len(x)
-        numsteps = len(list(dat.values())[0])//shots
+        x = data[ch].scan.parameter[xlab]["values"]
+        shots = len(list(dat.values())[0]) // len(x)
+        numsteps = len(list(dat.values())[0]) // shots
         daton = np.ndarray((numsteps,))
         datoff = np.ndarray((numsteps,))
-        datmean = {name: np.array([ dat[name][n*shots:(n+1)*shots].mean() for n in range(numsteps)]) for name in dat.keys()}
+        datmean = {
+            name: np.array(
+                [dat[name][n * shots : (n + 1) * shots].mean() for n in range(numsteps)]
+            )
+            for name in dat.keys()
+        }
         return {xlab: x}, datmean, dat
 
-    def plotEOS_list(self, runlist, what='diff',diode_channels=None, t0_corr=True, offset_sub=False):
-        '''
+    def plotEOS_list(
+        self, runlist, what="diff", diode_channels=None, t0_corr=True, offset_sub=False
+    ):
+        """
         what = 'diff' the read out from the channel 3 of the balanced diode 
                'diff/sum'  (diode1 - diode2)/(diode1+diode2)
         t0_corr: True or False
                 it finds the position the maximum / minimum peak and correct time zero in the time axis  
-        '''
-        fig , ax = plt.subplots(1,2,figsize=(10,5), num='Runlist')
-        ax[1].set_xlabel('Frequency [THz]') 
-        ax[1].set_ylabel('normalized ampl')
-        
-        for rr in runlist:
-           if diode_channels is None:diode_channels = self.diode_channels
-           x, datmean, dat = self.loaddata(rr, diode_channels)
-           x_motor, x = list(x.items())[0]
-           if 'delay' in x_motor:
-              x = np.array(x)*1e12 # covert to ps
-              x_motor = x_motor + ' [ps]'
-           dat1 = datmean['d1']
-           dat2 = datmean['d2']
-   
+        """
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5), num="Runlist")
+        ax[1].set_xlabel("Frequency [THz]")
+        ax[1].set_ylabel("normalized ampl")
 
-           if what == 'diff':
-              diff = datmean['diff']
-           elif what=='ratio':
-               diff = dat1/dat2
-           elif what =='diff/sum':
-              diff = (dat1-dat2) / (dat1+dat2)
-           if 'delay_thz' in x_motor:
-            freq, ampl= self.calcFFT(x,diff.T)
-  
-           else:
-              freq , ampl = 0,0
-           if offset_sub:
-              diff = diff - np.mean(diff[:5]) 
-           max_pos = np.argmax(abs(diff))
-           t0_pos = x[int(max_pos)]
-           if t0_corr: x = x - t0_pos       
-           ax[0].plot(x,diff,label=f'Run_{rr}: t0={t0_pos:0.2f}')
-           ax[0].legend()
-           ax[1].plot(freq, ampl)
+        for rr in runlist:
+            if diode_channels is None:
+                diode_channels = self.diode_channels
+            x, datmean, dat = self.loaddata(rr, diode_channels)
+            x_motor, x = list(x.items())[0]
+            if "delay" in x_motor:
+                x = np.array(x) * 1e12  # covert to ps
+                x_motor = x_motor + " [ps]"
+            dat1 = datmean["d1"]
+            dat2 = datmean["d2"]
+
+            if what == "diff":
+                diff = datmean["diff"]
+            elif what == "ratio":
+                diff = dat1 / dat2
+            elif what == 'sum':
+                diff = dat1+dat2
+            elif what=='diff':
+                diff = dat1-dat2
+            elif what == "diff/sum":
+                diff = (dat1 - dat2) / (dat1 + dat2)
+            if "delay_thz" in x_motor:
+                freq, ampl = self.calcFFT(x, diff.T)
+
+            else:
+                freq, ampl = 0, 0
+            if offset_sub:
+                diff = diff - np.mean(diff[:5])
+            max_pos = np.argmax(abs(diff))
+            t0_pos = x[int(max_pos)]
+            if t0_corr:
+                x = x - t0_pos
+            ax[0].plot(x, diff, label=f"Run_{rr}: t0={t0_pos:0.2f}")
+            ax[0].legend()
+            ax[1].plot(freq, ampl)
         ax[0].set_xlabel(x_motor)
 
-
-
- 
-    def plotEOS(self,runno,diode_channels=None):
+    def plotEOS(self, runno, diode_channels=None):
         if diode_channels is None:
             diode_channels = self.diode_channels
         x, datmean, dat = self.loaddata(runno, diode_channels)
         x_motor, x = list(x.items())[0]
-        if 'delay' in x_motor:
-            x = np.array(x)*1e12 # covert to ps
-            x_motor = x_motor + ' [ps]'
-        fig, ax = plt.subplots(2,2, figsize=(9,7), num=f'Run_{runno}')
-        dat1 = datmean['d1']
-        dat2 = datmean['d2']
-        diff = datmean['diff']
-        diffOverSum = (dat1-dat2) / (dat1+dat2)
-        if 'delay_thz' in x_motor:
-            freq_0 , ampl_0 = self.calcFFT(x,diff.T)
-            freq_1, ampl_1 = self.calcFFT(x,diffOverSum.T)
+        if "delay" in x_motor:
+            x = np.array(x) * 1e12  # covert to ps
+            x_motor = x_motor + " [ps]"
+        fig, ax = plt.subplots(2, 2, figsize=(9, 7), num=f"Run_{runno}")
+        dat1 = datmean["d1"]
+        dat2 = datmean["d2"]
+        diff = datmean["diff"]
+        diffOverSum = (dat1 - dat2) / (dat1 + dat2)
+        if "delay_thz" in x_motor:
+            freq_0, ampl_0 = self.calcFFT(x, diff.T)
+            freq_1, ampl_1 = self.calcFFT(x, diffOverSum.T)
         else:
-            freq_0 = 0; freq_1 =0 ; ampl_0 = 0; ampl_1 = 0
-        ax[0,0].set_title(f'Run_{runno}')
-        ax[0,0].plot(x,diff,'k-',label = 'Channel3 (diff)')
-        ax[1,0].plot(x,diffOverSum,'r-',label='Diff / Sum ')
-        ax[0,1].plot(x,dat1, label='Diode1')
-        ax[0,1].plot(x,dat2, label='Diode2')
-        ax[0,1].set_xlabel(x_motor)
-        ax[1,1].plot(freq_0, ampl_0, 'k-',label='Channel3(diff)')
-        ax[1,1].plot(freq_1, ampl_1,'r-', label='Diff/Sum')
-        ax[1,1].set_xlabel('Frequency [THz]') 
-        ax[1,1].set_ylabel('normalized ampl')
+            freq_0 = 0
+            freq_1 = 0
+            ampl_0 = 0
+            ampl_1 = 0
+        ax[0, 0].set_title(f"Run_{runno}")
+        ax[0, 0].plot(x, diff, "k-", label="Channel3 (diff)")
+        ax[1, 0].plot(x, diffOverSum, "r-", label="Diff / Sum ")
+        ax[0, 1].plot(x, dat1, label="Diode1")
+        ax[0, 1].plot(x, dat2, label="Diode2")
+        ax[0, 1].set_xlabel(x_motor)
+        ax[1, 1].plot(freq_0, ampl_0, "k-", label="Channel3(diff)")
+        ax[1, 1].plot(freq_1, ampl_1, "r-", label="Diff/Sum")
+        ax[1, 1].set_xlabel("Frequency [THz]")
+        ax[1, 1].set_ylabel("normalized ampl")
         for ii in range(2):
-            ax[ii,0].legend()
-            ax[ii,0].set_xlabel(x_motor)
-            ax[0,ii].legend()
-        return x,diffOverSum 
-    
-    def calcFFT(self,x,y,norm=True, lim=[0.1, 15]):
-        # lim: min and max in THz for normalization and plotting 
+            ax[ii, 0].legend()
+            ax[ii, 0].set_xlabel(x_motor)
+            ax[0, ii].legend()
+        return x, diffOverSum
+
+    def calcFFT(self, x, y, norm=True, lim=[0.1, 15]):
+        # lim: min and max in THz for normalization and plotting
         N = x.size
-        T = x[N-1]-x[0]
+        T = x[N - 1] - x[0]
         te = x[1] - x[0]
         fe = 1.0 / te
         fft_cal = np.fft.fft(y) / N
         ampl = np.absolute(fft_cal)
-        freq = np.arange(N)/T
-        ind0 = int(np.argmin(abs(freq-lim[0])))
-        ind1 = int(np.argmin(abs(freq-lim[1])))
+        freq = np.arange(N) / T
+        ind0 = int(np.argmin(abs(freq - lim[0])))
+        ind1 = int(np.argmin(abs(freq - lim[1])))
         ampl = ampl[ind0:ind1]
         freq = freq[ind0:ind1]
         if norm:
             ampl = ampl / np.max(ampl[2:])
         return freq, ampl
 
-    def calcField(self, DiffoverSum, L = 100e-6, wl = 800e-9, r41 = 0.97e-12, n0 = 3.19):
-        #Parameters: L: GaP thickness, lambda: EOS wavelength, r41: EO coefficient, n0: refractive index of EOS sampling
-        #Field transmission assuming that n(THz) = n(opt)
-        #Angle between THz polarization and (001)
-        alpha = 90./180*np.pi
-        #angle between probe polarization and (001)
-        th = 0./180*np.pi
-        t = 2./(n0+1)
-        geoSens = np.cos(alpha)*np.sin(2*th)+2*np.sin(alpha)*np.cos(2*th)
-        E = np.arcsin(DiffoverSum)*wl / (np.pi*L*r41*n0**3*t)/geoSens
+    def calcField(self, DiffoverSum, L=100e-6, wl=800e-9, r41=0.97e-12, n0=3.19):
+        # Parameters: L: GaP thickness, lambda: EOS wavelength, r41: EO coefficient, n0: refractive index of EOS sampling
+        # Field transmission assuming that n(THz) = n(opt)
+        # Angle between THz polarization and (001)
+        alpha = 90.0 / 180 * np.pi
+        # angle between probe polarization and (001)
+        th = 0.0 / 180 * np.pi
+        t = 2.0 / (n0 + 1)
+        geoSens = np.cos(alpha) * np.sin(2 * th) + 2 * np.sin(alpha) * np.cos(2 * th)
+        E = np.arcsin(DiffoverSum) * wl / (np.pi * L * r41 * n0 ** 3 * t) / geoSens
 
         return E
-     
-    
-    
+
     def __repr__(self):
         return self.get_adjustable_positions_str()
-    
+

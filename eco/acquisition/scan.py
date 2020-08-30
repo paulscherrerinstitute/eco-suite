@@ -88,20 +88,24 @@ class Scan:
         
         if self._elog:
             try:
-                metadata.update({"scan_command":get_ipython().user_ns['In'][-1]})
+                try:
+                    metadata.update({"scan_command":get_ipython().user_ns['In'][-1]})
+                except:
+                    print("Count not retrieve ipython scan command!")
+                  
+     
+                  
+                message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
+                if 'scan_command' in metadata.keys():
+                    message_string += metadata['scan_command'] + '\n'
+                message_string += metadata['scan_info_file'] + '\n'
+                self._elog_id = self._elog.post(
+                    message_string,
+                    Title=f'Run {runno}: {metadata["name"]}')
+                metadata.update({"elog_message_id":self._elog_id})
+                metadata.update({"elog_post_link":self._elog._log._url+str(self._elog_id)})
             except:
-                print("Count not retrieve ipython scan command!")
-              
-            message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
-            if 'scan_command' in metadata.keys():
-                message_string += metadata['scan_command'] + '\n'
-            message_string += metadata['scan_info_file'] + '\n'
-            self._elog_id = self._elog.post(
-                message_string,
-                Title=f'Run {runno}: {metadata["name"]}')
-            metadata.update({"elog_message_id":self._elog_id})
-            metadata.update({"elog_post_link":self._elog._log._url+str(self._elog_id)})
-        
+               print('elog posting failed')
         if self._run_table:
             self._run_table.append_run(runno, metadata=metadata)
 

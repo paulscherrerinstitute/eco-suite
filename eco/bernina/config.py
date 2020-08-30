@@ -51,7 +51,7 @@ components = [
         "name": "elog",
         "type": "eco.utilities.elog:Elog",
         "args": ["https://elog-gfa.psi.ch/Bernina"],
-        "kwargs": {"user": "gac-bernina", "screenshot_directory": "/tmp",},
+        "kwargs": {"screenshot_directory": "/tmp",},
     },
     {
         "name": "screenshot",
