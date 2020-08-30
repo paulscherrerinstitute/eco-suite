@@ -1,4 +1,5 @@
 from ..devices_general.motors import MotorRecord
+from ..devices_general.pv_adjustable import PvRecord
 from epics import PV
 from ..aliases import Alias, append_object_to_object
 
@@ -8,6 +9,25 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         self.alias.append(self.__dict__[name].alias)
     except:
         print(f"Warning! Could not find motor {name} (Id:{Id})")
+
+def addPvRecordToSelf(self, 
+        pvsetname, 
+        pvreadbackname=None, 
+        accuracy=None, 
+        sleeptime=0, 
+        name=None
+        ):
+    try:
+        self.__dict__[name] = PvRecord(
+            pvsetname,
+            pvreadbackname=pvreadbackname,
+            accuracy=accuracy,
+            sleeptime=sleeptime,
+            name=name,
+            )
+        self.alias.append(self.__dict__[name].alias)
+    except:
+        print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
 
 class KBhor:
     def __init__(self, Id, name=None):
@@ -22,6 +42,8 @@ class KBhor:
         addMotorRecordToSelf(self, Id=Id + ":W_RX", name='yaw')
         addMotorRecordToSelf(self, Id=Id + ":BU", name='bend1')
         addMotorRecordToSelf(self, Id=Id + ":BD", name='bend2')
+        addPvRecordToSelf(self, pvsetname=Id + ":CURV_SP", pvreadbackname =Id + ":CURV", accuracy= 0.002, name='curv')
+        addPvRecordToSelf(self, pvsetname=Id + ":ASYMMETRY_SP", pvreadbackname =Id + ":ASYMMETRY", accuracy= 0.002, name='asym')
 
         self.mode = PV(Id[:11] + ":MODE").enum_strs[PV(Id[:11] + ":MODE").value]
 

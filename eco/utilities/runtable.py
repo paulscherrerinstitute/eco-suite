@@ -101,8 +101,8 @@ class Run_Table():
             print(f"Tried to change permissions to 775")
         self.alias_df.to_pickle(self.alias_file_name+'.pkl')
         self.adj_df.to_pickle(self.adj_file_name+'.pkl')
-        self.alias_df.to_hdf(self.alias_file_name+'.h5', key='data')
-        self.adj_df.to_hdf(self.adj_file_name+'.h5', key='data')
+        #self.alias_df.to_hdf(self.alias_file_name+'.h5', key='data')
+        #self.adj_df.to_hdf(self.adj_file_name+'.h5', key='data')
         self.alias_df.to_excel(self.alias_file_name+'.xlsx')
         self.adj_df.to_excel(self.adj_file_name+'.xlsx')
 
