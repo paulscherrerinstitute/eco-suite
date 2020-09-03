@@ -23,15 +23,15 @@ class PvRecord:
         self.alias = Alias(name)
         self.sleeptime = sleeptime
 
-        self._pv = PV(self.Id)
+        self._pv = PV(self.Id, connection_timeout=0.05, auto_monitor=True)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id)
+            self._pvreadback = PV(self.Id, connection_timeout=0.05, auto_monitor=True)
             alias_fields={"set": pvsetname}
         else:
-            self._pvreadback = PV(pvreadbackname)
+            self._pvreadback = PV(pvreadbackname, connection_timeout=0.05, auto_monitor=True)
             alias_fields={"set": pvsetname, "readback": pvreadbackname}
 
         for name, ch in alias_fields.items():

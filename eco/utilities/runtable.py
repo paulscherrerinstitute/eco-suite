@@ -4,7 +4,6 @@ from pandas import DataFrame
 import pandas as pd
 import warnings
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
-import pandas as pd
 import os
 from pathlib import Path
 from epics import PV
@@ -15,38 +14,41 @@ import gspread_formatting.dataframe as gf_dataframe
 from datetime import datetime
 import xlwt
 import openpyxl
+from ..devices_general.pv_adjustable import PvRecord
+
 
 class Run_Table():
-    def __init__(self, pgroup, devices=None, alias_namespace=None,  add_pvs={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}, name=None):
-        '''
-        Additional PVs is a dictionary holding additional PVs to be saved to the dataframes
-        '''
+    def __init__(self, pgroup=None,spreadsheet_key=None, devices=None, alias_namespace=None,  channels_ca={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}, name=None):
+
+        ### Load device and alias_namespace after init of other devices ###
+        if not devices:
+            from eco import bernina
+            devices = bernina
+        self.devices = devices
+        if not alias_namespace:
+            from eco.aliases import NamespaceCollection
+            alias_namespace = NamespaceCollection().bernina
+        self.alias_namespace = alias_namespace
+
         self.name=name
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
         self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable'
         self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable'
-        self._add_pvs = add_pvs
-        if not devices:
-            from eco import bernina
-            devices = bernina
-        self.devices = devices
-        self._spreadsheet_key = '1Y8EKX8k_X7C0qwrQZk24tDcKbXjzYqwTXzQ_MuIBxlA'
+        self._channels_ca = channels_ca
+
+        ### credentials and settings for uploading to gspread ###
+        self._spreadsheet_key = spreadsheet_key
         self._scope = ['https://spreadsheets.google.com/feeds', 
                        'https://www.googleapis.com/auth/drive']
         self._credentials = ServiceAccountCredentials.from_json_keyfile_name('/sf/bernina/config/src/python/gspread/pandas_push', self._scope)
         self.gc = gspread.authorize(self._credentials)
         self.keys = 'metadata gps thc hex tht eos energy transmission hpos vpos hgap vgap shut delay lxt pulse_id att_self att_fe_self'
         self.key_order = 'metadata time name gps gps_hex thc tht eos las lxt phase_shifter xrd mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission'
-        if not alias_namespace:
-            from eco.aliases import NamespaceCollection
-            alias_namespace = NamespaceCollection().bernina
-        
-        self.alias_namespace = alias_namespace
 
+        ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
         self.bad_adjustables={}
-        self._parse_parent()
         pd.options.display.max_rows = 999
         self.load()
 
@@ -281,11 +283,9 @@ class Run_Table():
         for key in parent.__dict__.keys():
             if ~np.any([s in key for s in exclude]):
                 if np.all([hasattr(parent.__dict__[key], '__dict__'), hasattr(parent.__dict__[key],'name')]):
-                    #try:
                     self._parse_child_instances(parent.__dict__[key])
-                    #except:
-                    #    print(f'Getting adjustables from {key} failed')
-                    #    pass
+        for name, value in self._channels_ca.get_current_value().items():
+            self.adjustables[f"env_{name}"] = {key: PvRecord(pvsetname = ch) for key, ch in value.items()}
         self._check_adjustables()
 
     def _check_adjustables(self):
@@ -312,7 +312,6 @@ class Run_Table():
         aliases = [s.replace('.', '_') for s in alias_namespace.aliases]
         self._alias_namespace = alias_namespace
         self._pvs = dict(zip(aliases, np.array([PV(ch, connection_timeout=0.05, auto_monitor=True) for ch in alias_namespace.channels])))
-        self._pvs.update(dict(zip(self._add_pvs.keys(), np.array([PV(ch, connection_timeout=0.05, auto_monitor=True) for ch in self._add_pvs.values()]))))
 
     def get_alias_namespace(self):
         return self._alias_namespace

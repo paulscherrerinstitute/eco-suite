@@ -33,11 +33,24 @@ components = [
     #            'kwargs': {}
     #            }
     {
-        "args": [config["pgroup"]],
+        "args": ["/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA"],
+        "name": "_env_channels_ca",
+        "desc": "CA channels added to the run_table",
+        "type": "eco.devices_general.adjustable:AdjustableFS",
+        "kwargs": {},
+    },
+    {
+        "args": [],
         "name": "run_table",
         "desc": "run table for data acquisition",
         "type": "eco.utilities.runtable:Run_Table",
-        "kwargs": {"devices": None, "alias_namespace": None},
+        "kwargs": {
+            "pgroup": config["pgroup"], 
+            "spreadsheet_key": config["gspread_notebook_id"],
+            "devices": None, 
+            "alias_namespace": None,
+            "channels_ca": Component("_env_channels_ca")
+            },
         "lazy": False,
     },
     {
