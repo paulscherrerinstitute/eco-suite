@@ -45,7 +45,7 @@ class KBhor:
         addPvRecordToSelf(self, pvsetname=Id + ":CURV_SP", pvreadbackname =Id + ":CURV", accuracy= 0.002, name='curv')
         addPvRecordToSelf(self, pvsetname=Id + ":ASYMMETRY_SP", pvreadbackname =Id + ":ASYMMETRY", accuracy= 0.002, name='asym')
 
-        self.mode = PV(Id[:11] + ":MODE").enum_strs[PV(Id[:11] + ":MODE").value]
+        #self.mode = PV(Id[:11] + ":MODE").enum_strs[PV(Id[:11] + ":MODE").value]
 
         #### actual motors ###
         addMotorRecordToSelf(self, Id=Id + ":TY1", name='_Y1')

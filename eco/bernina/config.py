@@ -690,10 +690,10 @@ components = [
     },
     {
         "args": [],
-        "name": "tht",
+        "name": "ocb",
         "z_und": 142,
-        "desc": "High field THz Table",
-        "type": "eco.endstations.bernina_sample_environments:High_field_thz_table",
+        "desc": "LiNbO3 crystal breadboard",
+        "type": "eco.endstations.bernina_sample_environments:LiNbO3_crystal_breadboard",
         "kwargs": {"Id": "SARES23"},
     },
     {
@@ -701,7 +701,7 @@ components = [
         "name": "eos",
         "z_und": 142,
         "desc": "electro optic sampling stages",
-        "type": "eco.endstations.bernina_sample_environments:electro_optic_sampling",
+        "type": "eco.endstations.bernina_sample_environments:Electro_optic_sampling",
         "kwargs": {
             "Id": "SARES23",
             "pgroup": config["pgroup"],

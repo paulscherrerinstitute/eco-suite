@@ -76,6 +76,7 @@ class Scan:
                         f"scan_motor_{n}": adj.name,
                         f"from_motor_{n}": self.values_todo[0][n],
                         f"to_motor_{n}": self.values_todo[-1][n],
+                        f"id_motor_{n}": adj.Id,
                     }
                 )
             metadata.update(
@@ -154,13 +155,36 @@ class Scan:
         for tm in ms:
             tm.wait()
         readbacks_step = []
+        adjs_name = []
+        adjs_offset = []
+        adjs_id = []
+
         for adj in self.adjustables:
             readbacks_step.append(adj.get_current_value())
+            try:
+                adjs_name.append(adj.name)
+                if hasattr(adj, '_motor'):
+                    adjs_offset.append(adj._motor.OFF)
+                if hasattr(adj, 'Id'):
+                    adjs_id.append(adj.Id)
+            except:
+                print("acquiring metadata failed")
+                pass
+       
         if verbose:
             print("Moved variables, now starting acquisition")
         acs = []
         for ctr in self.counterCallers:
-            acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step)
+            if ctr.__module__ == 'eco.acquisition.daq_client':
+                acq_pars = {
+                        "motors_value": values_step,
+                        "motors_readback_value": readbacks_step,
+                        "motors_name": adjs_name,
+                        "motors_pv_name": adjs_id,
+                        }
+                acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars)
+            else:
+                acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step)
             acs.append(acq)
         filenames = []
         for ta in acs:

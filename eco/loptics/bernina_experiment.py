@@ -163,8 +163,8 @@ class Laser_Exp:
 
         # Waveplate and Delay stage
         try:
-            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp_bsen")
-            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp_eos")
+            addMotorRecordToSelf(self, self.Id + "-M534:MOT", name="wp_eos")
+            addMotorRecordToSelf(self, self.Id + "-M533:MOT", name="wp_bsen")
         except:
             print("No wp found")
 
@@ -251,15 +251,19 @@ class Laser_Exp:
             print(expt)
 
         ## IR beam pointing mirrors
+        #try:
+        #    addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR13:MOTRBV", accuracy= 10, name='IR_mirr1_ry')
+        #    addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR14:MOTRBV", accuracy= 10, name='IR_mirr1_rx')
+        #except:
+        #    print("Issue intializing picomotor IR beam pointing mirrors")
+        #    pass
         try:
-            addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR13:MOTRBV", accuracy= 10, name='IR_mirr1_ry')
-            addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR14:MOTRBV", accuracy= 10, name='IR_mirr1_rx')
-        except:
-            print("Issue intializing picomotor IR beam pointing mirrors")
-            pass
-        try:
-            addSmarActRecordToSelf(self, Id='SARES23-LIC12', name='IR_mirr2_rx')
-            addSmarActRecordToSelf(self, Id='SARES23-LIC8', name='IR_mirr2_ry')
+            addSmarActRecordToSelf(self, Id='SARES23-ESB4', name='IR_mirr1_rx')
+            addSmarActRecordToSelf(self, Id='SARES23-LIC7', name='IR_mirr1_ry')
+
+            addSmarActRecordToSelf(self, Id='SARES23-ESB1', name='IR_mirr2_ry')
+            addSmarActRecordToSelf(self, Id='SARES23-ESB2', name='IR_mirr2_rz')
+            addSmarActRecordToSelf(self, Id='SARES23-ESB3', name='IR_mirr2_z')
         except:
             print("Issue intializing SmarAct IR beam pointing mirrors")
             pass

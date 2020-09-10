@@ -72,11 +72,11 @@ class Bsen:
 
         self.motor_configuration = {
             "transl": {
-                "id": "-LIC9",
-                "pv_descr": " ",
+                "id": "-ESB17",
+                "pv_descr":"Motor8:2 BSEN_transl",
                 "type": 2,
                 "sensor": 1,
-                "speed": 250,
+                "speed": 400,
                 "home_direction": "back",
             },
         }

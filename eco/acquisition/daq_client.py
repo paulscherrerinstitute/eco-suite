@@ -41,7 +41,7 @@ class Daq:
         self.name = name
         self._default_file_path = None
 
-    def acquire(self, file_name=None, Npulses=100):
+    def acquire(self, file_name=None, Npulses=100, acq_pars = {}):
         print(file_name, Npulses)
         acquisition = Acquisition(
             acquire=None, acquisition_kwargs={"Npulses": Npulses},
@@ -55,6 +55,7 @@ class Daq:
                 channels_JF=self.channels["channels_JF"].get_current_value(),
                 channels_BS=self.channels["channels_BS"].get_current_value(),
                 channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
+                **acq_pars,
             )
             acquisition.acquisition_kwargs.update({"file_names": file_names})
             for key, val in acquisition.acquisition_kwargs.items():
@@ -87,7 +88,6 @@ class Daq:
         label=None,
         wait=True,
         wait_cycle_sleep=0.01,
-        **kwargs,
     ):
         if not stop_id:
             stop_id = int(self.pulse_id.get_current_value())
@@ -96,7 +96,6 @@ class Daq:
 
         acq_pars = self.running.pop(acq_ix)
         acq_pars["stop_id"] = stop_id
-        acq_pars.update(kwargs)
         label = acq_pars.pop("label")
         if wait:
             while int(self.pulse_id.get_current_value()) < stop_id:
@@ -116,6 +115,7 @@ class Daq:
         pgroup=None,
         pgroup_base_path="/sf/bernina/data/{:s}/raw",
         filename_format="run_{:06d}",
+        **kwargs,
     ):
         if not pgroup:
             pgroup = self.pgroup
@@ -127,6 +127,8 @@ class Daq:
         directory_base = Path(pgroup_base_path.format(pgroup)) / directory_relative
         files_extensions = []
         parameters = {"start_pulseid": start_id, "stop_pulseid": stop_id}
+        parameters.update(kwargs)
+        print(parameters)
         if channels_CA:
             parameters["pv_list"] = channels_CA
             files_extensions.append("CADUMP")

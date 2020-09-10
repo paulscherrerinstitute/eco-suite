@@ -15,7 +15,7 @@ from datetime import datetime
 import xlwt
 import openpyxl
 from ..devices_general.pv_adjustable import PvRecord
-
+from epics import caget
 
 class Run_Table():
     def __init__(self, pgroup=None,spreadsheet_key=None, devices=None, alias_namespace=None,  channels_ca={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}, name=None):
@@ -33,8 +33,10 @@ class Run_Table():
         self.name=name
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
+        self.unit_df = DataFrame()
         self.alias_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable'
         self.adj_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable'
+        self.unit_file_name = f'/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable'
         self._channels_ca = channels_ca
 
         ### credentials and settings for uploading to gspread ###
@@ -49,6 +51,7 @@ class Run_Table():
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
         self.bad_adjustables={}
+        self.units = {}
         pd.options.display.max_rows = 999
         self.load()
 
@@ -103,16 +106,19 @@ class Run_Table():
             print(f"Tried to change permissions to 775")
         self.alias_df.to_pickle(self.alias_file_name+'.pkl')
         self.adj_df.to_pickle(self.adj_file_name+'.pkl')
-        #self.alias_df.to_hdf(self.alias_file_name+'.h5', key='data')
-        #self.adj_df.to_hdf(self.adj_file_name+'.h5', key='data')
+        self.unit_df.to_pickle(self.unit_file_name+'.pkl')
         self.alias_df.to_excel(self.alias_file_name+'.xlsx')
         self.adj_df.to_excel(self.adj_file_name+'.xlsx')
+        self.unit_df.to_excel(self.unit_file_name+'.xlsx')
+
 
     def load(self):
         if os.path.exists(self.alias_file_name+'.pkl'):
             self.alias_df = pd.read_pickle(self.alias_file_name+'.pkl')
         if os.path.exists(self.adj_file_name+'.pkl'):
             self.adj_df = pd.read_pickle(self.adj_file_name+'.pkl')
+        if os.path.exists(self.unit_file_name+'.pkl'):
+            self.alias_df = pd.read_pickle(self.alias_file_name+'.pkl')
 
 
     def append_run(self, runno, metadata={'type': 'ascan',
@@ -138,6 +144,10 @@ class Run_Table():
         values = np.array([val for adjs in dat.values() for val in adjs.values()])
         run_df = DataFrame([values], columns=multiindex, index=[runno])
         self.adj_df = self.adj_df.append(run_df)
+        multiindex_u = pd.MultiIndex.from_tuples([(dev, adj) for dev in self.units.keys() for adj in self.units[dev].keys()], names=names)
+        values_u = np.array([val for adjs in self.units.values() for val in adjs.values()])
+        self.unit_df = DataFrame([values_u], columns=multiindex_u, index=['units'])
+
         self.save() 
 
     def append_pos(self, name=''):
@@ -161,6 +171,9 @@ class Run_Table():
         values = np.array([val for adjs in dat.values() for val in adjs.values()])
         pos_df = DataFrame([values], columns=multiindex, index=[f'p{posno}'])
         self.adj_df = self.adj_df.append(pos_df)
+        multiindex_u = pd.MultiIndex.from_tuples([(dev, adj) for dev in self.units.keys() for adj in self.units[dev].keys()], names=names)
+        values_u = np.array([val for adjs in self.units.values() for val in adjs.values()])
+        self.unit_df = DataFrame([values_u], columns=multiindex_u, index=['units'])
         self.save() 
 
     def upload_rt(self, worksheet='runtable', keys=None, df=None):
@@ -257,6 +270,9 @@ class Run_Table():
         else:
             name = device.name
         self.adjustables[name] = {key: value for key, value in device.__dict__.items() if hasattr(value, 'get_current_value')}
+        self.adjustables[name] = {key+'_offset': PvRecord(pvsetname = value.Id+'.OFF') for key, value in device.__dict__.items() if hasattr(value, '_motor')}
+        self.units[name] = {key: caget(value.Id+'.EGU') for key, value in device.__dict__.items() if hasattr(value, '_motor')}
+
         if hasattr(device, 'get_current_value'):
             self.adjustables[name]['_'.join([name, 'self'])]=device
 
@@ -302,7 +318,7 @@ class Run_Table():
             if len(good_dev_adj)>0:
                 good_adj[device]=good_dev_adj
             if len(bad_dev_adj)>0:
-                bad_dev_adj[device]=bad_dev
+                bad_adj[device]=bad_dev_adj
             self.good_adjustables = good_adj
             self.bad_adjustables = bad_adj
 

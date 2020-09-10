@@ -140,7 +140,7 @@ class High_field_thz_chamber:
         return self.get_adjustable_positions_str()
 
 
-class High_field_thz_table:
+class Organic_crystal_breadboard:
     def __init__(self, name=None, Id=None, alias_namespace=None):
         self.Id = Id
         self.name = name
@@ -150,48 +150,48 @@ class High_field_thz_table:
             "mirr2_x": {
                 "id": "-ESB1",
                 "pv_descr": "Motor3:1 THz mirror x ",
-                "type": 2,
-                "sensor": 1,
+                "type": 1,
+                "sensor": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
             "mirr2_rz": {
                 "id": "-ESB2",
                 "pv_descr": "Motor3:2 THz mirror rz ",
-                "type": 1,
-                "sensor": 0,
+                "type": 2,
+                "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
             "mirr2_ry": {
                 "id": "-ESB3",
                 "pv_descr": "Motor3:3 THz mirror ry ",
-                "type": 1,
-                "sensor": 0,
+                "type": 2,
+                "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
             "mirr2_z": {
                 "id": "-ESB4",
                 "pv_descr": "Motor4:1 THz mirror z",
-                "type": 2,
-                "sensor": 1,
+                "type": 1,
+                "sensor": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
             "par2_x": {
                 "id": "-ESB5",
                 "pv_descr": "Motor4:2 THz parabola2 x",
-                "type": 2,
-                "sensor": 1,
+                "type": 1,
+                "sensor": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
             "mirr1_x": {
                 "id": "-ESB7",
                 "pv_descr": "Motor5:1 near IR mirror x",
-                "type": 2,
-                "sensor": 1,
+                "type": 1,
+                "sensor": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
@@ -213,7 +213,7 @@ class High_field_thz_table:
             },
         }
 
-        ### in vacuum smaract motors ###
+        ### smaract motors ###
         for name, config in self.motor_configuration.items():
             addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
 
@@ -289,7 +289,7 @@ class High_field_thz_table:
                     mot.put("FRM_BACK.PROC", 1)
 
     def get_adjustable_positions_str(self):
-        ostr = "*****THz table motor positions******\n"
+        ostr = "*****Organic Crystal Breadboard positions******\n"
 
         for tkey, item in self.__dict__.items():
             if hasattr(item, "get_current_value"):
@@ -301,7 +301,79 @@ class High_field_thz_table:
         return self.get_adjustable_positions_str()
 
 
-class electro_optic_sampling:
+
+class LiNbO3_crystal_breadboard:
+    def __init__(self, name=None, Id=None, alias_namespace=None):
+        self.Id = Id
+        self.name = name
+        self.alias = Alias(name)
+        
+        self.motor_configuration = {
+            "rz": {
+                "id": "-ESB7",
+                "pv_descr": "Motor5:1 THz mirror rz ",
+                "type": 2,
+                "sensor": 1,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "ry": {
+                "id": "-ESB8",
+                "pv_descr": "Motor5:2 THz mirror ry ",
+                "type": 2,
+                "sensor": 1,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "z": {
+                "id": "-ESB9",
+                "pv_descr": "Motor5:3 THz mirror z ",
+                "type": 1,
+                "sensor": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "x": {
+                "id": "-ESB15",
+                "pv_descr": "Motor7:3 THz mirror x",
+                "type": 1,
+                "sensor": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+        }
+
+        ### in vacuum smaract motors ###
+        for name, config in self.motor_configuration.items():
+            addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
+
+
+    def set_stage_config(self):
+        for name, config in self.motor_configuration.items():
+            mot = self.__dict__[name]._device
+            mot.put("NAME", config["pv_descr"])
+            mot.put("STAGE_TYPE", config["type"])
+            mot.put("SET_SENSOR_TYPE", config["sensor"])
+            mot.put("CL_MAX_FREQ", config["speed"])
+            sleep(0.5)
+            mot.put("CALIBRATE.PROC", 1)
+
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****LiNbO3 crystal breadboard positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    def __repr__(self):
+        return self.get_adjustable_positions_str()
+
+
+
+class Electro_optic_sampling:
     def __init__(
         self, name=None, Id=None, alias_namespace=None, pgroup=None, diode_channels=None
     ):
@@ -461,7 +533,7 @@ class electro_optic_sampling:
                 diff = dat1-dat2
             elif what == "diff/sum":
                 diff = (dat1 - dat2) / (dat1 + dat2)
-            if "delay_thz" in x_motor:
+            if "delay" in x_motor:
                 freq, ampl = self.calcFFT(x, diff.T)
 
             else:
@@ -516,6 +588,7 @@ class electro_optic_sampling:
 
     def calcFFT(self, x, y, norm=True, lim=[0.1, 15]):
         # lim: min and max in THz for normalization and plotting
+        x = abs(x)
         N = x.size
         T = x[N - 1] - x[0]
         te = x[1] - x[0]
