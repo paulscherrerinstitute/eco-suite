@@ -270,7 +270,7 @@ class Run_Table():
         else:
             name = device.name
         self.adjustables[name] = {key: value for key, value in device.__dict__.items() if hasattr(value, 'get_current_value')}
-        self.adjustables[name] = {key+'_offset': PvRecord(pvsetname = value.Id+'.OFF') for key, value in device.__dict__.items() if hasattr(value, '_motor')}
+        self.adjustables[name].update({key+'_offset': PvRecord(pvsetname = value.Id+'.OFF') for key, value in device.__dict__.items() if hasattr(value, '_motor')})
         self.units[name] = {key: caget(value.Id+'.EGU') for key, value in device.__dict__.items() if hasattr(value, '_motor')}
 
         if hasattr(device, 'get_current_value'):
