@@ -119,6 +119,14 @@ components = [
         "kwargs": {},
     },
     {
+        "name": "xspect",
+        "z_und": 53,
+        "desc": "X-ray single shot spectrometer",
+        "type": "eco.xdiagnostics.xspect:Xspect",
+        "args": [],
+        "kwargs": {},
+    },
+    {
         "name": "prof_fe",
         "args": ["SARFE10-PPRM064"],
         "kwargs": {},
