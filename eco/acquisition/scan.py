@@ -71,12 +71,19 @@ class Scan:
                 "scan_info_file": self.scan_info_filename,
             }
             for n, adj in enumerate(self.adjustables):
+                nname = None
+                nId = None
+                if hasattr(adj, 'Id'):
+                    nId = adj.Id
+                if hasattr(adj, 'name'):
+                    nname = adj.name
+                
                 metadata.update(
                     {   
-                        f"scan_motor_{n}": adj.name,
+                        f"scan_motor_{n}": nname,
                         f"from_motor_{n}": self.values_todo[0][n],
                         f"to_motor_{n}": self.values_todo[-1][n],
-                        f"id_motor_{n}": adj.Id,
+                        f"id_motor_{n}": nId,
                     }
                 )
             metadata.update(
@@ -162,7 +169,8 @@ class Scan:
         for adj in self.adjustables:
             readbacks_step.append(adj.get_current_value())
             try:
-                adjs_name.append(adj.name)
+                if hasattr(adj, 'name'):
+                    adjs_name.append(adj.name)
                 if hasattr(adj, '_motor'):
                     adjs_offset.append(adj._motor.OFF)
                 if hasattr(adj, 'Id'):
