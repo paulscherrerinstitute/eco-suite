@@ -381,7 +381,7 @@ class Electro_optic_sampling:
         self.name = name
         self.alias = Alias(name)
         self.diode_channels = diode_channels
-        self.basepath = f"/sf/bernina/data/{pgroup}/res/scan_info/"
+        self.basepath = f"/sf/bernina/data/p18713/res/scan_info/"
         self.motor_configuration = {
             "ry": {
                 "id": "-ESB16",
@@ -544,6 +544,7 @@ class Electro_optic_sampling:
             t0_pos = x[int(max_pos)]
             if t0_corr:
                 x = x - t0_pos
+            np.savetxt(f'eos_data/eos_Scan{rr}.txt',[x,diff])
             ax[0].plot(x, diff, label=f"Run_{rr}: t0={t0_pos:0.2f}")
             ax[0].legend()
             ax[1].plot(freq, ampl)

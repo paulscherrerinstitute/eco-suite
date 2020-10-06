@@ -45,8 +45,8 @@ class Run_Table():
                        'https://www.googleapis.com/auth/drive']
         self._credentials = ServiceAccountCredentials.from_json_keyfile_name('/sf/bernina/config/src/python/gspread/pandas_push', self._scope)
         self.gc = gspread.authorize(self._credentials)
-        self.keys = 'metadata gps thc hex tht eos energy transmission hpos vpos hgap vgap shut delay lxt pulse_id att_self att_fe_self'
-        self.key_order = 'metadata time name gps gps_hex thc tht eos las lxt phase_shifter xrd mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission'
+        self.keys = 'metadata env_thc temperature gps thc hex ocb eos energy transmission hpos vpos hgap vgap shut delay lxt pulse_id att_self att_fe_self'
+        self.key_order = 'metadata env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter xrd mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission'
 
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}

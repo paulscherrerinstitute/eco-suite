@@ -8,6 +8,7 @@ from epics import PV
 from ..aliases import Alias, append_object_to_object
 from ..endstations.hexapod import HexapodPI
 from pathlib import Path
+import subprocess
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -218,6 +219,13 @@ class XRD:
                 pos = item.get_current_value()
                 ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
         return ostr
+
+    def gui(self, guiType="xdm"):
+        """ Adjustable convention"""
+        cmd = ["caqtdm", "-macro"]
+        cmd = ['-noMsg', '-stylefile', 'sfop.qss','-macro', 'P=SARES21-XRD', '/sf/common/config/qt/ESB_XRD_exp.ui']
+        return subprocess.Popen(" ".join(cmd), shell=True)
+
 
     def __repr__(self):
         return self.get_adjustable_positions_str()

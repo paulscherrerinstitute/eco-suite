@@ -50,12 +50,15 @@ class Alias:
                     )
         return aa
 
-    def get_full_name(self, joiner="."):
+    def get_full_name(self, base=None, joiner="."):
+        """allembles full name with parent names down to base (is supplied). Joiner is the separator between the hirarchical names."""
         name = [self.alias]
         parent = self.parent
         while not parent == None:
             name.append(parent.alias)
             parent = parent.__dict__.get("parent", None)
+            if parent is base:
+                break
         if joiner:
             return joiner.join(reversed(name))
         else:
