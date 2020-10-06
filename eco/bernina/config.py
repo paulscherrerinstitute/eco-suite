@@ -360,6 +360,15 @@ components = [
     },
     {
         "args": [],
+        "name": "xrd_new",
+        "z_und": 142,
+        "desc": "Xray diffractometer",
+        "type": "eco.endstations.bernina_diffractometers:XRD_new",
+        "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
+        "lazy":False,
+    },
+    {
+        "args": [],
         "name": "vonHamos",
         "z_und": 142,
         "desc": "Kern experiment, von Hamos vertical and horizontal stages ",

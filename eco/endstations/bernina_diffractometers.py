@@ -9,6 +9,7 @@ from ..aliases import Alias, append_object_to_object
 from ..endstations.hexapod import HexapodPI
 from pathlib import Path
 import subprocess
+from ..elements.assembly import Assembly
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -87,6 +88,132 @@ class GPS:
         return self.get_adjustable_positions_str()
 
 
+class XRD_new(Assembly):
+    def __init__(self, name=None, Id=None, configuration=["base"]):
+        """X-ray diffractometer platform in AiwssFEL Bernina.\
+                <configuration> : list of elements mounted on 
+                the plaform, options are kappa, nutable, hlgonio, polana"""
+        # self.Id = Id
+        super().__init__(name=name)
+        self.configuration = configuration
+
+        if "base" in self.configuration:
+            ### motors base platform ###
+            ### motors base platform ###
+            self._append(MotorRecord,Id + ":MOT_TX", name="xbase")
+            self._append(MotorRecord,Id + ":MOT_TY", name="ybase")
+            self._append(MotorRecord,Id + ":MOT_RX", name="rxbase")
+            self._append(MotorRecord,Id + ":MOT_MY_RYTH", name="alpha")
+
+        if "arm" in self.configuration:
+            ### motors XRD detector arm ###
+            self._append(MotorRecord,Id + ":MOT_NY_RY2TH", name="gamma")
+            self._append(MotorRecord,Id + ":MOT_DT_RX2TH", name="delta")
+            ### motors XRD area detector branch ###
+            self._append(MotorRecord,Id + ":MOT_D_T", name="tdet")
+
+            ### motors XRD polarisation analyzer branch ###
+            self._append(MotorRecord,Id + ":MOT_P_T", name="tpol")
+            # missing: slits of flight tube
+
+        if "hlxz" in self.configuration:
+            ### motors heavy load goniometer ###
+            self._append(MotorRecord,Id + ":MOT_TBL_TX", name="xhl")
+            self._append(MotorRecord,Id + ":MOT_TBL_TZ", name="zhl")
+        if "hly" in self.configuration:
+            self._append(MotorRecord,Id + ":MOT_TBL_TY", name="yhl")
+
+        if "hlrxrz" in self.configuration:
+            try:
+                self._append(MotorRecord,Id + ":MOT_TBL_RX", name="rxhl")
+            except:
+                print("XRD.rxhl not found")
+                pass
+            try:
+                self._append(MotorRecord,Id + ":MOT_TBL_RY", name="rzhl")
+            except:
+                print("XRD.rzhl not found")
+                pass
+
+        if "phi_table" in self.configuration:
+            ### motors nu table ###
+            self._append(MotorRecord,Id + ":MOT_HEX_TX", name="tphi")
+            self._append(MotorRecord,Id + ":MOT_HEX_RX", name="phi")
+
+        if "phi_hex" in self.configuration:
+            ### motors PI hexapod ###
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-X",
+                pvreadbackname="SARES20-HEX_PI:POSI-X",
+                name="xhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-Y",
+                pvreadbackname="SARES20-HEX_PI:POSI-Y",
+                name="yhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-Z",
+                pvreadbackname="SARES20-HEX_PI:POSI-Z",
+                name="zhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-U",
+                pvreadbackname="SARES20-HEX_PI:POSI-U",
+                name="uhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-V",
+                pvreadbackname="SARES20-HEX_PI:POSI-V",
+                name="vhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-W",
+                pvreadbackname="SARES20-HEX_PI:POSI-W",
+                name="whex",
+            )
+
+        if "kappa" in self.configuration:
+            self._append(MotorRecord,"SARES21-XRD:MOT_KAP_KRX", name="eta")
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_KAP", name="kappa") 
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_KPH", name="phi")   
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DTY", name="zkap")  
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DTX", name="xkap")  
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DTZ", name="ykap")  
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DRX", name="rxkap") 
+            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DRZ", name="rykap") 
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****XRD motor positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    def gui(self, guiType="xdm"):
+        """ Adjustable convention"""
+        cmd = ["caqtdm", "-macro"]
+        cmd = ['-noMsg', '-stylefile', 'sfop.qss','-macro', 'P=SARES21-XRD', '/sf/common/config/qt/ESB_XRD_exp.ui']
+        return subprocess.Popen(" ".join(cmd), shell=True)
+
+
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
+    
 class XRD:
     def __init__(self, name=None, Id=None, configuration=["base"]):
         """X-ray diffractometer platform in AiwssFEL Bernina.\

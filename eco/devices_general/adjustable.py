@@ -421,6 +421,31 @@ class PvEnum:
             s += "{:>4}   {}  {}\n".format(val, sel, name)
         return s
 
+class PvString:
+    def __init__(self, pvname, name=None, elog=None):
+        self.name = name
+        self.pvname = pvname
+        self._pv = PV(pvname)
+        self._elog = elog
+        self.alias = Alias(name, channel=self.pvname, channeltype="CA")
+
+    def get_current_value(self):
+        return self._pv.get()
+
+    def set_target_value(self, value, hold=False):
+        changer = lambda value: self._pv.put(bytes(value, "utf8"), wait=True)
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+    
+    def __repr__(self):
+        return self.get_current_value()
+
+    def __call__(self, string=None):
+        if not string is None:
+            self.set_target_value(string)
+        else:
+            return self.get_current_value()
 
 @default_representation
 @spec_convenience

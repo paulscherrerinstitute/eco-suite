@@ -55,10 +55,11 @@ class Alias:
         name = [self.alias]
         parent = self.parent
         while not parent == None:
+            if (parent is base) or (parent is None):
+                break
             name.append(parent.alias)
             parent = parent.__dict__.get("parent", None)
-            if parent is base:
-                break
+        
         if joiner:
             return joiner.join(reversed(name))
         else:
