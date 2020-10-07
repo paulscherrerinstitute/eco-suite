@@ -521,3 +521,19 @@ class AdjustableVirtual:
             vals = self._foo_set_target_value_current_value(value)
             for adj, val in zip(self._adjustables, vals):
                 adj.set_current_value(val)
+
+
+@default_representation
+@spec_convenience
+class AdjustableGetSet:
+    def __init__(self, foo_get, foo_set, name=None):
+        self.alias = Alias(name)
+        self.name = name
+        self._set = foo_set
+        self._get = foo_get
+
+    def set_target_value(self,value):
+        return Changer(target=value, parent=self, changer=self._set, hold=False, stopper=None)
+    
+    def get_current_value(self):
+        return self._get()

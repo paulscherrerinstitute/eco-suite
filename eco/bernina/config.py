@@ -45,12 +45,12 @@ components = [
         "desc": "run table for data acquisition",
         "type": "eco.utilities.runtable:Run_Table",
         "kwargs": {
-            "pgroup": config["pgroup"], 
+            "pgroup": config["pgroup"],
             "spreadsheet_key": config["gspread_notebook_id"],
-            "devices": None, 
+            "devices": None,
             "alias_namespace": None,
-            "channels_ca": Component("_env_channels_ca")
-            },
+            "channels_ca": Component("_env_channels_ca"),
+        },
         "lazy": False,
     },
     {
@@ -64,7 +64,9 @@ components = [
         "name": "elog",
         "type": "eco.utilities.elog:Elog",
         "args": ["https://elog-gfa.psi.ch/Bernina"],
-        "kwargs": {"screenshot_directory": "/tmp",},
+        "kwargs": {
+            "screenshot_directory": "/tmp",
+        },
     },
     {
         "name": "screenshot",
@@ -110,14 +112,14 @@ components = [
         "z_und": 53,
         "desc": "Attenuator in Front End",
     },
-    #{
+    # {
     #    "name": "mon_und",
     #    "z_und": 53,
     #    "desc": "Intensity/position monitor after Optics hutch",
     #    "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
     #    "args": ["SARFE10-PBPS053"],
     #    "kwargs": {},
-    #},
+    # },
     {
         "name": "xspect",
         "z_und": 53,
@@ -208,35 +210,35 @@ components = [
         "type": "eco.xoptics.pp:Pulsepick",
         "lazy": False,
     },
-    #{
+    # {
     #    "name": "mon_opt_old",
     #    "z_und": 133,
     #    "desc": "Intensity/position monitor after Optics hutch",
     #    "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
     #    "args": ["SAROP21-PBPS133"],
     #    "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9},
-    #},
+    # },
     {
-       "name": "mon_opt",
-       "z_und": 133,
-       "desc": "Intensity/position monitor after Optics hutch",
-       "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
-       "args": ["SAROP21-PBPS133"],
-       "kwargs": {
-           "VME_crate": "SAROP21-CVME-PBPS1",
-           "link": 9,
-           "channels": {
-               "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
-               "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
-               "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
-               "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
-           },
-           "calc": {
-               "itot": "SLAAR21-LTIM01-EVR0:CALCI",
-               "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
-               "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
-           },
-       },
+        "name": "mon_opt",
+        "z_und": 133,
+        "desc": "Intensity/position monitor after Optics hutch",
+        "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
+        "args": ["SAROP21-PBPS133"],
+        "kwargs": {
+            "VME_crate": "SAROP21-CVME-PBPS1",
+            "link": 9,
+            "channels": {
+                "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+                "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+                "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+                "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+            },
+            "calc": {
+                "itot": "SLAAR21-LTIM01-EVR0:CALCI",
+                "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+                "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+            },
+        },
     },
     {
         "name": "prof_opt",
@@ -269,7 +271,7 @@ components = [
         "kwargs": {},
         "z_und": 136,
         "desc": "Bernina beamline reference laser before KBs",
-        "type": "eco.xoptics.reflaser:RefLaser_Aramis",
+        "type": "eco.xoptics.reflaser_new:RefLaser_Aramis",
     },
     {
         "name": "slit_att",
@@ -365,7 +367,7 @@ components = [
         "desc": "Xray diffractometer",
         "type": "eco.endstations.bernina_diffractometers:XRD_new",
         "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
-        "lazy":False,
+        "lazy": False,
     },
     {
         "args": [],

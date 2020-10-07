@@ -14,6 +14,7 @@ class RefLaser_Aramis:
         self._inpos = inpos
         self._outpos = outpos
         self.mirrmotortest = MotorRecord(self.Id + ":MOTOR_1")
+        self.mirrmotortest.set_limits(-20, 0)
 
     def __call__(self, *args, **kwargs):
         self.set(*args, **kwargs)
@@ -49,6 +50,12 @@ class RefLaser_Aramis:
             self.mirrmotortest.set_target_value(self._inpos)
         else:
             self.mirrmotortest.set_target_value(self._outpos)
+
+    def movein(self):
+        self.set("in")
+
+    def moveout(self):
+        self.set("out")
 
     def __repr__(self):
         return self.__str__()

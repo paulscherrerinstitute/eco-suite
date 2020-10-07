@@ -55,11 +55,11 @@ class Alias:
         name = [self.alias]
         parent = self.parent
         while not parent == None:
-            if (parent is base) or (parent is None):
+            if (not (base is None) and (parent is base.alias)) or (parent is None):
                 break
             name.append(parent.alias)
             parent = parent.__dict__.get("parent", None)
-        
+
         if joiner:
             return joiner.join(reversed(name))
         else:
@@ -81,8 +81,8 @@ def find_aliases(*args):
 
 
 def append_object_to_object(obj_target, obj_init, *args, name=None, **kwargs):
-    """append a new object to another object together with the alias. 
-    The new object needs to be defined with a name keyword. Theadditional 
+    """append a new object to another object together with the alias.
+    The new object needs to be defined with a name keyword. Theadditional
     args and kwargs are the expected input for the new opject."""
     obj_target.__dict__[name] = obj_init(*args, **kwargs, name=name)
     obj_target.alias.append(obj_target.__dict__[name].alias)

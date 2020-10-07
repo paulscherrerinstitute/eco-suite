@@ -8,7 +8,7 @@ from ..acquisition.utilities import Acquisition
 class Daq:
     def __init__(
         self,
-        broker_address="http://sf-daq-1:10002",
+        broker_address="http://sf-daq:10002",
         timeout=10,
         pgroup=None,
         pulse_id_adj=None,

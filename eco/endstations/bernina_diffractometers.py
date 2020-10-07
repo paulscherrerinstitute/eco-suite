@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append("..")
-from ..devices_general.motors import MotorRecord
+from ..devices_general.motors import MotorRecord, MotorRecord_new
 from ..devices_general.adjustable import PvRecord
 
 from epics import PV
@@ -100,45 +100,67 @@ class XRD_new(Assembly):
         if "base" in self.configuration:
             ### motors base platform ###
             ### motors base platform ###
-            self._append(MotorRecord,Id + ":MOT_TX", name="xbase")
-            self._append(MotorRecord,Id + ":MOT_TY", name="ybase")
-            self._append(MotorRecord,Id + ":MOT_RX", name="rxbase")
-            self._append(MotorRecord,Id + ":MOT_MY_RYTH", name="alpha")
+            self._append(MotorRecord_new, Id + ":MOT_TX", name="xbase", is_setting=True)
+            self._append(MotorRecord_new, Id + ":MOT_TY", name="ybase", is_setting=True)
+            self._append(
+                MotorRecord_new, Id + ":MOT_RX", name="rxbase", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_MY_RYTH", name="alpha", is_setting=True
+            )
 
         if "arm" in self.configuration:
             ### motors XRD detector arm ###
-            self._append(MotorRecord,Id + ":MOT_NY_RY2TH", name="gamma")
-            self._append(MotorRecord,Id + ":MOT_DT_RX2TH", name="delta")
+            self._append(
+                MotorRecord_new, Id + ":MOT_NY_RY2TH", name="gamma", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_DT_RX2TH", name="delta", is_setting=True
+            )
             ### motors XRD area detector branch ###
-            self._append(MotorRecord,Id + ":MOT_D_T", name="tdet")
+            self._append(MotorRecord_new, Id + ":MOT_D_T", name="tdet", is_setting=True)
 
             ### motors XRD polarisation analyzer branch ###
-            self._append(MotorRecord,Id + ":MOT_P_T", name="tpol")
+            self._append(MotorRecord_new, Id + ":MOT_P_T", name="tpol", is_setting=True)
             # missing: slits of flight tube
 
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###
-            self._append(MotorRecord,Id + ":MOT_TBL_TX", name="xhl")
-            self._append(MotorRecord,Id + ":MOT_TBL_TZ", name="zhl")
+            self._append(
+                MotorRecord_new, Id + ":MOT_TBL_TX", name="xhl", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_TBL_TZ", name="zhl", is_setting=True
+            )
         if "hly" in self.configuration:
-            self._append(MotorRecord,Id + ":MOT_TBL_TY", name="yhl")
+            self._append(
+                MotorRecord_new, Id + ":MOT_TBL_TY", name="yhl", is_setting=True
+            )
 
         if "hlrxrz" in self.configuration:
             try:
-                self._append(MotorRecord,Id + ":MOT_TBL_RX", name="rxhl")
+                self._append(
+                    MotorRecord_new, Id + ":MOT_TBL_RX", name="rxhl", is_setting=True
+                )
             except:
                 print("XRD.rxhl not found")
                 pass
             try:
-                self._append(MotorRecord,Id + ":MOT_TBL_RY", name="rzhl")
+                self._append(
+                    MotorRecord_new, Id + ":MOT_TBL_RY", name="rzhl", is_setting=True
+                )
             except:
                 print("XRD.rzhl not found")
                 pass
 
         if "phi_table" in self.configuration:
             ### motors nu table ###
-            self._append(MotorRecord,Id + ":MOT_HEX_TX", name="tphi")
-            self._append(MotorRecord,Id + ":MOT_HEX_RX", name="phi")
+            self._append(
+                MotorRecord_new, Id + ":MOT_HEX_TX", name="tphi", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_HEX_RX", name="phi", is_setting=True
+            )
 
         if "phi_hex" in self.configuration:
             ### motors PI hexapod ###
@@ -186,14 +208,39 @@ class XRD_new(Assembly):
             )
 
         if "kappa" in self.configuration:
-            self._append(MotorRecord,"SARES21-XRD:MOT_KAP_KRX", name="eta")
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_KAP", name="kappa") 
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_KPH", name="phi")   
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DTY", name="zkap")  
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DTX", name="xkap")  
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DTZ", name="ykap")  
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DRX", name="rxkap") 
-            self._append(MotorRecord, "SARES21-XRD:MOT_KAP_DRZ", name="rykap") 
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_KRX", name="eta", is_setting=True
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_KAP",
+                name="kappa",
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_KPH", name="phi", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTY", name="zkap", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTX", name="xkap", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTZ", name="ykap", is_setting=True
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DRX",
+                name="rxkap",
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DRZ",
+                name="rykap",
+                is_setting=True,
+            )
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
@@ -207,13 +254,20 @@ class XRD_new(Assembly):
     def gui(self, guiType="xdm"):
         """ Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
-        cmd = ['-noMsg', '-stylefile', 'sfop.qss','-macro', 'P=SARES21-XRD', '/sf/common/config/qt/ESB_XRD_exp.ui']
+        cmd = [
+            "-noMsg",
+            "-stylefile",
+            "sfop.qss",
+            "-macro",
+            "P=SARES21-XRD",
+            "/sf/common/config/qt/ESB_XRD_exp.ui",
+        ]
         return subprocess.Popen(" ".join(cmd), shell=True)
-
 
     # def __repr__(self):
     #     return self.get_adjustable_positions_str()
-    
+
+
 class XRD:
     def __init__(self, name=None, Id=None, configuration=["base"]):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
@@ -350,9 +404,15 @@ class XRD:
     def gui(self, guiType="xdm"):
         """ Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
-        cmd = ['-noMsg', '-stylefile', 'sfop.qss','-macro', 'P=SARES21-XRD', '/sf/common/config/qt/ESB_XRD_exp.ui']
+        cmd = [
+            "-noMsg",
+            "-stylefile",
+            "sfop.qss",
+            "-macro",
+            "P=SARES21-XRD",
+            "/sf/common/config/qt/ESB_XRD_exp.ui",
+        ]
         return subprocess.Popen(" ".join(cmd), shell=True)
-
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
