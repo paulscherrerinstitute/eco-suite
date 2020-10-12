@@ -68,7 +68,7 @@ class Daq:
     def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
         ix = self.start(label=label, **kwargs)
         return self.stop(
-            stop_id=self.running[ix]["start_id"] + Npulses, acq_ix=ix, wait=wait
+            stop_id=self.running[ix]["start_id"] + Npulses -1, acq_ix=ix, wait=wait
         )
 
     def start(self, label=None, **kwargs):

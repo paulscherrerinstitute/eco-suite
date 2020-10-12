@@ -263,8 +263,12 @@ def _keywordChecker(kw_key_list_tups):
 @default_representation
 @spec_convenience
 class AdjustableFS:
-    def __init__(self, file_path, name=None):
+    def __init__(self, file_path, name=None, default_value=None):
         self.file_path = Path(file_path)
+        if not self.file_path.exists():
+            if not self.file_path.parent.exists():
+                self.file_path.parent.mkdir()
+            self._write_value(default_value)
         self.name = name
 
     def get_current_value(self):

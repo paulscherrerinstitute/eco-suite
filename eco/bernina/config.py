@@ -54,6 +54,13 @@ components = [
         "lazy": False,
     },
     {
+        "type": "eco.elements.memory:set_global_memory_dir",
+        "args": ["~/eco/memory"],
+        "name": "path_memory",
+        "kwargs": {},
+        "lazy": False,
+    },
+    {
         "type": "eco.utilities.config:append_to_path",
         "args": config["path_exp"],
         "name": "path_exp",
@@ -82,12 +89,26 @@ components = [
         "kwargs": {"pv_pulse_id": "SARES20-CVME-01-EVR0:RX-PULSEID"},
     },
     {
+        "name": "fel",
+        "type": "eco.fel.swissfel:SwissFel",
+        "args": [],
+        "kwargs": {},
+        "desc": "Fel related control and feedback",
+    },
+    {
         "name": "slit_und",
         "type": "eco.xoptics.slits:SlitFourBlades_old",
         "args": ["SARFE10-OAPU044"],
         "kwargs": {},
         "desc": "Slit after Undulator",
     },
+    # {
+    #     "name": "slit_und_epics",
+    #     "type": "eco.xoptics.slits:SlitFourBlades_old",
+    #     "args": ["SARFE10-OAPU044"],
+    #     "kwargs": {},
+    #     "desc": "Slit after Undulator",
+    # },
     {
         "name": "pshut_und",
         "type": "eco.xoptics.shutters:PhotonShutter",
@@ -400,6 +421,32 @@ components = [
             "bshost": "sf-daqsync-01.psi.ch",
             "bsport": 11151,
         },
+    },
+    {
+        "args": ["SLAAR21-LCAM-C532"],
+        "name": "samplecam_inline",
+        "z_und": 142,
+        "desc": "Qioptic sample viewer in Bernina hutch",
+        "type": "eco.devices_general.cameras_swissfel:QioptiqMicroscope",
+        "kwargs": {
+            "pvname_zoom": "SARES20-MF1:MOT_16",
+        },
+    },
+    {
+        "args": ["SARES20-CAMS142-C1"],
+        "name": "samplecam_sideview",
+        "z_und": 142,
+        "desc": "",
+        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
+        "kwargs": {},
+    },
+    {
+        "args": ["SARES20-CAMS142-C3"],
+        "name": "samplecam_xrd",
+        "z_und": 142,
+        "desc": "",
+        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
+        "kwargs": {},
     },
     {
         "args": [],

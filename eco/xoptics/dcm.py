@@ -5,6 +5,14 @@ from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
+from ..devices_general.adjustable import (
+    PvEnum,
+    spec_convenience,
+    default_representation,
+)
+from ..devices_general.utilities import Changer
+from ..elements.assembly import Assembly
+
 
 def addMotorRecordToSelf(self, Id=None, name=None):
     try:
@@ -13,20 +21,18 @@ def addMotorRecordToSelf(self, Id=None, name=None):
     except:
         print(f"Warning! Could not find motor {name} (Id:{Id})")
 
+
 def addPvToSelf(self, Id=None, name=None):
-    try: 
+    try:
         self.__dict__[name] = PV(Id)
-        self.alias.append(Alias(name, channel=Id, channeltype='CA'))
+        self.alias.append(Alias(name, channel=Id, channeltype="CA"))
     except:
         print(f"Warning! Could not find PV {name} (Id:{Id})")
 
-def addPvRecordToSelf(self, 
-        pvsetname, 
-        pvreadbackname=None, 
-        accuracy=None, 
-        sleeptime=0, 
-        name=None
-        ):
+
+def addPvRecordToSelf(
+    self, pvsetname, pvreadbackname=None, accuracy=None, sleeptime=0, name=None
+):
     try:
         self.__dict__[name] = PvRecord(
             pvsetname,
@@ -34,29 +40,42 @@ def addPvRecordToSelf(self,
             accuracy=accuracy,
             sleeptime=sleeptime,
             name=name,
-            )
+        )
         self.alias.append(self.__dict__[name].alias)
+
     except:
         print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
+
 
 class Double_Crystal_Mono:
     def __init__(self, Id, name=None, energy_sp=None, energy_rb=None):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        addMotorRecordToSelf(self, Id=Id + ":RX12", name='theta')
-        addMotorRecordToSelf(self, Id=Id + ":TX12", name='x')
-        addMotorRecordToSelf(self, Id=Id + ":T2", name='gap')
-        addMotorRecordToSelf(self, Id=Id + ":RZ1", name='roll1')
-        addMotorRecordToSelf(self, Id=Id + ":RZ2", name='roll2')
-        addMotorRecordToSelf(self, Id=Id + ":RX2", name='pitch2')
-        if energy_sp: 
-            addPvRecordToSelf(self, pvsetname=energy_sp, pvreadbackname =energy_rb, accuracy= 0.5, name='energy')
+        addMotorRecordToSelf(self, Id=Id + ":RX12", name="theta")
+        addMotorRecordToSelf(self, Id=Id + ":TX12", name="x")
+        addMotorRecordToSelf(self, Id=Id + ":T2", name="gap")
+        addMotorRecordToSelf(self, Id=Id + ":RZ1", name="roll1")
+        addMotorRecordToSelf(self, Id=Id + ":RZ2", name="roll2")
+        addMotorRecordToSelf(self, Id=Id + ":RX2", name="pitch2")
+        if energy_sp:
+            addPvRecordToSelf(
+                self,
+                pvsetname=energy_sp,
+                pvreadbackname=energy_rb,
+                accuracy=0.5,
+                name="energy",
+            )
         else:
-            addPvRecordToSelf(self, pvsetname=Id + ":ENERGY_SP", pvreadbackname =Id + ":ENERGY", accuracy= 0.2, name='energy')
+            addPvRecordToSelf(
+                self,
+                pvsetname=Id + ":ENERGY_SP",
+                pvreadbackname=Id + ":ENERGY",
+                accuracy=0.2,
+                name="energy",
+            )
         self.moving = PV(Id + ":MOVING")
         self._stop = PV(Id + ":STOP.PROC")
-
 
     def move_and_wait(self, value, checktime=0.01, precision=0.5):
         self.energy.set_target_value(value)
@@ -121,6 +140,53 @@ class Double_Crystal_Mono:
         self._currentChange = self.set_target_value(value)
 
 
+@spec_convenience
+@default_representation
+class EcolEnergy_new(Assembly):
+    def __init__(
+        self,
+        pv_val="SARCL02-MBND100:USER-ENE",
+        pv_enable="SARCL02-MBND100:USER-ENA",
+        pv_rb="SARCL02-MBND100:P-READ",
+        pv_diff="SARCL02-MBND100:USER-ERROR",
+        name=None,
+    ):
+        super().__init__(name=name)
+        self._append(PvEnum, pv_enable, name="enable_control")
+        self._pv_val = PV(pv_val)
+        self._pv_rb = PV(pv_rb)
+        self._pv_diff = PV(pv_diff)
+
+    def change_energy_to(self, value, tolerance=0.5):
+        self.enable_control(0)
+        sleep(0.1)
+        self._pv_val.put(value)
+        sleep(0.1)
+        self.enable_control(1)
+        done = False
+        sleep(0.1)
+        while not done:
+            sleep(0.05)
+            diffabs = np.abs(self._pv_rb.get() - value)
+            # diff = self._pv_diff.get()
+            if diffabs < tolerance:
+                diff = self._pv_diff.get()
+                if diff == 0:
+                    done = True
+        self.enable_control(0)
+
+    def get_current_value(self):
+        return self._pv_rb.get()
+
+    def set_target_value(self, value, hold=False):
+        """ Adjustable convention"""
+
+        changer = lambda value: self.change_energy_to(value)
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+
+
 class EcolEnergy:
     def __init__(
         self,
@@ -128,12 +194,15 @@ class EcolEnergy:
         val="SARCL02-MBND100:P-SET",
         rb="SARCL02-MBND100:P-READ",
         dmov="SFB_BEAM_ENERGY_ECOL:SUM-ERROR-OK",
+        name=None,
     ):
         self.Id = Id
         self.setter = PV(val)
         self.readback = PV(rb)
-        self.dmov = PV(dmov)
+        # self.dmov = PV(dmov)
         self.done = False
+        self.name = name
+        self.alias = Alias(name)
 
     def get_current_value(self):
         return self.readback.get()
@@ -148,9 +217,9 @@ class EcolEnergy:
         self.setter.put(value)
         while abs(self.get_current_value() - value) > precision:
             sleep(checktime)
-        while not self.dmov.get():
-            # print(self.dmov.get())
-            sleep(checktime)
+        # while not self.dmov.get():
+        #     # print(self.dmov.get())
+        #     sleep(checktime)
 
     def set_target_value(self, value, hold=False):
         changer = lambda value: self.move_and_wait(value)

@@ -63,6 +63,7 @@ class MotorRecord_new(Assembly):
         alias_fields={"readback": "RBV", "user_offset": "OFF"},
     ):
         super().__init__(name=name)
+        self.settings.append(self)
 
         self.pvname = pvname
         self._motor = _Motor(pvname)

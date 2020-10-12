@@ -8,6 +8,7 @@ import colorama
 from ..devices_general.adjustable import DummyAdjustable
 from IPython import get_ipython
 
+
 class Scan:
     def __init__(
         self,
@@ -73,13 +74,13 @@ class Scan:
             for n, adj in enumerate(self.adjustables):
                 nname = None
                 nId = None
-                if hasattr(adj, 'Id'):
+                if hasattr(adj, "Id"):
                     nId = adj.Id
-                if hasattr(adj, 'name'):
+                if hasattr(adj, "name"):
                     nname = adj.name
-                
+
                 metadata.update(
-                    {   
+                    {
                         f"scan_motor_{n}": nname,
                         f"from_motor_{n}": self.values_todo[0][n],
                         f"to_motor_{n}": self.values_todo[-1][n],
@@ -93,27 +94,27 @@ class Scan:
                     "counters": [daq.name for daq in counterCallers],
                 }
             )
-        
+
         if self._elog:
             try:
                 try:
-                    metadata.update({"scan_command":get_ipython().user_ns['In'][-1]})
+                    metadata.update({"scan_command": get_ipython().user_ns["In"][-1]})
                 except:
                     print("Count not retrieve ipython scan command!")
-                  
-     
-                  
+
                 message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
-                if 'scan_command' in metadata.keys():
-                    message_string += metadata['scan_command'] + '\n'
-                message_string += metadata['scan_info_file'] + '\n'
+                if "scan_command" in metadata.keys():
+                    message_string += metadata["scan_command"] + "\n"
+                message_string += metadata["scan_info_file"] + "\n"
                 self._elog_id = self._elog.post(
-                    message_string,
-                    Title=f'Run {runno}: {metadata["name"]}')
-                metadata.update({"elog_message_id":self._elog_id})
-                metadata.update({"elog_post_link":self._elog._log._url+str(self._elog_id)})
+                    message_string, Title=f'Run {runno}: {metadata["name"]}'
+                )
+                metadata.update({"elog_message_id": self._elog_id})
+                metadata.update(
+                    {"elog_post_link": self._elog._log._url + str(self._elog_id)}
+                )
             except:
-               print('elog posting failed')
+                print("elog posting failed")
         if self._run_table:
             self._run_table.append_run(runno, metadata=metadata)
 
@@ -169,28 +170,30 @@ class Scan:
         for adj in self.adjustables:
             readbacks_step.append(adj.get_current_value())
             try:
-                if hasattr(adj, 'name'):
+                if hasattr(adj, "name"):
                     adjs_name.append(adj.name)
-                if hasattr(adj, '_motor'):
+                if hasattr(adj, "_motor"):
                     adjs_offset.append(adj._motor.OFF)
-                if hasattr(adj, 'Id'):
+                if hasattr(adj, "Id"):
                     adjs_id.append(adj.Id)
             except:
                 print("acquiring metadata failed")
                 pass
-       
+
         if verbose:
             print("Moved variables, now starting acquisition")
         acs = []
         for ctr in self.counterCallers:
-            if ctr.__module__ == 'eco.acquisition.daq_client':
+            if ctr.__module__ == "eco.acquisition.daq_client":
                 acq_pars = {
-                        "motors_value": values_step,
-                        "motors_readback_value": readbacks_step,
-                        "motors_name": adjs_name,
-                        "motors_pv_name": adjs_id,
-                        }
-                acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars)
+                    "motors_value": values_step,
+                    "motors_readback_value": readbacks_step,
+                    "motors_name": adjs_name,
+                    "motors_pv_name": adjs_id,
+                }
+                acq = ctr.acquire(
+                    file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars
+                )
             else:
                 acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step)
             acs.append(acq)
@@ -330,7 +333,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             run_table=self._run_table,
-            elog = self._elog,
+            elog=self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -365,7 +368,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             run_table=self._run_table,
-            elog = self._elog,
+            elog=self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -401,13 +404,13 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
-            elog = self._elog,
+            elog=self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
         return s
 
-    def rscan(
+    def dscan(
         self,
         adjustable,
         start_pos,
@@ -438,17 +441,17 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
-            elog = self._elog,
+            elog=self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
         return s
 
-    def dscan(self, *args, **kwargs):
+    def rscan(self, *args, **kwargs):
         print(
-            "Warning: dscan will be deprecated for rscan unless someone explains what it stands for in spec!"
+            "Warning: This is not implemented, should be reflectivity scan. \n for relative/differential scan please use dscan ."
         )
-        return self.rscan(*args, **kwargs)
+        # return self.rscan(*args, **kwargs)
 
     def ascanList(
         self,
@@ -478,7 +481,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
-            elog = self._elog,
+            elog=self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -517,7 +520,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             run_table=self._run_table,
-            elog = self._elog,
+            elog=self._elog,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
