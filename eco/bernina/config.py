@@ -200,7 +200,24 @@ components = [
         "kwargs": {"Id": "SAROP21-OOMV096"},
     },
     {
+        "name": "offset",
+        "args": [],
+        "kwargs": {},
+        "z_und": 96,
+        "desc": "offset mirrors in pink mode",
+        "type": "eco.xoptics.offsetMirrors_new:OffsetMirrorsBernina",
+        "kwargs": {},
+    },
+    {
         "name": "mono",
+        "args": ["SAROP21-ODCM098"],
+        "kwargs": {},
+        "z_und": 98,
+        "desc": "DCM Monochromator",
+        "type": "eco.xoptics.dcm_new:DoubleCrystalMono",
+    },
+    {
+        "name": "mono_old",
         "args": ["SAROP21-ODCM098"],
         "kwargs": {
             "energy_sp": "SAROP21-ARAMIS:ENERGY_SP",
@@ -375,19 +392,23 @@ components = [
     },
     {
         "args": [],
-        "name": "xrd",
+        "name": "xrd_old",
         "z_und": 142,
         "desc": "Xray diffractometer",
-        "type": "eco.endstations.bernina_diffractometers:XRD",
+        "type": "eco.endstations.bernina_diffractometers:XRD_old",
         "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
     },
     {
         "args": [],
-        "name": "xrd_new",
+        "name": "xrd",
         "z_und": 142,
         "desc": "Xray diffractometer",
-        "type": "eco.endstations.bernina_diffractometers:XRD_new",
-        "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
+        "type": "eco.endstations.bernina_diffractometers:XRD",
+        "kwargs": {
+            "Id": "SARES21-XRD",
+            "configuration": config["xrd_config"],
+            "diff_detector": {"jf_id": "JF01T03V01"},
+        },
         "lazy": False,
     },
     {

@@ -52,7 +52,11 @@ class Alias:
 
     def get_full_name(self, base=None, joiner="."):
         """allembles full name with parent names down to base (is supplied). Joiner is the separator between the hirarchical names."""
-        name = [self.alias]
+        if (not (base is None)) and (self is base.alias):
+            name = []
+            return ""
+        else:
+            name = [self.alias]
         parent = self.parent
         while not parent == None:
             if (not (base is None) and (parent is base.alias)) or (parent is None):

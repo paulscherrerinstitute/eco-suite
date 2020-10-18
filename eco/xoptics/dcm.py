@@ -1,4 +1,4 @@
-from ..devices_general.motors import MotorRecord
+from ..devices_general.motors import MotorRecord, MotorRecord_new
 from ..devices_general.pv_adjustable import PvRecord
 from epics import PV
 from ..devices_general.utilities import Changer
@@ -46,6 +46,82 @@ def addPvRecordToSelf(
     except:
         print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
 
+
+class DoubleCrystalMono(Assembly):
+    def __init__(self, pvname, name=None, energy_sp=None, energy_rb=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(MotorRecord_new, pvname + ":RX12", name="theta")
+        self._append(MotorRecord_new, pvname + ":TX12", name="x")
+        self._append(MotorRecord_new, pvname + ":T2", name="gap")
+        self._append(MotorRecord_new, pvname + ":RZ1", name="roll1")
+        self._append(MotorRecord_new, pvname + ":RZ2", name="roll2")
+        self._append(MotorRecord_new, pvname + ":RX2", name="pitch2")
+        self._append(PvRecord, pvsetname=energy_sp,pvreadbackname=energy_rb, accuracy=0.5,name="energy")
+        self.moving = PV(Id + ":MOVING")
+        self._stop = PV(Id + ":STOP.PROC")
+
+    def move_and_wait(self, value, checktime=0.01, precision=0.5):
+        self.energy.set_target_value(value)
+        while abs(self.wait_for_valid_value() - value) > precision:
+            sleep(checktime)
+
+    def set_target_value(self, value, hold=False):
+        changer = lambda value: self.move_and_wait(value)
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=self.stop
+        )
+
+    def stop(self):
+        self._stop.put(1)
+
+    def get_current_value(self):
+        currentenergy = self.energy.get_current_value()
+        return currentenergy
+
+    def wait_for_valid_value(self):
+        tval = np.nan
+        while not np.isfinite(tval):
+            tval = self.energy.get_current_value()
+        return tval
+
+    def set_current_value(self, value):
+        self.energy.set_current_value(value)
+
+    def get_moveDone(self):
+        inmotion = int(self.moving.get())
+        return inmotion
+
+    # spec-inspired convenience methods
+    def mv(self, value):
+        self._currentChange = self.set_target_value(value)
+
+    def wm(self, *args, **kwargs):
+        return self.get_current_value(*args, **kwargs)
+
+    def mvr(self, value, *args, **kwargs):
+
+        if self.get_moveDone == 1:
+            startvalue = self.get_current_value(*args, **kwargs)
+        else:
+            startvalue = self.get_current_value(*args, **kwargs)
+        self._currentChange = self.set_target_value(value + startvalue, *args, **kwargs)
+
+    def wait(self):
+        self._currentChange.wait()
+
+    def __str__(self):
+        s = "**Double crystal monochromator**\n\n"
+        motors = "theta gap x roll1 roll2 pitch2 energy".split()
+        for motor in motors:
+            s += " - %s = %.4f\n" % (motor, getattr(self, motor).get_current_value())
+        return s
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __call__(self, value):
+        self._currentChange = self.set_target_value(value)
 
 class Double_Crystal_Mono:
     def __init__(self, Id, name=None, energy_sp=None, energy_rb=None):

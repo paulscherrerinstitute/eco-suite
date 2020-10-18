@@ -10,6 +10,7 @@ from ..endstations.hexapod import HexapodPI
 from pathlib import Path
 import subprocess
 from ..elements.assembly import Assembly
+from ..detector.jungfrau import Jungfrau
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -88,8 +89,8 @@ class GPS:
         return self.get_adjustable_positions_str()
 
 
-class XRD_new(Assembly):
-    def __init__(self, name=None, Id=None, configuration=["base"]):
+class XRD(Assembly):
+    def __init__(self, name=None, Id=None, configuration=["base"], diff_detector=None):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
@@ -241,6 +242,8 @@ class XRD_new(Assembly):
                 name="rykap",
                 is_setting=True,
             )
+        if diff_detector:
+            self._append(Jungfrau, diff_detector["jf_id"], name="det_diff")
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
@@ -268,7 +271,7 @@ class XRD_new(Assembly):
     #     return self.get_adjustable_positions_str()
 
 
-class XRD:
+class XRD_old:
     def __init__(self, name=None, Id=None, configuration=["base"]):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 

@@ -35,7 +35,7 @@ class Epicstools:
         else:
             self.channel_list = channel_list
         for channel in self.channel_list:
-            self.channels.append(PV(channel))
+            self.channels.append(PV(channel, auto_monitor=True))
 
     def h5(self, fina=None, channel_list=None, N_pulses=None, queue_size=100):
         channel_list = self.channel_list
