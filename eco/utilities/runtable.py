@@ -16,6 +16,8 @@ import xlwt
 import openpyxl
 from ..devices_general.pv_adjustable import PvRecord
 from epics import caget
+import threading
+
 
 class Run_Table():
     def __init__(self, pgroup=None,spreadsheet_key=None, devices=None, alias_namespace=None,  channels_ca={'pulse_id': 'SLAAR11-LTIM01-EVR0:RX-PULSEID'}, name=None):
@@ -147,8 +149,8 @@ class Run_Table():
         multiindex_u = pd.MultiIndex.from_tuples([(dev, adj) for dev in self.units.keys() for adj in self.units[dev].keys()], names=names)
         values_u = np.array([val for adjs in self.units.values() for val in adjs.values()])
         self.unit_df = DataFrame([values_u], columns=multiindex_u, index=['units'])
-
-        self.save() 
+        self.save()
+        self.upload_all()
 
     def append_pos(self, name=''):
         self.load()
@@ -175,6 +177,7 @@ class Run_Table():
         values_u = np.array([val for adjs in self.units.values() for val in adjs.values()])
         self.unit_df = DataFrame([values_u], columns=multiindex_u, index=['units'])
         self.save() 
+        self.upload_all()
 
     def upload_rt(self, worksheet='runtable', keys=None, df=None):
         '''
@@ -221,6 +224,17 @@ class Run_Table():
         upload_df = upload_df[upload_df['metadata']['type'].str.contains('pos', na=False)]
         gd.set_with_dataframe(self.ws, upload_df, include_index=True, col=2)
         gf_dataframe.format_with_dataframe(self.ws, upload_df, include_index=True, include_column_header=True, col=2)
+
+    def _upload_all(self):
+        try:
+            self.upload_rt()
+            self.upload_pos()
+        except:
+            print(f'Uploading of runtable to gsheet https://docs.google.com/spreadsheets/d/{self._spreadsheet_key}/ failed. Run run_table.upload_rt() for error traceback')
+
+    def upload_all(self):
+        rt = threading.Thread(target=self._upload_all)
+        rt.start()
 
 
     def _orderlist(self, mylist, key_order, orderlist=None):

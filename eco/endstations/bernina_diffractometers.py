@@ -89,6 +89,18 @@ class GPS:
         return self.get_adjustable_positions_str()
 
 
+class DeltaTauCurrOff:
+    def __init__(self, pvname, name=None):
+        self.pvname = pvname
+        self.PV = PV(pvname)
+
+    def set_off(self):
+        self.PV.put("#1..8k")
+
+    def __call__(self):
+        self.set_off()
+
+
 class XRD(Assembly):
     def __init__(self, name=None, Id=None, configuration=["base"], diff_detector=None):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
@@ -109,6 +121,7 @@ class XRD(Assembly):
             self._append(
                 MotorRecord_new, Id + ":MOT_MY_RYTH", name="alpha", is_setting=True
             )
+            self.set_base_off = DeltaTauCurrOff("SARES21-XRD:asyn4.AOUT")
 
         if "arm" in self.configuration:
             ### motors XRD detector arm ###
@@ -124,6 +137,7 @@ class XRD(Assembly):
             ### motors XRD polarisation analyzer branch ###
             self._append(MotorRecord_new, Id + ":MOT_P_T", name="tpol", is_setting=True)
             # missing: slits of flight tube
+            self.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
 
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###
@@ -133,10 +147,12 @@ class XRD(Assembly):
             self._append(
                 MotorRecord_new, Id + ":MOT_TBL_TZ", name="zhl", is_setting=True
             )
+            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
         if "hly" in self.configuration:
             self._append(
                 MotorRecord_new, Id + ":MOT_TBL_TY", name="yhl", is_setting=True
             )
+            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 
         if "hlrxrz" in self.configuration:
             try:
@@ -152,7 +168,7 @@ class XRD(Assembly):
                 )
             except:
                 print("XRD.rzhl not found")
-                pass
+            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 
         if "phi_table" in self.configuration:
             ### motors nu table ###
@@ -242,8 +258,16 @@ class XRD(Assembly):
                 name="rykap",
                 is_setting=True,
             )
+            self.set_kappa_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
         if diff_detector:
-            self._append(Jungfrau, diff_detector["jf_id"], name="det_diff")
+            self._append(
+                Jungfrau,
+                diff_detector["jf_id"],
+                name="det_diff",
+                is_setting=False,
+                is_status=True,
+                view_toplevel_only=True,
+            )
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"

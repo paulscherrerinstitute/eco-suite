@@ -51,7 +51,7 @@ components = [
             "alias_namespace": None,
             "channels_ca": Component("_env_channels_ca"),
         },
-        "lazy": False,
+        "lazy": True,
     },
     {
         "type": "eco.elements.memory:set_global_memory_dir",
@@ -359,15 +359,15 @@ components = [
         "type": "eco.xoptics.KBhor:KBhor",
         "kwargs": {},
     },
-    {
-        "name": "spatial_tt",
-        "args": [],
-        "kwargs": {"reduction_client_address": "http://sf-daqsync-02:12003/"},
-        "z_und": 141,
-        "desc": "spatial encoding timing diagnostics before sample.",
-        "type": "eco.xdiagnostics.timetools:SpatialEncoder",
-        "lazy": False,
-    },
+    # {
+        # "name": "spatial_tt",
+        # "args": [],
+        # "kwargs": {"reduction_client_address": "http://sf-daqsync-02:12003/"},
+        # "z_und": 141,
+        # "desc": "spatial encoding timing diagnostics before sample.",
+        # "type": "eco.xdiagnostics.timetools:SpatialEncoder",
+        # "lazy": True,
+    # },
     # {
     # "name": "slit_kb",
     # "args": [],
@@ -388,7 +388,7 @@ components = [
             "configuration": config["gps_config"],
             "fina_hex_angle_offset": "~/eco/reference_values/hex_pi_angle_offset.json",
         },
-        "lazy": False,
+        "lazy": True,
     },
     {
         "args": [],
@@ -409,7 +409,7 @@ components = [
             "configuration": config["xrd_config"],
             "diff_detector": {"jf_id": "JF01T03V01"},
         },
-        "lazy": False,
+        "lazy": True,
     },
     {
         "args": [],
