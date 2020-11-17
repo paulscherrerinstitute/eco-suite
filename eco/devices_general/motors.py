@@ -194,20 +194,20 @@ class SmaractStreamdevice(Assembly):
             if not (lim_low < value) and (value < lim_high):
                 raise AdjustableError("Soft limits violated!")
         t_start = time.time()
-        waiter = WaitPvConditions(
-            self.status_channel._pv,
-            lambda **kwargs: not kwargs["value"] == 0,
-            lambda **kwargs: kwargs["value"] == 0,
-        )
+        # waiter = WaitPvConditions(
+        #     self.status_channel._pv,
+        #     lambda **kwargs: not kwargs["value"] == 0,
+        #     lambda **kwargs: kwargs["value"] == 0,
+        # )
         self._drive.set_target_value(value)
-        waiter.wait_until_done(check_interval=update_value_time)
+        # waiter.wait_until_done(check_interval=update_value_time)
 
-        # while not self.get_close_to(value, self.accuracy):
-        #     if (time.time() - t_start) > timeout:
-        #         raise AdjustableError(
-        #             f"motion timeout reached in smaract {self.name}:{self.pvname}"
-        #         )
-        #     time.sleep(update_value_time)
+        while not self.get_close_to(value, self.accuracy):
+            if (time.time() - t_start) > timeout:
+                raise AdjustableError(
+                    f"motion timeout reached in smaract {self.name}:{self.pvname}"
+                )
+            time.sleep(update_value_time)
 
     def add_value_callback(self, callback, index=None):
         return self._readback._pv.add_callback(callback=callback, index=index)

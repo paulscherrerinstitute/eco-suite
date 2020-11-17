@@ -5,6 +5,7 @@ from ..devices_general.adjustable import PvEnum, PvRecord
 from ..devices_general.detectors import PvDataStream
 from ..eco_epics.utilities_epics import EpicsString
 import logging
+from ..elements.assembly import Assembly
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
 from cta_lib import CtaLib
@@ -143,10 +144,11 @@ event_code_delays_fix = {
 tim_tick = 7e-9
 
 
-class MasterEventSystem:
+class MasterEventSystem(Assembly):
     def __init__(self, pvname, name=None):
-        self.name = name
+        super().__init__(name=name)
         self.pvname = pvname
+
         self._pvs = {}
 
     def _get_pv(self, pvname):
@@ -217,38 +219,43 @@ class MasterEventSystem:
         print("\n".join(self.get_evt_code_status(codes))) / 1000
 
 
-class EvrPulser:
+class EvrPulser(Assembly):
     def __init__(self, pv_base, outputs=None, name=None):
+        super().__init__(name=name)
         self.pv_base = pv_base
         self.name = name
-        self.alias = Alias(name)
-        self._pvs = {}
-        append_object_to_object(
-            self, PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity"
+        self._append(
+            PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
         )
-        append_object_to_object(self, PvEnum, f"{self.pv_base}-Ena-Sel", name="enable")
-        append_object_to_object(
-            self, PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode"
+        self._append(
+            self, PvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True
         )
-        append_object_to_object(
-            self, PvRecord, f"{self.pv_base}-Evt-Set0-SP", name="event_set"
+        self._append(
+            PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode", is_setting=True
         )
-        append_object_to_object(
-            self, PvRecord, f"{self.pv_base}-Evt-Reset0-SP", name="event_reset"
+        self._append(
+            PvRecord, f"{self.pv_base}-Evt-Set0-SP", name="event_set", is_setting=True
         )
-        append_object_to_object(
-            self,
+        self._append(
+            PvRecord,
+            f"{self.pv_base}-Evt-Reset0-SP",
+            name="event_reset",
+            is_setting=False,
+        )
+
+        self._append(
             PvRecord,
             f"{self.pv_base}-Delay-SP",
             pvreadbackname=f"{self.pv_base}-Delay-RB",
             name="delay",
+            is_setting=True,
         )
-        append_object_to_object(
-            self,
+        self._append(
             PvRecord,
-            f"{self.pv_base}-Width-SP",
+            f"{self.pv_base}-Delay-SP",
             pvreadbackname=f"{self.pv_base}-Width-RB",
             name="width",
+            is_setting=True,
         )
         self.description = EpicsString(pv_base + "-Name-I")
 
