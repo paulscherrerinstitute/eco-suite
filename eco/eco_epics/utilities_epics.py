@@ -1,4 +1,6 @@
 from epics import PV
+from copy import copy
+from time import sleep
 
 
 class EnumWrapper:
@@ -82,3 +84,29 @@ class EpicsString:
 
     def __call__(self, string):
         self.set(string)
+
+
+class WaitPvConditions:
+    def __init__(self, pv, *condition_foos):
+        self.pv = pv
+        self.foos = list(copy(condition_foos))
+        self.callback_index = self.pv.add_callback(self.func)
+
+    def func(self, **kwargs):
+        if len(self.foos) > 0:
+            if self.foos[0](**kwargs):
+                self.foos.pop(0)
+            if len(self.foos) == 0:
+                self.pv.remove_callback(self.callback_index)
+
+    @property
+    def steps_left(self):
+        return len(self.foos)
+
+    @property
+    def is_done(self):
+        return len(self.foos) == 0
+
+    def wait_until_done(self,check_interval=0.05):
+        while not self.is_done:
+            sleep(check_interval)
