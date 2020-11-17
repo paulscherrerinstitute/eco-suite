@@ -13,13 +13,9 @@ from pint import UnitRegistry
 ureg = UnitRegistry()
 
 
-def addPvRecordToSelf(self, 
-        pvsetname, 
-        pvreadbackname=None, 
-        accuracy=None, 
-        sleeptime=0, 
-        name=None
-        ):
+def addPvRecordToSelf(
+    self, pvsetname, pvreadbackname=None, accuracy=None, sleeptime=0, name=None
+):
     try:
         self.__dict__[name] = PvRecord(
             pvsetname,
@@ -27,10 +23,11 @@ def addPvRecordToSelf(self,
             accuracy=accuracy,
             sleeptime=sleeptime,
             name=name,
-            )
+        )
         self.alias.append(self.__dict__[name].alias)
     except:
         print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
+
 
 def addMotorRecordToSelf(self, Id=None, name=None):
     self.__dict__[name] = MotorRecord(Id, name=name)
@@ -47,13 +44,9 @@ def addDelayStageToSelf(self, stage=None, name=None):
     self.alias.append(self.__dict__[name].alias)
 
 
-def addPvRecordToSelf(self, 
-        pvsetname, 
-        pvreadbackname=None, 
-        accuracy=None, 
-        sleeptime=0, 
-        name=None
-        ):
+def addPvRecordToSelf(
+    self, pvsetname, pvreadbackname=None, accuracy=None, sleeptime=0, name=None
+):
     try:
         self.__dict__[name] = PvRecord(
             pvsetname,
@@ -61,12 +54,10 @@ def addPvRecordToSelf(self,
             accuracy=accuracy,
             sleeptime=sleeptime,
             name=name,
-            )
+        )
         self.alias.append(self.__dict__[name].alias)
     except:
         print(f"Warning! Could not find PV {name} (Id:{pvsetname} RB:{pvreadbackname})")
-
-
 
 
 class DelayTime(AdjustableVirtual):
@@ -76,7 +67,7 @@ class DelayTime(AdjustableVirtual):
         self._direction = direction
         self._group_velo = 299798458  # m/s
         self._passes = passes
-        self.Id = stage.Id + "_delay"
+        # self.Id = stage.Id + "_delay"
         self._stage = stage
         AdjustableVirtual.__init__(
             self,
@@ -86,8 +77,20 @@ class DelayTime(AdjustableVirtual):
             reset_current_value_to=reset_current_value_to,
             name=name,
         )
-        addPvRecordToSelf(self, pvsetname="SIN-TIMAST-TMA:Evt-22-Freq-SP", pvreadbackname ="SIN-TIMAST-TMA:Evt-22-Freq-I", accuracy= 0.5, name='frequency_pp')
-        addPvRecordToSelf(self, pvsetname="SIN-TIMAST-TMA:Evt-27-Freq-SP", pvreadbackname ="SIN-TIMAST-TMA:Evt-27-Freq-I", accuracy= 0.5, name='frequency_dark')
+        addPvRecordToSelf(
+            self,
+            pvsetname="SIN-TIMAST-TMA:Evt-22-Freq-SP",
+            pvreadbackname="SIN-TIMAST-TMA:Evt-22-Freq-I",
+            accuracy=0.5,
+            name="frequency_pp",
+        )
+        addPvRecordToSelf(
+            self,
+            pvsetname="SIN-TIMAST-TMA:Evt-27-Freq-SP",
+            pvreadbackname="SIN-TIMAST-TMA:Evt-27-Freq-I",
+            accuracy=0.5,
+            name="frequency_dark",
+        )
 
     def _mm_to_s(self, mm):
         return mm * 1e-3 * self._passes / self._group_velo * self._direction
@@ -117,7 +120,7 @@ class DelayTime(AdjustableVirtual):
 
 
 class DelayCompensation(AdjustableVirtual):
-    """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for 
+    """Simple virtual adjustable for compensating delay adjustables. It assumes the first adjustable is the master for
     getting the current value."""
 
     def __init__(self, adjustables, directions, set_current_value=True, name=None):
@@ -184,7 +187,9 @@ class Laser_Exp:
         self.alias.append(self.delay_bsen.alias)
 
         try:
-            addMotorRecordToSelf(self, Id=self.Id + "-M522:MOTOR_1", name="_delay_thz_stg" )
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M522:MOTOR_1", name="_delay_thz_stg"
+            )
             self.delay_thz = DelayTime(self._delay_thz_stg, name="delay_thz")
             self.alias.append(self.delay_thz.alias)
         except:
@@ -199,12 +204,12 @@ class Laser_Exp:
             print("Problems initializing global delay stage")
 
         # Implementation of delay compensation, this assumes for now that delays_glob and delay_tt actually delay in positive directions.
-        #try:
+        # try:
         #    self.delay_lxtt = DelayCompensation(
         #        [self.delay_glob, self.delay_tt], [-1, 1], name="delay_lxtt"
         #    )
         #    self.alias.append(self.delay_lxtt.alias)
-        #except:
+        # except:
         #    print("Problems initializing virtual pump delay stage")
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")
@@ -214,19 +219,19 @@ class Laser_Exp:
         # addDelayStageToSelf(self, self.__dict__["_lam_delay_smarstg"], name="lam_delay_smar")
         # self._lam_delayStg_Smar = SmarActRecord('SLAAR21-LMTS-LAM11')
         # self.lam_delay_Smar = DelayStage(self._lam_delayStg_Smar)
-        #try:
+        # try:
         #    addMotorRecordToSelf(self, Id=self.Id + "-M548:MOT", name="_lam_delaystg")
         #    addDelayStageToSelf(
         #        self, self.__dict__["_lam_delaystg"], name="lam_delay"
         #    )  # this try except does not work
-        #except:
+        # except:
         #    print("Problems initializing LAM delay stage")
         # self._lam_delayStg = MotorRecord(self.Id+'-M548:MOT')
         # self.lam_delay = DelayStage(self._lam_delayStg)
 
         # PALM delay stages
-        #addMotorRecordToSelf(self, Id=self.Id + "-M552:MOT", name="_palm_delaystg")
-        #addDelayStageToSelf(self, self.__dict__["_palm_delaystg"], name="palm_delay")
+        # addMotorRecordToSelf(self, Id=self.Id + "-M552:MOT", name="_palm_delaystg")
+        # addDelayStageToSelf(self, self.__dict__["_palm_delaystg"], name="palm_delay")
         # self._palm_delayStg = MotorRecord(self.Id+'-M552:MOT')
         # self.palm_delay = DelayStage(self._palm_delayStg)
 
@@ -245,33 +250,38 @@ class Laser_Exp:
         ### SmarAct stages used in the experiment ###
         try:
             for smar_name, smar_address in self.smar_config.items():
-                addSmarActRecordToSelf(self, Id=(self.IdSA + smar_address), name=smar_name)
+                addSmarActRecordToSelf(
+                    self, Id=(self.IdSA + smar_address), name=smar_name
+                )
         except Exception as expt:
             print("Issue with initializing smaract stages from eco smar_config")
             print(expt)
 
         ## IR beam pointing mirrors
-        #try:
+        # try:
         #    addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR13:MOTRBV", accuracy= 10, name='IR_mirr1_ry')
         #    addPvRecordToSelf(self, pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE", pvreadbackname ="SLAAR21-LMNP-ESBIR14:MOTRBV", accuracy= 10, name='IR_mirr1_rx')
-        #except:
+        # except:
         #    print("Issue intializing picomotor IR beam pointing mirrors")
         #    pass
         try:
-            addSmarActRecordToSelf(self, Id='SARES23-ESB4', name='IR_mirr1_rx')
-            addSmarActRecordToSelf(self, Id='SARES23-LIC7', name='IR_mirr1_ry')
+            addSmarActRecordToSelf(self, Id="SARES23-ESB4", name="IR_mirr1_rx")
+            addSmarActRecordToSelf(self, Id="SARES23-LIC7", name="IR_mirr1_ry")
 
-            addSmarActRecordToSelf(self, Id='SARES23-ESB1', name='IR_mirr2_ry')
-            addSmarActRecordToSelf(self, Id='SARES23-ESB2', name='IR_mirr2_rz')
-            addSmarActRecordToSelf(self, Id='SARES23-ESB3', name='IR_mirr2_z')
+            addSmarActRecordToSelf(self, Id="SARES23-ESB1", name="IR_mirr2_ry")
+            addSmarActRecordToSelf(self, Id="SARES23-ESB2", name="IR_mirr2_rz")
+            addSmarActRecordToSelf(self, Id="SARES23-ESB3", name="IR_mirr2_z")
         except:
             print("Issue intializing SmarAct IR beam pointing mirrors")
             pass
 
         ## beam pointing offsets
         try:
-            def set_position_monitor_offsets(cam1_center=[None,None],cam2_center=[None,None]):
-                dims = ['x','y']
+
+            def set_position_monitor_offsets(
+                cam1_center=[None, None], cam2_center=[None, None]
+            ):
+                dims = ["x", "y"]
                 channels_cam1_xy = [
                     "SLAAR21-LTIM01-EVR0:CALCS.INPB",
                     "SARES20-CVME-01-EVR0:CALCI.INPB",
@@ -282,29 +292,28 @@ class Laser_Exp:
                 ]
                 print("Old crosshair position cam1")
                 for dim, tc, tv in zip(dims, channels_cam1_xy, cam1_center):
-                    print(f'{dim}: {PV(tc).get()}')
+                    print(f"{dim}: {PV(tc).get()}")
                     # PV(tc).put(bytes(str(tv), "utf8"))
                 print("Old crosshair position cam2")
                 for dim, tc, tv in zip(dims, channels_cam2_xy, cam2_center):
-                    print(f'{dim}: {PV(tc).get()}')
+                    print(f"{dim}: {PV(tc).get()}")
                     # PV(tc).put(bytes(str(tv), "utf8"))
                 print("New crosshair position cam1")
                 for dim, tc, tv in zip(dims, channels_cam1_xy, cam1_center):
                     if not tv:
                         break
-                    print(f'{dim}: {tv}')
+                    print(f"{dim}: {tv}")
                     PV(tc).put(bytes(str(tv), "utf8"))
                 print("New crosshair position cam2")
                 for dim, tc, tv in zip(dims, channels_cam2_xy, cam2_center):
                     if not tv:
                         break
-                    print(f'{dim}: {tv}')
+                    print(f"{dim}: {tv}")
                     PV(tc).put(bytes(str(tv), "utf8"))
+
             self.set_position_monitor_offsets = set_position_monitor_offsets
         except:
             pass
-
-
 
     def get_adjustable_positions_str(self):
         ostr = "*****Laser motor positions******\n"
@@ -323,5 +332,3 @@ class Laser_Exp:
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
-
-

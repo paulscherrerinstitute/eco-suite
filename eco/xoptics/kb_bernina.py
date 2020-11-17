@@ -138,20 +138,22 @@ class KBMirrorBernina_new(Assembly):
         self.d_win1 = d_win1
         self.d_target = d_target
 
-        self._add(MotorRecord, pvname_hor + ":W_X", name="x_hor")
-        self._add(MotorRecord, pvname_hor + ":W_Y", name="y_hor")
-        self._add(MotorRecord, pvname_hor + ":W_RY", name="y_hor")
-        self._add(MotorRecord, pvname_hor + ":W_RY", name="pitch_hor")
-        self._add(MotorRecord, pvname_hor + ":W_RZ", name="roll_hor")
-        self._add(MotorRecord, pvname_hor + ":W_RX", name="yaw_hor")
-        self._add(MotorRecord, pvname_hor + ":BU", name="bend_upstream_hor")
-        self._add(MotorRecord, pvname_hor + ":BD", name="bend_downstream_hor")
+        self._append(MotorRecord, pvname_hor + ":W_X", name="x_hor")
+        self._append(MotorRecord, pvname_hor + ":W_Y", name="y_hor")
+        self._append(MotorRecord, pvname_hor + ":W_RY", name="y_hor")
+        self._append(MotorRecord, pvname_hor + ":W_RY", name="pitch_hor")
+        self._append(MotorRecord, pvname_hor + ":W_RZ", name="roll_hor")
+        self._append(MotorRecord, pvname_hor + ":W_RX", name="yaw_hor")
+        self._append(MotorRecord, pvname_hor + ":BU", name="bend_upstream_hor")
+        self._append(MotorRecord, pvname_hor + ":BD", name="bend_downstream_hor")
 
-        self._add(MotorRecord, pvname_hor + ":TY1", name="y1_phys_hor")
-        self._add(MotorRecord, pvname_hor + ":TY2", name="y2_phys_hor")
-        self._add(MotorRecord, pvname_hor + ":TY3", name="y3_phys_hor")
-        self._add(MotorRecord, pvname_hor + ":TX1", name="x1_phys_hor")
-        self._add(MotorRecord, pvname_hor + ":TX2", name="x2_phys_hor")
+        self._append(MotorRecord, pvname_hor + ":TY1", name="y1_phys_hor")
+        self._append(MotorRecord, pvname_hor + ":TY2", name="y2_phys_hor")
+        self._append(MotorRecord, pvname_hor + ":TY3", name="y3_phys_hor")
+        self._append(MotorRecord, pvname_hor + ":TX1", name="x1_phys_hor")
+        self._append(MotorRecord, pvname_hor + ":TX2", name="x2_phys_hor")
+
+        self._append()
 
         self._add(
             PvRecord,

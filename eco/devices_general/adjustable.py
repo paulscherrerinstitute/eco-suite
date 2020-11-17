@@ -376,11 +376,21 @@ class PvRecord:
 # @default_representation
 @spec_convenience
 class PvEnum:
-    def __init__(self, pvname, name=None):
+    def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self._pv = PV(pvname)
         self.name = name
         self.enum_strs = self._pv.enum_strs
+
+        if pvname_set:
+            self._pv_set = PV(pvname_set)
+            tstrs = self._pv_set.enum_strs
+            if not (tstrs == self.enum_strs):
+                raise Exception("pv enum setter strings do not match the values!")
+
+        else:
+            self._pv_set = None
+
         if name:
             enumname = self.name
         else:
@@ -402,8 +412,11 @@ class PvEnum:
     def set_target_value(self, value, hold=False):
         """ Adjustable convention"""
         value = self.validate(value)
-
-        changer = lambda value: self._pv.put(value, wait=True)
+        if self._pv_set:
+            tpv = self._pv_set
+        else:
+            tpv = self._pv
+        changer = lambda value: tpv.put(value, wait=True)
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
@@ -425,6 +438,7 @@ class PvEnum:
             s += "{:>4}   {}  {}\n".format(val, sel, name)
         return s
 
+
 class PvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
@@ -441,7 +455,7 @@ class PvString:
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
-    
+
     def __repr__(self):
         return self.get_current_value()
 
@@ -450,6 +464,7 @@ class PvString:
             self.set_target_value(string)
         else:
             return self.get_current_value()
+
 
 @default_representation
 @spec_convenience
@@ -536,8 +551,10 @@ class AdjustableGetSet:
         self._set = foo_set
         self._get = foo_get
 
-    def set_target_value(self,value):
-        return Changer(target=value, parent=self, changer=self._set, hold=False, stopper=None)
-    
+    def set_target_value(self, value):
+        return Changer(
+            target=value, parent=self, changer=self._set, hold=False, stopper=None
+        )
+
     def get_current_value(self):
         return self._get()

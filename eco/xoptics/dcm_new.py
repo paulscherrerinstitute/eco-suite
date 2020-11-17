@@ -20,7 +20,7 @@ class DoubleCrystalMono(Assembly):
         self,
         pvname,
         name=None,
-        energy_sp="SAROP21-ARAMIS:ENERGY_SP",
+        energy_sp="SGE-OP2E-ARAMIS:E_ENERGY_SP",
         energy_rb="SAROP21-ARAMIS:ENERGY",
     ):
         super().__init__(name=name)
