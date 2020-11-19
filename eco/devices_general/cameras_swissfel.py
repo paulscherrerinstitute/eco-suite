@@ -1,13 +1,65 @@
+from cam_server import CamClient
 from ..aliases import Alias, append_object_to_object
 from .adjustable import PvRecord, PvEnum, AdjustableGetSet, AdjustableVirtual
 from ..elements import Assembly
 from .motors import MotorRecord
 
 
+class CamserverConfig:
+    def __init__(self, camname, name=None):
+        self.name = name
+        self.camname = camname
+        self.cc = CamClient()
+
+    def get_current_value(self):
+        return self.cc.get_camera_config(self.camname)
+
+    def set_config_fields(self, fields):
+        """fields is a dictionary containing the keys and values that should be updated, e.g. fields={'group': ['Laser', 'Bernina']}"""
+        config = self.get_current_value()
+        config.update(fields)
+        self.cc.set_camera_config(self.camname,config)
+
+    ### convenience functions ###
+    def set_alias(self, alias=None):
+        """creates an alias in the camera config on the server. If no alias is provided, it defaults to the camera name"""
+        if not alias:
+            alias = self.name
+        self.set_config_fields({'alias':[alias]})
+
+    def stop(self):
+        self.cc.stop_instance(self.camname)
+
+    def set_cross(self,x,y, x_um_per_px = None, y_um_per_px=None):
+        """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given"""
+        calib = self.get_current_value()['camera_calibration']
+        if calib:
+            if not x_um_per_px:
+                x_um_per_px = calib['reference_marker_width']/abs(calib['reference_marker'][2]-calib['reference_marker'][0])
+            if not y_um_per_px:
+                y_um_per_px = calib['reference_marker_height']/abs(calib['reference_marker'][3]-calib['reference_marker'][1])
+        else: 
+            calib = {}
+            x_um_per_px = 1
+            y_um_per_px = 1
+
+        calib['reference_marker']=[x-1,y-1,x+1,y+1]
+        calib['reference_marker_width']=2*x_um_per_px
+        calib['reference_marker_height']=2*y_um_per_px
+        self.set_config_fields(fields={'camera_calibration':calib})
+
+    def __repr__(self):
+        s = f"**Camera Server Config {self.camname} with Alias {self.name}**\n"
+        for key, item in self.get_current_value().items():
+            s += f"{key:20} : {item}\n"
+        return s
+
 class CameraBasler(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
+        self.config_cs = CamserverConfig(self.pvname, name=name)
+        self.config_cs.set_alias()
         self._append(PvEnum, self.pvname + ":INIT", name="initialize")
         self._append(PvEnum, self.pvname + ":CAMERA", name="running")
         self._append(PvRecord, self.pvname + ":BOARD", name="board_no")

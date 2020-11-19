@@ -457,17 +457,15 @@ components = [
         },
     },
     {
-        "args": ["SLAAR21-LCAM-C532"],
-        "name": "samplecam_inline",
+        "args": ["SARES20-CAMS142-M3"],
+        "name": "samplecam_sideview",
         "z_und": 142,
-        "desc": "Qioptic sample viewer in Bernina hutch",
-        "type": "eco.devices_general.cameras_swissfel:QioptiqMicroscope",
-        "kwargs": {
-            "pvname_zoom": "SARES20-MF1:MOT_16",
-        },
+        "desc": "",
+        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
+        "kwargs": {},
     },
     {
-        "args": ["SARES20-CAMS142-C1"],
+        "args": ["SARES20-CAMS142-M3"],
         "name": "samplecam_sideview",
         "z_und": 142,
         "desc": "",

@@ -1,5 +1,6 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
+from ..devices_general.cameras_swissfel import CameraBasler
 from ..aliases import Alias, append_object_to_object
 from ..devices_general.adjustable import PvEnum
 
@@ -13,12 +14,36 @@ def addMotorRecordToSelf(self, Id=None, name=None):
     self.alias.append(self.__dict__[name].alias)
 
 
-class Pprm:
+class Pprm(CameraBasler):
+    def __init__(self, pvname_camera, name=None):
+        super().__init__(pvname_camera, name=name)
+        self.target_pos = MotorRecord(pvname_camera + ":MOTOR_PROBE", name="target_pos")
+        self.camCA = CameraCA(pvname_camera)
+        self.led = PvEnum(self.pvname_camera + ":LED", name="led")
+        self.target = PvEnum(self.pvname_camera + ":PROBE_SP", name="target")
+        if name:
+            self.alias = Alias(name)
+            self.alias.append(self.target_pos.alias)
+            self.alias.append(self.target.alias)
+            self.alias.append(self.led.alias)
+    def movein(self, target=1):
+        self.target.set_target_value(target)
+
+    def moveout(self, target=0):
+        self.target.set_target_value(target)
+
+    def __repr__(self):
+        s = f"**Profile Monitor {self.name}**\n"
+        s += f"Target in beam: {self.target.get_current_value().name}\n"
+        return s
+
+class Pprmold:
     def __init__(self, Id, name=None):
         self.Id = Id
         self.name = name
         self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name="target_pos")
-        self.cam = CameraCA(Id)
+        self.camCA = CameraCA(Id)
+        #self.camCS = CameraCS(Id, name)
         self.led = PvEnum(self.Id + ":LED", name="led")
         self.target = PvEnum(self.Id + ":PROBE_SP", name="target")
         if name:
