@@ -41,10 +41,11 @@ class Daq:
         self.name = name
         self._default_file_path = None
 
-    def acquire(self, file_name=None, Npulses=100, acq_pars = {}):
+    def acquire(self, file_name=None, Npulses=100, acq_pars={}):
         print(file_name, Npulses)
         acquisition = Acquisition(
-            acquire=None, acquisition_kwargs={"Npulses": Npulses},
+            acquire=None,
+            acquisition_kwargs={"Npulses": Npulses},
         )
 
         def acquire():
@@ -68,7 +69,7 @@ class Daq:
     def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
         ix = self.start(label=label, **kwargs)
         return self.stop(
-            stop_id=self.running[ix]["start_id"] + Npulses -1, acq_ix=ix, wait=wait
+            stop_id=self.running[ix]["start_id"] + Npulses - 1, acq_ix=ix, wait=wait
         )
 
     def start(self, label=None, **kwargs):
@@ -117,6 +118,7 @@ class Daq:
         filename_format="run_{:06d}",
         **kwargs,
     ):
+        print("This is tha additional input:", kwargs)
         if not pgroup:
             pgroup = self.pgroup
         if not pgroup:

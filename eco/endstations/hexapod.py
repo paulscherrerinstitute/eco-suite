@@ -9,6 +9,7 @@ from time import sleep
 from ..aliases import append_object_to_object, Alias
 from scipy.spatial.transform import Rotation
 import datetime
+from ..elements.assembly import Assembly
 
 
 class Hexapod_PI:
@@ -28,7 +29,180 @@ class Hexapod_PI:
         ]
 
 
-class HexapodPI:
+class HexapodPI(Assembly):
+    def __init__(self, pvname, name=None, fina_angle_offset=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-POSI-X",
+            pvreadbackname=self.pvname + ":POSI-X",
+            accuracy=0.001,
+            name="x_raw",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-POSI-Y",
+            pvreadbackname=self.pvname + ":POSI-Y",
+            accuracy=0.001,
+            name="y_raw",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-POSI-Z",
+            pvreadbackname=self.pvname + ":POSI-Z",
+            accuracy=0.001,
+            name="z_raw",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-POSI-U",
+            pvreadbackname=self.pvname + ":POSI-U",
+            accuracy=0.001,
+            name="rx_raw",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-POSI-V",
+            pvreadbackname=self.pvname + ":POSI-V",
+            accuracy=0.001,
+            name="ry_raw",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-POSI-W",
+            pvreadbackname=self.pvname + ":POSI-W",
+            accuracy=0.001,
+            name="rz_raw",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-PIVOT-R",
+            pvreadbackname=self.pvname + ":PIVOT-R",
+            accuracy=0.001,
+            name="pivot_x",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-PIVOT-S",
+            pvreadbackname=self.pvname + ":PIVOT-S",
+            accuracy=0.001,
+            name="pivot_y",
+            is_setting=True,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET-PIVOT-T",
+            pvreadbackname=self.pvname + ":PIVOT-T",
+            accuracy=0.001,
+            name="pivot_z",
+            is_setting=True,
+        )
+        if fina_angle_offset:
+            self._append(
+                AdjustableFS, fina_angle_offset, name="ref_frame_angle", is_setting=True
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.x_raw, self.y_raw, self.z_raw],
+                lambda xraw, yraw, zraw: self._calc_xyz(xraw, yraw, zraw)[0],
+                lambda x: self._calc_xyzraw(
+                    x, self.y.get_current_value(), self.z.get_current_value()
+                ),
+                reset_current_value_to=False,
+                append_aliases=False,
+                change_simultaneously=False,
+                name="x",
+                is_setting=True,
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.x_raw, self.y_raw, self.z_raw],
+                lambda xraw, yraw, zraw: self._calc_xyz(xraw, yraw, zraw)[1],
+                lambda y: self._calc_xyzraw(
+                    self.x.get_current_value(), y, self.z.get_current_value()
+                ),
+                reset_current_value_to=False,
+                change_simultaneously=False,
+                append_aliases=False,
+                name="y",
+                is_setting=True,
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.x_raw, self.y_raw, self.z_raw],
+                lambda xraw, yraw, zraw: self._calc_xyz(xraw, yraw, zraw)[2],
+                lambda z: self._calc_xyzraw(
+                    self.x.get_current_value(), self.y.get_current_value(), z
+                ),
+                reset_current_value_to=False,
+                append_aliases=False,
+                change_simultaneously=False,
+                name="z",
+                is_setting=True,
+            )
+
+    @property
+    def rotation(self):
+        angs = self.ref_frame_angle.get_current_value()
+        angs = [angs["rx"], angs["ry"], angs["rz"]]
+        return Rotation.from_euler("xyz", angs, degrees=True)
+
+    def _calc_xyz(self, xraw, yraw, zraw):
+        return self.rotation.apply([xraw, yraw, zraw])
+
+    def _calc_xyzraw(self, x, y, z):
+        print(self.rotation.inv().apply([x, y, z]))
+        return self.rotation.inv().apply([x, y, z])
+
+    # # def get_status(self):
+    # #     s = f'Hexapod {self.alias.get_full_name()} status ({datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")})\n'
+    # #     if hasattr(self, "ref_frame_angle"):
+    # #         for var in ["x", "y", "z"]:
+    # #             s += (
+    # #                 " " * 4
+    # #                 + var.ljust(16)
+    # #                 + f"{self.__dict__[var].get_current_value():g}\n"
+    # #             )
+    # #         s += (
+    # #             " " * 4
+    # #             + "ref_frame_angle".ljust(16)
+    # #             + str(self.ref_frame_angle.get_current_value())
+    # #             + "\n"
+    # #         )
+    # #     for var in [
+    # #         "x_raw",
+    # #         "y_raw",
+    # #         "z_raw",
+    # #         "rx_raw",
+    # #         "ry_raw",
+    # #         "rz_raw",
+    # #         "pivot_x",
+    # #         "pivot_y",
+    # #         "pivot_z",
+    # #     ]:
+    # #         s += (
+    # #             " " * 4
+    # #             + var.ljust(16)
+    # #             + f"{self.__dict__[var].get_current_value():g}\n"
+    # #         )
+    # #     return s
+
+    # def __str__(self):
+    #     return self.get_status()
+
+    # def __repr__(self):
+    #     return self.__str__()
+
+
+class HexapodPI_old:
     def __init__(self, pvname, name=None, fina_angle_offset=None):
         self.name = name
         self.alias = Alias(name)

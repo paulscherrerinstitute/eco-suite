@@ -220,15 +220,14 @@ class MasterEventSystem(Assembly):
 
 
 class EvrPulser(Assembly):
-    def __init__(self, pv_base, outputs=None, name=None):
+    def __init__(self, pv_base, name=None):
         super().__init__(name=name)
         self.pv_base = pv_base
-        self.name = name
         self._append(
             PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
         )
         self._append(
-            self, PvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True
+            PvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True
         )
         self._append(
             PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode", is_setting=True
@@ -252,7 +251,7 @@ class EvrPulser(Assembly):
         )
         self._append(
             PvRecord,
-            f"{self.pv_base}-Delay-SP",
+            f"{self.pv_base}-Width-SP",
             pvreadbackname=f"{self.pv_base}-Width-RB",
             name="width",
             is_setting=True,
@@ -260,27 +259,24 @@ class EvrPulser(Assembly):
         self.description = EpicsString(pv_base + "-Name-I")
 
 
-class EvrOutput:
-    def __init__(self, pv_base, name=None):
+class EvrOutput(Assembly):
+    def __init__(self, pv_base, pulsers=None, name=None):
+        super().__init__(name=name)
         self.pv_base = pv_base
-        self.name = name
-        self.alias = Alias(name)
-        self._pulsers = None
+        self._pulsers = pulsers
         # self._update_connected_pulsers()
-        append_object_to_object(self, PvEnum, f"{self.pv_base}-Ena-SP", name="enable")
-        self.pulsers_numbers = (
-            PvEnum(f"{self.pv_base}-Src-Pulse-SP", name="pulserA"),
-            PvEnum(f"{self.pv_base}-Src2-Pulse-SP", name="pulserB"),
-        )
+        self._append(PvEnum, f"{self.pv_base}-Ena-SP", name="enable",is_setting=True)
+        self._append(PvEnum, f"{self.pv_base}-Src-Pulse-SP", name="pulser_number_A", is_setting=True)
+        self._append(PvEnum, f"{self.pv_base}-Src2-Pulse-SP", name="pulser_number_B", is_setting=True)
         self.description = EpicsString(pv_base + "-Name-I")
 
     def _get_pulserA(self):
-        return self._pulsers[self.pulsers_numbers[0].get_current_value()]
+        return self._pulsers[self.pulser_number_A.get_current_value()]
 
     pulserA = property(_get_pulserA)
 
     def _get_pulserB(self):
-        return self._pulsers[self.pulsers_numbers[1].get_current_value()]
+        return self._pulsers[self.pulser_number_B.get_current_value()]
 
     pulserB = property(_get_pulserB)
 
@@ -294,40 +290,30 @@ class EvrOutput:
 
     # self.pulsers = ()
 
-    def get_status(self):
-        pass
 
 
-class EventReceiver:
+class EventReceiver(Assembly):
     def __init__(
         self, pvname, n_pulsers=24, n_output_front=8, n_output_rear=16, name=None
     ):
-        self.name = name
-        self.alias = Alias(name)
+        super().__init__(name=name)
         self.pvname = pvname
         pulsers = []
         for n in range(n_pulsers):
-            append_object_to_object(
-                self, EvrPulser, f"{self.pvname}:Pul{n}", name=f"pulser{n}"
-            )
+            self._append(EvrPulser, f"{self.pvname}:Pul{n}", name=f"pulser{n}", is_setting=True)
             pulsers.append(self.__dict__[f"pulser{n}"])
         self.pulsers = tuple(pulsers)
         outputs = []
         for n in range(n_output_front):
-            append_object_to_object(
-                self,
-                EvrOutput,
-                f"{self.pvname}:FrontUnivOut{n}",
-                name=f"output_front{n}",
-            )
+            self._append(EvrOutput,
+                f"{self.pvname}:FrontUnivOut{n}", pulsers=pulsers,
+                name=f"output_front{n}", is_setting=True)
             outputs.append(self.__dict__[f"output_front{n}"])
         for n in range(n_output_rear):
-            append_object_to_object(
-                self, EvrOutput, f"{self.pvname}:RearUniv{n}", name=f"output_rear{n}"
-            )
+            self._append(EvrOutput, f"{self.pvname}:RearUniv{n}", pulsers=pulsers, name=f"output_rear{n}", is_setting=True)
             outputs.append(self.__dict__[f"output_rear{n}"])
-        for to in outputs:
-            to._pulsers = self.pulsers
+        # for to in outputs:
+        #     to._pulsers = self.pulsers
         self.outputs = outputs
 
 

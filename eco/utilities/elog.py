@@ -29,12 +29,11 @@ class Elog:
         self._screenshot = Screenshot(screenshot_directory)
         self.read = self._log.read
 
-    def post(self, *args, **kwargs):
-        """
-        """
-        if not ("Author" in kwargs):
-            kwargs["Author"] = self.user
-        return self._log.post(*args, **kwargs)
+    def post(self, *args, Title=None, Author=None, **kwargs):
+        """"""
+        if not Author:
+            Author = self.user
+        return self._log.post(*args, Title=Title, Author=Author, **kwargs)
 
     def screenshot(self, message="", window=False, desktop=False, delay=3, **kwargs):
         filepath = self._screenshot.shoot()[0]

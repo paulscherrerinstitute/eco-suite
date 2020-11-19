@@ -269,6 +269,7 @@ class AdjustableFS:
             if not self.file_path.parent.exists():
                 self.file_path.parent.mkdir()
             self._write_value(default_value)
+        self.alias = Alias(name)
         self.name = name
 
     def get_current_value(self):

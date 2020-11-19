@@ -462,11 +462,11 @@ class MotorRecord(Assembly):
         """ Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
 
-        cmd.append('"P=%s:,M=%s"' % tuple(self.Id.split(":")))
+        cmd.append('"P=%s:,M=%s"' % tuple(self.pvname.split(":")))
         # cmd.append('/sf/common/config/qt/motorx_more.ui')
         cmd.append("motorx_more.ui")
         # os.system(' '.join(cmd))
-        return subprocess.Popen(" ".join(cmd), shell=True)
+        return subprocess.Popen(" ".join(cmd), shell=True, stdout=subprocess.DEVNULL)
 
     # return string with motor value as variable representation
     def __str__(self):

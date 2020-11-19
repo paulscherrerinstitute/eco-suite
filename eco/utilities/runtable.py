@@ -284,19 +284,19 @@ class Run_Table():
         else:
             name = device.name
         self.adjustables[name] = {key: value for key, value in device.__dict__.items() if hasattr(value, 'get_current_value')}
-        self.adjustables[name].update({key+'_offset': PvRecord(pvsetname = value.Id+'.OFF') for key, value in device.__dict__.items() if hasattr(value, '_motor')})
-        self.units[name] = {key: caget(value.Id+'.EGU') for key, value in device.__dict__.items() if hasattr(value, '_motor')}
+        self.adjustables[name].update({key+'_offset': PvRecord(pvsetname = value.pvname+'.OFF') for key, value in device.__dict__.items() if hasattr(value, '_motor')})
+        self.units[name] = {key: caget(value.pvname+'.EGU') for key, value in device.__dict__.items() if hasattr(value, '_motor')}
 
         if hasattr(device, 'get_current_value'):
             self.adjustables[name]['_'.join([name, 'self'])]=device
 
 
     def _parse_child_instances(self, parent_class, pp_name=None):
-        try:
-            self._get_all_adjustables(parent_class, pp_name)
-        except:
-            print(f'Getting adjustables from {parent_class.name} failed')
-            pass
+        #try:
+        self._get_all_adjustables(parent_class, pp_name)
+        #except:
+        #    print(f'Getting adjustables from {parent_class.name} failed')
+        #    pass
         if pp_name is not None:
             pp_name = '_'.join([pp_name, parent_class.name])
         else:

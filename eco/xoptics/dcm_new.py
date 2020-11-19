@@ -9,12 +9,14 @@ from ..devices_general.adjustable import (
     PvEnum,
     spec_convenience,
     default_representation,
+    update_changes,
 )
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
 
 @spec_convenience
+@update_changes
 class DoubleCrystalMono(Assembly):
     def __init__(
         self,
@@ -77,6 +79,18 @@ class DoubleCrystalMono(Assembly):
 
     def get_current_value(self, *args, **kwargs):
         return self.energy.get_current_value(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} @ {self.get_current_value()} eV"
+
+    def add_value_callback(self, callback, index=None):
+        return self.energy._pvreadback.add_callback(callback=callback, index=index)
+
+    def clear_value_callback(self, index=None):
+        if index:
+            self.energy._pvreadback.remove_callback(index)
+        else:
+            self.energy._pvreadback.clear_callbacks()
 
 
 @spec_convenience

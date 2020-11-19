@@ -21,7 +21,95 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         print(f"Warning! Could not find motor {name} (Id:{Id})")
 
 
-class GPS:
+class GPS(Assembly):
+    def __init__(
+        self,
+        name=None,
+        pvname=None,
+        configuration=["base"],
+        alias_namespace=None,
+        fina_hex_angle_offset=None,
+    ):
+        super().__init__()
+        self.pvname = pvname
+        self.name = name
+        self.configuration = configuration
+
+        if "base" in self.configuration:
+            ### motors base platform ###
+            self._append(MotorRecord, pvname + ":MOT_TX", name="xbase", is_setting=True)
+            self._append(MotorRecord, pvname + ":MOT_TY", name="ybase", is_setting=True)
+            self._append(
+                MotorRecord, pvname + ":MOT_RX", name="rxbase", is_setting=True
+            )
+            self._append(
+                MotorRecord, pvname + ":MOT_MY_RYTH", name="alpha", is_setting=True
+            )
+
+            ### motors XRD detector arm ###
+            self._append(
+                MotorRecord, pvname + ":MOT_NY_RY2TH", name="gamma", is_setting=True
+            )
+
+        if "phi_table" in self.configuration:
+            ### motors phi table ###
+            self._append(
+                MotorRecord, pvname + ":MOT_HEX_RX", name="phi", is_setting=True
+            )
+            self._append(
+                MotorRecord, pvname + ":MOT_HEX_TX", name="tphi", is_setting=True
+            )
+
+        if "phi_hex" in self.configuration:
+
+            ### motors PI hexapod ###
+            if fina_hex_angle_offset:
+                fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
+
+            self._append(
+                HexapodPI,
+                "SARES20-HEX_PI",
+                name="hex",
+                fina_angle_offset=fina_hex_angle_offset,
+                is_setting=False,
+            )
+
+        if "hlxz" in self.configuration:
+            ### motors heavy load goniometer ###
+            self._append(
+                MotorRecord, pvname + ":MOT_TBL_TX", name="xhl", is_setting=True
+            )
+            self._append(
+                MotorRecord, pvname + ":MOT_TBL_TZ", name="zhl", is_setting=True
+            )
+
+        if "hly" in self.configuration:
+            self._append(
+                MotorRecord, pvname + ":MOT_TBL_TY", name="yhl", is_setting=True
+            )
+
+        if "hlrxrz" in self.configuration:
+            self._append(
+                MotorRecord, pvname + ":MOT_TBL_RX", name="rxhl", is_setting=True
+            )
+            self._append(
+                MotorRecord, pvname + ":MOT_TBL_RZ", name="rzhl", is_setting=True
+            )
+
+    # def get_adjustable_positions_str(self):
+    #     ostr = "*****GPS motor positions******\n"
+
+    #     for tkey, item in self.__dict__.items():
+    #         if hasattr(item, "get_current_value"):
+    #             pos = item.get_current_value()
+    #             ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+    #     return ostr
+
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
+
+
+class GPS_old:
     def __init__(
         self,
         name=None,
