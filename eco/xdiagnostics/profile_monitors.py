@@ -3,6 +3,7 @@ from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler
 from ..aliases import Alias, append_object_to_object
 from ..devices_general.adjustable import PvEnum
+from ..elements.assembly import Assembly
 
 # from ..devices_general.epics_wrappers import EnumSelector
 from epics import PV
@@ -14,18 +15,21 @@ def addMotorRecordToSelf(self, Id=None, name=None):
     self.alias.append(self.__dict__[name].alias)
 
 
-class Pprm(CameraBasler):
-    def __init__(self, pvname_camera, name=None):
-        super().__init__(pvname_camera, name=name)
-        self.target_pos = MotorRecord(pvname_camera + ":MOTOR_PROBE", name="target_pos")
+class Pprm(Assembly):
+    def __init__(self, pvname, pvname_camera, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(
+            MotorRecord,
+            pvname_camera + ":MOTOR_PROBE",
+            name="target_pos",
+            is_setting=True,
+        )
         self.camCA = CameraCA(pvname_camera)
-        self.led = PvEnum(self.pvname_camera + ":LED", name="led")
-        self.target = PvEnum(self.pvname_camera + ":PROBE_SP", name="target")
-        if name:
-            self.alias = Alias(name)
-            self.alias.append(self.target_pos.alias)
-            self.alias.append(self.target.alias)
-            self.alias.append(self.led.alias)
+        self._append(CameraBasler, pvname_camera, name="camera")
+        self._append(PvEnum, self.pvname + ":LED", name="led", is_setting=True)
+        self._append(PvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
+
     def movein(self, target=1):
         self.target.set_target_value(target)
 
@@ -37,13 +41,14 @@ class Pprm(CameraBasler):
         s += f"Target in beam: {self.target.get_current_value().name}\n"
         return s
 
+
 class Pprmold:
     def __init__(self, Id, name=None):
         self.Id = Id
         self.name = name
         self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name="target_pos")
         self.camCA = CameraCA(Id)
-        #self.camCS = CameraCS(Id, name)
+        # self.camCS = CameraCS(Id, name)
         self.led = PvEnum(self.Id + ":LED", name="led")
         self.target = PvEnum(self.Id + ":PROBE_SP", name="target")
         if name:

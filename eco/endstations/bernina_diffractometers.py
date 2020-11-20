@@ -30,9 +30,8 @@ class GPS(Assembly):
         alias_namespace=None,
         fina_hex_angle_offset=None,
     ):
-        super().__init__()
+        super().__init__(name=name)
         self.pvname = pvname
-        self.name = name
         self.configuration = configuration
 
         if "base" in self.configuration:

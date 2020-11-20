@@ -151,7 +151,7 @@ components = [
     },
     {
         "name": "prof_fe",
-        "args": ["SARFE10-PPRM064"],
+        "args": ["SARFE10-PPRM064"] * 2,
         "kwargs": {},
         "z_und": 64,
         "desc": "Profile monitor after Front End",
@@ -159,7 +159,7 @@ components = [
     },
     {
         "name": "prof_mirr_alv1",
-        "args": ["SAROP11-PPRM066"],
+        "args": ["SAROP11-PPRM066"] * 2,
         "kwargs": {},
         "z_und": 66,
         "desc": "Profile monitor after Alvra Mirror 1",
@@ -175,7 +175,7 @@ components = [
     },
     {
         "name": "prof_mirr1",
-        "args": ["SAROP21-PPRM094"],
+        "args": ["SAROP21-PPRM094"] * 2,
         "kwargs": {},
         "z_und": 94,
         "desc": "Profile monitor after Mirror 1",
@@ -229,7 +229,7 @@ components = [
     },
     {
         "name": "prof_mono",
-        "args": ["SAROP21-PPRM102"],
+        "args": ["SAROP21-PPRM102"] * 2,
         "kwargs": {},
         "z_und": 102,
         "desc": "Profile monitor after Monochromator",
@@ -280,7 +280,7 @@ components = [
     },
     {
         "name": "prof_opt",
-        "args": ["SAROP21-PPRM133"],
+        "args": ["SAROP21-PPRM133"] * 2,
         "kwargs": {},
         "z_und": 133,
         "desc": "Profile monitor after Optics hutch",
@@ -337,7 +337,7 @@ components = [
     },
     {
         "name": "prof_att",
-        "args": ["SAROP21-PPRM138"],
+        "args": ["SAROP21-PPRM138"] * 2,
         "kwargs": {},
         "z_und": 138,
         "desc": "Profile monitor after Attenuator",
