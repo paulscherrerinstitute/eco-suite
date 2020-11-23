@@ -457,7 +457,7 @@ components = [
         },
     },
     {
-        "args": ["SARES20-CAMS142-M3"],
+        "args": ["SARES20-CAMS142-M2"],
         "name": "samplecam_sideview",
         "z_und": 142,
         "desc": "",
@@ -466,7 +466,7 @@ components = [
     },
     {
         "args": ["SARES20-CAMS142-M3"],
-        "name": "samplecam_sideview",
+        "name": "samplecam_inline",
         "z_und": 142,
         "desc": "",
         "type": "eco.devices_general.cameras_swissfel:CameraBasler",

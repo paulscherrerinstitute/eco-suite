@@ -175,9 +175,11 @@ class Laser_Exp:
             addMotorRecordToSelf(
                 self, Id=self.Id + "-M521:MOTOR_1", name="_delay_eos_stg"
             )
-            addDelayStageToSelf(
-                self, stage=self.__dict__["_delay_eos_stg"], name="delay_eos"
-            )
+            #addDelayStageToSelf(
+            #    self, stage=self.__dict__["_delay_eos_stg"], name="delay_eos"
+            #)
+            self.delay_eos = DelayTime(self._delay_eos_stg, name="delay_eos")
+            self.alias.append(self.delay_eos.alias)
         except Exception as expt:
             print("No EOS delay stage")
             print(expt)

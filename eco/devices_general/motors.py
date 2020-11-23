@@ -81,9 +81,9 @@ class SmaractStreamdevice(Assembly):
         self._currentChange = None
         # self.description = EpicsString(pvname + ".DESC")
         self._append(PvEnum, self.pvname + ":DIR", name="direction", is_setting=True)
-        self._append(
-            PvRecord, self.pvname + ":SET_POS", name="set_pos", is_setting=True
-        )
+        #self._append(
+        #    PvRecord, self.pvname + ":SET_POS", name="set_pos", is_setting=True
+        #)
         self._append(
             PvRecord, self.pvname + ":GET_HOMED", name="speed", is_setting=False
         )

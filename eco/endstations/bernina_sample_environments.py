@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append("..")
-from ..devices_general.motors import MotorRecord
+from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
 from ..devices_general.adjustable import PvRecord
 import numpy as np
@@ -25,7 +25,7 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 
 def addSmarActRecordToSelf(self, Id=None, name=None):
-    self.__dict__[name] = SmarActRecord(Id, name=name)
+    self.__dict__[name] = SmaractStreamdevice(Id, name=name)
     self.alias.append(self.__dict__[name].alias)
 
 
@@ -381,7 +381,7 @@ class Electro_optic_sampling:
         self.name = name
         self.alias = Alias(name)
         self.diode_channels = diode_channels
-        self.basepath = f"/sf/bernina/data/p18713/res/scan_info/"
+        self.basepath = f"/sf/bernina/data/p18775/res/scan_info/"
         self.motor_configuration = {
             "ry": {
                 "id": "-ESB16",

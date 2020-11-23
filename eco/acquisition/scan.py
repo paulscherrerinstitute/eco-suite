@@ -172,10 +172,6 @@ class Scan:
             try:
                 if hasattr(adj, "name"):
                     adjs_name.append(adj.name)
-                if hasattr(adj, "_motor"):
-                    adjs_offset.append(adj._motor.OFF)
-                if hasattr(adj, "Id"):
-                    adjs_id.append(adj.Id)
             except:
                 print("acquiring metadata failed")
                 pass
@@ -186,10 +182,12 @@ class Scan:
         for ctr in self.counterCallers:
             if ctr.__module__ == "eco.acquisition.daq_client":
                 acq_pars = {
-                    "motors_value": values_step,
-                    "motors_readback_value": readbacks_step,
-                    "motors_name": adjs_name,
-                    "motors_pv_name": adjs_id,
+                    "scan_info": {
+                        "scan_name": Path(fina).stem,
+                        "motors_value": values_step,
+                        "motors_readback_value": readbacks_step,
+                        "motors_name": adjs_name,
+                    }
                 }
                 acq = ctr.acquire(
                     file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars
