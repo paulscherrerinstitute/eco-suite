@@ -1,5 +1,5 @@
 from ..aliases import Alias
-from ..devices_general.motors import MotorRecord
+from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
 
 from epics import PV
@@ -9,7 +9,7 @@ from ..devices_general.pv_adjustable import PvRecord
 
 import colorama, datetime
 from pint import UnitRegistry
-
+from time import sleep
 ureg = UnitRegistry()
 
 
@@ -30,12 +30,12 @@ def addPvRecordToSelf(
 
 
 def addMotorRecordToSelf(self, Id=None, name=None):
-    self.__dict__[name] = MotorRecord(Id, name=name)
+    self.__dict__[name] = MotorRecord(pvname = Id, name=name)
     self.alias.append(self.__dict__[name].alias)
 
 
 def addSmarActRecordToSelf(self, Id=None, name=None):
-    self.__dict__[name] = SmarActRecord(Id, name=name)
+    self.__dict__[name] = SmaractStreamdevice(Id, name=name)
     self.alias.append(self.__dict__[name].alias)
 
 
@@ -185,6 +185,7 @@ class Laser_Exp:
             print(expt)
 
         addMotorRecordToSelf(self, Id=self.Id + "-M524:MOTOR_1", name="_delay_bsen_stg")
+        addMotorRecordToSelf(self, Id="SARES20-MF1:MOT_5", name="par_y")
         self.delay_bsen = DelayTime(self._delay_bsen_stg, name="delay_bsen")
         self.alias.append(self.delay_bsen.alias)
 
@@ -251,13 +252,43 @@ class Laser_Exp:
 
         ### SmarAct stages used in the experiment ###
         try:
-            for smar_name, smar_address in self.smar_config.items():
-                addSmarActRecordToSelf(
-                    self, Id=(self.IdSA + smar_address), name=smar_name
-                )
+            for name, config in self.smar_config.items():
+                addSmarActRecordToSelf(self, Id=self.IdSA + config["id"], name=name)
         except Exception as expt:
             print("Issue with initializing smaract stages from eco smar_config")
             print(expt)
+
+    def set_stage_config(self):
+        for name, config in self.smar_config.items():
+            mot = self.__dict__[name]
+            mot.caqtdm_name.mv(config["pv_descr"])
+            mot.stage_type.mv(config["type"])
+            mot.sensor_type.mv(config["sensor"])
+            mot.speed.mv(config["speed"])
+            if "direction" in config.keys():
+                mot.direction.mv(config["direction"])
+            sleep(0.5)
+            mot.calibrate_sensor.mv(1)
+
+    def home_smaract_stages(self, stages=None):
+        if stages == None:
+            stages = self.smar_config.keys()
+        print("#### Positions before homing ####")
+        print(self.__repr__())
+        for name in stages:
+            config = self.smar_config[name]
+            mot = self.__dict__[name]
+            print(
+                "#### Homing {} in {} direction ####".format(
+                    name, config["home_direction"]
+                )
+            )
+            if config["home_direction"] == "back":
+                mot.home_backward.mv(1)
+            elif config["home_direction"] == "forward":
+                mot.home_forward.mv(1)
+
+
 
         ## IR beam pointing mirrors
         # try:

@@ -85,9 +85,6 @@ class SmaractStreamdevice(Assembly):
         #    PvRecord, self.pvname + ":SET_POS", name="set_pos", is_setting=True
         #)
         self._append(
-            PvRecord, self.pvname + ":GET_HOMED", name="speed", is_setting=False
-        )
-        self._append(
             PvRecord,
             self.pvname + ":FRM_BACK.PROC",
             name="home_backward",
@@ -111,7 +108,7 @@ class SmaractStreamdevice(Assembly):
         self._append(
             PvRecord,
             self.pvname + ":CL_MAX_FREQ",
-            name="maximum_frequency",
+            name="speed",
             is_setting=False,
         )
         self._append(
@@ -155,6 +152,7 @@ class SmaractStreamdevice(Assembly):
         self._append(
             PvRecord, self.pvname + ":HLM", name="limit_high", is_setting=False
         )
+        self._append(PvRecord, self.pvname + ":NAME", name="caqtdm_name", is_setting=True)
         self.accuracy = accuracy
         self._stop_pv = PV(self.pvname + ":STOP.PROC")
         self.stop = lambda: self._stop_pv.put(1)

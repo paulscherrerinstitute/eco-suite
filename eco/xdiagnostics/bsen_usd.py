@@ -4,7 +4,7 @@ sys.path.append("..")
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
 from ..devices_general.adjustable import PvRecord
-from ..devices_general.cameras_swissfel import CameraBasler
+from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -83,6 +83,12 @@ class Bsen(Assembly):
             CameraBasler,
             "SARES20-PROF141-M1",
             name="camera_microscope",
+            is_setting=True,
+        )
+        self._append(
+            CameraPCO,
+            "SARES20-CAMS142-M5",
+            name="camera_spectrometer",
             is_setting=True,
         )
         self._append(

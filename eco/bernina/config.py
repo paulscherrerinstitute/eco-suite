@@ -857,7 +857,7 @@ components = [
             "run_table": Component("run_table"),
             "elog": Component("elog"),
         },
-        "lazy": False,
+        "lazy": True,
     },
 ]
 
