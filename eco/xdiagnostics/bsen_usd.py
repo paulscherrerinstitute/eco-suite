@@ -111,7 +111,7 @@ class Bsen(Assembly):
             PvRecord, 
             pvsetname = "SLAAR21-LMNP-ESBIR13:DRIVE", 
             pvreadbackname = "SLAAR21-LMNP-ESBIR13:MOTRBV", 
-            name="las_out_ry", 
+            name="las_out_rx", 
             accuracy=10, 
             is_setting=True
         )
@@ -119,7 +119,7 @@ class Bsen(Assembly):
             PvRecord, 
             pvsetname = "SLAAR21-LMNP-ESBIR14:DRIVE", 
             pvreadbackname = "SLAAR21-LMNP-ESBIR14:MOTRBV", 
-            name="las_out_rx", 
+            name="las_out_ry", 
             accuracy=10, 
             is_setting=True
         )
