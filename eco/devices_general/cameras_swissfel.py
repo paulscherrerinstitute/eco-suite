@@ -1,25 +1,46 @@
-from cam_server import CamClient
+from cam_server import CamClient,PipelineClient
 from ..aliases import Alias, append_object_to_object
 from .adjustable import PvRecord, PvEnum, AdjustableGetSet, AdjustableVirtual
 from ..elements import Assembly
 from .motors import MotorRecord
 
+CAM_CLIENT = None
+PIPELINE_CLIENT = None
+
+def get_camclient():
+    global CAM_CLIENT
+    if not CAM_CLIENT:
+        CAM_CLIENT = CamClient()
+    return CAM_CLIENT
+
+def get_pipelineclient():
+    global PIPELINE_CLIENT
+    if not PIPELINE_CLIENT:
+        PIPELINE_CLIENT = PipelineClient()
+    return PIPELINE_CLIENT
 
 class CamserverConfig(Assembly):
-    def __init__(self, camname, camserver_alias=None, name=None):
+    def __init__(self, cam_id, camserver_alias=None, name=None):
         super().__init__(name=name)
-        self.camname = camname
+        self.cam_id = cam_id
         self.camserver_alias = camserver_alias
-        self.cc = CamClient()
+    
+    @property 
+    def cc(self):
+        return get_camclient()
+    
+    @property
+    def pc(self):
+        return get_pipelineclient()
 
     def get_current_value(self):
-        return self.cc.get_camera_config(self.camname)
+        return self.cc.get_camera_config(self.cam_id)
 
     def set_config_fields(self, fields):
         """fields is a dictionary containing the keys and values that should be updated, e.g. fields={'group': ['Laser', 'Bernina']}"""
         config = self.get_current_value()
         config.update(fields)
-        self.cc.set_camera_config(self.camname, config)
+        self.cc.set_camera_config(self.cam_id, config)
 
     ### convenience functions ###
     def set_alias(self, alias=None):
@@ -29,7 +50,7 @@ class CamserverConfig(Assembly):
         self.set_config_fields({"alias": [alias]})
 
     def stop(self):
-        self.cc.stop_instance(self.camname)
+        self.cc.stop_instance(self.cam_id)
 
     def set_cross(self, x, y, x_um_per_px=None, y_um_per_px=None):
         """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given"""

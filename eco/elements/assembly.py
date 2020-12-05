@@ -51,7 +51,7 @@ class Assembly:
                 settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
         for ts in self.status_indicators:
             if (not (ts is self)) and hasattr(ts, "get_status"):
-                tstat = ts.get_status()
+                tstat = ts.get_status(base=base)
                 settings.update(tstat["settings"])
                 status_indicators.update(tstat["status_indicators"])
             else:

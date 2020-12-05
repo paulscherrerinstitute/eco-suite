@@ -26,7 +26,7 @@ class Pprm(Assembly):
             is_setting=True,
         )
         self.camCA = CameraCA(pvname_camera)
-        self._append(CameraBasler, pvname_camera, name="camera")
+        self._append(CameraBasler, pvname_camera, name="camera", is_setting=True)
         self._append(PvEnum, self.pvname + ":LED", name="led", is_setting=True)
         self._append(PvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
 
@@ -40,6 +40,32 @@ class Pprm(Assembly):
         s = f"**Profile Monitor {self.name}**\n"
         s += f"Target in beam: {self.target.get_current_value().name}\n"
         return s
+
+
+
+class Pprm_dsd(Assembly):
+    def __init__(self, pvname, pvname_camera, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(
+            MotorRecord,
+            pvname_camera + ":MOTOR_PROBE",
+            name="target_pos",
+            is_setting=True,
+        )
+        self.camCA = CameraCA(pvname_camera)
+        self._append(CameraBasler, pvname_camera, name="camera", is_setting=False)
+        self._append(MotorRecord, self.pvname + ":MOTOR_ZOOM", name="zoom", is_setting=True)
+        self._append(PvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
+
+    def movein(self, target=1):
+        self.target.set_target_value(target)
+
+    def moveout(self, target=0):
+        self.target.set_target_value(target)
+
+
+
 
 
 class Pprmold:

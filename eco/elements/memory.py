@@ -138,6 +138,8 @@ class Memory:
                 continue
             table.append([n, tselstr, key, present_value, comp_indicator, recall_value])
 
+        if len(table)==0:
+            return "No changes compared to memory!"
         return tabulate(
             table,
             headers=[
