@@ -457,7 +457,7 @@ components = [
         },
     },
     {
-        "args": ["SARES20-CAMS142-M2"],
+        "args": ["SARES20-CAMS142-M1"],
         "name": "samplecam_sideview",
         "z_und": 142,
         "desc": "",
@@ -465,7 +465,7 @@ components = [
         "kwargs": {},
     },
     {
-        "args": ["SARES20-CAMS142-M3"],
+        "args": ["SARES20-CAMS142-C3"],
         "name": "samplecam_inline",
         "z_und": 142,
         "desc": "",

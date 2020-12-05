@@ -1,4 +1,4 @@
-from cam_server import CamClient,PipelineClient
+from cam_server import CamClient, PipelineClient
 from ..aliases import Alias, append_object_to_object
 from .adjustable import PvRecord, PvEnum, AdjustableGetSet, AdjustableVirtual
 from ..elements import Assembly
@@ -7,11 +7,13 @@ from .motors import MotorRecord
 CAM_CLIENT = None
 PIPELINE_CLIENT = None
 
+
 def get_camclient():
     global CAM_CLIENT
     if not CAM_CLIENT:
         CAM_CLIENT = CamClient()
     return CAM_CLIENT
+
 
 def get_pipelineclient():
     global PIPELINE_CLIENT
@@ -19,16 +21,17 @@ def get_pipelineclient():
         PIPELINE_CLIENT = PipelineClient()
     return PIPELINE_CLIENT
 
+
 class CamserverConfig(Assembly):
     def __init__(self, cam_id, camserver_alias=None, name=None):
         super().__init__(name=name)
         self.cam_id = cam_id
         self.camserver_alias = camserver_alias
-    
-    @property 
+
+    @property
     def cc(self):
         return get_camclient()
-    
+
     @property
     def pc(self):
         return get_pipelineclient()
@@ -75,7 +78,7 @@ class CamserverConfig(Assembly):
         self.set_config_fields(fields={"camera_calibration": calib})
 
     def __repr__(self):
-        s = f"**Camera Server Config {self.camname} with Alias {self.name}**\n"
+        s = f"**Camera Server Config {self.cam_id} with Alias {self.name}**\n"
         for key, item in self.get_current_value().items():
             s += f"{key:20} : {item}\n"
         return s
@@ -206,4 +209,7 @@ class CameraPCO(Assembly):
         for ob, val in args:
             ob(val)
         self._set_parameters(1)
-        self.running(1)
+
+
+False
+False

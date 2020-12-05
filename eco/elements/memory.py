@@ -71,14 +71,24 @@ class Memory:
         tmp(stat_now)
         self.memories(mem)
 
-    def get_memory(self, index=None, key=None):
-        self.setup_path()
-        if not (index is None):
-            key = list(self.memories().keys())[index]
-        tmp = AdjustableFS(self.dir / Path(key + ".json"))
-        return tmp()
+    def get_memory(self, input=None, index=None, key=None):
+        if input:
+            if type(input) is dict:
+                return input
+            else:
+                tmp = AdjustableFS(Path(input))
+                return tmp()
+        else:
+            self.setup_path()
+            if not (index is None):
+                key = list(self.memories().keys())[index]
+            tmp = AdjustableFS(self.dir / Path(key + ".json"))
+            return tmp()
 
-    def recall(self, memory_index=None, key=None, wait=True, show_changes_only=True):
+    def recall(
+        self, input=None, memory_index=None, key=None, wait=True, show_changes_only=True
+    ):
+
         select = self.select_from_memory(
             memory_index, show_changes_only=show_changes_only
         )
@@ -138,7 +148,7 @@ class Memory:
                 continue
             table.append([n, tselstr, key, present_value, comp_indicator, recall_value])
 
-        if len(table)==0:
+        if len(table) == 0:
             return "No changes compared to memory!"
         return tabulate(
             table,
