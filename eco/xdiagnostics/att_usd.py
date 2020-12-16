@@ -31,7 +31,9 @@ class att_usd_targets:
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        self.E = 7520
+        self.E = None
+        self.E_min = 1500
+        self._sleeptime = 1
         self.motor_configuration = {
             "transl": {
                 "id": "-LIC6",
@@ -43,6 +45,7 @@ class att_usd_targets:
             },
         }
         self._xp = xp
+        self._updateE()
 
         ### BSEN target position ###
         for name, config in self.motor_configuration.items():
@@ -56,6 +59,20 @@ class att_usd_targets:
                 }
         self._get_transmission()
 
+    def _updateE(self, energy=None):
+        while not energy:
+            energy = PV("SARUN03-UIND030:FELPHOTENE").value
+            energy = energy * 1000
+            if energy < self.E_min:
+                energy = None
+                print(
+                    f"Machine photon energy is below {self.E_min} - waiting for the machine to recover"
+                )
+                sleep(self._sleeptime)
+        self.E = energy
+        print("Set energy to %s eV" % energy)
+        return
+
     def _get_transmission(self):
         t = np.array([np.exp(-d/mat.absorption_length(self.E)) for d, mat in zip(self.targets['d'], self.targets['mat'])])
         self.targets['t']=t
@@ -66,6 +83,8 @@ class att_usd_targets:
         return idx, a[idx]
 
     def set_transmission(self, value):
+        self._updateE()
+        self._get_transmission()
         idx, t = self._find_nearest(self.targets['t'],value)
         pos = self.targets['pos'][idx]
         self._xp.close()

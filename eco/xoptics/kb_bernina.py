@@ -2,14 +2,15 @@ import numpy as np
 from scipy import constants
 from ..elements import Assembly
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import PvRecord
+from ..devices_general.adjustable import PvRecord, PvEnum
+from .kb_mirrors import KbVer, KbHor
 
 
-class KBMirrorBernina:
+class KBMirrorBernina_new(Assembly):
     def __init__(
         self,
-        kb_ver=None,
-        kb_hor=None,
+        pvname_ver,
+        pvname_hor,
         usd_table=None,
         d_kbver=3350.0,
         d_kbhor=2600.0,
@@ -18,10 +19,17 @@ class KBMirrorBernina:
         d_win2=1330.0,
         d_target=1520.0,
         d_att=1420.0,
+        name=None,
     ):
         """All distances are from sample interaction point at straight beam (no kb deflection), the units are expected in mm"""
-        self.kb_ver = kb_ver
-        self.kb_hor = kb_hor
+        super().__init__(name=name)
+
+        self._append(
+            KbVer, pvname_ver, name="ver", is_setting=True, view_toplevel_only=False
+        )
+        self._append(
+            KbHor, pvname_hor, name="hor", is_setting=True, view_toplevel_only=False
+        )
         self.usd_table = usd_table
         self.d_kbver = d_kbver
         self.d_kbhor = d_kbhor
@@ -110,11 +118,11 @@ class KBMirrorBernina:
             self.usd_table.move_to_coordinates(x, y, z, rx, ry, rz)
 
 
-class KBMirrorBernina_new(Assembly):
+class KBMirrorBernina:
     def __init__(
         self,
-        pvname_hor,
-        pvname_ver,
+        kb_ver=None,
+        kb_hor=None,
         usd_table=None,
         d_kbver=3350.0,
         d_kbhor=2600.0,
@@ -125,8 +133,6 @@ class KBMirrorBernina_new(Assembly):
         d_att=1420.0,
     ):
         """All distances are from sample interaction point at straight beam (no kb deflection), the units are expected in mm"""
-        super().__init__(name=name)
-
         self.kb_ver = kb_ver
         self.kb_hor = kb_hor
         self.usd_table = usd_table
@@ -137,38 +143,6 @@ class KBMirrorBernina_new(Assembly):
         self.d_win2 = d_win2
         self.d_win1 = d_win1
         self.d_target = d_target
-
-        self._append(MotorRecord, pvname_hor + ":W_X", name="x_hor")
-        self._append(MotorRecord, pvname_hor + ":W_Y", name="y_hor")
-        self._append(MotorRecord, pvname_hor + ":W_RY", name="y_hor")
-        self._append(MotorRecord, pvname_hor + ":W_RY", name="pitch_hor")
-        self._append(MotorRecord, pvname_hor + ":W_RZ", name="roll_hor")
-        self._append(MotorRecord, pvname_hor + ":W_RX", name="yaw_hor")
-        self._append(MotorRecord, pvname_hor + ":BU", name="bend_upstream_hor")
-        self._append(MotorRecord, pvname_hor + ":BD", name="bend_downstream_hor")
-
-        self._append(MotorRecord, pvname_hor + ":TY1", name="y1_phys_hor")
-        self._append(MotorRecord, pvname_hor + ":TY2", name="y2_phys_hor")
-        self._append(MotorRecord, pvname_hor + ":TY3", name="y3_phys_hor")
-        self._append(MotorRecord, pvname_hor + ":TX1", name="x1_phys_hor")
-        self._append(MotorRecord, pvname_hor + ":TX2", name="x2_phys_hor")
-
-        self._append()
-
-        self._add(
-            PvRecord,
-            pvsetname=Id + ":CURV_SP",
-            pvreadbackname=Id + ":CURV",
-            accuracy=0.002,
-            name="curv",
-        )
-        addPvRecordToSelf(
-            self,
-            pvsetname=Id + ":ASYMMETRY_SP",
-            pvreadbackname=Id + ":ASYMMETRY",
-            accuracy=0.002,
-            name="asym",
-        )
 
     def calc_positions(self, the_kbver, the_kbhor):
         """angles in rad"""

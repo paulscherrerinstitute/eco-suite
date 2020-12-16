@@ -41,7 +41,8 @@ def init(*args, lazy=None):
         # _namespace[key] = value
         _mod.__dict__[key] = value
         op[key] = value
-        if not ecocnf.startup_lazy:
+        if not lazy:
+            print("made here")
             if hasattr(value, "alias"):
                 for ta in value.alias.get_all():
                     try:
@@ -61,3 +62,20 @@ def init(*args, lazy=None):
     # print('Initializing of run_table failed')
     return op
 
+
+def parse_for_aliases():
+    names = [tc['name'] for tc in components]
+    for name in names:
+        to = _mod.__dict__[name]
+        if hasattr(to, "alias"):
+            for ta in to.alias.get_all():
+                try:
+                    globals()['alias_namespaces'].bernina.update(
+                        ta["alias"], ta["channel"], ta["channeltype"]
+                    )
+                except:
+                    print(f'could not init alias {ta["alias"]}')
+        else:
+            print(f"object {name} has no alias!")
+    globals()['alias_namespaces'].bernina.store()
+    

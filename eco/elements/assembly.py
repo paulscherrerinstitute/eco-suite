@@ -52,7 +52,7 @@ class Assembly:
         for ts in self.status_indicators:
             if (not (ts is self)) and hasattr(ts, "get_status"):
                 tstat = ts.get_status(base=base)
-                settings.update(tstat["settings"])
+                status_indicators.update(tstat["settings"])
                 status_indicators.update(tstat["status_indicators"])
             else:
                 status_indicators[

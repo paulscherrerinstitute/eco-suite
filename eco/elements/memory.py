@@ -4,6 +4,7 @@ from ..devices_general.adjustable import AdjustableFS
 from ..utilities.KeyPress import KeyPress
 from tabulate import tabulate
 import sys, colorama
+from inspect import getargspec
 
 global_memory_dir = None
 
@@ -33,7 +34,9 @@ class Memory:
     def setup_path(self):
         name = self.obj_parent.alias.get_full_name(joiner=None)
         self.dir = Path(self.base_dir) / Path("/".join(reversed(name)))
-        self.memories = AdjustableFS(self.dir / Path("memories.json"), default_value={})
+        self._memories = AdjustableFS(
+            self.dir / Path("memories.json"), default_value={}
+        )
         try:
             self.dir.mkdir(exist_ok=True)
         except:
@@ -41,7 +44,7 @@ class Memory:
 
     def __str__(self):
         self.setup_path()
-        mem = self.memories()
+        mem = self._memories()
         a = []
         for n, (key, content) in enumerate(mem.items()):
             row = [n]
@@ -53,14 +56,14 @@ class Memory:
 
     def __call__(self, index):
         # print(self.get_memory_difference_str(index))
-        self.recall(index)
+        self.recall(memory_index=index)
 
     def memorize(self, message=None, attributes={}, force_message=True):
         self.setup_path()
         stat_now = self.obj_parent.get_status(base=self.obj_parent)
         stat_now["memorized_attributes"] = attributes
         key = datetime.now().isoformat()
-        mem = self.memories()
+        mem = self._memories()
         if force_message:
             while not message:
                 message = input(
@@ -69,24 +72,30 @@ class Memory:
         mem[key] = {"message": message, "categories": self.categories}
         tmp = AdjustableFS(self.dir / Path(key + ".json"))
         tmp(stat_now)
-        self.memories(mem)
+        self._memories(mem)
 
-    def get_memory(self, input=None, index=None, key=None):
-        if input:
-            if type(input) is dict:
-                return input
+    def get_memory(self, input_obj=None, index=None, key=None):
+        if input_obj:
+            if type(input_obj) is dict:
+                return input_obj
             else:
-                tmp = AdjustableFS(Path(input))
+                tmp = AdjustableFS(Path(input_obj))
                 return tmp()
         else:
             self.setup_path()
             if not (index is None):
-                key = list(self.memories().keys())[index]
+                key = list(self._memories().keys())[index]
             tmp = AdjustableFS(self.dir / Path(key + ".json"))
             return tmp()
 
     def recall(
-        self, input=None, memory_index=None, key=None, wait=True, show_changes_only=True
+        self,
+        memory_index=None,
+        input_obj=None,
+        key=None,
+        wait=True,
+        show_changes_only=True,
+        check_limits=True,
     ):
 
         select = self.select_from_memory(
@@ -103,7 +112,10 @@ class Memory:
             if sel:
                 to = name2obj(self.obj_parent, key)
                 print(f"Changing {key} from {to.get_current_value()} to {val}")
-                changes.append(to.set_target_value(val))
+                if "check" in getargspec(to.set_target_value).args:
+                    changes.append(to.set_target_value(val, check=check_limits))
+                else:
+                    changes.append(to.set_target_value(val))
         if wait:
             for change in changes:
                 change.wait()
