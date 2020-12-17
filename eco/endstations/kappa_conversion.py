@@ -13,6 +13,7 @@ def you2kappa(eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True):
     
     if bernina_kappa:
         eta_k = eta_k - np.pi/2
+        kappa = - kappa
         phi_k = -phi_k + np.pi/2
     if degrees:
         eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
@@ -26,6 +27,7 @@ def kappa2you(eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=T
         )
     if bernina_kappa:    
         eta_k = eta_k + np.pi / 2 
+        kappa = - kappa
         phi_k = -phi_k + np.pi / 2 
     delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
     eta = eta_k - delta_angle
