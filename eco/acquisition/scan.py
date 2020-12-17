@@ -9,6 +9,9 @@ from ..devices_general.adjustable import DummyAdjustable
 from IPython import get_ipython
 
 
+inval_chars = [' ', '/']
+ScanNameError = Exception(f'invalid character in acquisition name, please use a name without {inval_chars}')
+
 class Scan:
     def __init__(
         self,
@@ -27,6 +30,8 @@ class Scan:
         run_table=None,
         elog=None,
     ):
+        if np.any([char in fina for char in inval_chars]):
+            raise ScanNameError 
         self.Nsteps = len(values)
         self._run_table = run_table
         self.pulses_per_step = Npulses
