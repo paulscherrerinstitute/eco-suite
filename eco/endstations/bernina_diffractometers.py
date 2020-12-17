@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 from ..elements.assembly import Assembly
 from ..detector.jungfrau import Jungfrau
+from .kappa_conversion import kappa2you, you2kappa
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -346,6 +347,7 @@ class XRD(Assembly):
                 is_setting=True,
             )
             self.set_kappa_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
+
         if diff_detector:
             self._append(
                 Jungfrau,
@@ -377,6 +379,12 @@ class XRD(Assembly):
             "/sf/common/config/qt/ESB_XRD_exp.ui",
         ]
         return subprocess.Popen(" ".join(cmd), shell=True)
+
+    def calc_kappa2you(self, eta_k, kappa, phi_k):
+        return kappa2you(eta_k, kappa, phi_k)
+
+    def calc_you2kappa(self, eta, chi, phi):
+        return you2kappa(eta, chi, phi)
 
     # def __repr__(self):
     #     return self.get_adjustable_positions_str()
