@@ -12,9 +12,9 @@ def you2kappa(eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True):
     phi_k = phi - delta_angle
     
     if bernina_kappa:
-        eta_k = eta_k - np.pi/2
-        kappa = - kappa
-        phi_k = -phi_k + np.pi/2
+        eta_k = -eta_k + np.pi/2
+        kappa = kappa
+        phi_k = -phi_k - np.pi/2
     if degrees:
         eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
     return eta_k, kappa, phi_k
