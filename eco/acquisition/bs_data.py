@@ -69,7 +69,6 @@ class BStools:
         compact_format=False,
     ):
         N_pulses *= 1
-        N_pulses += 200
         if os.path.isfile(fina):
             print("!!! File %s already exists, would you like to delete it?" % fina)
             if input("(y/n)") == "y":

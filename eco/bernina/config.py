@@ -109,6 +109,36 @@ components = [
     #     "kwargs": {},
     #     "desc": "Slit after Undulator",
     # },
+    # {
+        # "name": "mon_und",
+        # "args": ["SARFE10-PBPS053"],
+        # "z_und": 53,
+        # "desc": "Intensity/Position monitor after Undolator",
+        # "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
+        # "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
+    # },
+    {
+        "name": "mon_und",
+        "z_und": 53,
+        "desc": "Intensity/position monitor after Undulator",
+        "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
+        "args": ["SARFE10-PBPS053"],
+        "kwargs": {
+            "VME_crate": "SAROP21-CVME-PBPS1",
+            "link": 9,
+            "channels": {
+                "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+                "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+                "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+                "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+            },
+            "calc": {
+                "itot": "SLAAR21-LTIM01-EVR0:CALCI",
+                "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+                "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+            },
+        },
+    },
     {
         "name": "pshut_und",
         "type": "eco.xoptics.shutters:PhotonShutter",

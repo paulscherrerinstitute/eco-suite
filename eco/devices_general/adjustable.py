@@ -546,15 +546,27 @@ class AdjustableVirtual:
 @default_representation
 @spec_convenience
 class AdjustableGetSet:
-    def __init__(self, foo_get, foo_set, name=None):
+    def __init__(self, foo_get, foo_set, precision=0, check_interval=None, name=None):
+        """ assumes a waiting setterin function, in case no check_interval parameter is supplied"""
         self.alias = Alias(name)
         self.name = name
         self._set = foo_set
         self._get = foo_get
+        self._check_interval = check_interval
+        self.precision = precision
+    
+    def set_and_wait(self,value):
+        if self._check_interval:
+            self._set(value)
+            while abs(self.get_current_value()-value)>self.precision:
+                time.sleep(self._check_interval)
+        else:
+            self._set(value)
+
 
     def set_target_value(self, value):
         return Changer(
-            target=value, parent=self, changer=self._set, hold=False, stopper=None
+            target=value, parent=self, changer=self.set_and_wait, hold=False, stopper=None
         )
 
     def get_current_value(self):
