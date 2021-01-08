@@ -1,5 +1,5 @@
 {
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true,
-    "python.pythonPath": "/sf/bernina/anaconda/bernina_envs/bernina37/bin/python"
+    "python.pythonPath": "/home/lemke_h/anaconda3/envs/bernina37/bin/python"
 }

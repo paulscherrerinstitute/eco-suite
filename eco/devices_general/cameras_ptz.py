@@ -7,7 +7,8 @@ import urllib.request
 import io
 from PIL import Image
 import os
-from timg import Renderer
+from timg import Renderer,Ansi24HblockMethod
+from shutil import get_terminal_size
 
 #function ptz_slider_onChange(group)
 #{
@@ -81,9 +82,12 @@ class AxisPTZ(Assembly):
             return np.asarray(img)
         else:
             return img
-
-
-
+    
+    def show(self, in_terminal=True):
+        r = Renderer()
+        r.load_image(self.get_image())
+        r.resize(get_terminal_size()[0])
+        r.render(Ansi24HblockMethod)
 
     def cameraCmd(self,q_cmd):
         resp_data = {}
