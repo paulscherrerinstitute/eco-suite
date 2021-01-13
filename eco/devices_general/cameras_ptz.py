@@ -39,8 +39,8 @@ class AxisPTZ(Assembly):
         self._append(AdjustableGetSet, lambda:polyval([0.00290058, 0.99709942],self.get_position()['zoom']),lambda val: self.set_par('zoom',int(polyval([ 344.75862069, -343.75862069],val))), precision=10/9999*30,check_interval=0.05,name='zoom', is_setting=True)
         self._append(AdjustableGetSet, lambda:self.get_position()['tilt'],lambda val: self.set_par('tilt',val), name='tilt', is_setting=True)
         self._append(AdjustableGetSet, lambda:self.get_position()['pan'],lambda val: self.set_par('pan',val), name='pan', is_setting=True)
-        self._append(AdjustableGetSet, lambda:self.get_position()['iris'],lambda val: self.set_par('iris',val), name='iris', is_setting=True)
-        self._append(AdjustableGetSet, lambda:self.get_position()['focus'],lambda val: self.set_par('focus',val), name='focus', is_setting=True)
+        self._append(AdjustableGetSet, lambda:(self.get_position()['iris']-1)/9995,lambda val: self.set_par('iris',val*9995+1), name='iris', is_setting=True)
+        self._append(AdjustableGetSet, lambda:(self.get_position()['focus']-750)/(9999-750),lambda val: self.set_par('focus',val*(9999-750)+750), name='focus', is_setting=True)
 
     # camera_n = 1
     # camera_url = 'http://<<camera address>>/axis-cgi/com/ptz.cgi'
@@ -223,6 +223,3 @@ def merge_dicts(*dict_args):
         result.update(dictionary)
     return result
 
-def get_terminal_size():
-    rows, columns = os.popen('stty size', 'r').read().split()
-    return int(rows),int(columns)

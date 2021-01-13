@@ -16,6 +16,7 @@ _scope_name = "bernina"
 
 alias_namespaces = NamespaceCollection()
 
+from .bernina import *
 
 # from ..utilities.runtable import Run_Table
 # def init(pgroup, alias_namespaces, instances):

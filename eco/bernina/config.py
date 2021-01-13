@@ -13,7 +13,6 @@
 # (e.g. from same configuration).
 from ..utilities.config import (
     Component,
-    Alias,
     init_device,
     initFromConfigList,
     Configuration,
@@ -110,12 +109,12 @@ components = [
     #     "desc": "Slit after Undulator",
     # },
     # {
-        # "name": "mon_und",
-        # "args": ["SARFE10-PBPS053"],
-        # "z_und": 53,
-        # "desc": "Intensity/Position monitor after Undolator",
-        # "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
-        # "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
+    # "name": "mon_und",
+    # "args": ["SARFE10-PBPS053"],
+    # "z_und": 53,
+    # "desc": "Intensity/Position monitor after Undolator",
+    # "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
+    # "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
     # },
     {
         "name": "mon_und",
