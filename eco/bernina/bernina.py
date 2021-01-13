@@ -35,3 +35,8 @@ namespace.append_obj(
     name="cam_south",
     module_name="eco.devices_general.cameras_ptz",
 )
+
+
+# def __getattr__(*args, **kwargs):
+#     print("called getattr")
+#     print(args, kwargs)
