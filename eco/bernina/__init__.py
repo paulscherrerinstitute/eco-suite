@@ -16,7 +16,6 @@ _scope_name = "bernina"
 
 alias_namespaces = NamespaceCollection()
 
-from .bernina import *
 
 # from ..utilities.runtable import Run_Table
 # def init(pgroup, alias_namespaces, instances):
@@ -65,18 +64,17 @@ def init(*args, lazy=None):
 
 
 def parse_for_aliases():
-    names = [tc['name'] for tc in components]
+    names = [tc["name"] for tc in components]
     for name in names:
         to = _mod.__dict__[name]
         if hasattr(to, "alias"):
             for ta in to.alias.get_all():
                 try:
-                    globals()['alias_namespaces'].bernina.update(
+                    globals()["alias_namespaces"].bernina.update(
                         ta["alias"], ta["channel"], ta["channeltype"]
                     )
                 except:
                     print(f'could not init alias {ta["alias"]}')
         else:
             print(f"object {name} has no alias!")
-    globals()['alias_namespaces'].bernina.store()
-    
+    globals()["alias_namespaces"].bernina.store()
