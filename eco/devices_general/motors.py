@@ -81,9 +81,9 @@ class SmaractStreamdevice(Assembly):
         self._currentChange = None
         # self.description = EpicsString(pvname + ".DESC")
         self._append(PvEnum, self.pvname + ":DIR", name="direction", is_setting=True)
-        #self._append(
+        # self._append(
         #    PvRecord, self.pvname + ":SET_POS", name="set_pos", is_setting=True
-        #)
+        # )
         self._append(
             PvRecord,
             self.pvname + ":FRM_BACK.PROC",
@@ -152,7 +152,9 @@ class SmaractStreamdevice(Assembly):
         self._append(
             PvRecord, self.pvname + ":HLM", name="limit_high", is_setting=False
         )
-        self._append(PvRecord, self.pvname + ":NAME", name="caqtdm_name", is_setting=True)
+        self._append(
+            PvRecord, self.pvname + ":NAME", name="caqtdm_name", is_setting=True
+        )
         self.accuracy = accuracy
         self._stop_pv = PV(self.pvname + ":STOP.PROC")
         self.stop = lambda: self._stop_pv.put(1)
@@ -334,6 +336,7 @@ class MotorRecord(Assembly):
         name=None,
         elog=None,
         alias_fields={"readback": "RBV", "user_offset": "OFF", "user_direction": "DIR"},
+        expect_bad_limits=True,
     ):
         super().__init__(name=name)
         self.settings.append(self)
@@ -364,6 +367,13 @@ class MotorRecord(Assembly):
         self._append(
             PvString, self.pvname + ".DESC", name="description", is_setting=False
         )
+        if expect_bad_limits:
+            self.check_bad_limits()
+
+    def check_bad_limits(self, abs_set_value=2 ** 53):
+        ll, hl = self.get_limits()
+        if ll == 0 and hl == 0:
+            self.set_limits(-abs_set_value, abs_set_value)
 
     def set_target_value(self, value, hold=False, check=True):
         """ Adjustable convention"""
