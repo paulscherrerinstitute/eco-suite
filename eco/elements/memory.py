@@ -150,10 +150,14 @@ class Memory:
                 if not tsel:
                     comp_indicator = f"not changed ({recall_value-present_value:+g})"
                 else:
+                    try:
+                        tdiff = f"{recall_value - present_value:+g}"
+                    except TypeError:
+                        tdiff = "special"
                     comp_indicator = (
                         colorama.Fore.RED
                         + colorama.Style.BRIGHT
-                        + f"--({recall_value-present_value:+g})-->"
+                        + f"{tdiff:s}"
                         + colorama.Style.RESET_ALL
                     )
             if show_changes_only and (not changed):
@@ -169,7 +173,7 @@ class Memory:
                 "",
                 "name",
                 "present",
-                "",
+                "difference",
                 "memory",
             ],
             colalign=("decimal", "center", "left", "decimal", "center", "decimal"),

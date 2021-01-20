@@ -275,7 +275,6 @@ components = [
         "z_und": 103,
         "desc": "X-ray pulse picker",
         "type": "eco.xoptics.pp:Pulsepick",
-        "lazy": False,
     },
     # {
     #    "name": "mon_opt_old",
@@ -322,7 +321,6 @@ components = [
         "z_und": 135,
         "desc": "Spectral encoding timing diagnostics before Attenuator.",
         "type": "eco.xdiagnostics.timetools:SpectralEncoder",
-        "lazy": False,
     },
     {
         "name": "att",
@@ -433,7 +431,6 @@ components = [
             "configuration": config["gps_config"],
             "fina_hex_angle_offset": "~/eco/reference_values/hex_pi_angle_offset.json",
         },
-        "lazy": True,
     },
     # {
     #     "args": [],
@@ -467,7 +464,6 @@ components = [
             "configuration": config["xrd_config"],
             "diff_detector": {"jf_id": "JF01T03V01"},
         },
-        "lazy": True,
     },
     {
         "args": [],
@@ -727,7 +723,6 @@ components = [
         "kwargs": {
             "file_name": "/sf/bernina/config/channel_lists/default_channel_list"
         },
-        "lazy": False,
     },
     {
         "args": [],
@@ -737,7 +732,6 @@ components = [
         "kwargs": {
             "file_name": "/sf/bernina/config/channel_lists/default_channel_list_bs"
         },
-        "lazy": False,
     },
     {
         "args": [],
@@ -747,7 +741,6 @@ components = [
         "kwargs": {
             "file_name": "/sf/bernina/config/channel_lists/channel_list_PSSS_projection"
         },
-        "lazy": False,
     },
     {
         "args": [],
@@ -760,7 +753,6 @@ components = [
             },
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
-        "lazy": False,
     },
     {
         "args": [],
@@ -809,7 +801,6 @@ components = [
         "desc": "collection of all slits",
         "type": "eco.utilities.beamline:Slits",
         "kwargs": {},
-        "lazy": False,
     },
     # {
     #     "args": [
@@ -908,7 +899,6 @@ components = [
             "run_table": Component("run_table"),
             "elog": Component("elog"),
         },
-        "lazy": True,
     },
 ]
 

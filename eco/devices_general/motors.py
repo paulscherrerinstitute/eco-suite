@@ -159,6 +159,9 @@ class SmaractStreamdevice(Assembly):
         self._stop_pv = PV(self.pvname + ":STOP.PROC")
         self.stop = lambda: self._stop_pv.put(1)
 
+    def update_name_in_panel(self):
+        self.caqtdm_name(self.alias.get_full_name())
+
     def set_target_value(self, value, hold=False, check=True):
         def changer(value):
             self._drive.set_target_value(value)
