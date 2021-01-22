@@ -15,6 +15,9 @@ from lazy_object_proxy import Proxy as Proxy_orig
 from tabulate import tabulate
 
 
+import traceback
+
+
 class Component:
     def __init__(self, namestring):
         self.name = namestring
@@ -293,8 +296,10 @@ class Namespace(object):
                             self.alias_namespace.update(
                                 ta["alias"], ta["channel"], ta["channeltype"]
                             )
-                        except:
+                        except Exception as e:
                             print(f'could not init alias {ta["alias"]}')
+                            print("error message", e)
+                            # traceback.print_tb(e)
                 else:
                     print(f"object {name} has no alias!")
                 return obj_initialized
@@ -323,8 +328,9 @@ class Namespace(object):
                         self.alias_namespace.update(
                             ta["alias"], ta["channel"], ta["channeltype"]
                         )
-                    except:
+                    except Exception as e:
                         print(f'could not init alias {ta["alias"]}')
+                        print("error message", e)
             else:
                 print(f"object {name} has no alias!")
             return obj

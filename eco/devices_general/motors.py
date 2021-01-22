@@ -338,7 +338,7 @@ class MotorRecord(Assembly):
         pvname,
         name=None,
         elog=None,
-        alias_fields={"readback": "RBV", "user_offset": "OFF", "user_direction": "DIR"},
+        alias_fields={"readback": "RBV"},
         expect_bad_limits=True,
     ):
         super().__init__(name=name)

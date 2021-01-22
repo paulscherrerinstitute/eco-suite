@@ -7,10 +7,15 @@ class LaserBernina(Assembly):
         super().__init__(name=name)
         self._append()
         self.pvname = pvname
+        #Table 1, Benrina hutch
+            addMotorRecordToSelf(
+                self, Id=self.Id + "-M523:MOTOR_1", name="_delay_glob_stg"
+            )
+            self.delay_glob = DelayTime(self._delay_glob_stg, name="delay_glob")
         # Table in bernina hutch
         # Waveplate and Delay stage
-        self._append(MotorRecord, self.pvname+"-M534:MOT", name="wp_eos",is_setting=True)
-        self._append(MotorRecord, self.pvname+"-M533:MOT", name="wp_bsen",is_setting=True)
+        self._append(MotorRecord, self.pvname+"-M534:MOT", name="wp_aux1",is_setting=True)
+        self._append(MotorRecord, self.pvname+"-M533:MOT", name="wp_aux2",is_setting=True)
         self._append(MotorRecord, self.pvname+"-M521:MOTOR_1", name="delay_eos_stage",is_setting=True)
         
         # todo
@@ -24,10 +29,6 @@ class LaserBernina(Assembly):
                 self, Id=self.Id + "-M522:MOTOR_1", name="_delay_thz_stg"
             )
             self.delay_thz = DelayTime(self._delay_thz_stg, name="delay_thz")
-            addMotorRecordToSelf(
-                self, Id=self.Id + "-M523:MOTOR_1", name="_delay_glob_stg"
-            )
-            self.delay_glob = DelayTime(self._delay_glob_stg, name="delay_glob")
 
         # compressor
         addMotorRecordToSelf(self, Id=self.Id + "-M532:MOT", name="compressor")

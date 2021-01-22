@@ -301,7 +301,6 @@ class PvRecord:
         #    ):
         self.Id = pvsetname
         self.name = name
-        self.alias = Alias(name)
         #        for an, af in alias_fields.items():
         #            self.alias.append(
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
@@ -313,8 +312,10 @@ class PvRecord:
 
         if pvreadbackname is None:
             self._pvreadback = PV(self.Id)
+            pvreadbackname = self.Id
         else:
             self._pvreadback = PV(pvreadbackname)
+        self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
     def get_current_value(self, readback=True):
         if readback:
@@ -554,19 +555,22 @@ class AdjustableGetSet:
         self._get = foo_get
         self._check_interval = check_interval
         self.precision = precision
-    
-    def set_and_wait(self,value):
+
+    def set_and_wait(self, value):
         if self._check_interval:
             self._set(value)
-            while abs(self.get_current_value()-value)>self.precision:
+            while abs(self.get_current_value() - value) > self.precision:
                 time.sleep(self._check_interval)
         else:
             self._set(value)
 
-
     def set_target_value(self, value):
         return Changer(
-            target=value, parent=self, changer=self.set_and_wait, hold=False, stopper=None
+            target=value,
+            parent=self,
+            changer=self.set_and_wait,
+            hold=False,
+            stopper=None,
         )
 
     def get_current_value(self):

@@ -80,4 +80,4 @@ from IPython import get_ipython
 
 _ipy = get_ipython()
 _ipy.Completer.use_jedi = False
-print(arguments)
+# print(arguments)

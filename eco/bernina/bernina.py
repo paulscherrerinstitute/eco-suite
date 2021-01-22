@@ -1,13 +1,13 @@
-# init()
-import sys
 from .config import components
+from .config import config as config_bernina
+from ..utilities.config import Namespace
 from ..aliases import NamespaceCollection
-from ..utilities.config import Component, Namespace
 
 
 namespace = Namespace(
     name="bernina", root_module=__name__, alias_namespace=NamespaceCollection().bernina
 )
+namespace.alias_namespace.data = []
 
 # adding all stuff from the config components the "old" way of configuring.
 for tk in components:
@@ -37,6 +37,6 @@ namespace.append_obj(
 )
 
 
-# def __getattr__(*args, **kwargs):
+# def __getattr__(*args, **kwargs)a
 #     print("called getattr")
 #     print(args, kwargs)

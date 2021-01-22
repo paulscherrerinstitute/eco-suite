@@ -108,13 +108,13 @@ class Namespace:
 
     @property
     def aliases(self):
-        if not self.data:
+        if self.data is None:
             self.read_file()
         return [td["alias"] for td in self.data]
 
     @property
     def channels(self):
-        if not self.data:
+        if self.data is None:
             self.read_file()
         return [td["channel"] for td in self.data]
 
