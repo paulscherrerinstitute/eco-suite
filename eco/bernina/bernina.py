@@ -1,5 +1,5 @@
 from .config import components
-from .config import config as config_bernina
+from .config import config as config_berninamesp
 from ..utilities.config import Namespace
 from ..aliases import NamespaceCollection
 
@@ -10,6 +10,9 @@ namespace = Namespace(
 namespace.alias_namespace.data = []
 
 # adding all stuff from the config components the "old" way of configuring.
+# whatever is added, it is available by the configured name in this module
+# afterwards, and can be used immediately, e.g. as input argument for the next thing.
+
 for tk in components:
     namespace.append_obj_from_config(tk, lazy=True)
 

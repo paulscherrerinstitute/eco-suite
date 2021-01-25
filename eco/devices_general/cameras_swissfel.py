@@ -89,7 +89,7 @@ class CameraBasler(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         if not camserver_alias:
-            camserver_alias = self.alias.get_full_name() + f"({pvname})"
+            camserver_alias = self.alias.get_full_name() + f" ({pvname})"
         self._append(
             CamserverConfig,
             self.pvname,
