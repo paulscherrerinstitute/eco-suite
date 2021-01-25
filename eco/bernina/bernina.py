@@ -38,6 +38,13 @@ namespace.append_obj(
     name="cam_south",
     module_name="eco.devices_general.cameras_ptz",
 )
+namespace.append_obj(
+    "BerninaInlineMicroscope",
+    pvname_camera="SARES20-CAMS142-M3",
+    lazy=True,
+    name="inline_microscope",
+    module_name="eco.microscopes",
+)
 
 
 # def __getattr__(*args, **kwargs)a
