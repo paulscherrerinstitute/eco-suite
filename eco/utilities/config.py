@@ -274,6 +274,29 @@ class Namespace(object):
     def all_names(self):
         return self.initialized_names | self.lazy_names
 
+    def init_all(self, verbose=True, raise_errors=False):
+        for name in self.all_names:
+            if verbose:
+                print(("Configuring %s " % (name)).ljust(25), end="")
+                sys.stdout.flush()
+            # if verbose:
+            #     print(("(%s)" % (name)).ljust(25), end="")
+            #     sys.stdout.flush()
+            try:
+                dir(self.get_obj(name))
+
+                if verbose:
+                    print((_color.GREEN + "OK" + _color.RESET).rjust(5))
+                    sys.stdout.flush()
+
+            except Exception as expt:
+                # tb = traceback.format_exc()
+                if verbose:
+                    print((_color.RED + "FAILED" + _color.RESET).rjust(5))
+                    # print(sys.exc_info())
+                if raise_errors:
+                    raise expt
+
     def append_obj(
         self, obj_factory, *args, lazy=False, name=None, module_name=None, **kwargs
     ):
