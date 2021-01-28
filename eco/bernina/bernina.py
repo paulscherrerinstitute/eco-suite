@@ -39,14 +39,41 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 
+namespace.append_obj(
+    "Daq",
+    instrument="bernina",
+    pgroup=config_berninamesp["pgroup"],
+    channels_JF=channels_JF,
+    channels_BS=channels_BS,
+    channels_BSCAM=channels_BSCAM,
+    channels_CA=channels_CA,
+    pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
+    event_master=event_master,
+    detectors_event_code=50,
+    name="daq",
+    module_name="eco.acquisition.daq_client",
+)
+namespace.append_obj(
+    "Scans",
+    data_base_dir="scan_data",
+    scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
+    default_counters=[daq],
+    checker=checker,
+    scan_directories=True,
+    run_table=run_table,
+    elog=elog,
+    name="scans",
+    module_name="eco.acquisition.scan",
+)
+
 #####################################################################################################
 ## more temporary devices will be outcoupled to temorary module.
 
 namespace.append_obj(
     "AxisPTZ",
-    "bernina-cam-mobile",
+    "bernina-cam-mobile1",
     lazy=True,
-    name="cam_mob",
+    name="cam_mob1",
     module_name="eco.devices_general.cameras_ptz",
 )
 
@@ -92,7 +119,29 @@ namespace.append_obj(
     smar_config=config_berninamesp["las_smar_config"],
 )
 
+from ..elements.assembly import Assembly
+from ..devices_general.motors import SmaractStreamdevice
 
+
+# ad hoc incoupling device
+class Incoupling(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB6", name="rx_pump", is_setting=True
+        )
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB17", name="ry_pump", is_setting=True
+        )
+
+
+namespace.append_obj(
+    Incoupling,
+    lazy=True,
+    name="incoupling",
+)
+
+# incoupling = Incoupling(name="incoupling")
 # {
 #     "args": [],
 #     "name": "cams_qioptiq",

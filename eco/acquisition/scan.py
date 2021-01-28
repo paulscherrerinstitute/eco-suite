@@ -9,8 +9,11 @@ from ..devices_general.adjustable import DummyAdjustable
 from IPython import get_ipython
 
 
-inval_chars = [' ', '/']
-ScanNameError = Exception(f'invalid character in acquisition name, please use a name without {inval_chars}')
+inval_chars = [" ", "/"]
+ScanNameError = Exception(
+    f"invalid character in acquisition name, please use a name without {inval_chars}"
+)
+
 
 class Scan:
     def __init__(
@@ -31,7 +34,7 @@ class Scan:
         elog=None,
     ):
         if np.any([char in fina for char in inval_chars]):
-            raise ScanNameError 
+            raise ScanNameError
         self.Nsteps = len(values)
         self._run_table = run_table
         self.pulses_per_step = Npulses
@@ -286,7 +289,7 @@ class Scans:
             print(f"Tried to change permissions to 775")
 
         for counter in default_counters:
-            if counter._default_file_path is not None:
+            if not (counter._default_file_path is None):
                 data_dir = Path(counter._default_file_path + self.data_base_dir)
                 if not data_dir.exists():
                     print(
