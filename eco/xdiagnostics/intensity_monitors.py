@@ -86,13 +86,13 @@ class SolidTargetDetectorPBPS_new:
             "SLAAR21-LTIM01-EVR0:CALCI.INPE",
         ]
         for tc, tv in zip(channels, norm_diodes):
-            PV(tc).put(bytes(str(tv), "utf8"))
+            PV(tc).put(bytes(str(tv), "utf8"), wait=True, timeout=8)
         channels = ["SLAAR21-LTIM01-EVR0:CALCX.INPE", "SLAAR21-LTIM01-EVR0:CALCX.INPF"]
         for tc, tv in zip(channels, norm_diodes[2:4]):
-            PV(tc).put(bytes(str(tv), "utf8"))
+            PV(tc).put(bytes(str(tv), "utf8"), wait=True, timeout=8)
         channels = ["SLAAR21-LTIM01-EVR0:CALCY.INPE", "SLAAR21-LTIM01-EVR0:CALCY.INPF"]
         for tc, tv in zip(channels, norm_diodes[0:2]):
-            PV(tc).put(bytes(str(tv), "utf8"))
+            PV(tc).put(bytes(str(tv), "utf8"), wait=True, timeout=8)
 
     def get_calibration_values_position(
         self, calib_intensities, seconds=5, motion_range=0.2
@@ -139,10 +139,10 @@ class SolidTargetDetectorPBPS_new:
         channels = ["SLAAR21-LTIM01-EVR0:CALCX.INPJ", "SLAAR21-LTIM01-EVR0:CALCX.INPI"]
         # txcalib = [-1*xcalib[0],-1*xcalib[1]]
         for tc, tv in zip(channels, xcalib):
-            PV(tc).put(bytes(str(tv), "utf8"))
+            PV(tc).put(bytes(str(tv), "utf8"), wait=True)
         channels = ["SLAAR21-LTIM01-EVR0:CALCY.INPJ", "SLAAR21-LTIM01-EVR0:CALCY.INPI"]
         for tc, tv in zip(channels, ycalib):
-            PV(tc).put(bytes(str(tv), "utf8"))
+            PV(tc).put(bytes(str(tv), "utf8"), wait=True)
 
     def calibrate(self, seconds=5):
         c = self.get_calibration_values(seconds=seconds)
