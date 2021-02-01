@@ -47,18 +47,16 @@ class Run_Table:
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
         self.unit_df = DataFrame()
-        self.alias_file_name = (
-            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable"
-        )
-        self.adj_file_name = (
-            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable"
-        )
-        self.unit_file_name = (
-            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable"
-        )
+        self.alias_file_name = (f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable")
+        self.adj_file_name = (f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable")
+        self.unit_file_name = (f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable")
+        self.gspread_key_file_name = (f"/sf/bernina/config/src/python/gspread/gspread_keys")
+
         self._channels_ca = channels_ca
 
         ### credentials and settings for uploading to gspread ###
+        if not spreadsheet_key:
+            spreadsheet_key = self._load_pgroup_gspread_keys(pgroup)
         self._spreadsheet_key = spreadsheet_key
         self._scope = [
             "https://spreadsheets.google.com/feeds",
@@ -77,6 +75,23 @@ class Run_Table:
         self.units = {}
         pd.options.display.max_rows = 999
         self.load()
+
+    def _load_pgroup_gspread_keys(self, pgroup):
+        if os.path.exists(self.gspread_key_file_name + ".pkl"):
+            self.key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
+            if str(pgroup) in self.gspread_key_df.index:
+                spreadsheet_key = self.gspread_key_df['keys'][f'{pgroup}']
+            else:
+                spreadsheet_key = str(input("Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "))
+                gspread_key_df = DataFrame({'keys': [spreadsheet_key]}, index=[f'{pgroup}'])
+                self.gspread_key_df = self.gspread_key_df.append(gspread_key_df)
+                self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
+        else:
+            spreadsheet_key = str(input("Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "))
+            self.gspread_key_df = DataFrame({'keys': [spreadsheet_key]}, index=[f'{pgroup}'])
+            self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
+        return spreadsheet_key
+
 
     def _query_by_keys(self, keys="", df=None):
         if df is None:

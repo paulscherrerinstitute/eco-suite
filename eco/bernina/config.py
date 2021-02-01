@@ -45,7 +45,7 @@ components = [
         "type": "eco.utilities.runtable:Run_Table",
         "kwargs": {
             "pgroup": config["pgroup"],
-            "spreadsheet_key": config["gspread_notebook_id"],
+            "spreadsheet_key": None,
             "devices": None,
             "alias_namespace": None,
             "channels_ca": Component("_env_channels_ca"),
