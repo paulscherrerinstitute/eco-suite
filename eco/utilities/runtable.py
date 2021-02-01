@@ -78,7 +78,7 @@ class Run_Table:
 
     def _load_pgroup_gspread_keys(self, pgroup):
         if os.path.exists(self.gspread_key_file_name + ".pkl"):
-            self.key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
+            self.gspread_key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
             if str(pgroup) in self.gspread_key_df.index:
                 spreadsheet_key = self.gspread_key_df['keys'][f'{pgroup}']
             else:
@@ -143,6 +143,10 @@ class Run_Table:
         is_connected = np.array([pv.connected for pv in self._pvs.values()])
         filtered_dict = {key: pv.value for key, pv in self._pvs.items() if pv.connected}
         return filtered_dict
+    def _remove_duplicates(self):
+         self.adj_df = self.adj_df[~self.adj_df.index.duplicated(keep='last')]
+         self.alias_df = self.alias_df[~self.alias_df.index.duplicated(keep='last')]
+         self.unit_df = self.unit_df[~self.unit_df.index.duplicated(keep='last')]
 
     def save(self):
         data_dir = Path(os.path.dirname(self.alias_file_name + ".pkl"))
@@ -208,6 +212,7 @@ class Run_Table:
             [val for adjs in self.units.values() for val in adjs.values()]
         )
         self.unit_df = DataFrame([values_u], columns=multiindex_u, index=["units"])
+        self._remove_duplicates()
         self.save()
         self.upload_all()
 
