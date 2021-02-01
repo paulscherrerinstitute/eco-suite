@@ -2,7 +2,7 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, MotorRecord_new
-from ..devices_general.adjustable import PvRecord
+from ..devices_general.adjustable import PvRecord, AdjustableVirtual
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -12,6 +12,7 @@ import subprocess
 from ..elements.assembly import Assembly
 from ..detector.jungfrau import Jungfrau
 from .kappa_conversion import kappa2you, you2kappa
+import numpy as np
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -187,6 +188,292 @@ class DeltaTauCurrOff:
 
     def __call__(self):
         self.set_off()
+
+
+class XRDYou(Assembly):
+    def __init__(self, name=None, Id=None, configuration=["base"], diff_detector=None):
+        """X-ray diffractometer platform in AiwssFEL Bernina.\
+                <configuration> : list of elements mounted on 
+                the plaform, options are kappa, nutable, hlgonio, polana"""
+        # self.Id = Id
+        super().__init__(name=name)
+        self.configuration = configuration
+
+        if "base" in self.configuration:
+            ### motors base platform ###
+            ### motors base platform ###
+            self._append(MotorRecord_new, Id + ":MOT_TX", name="xbase", is_setting=True)
+            self._append(MotorRecord_new, Id + ":MOT_TY", name="ybase", is_setting=True)
+            self._append(
+                MotorRecord_new, Id + ":MOT_RX", name="rxbase", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_MY_RYTH", name="mu", is_setting=True
+            )
+            self.set_base_off = DeltaTauCurrOff("SARES21-XRD:asyn4.AOUT")
+
+        if "arm" in self.configuration:
+            ### motors XRD detector arm ###
+            self._append(
+                MotorRecord_new, Id + ":MOT_NY_RY2TH", name="nu", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_DT_RX2TH", name="delta", is_setting=True
+            )
+            ### motors XRD area detector branch ###
+            self._append(MotorRecord_new, Id + ":MOT_D_T", name="tdet", is_setting=True)
+
+            ### motors XRD polarisation analyzer branch ###
+            self._append(MotorRecord_new, Id + ":MOT_P_T", name="tpol", is_setting=True)
+            # missing: slits of flight tube
+            self.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
+
+        if "hlxz" in self.configuration:
+            ### motors heavy load goniometer ###
+            self._append(
+                MotorRecord_new, Id + ":MOT_TBL_TX", name="xhl", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_TBL_TZ", name="zhl", is_setting=True
+            )
+            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
+        if "hly" in self.configuration:
+            self._append(
+                MotorRecord_new, Id + ":MOT_TBL_TY", name="yhl", is_setting=True
+            )
+            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
+
+        if "hlrxrz" in self.configuration:
+            try:
+                self._append(
+                    MotorRecord_new, Id + ":MOT_TBL_RX", name="rxhl", is_setting=True
+                )
+            except:
+                print("XRD.rxhl not found")
+                pass
+            try:
+                self._append(
+                    MotorRecord_new, Id + ":MOT_TBL_RY", name="rzhl", is_setting=True
+                )
+            except:
+                print("XRD.rzhl not found")
+            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
+
+        if "phi_table" in self.configuration:
+            ### motors nu table ###
+            self._append(
+                MotorRecord_new, Id + ":MOT_HEX_TX", name="tphi", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, Id + ":MOT_HEX_RX", name="phi", is_setting=True
+            )
+
+        if "phi_hex" in self.configuration:
+            ### motors PI hexapod ###
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-X",
+                pvreadbackname="SARES20-HEX_PI:POSI-X",
+                name="xhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-Y",
+                pvreadbackname="SARES20-HEX_PI:POSI-Y",
+                name="yhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-Z",
+                pvreadbackname="SARES20-HEX_PI:POSI-Z",
+                name="zhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-U",
+                pvreadbackname="SARES20-HEX_PI:POSI-U",
+                name="uhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-V",
+                pvreadbackname="SARES20-HEX_PI:POSI-V",
+                name="vhex",
+            )
+            append_object_to_object(
+                self,
+                PvRecord,
+                "SARES20-HEX_PI:SET-POSI-W",
+                pvreadbackname="SARES20-HEX_PI:POSI-W",
+                name="whex",
+            )
+
+        if "kappa" in self.configuration:
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_KRX",
+                name="eta_kap",
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_KAP",
+                name="kappa",
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_KPH",
+                name="phi_kap",
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTY", name="zkap", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTX", name="xkap", is_setting=True
+            )
+            self._append(
+                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTZ", name="ykap", is_setting=True
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DRX",
+                name="rxkap",
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DRZ",
+                name="rykap",
+                is_setting=True,
+            )
+            self.set_kappa_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
+
+            def get_current_kappa2you(self):
+                return self.calc_kappa2you(
+                    self.eta_kap.get_current_value(),
+                    self.kappa.get_current_value(),
+                    self.phi_kap.get_current_value(),
+                )
+
+            def set_youvar_value_to_current_kappa(value, varind):
+                vars = list(get_current_kappa2you())
+                vars[varind] = value
+                return self.calc_you2kappa(*vars)
+
+            self._append(
+                AdjustableVirtual,
+                [self.eta_kap, self.kappa, self.phi_kap],
+                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
+                    eta_kap, kappa, phi_kap
+                )[0],
+                lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
+                name="eta",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.eta_kap, self.kappa, self.phi_kap],
+                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
+                    eta_kap, kappa, phi_kap
+                )[1],
+                lambda value_chi: set_youvar_value_to_current_kappa(value_eta, 1),
+                name="chi",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.eta_kap, self.kappa, self.phi_kap],
+                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
+                    eta_kap, kappa, phi_kap
+                )[2],
+                lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 2),
+                name="phi",
+            )
+
+        if diff_detector:
+            self._append(
+                Jungfrau,
+                diff_detector["jf_id"],
+                name="det_diff",
+                is_setting=False,
+                is_status=True,
+                view_toplevel_only=True,
+            )
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****XRD motor positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    def gui(self, guiType="xdm"):
+        """ Adjustable convention"""
+        cmd = ["caqtdm", "-macro"]
+        cmd = [
+            "-noMsg",
+            "-stylefile",
+            "sfop.qss",
+            "-macro",
+            "P=SARES21-XRD",
+            "/sf/common/config/qt/ESB_XRD_exp.ui",
+        ]
+        return subprocess.Popen(" ".join(cmd), shell=True)
+
+    # def calc_kappa2you(self, eta_k, kappa, phi_k):
+    #     return kappa2you(eta_k, kappa, phi_k)
+
+    # def calc_you2kappa(self, eta, chi, phi):
+    #     return you2kappa(eta, chi, phi)
+
+    def calc_you2kappa(
+        self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True
+    ):
+        """tool to convert from you definition angles to kappa angles, in
+        particular the bernina kappa where the"""
+        if degrees:
+            eta, chi, phi, kappa_angle = np.deg2rad([eta, chi, phi, kappa_angle])
+        delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+        eta_k = eta - delta_angle
+        kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+        phi_k = phi - delta_angle
+
+        if bernina_kappa:
+            eta_k = eta_k - np.pi / 2
+            kappa = -kappa
+            phi_k = -phi_k
+        if degrees:
+            eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
+        return eta_k, kappa, phi_k
+
+    def calc_kappa2you(
+        self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True
+    ):
+        if degrees:
+            eta_k, kappa, phi_k, kappa_angle = np.deg2rad(
+                [eta_k, kappa, phi_k, kappa_angle]
+            )
+        if bernina_kappa:
+            eta_k = eta_k + np.pi / 2
+            kappa = -kappa
+            phi_k = -phi_k
+        delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+        eta = eta_k - delta_angle
+        chi = 2 * np.arcsin(np.sin(kappa / 2) * np.sin(kappa_angle))
+        phi = phi_k - delta_angle
+        if degrees:
+            eta, chi, phi = np.rad2deg([eta, chi, phi])
+        return eta, chi, phi
+
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
 
 
 class XRD(Assembly):

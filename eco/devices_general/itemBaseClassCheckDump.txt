@@ -1,0 +1,295 @@
+*-------------------------------------------------------
+* itemType: Rectangle
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Line
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Triangle
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Circle
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2,11,12
+contextActions(editmode)=10(ClosePath),21(Pie),20(Arc),30(90deg),31(180deg),32(270deg),33(360deg)
+*-------------------------------------------------------
+* itemType: Polygon
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Path
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+contextActions(editmode)=10(ClosePath),11(FillSolid),20(OddEven),21(Winding)
+*-------------------------------------------------------
+* itemType: Text
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Image
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Symbol
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: AttachLabel
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: AttachTransform
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Frame
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ScrollArea
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: GroupBox
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Stacked
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+contextActions(editmode)=100(Add Tab),101(Delete Tab)
+*-------------------------------------------------------
+* itemType: SubPicture
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: MonitorText
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+controlPoints=1,2,10
+contextActions(editmode)=1(Show Unit)
+*-------------------------------------------------------
+* itemType: MonitorBar
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor),3(Monitor)
+controlPoints=1,2,10,11
+contextActions(editmode)=30(No),31(Gradient),32(Solid),33(Warning&Alarm Gradient),34(Warning&Alarm Solid),35(Alarm Solid),36(Warning Solid),20(No),21(Inside),22(Outside)
+*-------------------------------------------------------
+* itemType: MonitorMeter
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor),3(Monitor)
+controlPoints=1,2,10,11
+contextActions(editmode)=30(No),31(Gradient),32(Solid),33(Warning&Alarm Gradient),34(Warning&Alarm Solid),35(Alarm Solid),36(Warning Solid),20(No),21(Inside),22(Outside),50(Two Third),51(Three Quarters),60(Upper Half),70(TopRight Quarter),71(TopLeft  Quarter),72(BotRight Quarter),73(BotLeft  Quarter)
+*-------------------------------------------------------
+* itemType: MonitorIndic
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: MonitorBits
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+controlPoints=1,2
+contextActions(editmode)=1(Up),2(Down),3(Left),4(Right)
+*-------------------------------------------------------
+* itemType: MonitorBitnames
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor),3(Monitor)
+controlPoints=1,2
+contextActions(editmode)=1(Up),2(Down),3(Left),4(Right)
+*-------------------------------------------------------
+* itemType: StateSymbol
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: MonitorStripChart
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor),3(Monitor),4(Monitor),5(Monitor),6(Monitor),7(Monitor),8(Monitor),9(Monitor),10(Monitor)
+controlPoints=1,2
+contextActions(editmode)=30(PV),31(Received),10(None),11(TopLeft),12(Top),13(TopRight),14(Right),15(BottomRight),16(Bottom),17(BottomLeft),18(Left),40(Absolut),41(Relative),60(Right to Left),61(Left to Right),50(None),51(Horizontal),52(Vertical),53(Hor&Vert)
+contextActions(runtime)=80(Clear Curve),30(PV),31(Received),10(None),11(TopLeft),12(Top),13(TopRight),14(Right),15(BottomRight),16(Bottom),17(BottomLeft),18(Left),40(Absolut),41(Relative),60(Right to Left),61(Left to Right),50(None),51(Horizontal),52(Vertical),53(Hor&Vert)
+*-------------------------------------------------------
+* itemType: MonitorXYPlot
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),10(Monitor),18(Monitor),11(Monitor),19(Monitor),12(Monitor),20(Monitor),13(Monitor),21(Monitor),14(Monitor),22(Monitor),15(Monitor),23(Monitor),16(Monitor),24(Monitor),17(Monitor),25(Monitor),3(Monitor),2(Monitor),4(Monitor),50(Monitor),52(Monitor),51(Monitor),53(Monitor)
+controlPoints=1,2
+contextActions(editmode)=30(PV),31(Received),10(None),11(TopLeft),12(Top),13(TopRight),14(Right),15(BottomRight),16(Bottom),17(BottomLeft),18(Left),50(None),51(Horizontal),52(Vertical),53(Hor&Vert)
+contextActions(runtime)=80(Clear Plot),30(PV),31(Received),10(None),11(TopLeft),12(Top),13(TopRight),14(Right),15(BottomRight),16(Bottom),17(BottomLeft),18(Left),50(None),51(Horizontal),52(Vertical),53(Hor&Vert)
+*-------------------------------------------------------
+* itemType: MonitorCamera
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor),3(Monitor),4(Monitor),5(Monitor),6(Monitor)
+controlPoints=1,2,10,11
+contextActions(editmode)=21(Information),20(Histogram),22(Level Bar),11(<Disable All>),1(Default),2(Grey),3(Spectrum),4(Automatic Levels)
+contextActions(runtime)=21(Information),20(Histogram),22(Level Bar),11(<Disable All>),1(Default),2(Grey),3(Spectrum),4(Automatic Levels)
+*-------------------------------------------------------
+* itemType: MonitorTable
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2,100,101,102
+*-------------------------------------------------------
+* itemType: MonitorWaterfallPlot
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor),3(Monitor),4(Monitor)
+controlPoints=1,2,10,11
+contextActions(editmode)=30(Scroll),31(Repeate),32(Single),40(Down),41(Up),21(Information),20(Intensity),22(Grid),11(<Disable All>),2(Grey),3(Spectrum0),4(Spectrum1)
+contextActions(runtime)=90(Clear Plot),30(Scroll),31(Repeate),32(Single),40(Down),41(Up),21(Information),20(Intensity),22(Grid),11(<Disable All>),2(Grey),3(Spectrum0),4(Spectrum1)
+*-------------------------------------------------------
+* itemType: ControlKnob
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control)
+controlPoints=1,2,10,11
+contextActions(editmode)=10(Unit),30(No),31(Gradient),32(Solid),33(Warning&Alarm Gradient),34(Warning&Alarm Solid),35(Alarm Solid),36(Warning Solid)
+*-------------------------------------------------------
+* itemType: ControlSlider
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control),3(Monitor)
+controlPoints=1,2,10,11
+contextActions(editmode)=30(No),31(Gradient),32(Solid),33(Warning&Alarm Gradient),34(Warning&Alarm Solid),35(Alarm Solid),36(Warning Solid),20(No),21(Inside),22(Outside)
+*-------------------------------------------------------
+* itemType: ControlTextEntry
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control)
+controlPoints=1,2,10
+contextActions(editmode)=1(Show Unit)
+*-------------------------------------------------------
+* itemType: ControlNumeric
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control)
+controlPoints=1,2,10
+contextActions(editmode)=1(Show Unit)
+*-------------------------------------------------------
+* itemType: ControlMessageButton
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ControlChoiceButton
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ControlCheckBox
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Control)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ActionDisplayGroup
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ActionLoadPicture
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ActionShellCommand
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: PropertyModifierCheckBox
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ScriptContext2d
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: ScriptActionButton
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: BackgroundImage
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+*-------------------------------------------------------
+* itemType: TestEvents
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: TestTGeneric
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: TestArea
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: Button
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+*-------------------------------------------------------
+* itemType: SymOriginPosition
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+*-------------------------------------------------------
+* itemType: SymConnectionPoint
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+*-------------------------------------------------------
+* itemType: SymConnectionLine
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=100
+*-------------------------------------------------------
+* itemType: SymElmFrame
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+*-------------------------------------------------------
+* itemType: SymElmRectangle
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+*-------------------------------------------------------
+* itemType: SymElmCircle
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=11,12
+contextActions(editmode)=10(ClosePath),21(Pie),20(Arc),30(90deg),31(180deg),32(270deg),33(360deg)
+*-------------------------------------------------------
+* itemType: SymElmText
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+*-------------------------------------------------------
+* itemType: SymElmPath
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+contextActions(editmode)=10(ClosePath),11(FillSolid),20(OddEven),21(Winding)
+*-------------------------------------------------------
+* itemType: SymElmImage
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm),2(Monitor)
+*-------------------------------------------------------
+* itemType: Cross
+*-------------------------------------------------------
+pvs=0(Visibility),1(Alarm)
+controlPoints=1,2
+

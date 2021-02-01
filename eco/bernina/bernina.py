@@ -38,7 +38,26 @@ namespace.append_obj(
     name="cam_south",
     module_name="eco.devices_general.cameras_ptz",
 )
-
+namespace.append_obj(
+    "XRDYou",
+    module_name="eco.endstations.bernina_diffractometers",
+    Id="SARES21-XRD",
+    configuration=config_berninamesp["xrd_config"],
+    diff_detector={"jf_id": "JF01T03V01"},
+    name="xrd_you",
+)
+# {
+#     "args": [],
+#     "name": "xrd",
+#     "z_und": 142,
+#     "desc": "Xray diffractometer",
+#     "type": "eco.endstations.bernina_diffractometers:XRD",
+#     "kwargs": {
+#         "Id": "SARES21-XRD",
+#         "configuration": config["xrd_config"],
+#         "diff_detector": {"jf_id": "JF01T03V01"},
+#     },
+# },
 namespace.append_obj(
     "Daq",
     instrument="bernina",
