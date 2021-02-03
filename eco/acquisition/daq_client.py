@@ -136,7 +136,7 @@ class Daq:
             files_extensions.append("CADUMP")
         if channels_BS:
             parameters["channels_list"] = channels_BS
-            files_extensions.append("BSREAD")
+            files_extensions.append("BSDATA")
         if channels_JF:
             parameters["detectors"] = {tn: {} for tn in channels_JF}
             for ch in channels_JF:

@@ -355,7 +355,7 @@ class XRDYou(Assembly):
             )
             self.set_kappa_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 
-            def get_current_kappa2you(self):
+            def get_current_kappa2you():
                 return self.calc_kappa2you(
                     self.eta_kap.get_current_value(),
                     self.kappa.get_current_value(),
@@ -382,7 +382,7 @@ class XRDYou(Assembly):
                 lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
                     eta_kap, kappa, phi_kap
                 )[1],
-                lambda value_chi: set_youvar_value_to_current_kappa(value_eta, 1),
+                lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
                 name="chi",
             )
             self._append(
@@ -391,7 +391,7 @@ class XRDYou(Assembly):
                 lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
                     eta_kap, kappa, phi_kap
                 )[2],
-                lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 2),
+                lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
                 name="phi",
             )
 
@@ -438,6 +438,8 @@ class XRDYou(Assembly):
     ):
         """tool to convert from you definition angles to kappa angles, in
         particular the bernina kappa where the"""
+        if bernina_kappa:
+            eta = -eta
         if degrees:
             eta, chi, phi, kappa_angle = np.deg2rad([eta, chi, phi, kappa_angle])
         delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
@@ -448,7 +450,7 @@ class XRDYou(Assembly):
         if bernina_kappa:
             eta_k = eta_k - np.pi / 2
             kappa = -kappa
-            phi_k = -phi_k
+            phi_k = phi_k
         if degrees:
             eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
         return eta_k, kappa, phi_k
@@ -463,13 +465,15 @@ class XRDYou(Assembly):
         if bernina_kappa:
             eta_k = eta_k + np.pi / 2
             kappa = -kappa
-            phi_k = -phi_k
+            phi_k = phi_k
         delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
         eta = eta_k - delta_angle
         chi = 2 * np.arcsin(np.sin(kappa / 2) * np.sin(kappa_angle))
         phi = phi_k - delta_angle
         if degrees:
             eta, chi, phi = np.rad2deg([eta, chi, phi])
+        if bernina_kappa:
+            eta = -eta
         return eta, chi, phi
 
     # def __repr__(self):
