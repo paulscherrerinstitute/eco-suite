@@ -381,7 +381,7 @@ class Electro_optic_sampling:
         self.name = name
         self.alias = Alias(name)
         self.diode_channels = diode_channels
-        self.basepath = f"/sf/bernina/data/p18775/res/scan_info/"
+        self.basepath = f"/sf/bernina/data/p18915/res/scan_info/"
         self.motor_configuration = {
             "ry": {
                 "id": "-ESB16",

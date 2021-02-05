@@ -1,5 +1,5 @@
 from ..devices_general.adjustable import PvRecord, AdjustableVirtual
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 from ..aliases import Alias
 from ..elements import memory
 
@@ -13,13 +13,8 @@ class Jungfrau(Assembly):
         trigger_off=255,
         name=None,
     ):
-        self.name = name
+        super().__init__(name=name)
         self.alias = Alias(name, channel=jf_id, channeltype="JF")
-        self.settings = []
-        self.status_indicators = []
-        self.view_toplevel_only = []
-        if memory.global_memory_dir:
-            self.memory = memory.Memory(self)
 
         self.jf_id = jf_id
         self._append(
