@@ -28,6 +28,8 @@ class Daq:
             self.channels["channels_BS"] = channels_BS
         if channels_BSCAM:
             self.channels["channels_BSCAM"] = channels_BSCAM
+        if channels_CA:
+            self.channels["channels_CA"] = channels_CA
         self.broker_address = broker_address
         self.timeout = timeout
         self.pgroup = pgroup
@@ -56,6 +58,7 @@ class Daq:
                 channels_JF=self.channels["channels_JF"].get_current_value(),
                 channels_BS=self.channels["channels_BS"].get_current_value(),
                 channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
+                channels_CA=self.channels["channels_CA"].get_current_value(),
                 **acq_pars,
             )
             acquisition.acquisition_kwargs.update({"file_names": file_names})
@@ -133,7 +136,7 @@ class Daq:
         print(parameters)
         if channels_CA:
             parameters["pv_list"] = channels_CA
-            files_extensions.append("CADUMP")
+            files_extensions.append("PVCHANNELS")
         if channels_BS:
             parameters["channels_list"] = channels_BS
             files_extensions.append("BSDATA")

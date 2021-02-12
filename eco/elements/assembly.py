@@ -2,6 +2,7 @@ from ..aliases import Alias
 from tabulate import tabulate
 import colorama
 from . import memory
+from enum import Enum
 
 
 class Collection:
@@ -15,16 +16,16 @@ class Collection:
         return self._list
 
     def append(self, obj, recursive=True, force=False):
-        # if force:
-        #     if not (obj in self._list):
-        #         self._list.append(obj)
+        if force:
+            if not (obj in self._list):
+                self._list.append(obj)
 
-        if hasattr(obj, self.name):
+        elif hasattr(obj, self.name):
             if isinstance(obj.__dict__[self.name], type(self)):
                 if not recursive:
                     # if (obj in obj.__dict__[self.name]()):
-                        if not (obj in self._list):
-                            self._list.append(obj)
+                    if not (obj in self._list):
+                        self._list.append(obj)
                 else:
                     for it in obj.__dict__[self.name].get_list():
                         if not (it in self._list):
@@ -63,7 +64,7 @@ class Assembly:
         is_status=True,
         is_alias=True,
         view_toplevel_only=True,
-        **kwargs
+        **kwargs,
     ):
         self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
         self.alias.append(self.__dict__[name].alias)
@@ -139,13 +140,20 @@ class Assembly:
         return s
 
     def get_status_indicator_str(self):
+        main_name = self.name
         stats = self.status_indicators_collection()
         # stats_dict = {}
         tab = []
         for to in stats:
             name = to.alias.get_full_name(base=self)
             value = to.get_current_value()
-            tab.append([name, value])
+            if isinstance(value, Enum):
+                value = f"{value.value} ({value.name})"
+            try:
+                unit = to.unit()
+            except:
+                unit = None
+            tab.append([".".join([main_name, name]), value, unit])
         s = tabulate(tab)
         return s
 
@@ -172,7 +180,7 @@ class Assembly_old:
         is_status=True,
         is_alias=True,
         view_toplevel_only=True,
-        **kwargs
+        **kwargs,
     ):
         self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
         self.alias.append(self.__dict__[name].alias)

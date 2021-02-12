@@ -84,46 +84,47 @@ class Bsen(Assembly):
             "SARES20-PROF141-M1",
             name="camera_microscope",
             is_setting=True,
+            is_status=False,
         )
         self._append(
             CameraPCO,
             "SARES20-CAMS142-M5",
             name="camera_spectrometer",
             is_setting=True,
+            is_status=False,
         )
         self._append(
-            PvRecord, 
-            pvsetname = "SLAAR21-LMNP-ESBIR11:DRIVE", 
-            pvreadbackname = "SLAAR21-LMNP-ESBIR11:MOTRBV", 
-            name="las_in_ry", 
-            accuracy=10, 
-            is_setting=True
+            PvRecord,
+            pvsetname="SLAAR21-LMNP-ESBIR11:DRIVE",
+            pvreadbackname="SLAAR21-LMNP-ESBIR11:MOTRBV",
+            name="las_in_ry",
+            accuracy=10,
+            is_setting=True,
         )
         self._append(
-            PvRecord, 
-            pvsetname = "SLAAR21-LMNP-ESBIR12:DRIVE", 
-            pvreadbackname = "SLAAR21-LMNP-ESBIR12:MOTRBV", 
-            name="las_in_rx", 
-            accuracy=10, 
-            is_setting=True
+            PvRecord,
+            pvsetname="SLAAR21-LMNP-ESBIR12:DRIVE",
+            pvreadbackname="SLAAR21-LMNP-ESBIR12:MOTRBV",
+            name="las_in_rx",
+            accuracy=10,
+            is_setting=True,
         )
         self._append(
-            PvRecord, 
-            pvsetname = "SLAAR21-LMNP-ESBIR13:DRIVE", 
-            pvreadbackname = "SLAAR21-LMNP-ESBIR13:MOTRBV", 
-            name="las_out_rx", 
-            accuracy=10, 
-            is_setting=True
+            PvRecord,
+            pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE",
+            pvreadbackname="SLAAR21-LMNP-ESBIR13:MOTRBV",
+            name="las_out_rx",
+            accuracy=10,
+            is_setting=True,
         )
         self._append(
-            PvRecord, 
-            pvsetname = "SLAAR21-LMNP-ESBIR14:DRIVE", 
-            pvreadbackname = "SLAAR21-LMNP-ESBIR14:MOTRBV", 
-            name="las_out_ry", 
-            accuracy=10, 
-            is_setting=True
+            PvRecord,
+            pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE",
+            pvreadbackname="SLAAR21-LMNP-ESBIR14:MOTRBV",
+            name="las_out_ry",
+            accuracy=10,
+            is_setting=True,
         )
-
 
     def get_proc_config(self):
         return self.proc_client.get_pipeline_config(self.proc_pipeline)

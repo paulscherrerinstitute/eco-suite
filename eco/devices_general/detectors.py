@@ -14,6 +14,19 @@ from datetime import datetime
 
 from ..acquisition.utilities import Acquisition
 from ..aliases import Alias
+from ..elements import Assembly
+
+
+class PvData(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._pv = PV(pvname)
+        self.name = name
+        self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
+
+    def get_current_value(self):
+        return self._pv.get()
 
 
 class PvDataStream:
@@ -106,8 +119,6 @@ class PvDataStream:
 
 
 _cameraArrayTypes = ["monochrome", "rgb"]
-
-
 
 
 class CameraCA:
