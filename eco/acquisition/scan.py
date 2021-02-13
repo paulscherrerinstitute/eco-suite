@@ -250,11 +250,16 @@ class Scan:
         finally:
             print(tb)
             if self.return_at_end == "question":
-                if input("Move back to initial values? (y/n)")[0] == "y":
-                    self.changeToInitialValues()
+                if input("Change back to initial values? (y/n)")[0] == "y":
+                    chs = self.changeToInitialValues()
+                    print("Changing back to value(s) before scan.")
+                    for ch in chs:
+                        ch.wait()
             elif self.return_at_end:
                 self.changeToInitialValues()
-                print("Moving back to value(s) before scan.")
+                print("Changing back to value(s) before scan.")
+                for ch in chs:
+                    ch.wait()
             else:
                 print("Staying at final scan value(s)!")
 

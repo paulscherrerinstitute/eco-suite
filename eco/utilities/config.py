@@ -13,7 +13,7 @@ import socket
 from importlib import import_module
 from lazy_object_proxy import Proxy as Proxy_orig
 from tabulate import tabulate
-
+from concurrent.futures import ThreadPoolExecutor
 
 import traceback
 
@@ -274,28 +274,65 @@ class Namespace(object):
     def all_names(self):
         return self.initialized_names | self.lazy_names
 
-    def init_all(self, verbose=True, raise_errors=False):
-        for name in self.all_names:
+    def init_name(self, name, verbose=True, raise_errors=False):
+        # for name in self.all_names:
+        if verbose:
+            print(("Configuring %s " % (name)).ljust(25), end="")
+            sys.stdout.flush()
+        # if verbose:
+        #     print(("(%s)" % (name)).ljust(25), end="")
+        #     sys.stdout.flush()
+        try:
+            dir(self.get_obj(name))
+
             if verbose:
-                print(("Configuring %s " % (name)).ljust(25), end="")
+                print((_color.GREEN + "OK" + _color.RESET).rjust(5))
                 sys.stdout.flush()
+
+        except Exception as expt:
+            # tb = traceback.format_exc()
+            if verbose:
+                print((_color.RED + "FAILED" + _color.RESET).rjust(5))
+                # print(sys.exc_info())
+            if raise_errors:
+                raise expt
+
+    def init_all(self, verbose=True, raise_errors=False, max_workers=20):
+        with ThreadPoolExecutor(max_workers=max_workers) as exc:
+            for name in self.all_names:
+                exc.submit(
+                    self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                )
             # if verbose:
-            #     print(("(%s)" % (name)).ljust(25), end="")
+            #     print(("Configuring %s " % (name)).ljust(25), end="")
             #     sys.stdout.flush()
+            # # if verbose:
+            # #     print(("(%s)" % (name)).ljust(25), end="")
+            # #     sys.stdout.flush()
+            # try:
+            #     dir(self.get_obj(name))
+
+            #     if verbose:
+            #         print((_color.GREEN + "OK" + _color.RESET).rjust(5))
+            #         sys.stdout.flush()
+
+            # except Exception as expt:
+            #     # tb = traceback.format_exc()
+            #     if verbose:
+            #         print((_color.RED + "FAILED" + _color.RESET).rjust(5))
+            #         # print(sys.exc_info())
+            #     if raise_errors:
+            #         raise expt
+
+    def get_initialized_aliases(self):
+        aliases = []
+        has_no_aliases = []
+        for tn, tv in self.initialized_items.items():
             try:
-                dir(self.get_obj(name))
-
-                if verbose:
-                    print((_color.GREEN + "OK" + _color.RESET).rjust(5))
-                    sys.stdout.flush()
-
-            except Exception as expt:
-                # tb = traceback.format_exc()
-                if verbose:
-                    print((_color.RED + "FAILED" + _color.RESET).rjust(5))
-                    # print(sys.exc_info())
-                if raise_errors:
-                    raise expt
+                aliases.append(tv.alias.get_all())
+            except:
+                has_no_aliases.append(tn)
+        return aliases, has_no_aliases
 
     def append_obj(
         self, obj_factory, *args, lazy=False, name=None, module_name=None, **kwargs
