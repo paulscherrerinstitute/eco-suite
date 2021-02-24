@@ -852,3 +852,15 @@ class ChangerOld:
 
     def stop(self):
         self._stopper()
+
+class MForceSettings(Assembly):
+    def __init__(self,pv_controller, port_number, name='motor_parameters'):
+        super().__init__(name=name)
+        self.pv_motor = f'{pv_controller}:MOT_{port_number}'
+        self.pv_channel = f'{pv_controller}:{port_number}'
+        self._append(PVRecord,self.pv_motor+'.EGU',name='unit',is_setting=True)
+        self._append(PVRecord,self.pv_motor+'.MRES',name='motor_resolution',is_setting=True)
+        self._append(PVRecord,self.pv_motor+'.ERES',name='encoder_resolution',is_setting=True)
+        self._append(PVRecord,self.pv_channel+'_set',name='channel_config',is_setting=True)
+        self._append(PVRecord,self.pv_channel+'_RC',name='run_current',is_setting=True)
+

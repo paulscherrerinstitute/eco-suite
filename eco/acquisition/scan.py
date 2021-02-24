@@ -256,7 +256,7 @@ class Scan:
                     for ch in chs:
                         ch.wait()
             elif self.return_at_end:
-                self.changeToInitialValues()
+                chs = self.changeToInitialValues()
                 print("Changing back to value(s) before scan.")
                 for ch in chs:
                     ch.wait()
