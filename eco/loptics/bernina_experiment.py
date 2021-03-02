@@ -10,6 +10,7 @@ from ..devices_general.pv_adjustable import PvRecord
 import colorama, datetime
 from pint import UnitRegistry
 from time import sleep
+
 ureg = UnitRegistry()
 
 
@@ -30,7 +31,7 @@ def addPvRecordToSelf(
 
 
 def addMotorRecordToSelf(self, Id=None, name=None):
-    self.__dict__[name] = MotorRecord(pvname = Id, name=name)
+    self.__dict__[name] = MotorRecord(pvname=Id, name=name)
     self.alias.append(self.__dict__[name].alias)
 
 
@@ -175,9 +176,9 @@ class Laser_Exp:
             addMotorRecordToSelf(
                 self, Id=self.Id + "-M521:MOTOR_1", name="_delay_eos_stg"
             )
-            #addDelayStageToSelf(
+            # addDelayStageToSelf(
             #    self, stage=self.__dict__["_delay_eos_stg"], name="delay_eos"
-            #)
+            # )
             self.delay_eos = DelayTime(self._delay_eos_stg, name="delay_eos")
             self.alias.append(self.delay_eos.alias)
         except Exception as expt:
@@ -287,8 +288,6 @@ class Laser_Exp:
                 mot.home_backward.mv(1)
             elif config["home_direction"] == "forward":
                 mot.home_forward.mv(1)
-
-
 
         ## IR beam pointing mirrors
         # try:

@@ -314,7 +314,11 @@ class SolidTargetDetectorPBPS:
             print("No diodes configured, can not change any gain!")
 
         # SAROP21-CVME-PBPS:Lnk10Ch15-WD-gain
+
+
 from ..elements.assembly import Assembly
+
+
 class SolidTargetDetectorPBPS_new_assembly(Assembly):
     def __init__(
         self,
@@ -333,10 +337,18 @@ class SolidTargetDetectorPBPS_new_assembly(Assembly):
     ):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(MotorRecord, "SARES20-DSD:MOTOR_DSDX", name="xbase", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_X1", name="x_diodes", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_Y1", name="y_diodes", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_PROBE", name="target_y", is_setting=True)
+        self._append(
+            MotorRecord, "SARES20-DSD:MOTOR_DSDX", name="xbase", is_setting=True
+        )
+        self._append(
+            MotorRecord, pvname + ":MOTOR_X1", name="x_diodes", is_setting=True
+        )
+        self._append(
+            MotorRecord, pvname + ":MOTOR_Y1", name="y_diodes", is_setting=True
+        )
+        self._append(
+            MotorRecord, pvname + ":MOTOR_PROBE", name="target_y", is_setting=True
+        )
         self._append(PvEnum, pvname + ":PROBE_SP", name="target", is_setting=True)
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
@@ -345,10 +357,18 @@ class SolidTargetDetectorPBPS_new_assembly(Assembly):
             self.diode_right = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_right))
 
         if channels:
-            self._append(PvDataStream, channels["up"], name="signal_up", is_setting=False)
-            self._append(PvDataStream, channels["down"], name="signal_down", is_setting=False)
-            self._append(PvDataStream, channels["left"], name="signal_left", is_setting=False)
-            self._append(PvDataStream, channels["right"], name="signal_right", is_setting=False)
+            self._append(
+                PvDataStream, channels["up"], name="signal_up", is_setting=False
+            )
+            self._append(
+                PvDataStream, channels["down"], name="signal_down", is_setting=False
+            )
+            self._append(
+                PvDataStream, channels["left"], name="signal_left", is_setting=False
+            )
+            self._append(
+                PvDataStream, channels["right"], name="signal_right", is_setting=False
+            )
 
         if calc:
             self._append(PvDataStream, calc["itot"], name="intensity", is_setting=False)
@@ -438,7 +458,6 @@ class SolidTargetDetectorPBPS_new_assembly(Assembly):
         self.set_calibration_values(c)
         xc, yc = self.get_calibration_values_position(c, seconds=seconds)
         self.set_calibration_values_position(xc, yc)
-
 
     def set_gains(self, value):
         try:

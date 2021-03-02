@@ -334,8 +334,6 @@ class Namespace(object):
                 has_no_aliases.append(tn)
         return aliases, has_no_aliases
 
-                
-
     def append_obj(
         self, obj_factory, *args, lazy=False, name=None, module_name=None, **kwargs
     ):

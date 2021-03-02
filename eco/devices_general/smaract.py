@@ -145,7 +145,7 @@ class SmarActRecord:
         ignore_limits=False,
         confirm_move=False,
     ):
-        """ moves smaract drive to position
+        """moves smaract drive to position
 
         arguments:
         ==========
@@ -167,7 +167,7 @@ class SmarActRecord:
            -3 : move-with-wait finished, hard limit violation seen
             0 : move-with-wait finish OK.
             0 : move-without-wait executed, not cpmfirmed
-            1 : move-without-wait executed, move confirmed 
+            1 : move-without-wait executed, move confirmed
             3 : move-without-wait finished, hard limit violation seen
             4 : move-without-wait finished, soft limit violation seen
 

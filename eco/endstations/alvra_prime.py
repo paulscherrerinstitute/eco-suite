@@ -65,31 +65,25 @@ class table:
         self.status = PV(Id + ":SS_STATUS")
 
     def __str__(self):
-        return (
-            "Prime Table position\nx: %s mm\ny: %s mm\nz: %s\npitch: %s mrad\nyaw: %s mrad\nmode SP: %s \nstatus: %s"
-            % (
-                self.x.wm(),
-                self.y.wm(),
-                self.z.wm(),
-                self.pitch.wm(),
-                self.yaw.wm(),
-                self.modeSP.get(as_string=True),
-                self.status.get(),
-            )
+        return "Prime Table position\nx: %s mm\ny: %s mm\nz: %s\npitch: %s mrad\nyaw: %s mrad\nmode SP: %s \nstatus: %s" % (
+            self.x.wm(),
+            self.y.wm(),
+            self.z.wm(),
+            self.pitch.wm(),
+            self.yaw.wm(),
+            self.modeSP.get(as_string=True),
+            self.status.get(),
         )
 
     def __repr__(self):
-        return (
-            "{'x': %s, 'y': %s,'z': %s,'pitch': %s, 'yaw': %s, 'mode set point': %s,'status': %s}"
-            % (
-                self.x,
-                self.y,
-                self.z,
-                self.pitch,
-                self.yaw,
-                self.modeSP.get(as_string=True),
-                self.status.get(),
-            )
+        return "{'x': %s, 'y': %s,'z': %s,'pitch': %s, 'yaw': %s, 'mode set point': %s,'status': %s}" % (
+            self.x,
+            self.y,
+            self.z,
+            self.pitch,
+            self.yaw,
+            self.modeSP.get(as_string=True),
+            self.status.get(),
         )
 
 

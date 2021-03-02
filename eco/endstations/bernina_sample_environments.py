@@ -217,31 +217,43 @@ class Organic_crystal_breadboard:
         for name, config in self.motor_configuration.items():
             addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
 
-        
-        addSmarActRecordToSelf(self, Id='SARES23-LIC7', name='polarizer_stg')
-        addSmarActRecordToSelf(self, Id='SARES23-LIC14', name='crystal_stg')
-        addSmarActRecordToSelf(self, Id='SARES23-LIC13', name='wp_stg')
+        addSmarActRecordToSelf(self, Id="SARES23-LIC7", name="polarizer_stg")
+        addSmarActRecordToSelf(self, Id="SARES23-LIC14", name="crystal_stg")
+        addSmarActRecordToSelf(self, Id="SARES23-LIC13", name="wp_stg")
 
-
-        self.polarizer = AdjustableVirtual([self.polarizer_stg],self.pol_get, self.pol_set, name='polarizer')
-        self.crystal = AdjustableVirtual([self.crystal_stg],self.xtal_wp_get, self.xtal_wp_set, name='crystal')
-        self.wp = AdjustableVirtual([self.wp_stg],self.xtal_wp_get, self.xtal_wp_set, name='wp')
-        self.thz_polarization = AdjustableVirtual([self.crystal_stg, self.wp_stg],self.thz_pol_get, self.thz_pol_set, name='thz_polarization')
+        self.polarizer = AdjustableVirtual(
+            [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
+        )
+        self.crystal = AdjustableVirtual(
+            [self.crystal_stg], self.xtal_wp_get, self.xtal_wp_set, name="crystal"
+        )
+        self.wp = AdjustableVirtual(
+            [self.wp_stg], self.xtal_wp_get, self.xtal_wp_set, name="wp"
+        )
+        self.thz_polarization = AdjustableVirtual(
+            [self.crystal_stg, self.wp_stg],
+            self.thz_pol_get,
+            self.thz_pol_set,
+            name="thz_polarization",
+        )
 
     def pol_set(self, val):
-        return 204/360*val
+        return 204 / 360 * val
+
     def pol_get(self, val):
-        return 360/204*val
+        return 360 / 204 * val
 
     def thz_pol_set(self, val):
-        return 1./5*val, 1/2.5*val 
+        return 1.0 / 5 * val, 1 / 2.5 * val
+
     def thz_pol_get(self, val, val2):
-        return 5/1.*val
+        return 5 / 1.0 * val
 
     def xtal_wp_set(self, val):
-        return 1/5.*val
+        return 1 / 5.0 * val
+
     def xtal_wp_get(self, val):
-        return 5/1.*val
+        return 5 / 1.0 * val
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
@@ -301,13 +313,12 @@ class Organic_crystal_breadboard:
         return self.get_adjustable_positions_str()
 
 
-
 class LiNbO3_crystal_breadboard:
     def __init__(self, name=None, Id=None, alias_namespace=None):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        
+
         self.motor_configuration = {
             "rz": {
                 "id": "-ESB7",
@@ -347,7 +358,6 @@ class LiNbO3_crystal_breadboard:
         for name, config in self.motor_configuration.items():
             addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
 
-
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
             mot = self.__dict__[name]._device
@@ -357,7 +367,6 @@ class LiNbO3_crystal_breadboard:
             mot.put("CL_MAX_FREQ", config["speed"])
             sleep(0.5)
             mot.put("CALIBRATE.PROC", 1)
-
 
     def get_adjustable_positions_str(self):
         ostr = "*****LiNbO3 crystal breadboard positions******\n"
@@ -370,7 +379,6 @@ class LiNbO3_crystal_breadboard:
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
-
 
 
 class Electro_optic_sampling:
@@ -503,10 +511,10 @@ class Electro_optic_sampling:
         self, runlist, what="diff", diode_channels=None, t0_corr=True, offset_sub=False
     ):
         """
-        what = 'diff' the read out from the channel 3 of the balanced diode 
+        what = 'diff' the read out from the channel 3 of the balanced diode
                'diff/sum'  (diode1 - diode2)/(diode1+diode2)
         t0_corr: True or False
-                it finds the position the maximum / minimum peak and correct time zero in the time axis  
+                it finds the position the maximum / minimum peak and correct time zero in the time axis
         """
         fig, ax = plt.subplots(1, 2, figsize=(10, 5), num="Runlist")
         ax[1].set_xlabel("Frequency [THz]")
@@ -527,10 +535,10 @@ class Electro_optic_sampling:
                 diff = datmean["diff"]
             elif what == "ratio":
                 diff = dat1 / dat2
-            elif what == 'sum':
-                diff = dat1+dat2
-            elif what=='diff':
-                diff = dat1-dat2
+            elif what == "sum":
+                diff = dat1 + dat2
+            elif what == "diff":
+                diff = dat1 - dat2
             elif what == "diff/sum":
                 diff = (dat1 - dat2) / (dat1 + dat2)
             if "delay" in x_motor:
@@ -544,7 +552,7 @@ class Electro_optic_sampling:
             t0_pos = x[int(max_pos)]
             if t0_corr:
                 x = x - t0_pos
-            np.savetxt(f'eos_data/eos_Scan{rr}.txt',[x,diff])
+            np.savetxt(f"eos_data/eos_Scan{rr}.txt", [x, diff])
             ax[0].plot(x, diff, label=f"Run_{rr}: t0={t0_pos:0.2f}")
             ax[0].legend()
             ax[1].plot(freq, ampl)
@@ -620,4 +628,3 @@ class Electro_optic_sampling:
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
-

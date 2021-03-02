@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 
+
 class Adjustable(ABC):
     @abstractmethod
     def get_current_value(self):
         pass
+
     @abstractmethod
-    def set_target_value_to(self,value):
+    def set_target_value_to(self, value):
         pass
 
 
@@ -35,4 +37,3 @@ class Changer:
 
     def stop(self):
         self._stopper()
-    

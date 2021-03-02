@@ -202,58 +202,118 @@ class XRDYou(Assembly):
         if "base" in self.configuration:
             ### motors base platform ###
             ### motors base platform ###
-            self._append(MotorRecord_new, Id + ":MOT_TX", name="xbase", is_setting=True, is_status=True)
-            self._append(MotorRecord_new, Id + ":MOT_TY", name="ybase", is_setting=True, is_status=True)
             self._append(
-                MotorRecord_new, Id + ":MOT_RX", name="rxbase", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_TX",
+                name="xbase",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, Id + ":MOT_MY_RYTH", name="mu", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_TY",
+                name="ybase",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                Id + ":MOT_RX",
+                name="rxbase",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                Id + ":MOT_MY_RYTH",
+                name="mu",
+                is_setting=True,
+                is_status=True,
             )
             self.set_base_off = DeltaTauCurrOff("SARES21-XRD:asyn4.AOUT")
 
         if "arm" in self.configuration:
             ### motors XRD detector arm ###
             self._append(
-                MotorRecord_new, Id + ":MOT_NY_RY2TH", name="nu", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_NY_RY2TH",
+                name="nu",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, Id + ":MOT_DT_RX2TH", name="delta", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_DT_RX2TH",
+                name="delta",
+                is_setting=True,
+                is_status=True,
             )
             ### motors XRD area detector branch ###
-            self._append(MotorRecord_new, Id + ":MOT_D_T", name="tdet", is_setting=True, is_status=True)
+            self._append(
+                MotorRecord_new,
+                Id + ":MOT_D_T",
+                name="tdet",
+                is_setting=True,
+                is_status=True,
+            )
 
             ### motors XRD polarisation analyzer branch ###
-            self._append(MotorRecord_new, Id + ":MOT_P_T", name="tpol", is_setting=True, is_status=True)
+            self._append(
+                MotorRecord_new,
+                Id + ":MOT_P_T",
+                name="tpol",
+                is_setting=True,
+                is_status=True,
+            )
             # missing: slits of flight tube
             self.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
 
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###
             self._append(
-                MotorRecord_new, Id + ":MOT_TBL_TX", name="xhl", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_TBL_TX",
+                name="xhl",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, Id + ":MOT_TBL_TZ", name="zhl", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_TBL_TZ",
+                name="zhl",
+                is_setting=True,
+                is_status=True,
             )
             self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
         if "hly" in self.configuration:
             self._append(
-                MotorRecord_new, Id + ":MOT_TBL_TY", name="yhl", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_TBL_TY",
+                name="yhl",
+                is_setting=True,
+                is_status=True,
             )
             self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 
         if "hlrxrz" in self.configuration:
             try:
                 self._append(
-                    MotorRecord_new, Id + ":MOT_TBL_RX", name="rxhl", is_setting=True, is_status=True
+                    MotorRecord_new,
+                    Id + ":MOT_TBL_RX",
+                    name="rxhl",
+                    is_setting=True,
+                    is_status=True,
                 )
             except:
                 print("XRD.rxhl not found")
                 pass
             try:
                 self._append(
-                    MotorRecord_new, Id + ":MOT_TBL_RY", name="rzhl", is_setting=True, is_status=True
+                    MotorRecord_new,
+                    Id + ":MOT_TBL_RY",
+                    name="rzhl",
+                    is_setting=True,
+                    is_status=True,
                 )
             except:
                 print("XRD.rzhl not found")
@@ -262,10 +322,18 @@ class XRDYou(Assembly):
         if "phi_table" in self.configuration:
             ### motors nu table ###
             self._append(
-                MotorRecord_new, Id + ":MOT_HEX_TX", name="tphi", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_HEX_TX",
+                name="tphi",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, Id + ":MOT_HEX_RX", name="phi", is_setting=True, is_status=True
+                MotorRecord_new,
+                Id + ":MOT_HEX_RX",
+                name="phi",
+                is_setting=True,
+                is_status=True,
             )
 
         if "phi_hex" in self.configuration:
@@ -318,40 +386,57 @@ class XRDYou(Assembly):
                 MotorRecord_new,
                 "SARES21-XRD:MOT_KAP_KRX",
                 name="eta_kap",
-                is_setting=True, is_status=True,
+                is_setting=True,
+                is_status=True,
             )
             self._append(
                 MotorRecord_new,
                 "SARES21-XRD:MOT_KAP_KAP",
                 name="kappa",
-                is_setting=True, is_status=True,
+                is_setting=True,
+                is_status=True,
             )
             self._append(
                 MotorRecord_new,
                 "SARES21-XRD:MOT_KAP_KPH",
                 name="phi_kap",
-                is_setting=True, is_status=True,
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTY", name="zkap", is_setting=True, is_status=True
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DTY",
+                name="zkap",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTX", name="xkap", is_setting=True, is_status=True
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DTX",
+                name="xkap",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
-                MotorRecord_new, "SARES21-XRD:MOT_KAP_DTZ", name="ykap", is_setting=True, is_status=True
+                MotorRecord_new,
+                "SARES21-XRD:MOT_KAP_DTZ",
+                name="ykap",
+                is_setting=True,
+                is_status=True,
             )
             self._append(
                 MotorRecord_new,
                 "SARES21-XRD:MOT_KAP_DRX",
                 name="rxkap",
-                is_setting=True, is_status=True,
+                is_setting=True,
+                is_status=True,
             )
             self._append(
                 MotorRecord_new,
                 "SARES21-XRD:MOT_KAP_DRZ",
                 name="rykap",
-                is_setting=True, is_status=True,
+                is_setting=True,
+                is_status=True,
             )
             self.set_kappa_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 

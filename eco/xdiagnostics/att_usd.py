@@ -13,6 +13,7 @@ import numpy as np
 
 from time import sleep
 
+
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
         self.__dict__[name] = MotorRecord(Id, name=name)
@@ -50,13 +51,13 @@ class att_usd_targets:
         ### BSEN target position ###
         for name, config in self.motor_configuration.items():
             addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
-    
+
         Al = materials.Al
         self.targets = {
-                'mat': np.array([Al,Al,Al,Al,Al,Al,Al,Al]), 
-                'd': np.array([0,60,160, 200, 300, 400, 500, 700]),
-                'pos': np.array([-35,-25,-15,-5,5,15,25,35]),
-                }
+            "mat": np.array([Al, Al, Al, Al, Al, Al, Al, Al]),
+            "d": np.array([0, 60, 160, 200, 300, 400, 500, 700]),
+            "pos": np.array([-35, -25, -15, -5, 5, 15, 25, 35]),
+        }
         self._get_transmission()
 
     def _updateE(self, energy=None):
@@ -74,10 +75,15 @@ class att_usd_targets:
         return
 
     def _get_transmission(self):
-        t = np.array([np.exp(-d/mat.absorption_length(self.E)) for d, mat in zip(self.targets['d'], self.targets['mat'])])
-        self.targets['t']=t
+        t = np.array(
+            [
+                np.exp(-d / mat.absorption_length(self.E))
+                for d, mat in zip(self.targets["d"], self.targets["mat"])
+            ]
+        )
+        self.targets["t"] = t
 
-    def _find_nearest(self,a, a0):
+    def _find_nearest(self, a, a0):
         "Element in nd array `a` closest to the scalar value `a0`"
         idx = np.abs(a - a0).argmin()
         return idx, a[idx]
@@ -85,22 +91,22 @@ class att_usd_targets:
     def set_transmission(self, value):
         self._updateE()
         self._get_transmission()
-        idx, t = self._find_nearest(self.targets['t'],value)
-        pos = self.targets['pos'][idx]
+        idx, t = self._find_nearest(self.targets["t"], value)
+        pos = self.targets["pos"][idx]
         self._xp.close()
         self.transl.mv(pos)
-        print(f'Set transmission to {t:0.2E} | Moving to target {idx} at pos {pos}')
-        while abs(pos-self.transl.get_current_value()) > 0.1:
+        print(f"Set transmission to {t:0.2E} | Moving to target {idx} at pos {pos}")
+        while abs(pos - self.transl.get_current_value()) > 0.1:
             sleep(0.1)
-        print('transmission changed')
+        print("transmission changed")
         self._xp.open()
 
-    
     def get_current_value(self):
-        idx, pos = self._find_nearest(self.targets['pos'],self.transl.get_current_value())
-        t = self.targets['t'][idx]
-        return t 
-
+        idx, pos = self._find_nearest(
+            self.targets["pos"], self.transl.get_current_value()
+        )
+        t = self.targets["t"][idx]
+        return t
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():

@@ -107,6 +107,6 @@ class WaitPvConditions:
     def is_done(self):
         return len(self.foos) == 0
 
-    def wait_until_done(self,check_interval=0.05):
+    def wait_until_done(self, check_interval=0.05):
         while not self.is_done:
             sleep(check_interval)

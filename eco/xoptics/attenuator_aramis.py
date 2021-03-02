@@ -27,12 +27,13 @@ class AttenuatorAramis:
             if set_limits:
                 mot.set_limits(*set_limits)
 
-        alias_fields = {"transmission": "TRANS_RB", "transmission_3rd": "TRANS3EDHARM_RB"}
+        alias_fields = {
+            "transmission": "TRANS_RB",
+            "transmission_3rd": "TRANS3EDHARM_RB",
+        }
         for an, af in alias_fields.items():
             ach = ":".join([self.Id, af])
-            self.alias.append(
-                    Alias(an, channel=ach, channeltype="CA")
-            )
+            self.alias.append(Alias(an, channel=ach, channeltype="CA"))
 
     def __str__(self):
         pass

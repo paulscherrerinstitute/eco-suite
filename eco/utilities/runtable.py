@@ -47,10 +47,18 @@ class Run_Table:
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
         self.unit_df = DataFrame()
-        self.alias_file_name = (f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable")
-        self.adj_file_name = (f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable")
-        self.unit_file_name = (f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable")
-        self.gspread_key_file_name = (f"/sf/bernina/config/src/python/gspread/gspread_keys")
+        self.alias_file_name = (
+            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable"
+        )
+        self.adj_file_name = (
+            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable"
+        )
+        self.unit_file_name = (
+            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable"
+        )
+        self.gspread_key_file_name = (
+            f"/sf/bernina/config/src/python/gspread/gspread_keys"
+        )
 
         self._channels_ca = channels_ca
 
@@ -80,18 +88,29 @@ class Run_Table:
         if os.path.exists(self.gspread_key_file_name + ".pkl"):
             self.gspread_key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
             if str(pgroup) in self.gspread_key_df.index:
-                spreadsheet_key = self.gspread_key_df['keys'][f'{pgroup}']
+                spreadsheet_key = self.gspread_key_df["keys"][f"{pgroup}"]
             else:
-                spreadsheet_key = str(input("Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "))
-                gspread_key_df = DataFrame({'keys': [spreadsheet_key]}, index=[f'{pgroup}'])
+                spreadsheet_key = str(
+                    input(
+                        "Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "
+                    )
+                )
+                gspread_key_df = DataFrame(
+                    {"keys": [spreadsheet_key]}, index=[f"{pgroup}"]
+                )
                 self.gspread_key_df = self.gspread_key_df.append(gspread_key_df)
                 self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
         else:
-            spreadsheet_key = str(input("Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "))
-            self.gspread_key_df = DataFrame({'keys': [spreadsheet_key]}, index=[f'{pgroup}'])
+            spreadsheet_key = str(
+                input(
+                    "Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "
+                )
+            )
+            self.gspread_key_df = DataFrame(
+                {"keys": [spreadsheet_key]}, index=[f"{pgroup}"]
+            )
             self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
         return spreadsheet_key
-
 
     def _query_by_keys(self, keys="", df=None):
         if df is None:
@@ -143,10 +162,11 @@ class Run_Table:
         is_connected = np.array([pv.connected for pv in self._pvs.values()])
         filtered_dict = {key: pv.value for key, pv in self._pvs.items() if pv.connected}
         return filtered_dict
+
     def _remove_duplicates(self):
-         self.adj_df = self.adj_df[~self.adj_df.index.duplicated(keep='last')]
-         self.alias_df = self.alias_df[~self.alias_df.index.duplicated(keep='last')]
-         self.unit_df = self.unit_df[~self.unit_df.index.duplicated(keep='last')]
+        self.adj_df = self.adj_df[~self.adj_df.index.duplicated(keep="last")]
+        self.alias_df = self.alias_df[~self.alias_df.index.duplicated(keep="last")]
+        self.unit_df = self.unit_df[~self.unit_df.index.duplicated(keep="last")]
 
     def save(self):
         data_dir = Path(os.path.dirname(self.alias_file_name + ".pkl"))

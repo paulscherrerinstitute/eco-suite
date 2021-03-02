@@ -218,7 +218,7 @@ class Device(object):
         """write save state  to external file.
         If state is not provided, the current state is used
 
-        Note that this only writes data for PVs with write-access, and count=1 (except CHAR """
+        Note that this only writes data for PVs with write-access, and count=1 (except CHAR"""
         if state is None:
             state = self.save_state()
         out = [

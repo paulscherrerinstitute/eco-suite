@@ -19,9 +19,9 @@ class Acquisition:
         self._stopper = stopper
         self._get_result = get_result
         if acquire:
-            self.set_acquire_foo(acquire,hold=hold)
-    
-    def set_acquire_foo(self,acquire,hold=True):
+            self.set_acquire_foo(acquire, hold=hold)
+
+    def set_acquire_foo(self, acquire, hold=True):
         self._acquire = acquire
         self._thread = PropagatingThread(target=self._acquire)
         if not hold:

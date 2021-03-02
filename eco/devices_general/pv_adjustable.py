@@ -29,15 +29,15 @@ class PvRecord:
 
         if pvreadbackname is None:
             self._pvreadback = PV(self.Id, connection_timeout=0.05, auto_monitor=True)
-            alias_fields={"set": pvsetname}
+            alias_fields = {"set": pvsetname}
         else:
-            self._pvreadback = PV(pvreadbackname, connection_timeout=0.05, auto_monitor=True)
-            alias_fields={"set": pvsetname, "readback": pvreadbackname}
+            self._pvreadback = PV(
+                pvreadbackname, connection_timeout=0.05, auto_monitor=True
+            )
+            alias_fields = {"set": pvsetname, "readback": pvreadbackname}
 
         for name, ch in alias_fields.items():
-            self.alias.append(
-            Alias(name, channel=ch, channeltype="CA")
-            )
+            self.alias.append(Alias(name, channel=ch, channeltype="CA"))
 
     def get_current_value(self, readback=True):
         if readback:

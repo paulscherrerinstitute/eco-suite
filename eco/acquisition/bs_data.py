@@ -163,7 +163,7 @@ class BStools:
     def acquire(self, file_name=None, Npulses=100):
         file_name += ".h5"
 
-        #Npulses += 100
+        # Npulses += 100
         if self._default_file_path:
             file_name = self._default_file_path % file_name
         data_dir = Path(os.path.dirname(file_name))

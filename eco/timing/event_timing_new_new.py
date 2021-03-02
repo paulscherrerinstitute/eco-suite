@@ -1,11 +1,18 @@
-from epics import PV
+from epics import PV, caget_many
 from ..aliases import Alias, append_object_to_object
 from ..utilities.lazy_proxy import Proxy
-from ..devices_general.adjustable import PvEnum, PvRecord
-from ..devices_general.detectors import PvDataStream
+from ..devices_general.adjustable import (
+    PvEnum,
+    PvRecord,
+    PvString,
+    AdjustableVirtual,
+    AdjustableMemory,
+)
+from ..devices_general.detectors import PvDataStream, PvData
 from ..eco_epics.utilities_epics import EpicsString
 import logging
 from ..elements.assembly import Assembly
+from tabulate import tabulate
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
 from cta_lib import CtaLib
@@ -144,91 +151,100 @@ event_code_delays_fix = {
 tim_tick = 7e-9
 
 
-class MasterEventSystem(Assembly):
-    def __init__(self, pvname, name=None):
+class MasterEventCode(Assembly):
+    def __init__(self, pvname, slot_number, name=None):
         super().__init__(name=name)
         self.pvname = pvname
+        self._slot_number = slot_number
+        self._append(
+            PvData, f"{self.pvname}:Evt-{slot_number}-Code-SP", name="code_number"
+        )
+        self._append(PvData, f"{self.pvname}:Evt-{slot_number}-Delay-RB", name="delay")
+        self._append(
+            PvData, f"{self.pvname}:Evt-{slot_number}-Freq-I", name="frequency"
+        )
+        self._append(
+            PvString, f"{self.pvname}:Evt-{slot_number}.DESC", name="description"
+        )
 
-        self._pvs = {}
 
-    def _get_pv(self, pvname):
-        if not pvname in self._pvs:
-            self._pvs[pvname] = PV(pvname)
-        return self._pvs[pvname]
+class MasterEventCodeFix(Assembly):
+    def __init__(self, code_number, delay, description="fixed event code", name=None):
+        super().__init__(name=name)
+        self._append(AdjustableMemory, delay, name="code_number")
+        self._append(AdjustableMemory, delay, name="delay")
+        self._append(AdjustableMemory, None, name="frequency")
+        self._append(AdjustableMemory, description, name="description")
 
-    def _get_Id_code(self, intId):
-        return self._get_pv(f"{self.pvname}:Evt-{intId}-Code-SP").get()
 
-    def _get_Id_freq(self, intId):
-        return self._get_pv(f"{self.pvname}:Evt-{intId}-Freq-I").get()
-
-    def _get_Id_period(self, intId):
-        return self._get_pv(f"{self.pvname}:Evt-{intId}-Period-I").get()
-
-    def _get_Id_delay(self, intId, inticks=False):
-        """in seconds if not ticks"""
-        if inticks:
-            return self._get_pv(f"{self.pvname}:Evt-{intId}-Delay-RB.A").get()
-        else:
-            return self._get_pv(f"{self.pvname}:Evt-{intId}-Delay-RB").get() / 1_000_000
-
-    def _get_Id_description(self, intId):
-        return self._get_pv(f"{self.pvname}:Evt-{intId}.DESC").get()
-
-    def _get_evtcode_Id(self, evtcode):
-        if not evtcode in eventcodes:
-            raise Exception(f"Eventcode mapping not defined for {evtcode}")
-        Id = eventcodes.index(evtcode) + 1
-        if not self._get_Id_code(Id) == evtcode:
-            raise Exception(f"Eventcode mapping has apparently changed!")
-        return Id
-
-    def get_evtcode_delay(self, evtcode, **kwargs):
-        if evtcode in event_code_delays_fix.keys():
-            return event_code_delays_fix[evtcode] * tim_tick
-        Id = self._get_evtcode_Id(evtcode)
-        return self._get_Id_delay(Id, **kwargs)
-
-    def get_evtcode_description(self, evtcode):
-        Id = self._get_evtcode_Id(evtcode)
-        return self._get_Id_description(Id)
-
-    def get_evtcode_frequency(self, evtcode):
-        """ in Hz"""
-        Id = self._get_evtcode_Id(evtcode)
-        return self._get_Id_freq(Id)
-
-    def get_evtcode_period(self, evtcode):
-        """ in s"""
-        Id = self._get_evtcode_Id(evtcode)
-        return self._get_Id_period(Id)
-
-    def get_evt_code_status(self, codes=None):
-        if not codes:
-            codes = sorted(eventcodes)
-        if isinstance(codes, Number):
-            codes = [codes]
-        s = []
-        for c in codes:
-            s.append(
-                f"{c:3d}: delay = {self.get_evtcode_delay(c)*1e6:9.3f} us; frequency: {self.get_evtcode_frequency(c):5.1f} Hz; Desc.: {self.get_evtcode_description(c)}"
+class MasterEventSystem(Assembly):
+    def __init__(self, pvname="SIN-TIMAST-TMA", name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        slots, codes = self._get_slot_codes()
+        self.event_codes = {}
+        for slot, code in zip(slots, codes):
+            self._append(MasterEventCode, self.pvname, slot, name=f"code{code:03d}")
+            self.event_codes[code] = self.__dict__[f"code{code:03d}"]
+        for code, delay in event_code_delays_fix.items():
+            self._append(
+                MasterEventCodeFix,
+                code,
+                delay,
+                "fix delay CTA sequencer code",
+                name=f"code{code:03d}",
             )
-        return s
+            self.event_codes[code] = self.__dict__[f"code{code:03d}"]
 
-    def status(self, codes=None):
-        print("\n".join(self.get_evt_code_status(codes))) / 1000
+    def _get_slot_codes(self, slots=range(1, 257)):
+        pvs = [f"{self.pvname}:Evt-{slot}-Code-SP" for slot in slots]
+        codes = caget_many(pvs)
+
+        slots_out = []
+        codes_out = []
+        for s, c in zip(slots, codes):
+            if not c == None:
+                if c in codes_out:
+                    print(f"Code {c} exists multiple times!")
+                    continue
+                slots_out.append(s)
+                codes_out.append(c)
+
+        codes_out, slots_out = zip(*sorted(zip(codes_out, slots_out)))
+        return slots_out, codes_out
+
+    def status(self, code=None, printit=True):
+        if code == None:
+            code = self.event_codes.keys()
+        else:
+            try:
+                iter(code)
+            except TypeError:
+                code = [code]
+
+        o = []
+        for cod in code:
+            tc = self.__dict__[f"code{cod:03d}"]
+            o.append([cod, tc.delay(), tc.frequency(), tc.description()])
+        s = tabulate(o, ["Code", "Delay / us", "Freq. / Hz", "Description"], "simple")
+        if printit:
+            print(s)
+        else:
+            return s
+
+    def __repr__(self):
+        return self.status(printit=False)
 
 
 class EvrPulser(Assembly):
-    def __init__(self, pv_base, name=None):
+    def __init__(self, pv_base, event_master, name=None):
         super().__init__(name=name)
         self.pv_base = pv_base
+        self._event_master = event_master
         self._append(
             PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
         )
-        self._append(
-            PvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True
-        )
+        self._append(PvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True)
         self._append(
             PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode", is_setting=True
         )
@@ -246,7 +262,7 @@ class EvrPulser(Assembly):
             PvRecord,
             f"{self.pv_base}-Delay-SP",
             pvreadbackname=f"{self.pv_base}-Delay-RB",
-            name="delay",
+            name="delay_pulser",
             is_setting=True,
         )
         self._append(
@@ -257,6 +273,31 @@ class EvrPulser(Assembly):
             is_setting=True,
         )
         self.description = EpicsString(pv_base + "-Name-I")
+        self._append(
+            AdjustableVirtual,
+            [self._eventcode.frequency],
+            lambda x: x,
+            lambda x: x,
+            name="frequency",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._eventcode.delay],
+            lambda x: x,
+            lambda x: x,
+            name="delay_eventcode",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.delay_pulser],
+            lambda tp: self.delay_eventcode.get_current_value() + tp,
+            lambda x: x - self.delay_eventcode.get_current_value(),
+            name="delay",
+        )
+
+    @property
+    def _eventcode(self):
+        return self._event_master.event_codes[self.eventcode.get_current_value()]
 
 
 class EvrOutput(Assembly):
@@ -265,52 +306,171 @@ class EvrOutput(Assembly):
         self.pv_base = pv_base
         self._pulsers = pulsers
         # self._update_connected_pulsers()
-        self._append(PvEnum, f"{self.pv_base}-Ena-SP", name="enable",is_setting=True)
-        self._append(PvEnum, f"{self.pv_base}-Src-Pulse-SP", name="pulser_number_A", is_setting=True)
-        self._append(PvEnum, f"{self.pv_base}-Src2-Pulse-SP", name="pulser_number_B", is_setting=True)
+        self._append(PvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True)
+        self._append(
+            PvEnum,
+            f"{self.pv_base}-Src-Pulse-SP",
+            name="pulserA_number",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.delay],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_delay",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.delay_pulser],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_delay_pulser",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.delay_eventcode],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_delay_eventcode",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.eventcode],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_eventcode",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.frequency],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_frequency",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.enable],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_enable",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserA.width],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_width",
+        )
+
+        self._append(
+            PvEnum,
+            f"{self.pv_base}-Src2-Pulse-SP",
+            name="pulserB_number",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.delay],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_delay",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.delay_pulser],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_delay_pulser",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.delay_eventcode],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_delay_eventcode",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.eventcode],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_eventcode",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.frequency],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_frequency",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.enable],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_enable",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.pulserB.width],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_width",
+        )
+
         self.description = EpicsString(pv_base + "-Name-I")
 
-    def _get_pulserA(self):
-        return self._pulsers[self.pulser_number_A.get_current_value()]
+    @property
+    def pulserA(self):
+        return self._pulsers[self.pulserA_number.get_current_value()]
 
-    pulserA = property(_get_pulserA)
-
-    def _get_pulserB(self):
-        return self._pulsers[self.pulser_number_B.get_current_value()]
-
-    pulserB = property(_get_pulserB)
-
-    def _get_pv(self, pvname):
-        if not pvname in self._pvs:
-            self._pvs[pvname] = PV(pvname)
-        return self._pvs[pvname]
-
-    # def _update_connected_pulsers(self):
-    # self._get_pv()
-
-    # self.pulsers = ()
-
+    @property
+    def pulserB(self):
+        return self._pulsers[self.pulserB_number.get_current_value()]
 
 
 class EventReceiver(Assembly):
     def __init__(
-        self, pvname, n_pulsers=24, n_output_front=8, n_output_rear=16, name=None
+        self,
+        pvname,
+        event_master,
+        n_pulsers=24,
+        n_output_front=8,
+        n_output_rear=16,
+        name=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
         pulsers = []
         for n in range(n_pulsers):
-            self._append(EvrPulser, f"{self.pvname}:Pul{n}", name=f"pulser{n}", is_setting=True)
+            self._append(
+                EvrPulser,
+                f"{self.pvname}:Pul{n}",
+                event_master,
+                name=f"pulser{n}",
+                is_setting=True,
+            )
             pulsers.append(self.__dict__[f"pulser{n}"])
         self.pulsers = tuple(pulsers)
         outputs = []
         for n in range(n_output_front):
-            self._append(EvrOutput,
-                f"{self.pvname}:FrontUnivOut{n}", pulsers=pulsers,
-                name=f"output_front{n}", is_setting=True)
+            self._append(
+                EvrOutput,
+                f"{self.pvname}:FrontUnivOut{n}",
+                pulsers=pulsers,
+                name=f"output_front{n}",
+                is_setting=True,
+            )
             outputs.append(self.__dict__[f"output_front{n}"])
         for n in range(n_output_rear):
-            self._append(EvrOutput, f"{self.pvname}:RearUniv{n}", pulsers=pulsers, name=f"output_rear{n}", is_setting=True)
+            self._append(
+                EvrOutput,
+                f"{self.pvname}:RearUniv{n}",
+                pulsers=pulsers,
+                name=f"output_rear{n}",
+                is_setting=True,
+            )
             outputs.append(self.__dict__[f"output_rear{n}"])
         # for to in outputs:
         #     to._pulsers = self.pulsers

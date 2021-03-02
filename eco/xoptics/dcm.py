@@ -57,7 +57,13 @@ class DoubleCrystalMono(Assembly):
         self._append(MotorRecord_new, pvname + ":RZ1", name="roll1")
         self._append(MotorRecord_new, pvname + ":RZ2", name="roll2")
         self._append(MotorRecord_new, pvname + ":RX2", name="pitch2")
-        self._append(PvRecord, pvsetname=energy_sp,pvreadbackname=energy_rb, accuracy=0.5,name="energy")
+        self._append(
+            PvRecord,
+            pvsetname=energy_sp,
+            pvreadbackname=energy_rb,
+            accuracy=0.5,
+            name="energy",
+        )
         self.moving = PV(Id + ":MOVING")
         self._stop = PV(Id + ":STOP.PROC")
 
@@ -122,6 +128,7 @@ class DoubleCrystalMono(Assembly):
 
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
+
 
 class Double_Crystal_Mono:
     def __init__(self, Id, name=None, energy_sp=None, energy_rb=None):

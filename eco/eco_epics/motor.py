@@ -77,59 +77,59 @@ class MotorException(Exception):
 
 class Motor(device.Device):
     """Epics Motor Class for pyepics3
-    
-   This module provides a class library for the EPICS motor record.
 
-   It uses the epics.Device and epics.PV classese
+    This module provides a class library for the EPICS motor record.
 
-   Virtual attributes:
-      These attributes do not appear in the dictionary for this class, but
-      are implemented with the __getattr__ and __setattr__ methods.  They
-      simply get or putthe appropriate motor record fields.  All attributes
-      can be both read and written unless otherwise noted. 
+    It uses the epics.Device and epics.PV classese
 
-      Attribute        Description                  Field
-      ---------        -----------------------      -----
-      drive            Motor Drive Value            .VAL
-      readback         Motor Readback Value         .RBV    (read-only) 
-      slew_speed       Slew speed or velocity       .VELO
-      base_speed       Base or starting speed       .VBAS
-      acceleration     Acceleration time (sec)      .ACCL
-      description      Description of motor         .DESC
-      resolution       Resolution (units/step)      .MRES
-      high_limit       High soft limit (user)       .HLM
-      low_limit        Low soft limit (user)        .LLM
-      dial_high_limit  High soft limit (dial)       .DHLM
-      dial_low_limit   Low soft limit (dial)        .DLLM
-      backlash         Backlash distance            .BDST
-      offset           Offset from dial to user     .OFF
-      done_moving      1=Done, 0=Moving, read-only  .DMOV
- 
-   Exceptions:
-      The check_limits() method raises an 'MotorLimitException' if a soft limit
-      or hard limit is detected.  The move() method calls
-      check_limits() unless they are called with the 
-      ignore_limits=True keyword set.
+    Virtual attributes:
+       These attributes do not appear in the dictionary for this class, but
+       are implemented with the __getattr__ and __setattr__ methods.  They
+       simply get or putthe appropriate motor record fields.  All attributes
+       can be both read and written unless otherwise noted.
 
-   Example use:
-      from epics import Motor
-      m = Motor('13BMD:m38')
-      m.move(10)               # Move to position 10 in user coordinates
-      m.move(100, dial=True)   # Move to position 100 in dial coordinates
-      m.move(1, step=True, relative=True) # Move 1 step relative to current position
+       Attribute        Description                  Field
+       ---------        -----------------------      -----
+       drive            Motor Drive Value            .VAL
+       readback         Motor Readback Value         .RBV    (read-only)
+       slew_speed       Slew speed or velocity       .VELO
+       base_speed       Base or starting speed       .VBAS
+       acceleration     Acceleration time (sec)      .ACCL
+       description      Description of motor         .DESC
+       resolution       Resolution (units/step)      .MRES
+       high_limit       High soft limit (user)       .HLM
+       low_limit        Low soft limit (user)        .LLM
+       dial_high_limit  High soft limit (dial)       .DHLM
+       dial_low_limit   Low soft limit (dial)        .DLLM
+       backlash         Backlash distance            .BDST
+       offset           Offset from dial to user     .OFF
+       done_moving      1=Done, 0=Moving, read-only  .DMOV
 
-      m.stop()                 # Stop moving immediately
-      high = m.high_limit      # Get the high soft limit in user coordinates
-      m.dial_high_limit = 100  # Set the high limit to 100 in dial coodinates
-      speed = m.slew_speed     # Get the slew speed
-      m.acceleration = 0.1     # Set the acceleration to 0.1 seconds
-      p=m.get_position()       # Get the desired motor position in user coordinates
-      p=m.get_position(dial=1) # Get the desired motor position in dial coordinates
-      p=m.get_position(readback=1) # Get the actual position in user coordinates
-      p=m.get_position(readback=1, step=1) Get the actual motor position in steps
-      p=m.set_position(100)   # Set the current position to 100 in user coordinates
-         # Puts motor in Set mode, writes value, puts back in Use mode.
-      p=m.set_position(10000, step=1) # Set the current position to 10000 steps
+    Exceptions:
+       The check_limits() method raises an 'MotorLimitException' if a soft limit
+       or hard limit is detected.  The move() method calls
+       check_limits() unless they are called with the
+       ignore_limits=True keyword set.
+
+    Example use:
+       from epics import Motor
+       m = Motor('13BMD:m38')
+       m.move(10)               # Move to position 10 in user coordinates
+       m.move(100, dial=True)   # Move to position 100 in dial coordinates
+       m.move(1, step=True, relative=True) # Move 1 step relative to current position
+
+       m.stop()                 # Stop moving immediately
+       high = m.high_limit      # Get the high soft limit in user coordinates
+       m.dial_high_limit = 100  # Set the high limit to 100 in dial coodinates
+       speed = m.slew_speed     # Get the slew speed
+       m.acceleration = 0.1     # Set the acceleration to 0.1 seconds
+       p=m.get_position()       # Get the desired motor position in user coordinates
+       p=m.get_position(dial=1) # Get the desired motor position in dial coordinates
+       p=m.get_position(readback=1) # Get the actual position in user coordinates
+       p=m.get_position(readback=1, step=1) Get the actual motor position in steps
+       p=m.set_position(100)   # Set the current position to 100 in user coordinates
+          # Puts motor in Set mode, writes value, puts back in Use mode.
+       p=m.set_position(10000, step=1) # Set the current position to 10000 steps
 
     """
 
@@ -315,7 +315,7 @@ class Motor(device.Device):
                 raise MotorException("EpicsMotor has no attribute %s" % attr)
 
     def check_limits(self):
-        """ check motor limits:
+        """check motor limits:
         returns None if no limits are violated
         raises expection if a limit is violated"""
         for field, msg in (
@@ -328,7 +328,7 @@ class Motor(device.Device):
         return
 
     def within_limits(self, val, dial=False):
-        """ returns whether a value for a motor is within drive limits
+        """returns whether a value for a motor is within drive limits
         with dial=True   dial limits are used (default is user limits)"""
         ll_name, hl_name = "LLM", "HLM"
         if dial:
@@ -347,7 +347,7 @@ class Motor(device.Device):
         ignore_limits=False,
         confirm_move=False,
     ):
-        """ moves motor drive to position
+        """moves motor drive to position
 
         arguments:
         ==========
@@ -372,7 +372,7 @@ class Motor(device.Device):
            -3 : move-with-wait finished, hard limit violation seen
             0 : move-with-wait finish OK.
             0 : move-without-wait executed, not cpmfirmed
-            1 : move-without-wait executed, move confirmed 
+            1 : move-without-wait executed, move confirmed
             3 : move-without-wait finished, hard limit violation seen
             4 : move-without-wait finished, soft limit violation seen
 
@@ -442,33 +442,33 @@ class Motor(device.Device):
 
     def get_position(self, dial=False, readback=False, step=False, raw=False):
         """
-        Returns the target or readback motor position in user, dial or step
-        coordinates.
-      
-      Keywords:
-         readback:
-            Set readback=True to return the readback position in the
-            desired coordinate system.  The default is to return the
-            drive position of the motor.
-            
-         dial:
-            Set dial=True to return the position in dial coordinates.
-            The default is user coordinates.
-            
-         raw (or step):
-            Set raw=True to return the raw position in steps.
-            The default is user coordinates.
+          Returns the target or readback motor position in user, dial or step
+          coordinates.
 
-         Notes:
-            The "raw" or "step" and "dial" keywords are mutually exclusive.
-            The "readback" keyword can be used in user, dial or step 
-            coordinates.
-            
-      Examples:
-        m=epicsMotor('13BMD:m38')
-        m.move(10)                   # Move to position 10 in user coordinates
-        p=m.get_position(dial=True)  # Read the target position in dial coordinates
-        p=m.get_position(readback=True, step=True) # Read the actual position in steps
+        Keywords:
+           readback:
+              Set readback=True to return the readback position in the
+              desired coordinate system.  The default is to return the
+              drive position of the motor.
+
+           dial:
+              Set dial=True to return the position in dial coordinates.
+              The default is user coordinates.
+
+           raw (or step):
+              Set raw=True to return the raw position in steps.
+              The default is user coordinates.
+
+           Notes:
+              The "raw" or "step" and "dial" keywords are mutually exclusive.
+              The "readback" keyword can be used in user, dial or step
+              coordinates.
+
+        Examples:
+          m=epicsMotor('13BMD:m38')
+          m.move(10)                   # Move to position 10 in user coordinates
+          p=m.get_position(dial=True)  # Read the target position in dial coordinates
+          p=m.get_position(readback=True, step=True) # Read the actual position in steps
         """
         pos, rbv = ("VAL", "RBV")
         if dial:
@@ -480,8 +480,8 @@ class Motor(device.Device):
         return self.get(pos)
 
     def tweak(self, direction="foreward", wait=False, timeout=300.0):
-        """ move the motor by the tweak_val
-       
+        """move the motor by the tweak_val
+
         takes optional args:
          direction    direction of motion (forward/reverse)  [forward]
                          must start with 'rev' or 'back' for a reverse tweak.
@@ -507,30 +507,30 @@ class Motor(device.Device):
 
     def set_position(self, position, dial=False, step=False, raw=False):
         """
-      Sets the motor position in user, dial or step coordinates.
-      
-      Inputs:
-         position:
-            The new motor position
-            
-      Keywords:
-         dial:
-            Set dial=True to set the position in dial coordinates.
-            The default is user coordinates.
-            
-         raw:
-            Set raw=True to set the position in raw steps.
-            The default is user coordinates.
-            
-      Notes:
-         The 'raw' and 'dial' keywords are mutually exclusive.
-         
-      Examples:
-         m=epicsMotor('13BMD:m38')
-         m.set_position(10, dial=True)   # Set the motor position to 10 in 
-                                      # dial coordinates
-         m.set_position(1000, raw=True) # Set the motor position to 1000 steps
-         """
+        Sets the motor position in user, dial or step coordinates.
+
+        Inputs:
+           position:
+              The new motor position
+
+        Keywords:
+           dial:
+              Set dial=True to set the position in dial coordinates.
+              The default is user coordinates.
+
+           raw:
+              Set raw=True to set the position in raw steps.
+              The default is user coordinates.
+
+        Notes:
+           The 'raw' and 'dial' keywords are mutually exclusive.
+
+        Examples:
+           m=epicsMotor('13BMD:m38')
+           m.set_position(10, dial=True)   # Set the motor position to 10 in
+                                        # dial coordinates
+           m.set_position(1000, raw=True) # Set the motor position to 1000 steps
+        """
 
         # Put the motor in "SET" mode
         self.put("SET", 1)
@@ -572,7 +572,7 @@ class Motor(device.Device):
         self._callbacks[attr] = index
 
     def refresh(self):
-        """ refresh all motor parameters currently in use:
+        """refresh all motor parameters currently in use:
         make sure all used attributes are up-to-date."""
         ca.poll()
 
@@ -585,7 +585,7 @@ class Motor(device.Device):
         self.STOP = 1
 
     def make_step_list(self, minstep=0.0, maxstep=None, decades=10):
-        """ create a reasonable list of motor steps, as for a dropdown menu
+        """create a reasonable list of motor steps, as for a dropdown menu
         The list is based on motor range Mand precision"""
 
         if maxstep is None:

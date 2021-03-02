@@ -10,6 +10,7 @@ from pathlib import Path
 from .utilities import Acquisition
 import time
 
+
 class Epicstools:
     def __init__(
         self,
@@ -24,8 +25,8 @@ class Epicstools:
         self._default_channel_list = default_channel_list
         self._elog = elog
         self.channels = []
-        self.pulse_id = PV('SLAAR11-LTIM01-EVR0:RX-PULSEID')
-        
+        self.pulse_id = PV("SLAAR11-LTIM01-EVR0:RX-PULSEID")
+
         if not channel_list:
 
             print("No channels specified, using all lists instead.")
@@ -79,7 +80,9 @@ class Epicstools:
         for (n, channel) in enumerate(channel_list):
             dat = f.create_group(name=channel)
             dat.create_dataset(name="data", data=data[n])
-            dat.create_dataset(name="pulse_id", data=np.arange(N_pulses)+round(time.time()*100))
+            dat.create_dataset(
+                name="pulse_id", data=np.arange(N_pulses) + round(time.time() * 100)
+            )
         return data
 
     def acquire(self, file_name=None, Npulses=100, default_path=True):

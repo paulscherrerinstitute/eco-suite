@@ -483,7 +483,9 @@ class DIAClient:
             print("ERROR: please configure the instrument parameter in DIAClient")
         self.update_config()
 
-    def update_config(self,):
+    def update_config(
+        self,
+    ):
         self.writer_config = {
             "output_file": "/sf/%s/data/p%d/raw/test_data.h5"
             % (self.instrument, self.pgroup),
@@ -574,7 +576,9 @@ class DIAClient:
         self.pgroup = pgroup
         self.update_config()
 
-    def set_bs_channels(self,):
+    def set_bs_channels(
+        self,
+    ):
         print(
             "Please update /sf/%s/config/com/channel_lists/default_channel_list and restart all services on the DAQ server"
             % self.instrument

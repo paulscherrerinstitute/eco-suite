@@ -28,6 +28,9 @@ class PvData(Assembly):
     def get_current_value(self):
         return self._pv.get()
 
+    def __call__(self):
+        return self.get_current_value()
+
 
 class PvDataStream:
     def __init__(self, Id, name=None):

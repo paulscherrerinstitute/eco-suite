@@ -11,37 +11,37 @@ class MforceChannel(Assembly):
             self.pv_base + self.port + "_RC",
             name="no_idea_what_this_is",
             is_setting=True,
-        )  
+        )
         self._append(
             PvRecord,
             self.pv_base + "MOT_" + self.port + ".DESC",
             name="display_name",
             is_setting=True,
-        )  
+        )
         self._append(
             PvRecord,
             self.pv_base + "MOT_" + self.port + ".EGU",
             name="units",
             is_setting=True,
-        )  
+        )
         self._append(
             PvRecord,
             self.pv_base + "MOT_" + self.port + ".MRES",
             name="motor_resolution",
             is_setting=True,
-        )  
+        )
         self._append(
             PvRecord,
             self.pv_base + "MOT_" + self.port + ".ERES",
             name="encoder_resolution",
             is_setting=True,
-        )  
+        )
         self._append(
             PvRecord,
             self.pv_base + "MOT_" + self.port + ".VELO",
             name="velocity",
             is_setting=True,
-        ) 
+        )
 
         self._append(
             PvRecord,

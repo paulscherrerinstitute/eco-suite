@@ -260,6 +260,32 @@ def _keywordChecker(kw_key_list_tups):
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
 
+@spec_convenience
+@update_changes
+class AdjustableMemory:
+    def __init__(self, value, name="adjustable_memory"):
+        self.name = name
+        self.alias = Alias(name)
+        self.current_value = value
+
+    def get_current_value(self):
+        return self.current_value
+
+    def set_target_value(self, value, hold=False):
+        def changer(value):
+            self.current_value = value
+
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+
+    def __repr__(self):
+        name = self.name
+        cv = self.get_current_value()
+        s = f"{name} at value: {cv}" + "\n"
+        return s
+
+
 @default_representation
 @spec_convenience
 class AdjustableFS:

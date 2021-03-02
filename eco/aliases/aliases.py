@@ -28,6 +28,11 @@ class Alias:
                 f"parent of alias {subalias.alias} has been defined already {subalias.parent.alias}."
             )
 
+    def pop_object(self, obj):
+        i = self.children.index(obj)
+        o = self.children[i]
+        o.parent = None
+
     def get_all(self, joiner="."):
         aa = []
         if self.channel:

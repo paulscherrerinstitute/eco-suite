@@ -54,7 +54,9 @@ class DIAClient:
         self.active_clients = list(self.get_active_clients()["clients_enabled"].keys())
         self.jf_channels = list(x for x in self.active_clients if x != "bsread")
 
-    def update_config(self,):
+    def update_config(
+        self,
+    ):
         # try:
         self.get_last_pedestal()
         # except:
@@ -137,7 +139,9 @@ class DIAClient:
         self.pgroup = pgroup
         self.update_config()
 
-    def set_bs_channels(self,):
+    def set_bs_channels(
+        self,
+    ):
         print(
             "Please update /sf/%s/config/com/channel_lists/default_channel_list and restart all services on the DAQ server"
             % self.instrument
