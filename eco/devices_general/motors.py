@@ -330,6 +330,19 @@ class SmaractStreamdevice(Assembly):
     def tweak(self, *args, **kwargs):
         return self._tweak_ioc(*args, **kwargs)
 
+    def gui(self):
+        num = ''
+        for s in self.pvname[::-1]:
+            if s.isdigit():
+                num = s + num
+            else:
+                break
+        nam = self.pvname[:-len(num)]
+        num = int(num)
+
+        self._run_cmd(f'caqtdm -macro "P={nam},M={num}" /ioc/qt/ESB_MX_SmarAct_mot_exp.ui')
+
+
 
 @spec_convenience
 @update_changes
@@ -471,15 +484,9 @@ class MotorRecord(Assembly):
             ll_name, hl_name = "DLLM", "DHLM"
         return self._motor.get(ll_name), self._motor.get(hl_name)
 
-    def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
-        cmd = ["caqtdm", "-macro"]
-
-        cmd.append('"P=%s:,M=%s"' % tuple(self.pvname.split(":")))
-        # cmd.append('/sf/common/config/qt/motorx_more.ui')
-        cmd.append("motorx_more.ui")
-        # os.system(' '.join(cmd))
-        return subprocess.Popen(" ".join(cmd), shell=True, stdout=subprocess.DEVNULL)
+    def gui(self):
+        pv,m = tuple(self.pvname.split(":"))
+        self._run_cmd(f'caqtdm -macro "P={pv}:,M={m}" motorx_more.ui')
 
     # return string with motor value as variable representation
     def __str__(self):

@@ -1,9 +1,12 @@
 from epics import PV
 import numpy as np
+from ..devices_general.adjustable import AdjustableFS, PvRecord
+from ..elements.assembly import Assembly
 
 
-class CheckerCA:
-    def __init__(self, pvname, thresholds, required_fraction):
+class CheckerCA(Assembly):
+    def __init__(self, pvname, thresholds, required_fraction, name=None):
+        super().__init__(name=name)
         self.PV = PV(pvname)
         self.data = []
         self.thresholds = sorted(thresholds)

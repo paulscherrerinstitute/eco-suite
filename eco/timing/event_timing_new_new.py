@@ -19,12 +19,15 @@ from cta_lib import CtaLib
 from numbers import Number
 
 
-class TimingSystem:
+class TimingSystem(Assembly):
     """ This is a wrapper object for the global timing system at SwissFEL"""
 
-    def __init__(self, pv_master=None, pv_pulse_id=None):
-        self.event_master = MasterEventSystem(pv_master, name="event_master")
-        self.pulse_id = PvDataStream(pv_pulse_id, name="pulse_id")
+    def __init__(self, pv_master=None, pv_pulse_id=None, name=None):
+        super().__init__(name=name)
+        self._append(
+            MasterEventSystem, pv_master, name="event_master", is_status="recursive"
+        )
+        self._append(PvDataStream, pv_pulse_id, name="pulse_id")
 
 
 # EVR output mapping
@@ -184,7 +187,13 @@ class MasterEventSystem(Assembly):
         slots, codes = self._get_slot_codes()
         self.event_codes = {}
         for slot, code in zip(slots, codes):
-            self._append(MasterEventCode, self.pvname, slot, name=f"code{code:03d}")
+            self._append(
+                MasterEventCode,
+                self.pvname,
+                slot,
+                name=f"code{code:03d}",
+                is_status="recursive",
+            )
             self.event_codes[code] = self.__dict__[f"code{code:03d}"]
         for code, delay in event_code_delays_fix.items():
             self._append(
@@ -193,6 +202,7 @@ class MasterEventSystem(Assembly):
                 delay,
                 "fix delay CTA sequencer code",
                 name=f"code{code:03d}",
+                is_status="recursive",
             )
             self.event_codes[code] = self.__dict__[f"code{code:03d}"]
 
@@ -241,6 +251,8 @@ class EvrPulser(Assembly):
         super().__init__(name=name)
         self.pv_base = pv_base
         self._event_master = event_master
+
+        self._append(PvString, pv_base + "-Name-I", name="description", is_status=True)
         self._append(
             PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
         )
@@ -299,6 +311,18 @@ class EvrPulser(Assembly):
     def _eventcode(self):
         return self._event_master.event_codes[self.eventcode.get_current_value()]
 
+class DummyPulser(Assembly):
+    def __init__(self,name='dummy'):
+        super().__init__(name=name)
+        self._append(AdjustableMemory,None,name="delay")
+        self._append(AdjustableMemory,None,name="delay_pulser")
+        self._append(AdjustableMemory,None,name="delay_eventcode")
+        self._append(AdjustableMemory,None,name="eventcode")
+        self._append(AdjustableMemory,None,name="frequency")
+        self._append(AdjustableMemory,None,name="enable")
+        self._append(AdjustableMemory,None,name="polarity")
+        self._append(AdjustableMemory,None,name="width")
+
 
 class EvrOutput(Assembly):
     def __init__(self, pv_base, pulsers=None, name=None):
@@ -306,10 +330,18 @@ class EvrOutput(Assembly):
         self.pv_base = pv_base
         self._pulsers = pulsers
         # self._update_connected_pulsers()
+        self._append(PvString, pv_base + "-Name-I", name="description", is_status=True)
         self._append(PvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True)
+        # self._append(
+        # PvEnum,
+        # f"{self.pv_base}_SOURCE",
+        # name="sourceA",
+        # is_setting=True,
+        # )
         self._append(
-            PvEnum,
+            PvRecord,
             f"{self.pv_base}-Src-Pulse-SP",
+            f"{self.pv_base}-Src-Pulse-RB",
             name="pulserA_number",
             is_setting=True,
         )
@@ -357,15 +389,29 @@ class EvrOutput(Assembly):
         )
         self._append(
             AdjustableVirtual,
+            [self.pulserA.polarity],
+            lambda x: x,
+            lambda x: x,
+            name="pulserA_polarity",
+        )
+        self._append(
+            AdjustableVirtual,
             [self.pulserA.width],
             lambda x: x,
             lambda x: x,
             name="pulserA_width",
         )
+        # self._append(
+        # PvEnum,
+        # f"{self.pv_base}_SOURCE2",
+        # name="sourceB",
+        # is_setting=True,
+        # )
 
         self._append(
-            PvEnum,
+            PvRecord,
             f"{self.pv_base}-Src2-Pulse-SP",
+            f"{self.pv_base}-Src2-Pulse-RB",
             name="pulserB_number",
             is_setting=True,
         )
@@ -413,21 +459,33 @@ class EvrOutput(Assembly):
         )
         self._append(
             AdjustableVirtual,
+            [self.pulserB.polarity],
+            lambda x: x,
+            lambda x: x,
+            name="pulserB_polarity",
+        )
+        self._append(
+            AdjustableVirtual,
             [self.pulserB.width],
             lambda x: x,
             lambda x: x,
             name="pulserB_width",
         )
 
-        self.description = EpicsString(pv_base + "-Name-I")
-
     @property
     def pulserA(self):
-        return self._pulsers[self.pulserA_number.get_current_value()]
+        try:
+            return self._pulsers[self.pulserA_number.get_current_value()]
+        except IndexError:
+            return DummyPulser()
+
 
     @property
     def pulserB(self):
-        return self._pulsers[self.pulserB_number.get_current_value()]
+        try:
+            return self._pulsers[self.pulserA_number.get_current_value()]
+        except IndexError:
+            return DummyPulser()
 
 
 class EventReceiver(Assembly):
@@ -450,6 +508,7 @@ class EventReceiver(Assembly):
                 event_master,
                 name=f"pulser{n}",
                 is_setting=True,
+                is_status=False,
             )
             pulsers.append(self.__dict__[f"pulser{n}"])
         self.pulsers = tuple(pulsers)
@@ -461,6 +520,7 @@ class EventReceiver(Assembly):
                 pulsers=pulsers,
                 name=f"output_front{n}",
                 is_setting=True,
+                is_status="recursive",
             )
             outputs.append(self.__dict__[f"output_front{n}"])
         for n in range(n_output_rear):
@@ -470,11 +530,37 @@ class EventReceiver(Assembly):
                 pulsers=pulsers,
                 name=f"output_rear{n}",
                 is_setting=True,
+                is_status="recursive",
             )
             outputs.append(self.__dict__[f"output_rear{n}"])
         # for to in outputs:
         #     to._pulsers = self.pulsers
         self.outputs = outputs
+    def gui(self):
+        dev = self.pvname.split('-')[-1]
+        sys = self.pvname[:-(len(dev)+1)]
+        ioc = self.pvname
+        self._run_cmd(f'caqtdm -noMsg  -macro IOC={ioc},SYS={sys},DEVICE={dev}  /sf/laser/config/qt/S_LAS-TMAIN.ui')
+
+    def status(self,printit=True):
+        o = []
+        for output in self.outputs:
+            o.append([
+                output.name,
+                output.description(),
+                output.enable(),
+                f'{output.pulserA_number()}/{output.pulserA_number()}',
+                f'{output.pulserA_frequency()}/{output.pulserA_frequency()}',
+                f'{output.pulserA_eventcode()}/{output.pulserA_eventcode()}',
+                ])
+        s = tabulate(o,['Output name','Description','On','Pulsrs','Freqs. / Hz', 'EvtCds'],'simple')
+        if printit:
+            print(s)
+        else:
+            return s
+
+    def __repr__(self):
+        return self.status(printit=False)
 
 
 class CTA_sequencer:

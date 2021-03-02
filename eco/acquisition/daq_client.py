@@ -170,7 +170,9 @@ class Daq:
         return runno, filenames
 
     def get_detector_frequency(self):
-        return self._event_master.get_evtcode_frequency(self._detectors_event_code)
+        return self._event_master.event_codes[
+            self._detectors_event_code
+        ].frequency.get_current_value()
 
 
 def validate_response(resp):

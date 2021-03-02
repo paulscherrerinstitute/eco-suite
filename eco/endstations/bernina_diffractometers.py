@@ -510,7 +510,7 @@ class XRDYou(Assembly):
             "P=SARES21-XRD",
             "/sf/common/config/qt/ESB_XRD_exp.ui",
         ]
-        return subprocess.Popen(" ".join(cmd), shell=True)
+        return self._run_cmd(" ".join(cmd))
 
     # def calc_kappa2you(self, eta_k, kappa, phi_k):
     #     return kappa2you(eta_k, kappa, phi_k)
@@ -754,7 +754,7 @@ class XRD(Assembly):
             "P=SARES21-XRD",
             "/sf/common/config/qt/ESB_XRD_exp.ui",
         ]
-        return subprocess.Popen(" ".join(cmd), shell=True)
+        return self._run_cmd(" ".join(cmd))
 
     def calc_kappa2you(self, eta_k, kappa, phi_k):
         return kappa2you(eta_k, kappa, phi_k)

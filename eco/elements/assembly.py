@@ -3,6 +3,8 @@ from tabulate import tabulate
 import colorama
 from . import memory
 from enum import Enum
+import os
+import subprocess
 
 
 class Collection:
@@ -159,6 +161,11 @@ class Assembly:
 
     def __repr__(self):
         return self.get_status_indicator_str()
+
+    def _run_cmd(self,line):
+        with open(os.devnull,'w') as FNULL:
+            subprocess.Popen(line, shell=True,stdout=FNULL,stderr=subprocess.STDOUT)
+
 
 
 class Assembly_old:
