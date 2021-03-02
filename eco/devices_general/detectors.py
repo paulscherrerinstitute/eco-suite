@@ -88,7 +88,7 @@ class PvDataStream:
             get_result=lambda: self.data_collected,
         )
 
-    def accumulate(self, n_buffer):
+    def accumulate_ring_buffer(self, n_buffer):
         if not hasattr(self, "_accumulate"):
             self._accumulate = {"n_buffer": n_buffer, "ix": 0, "n_cb": -1}
         else:
@@ -106,6 +106,21 @@ class PvDataStream:
             ]
 
         self._accumulate["n_cb"] = self._pv.add_callback(addData)
+
+    def accumulate_start(self):
+        if not hasattr(self, "_accumulate_inf"):
+            self._accumulate_inf = {"n_cb": -1}
+        self._pv.callbacks.pop(self._accumulate_inf["n_cb"], None)
+        self._data_inf = []
+
+        def addData(**kw):
+            self._data_inf.append(kw["value"])
+
+        self._accumulate_inf["n_cb"] = self._pv.add_callback(addData)
+
+    def accumulate_stop(self):
+        self._pv.callbacks.pop(self._accumulate_inf["n_cb"], None)
+        return self._data_inf
 
     def get_data(self):
         return self._data[

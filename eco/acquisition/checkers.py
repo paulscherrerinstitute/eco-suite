@@ -1,42 +1,54 @@
 from epics import PV
 import numpy as np
 from ..devices_general.adjustable import AdjustableFS, PvRecord
+from ..devices_general.detectors import PvDataStream
 from ..elements.assembly import Assembly
 
 
 class CheckerCA(Assembly):
     def __init__(self, pvname, thresholds, required_fraction, name=None):
         super().__init__(name=name)
-        self.PV = PV(pvname)
-        self.data = []
-        self.thresholds = sorted(thresholds)
-        self.required_fraction = required_fraction
+        self._append(PvDataStream, pvname, name="monitor")
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
+            default_value=sorted(thresholds),
+            name="thresholds",
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+            default_value=required_fraction,
+            name="required_fraction",
+        )
 
     def check_now(self):
-        cv = self.PV.get()
-        if cv > self.thresholds[0] and cv < self.thresholds[1]:
+        cv = self.monitor.get_current_value()
+        thresholds = self.thresholds()
+        if cv > thresholds[0] and cv < thresholds[1]:
             return True
         else:
             return False
 
-    def append_to_data(self, **kwargs):
-        self.data.append(kwargs["value"])
+    # def append_to_data(self, **kwargs):
+    #     self.data.append(kwargs["value"])
 
     def clear_and_start_counting(self):
-        self.data = []
-        self.PV.add_callback(self.append_to_data)
+        self.monitor.accumulate_start()
 
-    def stopcounting(self):
-        self.PV.clear_callbacks()
+    # def stopcounting(self):
+    #     self.PV.clear_callbacks()
 
     def stop_and_analyze(self):
-        self.stopcounting()
-        data = np.asarray(self.data)
-        good = np.logical_and(data > self.thresholds[0], data < self.thresholds[1])
+        data = np.asarray(self.monitor.accumulate_stop())
+        thresholds = self.thresholds()
+        good = np.logical_and(data > thresholds[0], data < thresholds[1])
         fraction = good.sum() / len(good)
-        print(f"Checker: {fraction*100}% inside limits {self.thresholds},")
-        print(f"         given limit was {self.required_fraction*100}%.")
-        return fraction >= self.required_fraction
+        isgood = fraction >= self.required_fraction()
+        if not isgood:
+            print(f"Checker: {fraction*100}% inside limits {self.thresholds()},")
+            print(f"         given limit was {self.required_fraction()*100}%.")
+        return fraction >= self.required_fraction()
 
 
 # checker_obj = Checker_obj(checkerPV)
