@@ -502,13 +502,13 @@ class XRDYou(Assembly):
     def gui(self, guiType="xdm"):
         """ Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
-        cmd = [
+        cmd += [
             "-noMsg",
             "-stylefile",
             "sfop.qss",
             "-macro",
             "P=SARES21-XRD",
-            "/sf/common/config/qt/ESB_XRD_exp.ui",
+            "ESB_XRD_exp.ui",
         ]
         return self._run_cmd(" ".join(cmd))
 
@@ -746,13 +746,13 @@ class XRD(Assembly):
     def gui(self, guiType="xdm"):
         """ Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
-        cmd = [
+        cmd += [
             "-noMsg",
             "-stylefile",
             "sfop.qss",
             "-macro",
             "P=SARES21-XRD",
-            "/sf/common/config/qt/ESB_XRD_exp.ui",
+            "ESB_XRD_exp.ui",
         ]
         return self._run_cmd(" ".join(cmd))
 
