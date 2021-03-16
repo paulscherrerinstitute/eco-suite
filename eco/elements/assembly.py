@@ -162,11 +162,10 @@ class Assembly:
     def __repr__(self):
         return self.get_status_indicator_str()
 
-    def _run_cmd(self,line):
-        print(f'Starting following commandline silently:\n'+line)
-        with open(os.devnull,'w') as FNULL:
-            subprocess.Popen(line, shell=True,stdout=FNULL,stderr=subprocess.STDOUT)
-
+    def _run_cmd(self, line):
+        print(f"Starting following commandline silently:\n" + line)
+        with open(os.devnull, "w") as FNULL:
+            subprocess.Popen(line, shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
 
 
 class Assembly_old:

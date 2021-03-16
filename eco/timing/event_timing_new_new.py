@@ -311,17 +311,18 @@ class EvrPulser(Assembly):
     def _eventcode(self):
         return self._event_master.event_codes[self.eventcode.get_current_value()]
 
+
 class DummyPulser(Assembly):
-    def __init__(self,name='dummy'):
+    def __init__(self, name="dummy"):
         super().__init__(name=name)
-        self._append(AdjustableMemory,None,name="delay")
-        self._append(AdjustableMemory,None,name="delay_pulser")
-        self._append(AdjustableMemory,None,name="delay_eventcode")
-        self._append(AdjustableMemory,None,name="eventcode")
-        self._append(AdjustableMemory,None,name="frequency")
-        self._append(AdjustableMemory,None,name="enable")
-        self._append(AdjustableMemory,None,name="polarity")
-        self._append(AdjustableMemory,None,name="width")
+        self._append(AdjustableMemory, None, name="delay")
+        self._append(AdjustableMemory, None, name="delay_pulser")
+        self._append(AdjustableMemory, None, name="delay_eventcode")
+        self._append(AdjustableMemory, None, name="eventcode")
+        self._append(AdjustableMemory, None, name="frequency")
+        self._append(AdjustableMemory, None, name="enable")
+        self._append(AdjustableMemory, None, name="polarity")
+        self._append(AdjustableMemory, None, name="width")
 
 
 class EvrOutput(Assembly):
@@ -479,7 +480,6 @@ class EvrOutput(Assembly):
         except IndexError:
             return DummyPulser()
 
-
     @property
     def pulserB(self):
         try:
@@ -536,24 +536,33 @@ class EventReceiver(Assembly):
         # for to in outputs:
         #     to._pulsers = self.pulsers
         self.outputs = outputs
-    def gui(self):
-        dev = self.pvname.split('-')[-1]
-        sys = self.pvname[:-(len(dev)+1)]
-        ioc = self.pvname
-        self._run_cmd(f'caqtdm -noMsg  -macro IOC={ioc},SYS={sys},DEVICE={dev}  /sf/laser/config/qt/S_LAS-TMAIN.ui')
 
-    def status(self,printit=True):
+    def gui(self):
+        dev = self.pvname.split("-")[-1]
+        sys = self.pvname[: -(len(dev) + 1)]
+        ioc = self.pvname
+        self._run_cmd(
+            f"caqtdm -noMsg  -macro IOC={ioc},SYS={sys},DEVICE={dev}  /sf/laser/config/qt/S_LAS-TMAIN.ui"
+        )
+
+    def status(self, printit=True):
         o = []
         for output in self.outputs:
-            o.append([
-                output.name,
-                output.description(),
-                output.enable(),
-                f'{output.pulserA_number()}/{output.pulserA_number()}',
-                f'{output.pulserA_frequency()}/{output.pulserA_frequency()}',
-                f'{output.pulserA_eventcode()}/{output.pulserA_eventcode()}',
-                ])
-        s = tabulate(o,['Output name','Description','On','Pulsrs','Freqs. / Hz', 'EvtCds'],'simple')
+            o.append(
+                [
+                    output.name,
+                    output.description(),
+                    output.enable(),
+                    f"{output.pulserA_number()}/{output.pulserA_number()}",
+                    f"{output.pulserA_frequency()}/{output.pulserA_frequency()}",
+                    f"{output.pulserA_eventcode()}/{output.pulserA_eventcode()}",
+                ]
+            )
+        s = tabulate(
+            o,
+            ["Output name", "Description", "On", "Pulsrs", "Freqs. / Hz", "EvtCds"],
+            "simple",
+        )
         if printit:
             print(s)
         else:

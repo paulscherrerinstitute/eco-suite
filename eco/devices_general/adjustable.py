@@ -506,6 +506,7 @@ class AdjustableVirtual:
         reset_current_value_to=False,
         append_aliases=False,
         name=None,
+        unit=None,
     ):
         self.name = name
         self.alias = Alias(name)
@@ -525,6 +526,8 @@ class AdjustableVirtual:
             for adj in self._adjustables:
                 if not hasattr(adj, "reset_current_value_to"):
                     raise Exception(f"No reset_current_value_to method found in {adj}")
+        if unit:
+            self.unit = AdjustableMemory(unit, name="unit")
 
     def set_target_value(self, value, hold=False):
         vals = self._foo_set_target_value_current_value(value)

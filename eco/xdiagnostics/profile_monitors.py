@@ -1,8 +1,8 @@
-from ..devices_general.motors import MotorRecord
+from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler
 from ..aliases import Alias, append_object_to_object
-from ..devices_general.adjustable import PvEnum
+from ..devices_general.adjustable import PvEnum, AdjustableVirtual
 from ..elements.assembly import Assembly
 
 # from ..devices_general.epics_wrappers import EnumSelector
@@ -40,6 +40,79 @@ class Pprm(Assembly):
         s = f"**Profile Monitor {self.name}**\n"
         s += f"Target in beam: {self.target.get_current_value().name}\n"
         return s
+
+
+class ProfKbBernina(Assembly):
+    def __init__(
+        self,
+        pvname_target_x="SARES20-MF2:MOT_1",
+        pvname_target_y="SARES20-MF2:MOT_2",
+        pvname_target_z="SARES20-MF2:MOT_3",
+        pvname_mirror="SARES23-LIC9",
+        mirror_in=15,
+        mirror_out=-5,
+        pvname_zoom="SARES20-MF1:MOT_8",
+        pvname_camera="SARES20-PROF141-M1",
+        name=None,
+    ):
+        super().__init__(name=name)
+        self.mirror_in_position = mirror_in
+        self.mirror_out_position = mirror_out
+        self._append(
+            MotorRecord,
+            pvname_target_x,
+            name="x_target",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname_target_y,
+            name="y_target",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname_target_z,
+            name="z_target",
+            is_setting=True,
+        )
+        self._append(
+            SmaractStreamdevice,
+            pvname_mirror,
+            name="x_mirror_microscope",
+            is_setting=True,
+            is_status=False,
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.x_mirror_microscope],
+            lambda v: abs(v - self.mirror_in_position) < 0.003,
+            lambda v: self.mirror_in_position if v else self.mirror_out_position,
+            name="mirror_in",
+            is_setting=True,
+            is_status=True,
+        )
+        # self.camCA = CameraCA(pvname_camera)
+        self._append(
+            CameraBasler,
+            pvname_camera,
+            name="camera",
+            is_setting=False,
+            is_status="recursive",
+        )
+        self._append(
+            MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_status=True
+        )
+
+    def movein(self,wait=False):
+        ch = self.mirror_in.set_target_value(1)
+        if wait:
+            ch.wait()
+
+    def moveout(self):
+        ch = self.mirror_in.set_target_value(0)
+        if wait:
+            ch.wait()
 
 
 class Pprm_dsd(Assembly):

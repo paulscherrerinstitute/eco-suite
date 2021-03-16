@@ -331,17 +331,18 @@ class SmaractStreamdevice(Assembly):
         return self._tweak_ioc(*args, **kwargs)
 
     def gui(self):
-        num = ''
+        num = ""
         for s in self.pvname[::-1]:
             if s.isdigit():
                 num = s + num
             else:
                 break
-        nam = self.pvname[:-len(num)]
+        nam = self.pvname[: -len(num)]
         num = int(num)
 
-        self._run_cmd(f'caqtdm -macro "P={nam},M={num}" /ioc/qt/ESB_MX_SmarAct_mot_exp.ui')
-
+        self._run_cmd(
+            f'caqtdm -macro "P={nam},M={num}" /ioc/qt/ESB_MX_SmarAct_mot_exp.ui'
+        )
 
 
 @spec_convenience
@@ -485,7 +486,7 @@ class MotorRecord(Assembly):
         return self._motor.get(ll_name), self._motor.get(hl_name)
 
     def gui(self):
-        pv,m = tuple(self.pvname.split(":"))
+        pv, m = tuple(self.pvname.split(":"))
         self._run_cmd(f'caqtdm -macro "P={pv}:,M={m}" motorx_more.ui')
 
     # return string with motor value as variable representation

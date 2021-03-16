@@ -37,7 +37,7 @@ class att_usd_targets:
         self._sleeptime = 1
         self.motor_configuration = {
             "transl": {
-                "id": "-LIC6",
+                "id": "-LIC10",
                 "pv_descr": " ",
                 "type": 2,
                 "sensor": 1,

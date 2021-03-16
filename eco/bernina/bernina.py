@@ -47,6 +47,18 @@ namespace.append_obj(
 # namespace.append_obj('Scans',data_base_dir="scan_data",scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
 # default_counters=[daq],checker=checker,scan_directories=True,run_table=run_table,elog=elog,
 # module_name = "eco.acquisition.scan",name="scans")
+namespace.append_obj(
+    "ProfKbBernina",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_kb",
+    lazy=True,
+)
+namespace.append_obj(
+    "TimetoolBerninaUSD",
+    module_name="eco.timing.timing_diag",
+    name="tt_kb",
+    lazy=True,
+)
 
 namespace.append_obj(
     "EventReceiver",
@@ -230,13 +242,22 @@ namespace.append_obj(
 )
 
 # will be split in permanent and temporary
+# namespace.append_obj(
+# "Laser_Exp",
+# lazy=True,
+# name="las",
+# module_name="eco.loptics.bernina_experiment",
+# Id="SLAAR21-LMOT",
+# smar_config=config_berninamesp["las_smar_config"],
+# )
+
+# new version
 namespace.append_obj(
-    "Laser_Exp",
+    "LaserBernina",
+    "SLAAR21-LMOT",
     lazy=True,
     name="las",
-    module_name="eco.loptics.bernina_experiment",
-    Id="SLAAR21-LMOT",
-    smar_config=config_berninamesp["las_smar_config"],
+    module_name="eco.loptics.bernina_laser",
 )
 
 from ..elements.assembly import Assembly

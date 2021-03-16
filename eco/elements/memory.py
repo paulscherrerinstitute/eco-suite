@@ -34,13 +34,16 @@ class Memory:
     def setup_path(self):
         name = self.obj_parent.alias.get_full_name(joiner=None)
         self.dir = Path(self.base_dir) / Path("/".join(reversed(name)))
-        self._memories = AdjustableFS(
-            self.dir / Path("memories.json"), default_value={}
-        )
         try:
             self.dir.mkdir(exist_ok=True)
         except:
             print("Could not create memory directory")
+        self._memories = AdjustableFS(
+            self.dir / Path("memories.json"), default_value={}
+        )
+        self._presets = AdjustableFS(
+            self.dir / Path("presets.json"), default_value={}
+        )
 
     def __str__(self):
         self.setup_path()
@@ -63,13 +66,14 @@ class Memory:
         stat_now = self.obj_parent.get_status(base=self.obj_parent)
         stat_now["memorized_attributes"] = attributes
         key = datetime.now().isoformat()
+        stat_now["date"] = key
         mem = self._memories()
         if force_message:
             while not message:
                 message = input(
                     "Please enter a message associated to this memory entry:\n>>> "
                 )
-        mem[key] = {"message": message, "categories": self.categories}
+                mem[key] = {"message": message, "categories": self.categories, "date":key}
         tmp = AdjustableFS(self.dir / Path(key + ".json"))
         tmp(stat_now)
         self._memories(mem)
@@ -97,9 +101,10 @@ class Memory:
         show_changes_only=True,
         check_limits=True,
     ):
+        # if input_obj:
 
         select = self.select_from_memory(
-            memory_index, show_changes_only=show_changes_only
+            memory_index=memory_index, show_changes_only=show_changes_only
         )
         if not select:
             return
@@ -124,9 +129,10 @@ class Memory:
             return changes
 
     def get_memory_difference_str(
-        self, memory_index, select=None, ask_select=True, show_changes_only=False
+        self, memory, select=None, ask_select=True, show_changes_only=False
     ):
-        mem = self.get_memory(index=memory_index)
+        # mem = self.get_memory(index=memory_index)
+        mem = memory
         rec = mem["settings"]
         if not select:
             select = [True] * len(rec)
@@ -179,8 +185,9 @@ class Memory:
             colalign=("decimal", "center", "left", "decimal", "center", "decimal"),
         )
 
-    def select_from_memory(self, memory_index, show_changes_only=True):
-        mem = self.get_memory(index=memory_index)
+    def select_from_memory(self, input_obj=None, memory_index=None, show_changes_only=True):
+
+        mem = self.get_memory(input_obj=input_obj, index=memory_index)
         rec = mem["settings"]
         k = KeyPress()
         # cll = colorama.ansi.clear_line()
@@ -201,7 +208,7 @@ class Memory:
             def print(self, **kwargs):
                 print(
                     self.o.get_memory_difference_str(
-                        memory_index,
+                        mem,
                         select=self.select,
                         show_changes_only=show_changes_only,
                     )

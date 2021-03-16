@@ -555,14 +555,6 @@ components = [
         "kwargs": {},
     },
     {
-        "args": [],
-        "name": "las",
-        "z_und": 142,
-        "desc": "Experiment laser optics",
-        "type": "eco.loptics.bernina_experiment:Laser_Exp",
-        "kwargs": {"Id": "SLAAR21-LMOT", "smar_config": config["las_smar_config"]},
-    },
-    {
         "args": ["SLAAR21-LTIM01-EVR0"],
         "name": "laser_shutter",
         "z_und": 142,
@@ -649,13 +641,6 @@ components = [
     #     "type": "eco.timing.lasertiming:Lxt",
     #     "kwargs": {},
     # },
-    {
-        "args": [],
-        "name": "xlt_epics",
-        "desc": "laser timing with pockels cells and phase shifter, epics implementation by edwin",
-        "type": "eco.timing.lasertiming_edwin:XltEpics",
-        "kwargs": {},
-    },
     # {
     #     "args": ["SARES20-CVME-01-EVR0"],
     #     "name": "evr_bernina",
@@ -819,14 +804,6 @@ components = [
                 "diff": "SARES20-LSCP9-FNS:CH3:VAL_GET",
             },
         },
-    },
-    {
-        "args": [],
-        "name": "tt_usd",
-        "z_und": 141,
-        "desc": "timetool in upstream diagnostics",
-        "type": "eco.xdiagnostics.bsen_usd:Bsen",
-        "kwargs": {},
     },
     {
         "args": [],

@@ -20,7 +20,9 @@ class BerninaInlineMicroscope(Assembly):
             camserver_alias=camserver_alias,
             name="camera",
             is_setting=True,
+            is_status="recursive",
         )
+        # self._
         self._append(OptoSigmaZoom, name="zoom", is_setting=[True])
 
     # def zoom
