@@ -42,6 +42,35 @@ class Pprm(Assembly):
         return s
 
 
+class Target_xyz(Assembly):
+    def __init__(
+        self,
+        pvname_x="SARES20-MF2:MOT_1",
+        pvname_y="SARES20-MF2:MOT_2",
+        pvname_z="SARES20-MF2:MOT_3",
+        name=None,
+    ):
+        super().__init__(name=name)
+        self._append(
+            MotorRecord,
+            pvname_x,
+            name="x",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname_y,
+            name="y",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname_z,
+            name="z",
+            is_setting=True,
+        )
+
+
 class ProfKbBernina(Assembly):
     def __init__(
         self,
@@ -58,6 +87,14 @@ class ProfKbBernina(Assembly):
         super().__init__(name=name)
         self.mirror_in_position = mirror_in
         self.mirror_out_position = mirror_out
+        self._append(Target_xyz,
+            pvname_x="SARES20-MF2:MOT_1",
+            pvname_y="SARES20-MF2:MOT_2",
+            pvname_z="SARES20-MF2:MOT_3",
+            name='target_stages',
+            is_status='recursive')
+        self.target = self.target_stages.presets
+
         self._append(
             MotorRecord,
             pvname_target_x,

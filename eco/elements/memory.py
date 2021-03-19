@@ -30,6 +30,7 @@ class Memory:
         if not memory_dir:
             memory_dir = global_memory_dir
         self.base_dir = Path(memory_dir)
+        self.obj_parent.presets = Presets(self)
 
     def setup_path(self):
         name = self.obj_parent.alias.get_full_name(joiner=None)
@@ -41,9 +42,7 @@ class Memory:
         self._memories = AdjustableFS(
             self.dir / Path("memories.json"), default_value={}
         )
-        self._presets = AdjustableFS(
-            self.dir / Path("presets.json"), default_value={}
-        )
+        self._presets = AdjustableFS(self.dir / Path("presets.json"), default_value={})
 
     def __str__(self):
         self.setup_path()
@@ -61,7 +60,9 @@ class Memory:
         # print(self.get_memory_difference_str(index))
         self.recall(memory_index=index)
 
-    def memorize(self, message=None, attributes={}, force_message=True):
+    def memorize(
+        self, message=None, attributes={}, force_message=True, preset_varname=None
+    ):
         self.setup_path()
         stat_now = self.obj_parent.get_status(base=self.obj_parent)
         stat_now["memorized_attributes"] = attributes
@@ -73,7 +74,13 @@ class Memory:
                 message = input(
                     "Please enter a message associated to this memory entry:\n>>> "
                 )
-                mem[key] = {"message": message, "categories": self.categories, "date":key}
+                mem[key] = {
+                    "message": message,
+                    "categories": self.categories,
+                    "date": key,
+                }
+                if preset_varname:
+                    mem[key].update({"presetname": preset_varname})
         tmp = AdjustableFS(self.dir / Path(key + ".json"))
         tmp(stat_now)
         self._memories(mem)
@@ -100,18 +107,22 @@ class Memory:
         wait=True,
         show_changes_only=True,
         check_limits=True,
+        force=False,
     ):
         # if input_obj:
-
-        select = self.select_from_memory(
-            memory_index=memory_index, show_changes_only=show_changes_only
-        )
-        if not select:
-            return
-        mem = self.get_memory(index=memory_index)
+        mem = self.get_memory(index=memory_index, key=key)
         rec = mem["settings"]
-        if not input("would you really like to do the change? (y/n):") == "y":
-            return
+        if force:
+            select = [True] * len(rec.items())
+        else:
+            select = self.select_from_memory(
+                memory_index=memory_index, key=key, show_changes_only=show_changes_only
+            )
+            if not select:
+                return
+            if not input("would you really like to do the change? (y/n):") == "y":
+                return
+
         changes = []
         for sel, (key, val) in zip(select, rec.items()):
             if sel:
@@ -185,9 +196,11 @@ class Memory:
             colalign=("decimal", "center", "left", "decimal", "center", "decimal"),
         )
 
-    def select_from_memory(self, input_obj=None, memory_index=None, show_changes_only=True):
+    def select_from_memory(
+        self, input_obj=None, key=None, memory_index=None, show_changes_only=True
+    ):
 
-        mem = self.get_memory(input_obj=input_obj, index=memory_index)
+        mem = self.get_memory(input_obj=input_obj, key=key, index=memory_index)
         rec = mem["settings"]
         k = KeyPress()
         # cll = colorama.ansi.clear_line()
@@ -271,6 +284,71 @@ class Memory:
         # for mem
 
     def __repr__(self):
+        return self.__str__()
+
+
+class Presets:
+    def __init__(
+        self,
+        memory,
+    ):
+        self._memory = memory
+        self._setup_presets()
+
+    def __dir__(self):
+        return self._setup_presets()
+
+    def _setup_presets(self):
+        self._memory.setup_path()
+        mem = self._memory._memories()
+        presets = []
+        for key, dat in mem.items():
+            if "presetname" in dat.keys():
+                self.__dict__[dat["presetname"]] = Preset(
+                    self._memory, key, name=dat["presetname"]
+                )
+                presets.append(dat["presetname"])
+        return presets
+
+    def __str__(self):
+        self._memory.setup_path()
+        mem = self._memory._memories()
+        table = []
+        for key, dat in mem.items():
+            if "presetname" in dat.keys():
+                table.append([dat["presetname"], key, dat["message"]])
+
+        return tabulate(
+            table,
+            headers=[
+                "Preset",
+                "Date",
+                "Message",
+            ],
+            colalign=("left", "left", "left"),
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class Preset:
+    def __init__(self, memory, key, name=None):
+        self._memory = memory
+        self._key = key
+        self._name = name
+
+    def __call__(self, force=True):
+        self._memory.recall(key=self._key, force=force)
+
+    def __str__(self):
+        s = f"Preset {self._name} - saved values compared to the present status\n"
+        tmem = self._memory.get_memory(key=self._key)
+        s += self._memory.get_memory_difference_str(tmem)
+        return s
+
+    def __repr__(self):
+
         return self.__str__()
 
 

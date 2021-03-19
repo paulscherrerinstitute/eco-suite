@@ -7,6 +7,7 @@ import colorama
 import datetime
 from pint import UnitRegistry
 from time import sleep
+from ..xdiagnostics.profile_monitors import Target_xyz
 
 from .timetool_online_helper import TtProcessor
 
@@ -22,7 +23,7 @@ class TimetoolBerninaUSD(Assembly):
         processing_pipeline="SARES20-CAMS142-M5_psen_db",
         processing_instance="SARES20-CAMS142-M5_psen_db1",
         spectrometer_camera_channel="SARES20-CAMS142-M5:FPICTURE",
-        delaystage_PV="SLAAR21-LMOT-M521:MOTOR_1",
+        delaystage_PV="SLAAR21-LMOT-M524:MOTOR_1",
         pvname_mirror="SARES23-LIC9",
         pvname_zoom="SARES20-MF1:MOT_8",
         mirror_in=15,
@@ -41,9 +42,16 @@ class TimetoolBerninaUSD(Assembly):
         self.proc_pipeline = processing_pipeline
         self.proc_instance = processing_instance
         self.spectrometer_camera_channel = spectrometer_camera_channel
-        self._append(MotorRecord, "SARES20-MF2:MOT_1", name="x_target", is_setting=True)
-        self._append(MotorRecord, "SARES20-MF2:MOT_2", name="y_target", is_setting=True)
-        self._append(MotorRecord, "SARES20-MF2:MOT_3", name="z_target", is_setting=True)
+        self._append(Target_xyz,
+            pvname_x="SARES20-MF2:MOT_1",
+            pvname_y="SARES20-MF2:MOT_2",
+            pvname_z="SARES20-MF2:MOT_3",
+            name='target_stages',
+            is_status='recursive')
+        self.target = self.target_stages.presets
+        # self._append(MotorRecord, "SARES20-MF2:MOT_1", name="x_target", is_setting=True)
+        # self._append(MotorRecord, "SARES20-MF2:MOT_2", name="y_target", is_setting=True)
+        # self._append(MotorRecord, "SARES20-MF2:MOT_3", name="z_target", is_setting=True)
         self._append(
             MotorRecord, "SARES20-MF2:MOT_4", name="zoom_microscope", is_setting=True
         )

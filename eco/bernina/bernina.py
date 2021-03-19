@@ -157,18 +157,6 @@ namespace.append_obj(
     name="xrd_you",
     lazy=True,
 )
-# {
-#     "args": [],
-#     "name": "xrd",
-#     "z_und": 142,
-#     "desc": "Xray diffractometer",
-#     "type": "eco.endstations.bernina_diffractometers:XRD",
-#     "kwargs": {
-#         "Id": "SARES21-XRD",
-#         "configuration": config["xrd_config"],
-#         "diff_detector": {"jf_id": "JF01T03V01"},
-#     },
-# },
 namespace.append_obj(
     "Daq",
     instrument="bernina",
@@ -282,22 +270,87 @@ namespace.append_obj(
     name="incoupling",
 )
 
-# incoupling = Incoupling(name="incoupling")
+
+from ..devices_general.motors import MotorRecord
+from ..loptics.bernina_laser import DelayTime
+from ..microscopes import MicroscopeMotorRecord
+
+# ad hoc interferometric timetool
+class TTinterferometrid(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(MotorRecord, "SARES20-MF1:MOT_7", name="z_target", is_setting=True)
+        self._append(
+            MotorRecord, "SARES20-MF1:MOT_10", name="x_target", is_setting=True
+        )
+        self._append(
+            MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage", is_setting=True
+#            MotorRecord,"SLAAR21-LMOT-M521",name = ""   
+#               starting following commandline silently:
+#           caqtdm -macro "P=SLAAR21-LMOT-M521:,M=MOTOR_1" motorx_more.ui
+
+      )
+        self._append(
+            DelayTime,
+            self.delaystage,
+            name="delay",
+            is_setting=True,
+            is_status=True,
+        )
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB18", name="rot_BC", is_setting=True
+        )
+        # self._append(
+        #     MotorRecord, "SARES20-MF1:MOT_15", name="zoom_microscope", is_setting=True
+        # )
+        self._append(
+            MicroscopeMotorRecord,
+            pvname_camera="SARES20-CAMS142-M1",
+            camserver_alias="tt_spatial",
+            pvname_zoom="SARES20-MF1:MOT_15",
+            is_setting=True,
+            is_status="recursive",
+            name="microscope",
+        )
+
+
+namespace.append_obj(
+    TTinterferometrid,
+    lazy=True,
+    name="exp",
+)
+
+
+############## maybe to be recycled ###################
+
 # {
 #     "args": [],
-#     "name": "cams_qioptiq",
+#     "name": "ocb",
 #     "z_und": 142,
-#     "desc": "Qioptic sample viewer in Bernina hutch",
-#     "type": "eco.endstations.bernina_cameras:Qioptiq",
+#     "desc": "LiNbO3 crystal breadboard",
+#     "type": "eco.endstations.bernina_sample_environments:LiNbO3_crystal_breadboard",
+#     "kwargs": {"Id": "SARES23"},
+# },
+# {
+#     "args": [],
+#     "name": "vonHamos",
+#     "z_und": 142,
+#     "desc": "Kern experiment, von Hamos vertical and horizontal stages ",
+#     "type": "eco.devices_general.micos_stage:stage",
 #     "kwargs": {
-#         "bshost": "sf-daqsync-01.psi.ch",
-#         "bsport": 11149,
-#         "zoomstage_pv": config["cams_qioptiq"]["zoomstage_pv"],
-#         "camera_pv": config["cams_qioptiq"]["camera_pv"],
+#         "vonHamos_horiz_pv": config["Kern"]["vonHamos_horiz"],
+#         "vonHamos_vert_pv": config["Kern"]["vonHamos_vert"],
 #     },
 # },
 
-
-# def __getattr__(*args, **kwargs)a
-#     print("called getattr")
-#     print(args, kwargs)
+# {
+#     "name": "mono_old",
+#     "args": ["SAROP21-ODCM098"],
+#     "kwargs": {
+#         "energy_sp": "SAROP21-ARAMIS:ENERGY_SP",
+#         "energy_rb": "SAROP21-ARAMIS:ENERGY",
+#     },
+#     "z_und": 98,
+#     "desc": "DCM Monochromator",
+#     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
+# },

@@ -1,8 +1,39 @@
 from ..elements.assembly import Assembly
 from ..devices_general.cameras_swissfel import CameraBasler
+from ..devices_general.motors import MotorRecord
 from ..devices_general.adjustable import PvRecord, AdjustableVirtual, spec_convenience
 from epics import PV
 import numpy as np
+
+
+class MicroscopeMotorRecord(Assembly):
+    def __init__(
+        self,
+        pvname_camera=None,
+        camserver_alias=None,
+        # camserver_alias=None,
+        pvname_zoom=None,
+        pvname_focus=None,
+        name=None,
+    ):
+        super().__init__(name=name)
+        if pvname_camera:
+            self._append(
+                CameraBasler,
+                pvname_camera,
+                camserver_alias=camserver_alias,
+                name="camera",
+                is_setting=True,
+                is_status="recursive",
+            )
+        if pvname_zoom:
+            self._append(
+                MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_status=True
+            )
+        if pvname_focus:
+            self._append(
+                MotorRecord, pvname_focus, name="focus", is_setting=True, is_status=True
+            )
 
 
 class BerninaInlineMicroscope(Assembly):
