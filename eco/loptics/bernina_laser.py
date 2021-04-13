@@ -18,7 +18,7 @@ class LaserBernina(Assembly):
         # Table 1, Benrina hutch
         self._append(
             MotorRecord,
-            self.pvname + "-M552:MOT",
+            "SLAAR21-LMOT-M523:MOTOR_1",
             name="delaystage_glob",
             is_setting=True,
         )

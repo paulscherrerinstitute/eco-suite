@@ -157,6 +157,46 @@ namespace.append_obj(
     name="xrd_you",
     lazy=True,
 )
+
+### draft new epics daq ###
+namespace.append_obj(
+    "EpicsDaq",
+    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
+    channels_list=channels_CA_epicsdaq,
+    name="daq_epics_local",
+    module_name="eco.acquisition.epics_data",
+    lazy=True,
+)
+### old epics daq ###
+namespace.append_obj(
+    "ChannelList",
+    name="epics_channel_list",
+    file_name="/sf/bernina/config/channel_lists/default_channel_list_epics",
+    module_name='eco.utilities.config',
+)
+
+namespace.append_obj(
+    "Epicstools",
+    name='epics_daq',
+    channel_list=epics_channel_list,
+    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
+    module_name="eco.acquisition.epics_data",
+)
+
+namespace.append_obj(
+    "Scans",
+    name='scans_epics',
+    module_name='eco.acquisition.scan',
+    data_base_dir="scan_data",
+    scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
+    default_counters= [epics_daq],
+    checker=checker_epics,
+    scan_directories=True,
+    run_table=run_table,
+)
+
+
+##### standard DAQ #######
 namespace.append_obj(
     "Daq",
     instrument="bernina",
@@ -298,7 +338,7 @@ class TTinterferometrid(Assembly):
             is_status=True,
         )
         self._append(
-            SmaractStreamdevice, "SARES23-ESB18", name="rot_BC", is_setting=True
+            SmaractStreamdevice, "SARES23-ESB18", name="rot_BC", accuracy=3e-3, is_setting=True
         )
         # self._append(
         #     MotorRecord, "SARES20-MF1:MOT_15", name="zoom_microscope", is_setting=True

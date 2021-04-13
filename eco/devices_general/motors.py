@@ -208,6 +208,7 @@ class SmaractStreamdevice(Assembly):
 
         while not self.get_close_to(value, self.accuracy):
             if (time.time() - t_start) > timeout:
+                print(f'Present position: {self.get_current_value()}, target position: {value}, accuracy: {self.accuracy}')
                 raise AdjustableError(
                     f"motion timeout reached in smaract {self.name}:{self.pvname}"
                 )

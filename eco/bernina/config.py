@@ -677,6 +677,13 @@ components = [
         "kwargs": {},
     },
     {
+        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_CA_epicsdaq"],
+        "name": "channels_CA_epicsdaq",
+        "desc": "jf detector channels",
+        "type": "eco.devices_general.adjustable:AdjustableFS",
+        "kwargs": {},
+    },
+    {
         "args": [],
         "name": "default_channel_list",
         "desc": "Bernina default channels, used in daq",
