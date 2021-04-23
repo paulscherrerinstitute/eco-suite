@@ -9,6 +9,16 @@ namespace = Namespace(
 )
 namespace.alias_namespace.data = []
 
+# Adding stuff that might be relevant for stuff configured below (e.g. config)
+
+namespace.append_obj(
+    "DataApi",
+    name="archiver",
+    module_name="eco.dbase.archiver",
+    pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
+    lazy=False,
+)
+
 # adding all stuff from the config components the "old" way of configuring.
 # whatever is added, it is available by the configured name in this module
 # afterwards, and can be used immediately, e.g. as input argument for the next thing.
@@ -172,12 +182,12 @@ namespace.append_obj(
     "ChannelList",
     name="epics_channel_list",
     file_name="/sf/bernina/config/channel_lists/default_channel_list_epics",
-    module_name='eco.utilities.config',
+    module_name="eco.utilities.config",
 )
 
 namespace.append_obj(
     "Epicstools",
-    name='epics_daq',
+    name="epics_daq",
     channel_list=epics_channel_list,
     default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
     module_name="eco.acquisition.epics_data",
@@ -185,11 +195,11 @@ namespace.append_obj(
 
 namespace.append_obj(
     "Scans",
-    name='scans_epics',
-    module_name='eco.acquisition.scan',
+    name="scans_epics",
+    module_name="eco.acquisition.scan",
     data_base_dir="scan_data",
     scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
-    default_counters= [epics_daq],
+    default_counters=[epics_daq],
     checker=checker_epics,
     scan_directories=True,
     run_table=run_table,
@@ -324,12 +334,14 @@ class TTinterferometrid(Assembly):
             MotorRecord, "SARES20-MF1:MOT_10", name="x_target", is_setting=True
         )
         self._append(
-            MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage", is_setting=True
-#            MotorRecord,"SLAAR21-LMOT-M521",name = ""   
-#               starting following commandline silently:
-#           caqtdm -macro "P=SLAAR21-LMOT-M521:,M=MOTOR_1" motorx_more.ui
-
-      )
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage",
+            is_setting=True
+            #            MotorRecord,"SLAAR21-LMOT-M521",name = ""
+            #               starting following commandline silently:
+            #           caqtdm -macro "P=SLAAR21-LMOT-M521:,M=MOTOR_1" motorx_more.ui
+        )
         self._append(
             DelayTime,
             self.delaystage,
@@ -338,7 +350,11 @@ class TTinterferometrid(Assembly):
             is_status=True,
         )
         self._append(
-            SmaractStreamdevice, "SARES23-ESB18", name="rot_BC", accuracy=3e-3, is_setting=True
+            SmaractStreamdevice,
+            "SARES23-ESB18",
+            name="rot_BC",
+            accuracy=3e-3,
+            is_setting=True,
         )
         # self._append(
         #     MotorRecord, "SARES20-MF1:MOT_15", name="zoom_microscope", is_setting=True

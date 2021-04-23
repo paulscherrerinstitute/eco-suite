@@ -46,7 +46,8 @@ class att_usd_targets:
             },
         }
         self._xp = xp
-        self._updateE()
+        # self._updateE()
+        self.E = None
 
         ### BSEN target position ###
         for name, config in self.motor_configuration.items():
@@ -60,7 +61,7 @@ class att_usd_targets:
         }
         self._get_transmission()
 
-    def _updateE(self, energy=None):
+    def _updateE(self, energy=None, check_once=False):
         while not energy:
             energy = PV("SARUN03-UIND030:FELPHOTENE").value
             energy = energy * 1000

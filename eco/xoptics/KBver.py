@@ -34,7 +34,9 @@ class KBver:
         self.Id = Id
         self.alias = Alias(name)
 
-        addMotorRecordToSelf(self, Id=Id + ":W_X", name="x")
+        addMotorRecordToSelf(self, Id=Id + ":TY1", name="phys_y_1", is_setting=True)
+        addMotorRecordToSelf(self, Id=Id + ":TY2", name="phys_y_2", is_setting=True)
+        addMotorRecordToSelf(self, Id=Id + ":TY3", name="phys_y_3", is_setting=True)
         addMotorRecordToSelf(self, Id=Id + ":W_Y", name="y")
         addMotorRecordToSelf(self, Id=Id + ":W_RX", name="pitch")
         addMotorRecordToSelf(self, Id=Id + ":W_RZ", name="roll")

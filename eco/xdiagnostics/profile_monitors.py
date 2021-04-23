@@ -87,12 +87,14 @@ class ProfKbBernina(Assembly):
         super().__init__(name=name)
         self.mirror_in_position = mirror_in
         self.mirror_out_position = mirror_out
-        self._append(Target_xyz,
+        self._append(
+            Target_xyz,
             pvname_x="SARES20-MF2:MOT_1",
             pvname_y="SARES20-MF2:MOT_2",
             pvname_z="SARES20-MF2:MOT_3",
-            name='target_stages',
-            is_status='recursive')
+            name="target_stages",
+            is_status="recursive",
+        )
         self.target = self.target_stages.presets
 
         self._append(
@@ -141,7 +143,7 @@ class ProfKbBernina(Assembly):
             MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_status=True
         )
 
-    def movein(self,wait=False):
+    def movein(self, wait=False):
         ch = self.mirror_in.set_target_value(1)
         if wait:
             ch.wait()

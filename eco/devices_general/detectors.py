@@ -76,13 +76,24 @@ class PvDataStream:
                     self._collection["done"] = True
 
         self._collection["ix_cb"] = self._pv.add_callback(addData)
+        time_wait_start = time()
         while not self._collection["done"]:
             sleep(0.005)
+            if seconds:
+                if (time() - time_wait_start) > seconds:
+                    if len(self.data_collected) == 0:
+                        print(
+                            f"No {self.name}({self.Id}) data update in time interval, reporting last value"
+                        )
+                        self._pv.callbacks.pop(self._collection["ix_cb"])
+                        self.data_collected.append(self.get_current_value())
+                        break
+
         return self.data_collected
 
-    def acquire(self, hold=False, **kwargs):
+    def acquire(self, hold=False, seconds=None, samples=None, **kwargs):
         return Acquisition(
-            acquire=lambda: self.collect(**kwargs),
+            acquire=lambda: self.collect(seconds=seconds, samples=samples, **kwargs),
             hold=hold,
             stopper=None,
             get_result=lambda: self.data_collected,

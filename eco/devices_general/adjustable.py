@@ -11,6 +11,7 @@ import datetime
 import numpy as np
 from pathlib import Path
 from json import load, dump
+from .. import ecocnf
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,20 @@ class AdjustableError(Exception):
 
 
 # wrappers for adjustables >>>>>>>>>>>
+
+
+def get_from_archive(Obj, attribute_name="pvname"):
+    def get_archiver_time_range(self, start=None, end=None, plot=True):
+        """Try to retrieve data within timerange from archiver. A time delta from now is assumed if end time is missing. """
+        channelname = self.__dict__[attribute_name]
+        return ecocnf.archiver.get_data_time_range(
+            channels=[channelname], start=start, end=end, plot=plot
+        )
+
+    Obj.get_archiver_time_range = get_archiver_time_range
+    return Obj
+
+
 def default_representation(Obj):
     def get_name(Obj):
         if hasattr(Obj, "alias") and Obj.alias:
@@ -318,6 +333,7 @@ class AdjustableFS:
 
 
 @spec_convenience
+@get_from_archive
 class PvRecord:
     def __init__(
         self, pvsetname, pvreadbackname=None, accuracy=None, name=None, elog=None
@@ -339,8 +355,10 @@ class PvRecord:
         if pvreadbackname is None:
             self._pvreadback = PV(self.Id)
             pvreadbackname = self.Id
+            self.pvname = self.Id
         else:
             self._pvreadback = PV(pvreadbackname)
+            self.pvname = self.pvreadbackname
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
     def get_current_value(self, readback=True):
@@ -403,9 +421,11 @@ class PvRecord:
 
 # @default_representation
 @spec_convenience
+@get_from_archive
 class PvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
+        self.pvname = pvname
         self._pv = PV(pvname)
         self.name = name
         self.enum_strs = self._pv.enum_strs

@@ -5,13 +5,16 @@ import datetime
 from numbers import Number
 from matplotlib import pyplot as plt
 import numpy as np
+from .. import ecocnf
 
 
 class DataApi:
-    def __init__(self, pv_pulse_id=None, name=None):
+    def __init__(self, pv_pulse_id=None, name=None, add_to_cnf=True):
         self.name = name
         if pv_pulse_id:
             self.pulse_id = PvDataStream(pv_pulse_id, name="pulse_id")
+        if add_to_cnf:
+            ecocnf.archiver = self
 
     def get_data_time_range(self, channels=[], start=None, end=None, plot=False):
         if not end:
@@ -54,6 +57,7 @@ class DataApi:
                 x = data.index[sel]
                 y = data[chan][sel]
                 ah.plot(x, y, ".-", label=chan, where="post")
+            plt.tight_layout()
 
         return data
 

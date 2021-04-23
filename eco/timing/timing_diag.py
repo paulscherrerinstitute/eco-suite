@@ -42,12 +42,14 @@ class TimetoolBerninaUSD(Assembly):
         self.proc_pipeline = processing_pipeline
         self.proc_instance = processing_instance
         self.spectrometer_camera_channel = spectrometer_camera_channel
-        self._append(Target_xyz,
+        self._append(
+            Target_xyz,
             pvname_x="SARES20-MF2:MOT_1",
             pvname_y="SARES20-MF2:MOT_2",
             pvname_z="SARES20-MF2:MOT_3",
-            name='target_stages',
-            is_status='recursive')
+            name="target_stages",
+            is_status="recursive",
+        )
         self.target = self.target_stages.presets
         # self._append(MotorRecord, "SARES20-MF2:MOT_1", name="x_target", is_setting=True)
         # self._append(MotorRecord, "SARES20-MF2:MOT_2", name="y_target", is_setting=True)
@@ -125,11 +127,11 @@ class TimetoolBerninaUSD(Assembly):
         self.online_monitor = TtProcessor()
 
     def start_online_monitor(self):
-        print(f'Starting online data acquisition ...')
+        print(f"Starting online data acquisition ...")
         self.get_online_data()
-        print(f'... done, waiting for data coming in ...')
+        print(f"... done, waiting for data coming in ...")
         sleep(5)
-        print(f'... done, starting online plot.')
+        print(f"... done, starting online plot.")
         self.online_monitor.plot_animation()
 
     def get_proc_config(self):

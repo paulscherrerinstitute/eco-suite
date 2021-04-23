@@ -81,13 +81,6 @@ components = [
         "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
     },
     {
-        "args": [],
-        "name": "archiver",
-        "desc": "SwisFEL archiver data_buffer",
-        "type": "eco.dbase.archiver:DataApi",
-        "kwargs": {"pv_pulse_id": "SARES20-CVME-01-EVR0:RX-PULSEID"},
-    },
-    {
         "name": "fel",
         "type": "eco.fel.swissfel:SwissFel",
         "args": [],

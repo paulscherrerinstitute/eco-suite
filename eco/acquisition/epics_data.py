@@ -30,8 +30,7 @@ class EpicsDaq:
         channels = self.channel_list.get_current_value()
         for channel in channels:
             if not (channel in self.channels.keys()):
-                self.channels[channel] = PV(channel,auto_monitor=True)
-
+                self.channels[channel] = PV(channel, auto_monitor=True)
 
     def h5(self, fina=None, channel_list=None, N_pulses=None, queue_size=100):
         channel_list = self.channel_list

@@ -25,9 +25,11 @@ class KBMirrorBernina_new(Assembly):
         super().__init__(name=name)
 
         self._append(
-            KbVer, pvname_ver, name="ver", is_setting=True, is_status='recursive')
+            KbVer, pvname_ver, name="ver", is_setting=True, is_status="recursive"
+        )
         self._append(
-            KbHor, pvname_hor, name="hor", is_setting=True, is_status='recursive')
+            KbHor, pvname_hor, name="hor", is_setting=True, is_status="recursive"
+        )
         self.usd_table = usd_table
         self.d_kbver = d_kbver
         self.d_kbhor = d_kbhor
