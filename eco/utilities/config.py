@@ -7,6 +7,7 @@ from functools import partial
 
 # from .lazy_proxy import Proxy
 from ..aliases import Alias
+from ..elements.assembly import Assembly
 import getpass
 import colorama
 import socket
@@ -254,9 +255,10 @@ class Terminal:
         print(colorama.ansi.set_title("♻️ " + self.get_string() + extension))
 
 
-class Namespace(object):
+class Namespace(Assembly):
     def __init__(self, name=None, root_module=None, alias_namespace=None):
-        self.name = name
+        super().__init__(name)
+        # self.name = name
         self.lazy_items = {}
         self.initialized_items = {}
         self.root_module = root_module
@@ -350,6 +352,8 @@ class Namespace(object):
                     obj_initialized = obj_maker(*args, **kwargs)
 
                 self.initialized_items[name] = self.lazy_items.pop(name)
+                if hasattr(obj_initialized, "alias"):
+                    self._append(obj_initialized,name=name,is_setting=True,is_status='recursive',call_obj=False)
                 if self.alias_namespace and hasattr(obj_initialized, "alias"):
                     for ta in obj_initialized.alias.get_all():
                         try:
@@ -382,6 +386,8 @@ class Namespace(object):
             self.initialized_items[name] = obj
             if self.root_module:
                 sys.modules[self.root_module].__dict__[name] = obj
+            if hasattr(obj, "alias"):
+                self._append(obj,name=name,is_setting=True,is_status='recursive',call_obj=False)
             if self.alias_namespace and hasattr(obj, "alias"):
                 for ta in obj.alias.get_all():
                     try:

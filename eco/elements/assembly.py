@@ -66,9 +66,13 @@ class Assembly:
         is_status=True,
         is_alias=True,
         view_toplevel_only=True,
+        call_obj=True,
         **kwargs,
-    ):
-        self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
+    ):  
+        if call_obj and callable(foo_obj_init):
+            self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
+        else:
+            self.__dict__[name] = foo_obj_init
         self.alias.append(self.__dict__[name].alias)
         # except:
         #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')

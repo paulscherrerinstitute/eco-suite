@@ -1,22 +1,26 @@
 from epics import PV
 from ..aliases import Alias
+from ..elements.assembly import Assembly
+from ..devices_general.adjustable import PvEnum
 
 
-class PhotonShutter:
+class PhotonShutter(Assembly):
     def __init__(self, pvname, name=None):
-        self.name = name
-        self.pv = PV(pvname)
-        if name:
-            self.alias = Alias(name, channel=pvname, channeltype="CA")
+        super().__init__(name=name)
+        self._append(PvEnum,pvname,name='request')
 
     def open(self):
-        self.pv.put(1)
+        self.request(1)
 
     def close(self):
-        self.pv.put(0)
+        self.request(0)
 
-    def get_state(self):
-        return self.pv.get()
+    def __call__(self,*args):
+        if args:
+            self.request.set_target_value(args[0])
+        else:
+            return self.request.get_current_value()
+
 
 
 class SafetyShutter:

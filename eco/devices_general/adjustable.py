@@ -358,7 +358,7 @@ class PvRecord:
             self.pvname = self.Id
         else:
             self._pvreadback = PV(pvreadbackname)
-            self.pvname = self.pvreadbackname
+            self.pvname = pvreadbackname
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
     def get_current_value(self, readback=True):
