@@ -46,3 +46,23 @@ The eco package is available on [anaconda.org](https://anaconda.org/paulscherrer
 ```bash
 conda install -c paulscherrerinstitute eco
 ```
+# HowTos
+
+Please find in the following some general procedures when adding components in eco according to present conventions. This section can and should be dynamic, and may include outdated hint if not updated for longer. 
+
+## create new object ind eco
+
+In order to help with naming, aliases, shell representation, new objects should be implemented as derived from `elements.Assembly` and call the parent init function with the name variable.
+```python
+from elements import Assembly
+class Myobject(Assembly):
+    def __init__(self,name=None):
+        super().__init__(name=name)
+```
+The `Assembly` object has different methods that help to assemble different other eco objects together.
+```python
+# in 
+self._append(MySubObject,*args, **kwargs, name='mysubobjname', is_setting=True, is_status=True)
+```
+The `is_setting` flag requires that the appended object is an adjustable (can be set afterwards) or has adjustable settings in case it is itself an assembly.
+The `is_status` flag independently determines if the subobject should be used to describe the status of the new assembly, e.g. show up in its representation. In case the subobject is no adjustable itself but has adjustable settings that should be shown in the object status, please use `is_status='recursive'`. 
