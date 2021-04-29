@@ -205,34 +205,22 @@ class Pprmold:
         return s
 
 
-class Bernina_XEYE:
+class Bernina_XEYE(Assembly):
     def __init__(
         self, camera_pv=None, zoomstage_pv=None, bshost=None, bsport=None, name=None
     ):
-        self.alias = Alias(name)
-        self.name = name
+        super().__init__(name=name)
         if zoomstage_pv:
-            append_object_to_object(self, MotorRecord, zoomstage_pv, name="zoom")
+            self._append(MotorRecord, zoomstage_pv, name="zoom",is_setting=True)
         try:
             self.cam = CameraCA(camera_pv)
+            self._append(CameraBasler,camera_pv,name='camera',is_setting=True,is_status='recursive')
         except:
             print("X-Ray eye Cam not found")
             pass
 
         if bshost:
             self.camBS = CameraBS(host=bshost, port=bsport)
-
-    def get_adjustable_positions_str(self):
-        ostr = "*****Xeye motor positions******\n"
-
-        for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
-        return ostr
-
-    def __repr__(self):
-        return self.get_adjustable_positions_str()
 
 
 #        self._led = PV(self.Id+':LED')
