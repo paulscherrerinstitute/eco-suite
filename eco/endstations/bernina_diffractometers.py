@@ -73,6 +73,7 @@ class GPS(Assembly):
                 name="hex",
                 fina_angle_offset=fina_hex_angle_offset,
                 is_setting=False,
+                is_status="recursive",
             )
 
         if "hlxz" in self.configuration:
