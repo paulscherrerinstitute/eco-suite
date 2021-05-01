@@ -15,6 +15,7 @@ from datetime import datetime
 from ..acquisition.utilities import Acquisition
 from ..aliases import Alias
 from ..elements import Assembly
+from ..devices_general.adjustable import PvString
 
 
 class PvData(Assembly):
@@ -32,12 +33,17 @@ class PvData(Assembly):
         return self.get_current_value()
 
 
-class PvDataStream:
-    def __init__(self, Id, name=None):
-        self.Id = Id
-        self._pv = PV(Id)
-        self.name = name
-        self.alias = Alias(self.name, channel=self.Id, channeltype="CA")
+class PvDataStream(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.Id = pvname
+        self.pvname = pvname
+        self._pv = PV(pvname)
+        self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
+        self._append(PvString, self.pvname + ".EGU", name="unit", is_setting=False)
+        # self._append(
+        #     PvString, self.pvname + ".DESC", name="description", is_setting=False
+        # )
 
     def collect(self, seconds=None, samples=None):
         if (not seconds) and (not samples):

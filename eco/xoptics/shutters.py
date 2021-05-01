@@ -7,7 +7,7 @@ from ..devices_general.adjustable import PvEnum
 class PhotonShutter(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
-        self._append(PvEnum,pvname,name='request')
+        self._append(PvEnum, pvname, name="request")
 
     def open(self):
         self.request(1)
@@ -15,12 +15,11 @@ class PhotonShutter(Assembly):
     def close(self):
         self.request(0)
 
-    def __call__(self,*args):
+    def __call__(self, *args):
         if args:
             self.request.set_target_value(args[0])
         else:
             return self.request.get_current_value()
-
 
 
 class SafetyShutter:

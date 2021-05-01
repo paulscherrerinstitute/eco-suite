@@ -1,15 +1,116 @@
 from ..devices_general.motors import MotorRecord
 from ..eco_epics.utilities_epics import EnumWrapper
 from ..devices_general.detectors import FeDigitizer, PvDataStream
-from ..devices_general.adjustable import PvEnum
+from ..devices_general.adjustable import PvEnum, PvRecord, AdjustableVirtual
 from ..aliases import Alias, append_object_to_object
+from ..elements import Assembly
 from epics import PV
 import numpy as np
 
 
-class GasDetector:
-    def __init__(self):
-        pass
+class GasDetector(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            PvDataStream,
+            "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
+            name="fast_calibrated",
+            is_status=True,
+        )
+
+
+class FeDigitiza(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(
+            PvEnum, pvname + "-WD-gain", name="gain", is_setting=True, is_status=True
+        )
+        self._append(
+            PvRecord, pvname + "-HV_SET", name="bias", is_setting=True, is_status=True
+        )
+
+        # self.channels = [
+        # Id + "-BG-DATA",
+        # Id + "-BG-DRS_TC",
+        # Id + "-BG-PULSEID-valid",
+        # Id + "-DATA",
+        # Id + "-DRS_TC",
+        # Id + "-PULSEID-valid",
+        # ]
+
+
+class SolidTargetDetectorPBPS_assi(Assembly):
+    def __init__(
+        self,
+        pvname,
+        pvname_fedigitizerchannels=dict(
+            up="SAROP21-CVME-PBPS1:Lnk9Ch0",
+            down="SAROP21-CVME-PBPS1:Lnk9Ch12",
+            left="SAROP21-CVME-PBPS1:Lnk9Ch15",
+            right="SAROP21-CVME-PBPS1:Lnk9Ch13",
+        ),
+        name=None,
+    ):
+        print("hia----->", name)
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(
+            PvEnum,
+            pvname + ":PROBE_SP",
+            name="target",
+            is_setting=True,
+            is_status=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname + ":MOTOR_X1",
+            name="x_diodes",
+            is_setting=True,
+            is_status=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname + ":MOTOR_Y1",
+            name="y_diodes",
+            is_setting=True,
+            is_status=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname + ":MOTOR_PROBE",
+            name="y_targets",
+            is_setting=True,
+            is_status=False,
+        )
+        for chdigi, tp in pvname_fedigitizerchannels.items():
+            self._append(
+                FeDigitiza, tp, name="diode_" + chdigi, is_setting=True, is_status=False
+            )
+        self._append(
+            AdjustableVirtual,
+            [
+                self.__dict__["diode_" + chdigi].bias
+                for chdigi in pvname_fedigitizerchannels.keys()
+            ],
+            lambda a, b, c, d: all([x == a for x in [b, c, d]]) * a,
+            lambda x: (x, x, x, x),
+            name="bias",
+            is_setting=False,
+            is_status=True,
+        )
+        self._append(
+            AdjustableVirtual,
+            [
+                self.__dict__["diode_" + chdigi].gain
+                for chdigi in pvname_fedigitizerchannels.keys()
+            ],
+            lambda a, b, c, d: all([x == a for x in [b, c, d]]) * a,
+            lambda x: (x, x, x, x),
+            name="gain",
+            is_setting=False,
+            is_status=True,
+        )
 
 
 class SolidTargetDetectorPBPS_new:

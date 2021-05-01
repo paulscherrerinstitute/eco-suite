@@ -55,6 +55,34 @@ class SwissFel(Assembly):
             is_status=True,
             is_setting=True,
         )
+        self._append(
+            PvEnum,
+            "SFB_PSICO_AR:ONOFF1",
+            name="psico_running",
+            is_status=True,
+            is_setting=False,
+        )
+        self._append(
+            PvEnum,
+            "SFB_POINTING_AR:ONOFF1",
+            name="pointing_feedback_running",
+            is_status=True,
+            is_setting=False,
+        )
+        self._append(
+            PvRecord,
+            "SFB_POINTING_AR:SP1",
+            name="pointing_feedback_setpoint_x",
+            is_status=True,
+            is_setting=False,
+        )
+        self._append(
+            PvRecord,
+            "SFB_POINTING_AR:SP2",
+            name="pointing_feedback_setpoint_y",
+            is_status=True,
+            is_setting=False,
+        )
 
 
 class MessageBoard(Assembly):

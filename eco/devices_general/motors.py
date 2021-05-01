@@ -156,8 +156,18 @@ class SmaractStreamdevice(Assembly):
             name="sensor_type",
             is_setting=True,
         )
-        self._append(PvRecord, self.pvname + ":GET_SENSOR_TYPE", name="sensor_type_getter_number", is_setting=False)
-        self._append(PvRecord, self.pvname + ":SET_SENSOR_TYPE", name="sensor_type_setter_number", is_setting=False)
+        self._append(
+            PvRecord,
+            self.pvname + ":GET_SENSOR_TYPE",
+            name="sensor_type_getter_number",
+            is_setting=False,
+        )
+        self._append(
+            PvRecord,
+            self.pvname + ":SET_SENSOR_TYPE",
+            name="sensor_type_setter_number",
+            is_setting=False,
+        )
         self._append(PvRecord, self.pvname + ":LLM", name="limit_low", is_setting=False)
         self._append(
             PvRecord, self.pvname + ":HLM", name="limit_high", is_setting=False

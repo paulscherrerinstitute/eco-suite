@@ -68,7 +68,7 @@ class Assembly:
         view_toplevel_only=True,
         call_obj=True,
         **kwargs,
-    ):  
+    ):
         if call_obj and callable(foo_obj_init):
             self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
         else:
@@ -164,7 +164,8 @@ class Assembly:
         return s
 
     def __repr__(self):
-        return self.get_status_indicator_str()
+        label = self.alias.get_full_name() + " status\n"
+        return label + self.get_status_indicator_str()
 
     def _run_cmd(self, line):
         print(f"Starting following commandline silently:\n" + line)

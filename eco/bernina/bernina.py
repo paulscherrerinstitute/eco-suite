@@ -37,6 +37,32 @@ for tk in components:
 # )
 
 namespace.append_obj(
+    "GasDetector",
+    name="mon_und_gas",
+    module_name="eco.xdiagnostics.intensity_monitors",
+    lazy=True,
+)
+namespace.append_obj(
+    "RefLaser_Aramis",
+    "SAROP21-OLAS136",
+    module_name =  "eco.xoptics.reflaser_new",
+    name='reflaser',
+    lazy=True,
+)
+namespace.append_obj(
+    "SolidTargetDetectorPBPS_assi",
+    "SAROP21-PBPS133",
+    pvname_fedigitizerchannels=dict(
+        up="SAROP21-CVME-PBPS1:Lnk9Ch0",
+        down="SAROP21-CVME-PBPS1:Lnk9Ch12",
+        left="SAROP21-CVME-PBPS1:Lnk9Ch15",
+        right="SAROP21-CVME-PBPS1:Lnk9Ch13",
+    ),
+    name="mon_opt_dev",
+    module_name="eco.xdiagnostics.intensity_monitors",
+    lazy=True,
+)
+namespace.append_obj(
     "CTA_sequencer",
     "SAR-CCTA-ESB",
     name="seq",
@@ -61,11 +87,13 @@ namespace.append_obj(
     "ProfKbBernina",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_kb",
+    pvname_mirror="SARES23-LIC11",
     lazy=True,
 )
 namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
+    pvname_mirror="SARES23-LIC11",
     name="tt_kb",
     lazy=True,
 )

@@ -324,14 +324,6 @@ components = [
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
     },
     {
-        "name": "ref_laser",
-        "args": ["SAROP21-OLAS136"],
-        "kwargs": {},
-        "z_und": 136,
-        "desc": "Bernina beamline reference laser before KBs",
-        "type": "eco.xoptics.reflaser_new:RefLaser_Aramis",
-    },
-    {
         "name": "slit_att",
         "args": ["SAROP21-OAPU136"],
         "kwargs": {},
@@ -446,18 +438,18 @@ components = [
     #     "type": "eco.endstations.bernina_diffractometers:XRD_old",
     #     "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
     # },
-    {
-        "args": [],
-        "name": "xrd",
-        "z_und": 142,
-        "desc": "Xray diffractometer",
-        "type": "eco.endstations.bernina_diffractometers:XRD",
-        "kwargs": {
-            "Id": "SARES21-XRD",
-            "configuration": config["xrd_config"],
-            "diff_detector": {"jf_id": "JF01T03V01"},
-        },
-    },
+    # {
+        # "args": [],
+        # "name": "xrd",
+        # "z_und": 142,
+        # "desc": "Xray diffractometer",
+        # "type": "eco.endstations.bernina_diffractometers:XRD",
+        # "kwargs": {
+            # "Id": "SARES21-XRD",
+            # "configuration": config["xrd_config"],
+            # "diff_detector": {"jf_id": "JF01T03V01"},
+        # },
+    # },
     {
         "args": [],
         "name": "vonHamos",

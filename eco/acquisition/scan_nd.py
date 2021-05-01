@@ -43,7 +43,7 @@ class ScanND:
         return_at_end="question",
         run_table=None,
         elog=None,
-    ): 
+    ):
         scan_array = []
         scan_adjustables = []
         for n_dim, (adj_tdim, arr_tdim) in enumerate(zip(adjustables, arrays)):
@@ -69,20 +69,27 @@ class ScanND:
 
     @property
     def steps_total(self):
-        return np.prod([len(ta[0]) for ta in  self.scan_array])
+        return np.prod([len(ta[0]) for ta in self.scan_array])
 
     @property
     def shape(self):
-        return tuple([len(ta[0]) for ta in  self.scan_array])
+        return tuple([len(ta[0]) for ta in self.scan_array])
 
-    def create_stepping_order(self,order='C'):
-        return [tuple(te) for te in np.vstack(np.unravel_index(np.arange(self.steps_total),self.shape,order=order)).T]
+    def create_stepping_order(self, order="C"):
+        return [
+            tuple(te)
+            for te in np.vstack(
+                np.unravel_index(np.arange(self.steps_total), self.shape, order=order)
+            ).T
+        ]
 
-    def create_random_selection(self,N_elements=None,scan_percentage=None,random_type=equal,sort_dimensions=False):
+    def create_random_selection(
+        self,
+        N_elements=None,
+        scan_percentage=None,
+        random_type=equal,
+        sort_dimensions=False,
+    ):
 
         rs = RandomState(seed=0)
-        rs.choice(a,5,p=np.exp(-a)/sum(np.exp(-a)),replace=False)
-
-
-
-
+        rs.choice(a, 5, p=np.exp(-a) / sum(np.exp(-a)), replace=False)

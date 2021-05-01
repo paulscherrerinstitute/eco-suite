@@ -1,20 +1,20 @@
 from ..devices_general.motors import MotorRecord
 from epics import PV
 from ..aliases import Alias, append_object_to_object
+from ..elements import Assembly
 
 
-class RefLaser_Aramis:
+class RefLaser_Aramis(Assembly):
     def __init__(self, Id, elog=None, name=None, inpos=-18.818, outpos=-5):
+        super().__init__(name=name)
         self.Id = Id
         self.elog = elog
-        self.name = name
-        self.alias = Alias(name)
         # append_object_to_object(self,
 
         self._inpos = inpos
         self._outpos = outpos
-        self.mirrmotortest = MotorRecord(self.Id + ":MOTOR_1")
-        self.mirrmotortest.set_limits(-20, 0)
+        self._append(MotorRecord,self.Id + ":MOTOR_1",name='mirror',is_setting=True)
+        self.mirror.set_limits(-20, 0)
 
     def __call__(self, *args, **kwargs):
         self.set(*args, **kwargs)
@@ -29,7 +29,7 @@ class RefLaser_Aramis:
             return "Reflaser status not defined."
 
     def get_status(self):
-        v = self.mirrmotortest.get_current_value()
+        v = self.mirror.get_current_value()
         if abs(v - self._inpos) < 0.2:
             isin = True
         elif abs(v - self._outpos) < 0.2:
@@ -47,9 +47,9 @@ class RefLaser_Aramis:
             else:
                 print("String %s not recognized!" % value)
         if value:
-            self.mirrmotortest.set_target_value(self._inpos)
+            self.mirror.set_target_value(self._inpos)
         else:
-            self.mirrmotortest.set_target_value(self._outpos)
+            self.mirror.set_target_value(self._outpos)
 
     def movein(self):
         self.set("in")
@@ -58,4 +58,5 @@ class RefLaser_Aramis:
         self.set("out")
 
     def __repr__(self):
-        return self.__str__()
+        return self.__str__() + super().__repr__()
+

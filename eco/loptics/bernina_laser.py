@@ -44,6 +44,16 @@ class LaserBernina(Assembly):
             DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
         )
         self._append(XltEpics, name="xlt", is_setting=True, is_status="recursive")
+        # Upstairs, Laser 1 LAM
+        self._append(
+            MotorRecord,
+            "SLAAR01-LMOT-M252:MOT",
+            name="delaystage_lam_upstairs",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime, self.delaystage_lam_upstairs, name="delay_lam_upstairs", is_setting=True
+        )
 
 
 class DelayTime(AdjustableVirtual):

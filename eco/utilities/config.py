@@ -353,7 +353,13 @@ class Namespace(Assembly):
 
                 self.initialized_items[name] = self.lazy_items.pop(name)
                 if hasattr(obj_initialized, "alias"):
-                    self._append(obj_initialized,name=name,is_setting=True,is_status='recursive',call_obj=False)
+                    self._append(
+                        obj_initialized,
+                        name=name,
+                        is_setting=True,
+                        is_status="recursive",
+                        call_obj=False,
+                    )
                 if self.alias_namespace and hasattr(obj_initialized, "alias"):
                     for ta in obj_initialized.alias.get_all():
                         try:
@@ -387,7 +393,13 @@ class Namespace(Assembly):
             if self.root_module:
                 sys.modules[self.root_module].__dict__[name] = obj
             if hasattr(obj, "alias"):
-                self._append(obj,name=name,is_setting=True,is_status='recursive',call_obj=False)
+                self._append(
+                    obj,
+                    name=name,
+                    is_setting=True,
+                    is_status="recursive",
+                    call_obj=False,
+                )
             if self.alias_namespace and hasattr(obj, "alias"):
                 for ta in obj.alias.get_all():
                     try:
