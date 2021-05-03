@@ -87,13 +87,13 @@ components = [
         "kwargs": {},
         "desc": "Fel related control and feedback",
     },
-    {
-        "name": "slit_und",
-        "type": "eco.xoptics.slits:SlitFourBlades_old",
-        "args": ["SARFE10-OAPU044"],
-        "kwargs": {},
-        "desc": "Slit after Undulator",
-    },
+    # {
+        # "name": "slit_und",
+        # "type": "eco.xoptics.slits:SlitFourBlades_old",
+        # "args": ["SARFE10-OAPU044"],
+        # "kwargs": {},
+        # "desc": "Slit after Undulator",
+    # },
     # {
     #     "name": "slit_und_epics",
     #     "type": "eco.xoptics.slits:SlitFourBlades_old",

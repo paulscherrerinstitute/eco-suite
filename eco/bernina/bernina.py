@@ -36,6 +36,15 @@ for tk in components:
 #     module_name="eco.devices_general.cameras_ptz",
 # )
 
+
+## beamline components ##
+
+namespace.append_obj(
+    "JJSlitUnd",
+    name="slit_und",
+    module_name="eco.xoptics.slits",
+    lazy=True,
+)
 namespace.append_obj(
     "GasDetector",
     name="mon_und_gas",
@@ -62,6 +71,9 @@ namespace.append_obj(
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
 )
+
+
+## general components ##
 namespace.append_obj(
     "CTA_sequencer",
     "SAR-CCTA-ESB",
