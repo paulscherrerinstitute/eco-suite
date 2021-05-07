@@ -30,7 +30,7 @@ class DownstreamDiagnostic(Assembly):
             "SARES20-DSDPPRM",
             name="prof_dsd",
             is_setting=True,
-            is_status='recursive',
+            is_status="recursive",
             view_toplevel_only=False,
         )
         self._append(
@@ -38,7 +38,7 @@ class DownstreamDiagnostic(Assembly):
             pvname="SARES20-DSDPBPS",
             name="mon_dsd",
             is_setting=True,
-            is_status='recursive',
+            is_status="recursive",
             view_toplevel_only=False,
         )
 

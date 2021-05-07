@@ -13,7 +13,7 @@ class RefLaser_Aramis(Assembly):
 
         self._inpos = inpos
         self._outpos = outpos
-        self._append(MotorRecord,self.Id + ":MOTOR_1",name='mirror',is_setting=True)
+        self._append(MotorRecord, self.Id + ":MOTOR_1", name="mirror", is_setting=True)
         self.mirror.set_limits(-20, 0)
 
     def __call__(self, *args, **kwargs):
@@ -59,4 +59,3 @@ class RefLaser_Aramis(Assembly):
 
     def __repr__(self):
         return self.__str__() + super().__repr__()
-

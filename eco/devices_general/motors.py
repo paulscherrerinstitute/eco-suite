@@ -377,6 +377,7 @@ class MotorRecord(Assembly):
         name=None,
         elog=None,
         alias_fields={"readback": "RBV"},
+        backlash_definition=False,
         expect_bad_limits=True,
     ):
         super().__init__(name=name)
@@ -409,6 +410,32 @@ class MotorRecord(Assembly):
         self._append(
             PvString, self.pvname + ".DESC", name="description", is_setting=False
         )
+        if backlash_definition:
+            self._append(
+                PvRecord,
+                self.pvname + ".BVEL",
+                name="backlash_velocity",
+                is_setting=False,
+            )
+            self._append(
+                PvRecord,
+                self.pvname + ".BACCL",
+                name="backlash_acceleration",
+                is_setting=False,
+            )
+            self._append(
+                PvRecord,
+                self.pvname + ".BDST",
+                name="backlash_distance",
+                is_setting=False,
+            )
+            self._append(
+                PvRecord,
+                self.pvname + ".FRAC",
+                name="backlash_fraction",
+                is_setting=False,
+            )
+
         if expect_bad_limits:
             self.check_bad_limits()
 

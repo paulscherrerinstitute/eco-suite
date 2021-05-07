@@ -52,7 +52,10 @@ class LaserBernina(Assembly):
             is_setting=True,
         )
         self._append(
-            DelayTime, self.delaystage_lam_upstairs, name="delay_lam_upstairs", is_setting=True
+            DelayTime,
+            self.delaystage_lam_upstairs,
+            name="delay_lam_upstairs",
+            is_setting=True,
         )
 
 

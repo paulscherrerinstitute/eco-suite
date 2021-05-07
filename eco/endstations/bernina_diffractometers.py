@@ -2,7 +2,7 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, MotorRecord_new
-from ..devices_general.adjustable import PvRecord, AdjustableVirtual
+from ..devices_general.adjustable import PvRecord, AdjustableVirtual, AdjustableMemory
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -38,11 +38,71 @@ class GPS(Assembly):
 
         if "base" in self.configuration:
             ### motors base platform ###
-            self._append(MotorRecord, pvname + ":MOT_TX", name="xbase", is_setting=True)
-            self._append(MotorRecord, pvname + ":MOT_TY", name="ybase", is_setting=True)
             self._append(
-                MotorRecord, pvname + ":MOT_RX", name="rxbase", is_setting=True
+                MotorRecord,
+                pvname + ":MOT_TX",
+                name="xbase",
+                is_setting=True,
+                is_status=True,
             )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_TY",
+                name="_ybase_deltatau",
+                is_setting=False,
+                is_status=False,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_RX",
+                name="_rxbase_deltatau",
+                is_setting=False,
+                is_status=False,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_YU",
+                name="_ybase_upstream",
+                is_setting=True,
+                is_status=False,
+                backlash_definition=True,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_YD",
+                name="_ybase_downstream",
+                is_setting=True,
+                is_status=False,
+                backlash_definition=True,
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._ybase_upstream, self._ybase_downstream],
+                lambda u, d: np.mean([u, d]),
+                lambda v: [
+                    i.get_current_value() + (v - self.ybase.get_current_value())
+                    for i in [self._ybase_upstream, self._ybase_downstream]
+                ],
+                name="ybase",
+                is_setting=False,
+                is_status=True,
+                unit="mm",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._ybase_upstream, self._ybase_downstream],
+                lambda u, d: np.arctan(np.diff([d, u])[0] / 1146) * 180 / np.pi,
+                lambda v: [
+                    self.ybase.get_current_value()
+                    + i * np.tan(v * np.pi / 180) * 1146 / 2
+                    for i in [1, -1]
+                ],
+                name="rxbase",
+                is_setting=False,
+                is_status=True,
+                unit="deg",
+            )
+
             self._append(
                 MotorRecord, pvname + ":MOT_MY_RYTH", name="alpha", is_setting=True
             )
@@ -98,6 +158,19 @@ class GPS(Assembly):
                 MotorRecord, pvname + ":MOT_TBL_RZ", name="rzhl", is_setting=True
             )
 
+    def gui(self, guiType="xdm"):
+        """ Adjustable convention"""
+        cmd = ["caqtdm", "-macro"]
+        cmd += [
+            "-noMsg",
+            "-stylefile",
+            "sfop.qss",
+            "-macro",
+            "P=SARES22-GPS",
+            "ESB_GPS_exp.ui",
+        ]
+        return self._run_cmd(" ".join(cmd))
+
     # def get_adjustable_positions_str(self):
     #     ostr = "*****GPS motor positions******\n"
 
@@ -109,74 +182,6 @@ class GPS(Assembly):
 
     # def __repr__(self):
     #     return self.get_adjustable_positions_str()
-
-
-class GPS_old:
-    def __init__(
-        self,
-        name=None,
-        Id=None,
-        configuration=["base"],
-        alias_namespace=None,
-        fina_hex_angle_offset=None,
-    ):
-        self.Id = Id
-        self.name = name
-        self.alias = Alias(name)
-        self.configuration = configuration
-
-        if "base" in self.configuration:
-            ### motors base platform ###
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TX", name="xbase")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TY", name="ybase")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_RX", name="rxbase")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_MY_RYTH", name="alpha")
-
-            ### motors XRD detector arm ###
-            addMotorRecordToSelf(self, Id=Id + ":MOT_NY_RY2TH", name="gamma")
-
-        if "phi_table" in self.configuration:
-            ### motors phi table ###
-            addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_RX", name="phi")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_HEX_TX", name="tphi")
-
-        if "phi_hex" in self.configuration:
-
-            ### motors PI hexapod ###
-            if fina_hex_angle_offset:
-                fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
-
-            append_object_to_object(
-                self,
-                HexapodPI,
-                "SARES20-HEX_PI",
-                name="hex",
-                fina_angle_offset=fina_hex_angle_offset,
-            )
-
-        if "hlxz" in self.configuration:
-            ### motors heavy load goniometer ###
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TX", name="xhl")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TZ", name="zhl")
-
-        if "hly" in self.configuration:
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_TY", name="yhl")
-
-        if "hlrxrz" in self.configuration:
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_RX", name="rxhl")
-            addMotorRecordToSelf(self, Id=Id + ":MOT_TBL_RZ", name="rzhl")
-
-    def get_adjustable_positions_str(self):
-        ostr = "*****GPS motor positions******\n"
-
-        for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
-        return ostr
-
-    def __repr__(self):
-        return self.get_adjustable_positions_str()
 
 
 class DeltaTauCurrOff:
@@ -197,32 +202,76 @@ class XRDYou(Assembly):
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
         # self.Id = Id
+        self.pvname = Id
+        pvname = Id
         super().__init__(name=name)
         self.configuration = configuration
 
         if "base" in self.configuration:
             ### motors base platform ###
-            ### motors base platform ###
             self._append(
-                MotorRecord_new,
-                Id + ":MOT_TX",
+                MotorRecord,
+                pvname + ":MOT_TX",
                 name="xbase",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
-                MotorRecord_new,
-                Id + ":MOT_TY",
-                name="ybase",
-                is_setting=True,
-                is_status=True,
+                MotorRecord,
+                pvname + ":MOT_TY",
+                name="_ybase_deltatau",
+                is_setting=False,
+                is_status=False,
             )
             self._append(
-                MotorRecord_new,
-                Id + ":MOT_RX",
-                name="rxbase",
+                MotorRecord,
+                pvname + ":MOT_RX",
+                name="_rxbase_deltatau",
+                is_setting=False,
+                is_status=False,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_YU",
+                name="_ybase_upstream",
                 is_setting=True,
+                is_status=False,
+                backlash_definition=True,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_YD",
+                name="_ybase_downstream",
+                is_setting=True,
+                is_status=False,
+                backlash_definition=True,
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._ybase_upstream, self._ybase_downstream],
+                lambda u, d: np.mean([u, d]),
+                lambda v: [
+                    i.get_current_value() + (v - self.ybase.get_current_value())
+                    for i in [self._ybase_upstream, self._ybase_downstream]
+                ],
+                name="ybase",
+                is_setting=False,
                 is_status=True,
+                unit="mm",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._ybase_upstream, self._ybase_downstream],
+                lambda u, d: np.arctan(np.diff([d, u])[0] / 1146) * 180 / np.pi,
+                lambda v: [
+                    self.ybase.get_current_value()
+                    + i * np.tan(v * np.pi / 180) * 1146 / 2
+                    for i in [1, -1]
+                ],
+                name="rxbase",
+                is_setting=False,
+                is_status=True,
+                unit="deg",
             )
             self._append(
                 MotorRecord_new,
@@ -577,12 +626,72 @@ class XRD(Assembly):
 
         if "base" in self.configuration:
             ### motors base platform ###
-            ### motors base platform ###
-            self._append(MotorRecord_new, Id + ":MOT_TX", name="xbase", is_setting=True)
-            self._append(MotorRecord_new, Id + ":MOT_TY", name="ybase", is_setting=True)
+
             self._append(
-                MotorRecord_new, Id + ":MOT_RX", name="rxbase", is_setting=True
+                MotorRecord,
+                pvname + ":MOT_TX",
+                name="xbase",
+                is_setting=True,
+                is_status=True,
             )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_TY",
+                name="_ybase_deltatau",
+                is_setting=False,
+                is_status=False,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_RX",
+                name="_rxbase_deltatau",
+                is_setting=False,
+                is_status=False,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_YU",
+                name="_ybase_upstream",
+                is_setting=True,
+                is_status=False,
+                backlash_definition=True,
+            )
+            self._append(
+                MotorRecord,
+                pvname + ":MOT_YD",
+                name="_ybase_downstream",
+                is_setting=True,
+                is_status=False,
+                backlash_definition=True,
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._ybase_upstream, self._ybase_downstream],
+                lambda u, d: np.mean([u, d]),
+                lambda v: [
+                    i.get_current_value() + (v - self.ybase.get_current_value())
+                    for i in [self._ybase_upstream, self._ybase_downstream]
+                ],
+                name="ybase",
+                is_setting=False,
+                is_status=True,
+                unit="mm",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._ybase_upstream, self._ybase_downstream],
+                lambda u, d: np.arctan(np.diff([d, u])[0] / 1146) * 180 / np.pi,
+                lambda v: [
+                    self.ybase.get_current_value()
+                    + i * np.tan(v * np.pi / 180) * 1146 / 2
+                    for i in [1, -1]
+                ],
+                name="rxbase",
+                is_setting=False,
+                is_status=True,
+                unit="deg",
+            )
+
             self._append(
                 MotorRecord_new, Id + ":MOT_MY_RYTH", name="alpha", is_setting=True
             )

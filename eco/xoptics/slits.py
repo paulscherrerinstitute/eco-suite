@@ -2,7 +2,7 @@ from ..devices_general.motors import MotorRecord
 from ..devices_general.adjustable import AdjustableVirtual
 from ..aliases import Alias, append_object_to_object
 from functools import partial
-from ..elements import Assembly 
+from ..elements import Assembly
 
 
 def addSlitRepr(Slitobj):
@@ -12,6 +12,7 @@ def addSlitRepr(Slitobj):
 
     Slitobj.__repr__ = repr
     return Slitobj
+
 
 def addSlitCall(Slitobj):
     def call(self, *args):
@@ -35,6 +36,7 @@ def addSlitCall(Slitobj):
             self.vgap.set_target_value(args[3])
         else:
             raise Exception("wrong number of input arguments!")
+
     Slitobj.__call__ = call
     return Slitobj
 
@@ -42,83 +44,191 @@ def addSlitCall(Slitobj):
 @addSlitRepr
 @addSlitCall
 class JJSlitUnd(Assembly):
-    def __init__(self,pvname='SARFE10-OAPU044',name=None):
+    def __init__(self, pvname="SARFE10-OAPU044", name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(MotorRecord,self.pvname+":MOTOR_AX1",is_setting=True, is_status=False, name="_blade_ax1")
-        self._append(MotorRecord,self.pvname+":MOTOR_AX2",is_setting=True, is_status=False, name="_blade_ax2")
-        self._append(MotorRecord,self.pvname+":MOTOR_AY1",is_setting=True, is_status=False, name="_blade_ay1")
-        self._append(MotorRecord,self.pvname+":MOTOR_AY2",is_setting=True, is_status=False, name="_blade_ay2")
-        self._append(MotorRecord,self.pvname+":MOTOR_BX1",is_setting=True, is_status=False, name="_blade_bx1")
-        self._append(MotorRecord,self.pvname+":MOTOR_BX2",is_setting=True, is_status=False, name="_blade_bx2")
-        self._append(MotorRecord,self.pvname+":MOTOR_BY1",is_setting=True, is_status=False, name="_blade_by1")
-        self._append(MotorRecord,self.pvname+":MOTOR_BY2",is_setting=True, is_status=False, name="_blade_by2")
-        self._append(AdjustableVirtual,[self._blade_ax1,self._blade_ax2],
-                     lambda x1,x2:(x1+x2)/2,
-                     lambda pos:[(pos-self._pos_ax())+tb for tb in [self._blade_ax1(),self._blade_ax2()]],
-                     is_setting=True, is_status=False, name="_pos_ax")
-        self._append(AdjustableVirtual,[self._blade_ay1,self._blade_ay2],
-                     lambda x1,x2:(x1+x2)/2,
-                     lambda pos:[(pos-self._pos_ay())+tb for tb in [self._blade_ay1(),self._blade_ay2()]],
-                     is_setting=True, is_status=False, name="_pos_ay")
-        self._append(AdjustableVirtual,[self._blade_bx1,self._blade_bx2],
-                     lambda x1,x2:(x1+x2)/2,
-                     lambda pos:[(pos-self._pos_bx())+tb for tb in [self._blade_bx1(),self._blade_bx2()]],
-                     is_setting=True, is_status=False, name="_pos_bx")
-        self._append(AdjustableVirtual,[self._blade_by1,self._blade_by2],
-                     lambda x1,x2:(x1+x2)/2,
-                     lambda pos:[(pos-self._pos_by())+tb for tb in [self._blade_by1(),self._blade_by2()]],
-                     is_setting=True, is_status=False, name="_pos_by")
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_AX1",
+            is_setting=True,
+            is_status=False,
+            name="_blade_ax1",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_AX2",
+            is_setting=True,
+            is_status=False,
+            name="_blade_ax2",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_AY1",
+            is_setting=True,
+            is_status=False,
+            name="_blade_ay1",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_AY2",
+            is_setting=True,
+            is_status=False,
+            name="_blade_ay2",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_BX1",
+            is_setting=True,
+            is_status=False,
+            name="_blade_bx1",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_BX2",
+            is_setting=True,
+            is_status=False,
+            name="_blade_bx2",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_BY1",
+            is_setting=True,
+            is_status=False,
+            name="_blade_by1",
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + ":MOTOR_BY2",
+            is_setting=True,
+            is_status=False,
+            name="_blade_by2",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_ax1, self._blade_ax2],
+            lambda x1, x2: (x1 + x2) / 2,
+            lambda pos: [
+                (pos - self._pos_ax()) + tb
+                for tb in [self._blade_ax1(), self._blade_ax2()]
+            ],
+            is_setting=True,
+            is_status=False,
+            name="_pos_ax",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_ay1, self._blade_ay2],
+            lambda x1, x2: (x1 + x2) / 2,
+            lambda pos: [
+                (pos - self._pos_ay()) + tb
+                for tb in [self._blade_ay1(), self._blade_ay2()]
+            ],
+            is_setting=True,
+            is_status=False,
+            name="_pos_ay",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_bx1, self._blade_bx2],
+            lambda x1, x2: (x1 + x2) / 2,
+            lambda pos: [
+                (pos - self._pos_bx()) + tb
+                for tb in [self._blade_bx1(), self._blade_bx2()]
+            ],
+            is_setting=True,
+            is_status=False,
+            name="_pos_bx",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_by1, self._blade_by2],
+            lambda x1, x2: (x1 + x2) / 2,
+            lambda pos: [
+                (pos - self._pos_by()) + tb
+                for tb in [self._blade_by1(), self._blade_by2()]
+            ],
+            is_setting=True,
+            is_status=False,
+            name="_pos_by",
+        )
 
-        self._append(AdjustableVirtual,[self._blade_ax1,self._blade_ax2],
-                     lambda x1,x2:(x2-x1),
-                     lambda gap:[(sign * gap/2 + self._pos_ax()) for sign in [-1,1]],
-                     is_setting=True, is_status=False, name="_gap_ax")
-        self._append(AdjustableVirtual,[self._blade_ay1,self._blade_ay2],
-                     lambda x1,x2:(x2-x1),
-                     lambda gap:[(sign * gap/2 + self._pos_ay()) for sign in [-1,1]],
-                     is_setting=True, is_status=False, name="_gap_ay")
-        self._append(AdjustableVirtual,[self._blade_bx1,self._blade_bx2],
-                     lambda x1,x2:(x2-x1),
-                     lambda gap:[(sign * gap/2 + self._pos_bx()) for sign in [-1,1]],
-                     is_setting=True, is_status=False, name="_gap_bx")
-        self._append(AdjustableVirtual,[self._blade_by1,self._blade_by2],
-                     lambda x1,x2:(x2-x1),
-                     lambda gap:[(sign * gap/2 + self._pos_by()) for sign in [-1,1]],
-                     is_setting=True, is_status=False, name="_gap_by")
-        self._append(AdjustableVirtual,[self._pos_ax, self._pos_bx],
-                     lambda a,b:a,
-                     lambda v:(v,v),
-                     is_setting=False,
-                     is_status=True,
-                     name='hpos',
-                     )
-        self._append(AdjustableVirtual,[self._gap_ax, self._gap_bx],
-                     lambda a,b:a,
-                     lambda v:(v,v),
-                     is_setting=False,
-                     is_status=True,
-                     name='hgap',
-                     )
-        self._append(AdjustableVirtual,[self._pos_ay, self._pos_by],
-                     lambda a,b:a,
-                     lambda v:(v,v),
-                     is_setting=False,
-                     is_status=True,
-                     name='vpos',
-                     )
-        self._append(AdjustableVirtual,[self._gap_ay, self._gap_by],
-                     lambda a,b:a,
-                     lambda v:(v,v),
-                     is_setting=False,
-                     is_status=True,
-                     name='vgap',
-                     )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_ax1, self._blade_ax2],
+            lambda x1, x2: (x2 - x1),
+            lambda gap: [(sign * gap / 2 + self._pos_ax()) for sign in [-1, 1]],
+            is_setting=True,
+            is_status=False,
+            name="_gap_ax",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_ay1, self._blade_ay2],
+            lambda x1, x2: (x2 - x1),
+            lambda gap: [(sign * gap / 2 + self._pos_ay()) for sign in [-1, 1]],
+            is_setting=True,
+            is_status=False,
+            name="_gap_ay",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_bx1, self._blade_bx2],
+            lambda x1, x2: (x2 - x1),
+            lambda gap: [(sign * gap / 2 + self._pos_bx()) for sign in [-1, 1]],
+            is_setting=True,
+            is_status=False,
+            name="_gap_bx",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._blade_by1, self._blade_by2],
+            lambda x1, x2: (x2 - x1),
+            lambda gap: [(sign * gap / 2 + self._pos_by()) for sign in [-1, 1]],
+            is_setting=True,
+            is_status=False,
+            name="_gap_by",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._pos_ax, self._pos_bx],
+            lambda a, b: a,
+            lambda v: (v, v),
+            is_setting=False,
+            is_status=True,
+            name="hpos",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._gap_ax, self._gap_bx],
+            lambda a, b: a,
+            lambda v: (v, v),
+            is_setting=False,
+            is_status=True,
+            name="hgap",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._pos_ay, self._pos_by],
+            lambda a, b: a,
+            lambda v: (v, v),
+            is_setting=False,
+            is_status=True,
+            name="vpos",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._gap_ay, self._gap_by],
+            lambda a, b: a,
+            lambda v: (v, v),
+            is_setting=False,
+            is_status=True,
+            name="vgap",
+        )
+
     def gui(self):
-        self._run_cmd('caqtdm -macro "NAME=OAPU044_JJXRAY,P=SARFE10-OAPU044" /sf/photo/config/qt/OAPU044.ui')
-
-   
-
+        self._run_cmd(
+            'caqtdm -macro "NAME=OAPU044_JJXRAY,P=SARFE10-OAPU044" /sf/photo/config/qt/OAPU044.ui'
+        )
 
 
 @addSlitRepr
@@ -504,13 +614,13 @@ class SlitBladesJJ_old:
         vg = self.get_vg()
         c1 = self._y1.set_target_value(value + vg / 2)
         c2 = self._y2.set_target_value(value - vg / 2)
-        return c1, c2                                 
-                                                      
-    def __call__(self, width, height):                
-        self.set_hg(width)                            
-        self.set_vg(height)                           
-                                                      
-    def __repr__(self):                               
+        return c1, c2
+
+    def __call__(self, width, height):
+        self.set_hg(width)
+        self.set_vg(height)
+
+    def __repr__(self):
         string1 = "gap: (%g,%g) mm" % (self.get_hg(), self.get_vg())
         string2 = "pos: (%g,%g) mm" % (self.get_ho(), self.get_vo())
         return "\n".join((string1, string2))

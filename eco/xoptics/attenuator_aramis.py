@@ -3,12 +3,13 @@ from epics import PV
 from time import sleep
 from ..devices_general.utilities import Changer
 from ..aliases import Alias
-from ..devices_general.adjustable import PvEnum
+from ..devices_general.adjustable import PvEnum, AdjustableFS
+from ..elements import Assembly
 
 
 class AttenuatorAramis:
     def __init__(
-        self, Id, E_min=1500, sleeptime=1, name=None, set_limits=[-52, 2], shutter=None
+        self, Id, E_min=1500, sleeptime=10, name=None, set_limits=[-52, 2], shutter=None
     ):
         self.Id = Id
         self.E_min = E_min
@@ -102,3 +103,20 @@ class AttenuatorAramis:
 
     def __call__(self, *args, **kwargs):
         self.set_transmission(*args, **kwargs)
+
+
+class AttenuatorAramisStandalone(Assembly):
+    def __init__(self, pvname, path_cfg="~/eco/att135_cfg", shutter=None, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self.E_min = E_min
+        self.shutter = shutter
+        self.cfg = AdjustableFS(path_cfg, name="cfg")
+        for n in range(6):
+            self._append(
+                MotorRecord,
+                f"{self.pvname}:MOTOR_{n+1}",
+                name=f"motor{n+1}",
+                is_setting=True,
+                is_status=False,
+            )

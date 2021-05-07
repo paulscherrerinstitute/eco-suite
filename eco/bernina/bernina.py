@@ -54,8 +54,8 @@ namespace.append_obj(
 namespace.append_obj(
     "RefLaser_Aramis",
     "SAROP21-OLAS136",
-    module_name =  "eco.xoptics.reflaser_new",
-    name='reflaser',
+    module_name="eco.xoptics.reflaser_new",
+    name="reflaser",
     lazy=True,
 )
 namespace.append_obj(

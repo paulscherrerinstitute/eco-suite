@@ -37,12 +37,12 @@ class OffsetMirrorsBernina(Assembly):
             "SAROP21-OOMV092",
             name="mirr1",
             is_setting=True,
-            is_status='recursive',
+            is_status="recursive",
         )
         self._append(
             OffsetMirror,
             "SAROP21-OOMV096",
             name="mirr2",
             is_setting=True,
-            is_status='recursive',
+            is_status="recursive",
         )

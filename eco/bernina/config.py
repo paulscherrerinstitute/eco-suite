@@ -88,11 +88,11 @@ components = [
         "desc": "Fel related control and feedback",
     },
     # {
-        # "name": "slit_und",
-        # "type": "eco.xoptics.slits:SlitFourBlades_old",
-        # "args": ["SARFE10-OAPU044"],
-        # "kwargs": {},
-        # "desc": "Slit after Undulator",
+    # "name": "slit_und",
+    # "type": "eco.xoptics.slits:SlitFourBlades_old",
+    # "args": ["SARFE10-OAPU044"],
+    # "kwargs": {},
+    # "desc": "Slit after Undulator",
     # },
     # {
     #     "name": "slit_und_epics",
@@ -439,16 +439,16 @@ components = [
     #     "kwargs": {"Id": "SARES21-XRD", "configuration": config["xrd_config"]},
     # },
     # {
-        # "args": [],
-        # "name": "xrd",
-        # "z_und": 142,
-        # "desc": "Xray diffractometer",
-        # "type": "eco.endstations.bernina_diffractometers:XRD",
-        # "kwargs": {
-            # "Id": "SARES21-XRD",
-            # "configuration": config["xrd_config"],
-            # "diff_detector": {"jf_id": "JF01T03V01"},
-        # },
+    # "args": [],
+    # "name": "xrd",
+    # "z_und": 142,
+    # "desc": "Xray diffractometer",
+    # "type": "eco.endstations.bernina_diffractometers:XRD",
+    # "kwargs": {
+    # "Id": "SARES21-XRD",
+    # "configuration": config["xrd_config"],
+    # "diff_detector": {"jf_id": "JF01T03V01"},
+    # },
     # },
     {
         "args": [],

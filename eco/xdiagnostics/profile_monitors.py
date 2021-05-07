@@ -148,7 +148,7 @@ class ProfKbBernina(Assembly):
         if wait:
             ch.wait()
 
-    def moveout(self,wait=False):
+    def moveout(self, wait=False):
         ch = self.mirror_in.set_target_value(0)
         if wait:
             ch.wait()
@@ -165,7 +165,13 @@ class Pprm_dsd(Assembly):
             is_setting=True,
         )
         self.camCA = CameraCA(pvname_camera)
-        self._append(CameraBasler, pvname_camera, name="camera", is_setting=False, is_status='recursive')
+        self._append(
+            CameraBasler,
+            pvname_camera,
+            name="camera",
+            is_setting=False,
+            is_status="recursive",
+        )
         self._append(
             MotorRecord, self.pvname + ":MOTOR_ZOOM", name="zoom", is_setting=True
         )
