@@ -630,30 +630,59 @@ class AdjustableGetSet:
 
 class Tweak:
     def __init__(self, *args):
+        """ usage: Tweak((adj0,startstepsize0),(adj1,startstepsize1))"""
         self.adjs = []
         startsteps = []
         for adj, startstep in args:
             self.adjs.append(adj)
             startsteps.append(startstep)
 
-    def _tweak_ioc(self, step_value=None):
-        pv = PV(self.pvname + ":TWV")
-        pvf = PV(self.pvname + ":TWF.PROC")
-        pvr = PV(self.pvname + ":TWR.PROC")
-        if not step_value:
-            step_value = pv.get()
-        print(f"Tweaking {self.name} at step size {step_value}", end="\r")
+        self.startpositions = [adj.get_current_value() for adj in self.adjs]
+        self.target_positions = [].append(self.startpositions)
+        self.step_sizes = [].append(startsteps)
+    
+    def set_target_step_increment(self,*args):
+        """ usage: set_target_value((adj0,+1),(adj2,-1))"""
+        indexes = []
+        directions = []
+        for obj,direction in args:
+            directions.append(direction)
+            if type(obj) is int:
+                indexes.append(obj)
+            else:
+                indexes.append(self.adjs.index(obj))
+        new_target = self.target_positions[-1]
+        for index,direction in zip(indexes,directions):
+            new_target[index] += direction*self.step_sizes[index]
+        self.target_positions.append(new_target)
+        self._changers = [adj.set_target_value(target) for adj,target in zip(self.adjs,new_target)]
 
+    def set_step_size(self,*args):
+        """ usage: set_step_size((adj0,step),(adj2,step))"""
+        indexes = []
+        steps = []
+        for obj,d in args:
+            steps.append(direction)
+            if type(obj) is int:
+                indexes.append(obj)
+            else:
+                indexes.append(self.adjs.index(obj))
+        new_steps = self.step_sizes = []
+        for index,step in zip(indexes,steps):
+            new_steps[index] += direction*self.step_sizes[index]
+        self.step_sizes = new_steps
+
+    def single_adjustable_tweak(self):
+        adj = self.adjs
+        step_value = float(self.step_sizes[0])
         help = "q = exit; up = step*2; down = step/2, left = neg dir, right = pos dir\n"
-        help = help + "g = go abs, s = set"
-        print(f"tweaking {self.name}")
+        help = help + "g = go abs, s = start value, r = reset current value to"
+        print(f"tweaking {adj.name}")
         print(help)
         print(f"Starting at {self.get_current_value()}")
-        step_value = float(step_value)
         oldstep = 0
         k = KeyPress()
         cll = colorama.ansi.clear_line()
-
         class Printer:
             def print(self, **kwargs):
                 print(
