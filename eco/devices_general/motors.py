@@ -21,6 +21,7 @@ from ..elements.assembly import Assembly
 import time
 from .adjustable import PvRecord, PvEnum, PvString
 import numpy as np
+from .motor_controller import MforceChannel
 
 if hasattr(global_config, "elog"):
     elog = global_config.elog
@@ -214,6 +215,7 @@ class SmaractStreamdevice(Assembly):
     def move(self, value, check=True, update_value_time=0.05, timeout=120):
         if check:
             lim_low, lim_high = self.get_limits()
+
             if not (lim_low < value) and (value < lim_high):
                 raise AdjustableError("Soft limits violated!")
         t_start = time.time()
@@ -378,6 +380,7 @@ class MotorRecord(Assembly):
         elog=None,
         alias_fields={"readback": "RBV"},
         backlash_definition=False,
+        schneider_config=None,
         expect_bad_limits=True,
     ):
         super().__init__(name=name)
@@ -438,6 +441,9 @@ class MotorRecord(Assembly):
 
         if expect_bad_limits:
             self.check_bad_limits()
+        if schneider_config:
+            pv_base,port = schneider_config
+            self._append(MforceChannel,pv_base,port,name='controller_settings',is_setting=True,is_status=False)
 
     def check_bad_limits(self, abs_set_value=2 ** 53):
         ll, hl = self.get_limits()

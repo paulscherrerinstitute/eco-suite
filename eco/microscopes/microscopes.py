@@ -27,12 +27,15 @@ class MicroscopeMotorRecord(Assembly):
                 is_status="recursive",
             )
         if pvname_zoom:
+            pv_base = pvname_zoom.split(':')[0]
+            port = pvname_zoom.split(':MOT_')[-1]
+
             self._append(
-                MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_status=True
+                MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_status=True, schneider_config=(pv_base,port)
             )
         if pvname_focus:
             self._append(
-                MotorRecord, pvname_focus, name="focus", is_setting=True, is_status=True
+                MotorRecord, pvname_focus, name="focus", is_setting=True, is_status=True, schneider_config=(pv_base,port)
             )
 
 

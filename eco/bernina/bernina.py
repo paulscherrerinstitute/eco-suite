@@ -278,6 +278,12 @@ namespace.append_obj(
 
 #####################################################################################################
 ## more temporary devices will be outcoupled to temorary module.
+namespace.append_obj(
+    "RIXS",
+    lazy=True,
+    name="rixs",
+    module_name="eco.endstations.bernina_rixs",
+)
 
 namespace.append_obj(
     "AxisPTZ",
@@ -296,12 +302,21 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C2",
+    "MicroscopeMotorRecord",
+    pvname_camera="SARES20-CAMS142-C1",
     lazy=True,
-    name="samplecam_sideview",
-    module_name="eco.devices_general.cameras_swissfel",
+    name="samplecam",
+    module_name="eco.microscopes",
+    pvname_zoom="SARES20-MF1:MOT_16",
 )
+
+# namespace.append_obj(
+    # "CameraBasler",
+    # "SARES20-CAMS142-C2",
+    # lazy=True,
+    # name="samplecam_sideview",
+    # module_name="eco.devices_general.cameras_swissfel",
+# )
 
 namespace.append_obj(
     "CameraBasler",

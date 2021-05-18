@@ -281,7 +281,7 @@ def _keywordChecker(kw_key_list_tups):
 @spec_convenience
 @update_changes
 class AdjustableMemory:
-    def __init__(self, value, name="adjustable_memory"):
+    def __init__(self, value=0, name="adjustable_memory"):
         self.name = name
         self.alias = Alias(name)
         self.current_value = value
@@ -311,7 +311,7 @@ class AdjustableFS:
         self.file_path = Path(file_path)
         if not self.file_path.exists():
             if not self.file_path.parent.exists():
-                self.file_path.parent.mkdir()
+                self.file_path.parent.mkdir(parents=True)
             self._write_value(default_value)
         self.alias = Alias(name)
         self.name = name
@@ -351,16 +351,16 @@ class PvRecord:
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
         #            )
 
-        self._pv = PV(self.Id)
+        self._pv = PV(self.Id, connection_timeout=0.05)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id)
+            self._pvreadback = PV(self.Id, connection_timeout=0.05)
             pvreadbackname = self.Id
             self.pvname = self.Id
         else:
-            self._pvreadback = PV(pvreadbackname)
+            self._pvreadback = PV(pvreadbackname, connection_timeout=0.05)
             self.pvname = pvreadbackname
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
@@ -429,12 +429,12 @@ class PvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname)
+        self._pv = PV(pvname, connection_timeout=0.05)
         self.name = name
         self.enum_strs = self._pv.enum_strs
 
         if pvname_set:
-            self._pv_set = PV(pvname_set)
+            self._pv_set = PV(pvname_set,connection_timeout=0.05)
             tstrs = self._pv_set.enum_strs
             if not (tstrs == self.enum_strs):
                 raise Exception("pv enum setter strings do not match the values!")
@@ -494,7 +494,7 @@ class PvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname)
+        self._pv = PV(pvname, connection_timeout=0.05)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
