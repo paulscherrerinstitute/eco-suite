@@ -16,6 +16,7 @@ from ..acquisition.utilities import Acquisition
 from ..aliases import Alias
 from ..elements import Assembly
 from ..devices_general.adjustable import PvString
+from .adjustable import AdjustableMemory
 
 
 class PvData(Assembly):
@@ -31,6 +32,34 @@ class PvData(Assembly):
 
     def __call__(self):
         return self.get_current_value()
+
+
+class DetectorVirtual(Assembly):
+    def __init__(
+        self,
+        detectors,
+        foo_get_current_value,
+        append_aliases=False,
+        name=None,
+        unit=None,
+    ):
+        super().__init__(name=name)
+        if append_aliases:
+            for det in detectors:
+                try:
+                    self.alias.append(det.alias)
+                except Exception as e:
+                    print(f"could not find alias in {det}")
+                    print(str(e))
+        self._detectors = detectors
+        self._foo_get_current_value = foo_get_current_value
+        if unit:
+            self.unit = AdjustableMemory(unit, name="unit")
+
+    def get_current_value(self):
+        return self._foo_get_current_value(
+            *[det.get_current_value() for det in self._detectors]
+        )
 
 
 class PvDataStream(Assembly):

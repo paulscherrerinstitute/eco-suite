@@ -22,6 +22,7 @@ import time
 from .adjustable import PvRecord, PvEnum, PvString
 import numpy as np
 from .motor_controller import MforceChannel
+from .detectors import PvData, DetectorVirtual
 
 if hasattr(global_config, "elog"):
     elog = global_config.elog
@@ -406,6 +407,8 @@ class MotorRecord(Assembly):
         self._append(
             PvRecord, self.pvname + ".HLM", name="limit_high", is_setting=False
         )
+        self._append(PvData, self.pvname + ".MSTA", name="_flags", is_setting=False)
+        self._append(MotorRecordFlags, self._flags, name="flags")
         self._append(
             PvEnum, self.pvname + ".SPMG", name="motor_state", is_setting=False
         )
@@ -418,32 +421,39 @@ class MotorRecord(Assembly):
                 PvRecord,
                 self.pvname + ".BVEL",
                 name="backlash_velocity",
-                is_setting=False,
+                is_setting=True,
             )
             self._append(
                 PvRecord,
-                self.pvname + ".BACCL",
+                self.pvname + ".BACC",
                 name="backlash_acceleration",
-                is_setting=False,
+                is_setting=True,
             )
             self._append(
                 PvRecord,
                 self.pvname + ".BDST",
                 name="backlash_distance",
-                is_setting=False,
+                is_setting=True,
             )
             self._append(
                 PvRecord,
                 self.pvname + ".FRAC",
                 name="backlash_fraction",
-                is_setting=False,
+                is_setting=True,
             )
 
         if expect_bad_limits:
             self.check_bad_limits()
         if schneider_config:
-            pv_base,port = schneider_config
-            self._append(MforceChannel,pv_base,port,name='controller_settings',is_setting=True,is_status=False)
+            pv_base, port = schneider_config
+            self._append(
+                MforceChannel,
+                pv_base,
+                port,
+                name="controller_settings",
+                is_setting=True,
+                is_status=False,
+            )
 
     def check_bad_limits(self, abs_set_value=2 ** 53):
         ll, hl = self.get_limits()
@@ -644,6 +654,43 @@ class MotorRecord(Assembly):
 
 
 MotorRecord_new = MotorRecord
+
+flag_names = [
+    "direction",
+    "motion_complete",
+    "pos_limit_switch",
+    "home_switch",
+    "unused",
+    "closed_loop_position",
+    "slipstall_detected",
+    "at_home_position",
+    "encoder_is_present",
+    "problem",
+    "moving",
+    "gain_support",
+    "communication_error",
+    "neg_limit_switch",
+    "is_homed",
+]
+
+
+class MotorRecordFlags(Assembly):
+    def __init__(self, flags, name="flags"):
+        super().__init__(name=name)
+        self._flags = flags
+        for flag_name in flag_names:
+            self._append(
+                DetectorVirtual,
+                [self._flags],
+                lambda val: self._get_flag_name_value(val, flag_name),
+                name=flag_name,
+                is_status=True,
+            )
+
+    def _get_flag_name_value(self, value, flag_name):
+        index = flag_names.index(flag_name)
+        print(index)
+        return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
 
 
 class MotorRecordMForceUser(MotorRecord):

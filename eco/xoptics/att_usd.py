@@ -1,5 +1,6 @@
 import sys
 from ..elements.assembly import Assembly
+
 sys.path.append("..")
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord
 from epics import PV
@@ -10,17 +11,12 @@ import numpy as np
 
 from time import sleep
 
+
 class att_usd_targets(Assembly):
-    def __init__(
-        self, 
-        name=None, 
-        Id=None, 
-        alias_namespace=None, 
-        xp=None
-    ):
+    def __init__(self, name=None, Id=None, alias_namespace=None, xp=None):
         super().__init__(name=name)
         self.Id = Id
-        #self.name = name
+        # self.name = name
         self.alias = Alias(name)
         self.E = None
         self.E_min = 1500
@@ -41,7 +37,13 @@ class att_usd_targets(Assembly):
 
         ### BSEN target position ###
         for name, config in self.motor_configuration.items():
-            self._append(SmaractStreamdevice, pvname=Id + config["id"], name=name, is_setting=True, is_status=False)
+            self._append(
+                SmaractStreamdevice,
+                pvname=Id + config["id"],
+                name=name,
+                is_setting=True,
+                is_status=False,
+            )
 
         Al = materials.Al
         self.targets = {
@@ -66,7 +68,12 @@ class att_usd_targets(Assembly):
         return
 
     def _get_transmission(self):
-        t = np.array([np.exp(-d / mat.absorption_length(self.E)) for d, mat in zip(self.targets["d"], self.targets["mat"])])     
+        t = np.array(
+            [
+                np.exp(-d / mat.absorption_length(self.E))
+                for d, mat in zip(self.targets["d"], self.targets["mat"])
+            ]
+        )
         self.targets["t"] = t
 
     def _find_nearest(self, a, a0):
@@ -93,7 +100,6 @@ class att_usd_targets(Assembly):
         )
         t = self.targets["t"][idx]
         return t
-
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():

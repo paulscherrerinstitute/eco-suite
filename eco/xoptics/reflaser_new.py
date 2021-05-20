@@ -16,12 +16,16 @@ class RefLaser_Aramis(Assembly):
         self._append(MotorRecord, self.Id + ":MOTOR_1", name="mirror", is_setting=True)
         self._append(MotorRecord, self.Id + ":MOTOR_X1", name="x1", is_setting=True)
         self._append(MotorRecord, self.Id + ":MOTOR_Z1", name="z1", is_setting=True)
-        self._append(MotorRecord, self.Id + ":MOTOR_ROT_X1", name="rx1", is_setting=True)
-        self._append(MotorRecord, self.Id + ":MOTOR_ROT_Z1", name="rz1", is_setting=True)
-        pv_lir0 = 'SAROP21-OLIR136' # TODO hardcoded
+        self._append(
+            MotorRecord, self.Id + ":MOTOR_ROT_X1", name="rx1", is_setting=True
+        )
+        self._append(
+            MotorRecord, self.Id + ":MOTOR_ROT_Z1", name="rz1", is_setting=True
+        )
+        pv_lir0 = "SAROP21-OLIR136"  # TODO hardcoded
         self._append(MotorRecord, pv_lir0 + ":MOTOR_MX", name="x_ap1", is_setting=True)
         self._append(MotorRecord, pv_lir0 + ":MOTOR_MY", name="y_ap1", is_setting=True)
-        pv_lir1 = 'SAROP21-OLIR138' # TODO hardcoded
+        pv_lir1 = "SAROP21-OLIR138"  # TODO hardcoded
         self._append(MotorRecord, pv_lir1 + ":MOTOR_MX", name="x_ap2", is_setting=True)
         self._append(MotorRecord, pv_lir1 + ":MOTOR_MY", name="y_ap2", is_setting=True)
         self.mirror.set_limits(-20, 0)
@@ -68,4 +72,4 @@ class RefLaser_Aramis(Assembly):
         self.set("out")
 
     def __repr__(self):
-        return self.__str__() + '\n' + super().__repr__()
+        return self.__str__() + "\n" + super().__repr__()

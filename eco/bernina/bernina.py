@@ -311,11 +311,11 @@ namespace.append_obj(
 )
 
 # namespace.append_obj(
-    # "CameraBasler",
-    # "SARES20-CAMS142-C2",
-    # lazy=True,
-    # name="samplecam_sideview",
-    # module_name="eco.devices_general.cameras_swissfel",
+# "CameraBasler",
+# "SARES20-CAMS142-C2",
+# lazy=True,
+# name="samplecam_sideview",
+# module_name="eco.devices_general.cameras_swissfel",
 # )
 
 namespace.append_obj(

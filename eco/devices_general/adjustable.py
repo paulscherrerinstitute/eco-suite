@@ -434,7 +434,7 @@ class PvEnum:
         self.enum_strs = self._pv.enum_strs
 
         if pvname_set:
-            self._pv_set = PV(pvname_set,connection_timeout=0.05)
+            self._pv_set = PV(pvname_set, connection_timeout=0.05)
             tstrs = self._pv_set.enum_strs
             if not (tstrs == self.enum_strs):
                 raise Exception("pv enum setter strings do not match the values!")
@@ -643,30 +643,32 @@ class Tweak:
         self.target_positions = []
         self.target_positions.append(self.startpositions)
         self._changers = []
-    
+
     def get_current_values(self):
         return [adj.get_current_value() for adj in self.adjs]
 
-    def set_target_step_increment(self,*args):
+    def set_target_step_increment(self, *args):
         """ usage: set_target_value((adj0,+1),(adj2,-1))"""
         indexes = []
         directions = []
-        for obj,direction in args:
+        for obj, direction in args:
             directions.append(direction)
             if type(obj) is int:
                 indexes.append(obj)
             else:
                 indexes.append(self.adjs.index(obj))
         new_target = self.target_positions[-1].copy()
-        for index,direction in zip(indexes,directions):
-            new_target[index] += direction*self.step_sizes[index]
+        for index, direction in zip(indexes, directions):
+            new_target[index] += direction * self.step_sizes[index]
         self.change_to_targets(new_target)
 
-    def change_to_targets(self,targets):
+    def change_to_targets(self, targets):
         self.target_positions.append(targets)
-        self._changers = [adj.set_target_value(target) for adj,target in zip(self.adjs,targets)]
+        self._changers = [
+            adj.set_target_value(target) for adj, target in zip(self.adjs, targets)
+        ]
 
-    def wait(self,sleeptime=.02):
+    def wait(self, sleeptime=0.02):
         if self._changers:
             changing = True
             while changing:
@@ -674,18 +676,18 @@ class Tweak:
                     changing = changer.is_alive()
                 time.sleep(sleeptime)
 
-    def set_step_size(self,*args):
+    def set_step_size(self, *args):
         """ usage: set_step_size((adj0,step),(adj2,step))"""
         indexes = []
         stepsizes = []
-        for obj,stepsize in args:
+        for obj, stepsize in args:
             stepsizes.append(stepsize)
             if type(obj) is int:
                 indexes.append(obj)
             else:
                 indexes.append(self.adjs.index(obj))
         new_steps = self.step_sizes.copy()
-        for index,stepsize in zip(indexes,stepsizes):
+        for index, stepsize in zip(indexes, stepsizes):
             new_steps[index] = stepsize
         self.step_sizes = new_steps
 
@@ -701,8 +703,9 @@ class Tweak:
         oldstep = 0
         k = KeyPress()
         cll = colorama.ansi.clear_line()
+
         class Printer:
-            def __init__(self,tweak=self):
+            def __init__(self, tweak=self):
                 self.tweak = tweak
                 self.thread = None
 
@@ -717,12 +720,14 @@ class Tweak:
             def print_foo(self, **kwargs):
                 if self.tweak._changers:
                     print(
-                        cll + f"stepsize: {self.tweak.step_sizes[i_adj]}; current: changing",
+                        cll
+                        + f"stepsize: {self.tweak.step_sizes[i_adj]}; current: changing",
                         end="\r",
                     )
                 self.tweak.wait()
                 print(
-                    cll + f"stepsize: {self.tweak.step_sizes[i_adj]}; current: {self.tweak.get_current_values()[i_adj]}",
+                    cll
+                    + f"stepsize: {self.tweak.step_sizes[i_adj]}; current: {self.tweak.get_current_values()[i_adj]}",
                     end="\r",
                 )
 
@@ -737,10 +742,10 @@ class Tweak:
                 self.set_step_size((adj, self.step_sizes[i_adj] / 2.0))
                 p.print()
             elif k.isr():
-                self.set_target_step_increment((adj,+1))
+                self.set_target_step_increment((adj, +1))
                 p.print()
             elif k.isl():
-                self.set_target_step_increment((adj,-1))
+                self.set_target_step_increment((adj, -1))
                 p.print()
             elif k.iskey("s"):
                 self.change_to_targets(self.target_positions[0])
@@ -763,10 +768,11 @@ class Tweak:
                     v = float(v[0:-1])
                     self.reset_current_value_to(v)
                 except:
-                    print("value cannot be converted to float, exit reset-value-tomode ...")
+                    print(
+                        "value cannot be converted to float, exit reset-value-tomode ..."
+                    )
                     sys.stdout.flush()
             elif k.isq():
                 break
 
             k.waitkey()
-        

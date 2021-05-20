@@ -106,6 +106,7 @@ class GPS(Assembly):
             self._append(
                 MotorRecord, pvname + ":MOT_MY_RYTH", name="alpha", is_setting=True
             )
+            self.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
 
             ### motors XRD detector arm ###
             self._append(
@@ -157,6 +158,65 @@ class GPS(Assembly):
             self._append(
                 MotorRecord, pvname + ":MOT_TBL_RZ", name="rzhl", is_setting=True
             )
+        self.set_samplestg_off = DeltaTauCurrOff("SARES22-GPS:asyn1.AOUT")
+        if "kappa" in self.configuration:
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_KRX",
+                name="eta_kap",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_KAP",
+                name="kappa",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_KPH",
+                name="phi_kap",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_DTY",
+                name="zkap",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_DTX",
+                name="xkap",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_DTZ",
+                name="ykap",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_DRX",
+                name="rxkap",
+                is_setting=True,
+                is_status=True,
+            )
+            self._append(
+                MotorRecord_new,
+                self.pvname + ":MOT_KAP_DRZ",
+                name="rykap",
+                is_setting=True,
+                is_status=True,
+            )
+            self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
 
     def gui(self, guiType="xdm"):
         """ Adjustable convention"""
@@ -167,9 +227,10 @@ class GPS(Assembly):
             "sfop.qss",
             "-macro",
             "P=SARES22-GPS",
-            "ESB_GPS_exp.ui",
+            "/ioc/modules/qt/ESB_GPS_exp.ui",
         ]
         return self._run_cmd(" ".join(cmd))
+        # bash -c 'caqtdm -noMsg  -stylefile sfop.qss -macro P=SARES22-GPS  /ioc/modules/qt/ESB_GPS_exp.ui'
 
     # def get_adjustable_positions_str(self):
     #     ostr = "*****GPS motor positions******\n"
@@ -434,61 +495,61 @@ class XRDYou(Assembly):
         if "kappa" in self.configuration:
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_KRX",
+                self.pvname + ":MOT_KAP_KRX",
                 name="eta_kap",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_KAP",
+                self.pvname + ":MOT_KAP_KAP",
                 name="kappa",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_KPH",
+                self.pvname + ":MOT_KAP_KPH",
                 name="phi_kap",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_DTY",
+                self.pvname + ":MOT_KAP_DTY",
                 name="zkap",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_DTX",
+                self.pvname + ":MOT_KAP_DTX",
                 name="xkap",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_DTZ",
+                self.pvname + ":MOT_KAP_DTZ",
                 name="ykap",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_DRX",
+                self.pvname + ":MOT_KAP_DRX",
                 name="rxkap",
                 is_setting=True,
                 is_status=True,
             )
             self._append(
                 MotorRecord_new,
-                "SARES21-XRD:MOT_KAP_DRZ",
+                self.pvname + ":MOT_KAP_DRZ",
                 name="rykap",
                 is_setting=True,
                 is_status=True,
             )
-            self.set_kappa_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
+            self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
 
             def get_current_kappa2you():
                 return self.calc_kappa2you(

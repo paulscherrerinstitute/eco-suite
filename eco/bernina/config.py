@@ -507,17 +507,17 @@ components = [
         "kwargs": {},
     },
     # {
-        # "args": [],
-        # "name": "cams_qioptiq",
-        # "z_und": 142,
-        # "desc": "Qioptic sample viewer in Bernina hutch",
-        # "type": "eco.endstations.bernina_cameras:Qioptiq",
-        # "kwargs": {
-            # "bshost": "sf-daqsync-01.psi.ch",
-            # "bsport": 11149,
-            # "zoomstage_pv": config["cams_qioptiq"]["zoomstage_pv"],
-            # "camera_pv": config["cams_qioptiq"]["camera_pv"],
-        # },
+    # "args": [],
+    # "name": "cams_qioptiq",
+    # "z_und": 142,
+    # "desc": "Qioptic sample viewer in Bernina hutch",
+    # "type": "eco.endstations.bernina_cameras:Qioptiq",
+    # "kwargs": {
+    # "bshost": "sf-daqsync-01.psi.ch",
+    # "bsport": 11149,
+    # "zoomstage_pv": config["cams_qioptiq"]["zoomstage_pv"],
+    # "camera_pv": config["cams_qioptiq"]["camera_pv"],
+    # },
     # },
     {
         "args": [],

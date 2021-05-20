@@ -25,6 +25,7 @@ class Changer:
                 return "changing"
             else:
                 return "done"
+
     def is_alive(self):
         if self._thread.ident is None:
             return True
@@ -33,6 +34,7 @@ class Changer:
                 return True
             else:
                 return False
+
     def isAlive(self):
         return self.is_alive()
 
