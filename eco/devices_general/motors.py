@@ -1,4 +1,5 @@
 # from ..eco_epics.motor import Motor as _Motor
+from functools import partial
 from epics.motor import Motor as _Motor
 from ..eco_epics.utilities_epics import EpicsString, WaitPvConditions
 import subprocess
@@ -397,6 +398,13 @@ class MotorRecord(Assembly):
             )
         self._currentChange = None
         # self.description = EpicsString(pvname + ".DESC")
+        self._append(
+            PvEnum,
+            self.pvname + ".STAT",
+            name="status_flag",
+            is_setting=False,
+            is_status=True,
+        )
         self._append(PvEnum, self.pvname + ".DIR", name="direction", is_setting=True)
         self._append(PvRecord, self.pvname + ".OFF", name="offset", is_setting=True)
         self._append(PvRecord, self.pvname + ".VELO", name="speed", is_setting=False)
@@ -559,7 +567,7 @@ class MotorRecord(Assembly):
     def __str__(self):
         # """ return short info for the current motor"""
         s = f"{self.name}"
-        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_current_value(posType='dial'):1.6g})"
+        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} (dial @ {self.get_current_value(posType='dial'):1.6g}; stat: {self.status_flag().name})"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
         s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
         s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
@@ -682,14 +690,13 @@ class MotorRecordFlags(Assembly):
             self._append(
                 DetectorVirtual,
                 [self._flags],
-                lambda val: self._get_flag_name_value(val, flag_name),
+                partial(self._get_flag_name_value, flag_name=flag_name),
                 name=flag_name,
                 is_status=True,
             )
 
-    def _get_flag_name_value(self, value, flag_name):
+    def _get_flag_name_value(self, value, flag_name=None):
         index = flag_names.index(flag_name)
-        print(index)
         return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
 
 
