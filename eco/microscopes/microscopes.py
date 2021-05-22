@@ -1,7 +1,8 @@
 from ..elements.assembly import Assembly
 from ..devices_general.cameras_swissfel import CameraBasler
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import PvRecord, AdjustableVirtual, spec_convenience
+from ..elements.adjustable import spec_convenience, AdjustableVirtual
+from ..epics.adjustable import AdjustablePv
 from epics import PV
 import numpy as np
 
@@ -84,7 +85,7 @@ class OptoSigmaZoom(Assembly):
         super().__init__(name=name)
         self.settings.append(self)
         self._append(
-            PvRecord,
+            AdjustablePv,
             pv_set_position,
             pv_get_position,
             accuracy=1,

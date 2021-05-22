@@ -1,6 +1,7 @@
 from ..elements.assembly import Assembly
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import PvRecord, PvEnum, AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 import numpy as np
 
 
@@ -48,14 +49,14 @@ class KbVer(Assembly):
             is_status=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvname + ":CURV_SP",
             pvreadbackname=pvname + ":CURV",
             accuracy=0.002,
             name="curv",
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvname + ":ASYMMETRY_SP",
             pvreadbackname=pvname + ":CURV",
             accuracy=0.002,
@@ -136,14 +137,14 @@ class KbHor(Assembly):
             is_status=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvname + ":CURV_SP",
             pvreadbackname=pvname + ":CURV",
             accuracy=0.002,
             name="curv",
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvname + ":ASYMMETRY_SP",
             pvreadbackname=pvname + ":CURV",
             accuracy=0.002,

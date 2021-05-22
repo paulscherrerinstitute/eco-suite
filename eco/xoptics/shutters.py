@@ -1,13 +1,13 @@
 from epics import PV
 from ..aliases import Alias
 from ..elements.assembly import Assembly
-from ..devices_general.adjustable import PvEnum
+from ..epics.adjustable import AdjustablePvEnum
 
 
 class PhotonShutter(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
-        self._append(PvEnum, pvname, name="request")
+        self._append(AdjustablePvEnum, pvname, name="request")
 
     def open(self):
         self.request(1)

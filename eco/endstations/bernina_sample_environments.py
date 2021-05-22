@@ -3,7 +3,7 @@ import sys
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv
 import numpy as np
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -13,7 +13,7 @@ from ..bernina import config
 import pylab as plt
 import escape
 from pathlib import Path
-from eco.devices_general.adjustable import AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):

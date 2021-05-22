@@ -3,13 +3,8 @@ import os
 import numpy as np
 import time
 from ..devices_general.utilities import Changer
-from ..devices_general.adjustable import (
-    AdjustableFS,
-    PvRecord,
-    AdjustableVirtual,
-    PvEnum,
-    spec_convenience,
-)
+from ..elements.adjustable import spec_convenience, AdjustableFS, AdjustableVirtual
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..aliases import append_object_to_object, Alias
 from ..elements import Assembly
 
@@ -20,13 +15,13 @@ class XltEpics:
         self.pvname = pvname
         self.alias = Alias(name)
         append_object_to_object(
-            self, PvEnum, self.pvname + ":SHOTDELAY", name="oscialltor_pulse_offset"
+            self, AdjustablePvEnum, self.pvname + ":SHOTDELAY", name="oscialltor_pulse_offset"
         )
         append_object_to_object(
-            self, PvEnum, self.pvname + ":SHOTMOFFS_ENA", name="modulo_offset_mode"
+            self, AdjustablePvEnum, self.pvname + ":SHOTMOFFS_ENA", name="modulo_offset_mode"
         )
         append_object_to_object(
-            self, PvRecord, self.pvname + ":DELAY_Z_OFFS", name="_offset"
+            self, AdjustablePv, self.pvname + ":DELAY_Z_OFFS", name="_offset"
         )
         self.offset = AdjustableVirtual(
             [self._offset],
@@ -35,7 +30,7 @@ class XltEpics:
             name="offset",
         )
         append_object_to_object(
-            self, PvRecord, self.pvname + ":DELAY", name="_set_user_delay_value"
+            self, AdjustablePv, self.pvname + ":DELAY", name="_set_user_delay_value"
         )
         self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
         self.alias.append(
@@ -92,21 +87,21 @@ class XltEpics(Assembly):
         self.settings_collection.append(self, force=True)
         self.status_indicators_collection.append(self, force=True)
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":SHOTDELAY",
             name="oscillator_pulse_offset",
             is_setting=True,
             is_status=True,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":SHOTMOFFS_ENA",
             name="modulo_offset_mode",
             is_setting=True,
             is_status=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":DELAY_Z_OFFS",
             name="_offset",
             is_setting=True,
@@ -122,21 +117,21 @@ class XltEpics(Assembly):
             is_status=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":DELAY",
             name="_set_user_delay_value",
             is_setting=False,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":P_RATIO",
             name="rep_len",
             is_setting=True,
             is_status=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             "SIN-TIMAST-TMA:Evt-22-Freq-SP",
             name="laser_frequency",
             is_setting=True,

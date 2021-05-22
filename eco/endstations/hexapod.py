@@ -1,10 +1,6 @@
 from epics import PV
-from ..devices_general.adjustable import (
-    PvEnum,
-    PvRecord,
-    AdjustableFS,
-    AdjustableVirtual,
-)
+from ..elements.adjustable import AdjustableFS, AdjustableVirtual
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from time import sleep
 from ..aliases import append_object_to_object, Alias
 from scipy.spatial.transform import Rotation
@@ -34,7 +30,7 @@ class HexapodPI(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-X",
             pvreadbackname=self.pvname + ":POSI-X",
             accuracy=0.001,
@@ -42,7 +38,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-Y",
             pvreadbackname=self.pvname + ":POSI-Y",
             accuracy=0.001,
@@ -50,7 +46,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-Z",
             pvreadbackname=self.pvname + ":POSI-Z",
             accuracy=0.001,
@@ -58,7 +54,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-U",
             pvreadbackname=self.pvname + ":POSI-U",
             accuracy=0.001,
@@ -66,7 +62,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-V",
             pvreadbackname=self.pvname + ":POSI-V",
             accuracy=0.001,
@@ -74,7 +70,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-W",
             pvreadbackname=self.pvname + ":POSI-W",
             accuracy=0.001,
@@ -82,7 +78,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-PIVOT-R",
             pvreadbackname=self.pvname + ":PIVOT-R",
             accuracy=0.001,
@@ -90,7 +86,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-PIVOT-S",
             pvreadbackname=self.pvname + ":PIVOT-S",
             accuracy=0.001,
@@ -98,7 +94,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-PIVOT-T",
             pvreadbackname=self.pvname + ":PIVOT-T",
             accuracy=0.001,
@@ -209,7 +205,7 @@ class HexapodPI_old:
         self.pvname = pvname
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-X",
             pvreadbackname=self.pvname + ":POSI-X",
             accuracy=0.001,
@@ -217,7 +213,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-Y",
             pvreadbackname=self.pvname + ":POSI-Y",
             accuracy=0.001,
@@ -225,7 +221,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-Z",
             pvreadbackname=self.pvname + ":POSI-Z",
             accuracy=0.001,
@@ -233,7 +229,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-U",
             pvreadbackname=self.pvname + ":POSI-U",
             accuracy=0.001,
@@ -241,7 +237,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-V",
             pvreadbackname=self.pvname + ":POSI-V",
             accuracy=0.001,
@@ -249,7 +245,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-POSI-W",
             pvreadbackname=self.pvname + ":POSI-W",
             accuracy=0.001,
@@ -257,7 +253,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-PIVOT-R",
             pvreadbackname=self.pvname + ":PIVOT-R",
             accuracy=0.001,
@@ -265,7 +261,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-PIVOT-S",
             pvreadbackname=self.pvname + ":PIVOT-S",
             accuracy=0.001,
@@ -273,7 +269,7 @@ class HexapodPI_old:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET-PIVOT-T",
             pvreadbackname=self.pvname + ":PIVOT-T",
             accuracy=0.001,
@@ -375,7 +371,7 @@ class HexapodSymmetrie:
         self.name = name
         self.offset = offset
         self.pvname = pv_master
-        self.coordinate_switch = PvEnum(
+        self.coordinate_switch = AdjustablePvEnum(
             f"{self.pvname}:MOVE#PARAM:CM", name="hex_usd_coordinate_switch"
         )
         self.pvs_setpos = {

@@ -1,29 +1,20 @@
 # from ..eco_epics.motor import Motor as _Motor
 from functools import partial
 from epics.motor import Motor as _Motor
-from ..eco_epics.utilities_epics import EpicsString, WaitPvConditions
-import subprocess
-from threading import Thread
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
-from .adjustable import (
-    spec_convenience,
-    ValueInRange,
-    update_changes,
-    AdjustableError,
-    get_from_archive,
-)
-import colorama
+from ..elements.adjustable import AdjustableError, get_from_archive, spec_convenience, ValueInRange, update_changes
 from ..utilities.KeyPress import KeyPress
 import sys, colorama
 from .. import global_config
 from ..elements.assembly import Assembly
 import time
-from .adjustable import PvRecord, PvEnum, PvString
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
 import numpy as np
 from .motor_controller import MforceChannel
-from .detectors import PvData, DetectorVirtual
+from .detectors import DetectorVirtual
+from ..epics.detector import DetectorPvData
 
 if hasattr(global_config, "elog"):
     elog = global_config.elog
@@ -91,92 +82,92 @@ class SmaractStreamdevice(Assembly):
             )
         self._currentChange = None
         # self.description = EpicsString(pvname + ".DESC")
-        self._append(PvEnum, self.pvname + ":DIR", name="direction", is_setting=True)
+        self._append(AdjustablePvEnum, self.pvname + ":DIR", name="direction", is_setting=True)
         # self._append(
         #    PvRecord, self.pvname + ":SET_POS", name="set_pos", is_setting=True
         # )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":FRM_BACK.PROC",
             name="home_backward",
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":FRM_FORW.PROC",
             name="home_forward",
             is_setting=False,
         )
         self._append(
-            PvRecord, self.pvname + ":GET_HOMED", name="is_homed", is_setting=False
+            AdjustablePv, self.pvname + ":GET_HOMED", name="is_homed", is_setting=False
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":CALIBRATE.PROC",
             name="calibrate_sensor",
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":CL_MAX_FREQ",
             name="speed",
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":HOLD",
             name="holding_time_ms",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":AMPLITUDE",
             name="voltage_4KADU_per_100V",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":DRIVE",
             name="_drive",
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":MOTRBV",
             name="_readback",
             is_setting=False,
         )
         self._append(
-            PvEnum, self.pvname + ":STAGE_TYPE", name="stage_type", is_setting=True
+            AdjustablePvEnum, self.pvname + ":STAGE_TYPE", name="stage_type", is_setting=True
         )
         self._append(
-            PvEnum, self.pvname + ":STATUS", name="status_channel", is_setting=False
+            AdjustablePvEnum, self.pvname + ":STATUS", name="status_channel", is_setting=False
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":GET_SENSOR_TYPE",
             pvname_set=self.pvname + ":SET_SENSOR_TYPE",
             name="sensor_type",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":GET_SENSOR_TYPE",
             name="sensor_type_getter_number",
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SET_SENSOR_TYPE",
             name="sensor_type_setter_number",
             is_setting=False,
         )
-        self._append(PvRecord, self.pvname + ":LLM", name="limit_low", is_setting=False)
+        self._append(AdjustablePv, self.pvname + ":LLM", name="limit_low", is_setting=False)
         self._append(
-            PvRecord, self.pvname + ":HLM", name="limit_high", is_setting=False
+            AdjustablePv, self.pvname + ":HLM", name="limit_high", is_setting=False
         )
         self._append(
-            PvRecord, self.pvname + ":NAME", name="caqtdm_name", is_setting=True
+            AdjustablePv, self.pvname + ":NAME", name="caqtdm_name", is_setting=True
         )
         self.accuracy = accuracy
         self._stop_pv = PV(self.pvname + ":STOP.PROC")
@@ -399,52 +390,52 @@ class MotorRecord(Assembly):
         self._currentChange = None
         # self.description = EpicsString(pvname + ".DESC")
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ".STAT",
             name="status_flag",
             is_setting=False,
             is_status=True,
         )
-        self._append(PvEnum, self.pvname + ".DIR", name="direction", is_setting=True)
-        self._append(PvRecord, self.pvname + ".OFF", name="offset", is_setting=True)
-        self._append(PvRecord, self.pvname + ".VELO", name="speed", is_setting=False)
+        self._append(AdjustablePvEnum, self.pvname + ".DIR", name="direction", is_setting=True)
+        self._append(AdjustablePv, self.pvname + ".OFF", name="offset", is_setting=True)
+        self._append(AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False)
         self._append(
-            PvRecord, self.pvname + ".ACCL", name="acceleration_time", is_setting=False
+            AdjustablePv, self.pvname + ".ACCL", name="acceleration_time", is_setting=False
         )
-        self._append(PvRecord, self.pvname + ".LLM", name="limit_low", is_setting=False)
+        self._append(AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=False)
         self._append(
-            PvRecord, self.pvname + ".HLM", name="limit_high", is_setting=False
+            AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=False
         )
-        self._append(PvData, self.pvname + ".MSTA", name="_flags", is_setting=False)
+        self._append(DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False)
         self._append(MotorRecordFlags, self._flags, name="flags")
         self._append(
-            PvEnum, self.pvname + ".SPMG", name="motor_state", is_setting=False
+            AdjustablePvEnum, self.pvname + ".SPMG", name="motor_state", is_setting=False
         )
-        self._append(PvString, self.pvname + ".EGU", name="unit", is_setting=False)
+        self._append(AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False)
         self._append(
-            PvString, self.pvname + ".DESC", name="description", is_setting=False
+            AdjustablePvString, self.pvname + ".DESC", name="description", is_setting=False
         )
         if backlash_definition:
             self._append(
-                PvRecord,
+                AdjustablePv,
                 self.pvname + ".BVEL",
                 name="backlash_velocity",
                 is_setting=True,
             )
             self._append(
-                PvRecord,
+                AdjustablePv,
                 self.pvname + ".BACC",
                 name="backlash_acceleration",
                 is_setting=True,
             )
             self._append(
-                PvRecord,
+                AdjustablePv,
                 self.pvname + ".BDST",
                 name="backlash_distance",
                 is_setting=True,
             )
             self._append(
-                PvRecord,
+                AdjustablePv,
                 self.pvname + ".FRAC",
                 name="backlash_fraction",
                 is_setting=True,
@@ -712,19 +703,19 @@ class MForceSettings(Assembly):
         super().__init__(name=name)
         self.pv_motor = f"{pv_controller}:MOT_{port_number}"
         self.pv_channel = f"{pv_controller}:{port_number}"
-        self._append(PvRecord, self.pv_motor + ".EGU", name="unit", is_setting=True)
+        self._append(AdjustablePv, self.pv_motor + ".EGU", name="unit", is_setting=True)
         self._append(
-            PvRecord, self.pv_motor + ".MRES", name="motor_resolution", is_setting=True
+            AdjustablePv, self.pv_motor + ".MRES", name="motor_resolution", is_setting=True
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_motor + ".ERES",
             name="encoder_resolution",
             is_setting=True,
         )
         self._append(
-            PvRecord, self.pv_channel + "_set", name="channel_config", is_setting=True
+            AdjustablePv, self.pv_channel + "_set", name="channel_config", is_setting=True
         )
         self._append(
-            PvRecord, self.pv_channel + "_RC", name="run_current", is_setting=True
+            AdjustablePv, self.pv_channel + "_RC", name="run_current", is_setting=True
         )

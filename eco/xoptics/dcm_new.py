@@ -1,16 +1,11 @@
 from ..devices_general.motors import MotorRecord, MotorRecord_new
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from epics import PV
 from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
-from ..devices_general.adjustable import (
-    PvEnum,
-    spec_convenience,
-    default_representation,
-    update_changes,
-)
+from ..elements.adjustable import default_representation, spec_convenience, update_changes
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
@@ -70,7 +65,7 @@ class DoubleCrystalMono(Assembly):
             view_toplevel_only=True,
         )
         self._append(
-            PvRecord, energy_sp, pvreadbackname=energy_rb, accuracy=0.5, name="energy"
+            AdjustablePv, energy_sp, pvreadbackname=energy_rb, accuracy=0.5, name="energy"
         )
         self.settings.append(self)
 
@@ -105,7 +100,7 @@ class EcolEnergy(Assembly):
         name=None,
     ):
         super().__init__(name=name)
-        self._append(PvEnum, pv_enable, name="enable_control")
+        self._append(AdjustablePvEnum, pv_enable, name="enable_control")
         self._pv_val = PV(pv_val)
         self._pv_rb = PV(pv_rb)
         self._pv_diff = PV(pv_diff)

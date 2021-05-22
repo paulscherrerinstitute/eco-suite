@@ -1,7 +1,7 @@
 from epics import PV
 from ..aliases import Alias
 from ..utilities.lazy_proxy import Proxy
-from ..devices_general.adjustable import PvEnum
+from ..epics.adjustable import AdjustablePvEnum
 import logging
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
@@ -211,7 +211,7 @@ class EvrPulser:
         self.pv_base = pv_base
         self.name = name
         self._pvs = {}
-        self.polarity = PvEnum(f"{self.pv_base}-Polarity-Sel", name="polarity")
+        self.polarity = AdjustablePvEnum(f"{self.pv_base}-Polarity-Sel", name="polarity")
 
     def _get_pv(self, pvname):
         if not pvname in self._pvs:
@@ -254,8 +254,8 @@ class EvrOutput:
         self._pulsers = None
         # self._update_connected_pulsers()
         self.pulsers_numbers = (
-            PvEnum(f"{self.pv_base}_SNUMPD", name="pulserA"),
-            PvEnum(f"{self.pv_base}_SNUMPD2", name="pulserB"),
+            AdjustablePvEnum(f"{self.pv_base}_SNUMPD", name="pulserA"),
+            AdjustablePvEnum(f"{self.pv_base}_SNUMPD2", name="pulserB"),
         )
 
     def _get_pulserA(self):

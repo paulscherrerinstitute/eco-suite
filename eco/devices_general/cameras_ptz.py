@@ -1,7 +1,7 @@
 import requests
 import time
 from ..elements.assembly import Assembly
-from ..devices_general.adjustable import AdjustableGetSet
+from ..elements.adjustable import AdjustableGetSet
 from numpy import polyval
 import numpy as np
 import urllib.request

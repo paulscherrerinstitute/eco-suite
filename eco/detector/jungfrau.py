@@ -1,4 +1,5 @@
-from ..devices_general.adjustable import PvRecord, AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual
+from ..epics.adjustable import AdjustablePv
 from ..elements.assembly import Assembly
 from ..aliases import Alias
 from ..elements import memory
@@ -18,7 +19,7 @@ class Jungfrau(Assembly):
 
         self.jf_id = jf_id
         self._append(
-            PvRecord,
+            AdjustablePv,
             pv_trigger,
             is_status=True,
             is_setting=False,

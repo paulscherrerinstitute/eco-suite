@@ -3,7 +3,8 @@ from epics import PV
 from time import sleep
 from ..devices_general.utilities import Changer
 from ..aliases import Alias
-from ..devices_general.adjustable import PvEnum, AdjustableFS
+from ..elements.adjustable import AdjustableFS
+from ..epics.adjustable import AdjustablePvEnum
 from ..elements import Assembly
 
 

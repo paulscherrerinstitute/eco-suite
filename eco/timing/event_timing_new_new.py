@@ -1,22 +1,14 @@
-from epics import PV, caget_many
-from ..aliases import Alias, append_object_to_object
-from ..utilities.lazy_proxy import Proxy
-from ..devices_general.adjustable import (
-    PvEnum,
-    PvRecord,
-    PvString,
-    AdjustableVirtual,
-    AdjustableMemory,
-)
-from ..devices_general.detectors import PvDataStream, PvData
-from ..eco_epics.utilities_epics import EpicsString
+from epics import caget_many
+from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
+from ..epics.detector import DetectorPvData, DetectorPvDataStream
+from eco.epics.utilities_epics import EpicsString
 import logging
 from ..elements.assembly import Assembly
 from tabulate import tabulate
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
 from cta_lib import CtaLib
-from numbers import Number
 
 
 class TimingSystem(Assembly):
@@ -27,7 +19,7 @@ class TimingSystem(Assembly):
         self._append(
             MasterEventSystem, pv_master, name="event_master", is_status="recursive"
         )
-        self._append(PvDataStream, pv_pulse_id, name="pulse_id")
+        self._append(DetectorPvDataStream, pv_pulse_id, name="pulse_id")
 
 
 # EVR output mapping
@@ -160,14 +152,14 @@ class MasterEventCode(Assembly):
         self.pvname = pvname
         self._slot_number = slot_number
         self._append(
-            PvData, f"{self.pvname}:Evt-{slot_number}-Code-SP", name="code_number"
+            DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Code-SP", name="code_number"
         )
-        self._append(PvData, f"{self.pvname}:Evt-{slot_number}-Delay-RB", name="delay")
+        self._append(DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Delay-RB", name="delay")
         self._append(
-            PvData, f"{self.pvname}:Evt-{slot_number}-Freq-I", name="frequency"
+            DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Freq-I", name="frequency"
         )
         self._append(
-            PvString, f"{self.pvname}:Evt-{slot_number}.DESC", name="description"
+            AdjustablePvString, f"{self.pvname}:Evt-{slot_number}.DESC", name="description"
         )
 
 
@@ -252,33 +244,33 @@ class EvrPulser(Assembly):
         self.pv_base = pv_base
         self._event_master = event_master
 
-        self._append(PvString, pv_base + "-Name-I", name="description", is_status=True)
+        self._append(AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True)
         self._append(
-            PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
+            AdjustablePvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
         )
-        self._append(PvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True)
+        self._append(AdjustablePvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True)
         self._append(
-            PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode", is_setting=True
-        )
-        self._append(
-            PvRecord, f"{self.pv_base}-Evt-Set0-SP", name="event_set", is_setting=True
+            AdjustablePv, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode", is_setting=True
         )
         self._append(
-            PvRecord,
+            AdjustablePv, f"{self.pv_base}-Evt-Set0-SP", name="event_set", is_setting=True
+        )
+        self._append(
+            AdjustablePv,
             f"{self.pv_base}-Evt-Reset0-SP",
             name="event_reset",
             is_setting=False,
         )
 
         self._append(
-            PvRecord,
+            AdjustablePv,
             f"{self.pv_base}-Delay-SP",
             pvreadbackname=f"{self.pv_base}-Delay-RB",
             name="delay_pulser",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             f"{self.pv_base}-Width-SP",
             pvreadbackname=f"{self.pv_base}-Width-RB",
             name="width",
@@ -331,8 +323,8 @@ class EvrOutput(Assembly):
         self.pv_base = pv_base
         self._pulsers = pulsers
         # self._update_connected_pulsers()
-        self._append(PvString, pv_base + "-Name-I", name="description", is_status=True)
-        self._append(PvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True)
+        self._append(AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True)
+        self._append(AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True)
         # self._append(
         # PvEnum,
         # f"{self.pv_base}_SOURCE",
@@ -340,7 +332,7 @@ class EvrOutput(Assembly):
         # is_setting=True,
         # )
         self._append(
-            PvRecord,
+            AdjustablePv,
             f"{self.pv_base}-Src-Pulse-SP",
             f"{self.pv_base}-Src-Pulse-RB",
             name="pulserA_number",
@@ -410,7 +402,7 @@ class EvrOutput(Assembly):
         # )
 
         self._append(
-            PvRecord,
+            AdjustablePv,
             f"{self.pv_base}-Src2-Pulse-SP",
             f"{self.pv_base}-Src2-Pulse-RB",
             name="pulserB_number",

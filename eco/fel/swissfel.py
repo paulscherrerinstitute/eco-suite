@@ -1,7 +1,8 @@
 from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
-from ..devices_general.adjustable import PvString, PvEnum, Changer
-from ..devices_general.detectors import PvData
+from ..devices_general.adjustable import Changer
+from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString
+from ..epics.detector import DetectorPvData
 from ..aliases import Alias
 from datetime import datetime
 
@@ -10,7 +11,7 @@ class SwissFel(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(
-            PvData,
+            DetectorPvData,
             "SWISSFEL-STATUS:Bunch-1-Appl-Freq-RB",
             name="aramis_rep_rate",
             is_status=True,
@@ -20,7 +21,7 @@ class SwissFel(Assembly):
             MessageBoard, name="message", is_setting=True, is_status="recursive"
         )
         self._append(
-            PvData,
+            DetectorPvData,
             "SAR-EVPO-010:DEACTIVATE",
             name="mode_monitor_inactive",
             is_status=True,
@@ -42,28 +43,28 @@ class SwissFel(Assembly):
         # caget SAR-EVPO-010:DEACTIVATE
         # SAR-EVPO-010:DEACTIVATE "FALSE"
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             "SAROP-ARAMIS:BEAMLINE_SP",
             name="aramis_beamline_switch",
             is_status=True,
             is_setting=True,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             "SAROP21-ARAMIS:MODE_SP",
             name="bernina_beamline_mode",
             is_status=True,
             is_setting=True,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             "SFB_PSICO_AR:ONOFF1",
             name="psico_running",
             is_status=True,
             is_setting=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             "SFB_POINTING_AR:ONOFF1",
             name="pointing_feedback_running",
             is_status=True,
@@ -97,8 +98,8 @@ class MessageBoard(Assembly):
 class Message:
     def __init__(self, pvstem, name=None):
         self.pvname = pvstem
-        self.pvs_msg = [PvString(self.pvname + f":OP-MSG{n+1}") for n in range(5)]
-        self.pvs_date = [PvString(self.pvname + f":OP-DATE{n+1}") for n in range(5)]
+        self.pvs_msg = [AdjustablePvString(self.pvname + f":OP-MSG{n + 1}") for n in range(5)]
+        self.pvs_date = [AdjustablePvString(self.pvname + f":OP-DATE{n + 1}") for n in range(5)]
         self.alias = Alias(name, channel=self.pvname + ":OP-MSG1", channeltype="CA")
 
     def set_new_message(self, message):

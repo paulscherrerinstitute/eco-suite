@@ -1,5 +1,5 @@
 from data_api import get_data, search
-from ..devices_general.detectors import PvDataStream
+from ..epics.detector import DetectorPvDataStream
 from fnmatch import translate
 import datetime
 from numbers import Number
@@ -12,7 +12,7 @@ class DataApi:
     def __init__(self, pv_pulse_id=None, name=None, add_to_cnf=True):
         self.name = name
         if pv_pulse_id:
-            self.pulse_id = PvDataStream(pv_pulse_id, name="pulse_id")
+            self.pulse_id = DetectorPvDataStream(pv_pulse_id, name="pulse_id")
         if add_to_cnf:
             ecocnf.archiver = self
 

@@ -1,5 +1,5 @@
 from ..devices_general.motors import MotorRecord_new
-from ..devices_general.adjustable import PvRecord, PvEnum
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..elements.assembly import Assembly
 
 
@@ -12,7 +12,7 @@ class OffsetMirror(Assembly):
         self._append(MotorRecord_new, self.pvname + ":W_RX", name="rx", is_setting=True)
         self._append(MotorRecord_new, self.pvname + ":W_RZ", name="rz", is_setting=True)
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":CURV_SP",
             pvreadbackname=self.pvname + ":CURV",
             accuracy=None,
@@ -20,7 +20,7 @@ class OffsetMirror(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":ASYMMETRY_SP",
             pvreadbackname=self.pvname + ":ASYMMETRY",
             accuracy=None,

@@ -2,7 +2,7 @@ import numpy as np
 from scipy import constants
 from ..elements import Assembly
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import PvRecord, PvEnum
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from .kb_mirrors import KbVer, KbHor
 
 

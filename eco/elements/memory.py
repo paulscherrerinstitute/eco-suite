@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime
-from ..devices_general.adjustable import AdjustableFS
+from .adjustable import AdjustableFS
 from ..utilities.KeyPress import KeyPress
 from tabulate import tabulate
 import sys, colorama

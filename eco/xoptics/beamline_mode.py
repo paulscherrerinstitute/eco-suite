@@ -1,12 +1,12 @@
-from ..devices_general.adjustable import PvEnum
+from ..epics.adjustable import AdjustablePvEnum
 
 
 class AramisMode:
     def __init__(self, name=None):
         self.name = name
-        self.switch = PvEnum("SAROP-ARAMIS:BEAMLINE_SP", name="switch")
-        self.alvra = PvEnum("SAROP11-ARAMIS:MODE_SP", name="alvra")
-        self.bernina = PvEnum("SAROP21-ARAMIS:MODE_SP", name="bernina")
+        self.switch = AdjustablePvEnum("SAROP-ARAMIS:BEAMLINE_SP", name="switch")
+        self.alvra = AdjustablePvEnum("SAROP11-ARAMIS:MODE_SP", name="alvra")
+        self.bernina = AdjustablePvEnum("SAROP21-ARAMIS:MODE_SP", name="bernina")
 
     def status(self):
         s = "Aramis mode\n"

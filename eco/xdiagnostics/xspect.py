@@ -1,6 +1,6 @@
 from ..aliases import Alias, append_object_to_object
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import PvEnum, PvRecord
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 
 
 class Xspect:
@@ -40,12 +40,12 @@ class Xspect:
             self, MotorRecord, "SARFE10-PSSS059:MOTOR_X5", name="x_camera"
         )
         append_object_to_object(
-            self, PvEnum, "SARFE10-PSSS055:GRATING_SP", name="grid_type"
+            self, AdjustablePvEnum, "SARFE10-PSSS055:GRATING_SP", name="grid_type"
         )
         append_object_to_object(
-            self, PvEnum, "SARFE10-PSSS059:CRYSTAL_SP", name="crystal_type"
+            self, AdjustablePvEnum, "SARFE10-PSSS059:CRYSTAL_SP", name="crystal_type"
         )
-        append_object_to_object(self, PvEnum, "SARFE10-PSSS055:PROBE_SP", name="probe")
+        append_object_to_object(self, AdjustablePvEnum, "SARFE10-PSSS055:PROBE_SP", name="probe")
         append_object_to_object(
-            self, PvRecord, "SARFE10-PSSS059:ENERGY", name="energy_center_setpoint"
+            self, AdjustablePv, "SARFE10-PSSS059:ENERGY", name="energy_center_setpoint"
         )

@@ -3,7 +3,7 @@ import sys
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 
 from epics import PV
@@ -28,7 +28,7 @@ def addPvRecordToSelf(
     self, pvsetname, pvreadbackname=None, accuracy=None, sleeptime=0, name=None
 ):
     try:
-        self.__dict__[name] = PvRecord(
+        self.__dict__[name] = AdjustablePv(
             pvsetname,
             pvreadbackname=pvreadbackname,
             accuracy=accuracy,
@@ -94,7 +94,7 @@ class Bsen(Assembly):
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR11:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR11:MOTRBV",
             name="las_in_ry",
@@ -102,7 +102,7 @@ class Bsen(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR12:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR12:MOTRBV",
             name="las_in_rx",
@@ -110,7 +110,7 @@ class Bsen(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR13:MOTRBV",
             name="las_out_rx",
@@ -118,7 +118,7 @@ class Bsen(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR14:MOTRBV",
             name="las_out_ry",

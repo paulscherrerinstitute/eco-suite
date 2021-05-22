@@ -1,5 +1,5 @@
 import numpy as np
-from eco.devices_general.adjustable import AdjustableError
+from eco.elements.adjustable import AdjustableError
 from time import sleep
 
 

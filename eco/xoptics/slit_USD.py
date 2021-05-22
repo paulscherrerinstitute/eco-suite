@@ -1,4 +1,4 @@
-from ..devices_general.adjustable import AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual
 from ..aliases import Alias, append_object_to_object
 from functools import partial
 from ..devices_general.smaract import SmarActRecord

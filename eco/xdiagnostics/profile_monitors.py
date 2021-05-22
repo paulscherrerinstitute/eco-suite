@@ -1,13 +1,12 @@
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler
-from ..aliases import Alias, append_object_to_object
-from ..devices_general.adjustable import PvEnum, AdjustableVirtual
+from ..aliases import Alias
+from ..elements.adjustable import AdjustableVirtual
+from ..epics.adjustable import AdjustablePvEnum
 from ..elements.assembly import Assembly
 
 # from ..devices_general.epics_wrappers import EnumSelector
-from epics import PV
-from ..eco_epics.utilities_epics import EnumWrapper
 
 
 def addMotorRecordToSelf(self, Id=None, name=None):
@@ -27,8 +26,8 @@ class Pprm(Assembly):
         )
         self.camCA = CameraCA(pvname_camera)
         self._append(CameraBasler, pvname_camera, name="camera", is_setting=True)
-        self._append(PvEnum, self.pvname + ":LED", name="led", is_setting=True)
-        self._append(PvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
+        self._append(AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True)
+        self._append(AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
 
     def movein(self, target=1):
         self.target.set_target_value(target)
@@ -175,7 +174,7 @@ class Pprm_dsd(Assembly):
         self._append(
             MotorRecord, self.pvname + ":MOTOR_ZOOM", name="zoom", is_setting=True
         )
-        self._append(PvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
+        self._append(AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
 
     def movein(self, target=1):
         self.target.set_target_value(target)
@@ -191,8 +190,8 @@ class Pprmold:
         self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name="target_pos")
         self.camCA = CameraCA(Id)
         # self.camCS = CameraCS(Id, name)
-        self.led = PvEnum(self.Id + ":LED", name="led")
-        self.target = PvEnum(self.Id + ":PROBE_SP", name="target")
+        self.led = AdjustablePvEnum(self.Id + ":LED", name="led")
+        self.target = AdjustablePvEnum(self.Id + ":PROBE_SP", name="target")
         if name:
             self.alias = Alias(name)
             self.alias.append(self.target_pos.alias)

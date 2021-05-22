@@ -1,7 +1,7 @@
 import requests
 from pathlib import Path
 from time import sleep
-from ..devices_general.detectors import PvDataStream
+from ..epics.detector import DetectorPvDataStream
 from ..acquisition.utilities import Acquisition
 
 
@@ -34,7 +34,7 @@ class Daq:
         self.timeout = timeout
         self.pgroup = pgroup
         if type(pulse_id_adj) is str:
-            self.pulse_id = PvDataStream(pulse_id_adj, name="pulse_id")
+            self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
         else:
             self.pulse_id = pulse_id_adj
         self.running = []

@@ -2,7 +2,8 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, MotorRecord_new
-from ..devices_general.adjustable import PvRecord, AdjustableVirtual, AdjustableMemory
+from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
+from ..epics.adjustable import AdjustablePv
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -451,42 +452,42 @@ class XRDYou(Assembly):
             ### motors PI hexapod ###
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-X",
                 pvreadbackname="SARES20-HEX_PI:POSI-X",
                 name="xhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-Y",
                 pvreadbackname="SARES20-HEX_PI:POSI-Y",
                 name="yhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-Z",
                 pvreadbackname="SARES20-HEX_PI:POSI-Z",
                 name="zhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-U",
                 pvreadbackname="SARES20-HEX_PI:POSI-U",
                 name="uhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-V",
                 pvreadbackname="SARES20-HEX_PI:POSI-V",
                 name="vhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-W",
                 pvreadbackname="SARES20-HEX_PI:POSI-W",
                 name="whex",
@@ -818,42 +819,42 @@ class XRD(Assembly):
             ### motors PI hexapod ###
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-X",
                 pvreadbackname="SARES20-HEX_PI:POSI-X",
                 name="xhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-Y",
                 pvreadbackname="SARES20-HEX_PI:POSI-Y",
                 name="yhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-Z",
                 pvreadbackname="SARES20-HEX_PI:POSI-Z",
                 name="zhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-U",
                 pvreadbackname="SARES20-HEX_PI:POSI-U",
                 name="uhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-V",
                 pvreadbackname="SARES20-HEX_PI:POSI-V",
                 name="vhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-W",
                 pvreadbackname="SARES20-HEX_PI:POSI-W",
                 name="whex",
@@ -994,42 +995,42 @@ class XRD_old:
             ### motors PI hexapod ###
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-X",
                 pvreadbackname="SARES20-HEX_PI:POSI-X",
                 name="xhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-Y",
                 pvreadbackname="SARES20-HEX_PI:POSI-Y",
                 name="yhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-Z",
                 pvreadbackname="SARES20-HEX_PI:POSI-Z",
                 name="zhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-U",
                 pvreadbackname="SARES20-HEX_PI:POSI-U",
                 name="uhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-V",
                 pvreadbackname="SARES20-HEX_PI:POSI-V",
                 name="vhex",
             )
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 "SARES20-HEX_PI:SET-POSI-W",
                 pvreadbackname="SARES20-HEX_PI:POSI-W",
                 name="whex",

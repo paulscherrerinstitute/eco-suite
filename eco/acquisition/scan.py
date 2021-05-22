@@ -5,7 +5,7 @@ from time import sleep, time
 import traceback
 from pathlib import Path
 import colorama
-from ..devices_general.adjustable import DummyAdjustable
+from ..elements.adjustable import DummyAdjustable
 from IPython import get_ipython
 
 

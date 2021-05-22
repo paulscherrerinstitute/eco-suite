@@ -1,7 +1,8 @@
 from ..devices_general.motors import MotorRecord
-from ..eco_epics.utilities_epics import EnumWrapper
-from ..devices_general.detectors import FeDigitizer, PvDataStream
-from ..devices_general.adjustable import PvEnum, PvRecord, AdjustableVirtual
+from ..devices_general.detectors import FeDigitizer
+from ..epics.detector import DetectorPvDataStream
+from ..elements.adjustable import AdjustableVirtual
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..aliases import Alias, append_object_to_object
 from ..elements import Assembly
 from epics import PV
@@ -12,7 +13,7 @@ class GasDetector(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(
-            PvDataStream,
+            DetectorPvDataStream,
             "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
             name="fast_calibrated",
             is_status=True,
@@ -24,10 +25,10 @@ class FeDigitiza(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         self._append(
-            PvEnum, pvname + "-WD-gain", name="gain", is_setting=True, is_status=True
+            AdjustablePvEnum, pvname + "-WD-gain", name="gain", is_setting=True, is_status=True
         )
         self._append(
-            PvRecord, pvname + "-HV_SET", name="bias", is_setting=True, is_status=True
+            AdjustablePv, pvname + "-HV_SET", name="bias", is_setting=True, is_status=True
         )
 
         # self.channels = [
@@ -56,7 +57,7 @@ class SolidTargetDetectorPBPS_assi(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             pvname + ":PROBE_SP",
             name="target",
             is_setting=True,
@@ -141,7 +142,7 @@ class SolidTargetDetectorPBPS_new:
         append_object_to_object(
             self, MotorRecord, pvname + ":MOTOR_PROBE", name="target_y"
         )
-        append_object_to_object(self, PvEnum, pvname + ":PROBE_SP", name="target")
+        append_object_to_object(self, AdjustablePvEnum, pvname + ":PROBE_SP", name="target")
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
             self.diode_down = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_down))
@@ -150,22 +151,22 @@ class SolidTargetDetectorPBPS_new:
 
         if channels:
             append_object_to_object(
-                self, PvDataStream, channels["up"], name="signal_up"
+                self, DetectorPvDataStream, channels["up"], name="signal_up"
             )
             append_object_to_object(
-                self, PvDataStream, channels["down"], name="signal_down"
+                self, DetectorPvDataStream, channels["down"], name="signal_down"
             )
             append_object_to_object(
-                self, PvDataStream, channels["left"], name="signal_left"
+                self, DetectorPvDataStream, channels["left"], name="signal_left"
             )
             append_object_to_object(
-                self, PvDataStream, channels["right"], name="signal_right"
+                self, DetectorPvDataStream, channels["right"], name="signal_right"
             )
 
         if calc:
-            append_object_to_object(self, PvDataStream, calc["itot"], name="intensity")
-            append_object_to_object(self, PvDataStream, calc["xpos"], name="xpos")
-            append_object_to_object(self, PvDataStream, calc["ypos"], name="ypos")
+            append_object_to_object(self, DetectorPvDataStream, calc["itot"], name="intensity")
+            append_object_to_object(self, DetectorPvDataStream, calc["xpos"], name="xpos")
+            append_object_to_object(self, DetectorPvDataStream, calc["ypos"], name="ypos")
 
     def get_calibration_values(self, seconds=5):
         self.x_diodes.set_target_value(0).wait()
@@ -336,7 +337,7 @@ class SolidTargetDetectorPBPS:
         self.diode_x = MotorRecord(Id + ":MOTOR_X1", name="diode_x")
         self.diode_y = MotorRecord(Id + ":MOTOR_Y1", name="diode_y")
         self.target_pos = MotorRecord(Id + ":MOTOR_PROBE", name="target_pos")
-        self.target = PvEnum(Id + ":PROBE_SP", name="target")
+        self.target = AdjustablePvEnum(Id + ":PROBE_SP", name="target")
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
             self.diode_down = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_down))
@@ -450,7 +451,7 @@ class SolidTargetDetectorPBPS_new_assembly(Assembly):
         self._append(
             MotorRecord, pvname + ":MOTOR_PROBE", name="target_y", is_setting=True
         )
-        self._append(PvEnum, pvname + ":PROBE_SP", name="target", is_setting=True)
+        self._append(AdjustablePvEnum, pvname + ":PROBE_SP", name="target", is_setting=True)
         if VME_crate:
             self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))
             self.diode_down = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_down))
@@ -459,22 +460,22 @@ class SolidTargetDetectorPBPS_new_assembly(Assembly):
 
         if channels:
             self._append(
-                PvDataStream, channels["up"], name="signal_up", is_setting=False
+                DetectorPvDataStream, channels["up"], name="signal_up", is_setting=False
             )
             self._append(
-                PvDataStream, channels["down"], name="signal_down", is_setting=False
+                DetectorPvDataStream, channels["down"], name="signal_down", is_setting=False
             )
             self._append(
-                PvDataStream, channels["left"], name="signal_left", is_setting=False
+                DetectorPvDataStream, channels["left"], name="signal_left", is_setting=False
             )
             self._append(
-                PvDataStream, channels["right"], name="signal_right", is_setting=False
+                DetectorPvDataStream, channels["right"], name="signal_right", is_setting=False
             )
 
         if calc:
-            self._append(PvDataStream, calc["itot"], name="intensity", is_setting=False)
-            self._append(PvDataStream, calc["xpos"], name="xpos", is_setting=False)
-            self._append(PvDataStream, calc["ypos"], name="ypos", is_setting=False)
+            self._append(DetectorPvDataStream, calc["itot"], name="intensity", is_setting=False)
+            self._append(DetectorPvDataStream, calc["xpos"], name="xpos", is_setting=False)
+            self._append(DetectorPvDataStream, calc["ypos"], name="ypos", is_setting=False)
 
     def get_calibration_values(self, seconds=5):
         self.x_diodes.set_target_value(0).wait()

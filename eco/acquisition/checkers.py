@@ -1,14 +1,15 @@
 from epics import PV
 import numpy as np
-from ..devices_general.adjustable import AdjustableFS, PvRecord
-from ..devices_general.detectors import PvDataStream
+from ..elements.adjustable import AdjustableFS
+from ..epics.adjustable import AdjustablePv
+from ..epics.detector import DetectorPvDataStream
 from ..elements.assembly import Assembly
 
 
 class CheckerCA(Assembly):
     def __init__(self, pvname, thresholds, required_fraction, name=None):
         super().__init__(name=name)
-        self._append(PvDataStream, pvname, name="monitor")
+        self._append(DetectorPvDataStream, pvname, name="monitor")
         self._append(
             AdjustableFS,
             "/photonics/home/gac-bernina/eco/configuration/checker_thresholds",

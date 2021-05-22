@@ -4,7 +4,7 @@ from ..devices_general.smaract import SmarActRecord
 
 from epics import PV
 from ..devices_general.delay_stage import DelayStage
-from ..devices_general.adjustable import AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual
 from ..devices_general.pv_adjustable import PvRecord
 
 import colorama, datetime

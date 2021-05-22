@@ -1,5 +1,5 @@
 from ..elements.assembly import Assembly
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv
 
 
 class MforceChannel(Assembly):
@@ -8,43 +8,43 @@ class MforceChannel(Assembly):
         self.pv_motor = pv_motor  # Example SARES20-MF1:
         self.pv_mcodebase = pv_mcodebase
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_mcodebase + "_RC",
             name="run_current",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_mcodebase + "_HC",
             name="holding_current",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_motor + ".DESC",
             name="display_name",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_motor + ".EGU",
             name="units",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_motor + ".MRES",
             name="motor_resolution",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_motor + ".ERES",
             name="encoder_resolution",
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pv_motor + ".VELO",
             name="velocity",
             is_setting=True,

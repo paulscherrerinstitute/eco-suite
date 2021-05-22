@@ -1,6 +1,6 @@
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord
-from ..devices_general.adjustable import AdjustableVirtual, AdjustableMemory
+from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..timing.lasertiming_edwin import XltEpics
 import colorama
 import datetime

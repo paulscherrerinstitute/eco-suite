@@ -1,11 +1,9 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import CameraCA, CameraBS
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv
 from ..aliases import Alias, append_object_to_object
 
 # from ..devices_general.epics_wrappers import EnumSelector
-from epics import PV
-from ..eco_epics.utilities_epics import EnumWrapper
 
 
 def addMotorRecordToSelf(self, Id=None, name=None):
@@ -16,7 +14,7 @@ def addMotorRecordToSelf(self, Id=None, name=None):
 def addPvRecordToSelf(
     self, name=None, pvsetname=None, pvreadbackname=None, accuracy=None
 ):
-    self.__dict__[name] = PvRecord(
+    self.__dict__[name] = AdjustablePv(
         name=name, pvsetname=pvsetname, pvreadbackname=pvreadbackname, accuracy=accuracy
     )
     self.alias.append(self.__dict__[name].alias)
@@ -43,7 +41,7 @@ class Sigma:
         if zoomstage_pvs:
             append_object_to_object(
                 self,
-                PvRecord,
+                AdjustablePv,
                 name="zoom",
                 pvsetname=zoomstage_pvs["set_value"],
                 pvreadbackname=zoomstage_pvs["readback"],

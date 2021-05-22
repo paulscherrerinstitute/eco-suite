@@ -1,9 +1,8 @@
 from epics import PV
 from ..aliases import Alias, append_object_to_object
-from ..utilities.lazy_proxy import Proxy
-from ..devices_general.adjustable import PvEnum, PvRecord
-from ..devices_general.detectors import PvDataStream
-from ..eco_epics.utilities_epics import EpicsString
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics.detector import DetectorPvDataStream
+from eco.epics.utilities_epics import EpicsString
 import logging
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
@@ -16,7 +15,7 @@ class TimingSystem:
 
     def __init__(self, pv_master=None, pv_pulse_id=None):
         self.event_master = MasterEventSystem(pv_master, name="event_master")
-        self.pulse_id = PvDataStream(pv_pulse_id, name="pulse_id")
+        self.pulse_id = DetectorPvDataStream(pv_pulse_id, name="pulse_id")
 
 
 # EVR output mapping
@@ -224,28 +223,28 @@ class EvrPulser:
         self.alias = Alias(name)
         self._pvs = {}
         append_object_to_object(
-            self, PvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity"
+            self, AdjustablePvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity"
         )
-        append_object_to_object(self, PvEnum, f"{self.pv_base}-Ena-Sel", name="enable")
+        append_object_to_object(self, AdjustablePvEnum, f"{self.pv_base}-Ena-Sel", name="enable")
         append_object_to_object(
-            self, PvRecord, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode"
-        )
-        append_object_to_object(
-            self, PvRecord, f"{self.pv_base}-Evt-Set0-SP", name="event_set"
+            self, AdjustablePv, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode"
         )
         append_object_to_object(
-            self, PvRecord, f"{self.pv_base}-Evt-Reset0-SP", name="event_reset"
+            self, AdjustablePv, f"{self.pv_base}-Evt-Set0-SP", name="event_set"
+        )
+        append_object_to_object(
+            self, AdjustablePv, f"{self.pv_base}-Evt-Reset0-SP", name="event_reset"
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             f"{self.pv_base}-Delay-SP",
             pvreadbackname=f"{self.pv_base}-Delay-RB",
             name="delay",
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             f"{self.pv_base}-Width-SP",
             pvreadbackname=f"{self.pv_base}-Width-RB",
             name="width",
@@ -260,10 +259,10 @@ class EvrOutput:
         self.alias = Alias(name)
         self._pulsers = None
         # self._update_connected_pulsers()
-        append_object_to_object(self, PvEnum, f"{self.pv_base}-Ena-SP", name="enable")
+        append_object_to_object(self, AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable")
         self.pulsers_numbers = (
-            PvEnum(f"{self.pv_base}-Src-Pulse-SP", name="pulserA"),
-            PvEnum(f"{self.pv_base}-Src2-Pulse-SP", name="pulserB"),
+            AdjustablePvEnum(f"{self.pv_base}-Src-Pulse-SP", name="pulserA"),
+            AdjustablePvEnum(f"{self.pv_base}-Src2-Pulse-SP", name="pulserB"),
         )
         self.description = EpicsString(pv_base + "-Name-I")
 

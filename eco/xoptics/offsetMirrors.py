@@ -2,7 +2,7 @@ import sys
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -29,7 +29,7 @@ class OffsetMirror:
         addMotorRecordToSelf(self, Id=Id + ":W_RZ", name="rz")
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             Id + ":CURV_SP",
             pvreadbackname=Id + ":CURV",
             accuracy=None,
@@ -38,7 +38,7 @@ class OffsetMirror:
         )
         append_object_to_object(
             self,
-            PvRecord,
+            AdjustablePv,
             Id + ":ASYMMETRY_SP",
             pvreadbackname=Id + ":ASYMMETRY",
             accuracy=None,

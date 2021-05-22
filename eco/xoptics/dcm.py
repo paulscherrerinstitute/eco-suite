@@ -5,11 +5,8 @@ from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
-from ..devices_general.adjustable import (
-    PvEnum,
-    spec_convenience,
-    default_representation,
-)
+from ..elements.adjustable import default_representation, spec_convenience
+from ..epics.adjustable import AdjustablePvEnum
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
@@ -235,7 +232,7 @@ class EcolEnergy_new(Assembly):
         name=None,
     ):
         super().__init__(name=name)
-        self._append(PvEnum, pv_enable, name="enable_control")
+        self._append(AdjustablePvEnum, pv_enable, name="enable_control")
         self._pv_val = PV(pv_val)
         self._pv_rb = PV(pv_rb)
         self._pv_diff = PV(pv_diff)

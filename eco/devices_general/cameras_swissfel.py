@@ -1,6 +1,7 @@
 from cam_server import CamClient, PipelineClient
 from ..aliases import Alias, append_object_to_object
-from .adjustable import PvRecord, PvEnum, AdjustableGetSet, AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..elements import Assembly
 from .motors import MotorRecord
 
@@ -99,126 +100,126 @@ class CameraBasler(Assembly):
         )
         self.config_cs.set_alias()
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":INIT",
             name="initialize",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":CAMERA",
             name="running",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":BOARD",
             name="board_no",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":SERIALNR",
             name="serial_no",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":EXPOSURE",
             name="_exposure_time",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":ACQMODE",
             name="_acq_mode",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":RECMODE",
             name="_req_mode",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":STOREMODE",
             name="_store_mode",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":BINY",
             name="_binx",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":BINY",
             name="_biny",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":REGIONX_START",
             name="_roixmin",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":REGIONX_END",
             name="_roixmax",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":REGIONY_START",
             name="_roiymin",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":REGIONY_END",
             name="_roiymax",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":SET_PARAM",
             name="_set_parameters",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":TRIGGER",
             name="trigger_on",
             is_setting=True,
             is_status=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             self.pvname + ":AMPGAIN",
             name="_gain",
             is_setting=True,
             is_status=False,
         )
         self._append(
-            PvEnum,
+            AdjustablePvEnum,
             self.pvname + ":TRIGGERSOURCE",
             name="trigger_source",
             is_setting=True,
@@ -281,24 +282,24 @@ class CameraPCO(Assembly):
             name="config_cs",
         )
         self.config_cs.set_alias()
-        self._append(PvEnum, self.pvname + ":INIT", name="initialize")
-        self._append(PvEnum, self.pvname + ":CAMERA", name="running")
-        self._append(PvRecord, self.pvname + ":BOARD", name="board_no")
-        self._append(PvRecord, self.pvname + ":SERIALNR", name="serial_no")
-        self._append(PvRecord, self.pvname + ":EXPOSURE", name="_exposure_time")
-        self._append(PvEnum, self.pvname + ":ACQMODE", name="_acq_mode")
-        self._append(PvEnum, self.pvname + ":RECMODE", name="_req_mode")
-        self._append(PvEnum, self.pvname + ":STOREMODE", name="_store_mode")
-        self._append(PvRecord, self.pvname + ":HSSPEED", name="_hs_speed")
-        self._append(PvEnum, self.pvname + ":SCMOSREADOUT", name="_readout_mode")
-        self._append(PvRecord, self.pvname + ":BINY", name="_binx")
-        self._append(PvRecord, self.pvname + ":BINY", name="_biny")
-        self._append(PvRecord, self.pvname + ":REGIONX_START", name="_roixmin")
-        self._append(PvRecord, self.pvname + ":REGIONX_END", name="_roixmax")
-        self._append(PvRecord, self.pvname + ":REGIONY_START", name="_roiymin")
-        self._append(PvRecord, self.pvname + ":REGIONY_END", name="_roiymax")
-        self._append(PvEnum, self.pvname + ":SET_PARAM", name="_set_parameters")
-        self._append(PvEnum, self.pvname + ":TRIGGER", name="trigger_on")
+        self._append(AdjustablePvEnum, self.pvname + ":INIT", name="initialize")
+        self._append(AdjustablePvEnum, self.pvname + ":CAMERA", name="running")
+        self._append(AdjustablePv, self.pvname + ":BOARD", name="board_no")
+        self._append(AdjustablePv, self.pvname + ":SERIALNR", name="serial_no")
+        self._append(AdjustablePv, self.pvname + ":EXPOSURE", name="_exposure_time")
+        self._append(AdjustablePvEnum, self.pvname + ":ACQMODE", name="_acq_mode")
+        self._append(AdjustablePvEnum, self.pvname + ":RECMODE", name="_req_mode")
+        self._append(AdjustablePvEnum, self.pvname + ":STOREMODE", name="_store_mode")
+        self._append(AdjustablePv, self.pvname + ":HSSPEED", name="_hs_speed")
+        self._append(AdjustablePvEnum, self.pvname + ":SCMOSREADOUT", name="_readout_mode")
+        self._append(AdjustablePv, self.pvname + ":BINY", name="_binx")
+        self._append(AdjustablePv, self.pvname + ":BINY", name="_biny")
+        self._append(AdjustablePv, self.pvname + ":REGIONX_START", name="_roixmin")
+        self._append(AdjustablePv, self.pvname + ":REGIONX_END", name="_roixmax")
+        self._append(AdjustablePv, self.pvname + ":REGIONY_START", name="_roiymin")
+        self._append(AdjustablePv, self.pvname + ":REGIONY_END", name="_roiymax")
+        self._append(AdjustablePvEnum, self.pvname + ":SET_PARAM", name="_set_parameters")
+        self._append(AdjustablePvEnum, self.pvname + ":TRIGGER", name="trigger_on")
         # append_object_to_object(self,PvEnum,self.pvname+':TRIGGEREDGE',name='trigger_edge')
         self._append(
             AdjustableGetSet,

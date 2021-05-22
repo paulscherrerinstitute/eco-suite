@@ -4,7 +4,7 @@ sys.path.append("..")
 
 from ..devices_general.motors import MotorRecord
 from ..devices_general.smaract import SmarActRecord
-from ..devices_general.adjustable import PvRecord
+from ..epics.adjustable import AdjustablePv
 from ..aliases import Alias, append_object_to_object
 from ..elements.assembly import Assembly
 from .profile_monitors import Pprm_dsd

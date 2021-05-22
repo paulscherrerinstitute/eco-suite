@@ -1,6 +1,7 @@
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord
-from ..devices_general.adjustable import AdjustableVirtual, AdjustableMemory, PvRecord
+from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
+from ..epics.adjustable import AdjustablePv
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 from cam_server import PipelineClient
 import colorama
@@ -91,7 +92,7 @@ class TimetoolBerninaUSD(Assembly):
             is_status=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR11:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR11:MOTRBV",
             name="las_in_ry",
@@ -99,7 +100,7 @@ class TimetoolBerninaUSD(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR12:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR12:MOTRBV",
             name="las_in_rx",
@@ -107,7 +108,7 @@ class TimetoolBerninaUSD(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR13:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR13:MOTRBV",
             name="las_out_rx",
@@ -115,7 +116,7 @@ class TimetoolBerninaUSD(Assembly):
             is_setting=True,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname="SLAAR21-LMNP-ESBIR14:DRIVE",
             pvreadbackname="SLAAR21-LMNP-ESBIR14:MOTRBV",
             name="las_out_ry",
