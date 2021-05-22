@@ -57,7 +57,7 @@ class KBMirrorBernina_new(Assembly):
         }
 
     def calc_fwhm(self, fwhm_hor, fwhm_ver, z_focver=0, z_fochor=0, E_phot=None):
-        """ E_phot in eV, length units in mm."""
+        """E_phot in eV, length units in mm."""
         lam = constants.c * constants.h / constants.electron_volt / E_phot
         print(lam * 1e10)
         fwhm_fac = 1 / np.sqrt(2 * np.log(2))  # w = fwhm_fac*fwhm
@@ -162,7 +162,7 @@ class KBMirrorBernina:
         }
 
     def calc_fwhm(self, fwhm_hor, fwhm_ver, z_focver=0, z_fochor=0, E_phot=None):
-        """ E_phot in eV, length units in mm."""
+        """E_phot in eV, length units in mm."""
         lam = constants.c * constants.h / constants.electron_volt / E_phot
         print(lam * 1e10)
         fwhm_fac = 1 / np.sqrt(2 * np.log(2))  # w = fwhm_fac*fwhm

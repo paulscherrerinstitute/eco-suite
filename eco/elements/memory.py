@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import datetime
 from .adjustable import AdjustableFS
-from ..utilities.KeyPress import KeyPress
+from ..utilities.keypress import KeyPress
 from tabulate import tabulate
 import sys, colorama
 from inspect import getargspec

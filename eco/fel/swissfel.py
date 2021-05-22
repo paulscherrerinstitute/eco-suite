@@ -98,8 +98,12 @@ class MessageBoard(Assembly):
 class Message:
     def __init__(self, pvstem, name=None):
         self.pvname = pvstem
-        self.pvs_msg = [AdjustablePvString(self.pvname + f":OP-MSG{n + 1}") for n in range(5)]
-        self.pvs_date = [AdjustablePvString(self.pvname + f":OP-DATE{n + 1}") for n in range(5)]
+        self.pvs_msg = [
+            AdjustablePvString(self.pvname + f":OP-MSG{n + 1}") for n in range(5)
+        ]
+        self.pvs_date = [
+            AdjustablePvString(self.pvname + f":OP-DATE{n + 1}") for n in range(5)
+        ]
         self.alias = Alias(name, channel=self.pvname + ":OP-MSG1", channeltype="CA")
 
     def set_new_message(self, message):

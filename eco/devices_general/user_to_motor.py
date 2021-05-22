@@ -33,7 +33,7 @@ class User_to_motor:
         return motor_pos
 
     def get_current_value(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         motor_pos = self._stage.get_current_value()
         motor_pos -= self.offset
         user = motor_pos * self.conv
@@ -67,7 +67,7 @@ class User_to_motor:
         self._stage._currentChange.wait()
 
     def stop(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         try:
             self._stage._currentChange.stop()
         except:

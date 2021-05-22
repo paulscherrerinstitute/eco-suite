@@ -5,7 +5,10 @@ from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
-from ..elements.adjustable import default_representation, spec_convenience, update_changes
+from ..elements.adjustable import (
+    spec_convenience,
+    update_changes, default_representation,
+)
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
@@ -65,7 +68,11 @@ class DoubleCrystalMono(Assembly):
             view_toplevel_only=True,
         )
         self._append(
-            AdjustablePv, energy_sp, pvreadbackname=energy_rb, accuracy=0.5, name="energy"
+            AdjustablePv,
+            energy_sp,
+            pvreadbackname=energy_rb,
+            accuracy=0.5,
+            name="energy",
         )
         self.settings.append(self)
 
@@ -127,7 +134,7 @@ class EcolEnergy(Assembly):
         return self._pv_rb.get()
 
     def set_target_value(self, value, hold=False):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         changer = lambda value: self.change_energy_to(value)
         return Changer(

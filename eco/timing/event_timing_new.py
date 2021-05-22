@@ -11,7 +11,7 @@ from numbers import Number
 
 
 class TimingSystem:
-    """ This is a wrapper object for the global timing system at SwissFEL"""
+    """This is a wrapper object for the global timing system at SwissFEL"""
 
     def __init__(self, pv_master=None, pv_pulse_id=None):
         self.event_master = MasterEventSystem(pv_master, name="event_master")
@@ -191,12 +191,12 @@ class MasterEventSystem:
         return self._get_Id_description(Id)
 
     def get_evtcode_frequency(self, evtcode):
-        """ in Hz"""
+        """in Hz"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_freq(Id)
 
     def get_evtcode_period(self, evtcode):
-        """ in s"""
+        """in s"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_period(Id)
 
@@ -225,7 +225,9 @@ class EvrPulser:
         append_object_to_object(
             self, AdjustablePvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity"
         )
-        append_object_to_object(self, AdjustablePvEnum, f"{self.pv_base}-Ena-Sel", name="enable")
+        append_object_to_object(
+            self, AdjustablePvEnum, f"{self.pv_base}-Ena-Sel", name="enable"
+        )
         append_object_to_object(
             self, AdjustablePv, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode"
         )
@@ -259,7 +261,9 @@ class EvrOutput:
         self.alias = Alias(name)
         self._pulsers = None
         # self._update_connected_pulsers()
-        append_object_to_object(self, AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable")
+        append_object_to_object(
+            self, AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable"
+        )
         self.pulsers_numbers = (
             AdjustablePvEnum(f"{self.pv_base}-Src-Pulse-SP", name="pulserA"),
             AdjustablePvEnum(f"{self.pv_base}-Src2-Pulse-SP", name="pulserB"),

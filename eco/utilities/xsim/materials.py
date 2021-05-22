@@ -8,7 +8,7 @@ import numpy as np
 
 
 class MaterialCollection:
-    """ Dummy class collections of materials (dict-like)."""
+    """Dummy class collections of materials (dict-like)."""
 
     def __init__(self, **entries):
         self.__dict__.update(entries)
@@ -27,7 +27,7 @@ gas = MaterialCollection()
 
 
 def _get_transmission(self, d, E="config"):
-    """ calculate the transmittion after thickness d (in m) of material at energy E (in eV)."""
+    """calculate the transmittion after thickness d (in m) of material at energy E (in eV)."""
     return np.exp(-d * 1e6 / self.absorption_length(E))
 
 

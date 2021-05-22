@@ -62,5 +62,5 @@ class DataApi:
         return data
 
     def search(self, searchstring):
-        """ A search in database using simpler unix glob expressions (e.g. '*ARES*')"""
+        """A search in database using simpler unix glob expressions (e.g. '*ARES*')"""
         return search(translate(searchstring))

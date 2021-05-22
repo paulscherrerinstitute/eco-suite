@@ -45,7 +45,9 @@ class Xspect:
         append_object_to_object(
             self, AdjustablePvEnum, "SARFE10-PSSS059:CRYSTAL_SP", name="crystal_type"
         )
-        append_object_to_object(self, AdjustablePvEnum, "SARFE10-PSSS055:PROBE_SP", name="probe")
+        append_object_to_object(
+            self, AdjustablePvEnum, "SARFE10-PSSS055:PROBE_SP", name="probe"
+        )
         append_object_to_object(
             self, AdjustablePv, "SARFE10-PSSS059:ENERGY", name="energy_center_setpoint"
         )

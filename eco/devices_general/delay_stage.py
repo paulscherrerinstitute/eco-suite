@@ -34,7 +34,7 @@ class DelayStage:
         return motor_pos
 
     def get_current_value(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         motor_pos = self._stage.get_current_value()
         motor_pos -= self.delay_stage_offset
         delay = motor_pos * 2.0 * 3.33333333 * 1e-12
@@ -68,7 +68,7 @@ class DelayStage:
         self._stage._currentChange.wait()
 
     def stop(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         try:
             self._stage._currentChange.stop()
         except:

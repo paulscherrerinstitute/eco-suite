@@ -8,8 +8,9 @@ from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
 from eco.elements import Assembly
 from eco.epics.adjustable import AdjustablePvString
+from eco.epics import get_from_archive
 
-
+@get_from_archive
 class DetectorPvData(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
@@ -18,6 +19,9 @@ class DetectorPvData(Assembly):
         self._pv = PV(pvname)
         self.name = name
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
+        self._append(
+            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+        )
 
     def get_current_value(self):
         return self._pv.get()
@@ -26,6 +30,7 @@ class DetectorPvData(Assembly):
         return self.get_current_value()
 
 
+@get_from_archive
 class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
@@ -35,7 +40,7 @@ class DetectorPvEnum(Assembly):
         self.enum_strs = self._pv.enum_strs
 
         self.PvEnum = IntEnum(name, {tstr: n for n, tstr in enumerate(self.enum_strs)})
-        self.alias = Alias(name, channel=self.Id, channeltype="CA")
+        self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
     def validate(self, value):
         if type(value) is str:
@@ -94,6 +99,7 @@ class DetectorPvString:
             return self.get_current_value()
 
 
+@get_from_archive
 class DetectorPvDataStream(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
@@ -101,7 +107,9 @@ class DetectorPvDataStream(Assembly):
         self.pvname = pvname
         self._pv = PV(pvname)
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
-        self._append(AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False)
+        self._append(
+            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+        )
         # self._append(
         #     PvString, self.pvname + ".DESC", name="description", is_setting=False
         # )

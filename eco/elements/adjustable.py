@@ -7,10 +7,9 @@ from threading import Thread
 
 import colorama
 
-from eco import ecocnf
 from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
-from eco.utilities.KeyPress import KeyPress
+from eco.utilities.keypress import KeyPress
 
 logger = logging.getLogger(__name__)
 
@@ -20,44 +19,11 @@ class AdjustableError(Exception):
 
 
 def tweak_option(Obj):
-    def tweak(self,interval,*args,**kwargs):
-        self._tweak_instance = Tweak((self,interval))
+    def tweak(self, interval, *args, **kwargs):
+        self._tweak_instance = Tweak((self, interval))
         self._tweak_instance.single_adjustable_tweak()
 
     Obj.tweak = tweak
-    return Obj
-
-
-def get_from_archive(Obj, attribute_name="pvname"):
-    def get_archiver_time_range(self, start=None, end=None, plot=True):
-        """Try to retrieve data within timerange from archiver. A time delta from now is assumed if end time is missing. """
-        channelname = self.__dict__[attribute_name]
-        return ecocnf.archiver.get_data_time_range(
-            channels=[channelname], start=start, end=end, plot=plot
-        )
-
-    Obj.get_archiver_time_range = get_archiver_time_range
-    return Obj
-
-
-def default_representation(Obj):
-    def get_name(Obj):
-        if hasattr(Obj, "alias") and Obj.alias:
-            return Obj.alias.get_full_name()
-        elif Obj.name:
-            return Obj.name
-        elif hasattr(Obj, "Id") and Obj.Id:
-            return Obj.Id
-        else:
-            return ""
-
-    def get_repr(Obj):
-        s = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
-        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{str(Obj.get_current_value())}{colorama.Style.RESET_ALL}"
-        return s
-
-    Obj._get_name = get_name
-    Obj.__repr__ = get_repr
     return Obj
 
 
@@ -304,6 +270,27 @@ class AdjustableMemory:
         return s
 
 
+def default_representation(Obj):
+    def get_name(Obj):
+        if hasattr(Obj, "alias") and Obj.alias:
+            return Obj.alias.get_full_name()
+        elif Obj.name:
+            return Obj.name
+        elif hasattr(Obj, "Id") and Obj.Id:
+            return Obj.Id
+        else:
+            return ""
+
+    def get_repr(Obj):
+        s = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") + ": "
+        s += f"{colorama.Style.BRIGHT}{Obj._get_name()}{colorama.Style.RESET_ALL} at {colorama.Style.BRIGHT}{str(Obj.get_current_value())}{colorama.Style.RESET_ALL}"
+        return s
+
+    Obj._get_name = get_name
+    Obj.__repr__ = get_repr
+    return Obj
+
+
 @default_representation
 @spec_convenience
 class AdjustableFS:
@@ -420,7 +407,7 @@ class AdjustableVirtual:
 @tweak_option
 class AdjustableGetSet:
     def __init__(self, foo_get, foo_set, precision=0, check_interval=None, name=None):
-        """ assumes a waiting setterin function, in case no check_interval parameter is supplied"""
+        """assumes a waiting setterin function, in case no check_interval parameter is supplied"""
         self.alias = Alias(name)
         self.name = name
         self._set = foo_set
@@ -451,7 +438,7 @@ class AdjustableGetSet:
 
 class Tweak:
     def __init__(self, *args):
-        """ usage: Tweak((adj0,startstepsize0),(adj1,startstepsize1))"""
+        """usage: Tweak((adj0,startstepsize0),(adj1,startstepsize1))"""
         self.adjs = []
         startsteps = []
         for adj, startstep in args:
@@ -468,7 +455,7 @@ class Tweak:
         return [adj.get_current_value() for adj in self.adjs]
 
     def set_target_step_increment(self, *args):
-        """ usage: set_target_value((adj0,+1),(adj2,-1))"""
+        """usage: set_target_value((adj0,+1),(adj2,-1))"""
         indexes = []
         directions = []
         for obj, direction in args:
@@ -497,7 +484,7 @@ class Tweak:
                 time.sleep(sleeptime)
 
     def set_step_size(self, *args):
-        """ usage: set_step_size((adj0,step),(adj2,step))"""
+        """usage: set_step_size((adj0,step),(adj2,step))"""
         indexes = []
         stepsizes = []
         for obj, stepsize in args:

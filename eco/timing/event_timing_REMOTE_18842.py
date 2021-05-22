@@ -147,12 +147,12 @@ class MasterEventSystem:
         return self._get_Id_description(Id)
 
     def get_evtcode_frequency(self, evtcode):
-        """ in Hz"""
+        """in Hz"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_freq(Id)
 
     def get_evtcode_period(self, evtcode):
-        """ in s"""
+        """in s"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_period(Id) / 1000
 
@@ -169,19 +169,19 @@ class EvrPulser:
         return self._pvs[pvname]
 
     def get_delay(self):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pvname}-Delay-RB").get() / int(1e6)
 
     def set_delay(self, value):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pvname}-Delay-SP").set(value * int(1e6))
 
     def get_width(self):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pvname}-Width-RB").get() / int(1e6)
 
     def set_width(self, value):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pvname}-Width-SP").set(value * int(1e6))
 
     def get_evtcode(self):

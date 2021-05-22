@@ -291,14 +291,18 @@ class CameraPCO(Assembly):
         self._append(AdjustablePvEnum, self.pvname + ":RECMODE", name="_req_mode")
         self._append(AdjustablePvEnum, self.pvname + ":STOREMODE", name="_store_mode")
         self._append(AdjustablePv, self.pvname + ":HSSPEED", name="_hs_speed")
-        self._append(AdjustablePvEnum, self.pvname + ":SCMOSREADOUT", name="_readout_mode")
+        self._append(
+            AdjustablePvEnum, self.pvname + ":SCMOSREADOUT", name="_readout_mode"
+        )
         self._append(AdjustablePv, self.pvname + ":BINY", name="_binx")
         self._append(AdjustablePv, self.pvname + ":BINY", name="_biny")
         self._append(AdjustablePv, self.pvname + ":REGIONX_START", name="_roixmin")
         self._append(AdjustablePv, self.pvname + ":REGIONX_END", name="_roixmax")
         self._append(AdjustablePv, self.pvname + ":REGIONY_START", name="_roiymin")
         self._append(AdjustablePv, self.pvname + ":REGIONY_END", name="_roiymax")
-        self._append(AdjustablePvEnum, self.pvname + ":SET_PARAM", name="_set_parameters")
+        self._append(
+            AdjustablePvEnum, self.pvname + ":SET_PARAM", name="_set_parameters"
+        )
         self._append(AdjustablePvEnum, self.pvname + ":TRIGGER", name="trigger_on")
         # append_object_to_object(self,PvEnum,self.pvname+':TRIGGEREDGE',name='trigger_edge')
         self._append(

@@ -220,7 +220,7 @@ class GPS(Assembly):
             self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
         cmd += [
             "-noMsg",
@@ -612,7 +612,7 @@ class XRDYou(Assembly):
         return ostr
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
         cmd += [
             "-noMsg",
@@ -916,7 +916,7 @@ class XRD(Assembly):
         return ostr
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
         cmd += [
             "-noMsg",
@@ -1072,7 +1072,7 @@ class XRD_old:
         return ostr
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
         cmd = [
             "-noMsg",

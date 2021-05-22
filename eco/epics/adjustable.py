@@ -5,9 +5,10 @@ import numpy as np
 from epics import PV
 
 from eco.aliases import Alias
-from eco.elements.adjustable import tweak_option, get_from_archive, spec_convenience
+from eco.elements.adjustable import tweak_option, spec_convenience
+from . import get_from_archive
 from eco.devices_general.utilities import Changer
-
+from ..elements import Assembly
 
 @spec_convenience
 @get_from_archive
@@ -47,7 +48,7 @@ class AdjustablePv:
         return currval
 
     def get_moveDone(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         """ 0: moving 1: move done"""
         movedone = 1
         if self.accuracy is not None:
@@ -68,7 +69,7 @@ class AdjustablePv:
             time.sleep(0.1)
 
     def set_target_value(self, value, hold=False):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         changer = lambda value: self.move(value)
         return Changer(
@@ -135,7 +136,7 @@ class AdjustablePvEnum:
         return self.validate(self._pv.get())
 
     def set_target_value(self, value, hold=False):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         value = self.validate(value)
         if self._pv_set:
             tpv = self._pv_set

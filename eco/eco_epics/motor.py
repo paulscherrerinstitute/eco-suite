@@ -54,7 +54,7 @@ from epics import device
 
 
 class MotorLimitException(Exception):
-    """ raised to indicate a motor limit has been reached """
+    """raised to indicate a motor limit has been reached"""
 
     def __init__(self, msg, *args):
         Exception.__init__(self, *args)
@@ -65,7 +65,7 @@ class MotorLimitException(Exception):
 
 
 class MotorException(Exception):
-    """ raised to indicate a problem with a motor"""
+    """raised to indicate a problem with a motor"""
 
     def __init__(self, msg, *args):
         Exception.__init__(self, *args)
@@ -272,7 +272,7 @@ class Motor(device.Device):
         return self.__repr__()
 
     def __getattr__(self, attr):
-        " internal method "
+        "internal method"
         if attr in self._alias:
             attr = self._alias[attr]
         if attr in self._pvs:
@@ -617,7 +617,7 @@ class Motor(device.Device):
         return out
 
     def show_info(self):
-        " show basic motor settings "
+        "show basic motor settings"
         ca.poll()
         out = []
         out.append(repr(self))
@@ -630,7 +630,7 @@ class Motor(device.Device):
         ca.write("\n".join(out))
 
     def show_all(self):
-        """ show all motor attributes"""
+        """show all motor attributes"""
         out = []
         add = out.append
         add("# Motor %s" % (self._prefix))

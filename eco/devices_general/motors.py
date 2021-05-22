@@ -4,8 +4,14 @@ from epics.motor import Motor as _Motor
 from epics import PV
 from .utilities import Changer
 from ..aliases import Alias
-from ..elements.adjustable import AdjustableError, get_from_archive, spec_convenience, ValueInRange, update_changes
-from ..utilities.KeyPress import KeyPress
+from ..elements.adjustable import (
+    AdjustableError,
+    spec_convenience,
+    ValueInRange,
+    update_changes,
+)
+from ..epics import get_from_archive
+from ..utilities.keypress import KeyPress
 import sys, colorama
 from .. import global_config
 from ..elements.assembly import Assembly
@@ -82,7 +88,9 @@ class SmaractStreamdevice(Assembly):
             )
         self._currentChange = None
         # self.description = EpicsString(pvname + ".DESC")
-        self._append(AdjustablePvEnum, self.pvname + ":DIR", name="direction", is_setting=True)
+        self._append(
+            AdjustablePvEnum, self.pvname + ":DIR", name="direction", is_setting=True
+        )
         # self._append(
         #    PvRecord, self.pvname + ":SET_POS", name="set_pos", is_setting=True
         # )
@@ -138,10 +146,16 @@ class SmaractStreamdevice(Assembly):
             is_setting=False,
         )
         self._append(
-            AdjustablePvEnum, self.pvname + ":STAGE_TYPE", name="stage_type", is_setting=True
+            AdjustablePvEnum,
+            self.pvname + ":STAGE_TYPE",
+            name="stage_type",
+            is_setting=True,
         )
         self._append(
-            AdjustablePvEnum, self.pvname + ":STATUS", name="status_channel", is_setting=False
+            AdjustablePvEnum,
+            self.pvname + ":STATUS",
+            name="status_channel",
+            is_setting=False,
         )
         self._append(
             AdjustablePvEnum,
@@ -162,7 +176,9 @@ class SmaractStreamdevice(Assembly):
             name="sensor_type_setter_number",
             is_setting=False,
         )
-        self._append(AdjustablePv, self.pvname + ":LLM", name="limit_low", is_setting=False)
+        self._append(
+            AdjustablePv, self.pvname + ":LLM", name="limit_low", is_setting=False
+        )
         self._append(
             AdjustablePv, self.pvname + ":HLM", name="limit_high", is_setting=False
         )
@@ -396,24 +412,43 @@ class MotorRecord(Assembly):
             is_setting=False,
             is_status=True,
         )
-        self._append(AdjustablePvEnum, self.pvname + ".DIR", name="direction", is_setting=True)
-        self._append(AdjustablePv, self.pvname + ".OFF", name="offset", is_setting=True)
-        self._append(AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False)
         self._append(
-            AdjustablePv, self.pvname + ".ACCL", name="acceleration_time", is_setting=False
+            AdjustablePvEnum, self.pvname + ".DIR", name="direction", is_setting=True
         )
-        self._append(AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=False)
+        self._append(AdjustablePv, self.pvname + ".OFF", name="offset", is_setting=True)
+        self._append(
+            AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".ACCL",
+            name="acceleration_time",
+            is_setting=False,
+        )
+        self._append(
+            AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=False
+        )
         self._append(
             AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=False
         )
-        self._append(DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False)
+        self._append(
+            DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False
+        )
         self._append(MotorRecordFlags, self._flags, name="flags")
         self._append(
-            AdjustablePvEnum, self.pvname + ".SPMG", name="motor_state", is_setting=False
+            AdjustablePvEnum,
+            self.pvname + ".SPMG",
+            name="motor_state",
+            is_setting=False,
         )
-        self._append(AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False)
         self._append(
-            AdjustablePvString, self.pvname + ".DESC", name="description", is_setting=False
+            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+        )
+        self._append(
+            AdjustablePvString,
+            self.pvname + ".DESC",
+            name="description",
+            is_setting=False,
         )
         if backlash_definition:
             self._append(
@@ -460,7 +495,7 @@ class MotorRecord(Assembly):
             self.set_limits(-abs_set_value, abs_set_value)
 
     def set_target_value(self, value, hold=False, check=True):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         def changer(value):
             self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
@@ -483,7 +518,7 @@ class MotorRecord(Assembly):
         )
 
     def stop(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         try:
             self._currentChange.stop()
         except:
@@ -491,7 +526,7 @@ class MotorRecord(Assembly):
         pass
 
     def get_current_value(self, posType="user", readback=True):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":
             return self._motor.get_position(readback=readback)
@@ -501,7 +536,7 @@ class MotorRecord(Assembly):
             return self._motor.get_position(readback=readback, raw=True)
 
     def reset_current_value_to(self, value, posType="user"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":
             return self._motor.set_position(value)
@@ -511,7 +546,7 @@ class MotorRecord(Assembly):
             return self._motor.set_position(value, raw=True)
 
     def get_moveDone(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         """ 0: moving 1: move done"""
         return PV(str(self.Id + ".DMOV")).value
 
@@ -543,7 +578,7 @@ class MotorRecord(Assembly):
             self._motor.get_pv("RBV").clear_callbacks()
 
     def get_limits(self, posType="user"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         ll_name, hl_name = "LLM", "HLM"
         if posType is "dial":
@@ -705,7 +740,10 @@ class MForceSettings(Assembly):
         self.pv_channel = f"{pv_controller}:{port_number}"
         self._append(AdjustablePv, self.pv_motor + ".EGU", name="unit", is_setting=True)
         self._append(
-            AdjustablePv, self.pv_motor + ".MRES", name="motor_resolution", is_setting=True
+            AdjustablePv,
+            self.pv_motor + ".MRES",
+            name="motor_resolution",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
@@ -714,7 +752,10 @@ class MForceSettings(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv, self.pv_channel + "_set", name="channel_config", is_setting=True
+            AdjustablePv,
+            self.pv_channel + "_set",
+            name="channel_config",
+            is_setting=True,
         )
         self._append(
             AdjustablePv, self.pv_channel + "_RC", name="run_current", is_setting=True

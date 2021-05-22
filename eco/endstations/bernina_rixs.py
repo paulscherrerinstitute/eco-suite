@@ -287,7 +287,7 @@ class RIXS(Assembly):
         )
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
         cmd += ["P=SARES22-RIXS", "ESB_RIXS_motors.ui"]
         return self._run_cmd(" ".join(cmd))

@@ -12,7 +12,7 @@ from cta_lib import CtaLib
 
 
 class TimingSystem(Assembly):
-    """ This is a wrapper object for the global timing system at SwissFEL"""
+    """This is a wrapper object for the global timing system at SwissFEL"""
 
     def __init__(self, pv_master=None, pv_pulse_id=None, name=None):
         super().__init__(name=name)
@@ -152,14 +152,20 @@ class MasterEventCode(Assembly):
         self.pvname = pvname
         self._slot_number = slot_number
         self._append(
-            DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Code-SP", name="code_number"
+            DetectorPvData,
+            f"{self.pvname}:Evt-{slot_number}-Code-SP",
+            name="code_number",
         )
-        self._append(DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Delay-RB", name="delay")
+        self._append(
+            DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Delay-RB", name="delay"
+        )
         self._append(
             DetectorPvData, f"{self.pvname}:Evt-{slot_number}-Freq-I", name="frequency"
         )
         self._append(
-            AdjustablePvString, f"{self.pvname}:Evt-{slot_number}.DESC", name="description"
+            AdjustablePvString,
+            f"{self.pvname}:Evt-{slot_number}.DESC",
+            name="description",
         )
 
 
@@ -244,16 +250,29 @@ class EvrPulser(Assembly):
         self.pv_base = pv_base
         self._event_master = event_master
 
-        self._append(AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True)
         self._append(
-            AdjustablePvEnum, f"{self.pv_base}-Polarity-Sel", name="polarity", is_setting=True
-        )
-        self._append(AdjustablePvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True)
-        self._append(
-            AdjustablePv, f"{self.pv_base}-Evt-Trig0-SP", name="eventcode", is_setting=True
+            AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True
         )
         self._append(
-            AdjustablePv, f"{self.pv_base}-Evt-Set0-SP", name="event_set", is_setting=True
+            AdjustablePvEnum,
+            f"{self.pv_base}-Polarity-Sel",
+            name="polarity",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePvEnum, f"{self.pv_base}-Ena-Sel", name="enable", is_setting=True
+        )
+        self._append(
+            AdjustablePv,
+            f"{self.pv_base}-Evt-Trig0-SP",
+            name="eventcode",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            f"{self.pv_base}-Evt-Set0-SP",
+            name="event_set",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
@@ -323,8 +342,12 @@ class EvrOutput(Assembly):
         self.pv_base = pv_base
         self._pulsers = pulsers
         # self._update_connected_pulsers()
-        self._append(AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True)
-        self._append(AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True)
+        self._append(
+            AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True
+        )
+        self._append(
+            AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True
+        )
         # self._append(
         # PvEnum,
         # f"{self.pv_base}_SOURCE",

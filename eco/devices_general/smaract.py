@@ -33,7 +33,7 @@ def _keywordChecker(kw_key_list_tups):
 
 
 class SmarActException(Exception):
-    """ raised to indicate a problem with a smartact"""
+    """raised to indicate a problem with a smartact"""
 
     def __init__(self, msg, *args):
         Exception.__init__(self, *args)
@@ -105,7 +105,7 @@ class SmarActRecord:
 
     # Conventional methods and properties for all Adjustable objects
     def set_target_value(self, value, hold=False, check=True):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         def changer(value):
             self._status = self.move(value, ignore_limits=(not check), wait=True)
@@ -125,7 +125,7 @@ class SmarActRecord:
         )
 
     def stop(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         try:
             self._currentChange.stop()
         except:
@@ -133,7 +133,7 @@ class SmarActRecord:
         pass
 
     def within_limits(self, val):
-        """ returns whether a value for a motor is within drive limits"""
+        """returns whether a value for a motor is within drive limits"""
         return val <= self._hlm.get("VAL") and val >= self._llm.get("VAL")
 
     def move(
@@ -248,32 +248,32 @@ class SmarActRecord:
         return self._set_pos.put("VAL", value)
 
     def get_precision(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         pass
 
     def set_precision(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         pass
 
     precision = property(get_precision, set_precision)
 
     def set_speed(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         pass
 
     def get_speed(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         pass
 
     def set_speedMax(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         pass
 
     def get_moveDone(self):
         pass
 
     def set_limits(self, values, posType="user", relative_to_present=False):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         if relative_to_present:
             v = self.get_current_value()
             values = [v - values[0], v - values[1]]
@@ -281,11 +281,11 @@ class SmarActRecord:
         self._hlm.put("VAL", values[1])
 
     def get_limits(self, posType="user"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         return self._llm.get("VAL"), self._hlm.get("VAL")
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
 
         for i in range(len(self.Id) - 1):

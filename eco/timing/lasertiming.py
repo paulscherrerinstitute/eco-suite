@@ -45,7 +45,7 @@ def niceTimeToStr(delay, fmt="%+.0f"):
 
 
 class Storage(object):
-    """ this class is needed to store the offset in files and read in s """
+    """this class is needed to store the offset in files and read in s"""
 
     def __init__(self, pvname):
         self._filename = os.path.join(_basefolder, pvname)
@@ -103,7 +103,7 @@ class Pockels_trigger(PV):
         )
 
     def get(self):
-        """ convert time to sec """
+        """convert time to sec"""
         return self.get_dial() - self.offset
 
     def store(self, value=None):
@@ -129,7 +129,7 @@ _OSCILLATOR_PERIOD = 1 / 71.368704e6
 
 
 class Phase_shifter(PV):
-    """ this class is needed to store the offset in files and read in ps """
+    """this class is needed to store the offset in files and read in ps"""
 
     def __init__(
         self, pv_basename="SLAAR02-TSPL-EPL", dial_max=14.0056e-9, precision=100e-15
@@ -151,7 +151,7 @@ class Phase_shifter(PV):
         return super().get() * 1e-12
 
     def get(self):
-        """ convert time to sec """
+        """convert time to sec"""
         return self.get_dial() - self.offset
 
     def store(self, value=None):
@@ -241,7 +241,7 @@ class Lxt(object):
         return -delay
 
     def set_target_value(self, value, hold=False):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         changer = lambda value: self.move(value)
         return Changer(

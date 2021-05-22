@@ -58,7 +58,7 @@ class Storage(object):
 
 
 class Pockels_trigger(PV):
-    """ this class is needed to store the offset in files and read in s """
+    """this class is needed to store the offset in files and read in s"""
 
     def __init__(self, pv_basename):
         pvname = pv_basename + "-RB"
@@ -75,7 +75,7 @@ class Pockels_trigger(PV):
         return super().get() * 1e-6
 
     def get(self):
-        """ convert time to sec """
+        """convert time to sec"""
         return self.get_dial() - self.offset
 
     def store(self, value=None):
@@ -98,7 +98,7 @@ class Pockels_trigger(PV):
 
 
 class Phase_shifter(PV):
-    """ this class is needed to store the offset in files and read in ps """
+    """this class is needed to store the offset in files and read in ps"""
 
     def __init__(self, pv_basename="SLAAR01-TSPL-EPL"):
         pvname = pv_basename + ":CURR_DELTA_T"
@@ -116,7 +116,7 @@ class Phase_shifter(PV):
         return super().get() * 1e-12
 
     def get(self):
-        """ convert time to sec """
+        """convert time to sec"""
         return self.get_dial() - self.offset
 
     def store(self, value=None):
@@ -156,17 +156,17 @@ class PhaseShifterAramis:
         self.name = name
 
     def set_target_value(self, value, hold=False, check=True):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         mover = lambda value: self._pshifter.move(value)
         return Changer(target=value, parent=self, mover=mover, hold=hold, stopper=None)
 
     def stop(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         pass
 
     def get_current_value(self, posType="user", readback=True):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":
             return self._pshifter.get()
@@ -174,7 +174,7 @@ class PhaseShifterAramis:
             return self._pshifter.get_dial()
 
     def set_current_value(self, value, posType="user"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         if posType == "user":
             return self._motor.set(value)

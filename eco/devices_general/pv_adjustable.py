@@ -47,7 +47,7 @@ class PvRecord:
         return currval
 
     def get_moveDone(self):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         """ 0: moving 1: move done"""
         movedone = 1
         if self.accuracy is not None:
@@ -70,7 +70,7 @@ class PvRecord:
             time.sleep(0.1)
 
     def set_target_value(self, value, hold=False):
-        """ Adjustable convention"""
+        """Adjustable convention"""
 
         changer = lambda value: self.move(value)
         return Changer(

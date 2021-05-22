@@ -60,7 +60,7 @@ class CameraCA:
             f["images"] = np.asarray(d)
 
     def gui(self, guiType="xdm"):
-        """ Adjustable convention"""
+        """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
 
         cmd.append('"NAME=%s,CAMNAME=%s"' % (self.Id, self.Id))

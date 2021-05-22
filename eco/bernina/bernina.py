@@ -199,6 +199,20 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 namespace.append_obj(
+    "WagoAnalogInputs",
+    "SARES20-CWAG-GPS01",
+    lazy=True,
+    name='analog_inputs',
+    module_name='eco.devices_general.wago'
+)
+namespace.append_obj(
+    "GudeStrip",
+    "SARES20-CPPS-01",
+    lazy=True,
+    name='powerstrip_mobile',
+    module_name='eco.devices_general.powersockets'
+)
+namespace.append_obj(
     "XRDYou",
     module_name="eco.endstations.bernina_diffractometers",
     Id="SARES21-XRD",

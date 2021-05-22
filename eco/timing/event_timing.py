@@ -181,12 +181,12 @@ class MasterEventSystem:
         return self._get_Id_description(Id)
 
     def get_evtcode_frequency(self, evtcode):
-        """ in Hz"""
+        """in Hz"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_freq(Id)
 
     def get_evtcode_period(self, evtcode):
-        """ in s"""
+        """in s"""
         Id = self._get_evtcode_Id(evtcode)
         return self._get_Id_period(Id) / 1000
 
@@ -211,7 +211,9 @@ class EvrPulser:
         self.pv_base = pv_base
         self.name = name
         self._pvs = {}
-        self.polarity = AdjustablePvEnum(f"{self.pv_base}-Polarity-Sel", name="polarity")
+        self.polarity = AdjustablePvEnum(
+            f"{self.pv_base}-Polarity-Sel", name="polarity"
+        )
 
     def _get_pv(self, pvname):
         if not pvname in self._pvs:
@@ -219,19 +221,19 @@ class EvrPulser:
         return self._pvs[pvname]
 
     def get_delay(self):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pv_base}-Delay-RB").get() / int(1e6)
 
     def set_delay(self, value):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pv_base}-Delay-SP").put(value * int(1e6))
 
     def get_width(self):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pv_base}-Width-RB").get() / int(1e6)
 
     def set_width(self, value):
-        """ in seconds """
+        """in seconds"""
         return self._get_pv(f"{self.pv_base}-Width-SP").put(value * int(1e6))
 
     def get_evtcode(self):

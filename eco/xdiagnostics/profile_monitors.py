@@ -26,8 +26,12 @@ class Pprm(Assembly):
         )
         self.camCA = CameraCA(pvname_camera)
         self._append(CameraBasler, pvname_camera, name="camera", is_setting=True)
-        self._append(AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True)
-        self._append(AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
+        self._append(
+            AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True
+        )
+        self._append(
+            AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True
+        )
 
     def movein(self, target=1):
         self.target.set_target_value(target)
@@ -174,7 +178,9 @@ class Pprm_dsd(Assembly):
         self._append(
             MotorRecord, self.pvname + ":MOTOR_ZOOM", name="zoom", is_setting=True
         )
-        self._append(AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True)
+        self._append(
+            AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True
+        )
 
     def movein(self, target=1):
         self.target.set_target_value(target)

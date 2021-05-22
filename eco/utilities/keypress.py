@@ -20,7 +20,7 @@ def isData():
 
 
 def getc():
-    """ Non blocking get character """
+    """Non blocking get character"""
     old_settings = termios.tcgetattr(sys.stdin)
     c = None
     try:
@@ -33,7 +33,7 @@ def getc():
 
 
 def wait_input():
-    """ wait for a character and returns it """
+    """wait for a character and returns it"""
     old_settings = termios.tcgetattr(sys.stdin)
     c = None
     try:
@@ -54,7 +54,7 @@ def wait_input():
 
 
 def wait_char(char="q"):
-    """ wait for a specific character, default is q """
+    """wait for a specific character, default is q"""
     c = None
     while c != char:
         c = wait_input()

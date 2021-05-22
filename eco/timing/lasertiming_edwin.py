@@ -15,10 +15,16 @@ class XltEpics:
         self.pvname = pvname
         self.alias = Alias(name)
         append_object_to_object(
-            self, AdjustablePvEnum, self.pvname + ":SHOTDELAY", name="oscialltor_pulse_offset"
+            self,
+            AdjustablePvEnum,
+            self.pvname + ":SHOTDELAY",
+            name="oscialltor_pulse_offset",
         )
         append_object_to_object(
-            self, AdjustablePvEnum, self.pvname + ":SHOTMOFFS_ENA", name="modulo_offset_mode"
+            self,
+            AdjustablePvEnum,
+            self.pvname + ":SHOTMOFFS_ENA",
+            name="modulo_offset_mode",
         )
         append_object_to_object(
             self, AdjustablePv, self.pvname + ":DELAY_Z_OFFS", name="_offset"
