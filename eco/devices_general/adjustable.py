@@ -27,6 +27,15 @@ class AdjustableError(Exception):
 # wrappers for adjustables >>>>>>>>>>>
 
 
+def tweak_option(Obj):
+    def tweak(self,interval,*args,**kwargs):
+        self._tweak_instance = Tweak((self,interval))
+        self._tweak_instance.single_adjustable_tweak()
+
+    Obj.tweak = tweak
+    return Obj
+
+
 def get_from_archive(Obj, attribute_name="pvname"):
     def get_archiver_time_range(self, start=None, end=None, plot=True):
         """Try to retrieve data within timerange from archiver. A time delta from now is assumed if end time is missing. """
@@ -250,6 +259,7 @@ def update_changes(Adj):
 
 @spec_convenience
 @update_changes
+@tweak_option
 class DummyAdjustable:
     def __init__(self, name="no_adjustable"):
         self.name = name
@@ -280,6 +290,7 @@ def _keywordChecker(kw_key_list_tups):
 
 @spec_convenience
 @update_changes
+@tweak_option
 class AdjustableMemory:
     def __init__(self, value=0, name="adjustable_memory"):
         self.name = name
@@ -337,6 +348,7 @@ class AdjustableFS:
 
 @spec_convenience
 @get_from_archive
+@tweak_option
 class PvRecord:
     def __init__(
         self, pvsetname, pvreadbackname=None, accuracy=None, name=None, elog=None
@@ -519,6 +531,7 @@ class PvString:
 
 @default_representation
 @spec_convenience
+@tweak_option
 class AdjustableVirtual:
     def __init__(
         self,
@@ -598,6 +611,7 @@ class AdjustableVirtual:
 
 @default_representation
 @spec_convenience
+@tweak_option
 class AdjustableGetSet:
     def __init__(self, foo_get, foo_set, precision=0, check_interval=None, name=None):
         """ assumes a waiting setterin function, in case no check_interval parameter is supplied"""

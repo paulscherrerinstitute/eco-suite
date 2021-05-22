@@ -1,4 +1,5 @@
 import numpy as np
+from enum import IntEnum
 from epics import caget
 from epics import PV
 from ..eco_epics.utilities_epics import EnumWrapper
@@ -22,6 +23,7 @@ from .adjustable import AdjustableMemory
 class PvData(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
+        self.status_indicators_collection.append(self)
         self.pvname = pvname
         self._pv = PV(pvname)
         self.name = name
@@ -32,6 +34,74 @@ class PvData(Assembly):
 
     def __call__(self):
         return self.get_current_value()
+
+
+class DetectorPvEnum(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._pv = PV(pvname, connection_timeout=0.05)
+        self.name = name
+        self.enum_strs = self._pv.enum_strs
+
+        self.PvEnum = IntEnum(name, {tstr: n for n, tstr in enumerate(self.enum_strs)})
+        self.alias = Alias(name, channel=self.Id, channeltype="CA")
+
+    def validate(self, value):
+        if type(value) is str:
+            return self.PvEnum.__members__[value]
+        else:
+            return self.PvEnum(value)
+
+    def get_current_value(self):
+        return self.validate(self._pv.get())
+
+    def __repr__(self):
+        if not self.name:
+            name = self.Id
+        else:
+            name = self.name
+        cv = self.get_current_value()
+        s = f"{name} (enum) at value: {cv}" + "\n"
+        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
+        # s+= '_'*40+'\n'
+        for name, val in self.PvEnum.__members__.items():
+            if val == cv:
+                sel = "x"
+            else:
+                sel = " "
+            s += "{:>4}   {}  {}\n".format(val, sel, name)
+        return s
+
+    def __call__(self):
+        return self.get_current_value()
+
+
+class PvString:
+    def __init__(self, pvname, name=None, elog=None):
+        self.name = name
+        self.pvname = pvname
+        self._pv = PV(pvname, connection_timeout=0.05)
+        self._elog = elog
+        self.alias = Alias(name, channel=self.pvname, channeltype="CA")
+
+    def get_current_value(self):
+        return self._pv.get()
+
+    def set_target_value(self, value, hold=False):
+        changer = lambda value: self._pv.put(bytes(value, "utf8"), wait=True)
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+
+    def __repr__(self):
+        return self.get_current_value()
+
+    def __call__(self, string=None):
+        if not string is None:
+            self.set_target_value(string)
+        else:
+            return self.get_current_value()
 
 
 class DetectorVirtual(Assembly):
