@@ -1,7 +1,7 @@
 from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
-from ..devices_general.adjustable import Changer
-from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString
+from ..elements.adjustable import Changer
+from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString,AdjustablePv
 from ..epics.detector import DetectorPvData
 from ..aliases import Alias
 from datetime import datetime
@@ -71,14 +71,14 @@ class SwissFel(Assembly):
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             "SFB_POINTING_AR:SP1",
             name="pointing_feedback_setpoint_x",
             is_status=True,
             is_setting=False,
         )
         self._append(
-            PvRecord,
+            AdjustablePv,
             "SFB_POINTING_AR:SP2",
             name="pointing_feedback_setpoint_y",
             is_status=True,

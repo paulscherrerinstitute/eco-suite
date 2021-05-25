@@ -86,6 +86,16 @@ class Analyzer(Assembly):
             name="energy",
             unit="eV",
         )
+        self._append(
+            AdjustableVirtual,
+            [self.t_hor, self._det.t_hor, self._det.t_ver, self._det.rot],
+            self.tth_from_motor_pos,
+            self.motor_pos_from_tth,
+            is_setting=False,
+            is_status=True,
+            name="tth",
+            unit="deg",
+        )
 
     def angs_from_hkl(self, h, k, l, energy=11215):
         self.hxrd.energy = energy
@@ -105,7 +115,7 @@ class Analyzer(Assembly):
         cfg = self.config["rowland"]
         r, a0 = cfg["r"], np.deg2rad(cfg["alpha_lin"])
         # NOTE: the following commented line rotates the Rowland circle with the crystal surface normal. To rotate with the normal of the hkl scattering plane instead, use tth/2 instead of om
-        [x_s, y_s], [x_d, y_d] = self.calc_crystal_detector_positions(tth / 2, tth)
+        [x_s, y_s], [x_d, y_d] = self.cartesian_positions_from_om_tth(tth / 2, tth)
         det_t_hor = np.sin(a0) * y_d + np.cos(a0) * x_d
         det_t_ver = np.cos(a0) * y_d - np.sin(a0) * x_d
         det_rot = -(180 - tth) / 2
@@ -119,6 +129,9 @@ class Analyzer(Assembly):
         energy = xu.lam2en(
             self.material.planeDistance(*self.hkl) * 2 * np.sin(np.deg2rad(tth / 2))
         )
+        om_calc, chi_calc, phi_calc, tth_calc = self.angs_from_hkl(*self.hkl, energy=energy)
+        if abs(om-om_calc)>0.1:
+            energy=None
         return energy
 
     def rowland_intersection(self, beta, tbeta):
@@ -138,7 +151,7 @@ class Analyzer(Assembly):
         x, y = np.array([d * np.cos(tb), d * np.sin(tb)])
         return x, y
 
-    def calc_crystal_detector_positions(self, om, tth):
+    def cartesian_positions_from_om_tth(self, om, tth):
         """
         This function returns the crystal and the detector positions in (x,y) assuming that the sample is at (0,0) for a given tth angle
         """
@@ -149,14 +162,37 @@ class Analyzer(Assembly):
 
         return np.array([-x_c, y_c]), np.array([x_d - x_c, y_d])
 
-    def tth_from_motor_pos(self, t_hor, det_t_hor, det_t_ver):
+    def motor_pos_from_tth(self, tth):
+        """
+        This function returns the detector motor positions from tth and t_hor for a fixed crystal-detector distance
+        """
+        cfg = self.config["rowland"]
+        a0 = np.deg2rad(cfg["alpha_lin"])
+        tb = np.deg2rad(180-tth)
+        t_hor, det_t_hor, det_t_ver = [t_hor.get_current_value(), det_t_hor.get_current_value(), det_t_ver.get_current_value()]
+        y_d_cur = np.sin(a0) * det_t_hor + np.cos(a0) * det_t_ver
+        x_d_cur = np.cos(a0) * det_t_hor - np.sin(a0) * det_t_ver + t_hor
+        d_cryst_det = norm(np.array([x_d, y_d]))
+        x_d = np.cos(tb)*d_cryst_det
+        y_d = np.sin(tb)*d_cryst_det
+        det_t_hor = np.sin(a0) * y_d + np.cos(a0) * x_d
+        det_t_ver = np.cos(a0) * y_d - np.sin(a0) * x_d
+        det_rot = -(180 - tth) / 2
+        return t_hor, det_t_hor, det_t_ver, det_rot
+
+
+
+    def tth_from_motor_pos(self, t_hor, det_t_hor, det_t_ver, det_rot=None):
+        """
+        This function returns the current tth value calculated from the crystal and detector translations t_hor, det_t_hor, det_t_ver
+        """
         cfg = self.config["rowland"]
         a0 = np.deg2rad(cfg["alpha_lin"])
         y_d = np.sin(a0) * det_t_hor + np.cos(a0) * det_t_ver
         x_d = np.cos(a0) * det_t_hor - np.sin(a0) * det_t_ver + t_hor
         d_cryst_det = norm(np.array([x_d, y_d]))
-        tth = np.rad2deg(np.arcsin(y_d / d_cryst_det))
-        return 180 - tth
+        tb = np.rad2deg(np.arcsin(y_d / d_cryst_det))
+        return 180 - tb
 
 
 class Detector(Assembly):
