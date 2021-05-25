@@ -5,7 +5,7 @@ from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
-from ..elements.adjustable import spec_convenience, default_representation
+from ..elements.adjustable import spec_convenience, default_representation, tweak_option
 from ..epics.adjustable import AdjustablePvEnum
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
@@ -222,6 +222,7 @@ class Double_Crystal_Mono:
 
 @spec_convenience
 @default_representation
+@tweak_option
 class EcolEnergy_new(Assembly):
     def __init__(
         self,

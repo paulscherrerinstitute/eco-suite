@@ -4,7 +4,10 @@ from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..elements import Assembly
 from .motors import MotorRecord
-
+import sys
+from pathlib import Path
+sys.path.append('/sf/bernina/config/src/python/sf_databuffer/')
+import bufferutils
 CAM_CLIENT = None
 PIPELINE_CLIENT = None
 
@@ -52,6 +55,28 @@ class CamserverConfig(Assembly):
         if not alias:
             alias = self.camserver_alias
         self.set_config_fields({"alias": [alias]})
+
+    def restart_pipeline(self):
+        base_directory = "/sf/bernina/config/src/python/sf_databuffer/"
+        label = self.cam_id
+
+        policies = bufferutils.read_files(base_directory / Path("policies"), "policies")
+        sources = bufferutils.read_files(base_directory / Path("sources"), "sources")
+        sources_new = sources.copy()
+
+        # Only for debugging purposes
+        labeled_sources = bufferutils.get_labeled_sources(sources_new, label)
+        for s in labeled_sources:
+            bufferutils.logging.info(f"Restarting {s['stream']}")
+
+        sources_new = bufferutils.remove_labeled_source(sources_new, label)
+
+        # Stopping the removed source(s)
+        bufferutils.update_sources_and_policies(sources_new, policies)
+
+        # Starting the source(s) again
+        bufferutils.update_sources_and_policies(sources, policies)
+
 
     def stop(self):
         self.cc.stop_instance(self.cam_id)

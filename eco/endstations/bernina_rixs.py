@@ -277,7 +277,7 @@ class RIXS(Assembly):
             pos=2,
             analyzer="Si533",
             hkl=(8, 4, 4),
-            name="ana_2",
+            name="ana2",
             det=self.__dict__["det"],
             pvname=pvname,
         )
@@ -286,7 +286,7 @@ class RIXS(Assembly):
             pos=2,
             analyzer="Si844",
             hkl=(8, 4, 4),
-            name="ana_2_laser",
+            name="ana2_laser",
             det=self.__dict__["det"],
             pvname=pvname,
         )

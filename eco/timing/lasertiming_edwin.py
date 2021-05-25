@@ -3,7 +3,12 @@ import os
 import numpy as np
 import time
 from ..devices_general.utilities import Changer
-from ..elements.adjustable import spec_convenience, AdjustableFS, AdjustableVirtual
+from ..elements.adjustable import (
+    spec_convenience,
+    AdjustableFS,
+    AdjustableVirtual,
+    tweak_option,
+)
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..aliases import append_object_to_object, Alias
 from ..elements import Assembly
@@ -86,6 +91,7 @@ class XltEpics:
 
 
 @spec_convenience
+@tweak_option
 class XltEpics(Assembly):
     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
         super().__init__(name=name)

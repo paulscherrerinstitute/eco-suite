@@ -7,7 +7,9 @@ import numpy as np
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import (
     spec_convenience,
-    update_changes, default_representation,
+    update_changes,
+    default_representation,
+    tweak_option,
 )
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
@@ -15,6 +17,7 @@ from ..elements.assembly import Assembly
 
 @spec_convenience
 @update_changes
+@tweak_option
 class DoubleCrystalMono(Assembly):
     def __init__(
         self,
