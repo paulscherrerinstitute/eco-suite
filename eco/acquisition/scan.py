@@ -7,6 +7,7 @@ from pathlib import Path
 import colorama
 from ..elements.adjustable import DummyAdjustable
 from IPython import get_ipython
+from .daq_client import Daq
 
 
 inval_chars = [" ", "/"]
@@ -188,13 +189,17 @@ class Scan:
             print("Moved variables, now starting acquisition")
         acs = []
         for ctr in self.counterCallers:
-            if ctr.__module__ == "eco.acquisition.daq_client":
+            if isinstance(ctr, Daq):
                 acq_pars = {
                     "scan_info": {
                         "scan_name": Path(fina).stem,
-                        "motors_value": values_step,
-                        "motors_readback_value": readbacks_step,
-                        "motors_name": adjs_name,
+                        "scan_values": values_step,
+                        "scan_readbacks": readbacks_step,
+                        "scan_step_info": {
+                            "step_number": self.nextStep + 1,
+                            "expected_total_number_of_steps": len(self.values_todo)
+                            + len(self.values_done),
+                        },
                     }
                 }
                 acq = ctr.acquire(

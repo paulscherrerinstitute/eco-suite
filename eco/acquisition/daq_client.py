@@ -151,7 +151,7 @@ class Daq:
             parameters["directory_name"] = directory_relative.as_posix()
 
         parameters["pgroup"] = pgroup
-
+        # print("----- debug info ----->\n", parameters, "\n<----- debug info -----")
         runno = validate_response(
             requests.post(
                 f"{self.broker_address}/retrieve_from_buffers",
