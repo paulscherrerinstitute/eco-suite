@@ -219,6 +219,49 @@ class GPS(Assembly):
             )
             self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
 
+            def get_current_kappa2you():
+                return self.calc_kappa2you(
+                    self.eta_kap.get_current_value(),
+                    self.kappa.get_current_value(),
+                    self.phi_kap.get_current_value(),
+                )
+
+            def set_youvar_value_to_current_kappa(value, varind):
+                vars = list(get_current_kappa2you())
+                vars[varind] = value
+                return self.calc_you2kappa(*vars)
+
+            self._append(
+                AdjustableVirtual,
+                [self.eta_kap, self.kappa, self.phi_kap],
+                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
+                    eta_kap, kappa, phi_kap
+                )[0],
+                lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
+                name="eta",
+                unit="deg",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.eta_kap, self.kappa, self.phi_kap],
+                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
+                    eta_kap, kappa, phi_kap
+                )[1],
+                lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
+                name="chi",
+                unit="deg",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.eta_kap, self.kappa, self.phi_kap],
+                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
+                    eta_kap, kappa, phi_kap
+                )[2],
+                lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
+                name="phi",
+                unit="deg",
+            )
+
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
@@ -232,6 +275,49 @@ class GPS(Assembly):
         ]
         return self._run_cmd(" ".join(cmd))
         # bash -c 'caqtdm -noMsg  -stylefile sfop.qss -macro P=SARES22-GPS  /ioc/modules/qt/ESB_GPS_exp.ui'
+
+    def calc_you2kappa(
+        self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True
+    ):
+        """tool to convert from you definition angles to kappa angles, in
+        particular the bernina kappa where the"""
+        if bernina_kappa:
+            eta = -eta
+        if degrees:
+            eta, chi, phi, kappa_angle = np.deg2rad([eta, chi, phi, kappa_angle])
+        delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+        eta_k = eta - delta_angle
+        kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+        phi_k = phi - delta_angle
+
+        if bernina_kappa:
+            eta_k = eta_k - np.pi / 2
+            kappa = -kappa
+            phi_k = phi_k
+        if degrees:
+            eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
+        return eta_k, kappa, phi_k
+
+    def calc_kappa2you(
+        self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True
+    ):
+        if degrees:
+            eta_k, kappa, phi_k, kappa_angle = np.deg2rad(
+                [eta_k, kappa, phi_k, kappa_angle]
+            )
+        if bernina_kappa:
+            eta_k = eta_k + np.pi / 2
+            kappa = -kappa
+            phi_k = phi_k
+        delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+        eta = eta_k - delta_angle
+        chi = 2 * np.arcsin(np.sin(kappa / 2) * np.sin(kappa_angle))
+        phi = phi_k - delta_angle
+        if degrees:
+            eta, chi, phi = np.rad2deg([eta, chi, phi])
+        if bernina_kappa:
+            eta = -eta
+        return eta, chi, phi
 
     # def get_adjustable_positions_str(self):
     #     ostr = "*****GPS motor positions******\n"
@@ -572,6 +658,7 @@ class XRDYou(Assembly):
                 )[0],
                 lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
                 name="eta",
+                unit="deg",
             )
             self._append(
                 AdjustableVirtual,
@@ -581,6 +668,7 @@ class XRDYou(Assembly):
                 )[1],
                 lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
                 name="chi",
+                unit="deg",
             )
             self._append(
                 AdjustableVirtual,
@@ -590,6 +678,7 @@ class XRDYou(Assembly):
                 )[2],
                 lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
                 name="phi",
+                unit="deg",
             )
 
         if diff_detector:
