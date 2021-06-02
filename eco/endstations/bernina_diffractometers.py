@@ -277,7 +277,7 @@ class GPS(Assembly):
         # bash -c 'caqtdm -noMsg  -stylefile sfop.qss -macro P=SARES22-GPS  /ioc/modules/qt/ESB_GPS_exp.ui'
 
     def calc_you2kappa(
-        self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True
+        self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True, invert_elbow=False,
     ):
         """tool to convert from you definition angles to kappa angles, in
         particular the bernina kappa where the"""
@@ -285,10 +285,26 @@ class GPS(Assembly):
             eta = -eta
         if degrees:
             eta, chi, phi, kappa_angle = np.deg2rad([eta, chi, phi, kappa_angle])
-        delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+        if invert_elbow:
+            delta_angle = np.pi - np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+        else:
+            delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
         eta_k = eta - delta_angle
-        kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+        if invert_elbow:
+            kappa = -2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+        else:
+            kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+
         phi_k = phi - delta_angle
+        if True:
+            def flip_ang(ang):
+                if 1 < abs(ang // np.pi):
+                    return ang - np.sign(ang) * np.pi * 2
+                else:
+                    return ang
+            phi_k = flip_ang(phi_k)
+            eta_k = flip_ang(eta_k)
+            kappa = flip_ang(kappa)
 
         if bernina_kappa:
             eta_k = eta_k - np.pi / 2
@@ -299,7 +315,7 @@ class GPS(Assembly):
         return eta_k, kappa, phi_k
 
     def calc_kappa2you(
-        self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True
+        self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True, invert_elbow=False,
     ):
         if degrees:
             eta_k, kappa, phi_k, kappa_angle = np.deg2rad(
@@ -309,7 +325,11 @@ class GPS(Assembly):
             eta_k = eta_k + np.pi / 2
             kappa = -kappa
             phi_k = phi_k
-        delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+        if invert_elbow:
+            kappa = -kappa
+            delta_angle = np.pi - np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+        else:
+            delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
         eta = eta_k - delta_angle
         chi = 2 * np.arcsin(np.sin(kappa / 2) * np.sin(kappa_angle))
         phi = phi_k - delta_angle

@@ -473,14 +473,14 @@ class Run_Table:
             }
         self._check_adjustables()
 
-    def _check_adjustables(self):
+    def _check_adjustables(self, check_for_current_none_values=False):
         good_adj = {}
         bad_adj = {}
         for device, adjs in self.adjustables.items():
             good_dev_adj = {}
             bad_dev_adj = {}
             for name, adj in adjs.items():
-                if adj.get_current_value() is None:
+                if check_for_current_none_values and (adj.get_current_value() is None):
                     bad_dev_adj[name] = adj
                 else:
                     good_dev_adj[name] = adj

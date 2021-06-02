@@ -197,10 +197,10 @@ class Scan:
                         "scan_readbacks": readbacks_step,
                         "scan_step_info": {
                             "step_number": self.nextStep + 1,
-                            "expected_total_number_of_steps": len(self.values_todo)
-                            + len(self.values_done),
                         },
-                    }
+                        "name" : [adj.name for adj in self.adjustables],
+                        "expected_total_number_of_steps": len(self.values_todo) + len(self.values_done),
+                }
                 }
                 acq = ctr.acquire(
                     file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars

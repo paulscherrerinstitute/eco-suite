@@ -145,6 +145,17 @@ namespace.append_obj(
 )
 namespace.append_obj(
     "EventReceiver",
+    "SGE-CPCW-72-EVR0",
+    event_master,
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver72",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
     "SGE-CPCW-83-EVR0",
     event_master,
     n_pulsers=16,
@@ -376,10 +387,10 @@ class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(
-            SmaractStreamdevice, "SARES23-ESB6", name="rx_pump", is_setting=True
+            SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
         )
         self._append(
-            SmaractStreamdevice, "SARES23-ESB17", name="ry_pump", is_setting=True
+            SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
         )
 
 

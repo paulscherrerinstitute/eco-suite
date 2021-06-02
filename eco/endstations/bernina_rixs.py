@@ -28,7 +28,6 @@ class Analyzer(Assembly):
         pos=None,
         config=None,
         pvname=None,
-        det=None,
     ):
         super().__init__(name=name)
         self.name = name
@@ -37,7 +36,6 @@ class Analyzer(Assembly):
         self.hkl = hkl
         self.pvname = pvname
         self.config = config
-        self._det = det
         if pos:
             self._motor_cfg = {
                 f"MOT_{int(pos)}_1": "om",
@@ -75,10 +73,18 @@ class Analyzer(Assembly):
             # is_status=True,
             # )
             # print(f"Initialization of epics motor {name}: {pvname}:{pvmot} failed, replaced by dummy!")
+        # append the detector
+        self._append(
+            Detector,
+            name="det",
+            pvname=pvname,
+            is_setting=False,
+            is_status="recursive",
+        )
 
         self._append(
             AdjustableVirtual,
-            [self.om, self.t_hor, self._det.t_hor, self._det.t_ver, self._det.rot],
+            [self.om, self.t_hor, self.det.t_hor, self.det.t_ver, self.det.rot],
             self.energy_from_motor_pos,
             self.motor_pos_from_energy,
             is_setting=False,
@@ -88,12 +94,22 @@ class Analyzer(Assembly):
         )
         self._append(
             AdjustableVirtual,
-            [self.t_hor, self._det.t_hor, self._det.t_ver, self._det.rot],
+            [self.t_hor, self.det.t_hor, self.det.t_ver, self.det.rot],
             self.tth_from_motor_pos,
             self.motor_pos_from_tth,
             is_setting=False,
             is_status=True,
             name="tth",
+            unit="deg",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.om, self.t_ver],
+            self.delta_from_motor_pos,
+            self.motor_pos_from_delta,
+            is_setting=False,
+            is_status=True,
+            name="delta",
             unit="deg",
         )
 
@@ -169,11 +185,11 @@ class Analyzer(Assembly):
         cfg = self.config["rowland"]
         a0 = np.deg2rad(cfg["alpha_lin"])
         tb = np.deg2rad(180-tth)
-        t_hor, det_t_hor, det_t_ver = [t_hor.get_current_value(), det_t_hor.get_current_value(), det_t_ver.get_current_value()]
+        t_hor, det_t_hor, det_t_ver = [self.t_hor.get_current_value(), self.det.t_hor.get_current_value(), self.det.t_ver.get_current_value()]
         y_d_cur = np.sin(a0) * det_t_hor + np.cos(a0) * det_t_ver
         x_d_cur = np.cos(a0) * det_t_hor - np.sin(a0) * det_t_ver + t_hor
-        d_cryst_det = norm(np.array([x_d, y_d]))
-        x_d = np.cos(tb)*d_cryst_det
+        d_cryst_det = norm(np.array([x_d_cur, y_d_cur]))
+        x_d = np.cos(tb)*d_cryst_det-t_hor
         y_d = np.sin(tb)*d_cryst_det
         det_t_hor = np.sin(a0) * y_d + np.cos(a0) * x_d
         det_t_ver = np.cos(a0) * y_d - np.sin(a0) * x_d
@@ -193,6 +209,31 @@ class Analyzer(Assembly):
         d_cryst_det = norm(np.array([x_d, y_d]))
         tb = np.rad2deg(np.arcsin(y_d / d_cryst_det))
         return 180 - tb
+
+    def reset_motors_current_values_to_energy(self, energy):
+        targets  = self.motor_pos_from_energy(energy)
+        motors = [self.om, self.t_hor, self.det.t_hor, self.det.t_ver, self.det.rot]
+        for mot, tar in zip(motors, targets):
+            print(f'Resetting {mot.name} from {mot.get_current_value():.5} to {tar:.5}')
+            mot.reset_current_value_to(tar)
+
+    def motor_pos_from_delta(self, delta):
+        t_hor = self.t_hor.get_current_value()
+        t_ver = self.t_ver.get_current_value()
+        t_ver = -t_ver /2.5e6*(48.1-22.5)
+        om = self.om.get_current_value()
+        t_ver_target = np.arctan(np.deg2rad(delta))*t_hor
+        om = om+(t_ver_target-t_ver)*0.0557
+        # t_ver moves in microsteps and the direction is wrong, we fix both here in eco:
+        t_ver_target = -t_ver_target*2.5e6/(48.1-22.5)
+
+        return om, t_ver_target
+
+    def delta_from_motor_pos(self, om, t_ver):
+        # t_ver moves in microsteps and the direction is wrong, we fix both here in eco:
+        t_hor = self.t_hor.get_current_value()
+        t_ver = -t_ver/2.5e6*(48.1-22.5)
+        return np.rad2deg(np.arctan(t_ver/t_hor))
 
 
 class Detector(Assembly):
@@ -264,21 +305,13 @@ class RIXS(Assembly):
             },
         }
 
-        # append the detector
-        self._append(
-            Detector,
-            name="det",
-            pvname=pvname,
-            is_setting=False,
-            is_status="recursive",
-        )
+
         # append an analyzer
         self.append_analyzer(
             pos=2,
             analyzer="Si533",
             hkl=(8, 4, 4),
             name="ana2",
-            det=self.__dict__["det"],
             pvname=pvname,
         )
 
@@ -287,7 +320,6 @@ class RIXS(Assembly):
             analyzer="Si844",
             hkl=(8, 4, 4),
             name="ana2_laser",
-            det=self.__dict__["det"],
             pvname=pvname,
         )
 
@@ -316,7 +348,6 @@ class RIXS(Assembly):
             pos=pos,
             name=name,
             config=self.config,
-            det=det,
             pvname=pvname,
             is_setting=False,
             is_status="recursive",
