@@ -105,14 +105,19 @@ class GPS(Assembly):
             )
 
             self._append(
-                MotorRecord, pvname + ":MOT_MY_RYTH", name="alpha", is_setting=True
+                MotorRecord, pvname + ":MOT_NY_RY2TH", name="nu", is_setting=True
             )
+            self._append(
+                MotorRecord, pvname + ":MOT_NY_RY2TH", name="gamma", is_setting=False, is_status=False,
+                             )
+            self._append(
+                MotorRecord, pvname + ":MOT_MY_RYTH", name="mu", is_setting=True
+            )
+            self._append(
+                MotorRecord, pvname + ":MOT_MY_RYTH", name="alpha", is_setting=False, is_status=False,
+                             )
             self.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
 
-            ### motors XRD detector arm ###
-            self._append(
-                MotorRecord, pvname + ":MOT_NY_RY2TH", name="gamma", is_setting=True
-            )
 
         if "phi_table" in self.configuration:
             ### motors phi table ###

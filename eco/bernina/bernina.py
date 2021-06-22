@@ -229,7 +229,7 @@ namespace.append_obj(
     Id="SARES21-XRD",
     configuration=config_berninamesp["xrd_config"],
     diff_detector={"jf_id": "JF01T03V01"},
-    name="xrd_you",
+    name="xrd",
     lazy=True,
 )
 

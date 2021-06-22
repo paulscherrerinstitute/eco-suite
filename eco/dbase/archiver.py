@@ -16,7 +16,9 @@ class DataApi:
         if add_to_cnf:
             ecocnf.archiver = self
 
-    def get_data_time_range(self, channels=[], start=None, end=None, plot=False):
+    def get_data_time_range(
+        self, channels=[], start=None, end=None, plot=False, **kwargs
+    ):
         if not end:
             end = datetime.datetime.now()
             if isinstance(start, datetime.timedelta):
@@ -27,6 +29,9 @@ class DataApi:
             elif isinstance(start, Number):
                 start = datetime.timedelta(seconds=start)
                 start = end + start
+            else:
+                start = datetime.timedelta(**kwargs)
+                start = end + start
 
         data = get_data(channels, start=start, end=end, range_type="time")
         if plot:
@@ -36,10 +41,11 @@ class DataApi:
                 x = data.index[sel]
                 y = data[chan][sel]
                 ah.step(x, y, ".-", label=chan, where="post")
-                plt.xticks(rotation=30)
-                plt.legend()
-                plt.tight_layout()
-                plt.xlabel(data.index.name)
+            plt.xticks(rotation=30)
+            plt.legend()
+            plt.tight_layout()
+            plt.xlabel(data.index.name)
+            ah.figure.tight_layout()
         return data
 
     def get_data_pulse_id_range(self, channels=[], start=None, end=None, plot=False):
