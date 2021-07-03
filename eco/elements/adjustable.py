@@ -63,7 +63,7 @@ def spec_convenience(Adj):
                 and not (self._currentChange.status() == "done")
             ):
                 startvalue = self._currentChange.target
-            elif hasattr(self, "get_moveDone") and (self.get_moveDone == 1):
+            elif hasattr(self, "get_moveDone") and (self.get_change_done == 1):
                 startvalue = self.get_current_value(readback=True, *args, **kwargs)
             else:
                 startvalue = self.get_current_value(*args, **kwargs)
@@ -310,7 +310,7 @@ class AdjustableFS:
 
     def _write_value(self, value):
         with open(self.file_path, "w") as f:
-            dump({"value": value}, f)
+            dump({"value": value}, f, indent=4)
 
     def set_target_value(self, value, hold=False):
         return Changer(

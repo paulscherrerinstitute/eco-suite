@@ -58,7 +58,7 @@ class KbVer(Assembly):
         self._append(
             AdjustablePv,
             pvname + ":ASYMMETRY_SP",
-            pvreadbackname=pvname + ":CURV",
+            pvreadbackname=pvname + ":ASYMMETRY",
             accuracy=0.002,
             name="asym",
         )
@@ -146,7 +146,7 @@ class KbHor(Assembly):
         self._append(
             AdjustablePv,
             pvname + ":ASYMMETRY_SP",
-            pvreadbackname=pvname + ":CURV",
+            pvreadbackname=pvname + ":ASYMMETRY",
             accuracy=0.002,
             name="asym",
         )

@@ -47,10 +47,10 @@ class AdjustablePv:
             currval = self._pv.get()
         return currval
 
-    def get_moveDone(self):
+    def get_change_done(self):
         """Adjustable convention"""
         """ 0: moving 1: move done"""
-        movedone = 1
+        change_done = 1
         if self.accuracy is not None:
             if (
                 np.abs(
@@ -59,19 +59,19 @@ class AdjustablePv:
                 )
                 > self.accuracy
             ):
-                movedone = 0
-        return movedone
+                change_done = 0
+        return change_done
 
-    def move(self, value):
+    def change(self, value):
         self._pv.put(value)
         time.sleep(0.1)
-        while self.get_moveDone() == 0:
+        while self.get_change_done() == 0:
             time.sleep(0.1)
 
     def set_target_value(self, value, hold=False):
         """Adjustable convention"""
 
-        changer = lambda value: self.move(value)
+        changer = lambda value: self.change(value)
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
