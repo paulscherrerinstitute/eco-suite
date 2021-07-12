@@ -10,8 +10,22 @@ import colorama
 from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
 from eco.utilities.keypress import KeyPress
+from copy import deepcopy
+
+# for python 3.8
+# from typing import Protocol
+# runtime_checkable
 
 logger = logging.getLogger(__name__)
+
+
+# @runtime_checkable
+# class Adjustable(Protocol):
+#     def set_target_value(self):
+#         ...
+
+#     def get_current_value(self):
+#         ...
 
 
 class AdjustableError(Exception):
@@ -157,9 +171,13 @@ def update_changes(Adj):
 
     def update_change(self, value, elog=None):
         start = self.get_current_value()
-        print(
-            f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}"
-        )
+        try:
+            print(
+                f"Changing {self.name} from {start:1.5g} by {value-start:1.5g} to {value:1.5g}"
+            )
+        except TypeError:
+            print(f"Changing {self.name} from {start} to {value}")
+
         print(get_position_str(start, value, start), end="\r")
         try:
             if hasattr(self, "add_value_callback"):
@@ -253,7 +271,7 @@ class AdjustableMemory:
         self.current_value = value
 
     def get_current_value(self):
-        return self.current_value
+        return deepcopy(self.current_value)
 
     def set_target_value(self, value, hold=False):
         def changer(value):

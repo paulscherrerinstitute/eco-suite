@@ -6,6 +6,7 @@ from diffcalc.ub import calc as dccalc
 # from diffcalc.ub import calc calc import UBCalculation, Crystal
 from eco.elements import Assembly
 from eco.elements.adjustable import AdjustableMemory
+from typing import Tuple, Optional
 
 
 class CrystalNew(Assembly):
@@ -40,11 +41,21 @@ class DiffGeometryYou(Assembly):
         self._append(AdjustableMemory, {}, name="U_matrix")
         self._append(AdjustableMemory, {}, name="UB_matrix")
         self._append(AdjustableMemory, [], name="orientations")
+        self.diffractometer = diffractometer_you
+
+    def get_position_angles(self):
+        nu = self.diffractometer.nu.get_current_value()
+        mu = self.diffractometer.mu.get_current_value()
+        delta = self.diffractometer.delta.get_current_value()
+        eta = self.diffractometer.eta.get_current_value()
+        chi = self.diffractometer.chi.get_current_value()
+        phi = self.diffractometer.phi.get_current_value()
+        return mu, delta, nu, eta, chi, phi
 
     def set_unit_cell(
         self, name_crystal, a=None, b=None, c=None, alpha=None, beta=None, gamma=None
     ):
-        self.unit_cell(
+        self.unit_cell.set_target_value(
             {
                 "name": name_crystal,
                 "a": a,
@@ -55,6 +66,7 @@ class DiffGeometryYou(Assembly):
                 "gamma": gamma,
             }
         )
+        self.recalculate()
 
     def recalculate(self):
         self.ubcalc = dccalc.UBCalculation("you")
@@ -64,10 +76,11 @@ class DiffGeometryYou(Assembly):
             self.ubcalc.add_orientation(ori.pop("hkl"), ori.pop("xyz"), **ori)
 
     def add_reflection(
-        hkl: Tuple[float, float, float],
-        position: Position,
-        energy: float,
-        tag: Optional[str] = None,
+        self,
+        hkl,
+        position,
+        energy,
+        tag=None,
     ):
         """Add a reference reflection.
 
@@ -87,9 +100,9 @@ class DiffGeometryYou(Assembly):
         """
 
         self.ubcalc.add_reflection(hkl, position, energy, tag=tag)
-        self.reflections(
+        self.reflections.set_target_value(
             self.reflections()
-            + {"hkl": hkl, "position": position, "energy": energy, "tag": tag}
+            + [{"hkl": hkl, "position": position, "energy": energy, "tag": tag}]
         )
 
     def add_orientation(self, hkl, xyz, position=None, tag=None):
@@ -109,10 +122,11 @@ class DiffGeometryYou(Assembly):
         tag : str
             identifying tag for the reflection
         """
+        self.recalculate()
         self.ubcalc.add_orientation(hkl, xyz, position=None, tag=None)
-        self.orientations(
+        self.orientations.set_target_value(
             self.orientations()
-            + {"hkl": hkl, "xyz": xyz, "position": position, "tag": tag}
+            + [{"hkl": hkl, "xyz": xyz, "position": position, "tag": tag}]
         )
         self.recalculate()
 
