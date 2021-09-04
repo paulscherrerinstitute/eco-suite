@@ -34,7 +34,7 @@ class RefLaser_Aramis(Assembly):
         self.set(*args, **kwargs)
 
     def __str__(self):
-        status = self.get_status()
+        status = self.get_in_status()
         if status:
             return "Reflaser is In."
         elif status == False:
@@ -42,7 +42,7 @@ class RefLaser_Aramis(Assembly):
         elif status == None:
             return "Reflaser status not defined."
 
-    def get_status(self):
+    def get_in_status(self):
         v = self.mirror.get_current_value()
         if abs(v - self._inpos) < 0.2:
             isin = True

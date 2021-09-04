@@ -301,6 +301,12 @@ class GPS(Assembly):
             kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
 
         phi_k = phi - delta_angle
+
+        if bernina_kappa:
+            eta_k = eta_k - np.pi / 2
+            kappa = -kappa
+            phi_k = phi_k
+
         if True:
             def flip_ang(ang):
                 if 1 < abs(ang // np.pi):
@@ -311,10 +317,6 @@ class GPS(Assembly):
             eta_k = flip_ang(eta_k)
             kappa = flip_ang(kappa)
 
-        if bernina_kappa:
-            eta_k = eta_k - np.pi / 2
-            kappa = -kappa
-            phi_k = phi_k
         if degrees:
             eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
         return eta_k, kappa, phi_k
@@ -370,7 +372,7 @@ class DeltaTauCurrOff:
 
 
 class XRDYou(Assembly):
-    def __init__(self, name=None, Id=None, configuration=["base"], diff_detector=None):
+    def __init__(self, name=None, Id=None, configuration=["base"], diff_detector=None, invert_kappa_ellbow=True):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
@@ -379,6 +381,7 @@ class XRDYou(Assembly):
         pvname = Id
         super().__init__(name=name)
         self.configuration = configuration
+        self.invert_kappa_ellbow = invert_kappa_ellbow
 
         if "base" in self.configuration:
             ### motors base platform ###
@@ -668,18 +671,23 @@ class XRDYou(Assembly):
                     self.eta_kap.get_current_value(),
                     self.kappa.get_current_value(),
                     self.phi_kap.get_current_value(),
+                    bernina_kappa=True,
+                    invert_elbow=self.invert_kappa_ellbow,
                 )
 
             def set_youvar_value_to_current_kappa(value, varind):
                 vars = list(get_current_kappa2you())
                 vars[varind] = value
-                return self.calc_you2kappa(*vars)
+                return self.calc_you2kappa(*vars,
+                                           bernina_kappa=True,
+                                           invert_elbow=self.invert_kappa_ellbow,
+                                           )
 
             self._append(
                 AdjustableVirtual,
                 [self.eta_kap, self.kappa, self.phi_kap],
                 lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap, kappa, phi_kap
+                    eta_kap, kappa, phi_kap, invert_elbow=self.invert_kappa_ellbow,bernina_kappa=True,
                 )[0],
                 lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
                 name="eta",
@@ -689,7 +697,7 @@ class XRDYou(Assembly):
                 AdjustableVirtual,
                 [self.eta_kap, self.kappa, self.phi_kap],
                 lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap, kappa, phi_kap
+                    eta_kap, kappa, phi_kap, invert_elbow=self.invert_kappa_ellbow,bernina_kappa=True,
                 )[1],
                 lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
                 name="chi",
@@ -699,7 +707,7 @@ class XRDYou(Assembly):
                 AdjustableVirtual,
                 [self.eta_kap, self.kappa, self.phi_kap],
                 lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap, kappa, phi_kap
+                    eta_kap, kappa, phi_kap, invert_elbow=self.invert_kappa_ellbow,bernina_kappa=True,
                 )[2],
                 lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
                 name="phi",
@@ -743,31 +751,48 @@ class XRDYou(Assembly):
 
     # def calc_you2kappa(self, eta, chi, phi):
     #     return you2kappa(eta, chi, phi)
+#################
 
     def calc_you2kappa(
-        self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True
+            self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True, invert_elbow=False,
     ):
         """tool to convert from you definition angles to kappa angles, in
         particular the bernina kappa where the"""
         if bernina_kappa:
             eta = -eta
+            phi = -phi
         if degrees:
             eta, chi, phi, kappa_angle = np.deg2rad([eta, chi, phi, kappa_angle])
-        delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+        if invert_elbow:
+            delta_angle = np.pi - np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+        else:
+            delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
         eta_k = eta - delta_angle
-        kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+        if invert_elbow:
+            kappa = -2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+        else:
+            kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+
         phi_k = phi - delta_angle
 
         if bernina_kappa:
             eta_k = eta_k - np.pi / 2
             kappa = -kappa
-            phi_k = phi_k
+        if True:
+            def flip_ang(ang):
+                if 1 < abs(ang // np.pi):
+                    return ang - np.sign(ang) * np.pi * 2
+                else:
+                    return ang
+            phi_k = flip_ang(phi_k)
+            eta_k = flip_ang(eta_k)
+            kappa = flip_ang(kappa)
         if degrees:
             eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
         return eta_k, kappa, phi_k
 
     def calc_kappa2you(
-        self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True
+            self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True, invert_elbow=False,
     ):
         if degrees:
             eta_k, kappa, phi_k, kappa_angle = np.deg2rad(
@@ -776,8 +801,12 @@ class XRDYou(Assembly):
         if bernina_kappa:
             eta_k = eta_k + np.pi / 2
             kappa = -kappa
-            phi_k = phi_k
-        delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+            #phi_k = -phi_k
+        if invert_elbow:
+            kappa = -kappa
+            delta_angle = np.pi - np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+        else:
+            delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
         eta = eta_k - delta_angle
         chi = 2 * np.arcsin(np.sin(kappa / 2) * np.sin(kappa_angle))
         phi = phi_k - delta_angle
@@ -785,10 +814,55 @@ class XRDYou(Assembly):
             eta, chi, phi = np.rad2deg([eta, chi, phi])
         if bernina_kappa:
             eta = -eta
+            phi = -phi
         return eta, chi, phi
 
-    # def __repr__(self):
-    #     return self.get_adjustable_positions_str()
+#################
+    # def calc_you2kappa(
+    #     self, eta, chi, phi, kappa_angle=60, degrees=True, bernina_kappa=True
+    # ):
+    #     """tool to convert from you definition angles to kappa angles, in
+    #     particular the bernina kappa where the"""
+    #     if bernina_kappa:
+    #         eta = -eta
+    #     if degrees:
+    #         eta, chi, phi, kappa_angle = np.deg2rad([eta, chi, phi, kappa_angle])
+    #     delta_angle = np.arcsin(-np.tan(chi / 2) / np.tan(kappa_angle))
+    #     eta_k = eta - delta_angle
+    #     kappa = 2 * np.arcsin(np.sin(chi / 2) / np.sin(kappa_angle))
+    #     phi_k = phi - delta_angle
+    #
+    #     if bernina_kappa:
+    #         eta_k = eta_k - np.pi / 2
+    #         kappa = -kappa
+    #         phi_k = phi_k
+    #     if degrees:
+    #         eta_k, kappa, phi_k = np.rad2deg([eta_k, kappa, phi_k])
+    #     return eta_k, kappa, phi_k
+    #
+    # def calc_kappa2you(
+    #     self, eta_k, kappa, phi_k, kappa_angle=60, degrees=True, bernina_kappa=True
+    # ):
+    #     if degrees:
+    #         eta_k, kappa, phi_k, kappa_angle = np.deg2rad(
+    #             [eta_k, kappa, phi_k, kappa_angle]
+    #         )
+    #     if bernina_kappa:
+    #         eta_k = eta_k + np.pi / 2
+    #         kappa = -kappa
+    #         phi_k = phi_k
+    #     delta_angle = np.arctan(np.tan(kappa / 2) * np.cos(kappa_angle))
+    #     eta = eta_k - delta_angle
+    #     chi = 2 * np.arcsin(np.sin(kappa / 2) * np.sin(kappa_angle))
+    #     phi = phi_k - delta_angle
+    #     if degrees:
+    #         eta, chi, phi = np.rad2deg([eta, chi, phi])
+    #     if bernina_kappa:
+    #         eta = -eta
+    #     return eta, chi, phi
+    #
+    # # def __repr__(self):
+    # #     return self.get_adjustable_positions_str()
 
 
 class XRD(Assembly):

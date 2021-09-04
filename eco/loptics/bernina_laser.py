@@ -25,15 +25,7 @@ class LaserBernina(Assembly):
         self._append(
             DelayTime, self.delaystage_glob, name="delay_glob", is_setting=True
         )
-        self._append(
-            SmaractStreamdevice,
-            "SARES23-ESB7",
-            name="pump_2_delaystage",
-            is_setting=True,
-        )
-        self._append(
-            DelayTime, self.pump_2_delaystage, name="delay_pump2", is_setting=False, is_status=True, reset_current_value_to=False
-        )
+
         # Table 2, Bernina hutch
         self._append(
             MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True

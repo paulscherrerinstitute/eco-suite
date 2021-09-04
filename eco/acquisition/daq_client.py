@@ -174,6 +174,16 @@ class Daq:
             self._detectors_event_code
         ].frequency.get_current_value()
 
+    def get_JFs_available(self):
+        return requests.get(f'{self.broker_address}/get_allowed_detectors_list').json()['detectors']
+
+    def get_JFs_running(self):
+        return requests.get(f'{self.broker_address}/get_running_detectors_list').json()['detectors']
+
+    def power_on_JF(self,JF_channel):
+        par = {"detector_name":JF_channel}
+        return requests.post(f'{self.broker_address}/power_on_detector', json=par).json()
+
 
 def validate_response(resp):
     if resp.get("status") == "ok":

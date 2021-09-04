@@ -384,8 +384,45 @@ from ..devices_general.motors import SmaractStreamdevice
 
 # ad hoc incoupling device
 class Incoupling(Assembly):
+   def __init__(self, name=None):
+       super().__init__(name=name)
+       self._append(
+           SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
+       )
+       self._append(
+           SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
+       )
+
+
+#namespace.append_obj(
+#    Incoupling,
+#    lazy=True,
+#    name="incoupling",
+#)
+
+# ad hoc 2 pulse setup
+class Laser2pulse(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB1", name="pump_exp_delaystage", is_setting=True
+        )
+
+        self._append(
+            DelayTime, self.pump_exp_delaystage, name="pump_delay_exp", is_setting=False, is_status=True, reset_current_value_to=False
+        )
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB5", name="wp", is_setting=True
+        )
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB4", name="pump_2_delaystage", is_setting=True
+        )
+        self._append(
+            DelayTime, self.pump_2_delaystage, name="pump_2_delay", is_setting=False, is_status=True, reset_current_value_to=False
+        )
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB6", name="ratio", is_setting=True
+        )
         self._append(
             SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
         )
@@ -395,9 +432,9 @@ class Incoupling(Assembly):
 
 
 namespace.append_obj(
-    Incoupling,
+    Laser2pulse,
     lazy=True,
-    name="incoupling",
+    name="laser2pulse",
 )
 
 
