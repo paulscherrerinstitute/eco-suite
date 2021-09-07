@@ -51,3 +51,9 @@ class Xspect:
         append_object_to_object(
             self, AdjustablePv, "SARFE10-PSSS059:ENERGY", name="energy_center_setpoint"
         )
+        append_object_to_object(
+            self, AdjustablePv, "SARFE10-PSSS059:MOTOR_Z5", name="camera_z"
+        )
+
+
+
