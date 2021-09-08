@@ -32,6 +32,7 @@ class Scan:
         checker_sleep_time=0.2,
         return_at_end="question",
         run_table=None,
+        run_number=None,
         elog=None,
     ):
         if np.any([char in fina for char in inval_chars]):
@@ -66,6 +67,7 @@ class Scan:
         self.return_at_end = return_at_end
         self._checker_sleep_time = checker_sleep_time
         self._elog = elog
+        self.run_number = run_number
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
             tv = adj.get_current_value()
@@ -198,9 +200,11 @@ class Scan:
                         "scan_step_info": {
                             "step_number": self.nextStep + 1,
                         },
-                        "name" : [adj.name for adj in self.adjustables],
-                        "expected_total_number_of_steps": len(self.values_todo) + len(self.values_done),
-                }
+                        "name": [adj.name for adj in self.adjustables],
+                        "expected_total_number_of_steps": len(self.values_todo)
+                        + len(self.values_done),
+                    },
+                    "acquisition_run_number": self.run_number,
                 }
                 acq = ctr.acquire(
                     file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars
@@ -350,6 +354,7 @@ class Scans:
             scan_directories=self._scan_directories,
             run_table=self._run_table,
             elog=self._elog,
+            return_at_end=return_at_end,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -371,6 +376,7 @@ class Scans:
         positions = list(range(N_repetitions))
         values = [[tp] for tp in positions]
         file_name = self.filename_generator.get_nextrun_filename(file_name)
+        run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
         s = Scan(
@@ -385,6 +391,8 @@ class Scans:
             scan_directories=self._scan_directories,
             run_table=self._run_table,
             elog=self._elog,
+            run_number=run_number,
+            return_at_end=return_at_end,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -406,6 +414,7 @@ class Scans:
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         values = [[tp] for tp in positions]
         file_name = self.filename_generator.get_nextrun_filename(file_name)
+        run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
         s = Scan(
@@ -421,6 +430,7 @@ class Scans:
             return_at_end=return_at_end,
             run_table=self._run_table,
             elog=self._elog,
+            run_number=run_number,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -443,6 +453,7 @@ class Scans:
         current = adjustable.get_current_value()
         values = [[tp + current] for tp in positions]
         file_name = self.filename_generator.get_nextrun_filename(file_name)
+        run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
         s = Scan(
@@ -458,6 +469,7 @@ class Scans:
             return_at_end=return_at_end,
             run_table=self._run_table,
             elog=self._elog,
+            run_number=run_number,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -483,6 +495,7 @@ class Scans:
         positions = posList
         values = [[tp] for tp in positions]
         file_name = self.filename_generator.get_nextrun_filename(file_name)
+        run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
         s = Scan(
@@ -498,6 +511,7 @@ class Scans:
             return_at_end=return_at_end,
             run_table=self._run_table,
             elog=self._elog,
+            run_number=run_number,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -560,6 +574,13 @@ class RunFilenameGenerator:
             int(tf.name.split(self.prefix)[1].split(self.separator)[0]) for tf in fl
         ]
         return runnos
+
+    def get_nextrun_number(self):
+        runnos = self.get_existing_runnumbers()
+        if runnos:
+            return max(runnos) + 1
+        else:
+            return 0
 
     def get_nextrun_filename(self, name):
         runnos = self.get_existing_runnumbers()

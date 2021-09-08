@@ -175,14 +175,32 @@ class Daq:
         ].frequency.get_current_value()
 
     def get_JFs_available(self):
-        return requests.get(f'{self.broker_address}/get_allowed_detectors_list').json()['detectors']
+        return requests.get(f"{self.broker_address}/get_allowed_detectors_list").json()[
+            "detectors"
+        ]
 
     def get_JFs_running(self):
-        return requests.get(f'{self.broker_address}/get_running_detectors_list').json()['detectors']
+        return requests.get(f"{self.broker_address}/get_running_detectors_list").json()[
+            "detectors"
+        ]
 
-    def power_on_JF(self,JF_channel):
-        par = {"detector_name":JF_channel}
-        return requests.post(f'{self.broker_address}/power_on_detector', json=par).json()
+    def power_on_JF(self, JF_channel):
+        par = {"detector_name": JF_channel}
+        return requests.post(
+            f"{self.broker_address}/power_on_detector", json=par
+        ).json()
+
+    def take_pedestal(self, JF_list=None):
+        if not JF_list:
+            JF_list = self.get_JFs_running()
+        parameters = {
+            "pgroup": self.pgroup,
+            "rate_multiplicator": 1,
+            "detectors": {tJF: {} for tJF in JF_list},
+        }
+        return requests.post(
+            f"{self.broker_address}/take_pedestal", json=parameters
+        ).json()
 
 
 def validate_response(resp):
