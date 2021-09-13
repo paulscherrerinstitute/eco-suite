@@ -339,6 +339,14 @@ class AdjustableFS:
             stopper=None,
         )
 
+#class AdjustableObject(Assembly):
+#    def __init__(self,adjustable_dict):
+#        pass
+
+#    def get_object(self):
+#        pass
+
+
 
 @default_representation
 @spec_convenience

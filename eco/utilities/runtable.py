@@ -148,8 +148,8 @@ class Run_Table:
         will return the same columns for the saved positions 1 and 2
         """
         self.load()
-        if len(keys) > 0:
-            keys += " name"
+        #if len(keys) > 0:
+        #    keys += " name"
         query_df = self._query_by_keys(keys, df)
         if not values is None:
             query_df = query_df.query(values)
@@ -394,31 +394,28 @@ class Run_Table:
         return df1.subtract(df2)
 
     def _get_all_adjustables(self, device, pp_name=None):
+        exclude =  "alias PV pv Record adjustable __ stage Delay Motor".split()
         print(device.name)
         if pp_name is not None:
-            name = "_".join([pp_name, device.name])
+            name = ".".join([pp_name, device.name])
         else:
             name = device.name
-        self.adjustables[name] = {
-            key: value
-            for key, value in device.__dict__.items()
-            if hasattr(value, "get_current_value")
-        }
-        self.adjustables[name].update(
-            {
-                key + "_offset": PvRecord(pvsetname=value.pvname + ".OFF")
-                for key, value in device.__dict__.items()
-                if hasattr(value, "_motor")
-            }
-        )
-        self.units[name] = {
-            key: caget(value.pvname + ".EGU")
-            for key, value in device.__dict__.items()
-            if hasattr(value, "_motor")
-        }
+        self.adjustables[name] = {}
+        for key in device.__dict__.keys():
+            exclude = "__ alias namespace daq scan evr _motor".split(' ')
+            if ~np.any([s in key for s in exclude]):
+                print(key)
+                value = device.__dict__[key]
+                if np.all(
+                    [
+                        "eco" in str(type(value)),
+                        ~np.any([s in str(type(value)) for s in exclude]),
+                        hasattr(value, "get_current_value")
+                    ]):
+                    self.adjustables[name][key] = value
 
         if hasattr(device, "get_current_value"):
-            self.adjustables[name]["_".join([name, "self"])] = device
+            self.adjustables[name][".".join([name, "self"])] = device
 
     def _parse_child_instances(self, parent_class, pp_name=None):
         # try:
@@ -427,11 +424,12 @@ class Run_Table:
         #    print(f'Getting adjustables from {parent_class.name} failed')
         #    pass
         if pp_name is not None:
-            pp_name = "_".join([pp_name, parent_class.name])
+            pp_name = ".".join([pp_name, parent_class.name])
         else:
             pp_name = parent_class.name
 
         exclude = "alias PV pv Record adjustable __ stage Delay".split()
+        exclude = "alias __ epics.motor.Motor".split(' ')
         sub_classes = np.array(
             [
                 s_class
@@ -455,6 +453,7 @@ class Run_Table:
         if parent == None:
             parent = self.devices
         exclude = "__ alias namespace config _mod evr daq scan".split()
+        exclude = "__ alias namespace daq scan evr _motor".split(' ')
         for key in parent.__dict__.keys():
             try:
                 if ~np.any([s in key for s in exclude]):
@@ -465,8 +464,9 @@ class Run_Table:
                         ]
                     ):
                         self._parse_child_instances(parent.__dict__[key])
-            except:
-                print(f"failed to pase {key} in runtable")
+            except Exception as e:
+                print(e)
+                #print(f"failed to parse {key} in runtable")
         for name, value in self._channels_ca.get_current_value().items():
             self.adjustables[f"env_{name}"] = {
                 key: PvRecord(pvsetname=ch) for key, ch in value.items()

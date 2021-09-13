@@ -1,7 +1,7 @@
 from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
 from ..elements.adjustable import Changer
-from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString,AdjustablePv
+from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
 from ..epics.detector import DetectorPvData
 from ..aliases import Alias
 from datetime import datetime
@@ -12,14 +12,23 @@ class SwissFel(Assembly):
         super().__init__(name=name)
         self._append(
             DetectorPvData,
+            "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
+            name="aramis_pulse_energy",
+            is_status=True,
+        )
+        self._append(
+            DetectorPvData,
+            "SARUN03-UIND030:FELPHOTENE",
+            name="aramis_photon_energy",
+            is_status=True,
+        )
+        self._append(
+            DetectorPvData,
             "SWISSFEL-STATUS:Bunch-1-Appl-Freq-RB",
             name="aramis_rep_rate",
             is_status=True,
         )
         self._append(EcolEnergy_new, name="ecol_energy", is_status=True)
-        self._append(
-            MessageBoard, name="message", is_setting=True, is_status="recursive"
-        )
         self._append(
             DetectorPvData,
             "SAR-EVPO-010:DEACTIVATE",
@@ -84,15 +93,43 @@ class SwissFel(Assembly):
             is_status=True,
             is_setting=False,
         )
+        self._append(
+            MessageBoard, name="message", is_setting=True, is_status="recursive"
+        )
 
 
 class MessageBoard(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(Message, "SF-OP:CR-MSG", name="control_room", is_setting=True)
-        self._append(Message, "SF-OP:ESA-MSG", name="alvra", is_setting=True)
-        self._append(Message, "SF-OP:ESB-MSG", name="bernina", is_setting=True)
-        self._append(Message, "SF-OP:ESM-MSG", name="maloja", is_setting=True)
+        self._append(
+            AdjustablePvEnum,
+            "SF-OP:ESA-MSG:STATUS",
+            name="alvra_status",
+            is_setting=True,
+        )
+        self._append(Message, "SF-OP:ESA-MSG", name="alvra_message", is_setting=True)
+        self._append(
+            AdjustablePvEnum,
+            "SF-OP:ESB-MSG:STATUS",
+            name="bernina_status",
+            is_setting=True,
+        )
+        self._append(Message, "SF-OP:ESB-MSG", name="bernina_message", is_setting=True)
+        self._append(
+            AdjustablePvEnum,
+            "SF-OP:ESE-MSG:STATUS",
+            name="maloja_status",
+            is_setting=True,
+        )
+        self._append(Message, "SF-OP:ESE-MSG", name="maloja_message", is_setting=True)
+        self._append(
+            AdjustablePvEnum,
+            "SF-OP:ESE-MSG:STATUS",
+            name="furka_status",
+            is_setting=True,
+        )
+        self._append(Message, "SF-OP:ESF-MSG", name="furka_message", is_setting=True)
 
 
 class Message:

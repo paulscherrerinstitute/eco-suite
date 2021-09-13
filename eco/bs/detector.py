@@ -11,17 +11,18 @@ from eco.epics.adjustable import AdjustablePvString
 from eco.epics import get_from_archive
 
 @get_from_archive
-class DetectorPvData(Assembly):
-    def __init__(self, pvname, name=None):
+class DetectorBsData(Assembly):
+    def __init__(self, bschannel, name=None):
         super().__init__(name=name)
         self.status_indicators_collection.append(self)
-        self.pvname = pvname
-        self._pv = PV(pvname)
+        self.bschannel = bschannel
+        if epics_pv_available & epics_pv_availabe=='same':
+            self._pv = PV(pvname)
+            self._append(
+                AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+            )
         self.name = name
-        self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
-        self._append(
-            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
-        )
+        self.alias = Alias(self.name, channel=self.pvname, channeltype="BS")
 
     def get_current_value(self):
         return self._pv.get()
