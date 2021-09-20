@@ -81,8 +81,18 @@ class Run_Table:
         self.adjustables = {}
         self.bad_adjustables = {}
         self.units = {}
+
+        ###parsing options
+        self._parse_exclude_keys =  "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan evr _motor Alias".split(' ')
+        self._parse_exclude_class_types = "__ alias namespace daq scan evr _motor Alias AdjustablePv".split(' ')
+        self._adj_exclude_class_types = "__ alias namespace daq scan evr _motor Alias".split(' ')
+
         pd.options.display.max_rows = 999
+        pd.options.display.max_columns = 999
+        pd.set_option('display.float_format', lambda x: '%.5g' % x)
         self.load()
+
+
 
     def _load_pgroup_gspread_keys(self, pgroup):
         if os.path.exists(self.gspread_key_file_name + ".pkl"):
@@ -181,9 +191,9 @@ class Run_Table:
         self.alias_df.to_pickle(self.alias_file_name + ".pkl")
         self.adj_df.to_pickle(self.adj_file_name + ".pkl")
         self.unit_df.to_pickle(self.unit_file_name + ".pkl")
-        self.alias_df.to_excel(self.alias_file_name + ".xlsx")
-        self.adj_df.to_excel(self.adj_file_name + ".xlsx")
-        self.unit_df.to_excel(self.unit_file_name + ".xlsx")
+        #self.alias_df.to_excel(self.alias_file_name + ".xlsx")
+        #self.adj_df.to_excel(self.adj_file_name + ".xlsx")
+        #self.unit_df.to_excel(self.unit_file_name + ".xlsx")
 
     def load(self):
         if os.path.exists(self.alias_file_name + ".pkl"):
@@ -207,7 +217,7 @@ class Run_Table:
     ):
         self.load()
         if len(self.adjustables) == 0:
-            self._parse_parent()
+            self._parse_parent_fewerparents()
         dat = self._get_values()
         dat.update(metadata)
         dat["time"] = datetime.now()
@@ -239,7 +249,7 @@ class Run_Table:
     def append_pos(self, name=""):
         self.load()
         if len(self.adjustables) == 0:
-            self._parse_parent()
+            self._parse_parent_fewerparents()
         try:
             posno = (
                 int(self.alias_df.query('type == "pos"').index[-1].split("p")[1]) + 1
@@ -394,28 +404,103 @@ class Run_Table:
         return df1.subtract(df2)
 
     def _get_all_adjustables(self, device, pp_name=None):
-        exclude =  "alias PV pv Record adjustable __ stage Delay Motor".split()
-        print(device.name)
         if pp_name is not None:
             name = ".".join([pp_name, device.name])
         else:
             name = device.name
         self.adjustables[name] = {}
         for key in device.__dict__.keys():
-            exclude = "__ alias namespace daq scan evr _motor".split(' ')
-            if ~np.any([s in key for s in exclude]):
-                print(key)
+            if ~np.any([s in key for s in self._parse_exclude_keys]):
                 value = device.__dict__[key]
                 if np.all(
                     [
-                        "eco" in str(type(value)),
-                        ~np.any([s in str(type(value)) for s in exclude]),
+                        ~np.any([s in str(type(value)) for s in self._adj_exclude_class_types]),
                         hasattr(value, "get_current_value")
                     ]):
                     self.adjustables[name][key] = value
 
         if hasattr(device, "get_current_value"):
             self.adjustables[name][".".join([name, "self"])] = device
+
+    def _get_all_adjustables_fewerparents(self, device, adj_prefix=None, parent_name=None):
+        if adj_prefix is not None:
+            name = ".".join([adj_prefix, device.name])
+        else:
+            name = device.name
+        for key in device.__dict__.keys():
+            if ~np.any([s in key for s in self._parse_exclude_keys]):
+                value = device.__dict__[key]
+                if np.all(
+                    [
+                        ~np.any([s in str(type(value)) for s in self._adj_exclude_class_types]),
+                        hasattr(value, "get_current_value")
+                    ]):
+                    if parent_name == device.name:
+                        self.adjustables[parent_name][key] = value
+                    else:
+                        self.adjustables[parent_name][".".join([name,key])] = value
+
+        if parent_name == device.name:
+            if hasattr(device, "get_current_value"):
+                self.adjustables[parent_name]["self"] = device
+
+    def _parse_child_instances_fewerparents(self, parent_class, adj_prefix=None, parent_name=None):
+        if parent_name is None:
+            parent_name = parent_class.name
+        self._get_all_adjustables_fewerparents(parent_class, adj_prefix, parent_name)
+        if parent_name is not parent_class.name:
+            if adj_prefix is not None:
+                adj_prefix = ".".join([adj_prefix, parent_class.name])
+            else:
+                adj_prefix = parent_class.name
+
+
+
+        sub_classes = []
+        for key in parent_class.__dict__.keys():
+            if ~np.any([s in key for s in self._parse_exclude_keys]):
+                s_class = parent_class.__dict__[key]
+                if np.all(
+                    [
+                        hasattr(s_class, "__dict__"),
+                        hasattr(s_class, "name"),
+                        s_class.__hash__ is not None,
+                        "eco" in str(type(s_class)),
+                        ~np.any([s in str(type(s_class)) for s in self._parse_exclude_class_types]),
+                    ]
+                ):
+                   sub_classes.append(s_class)
+        return set(sub_classes).union(
+            [s for c in sub_classes for s in self._parse_child_instances_fewerparents(c, adj_prefix, parent_name)]
+        )
+
+    def _parse_parent_fewerparents(self, parent=None):
+        if parent == None:
+            parent = self.devices
+        for key in parent.__dict__.keys():
+            try:
+                if ~np.any([s in key for s in self._parse_exclude_keys]):
+                    s_class = parent.__dict__[key]
+                    if np.all(
+                        [
+                            hasattr(s_class, "__dict__"),
+                            hasattr(s_class, "name"),
+                            s_class.__hash__ is not None,
+                            "eco" in str(type(s_class)),
+                            ~np.any([s in str(type(s_class)) for s in self._parse_exclude_class_types]),
+                        ]
+                    ):
+                        self.adjustables[s_class.name] = {}
+                        self._parse_child_instances_fewerparents(s_class)
+            except Exception as e:
+                print(e)
+                print(key)
+                #print(f"failed to parse {key} in runtable")
+        for name, value in self._channels_ca.get_current_value().items():
+            self.adjustables[f"env_{name}"] = {
+                key: PvRecord(pvsetname=ch) for key, ch in value.items()
+            }
+        self._check_adjustables()
 
     def _parse_child_instances(self, parent_class, pp_name=None):
         # try:
@@ -428,23 +513,20 @@ class Run_Table:
         else:
             pp_name = parent_class.name
 
-        exclude = "alias PV pv Record adjustable __ stage Delay".split()
-        exclude = "alias __ epics.motor.Motor".split(' ')
-        sub_classes = np.array(
-            [
-                s_class
-                for s_class in parent_class.__dict__.values()
+        sub_classes = []
+        for key in parent_class.__dict__.keys():
+            if ~np.any([s in key for s in self._parse_exclude_keys]):
+                s_class = parent_class.__dict__[key]
                 if np.all(
                     [
                         hasattr(s_class, "__dict__"),
                         hasattr(s_class, "name"),
                         s_class.__hash__ is not None,
                         "eco" in str(type(s_class)),
-                        ~np.any([s in str(type(s_class)) for s in exclude]),
+                        ~np.any([s in str(type(s_class)) for s in self._parse_exclude_class_types]),
                     ]
-                )
-            ]
-        )
+                ):
+                   sub_classes.append(s_class)
         return set(sub_classes).union(
             [s for c in sub_classes for s in self._parse_child_instances(c, pp_name)]
         )
@@ -452,20 +534,23 @@ class Run_Table:
     def _parse_parent(self, parent=None):
         if parent == None:
             parent = self.devices
-        exclude = "__ alias namespace config _mod evr daq scan".split()
-        exclude = "__ alias namespace daq scan evr _motor".split(' ')
         for key in parent.__dict__.keys():
             try:
-                if ~np.any([s in key for s in exclude]):
+                if ~np.any([s in key for s in self._parse_exclude_keys]):
+                    s_class = parent.__dict__[key]
                     if np.all(
                         [
-                            hasattr(parent.__dict__[key], "__dict__"),
-                            hasattr(parent.__dict__[key], "name"),
+                            hasattr(s_class, "__dict__"),
+                            hasattr(s_class, "name"),
+                            s_class.__hash__ is not None,
+                            "eco" in str(type(s_class)),
+                            ~np.any([s in str(type(s_class)) for s in self._parse_exclude_class_types]),
                         ]
                     ):
                         self._parse_child_instances(parent.__dict__[key])
             except Exception as e:
                 print(e)
+                print(key)
                 #print(f"failed to parse {key} in runtable")
         for name, value in self._channels_ca.get_current_value().items():
             self.adjustables[f"env_{name}"] = {

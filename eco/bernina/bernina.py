@@ -132,61 +132,61 @@ namespace.append_obj(
     module_name="eco.timing.event_timing_new_new",
     lazy=True,
 )
-namespace.append_obj(
-    "EventReceiver",
-    "SLAAR21-LTIM01-EVR0",
-    event_master,
-    n_pulsers=24,
-    n_output_front=7,
-    n_output_rear=16,
-    name="evr_hutch_laser",
-    module_name="eco.timing.event_timing_new_new",
-    lazy=True,
-)
-namespace.append_obj(
-    "EventReceiver",
-    "SGE-CPCW-72-EVR0",
-    event_master,
-    n_pulsers=16,
-    n_output_front=16,
-    n_output_rear=0,
-    name="evr_camserver72",
-    module_name="eco.timing.event_timing_new_new",
-    lazy=True,
-)
-namespace.append_obj(
-    "EventReceiver",
-    "SGE-CPCW-83-EVR0",
-    event_master,
-    n_pulsers=16,
-    n_output_front=16,
-    n_output_rear=0,
-    name="evr_camserver83",
-    module_name="eco.timing.event_timing_new_new",
-    lazy=True,
-)
-namespace.append_obj(
-    "EventReceiver",
-    "SGE-CPCW-84-EVR0",
-    event_master,
-    n_pulsers=16,
-    n_output_front=16,
-    n_output_rear=0,
-    name="evr_camserver84",
-    module_name="eco.timing.event_timing_new_new",
-    lazy=True,
-)
-namespace.append_obj(
-    "EventReceiver",
-    "SGE-CPCW-85-EVR0",
-    event_master,
-    n_pulsers=16,
-    n_output_front=16,
-    n_output_rear=0,
-    name="evr_camserver85",
-    module_name="eco.timing.event_timing_new_new",
-    lazy=True,
-)
+# namespace.append_obj(
+#    "EventReceiver",
+#    "SLAAR21-LTIM01-EVR0",
+#    event_master,
+#    n_pulsers=24,
+#    n_output_front=7,
+#    n_output_rear=16,
+#    name="evr_hutch_laser",
+#    module_name="eco.timing.event_timing_new_new",
+#    lazy=True,
+# )
+# namespace.append_obj(
+#    "EventReceiver",
+#    "SGE-CPCW-72-EVR0",
+#    event_master,
+#    n_pulsers=16,
+#    n_output_front=16,
+#    n_output_rear=0,
+#    name="evr_camserver72",
+#    module_name="eco.timing.event_timing_new_new",
+#    lazy=True,
+# )
+# namespace.append_obj(
+#    "EventReceiver",
+#    "SGE-CPCW-83-EVR0",
+#    event_master,
+#    n_pulsers=16,
+#    n_output_front=16,
+#    n_output_rear=0,
+#    name="evr_camserver83",
+#    module_name="eco.timing.event_timing_new_new",
+#    lazy=True,
+# )
+# namespace.append_obj(
+#    "EventReceiver",
+#    "SGE-CPCW-84-EVR0",
+#    event_master,
+#    n_pulsers=16,
+#    n_output_front=16,
+#    n_output_rear=0,
+#    name="evr_camserver84",
+#    module_name="eco.timing.event_timing_new_new",
+#    lazy=True,
+# )
+# namespace.append_obj(
+#    "EventReceiver",
+#    "SGE-CPCW-85-EVR0",
+#    event_master,
+#    n_pulsers=16,
+#    n_output_front=16,
+#    n_output_rear=0,
+#    name="evr_camserver85",
+#    module_name="eco.timing.event_timing_new_new",
+#    lazy=True,
+# )
 
 namespace.append_obj(
     "AxisPTZ",
@@ -213,15 +213,15 @@ namespace.append_obj(
     "WagoAnalogInputs",
     "SARES20-CWAG-GPS01",
     lazy=True,
-    name='analog_inputs',
-    module_name='eco.devices_general.wago'
+    name="analog_inputs",
+    module_name="eco.devices_general.wago",
 )
 namespace.append_obj(
     "GudeStrip",
     "SARES20-CPPS-01",
     lazy=True,
-    name='powerstrip_mobile',
-    module_name='eco.devices_general.powersockets'
+    name="powerstrip_mobile",
+    module_name="eco.devices_general.powersockets",
 )
 namespace.append_obj(
     "XRDYou",
@@ -384,45 +384,61 @@ from ..devices_general.motors import SmaractStreamdevice
 
 # ad hoc incoupling device
 class Incoupling(Assembly):
-   def __init__(self, name=None):
-       super().__init__(name=name)
-       self._append(
-           SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
-       )
-       self._append(
-           SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
-       )
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
+        )
+        self._append(
+            SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
+        )
 
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    Incoupling,
 #    lazy=True,
 #    name="incoupling",
-#)
+# )
+
+from ..devices_general.motors import MotorRecord
+from ..loptics.bernina_laser import DelayTime
+from ..microscopes import MicroscopeMotorRecord
 
 # ad hoc 2 pulse setup
 class Laser2pulse(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(
-            SmaractStreamdevice, "SARES23-ESB1", name="pump_exp_delaystage", is_setting=True
+            SmaractStreamdevice,
+            "SARES23-ESB1",
+            name="pump_exp_delaystage",
+            is_setting=True,
         )
 
         self._append(
-            DelayTime, self.pump_exp_delaystage, name="pump_delay_exp", is_setting=False, is_status=True, reset_current_value_to=False
+            DelayTime,
+            self.pump_exp_delaystage,
+            name="pump_delay_exp",
+            is_setting=False,
+            is_status=True,
+            reset_current_value_to=False,
+        )
+        self._append(SmaractStreamdevice, "SARES23-ESB5", name="wp", is_setting=True)
+        self._append(
+            SmaractStreamdevice,
+            "SARES23-ESB4",
+            name="pump_2_delaystage",
+            is_setting=True,
         )
         self._append(
-            SmaractStreamdevice, "SARES23-ESB5", name="wp", is_setting=True
+            DelayTime,
+            self.pump_2_delaystage,
+            name="pump_2_delay",
+            is_setting=False,
+            is_status=True,
+            reset_current_value_to=False,
         )
-        self._append(
-            SmaractStreamdevice, "SARES23-ESB4", name="pump_2_delaystage", is_setting=True
-        )
-        self._append(
-            DelayTime, self.pump_2_delaystage, name="pump_2_delay", is_setting=False, is_status=True, reset_current_value_to=False
-        )
-        self._append(
-            SmaractStreamdevice, "SARES23-ESB6", name="ratio", is_setting=True
-        )
+        self._append(SmaractStreamdevice, "SARES23-ESB6", name="ratio", is_setting=True)
         self._append(
             SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
         )
@@ -438,9 +454,19 @@ namespace.append_obj(
 )
 
 
-from ..devices_general.motors import MotorRecord
-from ..loptics.bernina_laser import DelayTime
-from ..microscopes import MicroscopeMotorRecord
+# from eco.xoptics import dcm_pathlength_compensation as dpc
+namespace.append_obj(
+    "MonoTimecompensation",
+    #laser2pulse.pump_delay_exp,
+    las.delay_glob,
+    mono,
+    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_timing.json",
+    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_invert_delay.json",
+    lazy=True,
+    name="mono_time_corrected",
+    module_name="eco.xoptics.dcm_pathlength_compensation",
+)
+
 
 # ad hoc interferometric timetool
 class TTinterferometrid(Assembly):

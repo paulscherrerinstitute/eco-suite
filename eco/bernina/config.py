@@ -725,22 +725,22 @@ components = [
             "usd_table": Component("usd_table"),
         },
     },
-    {
-        "args": ["SARES23-"],
-        "name": "slit_kb",
-        "z_und": 141,
-        "desc": "Upstream diagnostics slits",
-        "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {"right": "LIC4", "left": "LIC3", "up": "LIC2", "down": "LIC1"},
-    },
-    {
-        "args": ["SARES23-"],
-        "name": "slit_cleanup",
-        "z_und": 141,
-        "desc": "Upstream diagnostics slits",
-        "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
-        "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC8", "down": "LIC5"},
-    },
+    # {
+    #     "args": ["SARES23-"],
+    #     "name": "slit_kb",
+    #     "z_und": 141,
+    #     "desc": "Upstream diagnostics slits",
+    #     "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
+    #     "kwargs": {"right": "LIC4", "left": "LIC3", "up": "LIC2", "down": "LIC1"},
+    # },
+    #{
+    #    "args": ["SARES23-"],
+    #    "name": "slit_cleanup",
+    #    "z_und": 141,
+    #    "desc": "Upstream diagnostics slits",
+    #    "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
+    #    "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC8", "down": "LIC5"},
+    #},
     {
         "args": [
             [
