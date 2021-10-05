@@ -11,6 +11,7 @@ from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
 from eco.utilities.keypress import KeyPress
 from copy import deepcopy
+from functools import partial
 
 # for python 3.8
 # from typing import Protocol
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 class AdjustableError(Exception):
     pass
 
+
+#>>> wrapper decorators >>>
 
 def tweak_option(Obj):
     def tweak(self, interval, *args, **kwargs):
@@ -228,11 +231,31 @@ def update_changes(Adj):
     Adj.update_change_relative = update_change_relative
 
     return Adj
+   
+def value_property(Adj,wait_for_change=True,value_name='_value'):
+    if wait_for_change:
+        def tmp(Adj,value):
+            Adj.set_target_value(value,hold=False).wait()
 
+        setattr(
+            Adj,
+            value_name,
+            property(
+                Adj.get_current_value,
+                tmp,
+            )
+        )
+    return Adj
+
+
+
+
+#<<< wrapper decorators <<<
 
 @spec_convenience
 @update_changes
 @tweak_option
+@value_property
 class DummyAdjustable:
     def __init__(self, name="no_adjustable"):
         self.name = name
@@ -264,6 +287,7 @@ def _keywordChecker(kw_key_list_tups):
 @spec_convenience
 @update_changes
 @tweak_option
+@value_property
 class AdjustableMemory:
     def __init__(self, value=0, name="adjustable_memory"):
         self.name = name
@@ -311,6 +335,7 @@ def default_representation(Obj):
 
 @default_representation
 @spec_convenience
+@value_property
 class AdjustableFS:
     def __init__(self, file_path, name=None, default_value=None):
         self.file_path = Path(file_path)
@@ -351,6 +376,7 @@ class AdjustableFS:
 @default_representation
 @spec_convenience
 @tweak_option
+@value_property
 class AdjustableVirtual:
     def __init__(
         self,
@@ -431,6 +457,7 @@ class AdjustableVirtual:
 @default_representation
 @spec_convenience
 @tweak_option
+@value_property
 class AdjustableGetSet:
     def __init__(self, foo_get, foo_set, precision=0, check_interval=None, name=None):
         """assumes a waiting setterin function, in case no check_interval parameter is supplied"""

@@ -9,6 +9,7 @@ from ..elements.adjustable import (
     spec_convenience,
     ValueInRange,
     update_changes,
+    value_property
 )
 from ..epics import get_from_archive
 from ..utilities.keypress import KeyPress
@@ -63,6 +64,7 @@ def _keywordChecker(kw_key_list_tups):
 @spec_convenience
 @update_changes
 @get_from_archive
+@value_property
 class SmaractStreamdevice(Assembly):
     def __init__(
         self,
@@ -381,6 +383,7 @@ class SmaractStreamdevice(Assembly):
 @spec_convenience
 @update_changes
 @get_from_archive
+@value_property
 class MotorRecord(Assembly):
     def __init__(
         self,

@@ -5,7 +5,7 @@ import numpy as np
 from epics import PV
 
 from eco.aliases import Alias
-from eco.elements.adjustable import tweak_option, spec_convenience
+from eco.elements.adjustable import tweak_option, spec_convenience, value_property
 from . import get_from_archive
 from eco.devices_general.utilities import Changer
 from ..elements import Assembly
@@ -13,6 +13,7 @@ from ..elements import Assembly
 @spec_convenience
 @get_from_archive
 @tweak_option
+@value_property
 class AdjustablePv:
     def __init__(
         self, pvsetname, pvreadbackname=None, accuracy=None, name=None, elog=None
@@ -100,6 +101,7 @@ class AdjustablePv:
 
 @spec_convenience
 @get_from_archive
+@value_property
 class AdjustablePvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname

@@ -6,7 +6,7 @@ from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import spec_convenience, default_representation, tweak_option
-from ..epics.adjustable import AdjustablePvEnum
+from ..epics.adjustable import AdjustablePvEnum,AdjustablePvString
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
@@ -237,6 +237,7 @@ class EcolEnergy_new(Assembly):
         self._pv_val = PV(pv_val)
         self._pv_rb = PV(pv_rb)
         self._pv_diff = PV(pv_diff)
+        self._append(AdjustablePvString,pv_rb+'.EGU',name='unit',is_setting=False,is_status=False)
 
     def change_energy_to(self, value, tolerance=0.5):
         self.enable_control(0)

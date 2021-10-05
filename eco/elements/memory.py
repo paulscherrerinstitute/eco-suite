@@ -85,19 +85,37 @@ class Memory:
         tmp(stat_now)
         self._memories(mem)
 
-    def get_memory(self, input_obj=None, index=None, key=None):
+    def get_memory(self, input_obj=None, index=None, key=None, filter_existing=True):
         if input_obj:
             if type(input_obj) is dict:
-                return input_obj
+                mem_full = input_obj
             else:
                 tmp = AdjustableFS(Path(input_obj))
-                return tmp()
+                mem_full = tmp()
         else:
             self.setup_path()
             if not (index is None):
                 key = list(self._memories().keys())[index]
             tmp = AdjustableFS(self.dir / Path(key + ".json"))
-            return tmp()
+            mem_full = tmp()
+        if filter_existing:
+            mem_filt = {}
+            for tkey,tval in mem_full.items():
+                if tkey in ['settings','status_indicators']:
+                    mem_filt[tkey]={}
+                    for ttkey,ttval in tval.items():
+                        try:
+                            name2obj(self.obj_parent,ttkey)
+                            mem_filt[tkey][ttkey]=ttval
+                        except KeyError:
+                            ...
+                else:
+                    mem_filt[tkey]=tval
+
+            return mem_filt
+        else:
+            return mem_all
+
 
     def recall(
         self,

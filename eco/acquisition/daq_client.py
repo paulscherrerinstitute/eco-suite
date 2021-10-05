@@ -19,6 +19,7 @@ class Daq:
         channels_BS=None,
         channels_BSCAM=None,
         channels_CA=None,
+        config_JFs=None,
         name=None,
     ):
         self.channels = {}
@@ -30,6 +31,10 @@ class Daq:
             self.channels["channels_BSCAM"] = channels_BSCAM
         if channels_CA:
             self.channels["channels_CA"] = channels_CA
+        if config_JFs:
+            self.config_JFs = config_JFs
+        else:
+            self.config_JFs = {}
         self.broker_address = broker_address
         self.timeout = timeout
         self.pgroup = pgroup
@@ -141,7 +146,7 @@ class Daq:
             parameters["channels_list"] = channels_BS
             files_extensions.append("BSDATA")
         if channels_JF:
-            parameters["detectors"] = {tn: {} for tn in channels_JF}
+            parameters["detectors"] = {tn: self.config_JFs().get(tn,{}) for tn in channels_JF}
             for ch in channels_JF:
                 files_extensions.append(ch)
         if channels_BSCAM:

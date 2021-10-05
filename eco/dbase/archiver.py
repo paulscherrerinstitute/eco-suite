@@ -6,13 +6,14 @@ from numbers import Number
 from matplotlib import pyplot as plt
 import numpy as np
 from .. import ecocnf
+from ..elements import Assembly
 
 
-class DataApi:
+class DataApi(Assembly):
     def __init__(self, pv_pulse_id=None, name=None, add_to_cnf=True):
-        self.name = name
+        super().__init__(name=name)
         if pv_pulse_id:
-            self.pulse_id = DetectorPvDataStream(pv_pulse_id, name="pulse_id")
+            self._append(DetectorPvDataStream, pv_pulse_id, name="pulse_id")
         if add_to_cnf:
             ecocnf.archiver = self
 

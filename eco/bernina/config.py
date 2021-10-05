@@ -53,18 +53,11 @@ components = [
         "lazy": True,
     },
     {
-        "type": "eco.elements.memory:set_global_memory_dir",
-        "args": ["~/eco/memory"],
-        "name": "path_memory",
-        "kwargs": {},
-        "lazy": False,
-    },
-    {
         "type": "eco.utilities.config:append_to_path",
         "args": config["path_exp"],
         "name": "path_exp",
         "kwargs": {},
-        "lazy": False,
+        "lazy": True,
     },
     {
         "name": "elog",
@@ -405,18 +398,6 @@ components = [
     # "type": "eco.xoptics.slits:SlitBlades_JJ",
     # # "type": "eco.xoptics.slits:SlitBladesJJ_old",
     # },
-    {
-        "args": [],
-        "name": "gps",
-        "z_und": 142,
-        "desc": "General purpose station",
-        "type": "eco.endstations.bernina_diffractometers:GPS",
-        "kwargs": {
-            "pvname": "SARES22-GPS",
-            "configuration": config["gps_config"],
-            "fina_hex_angle_offset": "~/eco/reference_values/hex_pi_angle_offset.json",
-        },
-    },
     # {
     #     "args": [],
     #     "name": "gps_old",
@@ -555,6 +536,7 @@ components = [
         "kwargs": {
             "file_name": "/sf/bernina/config/channel_lists/default_channel_list_epics"
         },
+        "lazy": True,
     },
     {
         "args": [],
@@ -566,6 +548,7 @@ components = [
             "channel_list": Component("epics_channel_list"),
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/",
         },
+        "lazy": True,
     },
     # {
     #     "args": [],
@@ -618,6 +601,7 @@ components = [
             "scan_directories": True,
             "run_table": Component("run_table"),
         },
+        "lazy": True,
     },
     # {
     #     "args": [],
@@ -633,41 +617,6 @@ components = [
     #     "type": "eco.timing.event_timing:EventReceiver",
     #     "kwargs": {},
     # },
-    {
-        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_JF"],
-        "name": "channels_JF",
-        "desc": "jf detector channels",
-        "type": "eco.elements.adjustable:AdjustableFS",
-        "kwargs": {},
-    },
-    {
-        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_BS"],
-        "name": "channels_BS",
-        "desc": "jf detector channels",
-        "type": "eco.elements.adjustable:AdjustableFS",
-        "kwargs": {},
-    },
-    {
-        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_BSCAM"],
-        "name": "channels_BSCAM",
-        "desc": "jf detector channels",
-        "type": "eco.elements.adjustable:AdjustableFS",
-        "kwargs": {},
-    },
-    {
-        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_CA"],
-        "name": "channels_CA",
-        "desc": "jf detector channels",
-        "type": "eco.elements.adjustable:AdjustableFS",
-        "kwargs": {},
-    },
-    {
-        "args": ["/photonics/home/gac-bernina/eco/configuration/channels_CA_epicsdaq"],
-        "name": "channels_CA_epicsdaq",
-        "desc": "jf detector channels",
-        "type": "eco.elements.adjustable:AdjustableFS",
-        "kwargs": {},
-    },
     {
         "args": [],
         "name": "default_channel_list",
@@ -733,14 +682,14 @@ components = [
     #     "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
     #     "kwargs": {"right": "LIC4", "left": "LIC3", "up": "LIC2", "down": "LIC1"},
     # },
-    #{
+    # {
     #    "args": ["SARES23-"],
     #    "name": "slit_cleanup",
     #    "z_und": 141,
     #    "desc": "Upstream diagnostics slits",
     #    "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
     #    "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC8", "down": "LIC5"},
-    #},
+    # },
     {
         "args": [
             [
