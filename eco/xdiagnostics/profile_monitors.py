@@ -72,6 +72,13 @@ class Target_xyz(Assembly):
             name="z",
             is_setting=True,
         )
+        # temporarily remove the offsets for the limit switch homed stages
+        ix = self.settings_collection._list.index(self.x.offset)
+        self.settings_collection._list.pop(ix)
+        ix = self.settings_collection._list.index(self.y.offset)
+        self.settings_collection._list.pop(ix)
+        ix = self.settings_collection._list.index(self.z.offset)
+        self.settings_collection._list.pop(ix)
 
 
 class ProfKbBernina(Assembly):
@@ -83,7 +90,7 @@ class ProfKbBernina(Assembly):
         pvname_mirror="SARES23-LIC9",
         mirror_in=15,
         mirror_out=-5,
-        pvname_zoom="SARES20-MF1:MOT_8",
+        pvname_zoom="SARES20-MF2:MOT_4",
         pvname_camera="SARES20-PROF141-M1",
         name=None,
     ):

@@ -101,22 +101,22 @@ class Assembly:
             base = self
         settings = {}
         status_indicators = {}
-        for ts in self.settings:
-            if (not (ts is self)) and hasattr(ts, "get_status"):
-                tstat = ts.get_status(base=base)
-                settings.update(tstat["settings"])
-                status_indicators.update(tstat["status_indicators"])
-            else:
-                settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
-        for ts in self.status_indicators:
-            if (not (ts is self)) and hasattr(ts, "get_status"):
-                tstat = ts.get_status(base=base)
-                status_indicators.update(tstat["settings"])
-                status_indicators.update(tstat["status_indicators"])
-            else:
-                status_indicators[
-                    ts.alias.get_full_name(base=base)
-                ] = ts.get_current_value()
+        for ts in self.settings_collection.get_list():
+            # if (not (ts is self)) and hasattr(ts, "get_status"):
+            #     tstat = ts.get_status(base=base)
+            #     settings.update(tstat["settings"])
+            #     status_indicators.update(tstat["status_indicators"])
+            # else:
+            settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
+        for ts in self.status_indicators_collection.get_list():
+            # if (not (ts is self)) and hasattr(ts, "get_status"):
+            #     tstat = ts.get_status(base=base)
+            #     status_indicators.update(tstat["settings"])
+            #     status_indicators.update(tstat["status_indicators"])
+            # else:
+            status_indicators[
+                ts.alias.get_full_name(base=base)
+            ] = ts.get_current_value()
         return {"settings": settings, "status_indicators": status_indicators}
 
     def status(self, get_string=False):

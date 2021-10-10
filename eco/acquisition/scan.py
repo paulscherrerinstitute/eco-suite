@@ -244,8 +244,14 @@ class Scan:
         self.scan_info["scan_step_info"].append(step_info)
 
     def writeScanInfo(self):
-        with open(self.scan_info_filename, "w") as f:
-            json.dump(self.scan_info, f, indent=4, sort_keys=True)
+        if self.scan_info_filename.exists():
+            with open(self.scan_info_filename, "w") as f:
+                json.dump(self.scan_info, f, indent=4, sort_keys=True)
+        else:
+            with open(self.scan_info_filename, "r+") as f:
+                f.seek(0)
+                json.dump(self.scan_info, f, indent=4, sort_keys=True)
+                f.truncate()
 
     def scanAll(self, step_info=None):
         done = False

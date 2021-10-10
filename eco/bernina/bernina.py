@@ -398,13 +398,13 @@ namespace.append_obj(
     pvname_zoom="SARES20-MF1:MOT_16",
 )
 
-# namespace.append_obj(
-# "CameraBasler",
-# "SARES20-CAMS142-C2",
-# lazy=True,
-# name="samplecam_sideview",
-# module_name="eco.devices_general.cameras_swissfel",
-# )
+namespace.append_obj(
+"CameraBasler",
+"SARES20-CAMS142-C2",
+lazy=True,
+name="samplecam_sideview",
+module_name="eco.devices_general.cameras_swissfel",
+)
 
 namespace.append_obj(
     "CameraBasler",
@@ -599,7 +599,7 @@ except:
 
 #### pgroup specific appending, might be temporary at this location ####
 
-namespace.append_obj('Xom',module_name='xom',name='xom')
+namespace.append_obj('Xom',module_name='xom',name='xom',lazy=True)
 
 
 
