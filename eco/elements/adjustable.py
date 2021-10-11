@@ -11,6 +11,8 @@ from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
 from eco.utilities.keypress import KeyPress
 from copy import deepcopy
+from enum import IntEnum
+
 from functools import partial
 
 # for python 3.8
@@ -487,6 +489,46 @@ class AdjustableGetSet:
 
     def get_current_value(self):
         return self._get()
+
+
+@spec_convenience
+class AdjustableEnum:
+    def __init__(self, adjustable_instance, enum_strs_ordered, name=None):
+        self.name = name
+        self._base = adjustable_instance
+        self.name = name
+        self.enum_strs = enum_strs_ordered
+        self.value_enum = IntEnum(
+            name, {tstr: n for n, tstr in enumerate(self.enum_strs)}
+        )
+        self.alias = Alias(name)
+
+    def validate(self, value):
+        if type(value) is str:
+            return self.value_enum.__members__[value]
+        else:
+            return self.value_enum(value)
+
+    def get_current_value(self):
+        return self.validate(self._base.get_current_value())
+
+    def set_target_value(self, value, hold=False):
+        value = self.validate(value)
+        return self._base.set_target_value(value,hold=hold)
+
+    def __repr__(self):
+        name = self.name
+        cv = self.get_current_value()
+        s = f"{name} (enum) at value: {cv}" + "\n"
+        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
+        # s+= '_'*40+'\n'
+        for name, val in self.value_enum.__members__.items():
+            if val == cv:
+                sel = "x"
+            else:
+                sel = " "
+            s += "{:>4}   {}  {}\n".format(val, sel, name)
+        return s
 
 
 class Tweak:

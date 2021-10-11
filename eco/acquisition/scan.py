@@ -244,7 +244,7 @@ class Scan:
         self.scan_info["scan_step_info"].append(step_info)
 
     def writeScanInfo(self):
-        if self.scan_info_filename.exists():
+        if not Path(self.scan_info_filename).exists():
             with open(self.scan_info_filename, "w") as f:
                 json.dump(self.scan_info, f, indent=4, sort_keys=True)
         else:

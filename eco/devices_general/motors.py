@@ -435,9 +435,12 @@ class MotorRecord(Assembly):
             AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=False
         )
         self._append(
+            AdjustablePvEnum, self.pvname + ".SPMG", name="mode", is_setting=False
+        )
+        self._append(
             DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False
         )
-        self._append(MotorRecordFlags, self._flags, name="flags")
+        self._append(MotorRecordFlags, self._flags, name="flags", is_status='recursive')
         self._append(
             AdjustablePvEnum,
             self.pvname + ".SPMG",
