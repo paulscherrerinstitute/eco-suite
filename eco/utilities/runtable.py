@@ -84,7 +84,7 @@ class Run_Table:
 
         ###parsing options
         self._parse_exclude_keys =  "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan evr _motor Alias".split(' ')
-        self._parse_exclude_class_types = "__ alias namespace daq scan evr _motor Alias AdjustablePv".split(' ')
+        self._parse_exclude_class_types = "__ alias namespace daq scan evr _motor Alias AdjustablePv AxisPTZ".split(' ')
         self._adj_exclude_class_types = "__ alias namespace daq scan evr _motor Alias".split(' ')
 
         pd.options.display.max_rows = 999
@@ -383,11 +383,30 @@ class Run_Table:
             self._orderlist(list(self.adj_df.columns), key_order, orderlist=devs)
         ]
 
-    def _get_adjustable_values(self):
-        dat = {
-            devname: {adjname: adj.get_current_value() for adjname, adj in dev.items()}
-            for devname, dev in self.good_adjustables.items()
-        }
+    def _get_adjustable_values(self, silent = True):
+        """
+        This function gets the values of all adjustables in good adjustables and raises an error, when an adjustable is not connected anymore
+        """
+        if silent:
+            dat = {}
+            for devname, dev in self.good_adjustables.items():
+                dat[devname] = {}
+                for adjname, adj in dev.items():
+                    bad_adjs = []
+                    try:
+                        dat[devname][adjname] = adj.get_current_value() 
+                    except:
+                        print(f'run_table: getting value of {devname}.{adjname} failed, removing it from list of good adjustables')
+                        bad_adjs.append(adjname)
+                for ba in bad_adjs:
+                    if not devname in self.bad_adjustables.keys():
+                        self.bad_adjustables[devname] = {}
+                    self.bad_adjustables[devname][adjname] = self.good_adjustables[devname].pop(adjname)
+        else:
+            dat = {
+                devname: {adjname: adj.get_current_value() for adjname, adj in dev.items()}
+                for devname, dev in self.good_adjustables.items()
+            }
         return dat
 
     def subtract_df(self, devs, ind1, ind2):

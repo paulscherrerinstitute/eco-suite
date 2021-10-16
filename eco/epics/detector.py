@@ -7,9 +7,12 @@ from epics import PV
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
 from eco.elements import Assembly
+from eco.elements.detector import call_convenience, value_property
 from eco.epics.adjustable import AdjustablePvString
 from eco.epics import get_from_archive
 
+# @call_convenience
+# @value_property
 @get_from_archive
 class DetectorPvData(Assembly):
     def __init__(self, pvname, name=None):
@@ -30,6 +33,8 @@ class DetectorPvData(Assembly):
         return self.get_current_value()
 
 
+# @call_convenience
+# @value_property
 @get_from_archive
 class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
@@ -72,6 +77,8 @@ class DetectorPvEnum(Assembly):
         return self.get_current_value()
 
 
+# @call_convenience
+@value_property
 class DetectorPvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
@@ -99,6 +106,8 @@ class DetectorPvString:
             return self.get_current_value()
 
 
+# @call_convenience
+# @value_property
 @get_from_archive
 class DetectorPvDataStream(Assembly):
     def __init__(self, pvname, name=None):

@@ -750,19 +750,45 @@ class MForceSettings(Assembly):
             self.pv_motor + ".MRES",
             name="motor_resolution",
             is_setting=True,
+            is_status=False,
         )
         self._append(
             AdjustablePv,
             self.pv_motor + ".ERES",
             name="encoder_resolution",
             is_setting=True,
+            is_status=False,
         )
         self._append(
             AdjustablePv,
             self.pv_channel + "_set",
-            name="channel_config",
-            is_setting=True,
+            name="set_controller_command",
+            is_setting=False,
+            is_status=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pv_channel + "_get",
+            name="get_controller_command",
+            is_setting=False,
+            is_status=False,
         )
         self._append(
             AdjustablePv, self.pv_channel + "_RC", name="run_current", is_setting=True
         )
+
+    def set_limit_switch_config(self,invert_switches=False, invert_polarities=False):
+        if not invert_switches:
+            switch1 = 2
+            switch2 = 3
+        else:
+            switch1 = 3
+            switch2 = 2
+        if not invert_polarities:
+            polarity = 0
+        else:
+            polarity = 1
+        self.set_controller_command(f'IS=1,{switch1},{polarity}')
+        self.set_controller_command(f'IS=2,{switch2},{polarity}')
+    
+

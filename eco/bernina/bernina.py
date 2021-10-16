@@ -3,6 +3,9 @@ from .config import config as config_berninamesp
 from ..utilities.config import Namespace
 from ..aliases import NamespaceCollection
 
+from ..utilities.path_alias import PathAlias
+
+path_aliases = PathAlias()
 
 namespace = Namespace(
     name="bernina", root_module=__name__, alias_namespace=NamespaceCollection().bernina
@@ -13,10 +16,10 @@ namespace.alias_namespace.data = []
 
 
 namespace.append_obj(
-    'set_global_memory_dir',
+    "set_global_memory_dir",
     "~/eco/memory",
-    module_name='eco.elements.memory',
-    name='path_memory',
+    module_name="eco.elements.memory",
+    name="path_memory",
 )
 
 namespace.append_obj(
@@ -24,6 +27,14 @@ namespace.append_obj(
     name="archiver",
     module_name="eco.dbase.archiver",
     pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
+    add_to_cnf=True,
+    lazy=False,
+)
+
+namespace.append_obj(
+    "BerninaEnv",
+    name='env_log',
+    module_name="eco.fel.atmosphere",
     lazy=True,
 )
 
@@ -252,42 +263,42 @@ namespace.append_obj(
 
 ### channelsfor daq ###
 namespace.append_obj(
-    'AdjustableFS',
+    "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/channels_JF",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_JF",
 )
 namespace.append_obj(
-    'AdjustableFS',
+    "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/config_JFs",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="config_JFs",
 )
 namespace.append_obj(
-    'AdjustableFS',
+    "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/channels_BS",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_BS",
 )
 namespace.append_obj(
-    'AdjustableFS',
+    "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/channels_BSCAM",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_BSCAM",
 )
 namespace.append_obj(
-    'AdjustableFS',
+    "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/channels_CA",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_CA",
 )
 namespace.append_obj(
-    'AdjustableFS',
+    "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/channels_CA_epicsdaq",
     module_name="eco.elements.adjustable",
     lazy=True,
@@ -399,11 +410,11 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
-"CameraBasler",
-"SARES20-CAMS142-C2",
-lazy=True,
-name="samplecam_sideview",
-module_name="eco.devices_general.cameras_swissfel",
+    "CameraBasler",
+    "SARES20-CAMS142-C2",
+    lazy=True,
+    name="samplecam_sideview",
+    module_name="eco.devices_general.cameras_swissfel",
 )
 
 namespace.append_obj(
@@ -583,15 +594,15 @@ namespace.append_obj(
 )
 
 
-
 ############## experiment specific #############
 
 # try to append pgroup folder to path
 try:
     import sys
     from pathlib import Path
+
     pgroup_eco_path = Path(f'/sf/bernina/data/{config_berninamesp["pgroup"]}/res/eco')
-    pgroup_eco_path.mkdir(mode=775,exist_ok=True)
+    pgroup_eco_path.mkdir(mode=775, exist_ok=True)
     sys.path.append(pgroup_eco_path.as_posix())
 except:
     print("Did not succed to append an eco folder in current prgoup")
@@ -599,8 +610,7 @@ except:
 
 #### pgroup specific appending, might be temporary at this location ####
 
-namespace.append_obj('Xom',module_name='xom',name='xom',lazy=True)
-
+namespace.append_obj("Xom", module_name="xom", name="xom", lazy=True)
 
 
 ############## maybe to be recycled ###################
