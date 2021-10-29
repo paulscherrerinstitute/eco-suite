@@ -2,6 +2,34 @@ from time import sleep
 import sys, select
 from threading import Thread
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from pathlib import Path
+from typing import Any
+
+
+class TimeoutPath:
+    executor = ThreadPoolExecutor(max_workers=1)
+
+    def __init__(self, *args, timeout: float = 1, **kwargs):
+        self._path = Path(*args, **kwargs)
+        self.timeout = timeout
+
+    def exists(self) -> bool:
+        future = TimeoutPath.executor.submit(self._path.exists)
+        try:
+            return future.result(self.timeout)
+        except TimeoutError:
+            return False
+
+    def get_path(self) -> Path:
+        return self._path
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._path, name)
+
+    def __str__(self) -> str:
+        return str(self._path)
+
 
 class PropagatingThread(Thread):
     def run(self):

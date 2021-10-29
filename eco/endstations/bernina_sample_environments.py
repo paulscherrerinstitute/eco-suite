@@ -84,13 +84,13 @@ class High_field_thz_chamber:
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
-            mot = self.__dict__[name]._device
-            mot.put("NAME", config["pv_descr"])
-            mot.put("STAGE_TYPE", config["type"])
-            mot.put("SET_SENSOR_TYPE", config["sensor"])
-            mot.put("CL_MAX_FREQ", config["speed"])
+            mot = self.__dict__[name]
+            mot.caqtdm_name(config["pv_descr"])
+            mot.stage_type(config["type"])
+            mot.sensor_type(config["sensor"])
+            mot.speed(config["speed"])
             sleep(0.5)
-            mot.put("CALIBRATE.PROC", 1)
+            mot.calibrate_sensor(1)
 
     def home_smaract_stages(self, stages=None):
         if stages == None:
@@ -99,7 +99,7 @@ class High_field_thz_chamber:
         print(self.__repr__())
         for name in stages:
             config = self.motor_configuration[name]
-            mot = self.__dict__[name]._device
+            mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
                     name, config["home_direction"]
@@ -107,25 +107,25 @@ class High_field_thz_chamber:
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.put("FRM_BACK.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_backward(1)
+                while mot.status_channel().value == 7:
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if mot.is_homed() == 0:
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
-                    mot.put("FRM_FORW.PROC", 1)
+                    mot.home_forward(1)
             elif config["home_direction"] == "forward":
-                mot.put("FRM_FORW.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_forward(1)
+                while mot.status_channel().value == 7:
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if mot.is_homed() == 0:
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.put("FRM_BACK.PROC", 1)
+                    mot.home_backward(1)
 
     def get_adjustable_positions_str(self):
         ostr = "*****THz chamber motor positions******\n"
@@ -148,64 +148,96 @@ class Organic_crystal_breadboard:
 
         self.motor_configuration = {
             "mirr2_x": {
-                "id": "-ESB1",
-                "pv_descr": "Motor3:1 THz mirror x ",
+                "id": "-LIC17",
+                "pv_descr": "Motor8:2 THz mirror x ",
                 "type": 1,
-                "sensor": 0,
+                "sensor": 13,
                 "speed": 250,
                 "home_direction": "back",
             },
             "mirr2_rz": {
-                "id": "-ESB2",
-                "pv_descr": "Motor3:2 THz mirror rz ",
-                "type": 2,
-                "sensor": 1,
+                "id": "-LIC18",
+                "pv_descr": "Motor8:3 THz mirror rz ",
+                "type": 1,
+                "sensor": 13,
                 "speed": 250,
                 "home_direction": "back",
             },
             "mirr2_ry": {
-                "id": "-ESB3",
-                "pv_descr": "Motor3:3 THz mirror ry ",
+                "id": "-ESB1",
+                "pv_descr": "Motor3:1 THz mirror ry ",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
-                "home_direction": "back",
+                "home_direction": "forward",
             },
             "mirr2_z": {
-                "id": "-ESB4",
-                "pv_descr": "Motor4:1 THz mirror z",
+                "id": "-LIC16",
+                "pv_descr": "Motor8:1 THz mirror z",
                 "type": 1,
-                "sensor": 0,
+                "sensor": 13,
                 "speed": 250,
                 "home_direction": "back",
             },
             "par2_x": {
-                "id": "-ESB5",
-                "pv_descr": "Motor4:2 THz parabola2 x",
+                "id": "-ESB3",
+                "pv_descr": "Motor3:3 THz parabola2 x",
                 "type": 1,
                 "sensor": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "mirr1_x": {
-                "id": "-ESB7",
-                "pv_descr": "Motor5:1 near IR mirror x",
+            "thz_delay": {
+                "id": "-ESB18",
+                "pv_descr": "Motor8:3 NIR delay stage",
                 "type": 1,
                 "sensor": 0,
-                "speed": 250,
+                "speed": 100,
                 "home_direction": "back",
             },
-            "mirr1_ry": {
-                "id": "-ESB8",
-                "pv_descr": "Motor5:2 near IR mirror ry",
+            "nir_mirr1_ry": {
+                "id": "-ESB17",
+                "pv_descr": "Motor8:2 near IR mirror 1 ry",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "mirr1_rx": {
+            "nir_mirr1_rx": {
+                "id": "-ESB16",
+                "pv_descr": "Motor8:1 near IR mirror 1 rx",
+                "type": 2,
+                "sensor": 1,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "nir_mirr2_ry": {
                 "id": "-ESB9",
-                "pv_descr": "Motor5:3 near IR mirror rx",
+                "pv_descr": "Motor5:3 near IR mirror 2 ry",
+                "type": 2,
+                "sensor": 1,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "nir_mirr2_rx": {
+                "id": "-ESB4",
+                "pv_descr": "Motor4:1 near IR mirror 2 rx",
+                "type": 1,
+                "sensor": 13,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "crystal_stg": {
+                "id": "-ESB2",
+                "pv_descr": "Motor3:2 crystal rotation",
+                "type": 2,
+                "sensor": 1,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "wp_stg": {
+                "id": "-ESB7",
+                "pv_descr": "Motor5:1 waveplate rotation",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
@@ -217,13 +249,10 @@ class Organic_crystal_breadboard:
         for name, config in self.motor_configuration.items():
             addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
 
-        addSmarActRecordToSelf(self, Id="SARES23-LIC7", name="polarizer_stg")
-        addSmarActRecordToSelf(self, Id="SARES23-LIC14", name="crystal_stg")
-        addSmarActRecordToSelf(self, Id="SARES23-LIC13", name="wp_stg")
 
-        self.polarizer = AdjustableVirtual(
-            [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
-        )
+        #self.polarizer = AdjustableVirtual(
+        #    [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
+        #)
         self.crystal = AdjustableVirtual(
             [self.crystal_stg], self.xtal_wp_get, self.xtal_wp_set, name="crystal"
         )
@@ -257,13 +286,13 @@ class Organic_crystal_breadboard:
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
-            mot = self.__dict__[name]._device
-            mot.put("NAME", config["pv_descr"])
-            mot.put("STAGE_TYPE", config["type"])
-            mot.put("SET_SENSOR_TYPE", config["sensor"])
-            mot.put("CL_MAX_FREQ", config["speed"])
+            mot = self.__dict__[name]
+            mot.caqtdm_name(config["pv_descr"])
+            mot.stage_type(config["type"])
+            mot.sensor_type(config["sensor"])
+            mot.speed(config["speed"])
             sleep(0.5)
-            mot.put("CALIBRATE.PROC", 1)
+            mot.calibrate_sensor(1)
 
     def home_smaract_stages(self, stages=None):
         if stages == None:
@@ -272,7 +301,7 @@ class Organic_crystal_breadboard:
         print(self.__repr__())
         for name in stages:
             config = self.motor_configuration[name]
-            mot = self.__dict__[name]._device
+            mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
                     name, config["home_direction"]
@@ -280,25 +309,25 @@ class Organic_crystal_breadboard:
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.put("FRM_BACK.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_backward(1)
+                while mot.status_channel().value == 7:
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if mot.is_homed() == 0:
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
-                    mot.put("FRM_FORW.PROC", 1)
+                    mot.home_forward(1)
             elif config["home_direction"] == "forward":
-                mot.put("FRM_FORW.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_forward(1)
+                while mot.status_channel().value == 7:
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if mot.is_homed() == 0:
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.put("FRM_BACK.PROC", 1)
+                    mot.home_backward(1)
 
     def get_adjustable_positions_str(self):
         ostr = "*****Organic Crystal Breadboard positions******\n"
@@ -360,13 +389,48 @@ class LiNbO3_crystal_breadboard:
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
-            mot = self.__dict__[name]._device
-            mot.put("NAME", config["pv_descr"])
-            mot.put("STAGE_TYPE", config["type"])
-            mot.put("SET_SENSOR_TYPE", config["sensor"])
-            mot.put("CL_MAX_FREQ", config["speed"])
+            mot = self.__dict__[name]
+            mot.caqtdm_name(config["pv_descr"])
+            mot.stage_type(config["type"])
+            mot.sensor_type(config["sensor"])
+            mot.speed(config["speed"])
             sleep(0.5)
-            mot.put("CALIBRATE.PROC", 1)
+            mot.calibrate_sensor(1)
+
+    def home_smaract_stages(self, stages=None):
+        if stages == None:
+            stages = self.motor_configuration.keys()
+        print("#### Positions before homing ####")
+        print(self.__repr__())
+        for name in stages:
+            config = self.motor_configuration[name]
+            mot = self.__dict__[name]
+            print(
+                "#### Homing {} in {} direction ####".format(
+                    name, config["home_direction"]
+                )
+            )
+            sleep(1)
+            if config["home_direction"] == "back":
+                mot.home_backward(1)
+                while mot.status_channel().value == 7:
+                    sleep(1)
+                if mot.is_homed() == 0:
+                    print(
+                        "Homing failed, try homing {} in forward direction".format(name)
+                    )
+                    mot.home_forward(1)
+            elif config["home_direction"] == "forward":
+                mot.home_forward(1)
+                while mot.status_channel().value == 7:
+                    sleep(1)
+                if mot.is_homed() == 0:
+                    print(
+                        "Homing failed, try homing {} in backward direction".format(
+                            name
+                        )
+                    )
+                    mot.home_backward(1)
 
     def get_adjustable_positions_str(self):
         ostr = "*****LiNbO3 crystal breadboard positions******\n"

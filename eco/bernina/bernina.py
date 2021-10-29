@@ -33,7 +33,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "BerninaEnv",
-    name='env_log',
+    name="env_log",
     module_name="eco.fel.atmosphere",
     lazy=True,
 )
@@ -44,6 +44,7 @@ namespace.append_obj(
 
 for tk in components:
     namespace.append_obj_from_config(tk, lazy=True)
+
 
 # Adding stuff the "new" way
 
@@ -307,43 +308,43 @@ namespace.append_obj(
 
 
 ### draft new epics daq ###
-namespace.append_obj(
-    "EpicsDaq",
-    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
-    channels_list=channels_CA_epicsdaq,
-    name="daq_epics_local",
-    module_name="eco.acquisition.epics_data",
-    lazy=True,
-)
+# namespace.append_obj(
+#    "EpicsDaq",
+#    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
+#    channels_list=channels_CA_epicsdaq,
+#    name="daq_epics_local",
+#    module_name="eco.acquisition.epics_data",
+#    lazy=True,
+# )
 ### old epics daq ###
-namespace.append_obj(
-    "ChannelList",
-    name="epics_channel_list",
-    file_name="/sf/bernina/config/channel_lists/default_channel_list_epics",
-    module_name="eco.utilities.config",
-)
+# namespace.append_obj(
+#    "ChannelList",
+#    name="epics_channel_list",
+#    file_name="/sf/bernina/config/channel_lists/default_channel_list_epics",
+#    module_name="eco.utilities.config",
+# )
 
-namespace.append_obj(
-    "Epicstools",
-    name="epics_daq",
-    channel_list=epics_channel_list,
-    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
-    module_name="eco.acquisition.epics_data",
-)
+# namespace.append_obj(
+#    "Epicstools",
+#    name="epics_daq",
+#    channel_list=epics_channel_list,
+#    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
+#    module_name="eco.acquisition.epics_data",
+# )
 
-namespace.append_obj(
-    "Scans",
-    name="scans_epics",
-    module_name="eco.acquisition.scan",
-    data_base_dir="scan_data",
-    scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
-    default_counters=[epics_daq],
-    checker=checker_epics,
-    scan_directories=True,
-    run_table=run_table,
-)
-
-
+# namespace.append_obj(
+#    "Scans",
+#    name="scans_epics",
+#    module_name="eco.acquisition.scan",
+#    data_base_dir="scan_data",
+#    scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
+#    default_counters=[epics_daq],
+#    checker=checker_epics,
+#    scan_directories=True,
+#    run_table=run_table,
+# )
+#
+#
 ##### standard DAQ #######
 namespace.append_obj(
     "Daq",
@@ -375,14 +376,15 @@ namespace.append_obj(
     lazy=True,
 )
 
+
 #####################################################################################################
 ## more temporary devices will be outcoupled to temorary module.
-namespace.append_obj(
-    "RIXS",
-    lazy=True,
-    name="rixs",
-    module_name="eco.endstations.bernina_rixs",
-)
+# namespace.append_obj(
+#    "RIXS",
+#    lazy=True,
+#    name="rixs",
+#    module_name="eco.endstations.bernina_rixs",
+# )
 
 namespace.append_obj(
     "AxisPTZ",
@@ -433,6 +435,7 @@ namespace.append_obj(
     module_name="eco.devices_general.timing",
 )
 
+
 # will be split in permanent and temporary
 # namespace.append_obj(
 # "Laser_Exp",
@@ -479,53 +482,53 @@ from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
 
 # ad hoc 2 pulse setup
-class Laser2pulse(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(
-            SmaractStreamdevice,
-            "SARES23-ESB1",
-            name="pump_exp_delaystage",
-            is_setting=True,
-        )
-
-        self._append(
-            DelayTime,
-            self.pump_exp_delaystage,
-            name="pump_delay_exp",
-            is_setting=False,
-            is_status=True,
-            reset_current_value_to=False,
-        )
-        self._append(SmaractStreamdevice, "SARES23-ESB5", name="wp", is_setting=True)
-        self._append(
-            SmaractStreamdevice,
-            "SARES23-ESB4",
-            name="pump_2_delaystage",
-            is_setting=True,
-        )
-        self._append(
-            DelayTime,
-            self.pump_2_delaystage,
-            name="pump_2_delay",
-            is_setting=False,
-            is_status=True,
-            reset_current_value_to=False,
-        )
-        self._append(SmaractStreamdevice, "SARES23-ESB6", name="ratio", is_setting=True)
-        self._append(
-            SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
-        )
-        self._append(
-            SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
-        )
-
-
-namespace.append_obj(
-    Laser2pulse,
-    lazy=True,
-    name="laser2pulse",
-)
+# class Laser2pulse(Assembly):
+#    def __init__(self, name=None):
+#        super().__init__(name=name)
+#        self._append(
+#            SmaractStreamdevice,
+#            "SARES23-ESB1",
+#            name="pump_exp_delaystage",
+#            is_setting=True,
+#        )
+#
+#        self._append(
+#            DelayTime,
+#            self.pump_exp_delaystage,
+#            name="pump_delay_exp",
+#            is_setting=False,
+#            is_status=True,
+#            reset_current_value_to=False,
+#        )
+#        self._append(SmaractStreamdevice, "SARES23-ESB5", name="wp", is_setting=True)
+#        self._append(
+#            SmaractStreamdevice,
+#            "SARES23-ESB4",
+#            name="pump_2_delaystage",
+#            is_setting=True,
+#        )
+#        self._append(
+#            DelayTime,
+#            self.pump_2_delaystage,
+#            name="pump_2_delay",
+#            is_setting=False,
+#            is_status=True,
+#            reset_current_value_to=False,
+#        )
+#        self._append(SmaractStreamdevice, "SARES23-ESB6", name="ratio", is_setting=True)
+#        self._append(
+#            SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
+#        )
+#        self._append(
+#            SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
+#        )
+#
+#
+# namespace.append_obj(
+#    Laser2pulse,
+#    lazy=True,
+#    name="laser2pulse",
+# )
 
 
 # from eco.xoptics import dcm_pathlength_compensation as dpc
@@ -543,74 +546,82 @@ namespace.append_obj(
 
 
 # ad hoc interferometric timetool
-class TTinterferometrid(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(MotorRecord, "SARES20-MF1:MOT_7", name="z_target", is_setting=True)
-        self._append(
-            MotorRecord, "SARES20-MF1:MOT_10", name="x_target", is_setting=True
-        )
-        self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M521:MOTOR_1",
-            name="delaystage",
-            is_setting=True
-            #            MotorRecord,"SLAAR21-LMOT-M521",name = ""
-            #               starting following commandline silently:
-            #           caqtdm -macro "P=SLAAR21-LMOT-M521:,M=MOTOR_1" motorx_more.ui
-        )
-        self._append(
-            DelayTime,
-            self.delaystage,
-            name="delay",
-            is_setting=True,
-            is_status=True,
-        )
-        self._append(
-            SmaractStreamdevice,
-            "SARES23-ESB18",
-            name="rot_BC",
-            accuracy=3e-3,
-            is_setting=True,
-        )
-        # self._append(
-        #     MotorRecord, "SARES20-MF1:MOT_15", name="zoom_microscope", is_setting=True
-        # )
-        self._append(
-            MicroscopeMotorRecord,
-            pvname_camera="SARES20-CAMS142-M1",
-            camserver_alias="tt_spatial",
-            pvname_zoom="SARES20-MF1:MOT_15",
-            is_setting=True,
-            is_status="recursive",
-            name="microscope",
-        )
-
-
-namespace.append_obj(
-    TTinterferometrid,
-    lazy=True,
-    name="exp",
-)
+# class TTinterferometrid(Assembly):
+#    def __init__(self, name=None):
+#        super().__init__(name=name)
+#        self._append(MotorRecord, "SARES20-MF1:MOT_7", name="z_target", is_setting=True)
+#        self._append(
+#            MotorRecord, "SARES20-MF1:MOT_10", name="x_target", is_setting=True
+#        )
+#        self._append(
+#            MotorRecord,
+#            "SLAAR21-LMOT-M521:MOTOR_1",
+#            name="delaystage",
+#            is_setting=True
+#            #            MotorRecord,"SLAAR21-LMOT-M521",name = ""
+#            #               starting following commandline silently:
+#            #           caqtdm -macro "P=SLAAR21-LMOT-M521:,M=MOTOR_1" motorx_more.ui
+#        )
+#        self._append(
+#            DelayTime,
+#            self.delaystage,
+#            name="delay",
+#            is_setting=True,
+#            is_status=True,
+#        )
+#        self._append(
+#            SmaractStreamdevice,
+#            "SARES23-ESB18",
+#            name="rot_BC",
+#            accuracy=3e-3,
+#            is_setting=True,
+#        )
+#        # self._append(
+#        #     MotorRecord, "SARES20-MF1:MOT_15", name="zoom_microscope", is_setting=True
+#        # )
+#        self._append(
+#            MicroscopeMotorRecord,
+#            pvname_camera="SARES20-CAMS142-M1",
+#            camserver_alias="tt_spatial",
+#            pvname_zoom="SARES20-MF1:MOT_15",
+#            is_setting=True,
+#            is_status="recursive",
+#            name="microscope",
+#        )
+#
+#
+# namespace.append_obj(
+#    TTinterferometrid,
+#    lazy=True,
+#    name="exp",
+# )
 
 
 ############## experiment specific #############
 
-# try to append pgroup folder to path
+# try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
 try:
-    import sys
-    from pathlib import Path
 
-    pgroup_eco_path = Path(f'/sf/bernina/data/{config_berninamesp["pgroup"]}/res/eco')
-    pgroup_eco_path.mkdir(mode=775, exist_ok=True)
-    sys.path.append(pgroup_eco_path.as_posix())
+    import sys
+    from ..utilities import TimeoutPath
+
+    if TimeoutPath(f'/sf/bernina/data/{config_berninamesp["pgroup"]}/res/').exists():
+        pgroup_eco_path = TimeoutPath(
+            f'/sf/bernina/data/{config_berninamesp["pgroup"]}/res/eco'
+        )
+        pgroup_eco_path.mkdir(mode=775, exist_ok=True)
+        sys.path.append(pgroup_eco_path.as_posix())
+    else:
+        print(
+            "Could not access experiment folder, could be due to more systematic file system failure!"
+        )
 except:
     print("Did not succed to append an eco folder in current prgoup")
 
 
 #### pgroup specific appending, might be temporary at this location ####
 
-namespace.append_obj("Xom", module_name="xom", name="xom", lazy=True)
+# namespace.append_obj("Xom", module_name="xom", name="xom", lazy=True)
 
 
 ############## maybe to be recycled ###################
