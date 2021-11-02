@@ -1,6 +1,7 @@
 from ..devices_general.motors import MotorRecord
 from ..devices_general.detectors import FeDigitizer
 from ..epics.detector import DetectorPvDataStream
+from ..detector.detectors_psi import DetectorBsStream
 from ..elements.adjustable import AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..aliases import Alias, append_object_to_object

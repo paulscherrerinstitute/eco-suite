@@ -18,7 +18,14 @@ class DataApi(Assembly):
             ecocnf.archiver = self
 
     def get_data_time_range(
-        self, channels=[], start=None, end=None, plot=False, **kwargs
+        self,
+        channels=[],
+        start=None,
+        end=None,
+        plot=False,
+        force_type=None,
+        labels=None,
+        **kwargs,
     ):
         if not end:
             end = datetime.datetime.now()
@@ -34,14 +41,28 @@ class DataApi(Assembly):
                 start = datetime.timedelta(**kwargs)
                 start = end + start
 
-        data = get_data(channels, start=start, end=end, range_type="time")
+        if force_type:
+            archive_types = ["CA", "BS"]
+            if force_type in archive_types:
+                if force_type == "CA":
+                    channels_req = [f"sf-archiverappliance/{tch}" for tch in channels]
+                elif force_type == "BS":
+                    channels_req = [f"sf-databuffer/{tch}" for tch in channels]
+            else:
+                raise Exception(f"force_type must be one of {archive_types}")
+        else:
+            channels_req = channels
+        data = get_data(channels_req, start=start, end=end, range_type="time")
+
         if plot:
             ah = plt.gca()
-            for chan in channels:
+            if not labels:
+                labels = channels
+            for chan, label in zip(channels, labels):
                 sel = ~np.isnan(data[chan])
                 x = data.index[sel]
                 y = data[chan][sel]
-                ah.step(x, y, ".-", label=chan, where="post")
+                ah.step(x, y, ".-", label=label, where="post")
             plt.xticks(rotation=30)
             plt.legend()
             plt.tight_layout()
@@ -49,22 +70,47 @@ class DataApi(Assembly):
             ah.figure.tight_layout()
         return data
 
-    def get_data_pulse_id_range(self, channels=[], start=None, end=None, plot=False):
+    def get_data_pulse_id_range(
+        self,
+        channels=[],
+        start=None,
+        end=None,
+        plot=False,
+        force_type=None,
+        labels=None,
+    ):
         if not end:
             if hasattr(self, "pulse_id"):
                 end = int(self.pulse_id.get_current_value())
             else:
                 raise Exception("no end pulse id provided")
             start = start + end
-        data = get_data(channels, start=start, end=end, range_type="pulseId")
+        if force_type:
+            archive_types = ["CA", "BS"]
+            if force_type in archive_types:
+                if force_type == "CA":
+                    channels_req = [f"sf-archiverappliance/{tch}" for tch in channels]
+                elif force_type == "BS":
+                    channels_req = [f"sf-databuffer/{tch}" for tch in channels]
+            else:
+                raise Exception(f"force_type must be one of {archive_types}")
+        else:
+            channels_req = channels
+        data = get_data(channels_req, start=start, end=end, range_type="pulseId")
         if plot:
             ah = plt.gca()
-            for chan in channels:
+            if not labels:
+                labels = channels
+            for chan, label in zip(channels, labels):
                 sel = ~np.isnan(data[chan])
                 x = data.index[sel]
                 y = data[chan][sel]
-                ah.plot(x, y, ".-", label=chan, where="post")
+                ah.step(x, y, ".-", label=label, where="post")
+            plt.xticks(rotation=30)
+            plt.legend()
             plt.tight_layout()
+            plt.xlabel(data.index.name)
+            ah.figure.tight_layout()
 
         return data
 

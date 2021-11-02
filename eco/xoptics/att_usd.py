@@ -33,9 +33,7 @@ class att_usd_targets(Assembly):
         }
         self._xp = xp
         self.E = None
-        self._updateE()
 
-        ### BSEN target position ###
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractStreamdevice,
@@ -51,7 +49,6 @@ class att_usd_targets(Assembly):
             "d": np.array([0, 60, 160, 200, 300, 400, 500, 700]),
             "pos": np.array([-35, -25, -15, -5, 5, 15, 25, 35]),
         }
-        self._get_transmission()
 
     def _updateE(self, energy=None, check_once=False):
         while not energy:
@@ -95,6 +92,8 @@ class att_usd_targets(Assembly):
         self._xp.open()
 
     def get_current_value(self):
+        self._updateE()
+        self._get_transmission()
         idx, pos = self._find_nearest(
             self.targets["pos"], self.transl.get_current_value()
         )

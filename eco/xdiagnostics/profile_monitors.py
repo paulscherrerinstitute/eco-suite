@@ -87,7 +87,7 @@ class ProfKbBernina(Assembly):
         pvname_target_x="SARES20-MF2:MOT_1",
         pvname_target_y="SARES20-MF2:MOT_2",
         pvname_target_z="SARES20-MF2:MOT_3",
-        pvname_mirror="SARES23-LIC9",
+        pvname_mirror="SARES23-LIC11",
         mirror_in=15,
         mirror_out=-5,
         pvname_zoom="SARES20-MF2:MOT_4",
