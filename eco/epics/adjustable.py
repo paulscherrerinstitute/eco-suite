@@ -10,13 +10,20 @@ from . import get_from_archive
 from eco.devices_general.utilities import Changer
 from ..elements import Assembly
 
+
 @spec_convenience
 @get_from_archive
 @tweak_option
 @value_property
 class AdjustablePv:
     def __init__(
-        self, pvsetname, pvreadbackname=None, accuracy=None, name=None, elog=None
+        self,
+        pvsetname,
+        pvreadbackname=None,
+        accuracy=None,
+        name=None,
+        elog=None,
+        element_count=None,
     ):
 
         #        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
@@ -28,16 +35,18 @@ class AdjustablePv:
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
         #            )
 
-        self._pv = PV(self.Id, connection_timeout=0.05)
+        self._pv = PV(self.Id, connection_timeout=0.05, count=element_count)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id, connection_timeout=0.05)
+            self._pvreadback = PV(self.Id, count=element_count, connection_timeout=0.05)
             pvreadbackname = self.Id
             self.pvname = self.Id
         else:
-            self._pvreadback = PV(pvreadbackname, connection_timeout=0.05)
+            self._pvreadback = PV(
+                pvreadbackname, count=element_count, connection_timeout=0.05
+            )
             self.pvname = pvreadbackname
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 

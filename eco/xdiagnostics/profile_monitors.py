@@ -25,7 +25,7 @@ class Pprm(Assembly):
             is_setting=True,
         )
         self.camCA = CameraCA(pvname_camera)
-        self._append(CameraBasler, pvname_camera, camserver_alias=name, name="camera", is_setting=True)
+        self._append(CameraBasler, pvname_camera, camserver_alias=f"{name} ({pvname_camera})", name="camera", is_setting=True)
         self._append(
             AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True
         )
@@ -145,6 +145,7 @@ class ProfKbBernina(Assembly):
         self._append(
             CameraBasler,
             pvname_camera,
+            camserver_alias=f"{name} ({pvname_camera})",
             name="camera",
             is_setting=False,
             is_status="recursive",
@@ -178,6 +179,7 @@ class Pprm_dsd(Assembly):
         self._append(
             CameraBasler,
             pvname_camera,
+            camserver_alias=f"{name} ({pvname_camera})",
             name="camera",
             is_setting=False,
             is_status="recursive",
@@ -235,6 +237,7 @@ class Bernina_XEYE(Assembly):
             self._append(
                 CameraBasler,
                 camera_pv,
+                camserver_alias=name,
                 name="camera",
                 is_setting=True,
                 is_status="recursive",

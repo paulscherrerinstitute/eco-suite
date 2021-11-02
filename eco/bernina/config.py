@@ -433,7 +433,7 @@ components = [
     },
     {
         "args": ["SARES20-CAMS142-M1"],
-        "name": "samplecam_sideview",
+        "name": "cam_sample_sideview",
         "z_und": 142,
         "desc": "",
         "type": "eco.devices_general.cameras_swissfel:CameraBasler",
@@ -441,20 +441,20 @@ components = [
     },
     {
         "args": ["SARES20-CAMS142-M3"],
-        "name": "samplecam_inline",
+        "name": "cam_sample_inline",
         "z_und": 142,
         "desc": "",
         "type": "eco.devices_general.cameras_swissfel:CameraBasler",
         "kwargs": {},
     },
-    {
-        "args": ["SARES20-CAMS142-C3"],
-        "name": "samplecam_xrd",
-        "z_und": 142,
-        "desc": "",
-        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
-        "kwargs": {},
-    },
+    #{
+    #    "args": ["SARES20-CAMS142-C3"],
+    #    "name": "cam_sample_xrd",
+    #    "z_und": 142,
+    #    "desc": "",
+    #    "type": "eco.devices_general.cameras_swissfel:CameraBasler",
+    #    "kwargs": {},
+    #},
     # {
     # "args": [],
     # "name": "cams_qioptiq",

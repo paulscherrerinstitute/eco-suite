@@ -27,10 +27,11 @@ def get_pipelineclient():
 
 
 class CamserverConfig(Assembly):
-    def __init__(self, cam_id, camserver_alias=None, name=None):
+    def __init__(self, cam_id, camserver_alias=None, name=None, camserver_group=None):
         super().__init__(name=name)
         self.cam_id = cam_id
         self.camserver_alias = camserver_alias
+        self.camserver_group = camserver_group
 
     @property
     def cc(self):
@@ -54,7 +55,13 @@ class CamserverConfig(Assembly):
         """creates an alias in the camera config on the server. If no alias is provided, it defaults to the camera name"""
         if not alias:
             alias = self.camserver_alias
-        self.set_config_fields({"alias": [alias]})
+        self.set_config_fields({"alias": [alias.upper()]})
+
+    def set_group(self, group=None):
+        """creates an alias in the camera config on the server. If no alias is provided, it defaults to the camera name"""
+        if not group:
+            group = self.camserver_group
+        self.set_config_fields({"group": group})
 
     def restart_pipeline(self):
         base_directory = "/sf/bernina/config/src/python/sf_databuffer/"
@@ -111,7 +118,7 @@ class CamserverConfig(Assembly):
 
 
 class CameraBasler(Assembly):
-    def __init__(self, pvname, camserver_alias=None, name=None):
+    def __init__(self, pvname, camserver_alias=None, name=None, camserver_group=None):
         super().__init__(name=name)
         self.pvname = pvname
         if not camserver_alias:
@@ -120,10 +127,13 @@ class CameraBasler(Assembly):
             CamserverConfig,
             self.pvname,
             camserver_alias=camserver_alias,
+            camserver_group=camserver_group,
             name="config_cs",
             is_status=False,
         )
         self.config_cs.set_alias()
+        if camserver_group is not None:
+            self.config_cs.set_group()
         self._append(
             AdjustablePvEnum,
             self.pvname + ":INIT",

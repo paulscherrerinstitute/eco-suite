@@ -93,12 +93,29 @@ namespace.append_obj(
 )
 
 
+namespace.append_obj(
+    "Pprm_dsd",
+    pvname="SARES20-DSDPPRM",
+    pvname_camera="SARES20-DSDPPRM",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_dsd",
+    lazy=True,
+)
+namespace.append_obj(
+    "SolidTargetDetectorPBPS_new_assembly",
+    pvname="SARES20-DSDPBPS",
+    module_name="eco.xdiagnostics.intensity_monitors",
+    name="mon_dsd",
+    lazy=True,
+)
+
 ## general components ##
 namespace.append_obj(
-    "CTA_sequencer",
+    "CtaSequencer",
     "SAR-CCTA-ESB",
+    0,
     name="seq",
-    module_name="eco.timing.event_timing",
+    module_name="eco.timing.sequencer",
     lazy=True,
 )
 namespace.append_obj(
@@ -385,6 +402,28 @@ namespace.append_obj(
 #    name="rixs",
 #    module_name="eco.endstations.bernina_rixs",
 # )
+
+#### Beam pointing cameras for THz setups ####
+
+
+namespace.append_obj(
+    "CameraBasler",
+    pvname="SLAAR21-LCAM-C531",
+    lazy=True,
+    name="cam_NIR_position",
+    camserver_group=["Laser", "Bernina"],
+    module_name="eco.devices_general.cameras_swissfel",
+)
+
+
+namespace.append_obj(
+    "CameraBasler",
+    pvname="SLAAR21-LCAM-C511",
+    lazy=True,
+    name="cam_NIR_angle",
+    camserver_group=["Laser", "Bernina"],
+    module_name="eco.devices_general.cameras_swissfel",
+)
 
 namespace.append_obj(
     "AxisPTZ",

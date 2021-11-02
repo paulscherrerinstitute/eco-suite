@@ -24,23 +24,7 @@ class DownstreamDiagnostic(Assembly):
         self._append(
             MotorRecord, "SARES20-DSD:MOTOR_DSDY", name="ybase", is_setting=True
         )
-        self._append(
-            Pprm_dsd,
-            "SARES20-DSDPPRM",
-            "SARES20-DSDPPRM",
-            name="prof_dsd",
-            is_setting=True,
-            is_status="recursive",
-            view_toplevel_only=False,
-        )
-        self._append(
-            SolidTargetDetectorPBPS_new_assembly,
-            pvname="SARES20-DSDPBPS",
-            name="mon_dsd",
-            is_setting=True,
-            is_status="recursive",
-            view_toplevel_only=False,
-        )
+        
 
     def get_xyposition_for_kb_angles_in_rad(self, theta_kbver, theta_kbhor):
         y = np.tan(2 * theta_kbver) * 7075

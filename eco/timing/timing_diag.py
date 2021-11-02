@@ -78,6 +78,7 @@ class TimetoolBerninaUSD(Assembly):
             CameraBasler,
             "SARES20-PROF141-M1",
             name="camera_microscope",
+            camserver_name = f"{name} ({pvname_camera})",
             is_setting=True,
             is_status=False,
         )
@@ -88,6 +89,7 @@ class TimetoolBerninaUSD(Assembly):
             CameraPCO,
             "SARES20-CAMS142-M5",
             name="camera_spectrometer",
+            camserver_name = f"{name} ({pvname_camera})",
             is_setting=True,
             is_status=False,
         )

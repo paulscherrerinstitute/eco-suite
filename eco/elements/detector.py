@@ -1,15 +1,16 @@
 from eco.elements import Assembly
+from eco.aliases import Alias
 
-def value_property(Det,value_name='_value'):
+
+def value_property(Det, value_name="_value"):
     setattr(
         Det,
         value_name,
         property(
             Det.get_current_value,
-        )
+        ),
     )
     return Det
-
 
 
 def call_convenience(Det):
@@ -19,7 +20,7 @@ def call_convenience(Det):
         return self.get_current_value(*args, **kwargs)
 
     Det.wm = wm
-    
+
     def call(self):
         return self.wm()
 
@@ -56,3 +57,16 @@ class DetectorVirtual(Assembly):
         return self._foo_get_current_value(
             *[det.get_current_value() for det in self._detectors]
         )
+
+
+@call_convenience
+@value_property
+class DetectorGet:
+    def __init__(self, foo_get, name=None):
+        """ """
+        self.alias = Alias(name)
+        self.name = name
+        self._get = foo_get
+
+    def get_current_value(self):
+        return self._get()

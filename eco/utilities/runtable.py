@@ -47,6 +47,7 @@ class Run_Table:
         self.alias_df = DataFrame()
         self.adj_df = DataFrame()
         self.unit_df = DataFrame()
+        self.gspread_key_df = None
         self.alias_file_name = (
             f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable"
         )
@@ -93,33 +94,52 @@ class Run_Table:
         self.load()
 
 
+    def create_rt_spreadsheet(self, pgroup):
+        self.gc = gspread.authorize(self._credentials)
+        spreadsheet = self.gc.create(title = f"run_table_{pgroup}", folder_id="1F7DgF0HW1O71nETpfrTvQ35lRZCs5GvH")
+        spreadsheet.add_worksheet("runtable",10,10)
+        spreadsheet.add_worksheet("positions",10,10)
+        ws = spreadsheet.get_worksheet(0)
+        spreadsheet.del_worksheet(ws)
+        return spreadsheet
+
+    def _append_to_gspread_key_df(self, gspread_key_df):
+        if os.path.exists(self.gspread_key_file_name + ".pkl"):
+            self.gspread_key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
+            self.gspread_key_df = self.gspread_key_df.append(gspread_key_df)
+            self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
+        else:
+            self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
+
+
 
     def _load_pgroup_gspread_keys(self, pgroup):
         if os.path.exists(self.gspread_key_file_name + ".pkl"):
             self.gspread_key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
-            if str(pgroup) in self.gspread_key_df.index:
-                spreadsheet_key = self.gspread_key_df["keys"][f"{pgroup}"]
+        if self.gspread_key_df is not None and str(pgroup) in self.gspread_key_df.index:
+            spreadsheet_key = self.gspread_key_df["keys"][f"{pgroup}"]
+        else:
+            f_create = str(
+                input(
+                    "No google spreadsheet id found for pgroup {pgroup}. Create new run_table spreadsheet? (y/n) "
+                )
+            )
+            if f_create == "y":
+                spreadsheet = create_rt_spreadsheet(pgroup = pgroup)
+                gspread_key_df = DataFrame(
+                    {"keys": [spreadsheet.id]}, index=[f"{pgroup}"]
+                )
+
             else:
                 spreadsheet_key = str(
                     input(
-                        "Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "
+                        "No google spreadsheet id found for pgroup {pgroup}. Please enter the google spreadsheet key, e.g. 1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U: "
                     )
                 )
                 gspread_key_df = DataFrame(
                     {"keys": [spreadsheet_key]}, index=[f"{pgroup}"]
                 )
-                self.gspread_key_df = self.gspread_key_df.append(gspread_key_df)
-                self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
-        else:
-            spreadsheet_key = str(
-                input(
-                    "Please enter the google spreadsheet key of pgroup {pgroup}, e.g. '1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U': "
-                )
-            )
-            self.gspread_key_df = DataFrame(
-                {"keys": [spreadsheet_key]}, index=[f"{pgroup}"]
-            )
-            self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
+            self._append_to_gspread_key_df(self, gspread_key_df)
         return spreadsheet_key
 
     def _query_by_keys(self, keys="", df=None):

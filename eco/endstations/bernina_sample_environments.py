@@ -14,6 +14,7 @@ import pylab as plt
 import escape
 from pathlib import Path
 from ..elements.adjustable import AdjustableVirtual
+from ..elements.assembly import Assembly
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -140,8 +141,9 @@ class High_field_thz_chamber:
         return self.get_adjustable_positions_str()
 
 
-class Organic_crystal_breadboard:
+class Organic_crystal_breadboard(Assembly):
     def __init__(self, name=None, Id=None, alias_namespace=None):
+        super().__init__(name=name)
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
@@ -187,7 +189,7 @@ class Organic_crystal_breadboard:
                 "speed": 250,
                 "home_direction": "back",
             },
-            "thz_delay": {
+            "thz_delay_stg": {
                 "id": "-ESB18",
                 "pv_descr": "Motor8:3 NIR delay stage",
                 "type": 1,
@@ -247,8 +249,17 @@ class Organic_crystal_breadboard:
 
         ### smaract motors ###
         for name, config in self.motor_configuration.items():
-            addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
+            self._append(
+                SmaractStreamdevice,
+                Id = Id + config['id'],
+                name=name,
+                is_setting=True,
+            )
 
+
+        self._append(
+            DelayTime, self.delay_thz_stg, name="delay_thz", is_setting=True, direction=-1
+        )
 
         #self.polarizer = AdjustableVirtual(
         #    [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
@@ -692,3 +703,30 @@ class Electro_optic_sampling:
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
+
+
+class DelayTime(AdjustableVirtual):
+    def __init__(
+        self, stage, direction=1, passes=2, reset_current_value_to=True, name=None
+    ):
+        self._direction = direction
+        self._group_velo = 299798458  # m/s
+        self._passes = passes
+        # self.Id = stage.Id + "_delay"
+        self._stage = stage
+        AdjustableVirtual.__init__(
+            self,
+            [stage],
+            self._mm_to_s,
+            self._s_to_mm,
+            reset_current_value_to=reset_current_value_to,
+            name=name,
+            unit="s",
+        )
+
+    def _mm_to_s(self, mm):
+        return mm * 1e-3 * self._passes / self._group_velo * self._direction
+
+    def _s_to_mm(self, s):
+        return s * self._group_velo * 1e3 / self._passes * self._direction
+
