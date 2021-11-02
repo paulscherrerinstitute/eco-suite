@@ -237,7 +237,7 @@ class Bernina_XEYE(Assembly):
             self._append(
                 CameraBasler,
                 camera_pv,
-                camserver_alias=name,
+                camserver_alias=f"{name} ({camera_pv})",
                 name="camera",
                 is_setting=True,
                 is_status="recursive",

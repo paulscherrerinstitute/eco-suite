@@ -11,7 +11,6 @@ import bufferutils
 CAM_CLIENT = None
 PIPELINE_CLIENT = None
 
-
 def get_camclient():
     global CAM_CLIENT
     if not CAM_CLIENT:
@@ -84,7 +83,6 @@ class CamserverConfig(Assembly):
         # Starting the source(s) again
         bufferutils.update_sources_and_policies(sources, policies)
 
-
     def stop(self):
         self.cc.stop_instance(self.cam_id)
 
@@ -109,6 +107,31 @@ class CamserverConfig(Assembly):
         calib["reference_marker_width"] = 2 * x_um_per_px
         calib["reference_marker_height"] = 2 * y_um_per_px
         self.set_config_fields(fields={"camera_calibration": calib})
+
+    def set_config_fields_multiple_cams(self, conditions, fields):
+        """
+        conditions is a dictionary holding the conditions to select a subset of cameras, e.g. {"group": Bernina}
+        fields is a dictionary containing the keys and values that should be updated, e.g. fields={'alias': ['huhu', 'duda']}
+        """
+        cams = {cam: self.cc.get_camera_config(cam) for cam in self.cc.get_cameras()}
+        cams_selected = {}
+        for cam, cfg in cams.items():
+            try:
+                if all([value in cfg[key] for key, value in conditions.items()]) :
+                    cfg.update(fields)
+                    self.cc.set_camera_config(cam, cfg)
+                    cams_selected[cam]=cfg
+            except Exception as e:
+                print(f"{type(e)} {e} in cam {cam}")
+        return cams_selected
+
+    def clear_all_bernina_aliases(self, verbose=True):
+        cams_selected = self.set_config_fields_multiple_cams(conditions = {"group": "Bernina"}, fields = {"alias": []})
+        if verbose:
+            print(f"Reset alias of {len(cams_selected)} cameras")
+            print(cams_selected.keys())
+
+
 
     def __repr__(self):
         s = f"**Camera Server Config {self.cam_id} with Alias {self.name}**\n"
