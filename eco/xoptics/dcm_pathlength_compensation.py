@@ -7,6 +7,8 @@ from ..elements import Assembly
 
 def energy2tthe(energy, hkl=(1, 1, 1), material=materials.Si):
     """calculates 2 theta angle of certain energy, given material and bragg reflection"""
+    if energy == 0:
+        return np.nan
     return 2 * np.arcsin(
         constants.h
         * constants.c

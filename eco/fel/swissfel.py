@@ -1,11 +1,12 @@
 from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
-from ..elements.adjustable import Changer,spec_convenience,default_representation
+from ..elements.adjustable import Changer, spec_convenience, default_representation
 from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
 from ..epics.detector import DetectorPvData
 from ..aliases import Alias
 from datetime import datetime
 from time import sleep
+from ..detector.detectors_psi import DetectorBsStream
 
 
 class SwissFel(Assembly):
@@ -17,7 +18,7 @@ class SwissFel(Assembly):
             name="aramis_pulse_energy",
             is_status=True,
         )
-        self._append(UndulatorK,name='aramis_photon_energy_undulators',is_status=True)
+        self._append(UndulatorK, name="aramis_photon_energy_undulators", is_status=True)
         self._append(EcolEnergy_new, name="aramis_electron_energy_ecol", is_status=True)
         self._append(
             DetectorPvData,
@@ -26,10 +27,10 @@ class SwissFel(Assembly):
             is_status=True,
         )
         # self._append(
-            # DetectorPvData,
-            # "SARUN:FELPHOTENE",
-            # name="aramis_photon_energy",
-            # is_status=True,
+        # DetectorPvData,
+        # "SARUN:FELPHOTENE",
+        # name="aramis_photon_energy",
+        # is_status=True,
         # )
         self._append(
             DetectorPvData,
@@ -105,6 +106,31 @@ class SwissFel(Assembly):
             MessageBoard, name="message", is_setting=True, is_status="recursive"
         )
 
+        self._append(
+            DetectorBsStream,
+            "SINLH01-DBAM010:EOM1_T1",
+            name="bam_injector",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "S10BC01-DBAM070:EOM1_T1",
+            name="bam_linac_70m",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARCL01-DBAM110:EOM1_T1",
+            name="bam_linac_110m",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN20-DBAM020:EOM1_T1",
+            name="bam_aramisund",
+            is_setting=False,
+        )
+
 
 class MessageBoard(Assembly):
     def __init__(self, name=None):
@@ -178,7 +204,7 @@ class Message:
 
 @spec_convenience
 class UndulatorK(Assembly):
-    def __init__(self,name=None):
+    def __init__(self, name=None):
         super().__init__(name=name)
         self._append(
             DetectorPvData,
@@ -188,48 +214,54 @@ class UndulatorK(Assembly):
         )
         self.ksets = []
         self.gaps = []
-        for undno in [3,4,5,6,7,8,9,10,11,12,13,14,15]:
-            self._append(AdjustablePv,f'SARUN{undno:02d}-UIND030:K_SET',name=f'und{undno:02d}_Kset',is_setting=False,is_status=False)
-            self.ksets.append(self.__dict__[f'und{undno:02d}_Kset'])
-            self._append(AdjustablePv,f'SARUN{undno:02d}-UIND030:GAP_SP',pvreadbackname=f'SARUN{undno:02d}-UIND030:GAP-READ',accuracy=.0002,name=f'und{undno:02d}_gap',is_setting=False,is_status=False)
-            self.gaps.append(self.__dict__[f'und{undno:02d}_gap'])
+        for undno in [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+            self._append(
+                AdjustablePv,
+                f"SARUN{undno:02d}-UIND030:K_SET",
+                name=f"und{undno:02d}_Kset",
+                is_setting=False,
+                is_status=False,
+            )
+            self.ksets.append(self.__dict__[f"und{undno:02d}_Kset"])
+            self._append(
+                AdjustablePv,
+                f"SARUN{undno:02d}-UIND030:GAP_SP",
+                pvreadbackname=f"SARUN{undno:02d}-UIND030:GAP-READ",
+                accuracy=0.0002,
+                name=f"und{undno:02d}_gap",
+                is_setting=False,
+                is_status=False,
+            )
+            self.gaps.append(self.__dict__[f"und{undno:02d}_gap"])
         self.settings_collection.append(self)
         self.unit = self.aramis_undulator_photon_energy.unit
 
-    def calc_new_Ksets(self,energy_target,energy_start=None):
+    def calc_new_Ksets(self, energy_target, energy_start=None):
         if not energy_start:
-            energy_start=self.aramis_undulator_photon_energy.get_current_value()
+            energy_start = self.aramis_undulator_photon_energy.get_current_value()
         K_start = [tks.get_current_value() for tks in self.ksets]
-        return [(energy_start/energy_target * (tK_start**2 + 2) - 2)**.5 for tK_start in K_start]
+        return [
+            (energy_start / energy_target * (tK_start ** 2 + 2) - 2) ** 0.5
+            for tK_start in K_start
+        ]
 
     def get_current_value(self):
         return self.aramis_undulator_photon_energy.get_current_value()
 
-    def change_energy(self,energy):
+    def change_energy(self, energy):
         vals = self.calc_new_Ksets(energy)
-        for kset,val in zip(self.ksets,vals):
+        for kset, val in zip(self.ksets, vals):
             kset.set_target_value(val)
-        sleep(.2)
+        sleep(0.2)
         for gap in self.gaps:
             while gap.get_change_done() == 0:
-                sleep(.02)
+                sleep(0.02)
 
-    def set_target_value(self,value,hold=False):
-        return Changer(target=value,parent=self,changer=self.change_energy,hold=hold,stopper=None)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def set_target_value(self, value, hold=False):
+        return Changer(
+            target=value,
+            parent=self,
+            changer=self.change_energy,
+            hold=hold,
+            stopper=None,
+        )

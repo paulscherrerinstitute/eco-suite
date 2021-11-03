@@ -125,7 +125,7 @@ class Namespace:
 
     def update(self, alias, channel, channeltype):
         assert not alias in self.aliases, f"Duplicate alias {alias} found!"
-        assert not channel in self.channels, f"Duplicate channel {channel} found!"
+        # assert not channel in self.channels, f"Duplicate channel {channel} found!"
         self.data.append(
             {"alias": alias, "channel": channel, "channeltype": channeltype}
         )

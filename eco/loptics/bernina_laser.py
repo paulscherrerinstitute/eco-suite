@@ -10,6 +10,13 @@ from pint import UnitRegistry
 
 ureg = UnitRegistry()
 
+class IncouplingCleanBernina(Assembly):
+    def __init__(self,  name=None):
+        super().__init__(name=name)
+        self._append(SmaractStreamdevice,"SARES23-LIC13",name='tilt')
+        self._append(SmaractStreamdevice,"SARES23-LIC14",name='rotation')
+        self._append(SmaractStreamdevice,"SARES23-LIC15",name='transl_vertical')
+
 
 class LaserBernina(Assembly):
     def __init__(self, pvname, name=None):

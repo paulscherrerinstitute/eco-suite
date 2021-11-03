@@ -60,13 +60,11 @@ class CtaSequencer(Assembly):
             DetectorPvData,
             self._pvstr("Ctrl-IsRunning-O"),
             name="is_running",
-            is_setting=True,
         )
         self._append(
             DetectorPvData,
             self._pvstr("Ctrl-StartedAt-O"),
             name="last_start_pulse_id",
-            is_setting=True,
         )
         self.event_code_sequences = {}
         for i, eventcode in enumerate(self.event_codes):

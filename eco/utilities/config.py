@@ -15,6 +15,8 @@ from importlib import import_module
 from lazy_object_proxy import Proxy as Proxy_orig
 from tabulate import tabulate
 from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
+from rich import progress
 
 import traceback
 
@@ -299,12 +301,33 @@ class Namespace(Assembly):
             if raise_errors:
                 raise expt
 
-    def init_all(self, verbose=True, raise_errors=False, max_workers=20):
+    def init_all(
+        self, verbose=False, raise_errors=False, print_summary=True, max_workers=5
+    ):
         with ThreadPoolExecutor(max_workers=max_workers) as exc:
-            for name in self.all_names:
-                exc.submit(
-                    self.init_name, name, verbose=verbose, raise_errors=raise_errors
+            # for name in self.all_names:
+            #     exc.submit(
+            #         self.init_name, name, verbose=verbose, raise_errors=raise_errors
+            #     )
+            list(
+                progress.track(
+                    exc.map(
+                        lambda name: self.init_name(
+                            name, verbose=verbose, raise_errors=raise_errors
+                        ),
+                        self.all_names,
+                    ),
+                    description="Initializing ...",
+                    total=len(self.all_names),
                 )
+            )
+
+            if print_summary:
+                print(
+                    f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+                )
+                print("Failed objects: " + ", ".join(self.lazy_names))
+
             # if verbose:
             #     print(("Configuring %s " % (name)).ljust(25), end="")
             #     sys.stdout.flush()

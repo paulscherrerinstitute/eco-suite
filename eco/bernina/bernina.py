@@ -379,6 +379,21 @@ namespace.append_obj(
     module_name="eco.acquisition.daq_client",
     lazy=True,
 )
+
+
+def _append_namesace_status_to_scan(scan):
+    scan.scan_info["scan_parameters"]["namespace_status"] = namespace.get_status()
+
+
+def _append_namespace_aliases_to_scan(scan):
+    scan.scan_info["scan_parameters"]["namespace_aliases"] = namespace.alias.get_all()
+
+
+callbacks_start_scan = [lambda scan: namespace.init_all()]
+callbacks_start_scan.append(_append_namespace_aliases_to_scan)
+callbacks_start_scan.append(_append_namesace_status_to_scan)
+
+
 namespace.append_obj(
     "Scans",
     data_base_dir="scan_data",
@@ -386,6 +401,7 @@ namespace.append_obj(
     default_counters=[daq],
     checker=checker,
     scan_directories=True,
+    callbacks_start_scan=callbacks_start_scan,
     run_table=run_table,
     elog=elog,
     name="scans",
@@ -466,13 +482,13 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_swissfel",
 )
 
-namespace.append_obj(
-    "PaseShifterAramis",
-    "SLAAR02-TSPL-EPL",
-    lazy=True,
-    name="phase_shifter",
-    module_name="eco.devices_general.timing",
-)
+# namespace.append_obj(
+#     "PaseShifterAramis",
+#     "SLAAR02-TSPL-EPL",
+#     lazy=True,
+#     name="phase_shifter",
+#     module_name="eco.devices_general.timing",
+# )
 
 
 # will be split in permanent and temporary
@@ -493,6 +509,13 @@ namespace.append_obj(
     name="las",
     module_name="eco.loptics.bernina_laser",
 )
+namespace.append_obj(
+    "IncouplingCleanBernina",
+    lazy=False,
+    name="las_inc",
+    module_name="eco.loptics.bernina_laser",
+)
+
 
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice

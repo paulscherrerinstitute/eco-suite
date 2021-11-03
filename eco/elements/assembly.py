@@ -5,6 +5,7 @@ from . import memory
 from enum import Enum
 import os
 import subprocess
+from rich.progress import track
 
 
 class Collection:
@@ -96,27 +97,57 @@ class Assembly:
         if view_toplevel_only:
             self.view_toplevel_only.append(self.__dict__[name])
 
-    def get_status(self, base=None):
+    def get_status(self, base=None, verbose=True):
         if base is None:
             base = self
         settings = {}
         status_indicators = {}
-        for ts in self.settings_collection.get_list():
+        nodet = []
+        geterror = []
+        for ts in track(
+            self.settings_collection.get_list(),
+            transient=True,
+            description="Reading settings ...",
+        ):
             # if (not (ts is self)) and hasattr(ts, "get_status"):
             #     tstat = ts.get_status(base=base)
             #     settings.update(tstat["settings"])
             #     status_indicators.update(tstat["status_indicators"])
             # else:
-            settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
-        for ts in self.status_indicators_collection.get_list():
+            if hasattr(ts, "get_current_value"):
+                try:
+                    settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
+                except:
+                    geterror.append(ts.alias.get_full_name(base=base))
+            else:
+                nodet.append(ts.alias.get_full_name(base=base))
+        for ts in track(
+            self.status_indicators_collection.get_list(),
+            transient=True,
+            description="Reading status indicators ...",
+        ):
             # if (not (ts is self)) and hasattr(ts, "get_status"):
             #     tstat = ts.get_status(base=base)
             #     status_indicators.update(tstat["settings"])
             #     status_indicators.update(tstat["status_indicators"])
             # else:
-            status_indicators[
-                ts.alias.get_full_name(base=base)
-            ] = ts.get_current_value()
+            if hasattr(ts, "get_current_value"):
+                try:
+                    status_indicators[
+                        ts.alias.get_full_name(base=base)
+                    ] = ts.get_current_value()
+                except:
+                    geterror.append(ts.alias.get_full_name(base=base))
+            else:
+                nodet.append(ts.alias.get_full_name(base=base))
+        if verbose:
+            if nodet:
+                print("Could not retrieve status from: " + ", ".join(nodet))
+            if geterror:
+                print(
+                    "Retrieved error while running get_current_value from: "
+                    + ", ".join(geterror)
+                )
         return {"settings": settings, "status_indicators": status_indicators}
 
     def status(self, get_string=False):

@@ -16,6 +16,19 @@ ScanNameError = Exception(
 )
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """Special json encoder for numpy types"""
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
+
+
 class Scan:
     def __init__(
         self,
@@ -29,6 +42,7 @@ class Scan:
         checker=None,
         scan_directories=False,
         callbackStartStep=None,
+        callbacks_start_scan=[],
         checker_sleep_time=0.2,
         return_at_end="question",
         run_table=None,
@@ -73,6 +87,10 @@ class Scan:
             tv = adj.get_current_value()
             self.initial_values.append(adj.get_current_value())
             print("Initial value of %s : %g" % (adj.name, tv))
+
+        if callbacks_start_scan:
+            for caller in callbacks_start_scan:
+                caller(self)
 
         if self._run_table or self._elog:
             runname = os.path.basename(fina).split(".")[0]
@@ -246,11 +264,11 @@ class Scan:
     def writeScanInfo(self):
         if not Path(self.scan_info_filename).exists():
             with open(self.scan_info_filename, "w") as f:
-                json.dump(self.scan_info, f, indent=4, sort_keys=True)
+                json.dump(self.scan_info, f, indent=4, sort_keys=True, cls=NumpyEncoder)
         else:
             with open(self.scan_info_filename, "r+") as f:
                 f.seek(0)
-                json.dump(self.scan_info, f, indent=4, sort_keys=True)
+                json.dump(self.scan_info, f, indent=4, sort_keys=True, cls=NumpyEncoder)
                 f.truncate()
 
     def scanAll(self, step_info=None):
@@ -293,10 +311,12 @@ class Scans:
         default_counters=[],
         checker=None,
         scan_directories=False,
+        callbacks_start_scan=[],
         run_table=None,
         elog=None,
     ):
         self._run_table = run_table
+        self.callbacks_start_scan = callbacks_start_scan
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
         if not scan_info_dir.exists():
@@ -358,6 +378,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            callbacks_start_scan=self.callbacks_start_scan,
             run_table=self._run_table,
             elog=self._elog,
             return_at_end=return_at_end,
@@ -395,6 +416,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            callbacks_start_scan=self.callbacks_start_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -434,6 +456,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            callbacks_start_scan=self.callbacks_start_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -473,6 +496,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            callbacks_start_scan=self.callbacks_start_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -515,6 +539,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            callbacks_start_scan=self.callbacks_start_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -555,6 +580,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            callbacks_start_scan=self.callbacks_start_scan,
             run_table=self._run_table,
             elog=self._elog,
         )

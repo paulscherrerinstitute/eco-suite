@@ -81,3 +81,4 @@ from IPython import get_ipython
 _ipy = get_ipython()
 _ipy.Completer.use_jedi = False
 # print(arguments)
+_ipy.magic("load_ext rich")

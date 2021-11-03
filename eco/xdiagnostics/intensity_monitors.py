@@ -60,9 +60,9 @@ class SolidTargetDetectorPBPS_assi(Assembly):
             left="SAROP21-CVME-PBPS1:Lnk9Ch15",
             right="SAROP21-CVME-PBPS1:Lnk9Ch13",
         ),
+        channels_int=None,
         name=None,
     ):
-        print("hia----->", name)
         super().__init__(name=name)
         self.pvname = pvname
         self._append(

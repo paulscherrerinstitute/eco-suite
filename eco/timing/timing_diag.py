@@ -24,6 +24,8 @@ class TimetoolBerninaUSD(Assembly):
         processing_pipeline="SARES20-CAMS142-M5_psen_db",
         processing_instance="SARES20-CAMS142-M5_psen_db1",
         spectrometer_camera_channel="SARES20-CAMS142-M5:FPICTURE",
+        spectrometer_pvname="SARES20-CAMS142-M5",
+        microscope_pvname="SARES20-PROF141-M1",
         delaystage_PV="SLAAR21-LMOT-M524:MOTOR_1",
         pvname_mirror="SARES23-LIC9",
         pvname_zoom="SARES20-MF1:MOT_8",
@@ -76,9 +78,9 @@ class TimetoolBerninaUSD(Assembly):
         )
         self._append(
             CameraBasler,
-            "SARES20-PROF141-M1",
+            pvname=microscope_pvname,
             name="camera_microscope",
-            camserver_name = f"{name} ({pvname_camera})",
+            camserver_alias = f"{name} ({microscope_pvname})",
             is_setting=True,
             is_status=False,
         )
@@ -87,9 +89,9 @@ class TimetoolBerninaUSD(Assembly):
         )
         self._append(
             CameraPCO,
-            "SARES20-CAMS142-M5",
+            pvname=spectrometer_pvname,
             name="camera_spectrometer",
-            camserver_name = f"{name} ({pvname_camera})",
+            camserver_alias = f"{name} ({spectrometer_pvname})",
             is_setting=True,
             is_status=False,
         )
