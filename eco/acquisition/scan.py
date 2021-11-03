@@ -264,11 +264,11 @@ class Scan:
     def writeScanInfo(self):
         if not Path(self.scan_info_filename).exists():
             with open(self.scan_info_filename, "w") as f:
-                json.dump(self.scan_info, f, indent=4, sort_keys=True, cls=NumpyEncoder)
+                json.dump(self.scan_info, f, sort_keys=True, cls=NumpyEncoder)
         else:
             with open(self.scan_info_filename, "r+") as f:
                 f.seek(0)
-                json.dump(self.scan_info, f, indent=4, sort_keys=True, cls=NumpyEncoder)
+                json.dump(self.scan_info, f, sort_keys=True, cls=NumpyEncoder)
                 f.truncate()
 
     def scanAll(self, step_info=None):
