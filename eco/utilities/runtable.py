@@ -64,9 +64,6 @@ class Run_Table:
         self._channels_ca = channels_ca
 
         ### credentials and settings for uploading to gspread ###
-        if not spreadsheet_key:
-            spreadsheet_key = self._load_pgroup_gspread_keys(pgroup)
-        self._spreadsheet_key = spreadsheet_key
         self._scope = [
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
@@ -77,6 +74,10 @@ class Run_Table:
         self.gc = gspread.authorize(self._credentials)
         self.keys = "metadata midir xrd energy transmission delay lxt pulse_id att_self att_fe_self"
         self.key_order = "metadata xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
+
+        if not spreadsheet_key:
+            spreadsheet_key = self._load_pgroup_gspread_keys(pgroup)
+        self._spreadsheet_key = spreadsheet_key
 
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
@@ -121,11 +122,13 @@ class Run_Table:
         else:
             f_create = str(
                 input(
-                    "No google spreadsheet id found for pgroup {pgroup}. Create new run_table spreadsheet? (y/n) "
+                    f"No google spreadsheet id found for pgroup {pgroup}. Create new run_table spreadsheet? (y/n) "
                 )
             )
             if f_create == "y":
-                spreadsheet = create_rt_spreadsheet(pgroup = pgroup)
+                print('creating')
+                spreadsheet = self.create_rt_spreadsheet(pgroup = pgroup)
+                print("created")
                 gspread_key_df = DataFrame(
                     {"keys": [spreadsheet.id]}, index=[f"{pgroup}"]
                 )
@@ -133,13 +136,13 @@ class Run_Table:
             else:
                 spreadsheet_key = str(
                     input(
-                        "No google spreadsheet id found for pgroup {pgroup}. Please enter the google spreadsheet key, e.g. 1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U: "
+                        f"No google spreadsheet id found for pgroup {pgroup}. Please enter the google spreadsheet key, e.g. 1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U: "
                     )
                 )
                 gspread_key_df = DataFrame(
                     {"keys": [spreadsheet_key]}, index=[f"{pgroup}"]
                 )
-            self._append_to_gspread_key_df(self, gspread_key_df)
+            self._append_to_gspread_key_df(gspread_key_df)
         return spreadsheet_key
 
     def _query_by_keys(self, keys="", df=None):

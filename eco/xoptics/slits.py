@@ -1,3 +1,4 @@
+from time import sleep
 from ..devices_general.motors import MotorRecord
 from ..elements.adjustable import AdjustableVirtual
 from ..aliases import Alias, append_object_to_object
@@ -787,3 +788,141 @@ class SlitBladeStages:
         gap = self.getheigth()
         self.up.set_target_value(value + gap / 2)
         self.down.set_target_value(value - gap / 2)
+
+
+@addSlitRepr
+class SlitBladesGeneral(Assembly):
+    def __init__(
+        self,
+        def_blade_up={"args": [], "kwargs": {}},
+        def_blade_down={"args": [], "kwargs": {}},
+        def_blade_left={"args": [], "kwargs": {}},
+        def_blade_right={"args": [], "kwargs": {}},
+        name=None,
+        elog=None,
+    ):
+        super().__init__(name=name)
+        self._append(
+            *def_blade_up["args"],
+            **def_blade_up["kwargs"],
+            name="up",
+            is_setting=True,
+            is_status=False,
+        )
+        self._append(
+            *def_blade_down["args"],
+            **def_blade_down["kwargs"],
+            name="down",
+            is_setting=True,
+            is_status=False,
+        )
+        self._append(
+            *def_blade_left["args"],
+            **def_blade_left["kwargs"],
+            name="left",
+            is_setting=True,
+            is_status=False,
+        )
+        self._append(
+            *def_blade_right["args"],
+            **def_blade_right["kwargs"],
+            name="right",
+            is_setting=True,
+            is_status=False,
+        )
+        self.blade_motors = [self.up, self.down, self.left, self.right]
+
+        def getgap(xn, xp):
+            return xp - xn
+
+        def getpos(xn, xp):
+            return (xn + xp) / 2
+
+        def setwidth(x):
+            return tuple([tx + self.hpos.get_current_value() for tx in [-x / 2, x / 2]])
+
+        def setheight(x):
+            return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
+
+        def sethpos(x):
+            return tuple([tx + self.hgap.get_current_value() for tx in [-x / 2, x / 2]])
+
+        def setvpos(x):
+            return tuple([tx + self.vgap.get_current_value() for tx in [-x / 2, x / 2]])
+
+        self._append(
+            AdjustableVirtual,
+            [self.right, self.left],
+            getgap,
+            setwidth,
+            reset_current_value_to=True,
+            name="hgap",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.down, self.up],
+            getgap,
+            setheight,
+            reset_current_value_to=True,
+            name="vgap",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.right, self.left],
+            getpos,
+            sethpos,
+            reset_current_value_to=True,
+            name="hpos",
+        )
+        self._append(
+            AdjustableVirtual,
+            [self.down, self.up],
+            getpos,
+            setvpos,
+            reset_current_value_to=True,
+            name="vpos",
+        )
+
+    def _apply_on_all_blades(self, method_name, *args, **kwargs):
+        out = []
+        for blade in self.blade_motors:
+            out.append(blade.__dict__[method_name](*args, **kwargs))
+        return out
+
+    def home_all_blades(self):
+        self._apply_on_all_blades("home")
+
+    def init_all_blades(self):
+        self._apply_on_all_blades("stage_type", 1)
+        sleep(0.5)
+        self._apply_on_all_blades("sensor_type", 0)
+        sleep(0.5)
+        self._apply_on_all_blades("calibrate_sensor", 1)
+        sleep(3)
+        self._apply_on_all_blades("home_forward", 1)
+        homed = 0
+        while not homed:
+            homed = all(self._apply_on_all_blades("is_homed"))
+            sleep(0.1)
+
+    def __call__(self, *args):
+        if len(args) == 0:
+            return (
+                self.hpos.get_current_value(),
+                self.vpos.get_current_value(),
+                self.hgap.get_current_value(),
+                self.vgap.get_current_value(),
+            )
+        elif len(args) == 1:
+            self.hgap.set_target_value(args[0])
+            self.vgap.set_target_value(args[0])
+        elif len(args) == 2:
+            self.hgap.set_target_value(args[0])
+            self.vgap.set_target_value(args[1])
+        elif len(args) == 4:
+            self.hpos.set_target_value(args[0])
+            self.vpos.set_target_value(args[1])
+            self.hgap.set_target_value(args[2])
+            self.vgap.set_target_value(args[3])
+        else:
+            raise Exception("wrong number of input arguments!")

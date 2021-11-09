@@ -6,10 +6,12 @@ from .utilities import Changer
 from ..aliases import Alias
 from ..elements.adjustable import (
     AdjustableError,
+    AdjustableFS,
+    AdjustableMemory,
     spec_convenience,
     ValueInRange,
     update_changes,
-    value_property
+    value_property,
 )
 from ..epics import get_from_archive
 from ..utilities.keypress import KeyPress
@@ -77,6 +79,7 @@ class SmaractStreamdevice(Assembly):
             "user_set_pos": "SET_POS",
             "user_direction": "DIR",
         },
+        offset_file=None,
     ):
         super().__init__(name=name)
         self.settings.append(self)
@@ -190,13 +193,31 @@ class SmaractStreamdevice(Assembly):
         self.accuracy = accuracy
         self._stop_pv = PV(self.pvname + ":STOP.PROC")
         self.stop = lambda: self._stop_pv.put(1)
+        if offset_file:
+            self._append(
+                AdjustableFS,
+                offset_file,
+                name="offset",
+                default_value=0,
+                is_setting=True,
+                is_status=False,
+            )
+        else:
+            self._append(
+                AdjustableMemory,
+                value=0,
+                name="offset",
+                is_setting=True,
+                is_status=False,
+            )
 
     def update_name_in_panel(self):
         self.caqtdm_name(self.alias.get_full_name())
 
     def set_target_value(self, value, hold=False, check=True):
         def changer(value):
-            self._drive.set_target_value(value)
+            drive_value = value + self.offset.get_current_value()
+            self._drive.set_target_value(drive_value)
 
             # self._status_message = _status_messages[self._status]
             # if self._status < 0:
@@ -215,7 +236,12 @@ class SmaractStreamdevice(Assembly):
         )
 
     def get_current_value(self):
-        return self._readback.get_current_value()
+        return self._readback.get_current_value() - self.offset.get_current_value()
+
+    def reset_current_value_to(self, reset_value):
+        self.offset.set_target_value(
+            self._readback.get_current_value() - reset_value
+        ).wait()
 
     def get_close_to(self, value, accuracy):
         movedone = 1
@@ -440,7 +466,7 @@ class MotorRecord(Assembly):
         self._append(
             DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False
         )
-        self._append(MotorRecordFlags, self._flags, name="flags", is_status='recursive')
+        self._append(MotorRecordFlags, self._flags, name="flags", is_status="recursive")
         self._append(
             AdjustablePvEnum,
             self.pvname + ".SPMG",
@@ -777,7 +803,7 @@ class MForceSettings(Assembly):
             AdjustablePv, self.pv_channel + "_RC", name="run_current", is_setting=True
         )
 
-    def set_limit_switch_config(self,invert_switches=False, invert_polarities=False):
+    def set_limit_switch_config(self, invert_switches=False, invert_polarities=False):
         if not invert_switches:
             switch1 = 2
             switch2 = 3
@@ -788,7 +814,5 @@ class MForceSettings(Assembly):
             polarity = 0
         else:
             polarity = 1
-        self.set_controller_command(f'IS=1,{switch1},{polarity}')
-        self.set_controller_command(f'IS=2,{switch2},{polarity}')
-    
-
+        self.set_controller_command(f"IS=1,{switch1},{polarity}")
+        self.set_controller_command(f"IS=2,{switch2},{polarity}")

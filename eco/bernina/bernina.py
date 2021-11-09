@@ -65,6 +65,72 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+
+from eco.devices_general.motors import SmaractStreamdevice
+
+namespace.append_obj(
+    "SlitBladesGeneral",
+    name="slit_kb",
+    def_blade_up={
+        "args": [SmaractStreamdevice, "SARES23-LIC2"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_up.json",
+        },
+    },
+    def_blade_down={
+        "args": [SmaractStreamdevice, "SARES23-LIC1"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_down.json",
+        },
+    },
+    def_blade_left={
+        "args": [SmaractStreamdevice, "SARES23-LIC3"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_left.json",
+        },
+    },
+    def_blade_right={
+        "args": [SmaractStreamdevice, "SARES23-LIC4"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_right.json",
+        },
+    },
+    module_name="eco.xoptics.slits",
+    lazy=True,
+)
+
+
+namespace.append_obj(
+    "SlitBladesGeneral",
+    name="slit_cleanup",
+    def_blade_up={
+        "args": [SmaractStreamdevice, "SARES23-LIC6"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_up.json",
+        },
+    },
+    def_blade_down={
+        "args": [SmaractStreamdevice, "SARES23-LIC5"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_down.json",
+        },
+    },
+    def_blade_left={
+        "args": [SmaractStreamdevice, "SARES23-LIC8"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_left.json",
+        },
+    },
+    def_blade_right={
+        "args": [SmaractStreamdevice, "SARES23-LIC7"],
+        "kwargs": {
+            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_right.json",
+        },
+    },
+    module_name="eco.xoptics.slits",
+    lazy=True,
+)
+
 namespace.append_obj(
     "GasDetector",
     name="mon_und_gas",
@@ -457,18 +523,18 @@ namespace.append_obj(
     module_name="eco.microscopes",
 )
 
-namespace.append_obj(
-    "MicroscopeMotorRecord",
-    pvname_camera="SARES20-CAMS142-C1",
-    lazy=True,
-    name="samplecam",
-    module_name="eco.microscopes",
-    pvname_zoom="SARES20-MF1:MOT_16",
-)
+# namespace.append_obj(
+#    "MicroscopeMotorRecord",
+#    pvname_camera="SARES20-CAMS142-C1",
+#    lazy=True,
+#    name="samplecam",
+#    module_name="eco.microscopes",
+#    pvname_zoom="SARES20-MF1:MOT_16",
+# )
 
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-C2",
+    "SARES20-CAMS142-M1",
     lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
@@ -521,6 +587,13 @@ from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice
 
 
+namespace.append_obj(
+    "Organic_crystal_breadboard",
+    lazy=True,
+    name="ocb",
+    module_name="eco.endstations.bernina_sample_environments",
+    Id="SARES23",
+)
 # ad hoc incoupling device
 class Incoupling(Assembly):
     def __init__(self, name=None):

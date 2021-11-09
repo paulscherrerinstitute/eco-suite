@@ -431,22 +431,6 @@ components = [
             "bsport": 11151,
         },
     },
-    {
-        "args": ["SARES20-CAMS142-M1"],
-        "name": "cam_sample_sideview",
-        "z_und": 142,
-        "desc": "",
-        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
-        "kwargs": {},
-    },
-    {
-        "args": ["SARES20-CAMS142-M3"],
-        "name": "cam_sample_inline",
-        "z_und": 142,
-        "desc": "",
-        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
-        "kwargs": {},
-    },
     #{
     #    "args": ["SARES20-CAMS142-C3"],
     #    "name": "cam_sample_xrd",
@@ -690,14 +674,7 @@ components = [
         "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
         "kwargs": {"Id": "SARES23"},
     },
-    {
-        "args": [],
-        "name": "ocb",
-        "z_und": 142,
-        "desc": "Organic Crystal Breadboard",
-        "type": "eco.endstations.bernina_sample_environments:Organic_crystal_breadboard",
-        "kwargs": {"Id": "SARES23"},
-    },
+    
     {
         "args": [],
         "name": "eos",

@@ -2,7 +2,7 @@ from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
 from ..elements.adjustable import Changer, spec_convenience, default_representation
 from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
-from ..epics.detector import DetectorPvData
+from ..epics.detector import DetectorPvData, DetectorPvEnum
 from ..aliases import Alias
 from datetime import datetime
 from time import sleep
@@ -78,6 +78,13 @@ class SwissFel(Assembly):
             AdjustablePvEnum,
             "SFB_PSICO_AR:ONOFF1",
             name="psico_running",
+            is_status=True,
+            is_setting=False,
+        )
+        self._append(
+            DetectorPvEnum,
+            "SFB_POINTING_AR_MON:SELECT",
+            name="pointing_feedback_monitor",
             is_status=True,
             is_setting=False,
         )

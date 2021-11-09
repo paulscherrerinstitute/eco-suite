@@ -62,7 +62,7 @@ class BerninaInlineMicroscope(Assembly):
         self._append(
             CameraBasler,
             pvname_camera,
-            camserver_alias=camserver_alias,
+            camserver_alias = self.alias.get_full_name() + f" ({pvname_camera})",
             name="camera",
             is_setting=True,
             is_status="recursive",

@@ -16,6 +16,7 @@ class IncouplingCleanBernina(Assembly):
         self._append(SmaractStreamdevice,"SARES23-LIC13",name='tilt')
         self._append(SmaractStreamdevice,"SARES23-LIC14",name='rotation')
         self._append(SmaractStreamdevice,"SARES23-LIC15",name='transl_vertical')
+        self._append(MotorRecord,"SARES20-MF2:MOT_5",name='transl_horizontal')
 
 
 class LaserBernina(Assembly):
@@ -55,17 +56,22 @@ class LaserBernina(Assembly):
         # Upstairs, Laser 1 LAM
         self._append(
             MotorRecord,
-            "SLAAR01-LMOT-M252:MOT",
-            name="delaystage_lam_upstairs",
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage_eos",
             is_setting=True,
         )
         self._append(
             DelayTime,
-            self.delaystage_lam_upstairs,
-            name="delay_lam_upstairs",
+            self.delaystage_eos,
+            name="delay_eos",
             is_setting=True,
         )
-
+        self._append(
+            SmaractStreamdevice,
+            pvname="SARES23-ESB18",
+            name="delaystage_thz",
+            is_setting=True,
+        )
 
 class DelayTime(AdjustableVirtual):
     def __init__(

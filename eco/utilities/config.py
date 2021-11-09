@@ -17,6 +17,7 @@ from tabulate import tabulate
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from rich import progress
+from inspect import signature
 
 import traceback
 
@@ -369,9 +370,10 @@ class Namespace(Assembly):
                     obj_maker = getattr(import_module(module_name), obj_factory)
                 else:
                     obj_maker = obj_factory
-                try:
+
+                if "name" in signature(obj_maker).parameters:
                     obj_initialized = obj_maker(*args, name=name, **kwargs)
-                except TypeError:
+                else:
                     obj_initialized = obj_maker(*args, **kwargs)
 
                 self.initialized_items[name] = self.lazy_items.pop(name)

@@ -30,8 +30,9 @@ def addSmarActRecordToSelf(self, Id=None, name=None):
     self.alias.append(self.__dict__[name].alias)
 
 
-class High_field_thz_chamber:
+class High_field_thz_chamber(Assembly):
     def __init__(self, name=None, Id=None, alias_namespace=None):
+        super().__init__(name=name)
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
@@ -81,7 +82,12 @@ class High_field_thz_chamber:
 
         ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
-            addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
+            self._append(
+                SmaractStreamdevice,
+                pvname = Id + config['id'],
+                name=name,
+                is_setting=True,
+            )
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
@@ -189,7 +195,7 @@ class Organic_crystal_breadboard(Assembly):
                 "speed": 250,
                 "home_direction": "back",
             },
-            "thz_delay_stg": {
+            "delaystage_thz": {
                 "id": "-ESB18",
                 "pv_descr": "Motor8:3 NIR delay stage",
                 "type": 1,
@@ -251,15 +257,13 @@ class Organic_crystal_breadboard(Assembly):
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractStreamdevice,
-                Id = Id + config['id'],
+                pvname = Id + config['id'],
                 name=name,
                 is_setting=True,
             )
 
 
-        self._append(
-            DelayTime, self.delay_thz_stg, name="delay_thz", is_setting=True, direction=-1
-        )
+        #self.delay_thz = DelayTime(self.delay_thz_stg, name="delay_thz", direction=-1)
 
         #self.polarizer = AdjustableVirtual(
         #    [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
