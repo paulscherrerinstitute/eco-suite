@@ -1,4 +1,4 @@
-from eco.elements import Assembly
+from eco.elements.assembly import Assembly
 from eco.aliases import Alias
 
 

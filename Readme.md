@@ -54,7 +54,7 @@ Please find in the following some general procedures when adding components in e
 
 In order to help with naming, aliases, shell representation, new objects should be implemented as derived from `elements.Assembly` and call the parent init function with the name variable.
 ```python
-from elements import Assembly
+from elements.assembly import Assembly
 class Myobject(Assembly):
     def __init__(self,name=None):
         super().__init__(name=name)

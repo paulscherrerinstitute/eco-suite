@@ -13,7 +13,7 @@ from ..bernina import config
 import pylab as plt
 import escape
 from pathlib import Path
-from ..elements.adjustable import AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual, AdjustableFS
 from ..elements.assembly import Assembly
 
 
@@ -36,7 +36,7 @@ class High_field_thz_chamber(Assembly):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-
+        self.par_out_pos = [38,-9.5]
         self.motor_configuration = {
             "rx": {
                 "id": "-ESB13",
@@ -80,6 +80,7 @@ class High_field_thz_chamber(Assembly):
             },
         }
 
+
         ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
             self._append(
@@ -88,6 +89,28 @@ class High_field_thz_chamber(Assembly):
                 name=name,
                 is_setting=True,
             )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/reference_values/thc_par_in_pos",
+            name='par_in_pos',
+            is_setting=False
+        )
+    def moveout(self):
+        change_in_pos = str(
+            input(
+                f"Do you want to store the current parabola positions as the set values when moving the parabola back in (y/n)? "
+            )
+        )
+        if change_in_pos == 'y':
+            self.par_in_pos.set_target_value([self.x.get_current_value(), self.z.get_current_value()])
+        print(f'Moving parabola out. Previous positions (x,z): ({self.x.get_current_value()}, {self.z.get_current_value()}), target positions: ({self.par_out_pos[0]}, {self.par_out_pos[1]})')
+        self.z.set_target_value(self.par_out_pos[1]).wait()
+        self.x.set_target_value(self.par_out_pos[0])
+
+    def movein(self):
+        print(f'Moving parabola in. Target positions (x,z): ({self.par_in_pos()[0]}, {self.par_in_pos()[1]})')
+        self.x.set_target_value(self.par_in_pos()[0]).wait()
+        self.z.set_target_value(self.par_in_pos()[1])
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
@@ -133,19 +156,6 @@ class High_field_thz_chamber(Assembly):
                         )
                     )
                     mot.home_backward(1)
-
-    def get_adjustable_positions_str(self):
-        ostr = "*****THz chamber motor positions******\n"
-
-        for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
-        return ostr
-
-    def __repr__(self):
-        return self.get_adjustable_positions_str()
-
 
 class Organic_crystal_breadboard(Assembly):
     def __init__(self, name=None, Id=None, alias_namespace=None):

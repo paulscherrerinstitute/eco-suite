@@ -37,6 +37,15 @@ class Collection:
             if not (obj in self._list):
                 self._list.append(obj)
 
+    def pop(self, index):
+        return self._list.pop(index)
+
+    def index(self, item):
+        return self._list.index(item)
+
+    def pop_item(self, item):
+        return self.pop(self.index(item))
+
     def __call__(self):
         return self.get_list()
 

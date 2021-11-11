@@ -4,7 +4,7 @@ import numpy as np
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
 from ..elements.detector import DetectorGet
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 class CtaSequencer(Assembly):

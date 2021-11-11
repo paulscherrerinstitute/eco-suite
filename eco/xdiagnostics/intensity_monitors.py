@@ -5,7 +5,7 @@ from ..detector.detectors_psi import DetectorBsStream
 from ..elements.adjustable import AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..aliases import Alias, append_object_to_object
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 from epics import PV
 import numpy as np
 

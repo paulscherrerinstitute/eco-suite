@@ -9,6 +9,8 @@ import colorama
 
 from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
+
+
 from eco.utilities.keypress import KeyPress
 from copy import deepcopy
 from enum import IntEnum
@@ -35,7 +37,8 @@ class AdjustableError(Exception):
     pass
 
 
-#>>> wrapper decorators >>>
+# >>> wrapper decorators >>>
+
 
 def tweak_option(Obj):
     def tweak(self, interval, *args, **kwargs):
@@ -233,11 +236,13 @@ def update_changes(Adj):
     Adj.update_change_relative = update_change_relative
 
     return Adj
-   
-def value_property(Adj,wait_for_change=True,value_name='_value'):
+
+
+def value_property(Adj, wait_for_change=True, value_name="_value"):
     if wait_for_change:
-        def tmp(Adj,value):
-            Adj.set_target_value(value,hold=False).wait()
+
+        def tmp(Adj, value):
+            Adj.set_target_value(value, hold=False).wait()
 
         setattr(
             Adj,
@@ -245,14 +250,13 @@ def value_property(Adj,wait_for_change=True,value_name='_value'):
             property(
                 Adj.get_current_value,
                 tmp,
-            )
+            ),
         )
     return Adj
 
 
+# <<< wrapper decorators <<<
 
-
-#<<< wrapper decorators <<<
 
 @spec_convenience
 @update_changes
@@ -366,13 +370,39 @@ class AdjustableFS:
             stopper=None,
         )
 
-#class AdjustableObject(Assembly):
-#    def __init__(self,adjustable_dict):
-#        pass
 
-#    def get_object(self):
-#        pass
+# class AdjustableObject(Assembly):
+#     def __init__(self, adjustable_dict, name=None):
+#         super().__init__(name=name)
+#         self._base_dict = adjustable_dict
 
+#     def set_field(self, fieldname, value):
+#         d = self._base_dict.get_current_value()
+#         if fieldname not in d.keys():
+#             raise Exception(f"{fieldname} is not in dictionary")
+#         d[fieldname] = value
+#         self._base_dict.set_target_value(d)
+
+#     def get_field(self, fieldname):
+#         d = self._base_dict.get_current_value()
+#         if fieldname not in d.keys():
+#             raise Exception(f"{fieldname} is not in dictionary")
+#         return d[fieldname]
+
+#     def init_object(self):
+#         for k, v in self._base_dict.get_cuurent_value().items():
+#             tadj = AdjustableGetSet(
+#                 lambda: self.get_field(k), lambda val: self.set_field(k, val), name=k
+#             )
+#             if type(v) is dict:
+#                 self._append(
+#                     AdjustableObject(tadj),
+#                     call_obj=False,
+#                     is_setting=False,
+#                     is_status="recursive",
+#                 )
+#             else:
+#                 self._append(tadj, call_obj=False, is_setting=False, is_status=True)
 
 
 @default_representation
@@ -514,7 +544,7 @@ class AdjustableEnum:
 
     def set_target_value(self, value, hold=False):
         value = self.validate(value)
-        return self._base.set_target_value(value,hold=hold)
+        return self._base.set_target_value(value, hold=hold)
 
     def __repr__(self):
         name = self.name

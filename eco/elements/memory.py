@@ -100,22 +100,21 @@ class Memory:
             mem_full = tmp()
         if filter_existing:
             mem_filt = {}
-            for tkey,tval in mem_full.items():
-                if tkey in ['settings','status_indicators']:
-                    mem_filt[tkey]={}
-                    for ttkey,ttval in tval.items():
+            for tkey, tval in mem_full.items():
+                if tkey in ["settings", "status_indicators"]:
+                    mem_filt[tkey] = {}
+                    for ttkey, ttval in tval.items():
                         try:
-                            name2obj(self.obj_parent,ttkey)
-                            mem_filt[tkey][ttkey]=ttval
+                            name2obj(self.obj_parent, ttkey)
+                            mem_filt[tkey][ttkey] = ttval
                         except KeyError:
                             ...
                 else:
-                    mem_filt[tkey]=tval
+                    mem_filt[tkey] = tval
 
             return mem_filt
         else:
             return mem_all
-
 
     def recall(
         self,
@@ -124,6 +123,7 @@ class Memory:
         key=None,
         wait=True,
         show_changes_only=True,
+        set_changes_only=True,
         check_limits=True,
         force=False,
     ):
@@ -145,6 +145,9 @@ class Memory:
         for sel, (key, val) in zip(select, rec.items()):
             if sel:
                 to = name2obj(self.obj_parent, key)
+                if set_changes_only:
+                    if to.get_current_value() == val:
+                        continue
                 print(f"Changing {key} from {to.get_current_value()} to {val}")
                 if "check" in getargspec(to.set_target_value).args:
                     changes.append(to.set_target_value(val, check=check_limits))

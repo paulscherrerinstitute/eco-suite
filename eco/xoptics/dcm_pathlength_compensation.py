@@ -2,7 +2,7 @@ from scipy import constants
 import numpy as np
 from xrayutilities import materials
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 def energy2tthe(energy, hkl=(1, 1, 1), material=materials.Si):

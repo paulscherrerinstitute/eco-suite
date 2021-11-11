@@ -1,6 +1,6 @@
 from ..epics.detector import DetectorPvDataStream
 
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 class BerninaEnv(Assembly):

@@ -8,7 +8,7 @@ from eco.aliases import Alias
 from eco.elements.adjustable import tweak_option, spec_convenience, value_property
 from . import get_from_archive
 from eco.devices_general.utilities import Changer
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 @spec_convenience

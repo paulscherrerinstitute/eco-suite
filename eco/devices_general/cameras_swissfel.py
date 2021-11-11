@@ -1,15 +1,20 @@
 from cam_server import CamClient, PipelineClient
+
+from eco.devices_general.utilities import Changer
 from ..aliases import Alias, append_object_to_object
-from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet
+from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 from .motors import MotorRecord
 import sys
 from pathlib import Path
-sys.path.append('/sf/bernina/config/src/python/sf_databuffer/')
+
+sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
 import bufferutils
+
 CAM_CLIENT = None
 PIPELINE_CLIENT = None
+
 
 def get_camclient():
     global CAM_CLIENT
@@ -25,6 +30,7 @@ def get_pipelineclient():
     return PIPELINE_CLIENT
 
 
+@value_property
 class CamserverConfig(Assembly):
     def __init__(self, cam_id, camserver_alias=None, name=None, camserver_group=None):
         super().__init__(name=name)
@@ -42,6 +48,13 @@ class CamserverConfig(Assembly):
 
     def get_current_value(self):
         return self.cc.get_camera_config(self.cam_id)
+
+    def set_target_calue(self, value, hold=False):
+        return Changer(
+            target=value,
+            changer=lambda v: self.cc.set_camera_config(self.cam_id, v),
+            hold=hold,
+        )
 
     def set_config_fields(self, fields):
         """fields is a dictionary containing the keys and values that should be updated, e.g. fields={'group': ['Laser', 'Bernina']}"""
@@ -117,21 +130,21 @@ class CamserverConfig(Assembly):
         cams_selected = {}
         for cam, cfg in cams.items():
             try:
-                if all([value in cfg[key] for key, value in conditions.items()]) :
+                if all([value in cfg[key] for key, value in conditions.items()]):
                     cfg.update(fields)
                     self.cc.set_camera_config(cam, cfg)
-                    cams_selected[cam]=cfg
+                    cams_selected[cam] = cfg
             except Exception as e:
                 print(f"{type(e)} {e} in cam {cam}")
         return cams_selected
 
     def clear_all_bernina_aliases(self, verbose=True):
-        cams_selected = self.set_config_fields_multiple_cams(conditions = {"group": "Bernina"}, fields = {"alias": []})
+        cams_selected = self.set_config_fields_multiple_cams(
+            conditions={"group": "Bernina"}, fields={"alias": []}
+        )
         if verbose:
             print(f"Reset alias of {len(cams_selected)} cameras")
             print(cams_selected.keys())
-
-
 
     def __repr__(self):
         s = f"**Camera Server Config {self.cam_id} with Alias {self.name}**\n"

@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import constants
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 from ..devices_general.motors import MotorRecord
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from .kb_mirrors import KbVer, KbHor

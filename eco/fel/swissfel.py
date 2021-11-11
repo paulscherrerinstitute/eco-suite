@@ -137,6 +137,68 @@ class SwissFel(Assembly):
             name="bam_aramisund",
             is_setting=False,
         )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-DBPM070:X-REF-FB",
+            name="undulator_x_orbit",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-DBPM070:Y-REF-FB",
+            name="undulator_y_orbit",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-MQUA080:X",
+            name="undulator_quad_mover_x",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-MQUA080:Y",
+            name="undulator_quad_mover_y",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-UIND030:GM-X-SET",
+            name="undulator_girder_x",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-UIND030:GM-Y-SET",
+            name="undulator_girder_y",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-UIND030:GM-YAW-SET",
+            name="undulator_girder_yaw",
+            is_setting=False,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARUN03-UIND030:GM-PITCH-SET",
+            name="undulator_girder_pitch",
+            is_setting=False,
+        )
+
+
+# stuff to add
+
+
+# Quadrupole mover positions (normally set by the BBA):
+# SARUN03-MQUA080:X
+# SARUN03-MQUA080:Y
+
+# Undulators girder position (also set by the BBA):
+# SARUN03-UIND030:GM-X-SET
+# SARUN03-UIND030:GM-Y-SET
+# SARUN03-UIND030:GM-YAW-SET
+# SARUN03-UIND030:GM-PITCH-SET
 
 
 class MessageBoard(Assembly):

@@ -3,7 +3,7 @@ from ..devices_general.motors import MotorRecord
 from ..elements.adjustable import AdjustableVirtual
 from ..aliases import Alias, append_object_to_object
 from functools import partial
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 def addSlitRepr(Slitobj):

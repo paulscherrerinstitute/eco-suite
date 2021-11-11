@@ -1,4 +1,4 @@
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 from ..aliases import Alias
 from eco import ecocnf
 from epics.pv import PV

@@ -4,7 +4,7 @@ from diffcalc.hkl.geometry import Position
 from diffcalc.ub import calc as dccalc
 
 # from diffcalc.ub import calc calc import UBCalculation, Crystal
-from eco.elements import Assembly
+from eco.elements.assembly import Assembly
 from eco.elements.adjustable import AdjustableMemory
 from typing import Tuple, Optional
 

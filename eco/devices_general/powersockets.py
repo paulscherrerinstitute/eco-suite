@@ -1,16 +1,35 @@
 from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString
-from ..elements import Assembly
-from ..epics.detector import DetectorPvEnum,DetectorPvData
+from ..elements.assembly import Assembly
+from ..epics.detector import DetectorPvEnum, DetectorPvData
 
 
 class PowerSocket(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(AdjustablePvString, pvname + ':POWERONOFF-DESC', name='description', is_setting=True)
-        self._append(DetectorPvEnum, pvname + ':POWERONOFF-RB', name='stat', is_status=True)
-        self._append(AdjustablePvEnum, pvname + ':POWERONOFF', name='on_switch', is_setting=True, is_status=False)
-        self._append(AdjustablePvString, pvname + ':POWERCYCLE', name='powercycle_for_10s', is_setting=False, is_status=False)
+        self._append(
+            AdjustablePvString,
+            pvname + ":POWERONOFF-DESC",
+            name="description",
+            is_setting=True,
+        )
+        self._append(
+            DetectorPvEnum, pvname + ":POWERONOFF-RB", name="stat", is_status=True
+        )
+        self._append(
+            AdjustablePvEnum,
+            pvname + ":POWERONOFF",
+            name="on_switch",
+            is_setting=True,
+            is_status=False,
+        )
+        self._append(
+            AdjustablePvString,
+            pvname + ":POWERCYCLE",
+            name="powercycle_for_10s",
+            is_setting=False,
+            is_status=False,
+        )
 
     def toggle(self):
         self.on_switch(int(not (self.stat() == 1)))
@@ -33,7 +52,16 @@ class GudeStrip(Assembly):
         super().__init__(name=name)
         self.pvbase = pvbase
         for n in range(1, 5):
-            self._append(PowerSocket, pvbase + f'-CH{n}', is_status='recursive', is_setting=True, name=f'ch{n}')
-        self._append(DetectorPvData, pvbase + ':CURRENT', is_status=True, name='current')
-        self._append(DetectorPvData, pvbase + ':VOLTAGE', is_status=True, name='voltage')
-
+            self._append(
+                PowerSocket,
+                pvbase + f"-CH{n}",
+                is_status="recursive",
+                is_setting=True,
+                name=f"ch{n}",
+            )
+        self._append(
+            DetectorPvData, pvbase + ":CURRENT", is_status=True, name="current"
+        )
+        self._append(
+            DetectorPvData, pvbase + ":VOLTAGE", is_status=True, name="voltage"
+        )

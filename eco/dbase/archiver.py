@@ -6,7 +6,7 @@ from numbers import Number
 from matplotlib import pyplot as plt
 import numpy as np
 from .. import ecocnf
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 class DataApi(Assembly):

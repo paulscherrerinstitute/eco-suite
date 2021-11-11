@@ -11,7 +11,7 @@ from ..elements.adjustable import (
 )
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..aliases import append_object_to_object, Alias
-from ..elements import Assembly
+from ..elements.assembly import Assembly
 
 
 @spec_convenience

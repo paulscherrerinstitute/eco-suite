@@ -6,7 +6,7 @@ from epics import PV
 
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
-from eco.elements import Assembly
+from eco.elements.assembly import Assembly
 from eco.elements.detector import call_convenience, value_property
 from eco.epics.adjustable import AdjustablePvString
 from eco.epics import get_from_archive

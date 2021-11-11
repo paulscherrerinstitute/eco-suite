@@ -6,9 +6,10 @@ from epics import PV
 
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
-from eco.elements import Assembly
+from eco.elements.assembly import Assembly
 from eco.epics.adjustable import AdjustablePvString
 from eco.epics import get_from_archive
+
 
 @get_from_archive
 class DetectorBsData(Assembly):
@@ -16,7 +17,7 @@ class DetectorBsData(Assembly):
         super().__init__(name=name)
         self.status_indicators_collection.append(self)
         self.bschannel = bschannel
-        if epics_pv_available & epics_pv_availabe=='same':
+        if epics_pv_available & epics_pv_availabe == "same":
             self._pv = PV(pvname)
             self._append(
                 AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
