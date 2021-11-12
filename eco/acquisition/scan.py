@@ -43,6 +43,7 @@ class Scan:
         scan_directories=False,
         callbackStartStep=None,
         callbacks_start_scan=[],
+        callbacks_end_scan=[],
         checker_sleep_time=0.2,
         return_at_end="question",
         run_table=None,
@@ -82,6 +83,7 @@ class Scan:
         self._checker_sleep_time = checker_sleep_time
         self._elog = elog
         self.run_number = run_number
+        self.callbacks_end_scan = callbacks_end_scan
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
             tv = adj.get_current_value()
@@ -282,6 +284,10 @@ class Scan:
             tb = "Ended all steps without interruption."
         finally:
             print(tb)
+
+            if self.callbacks_end_scan:
+                for caller in self.callbacks_end_scan:
+                    caller(self)
             if self.return_at_end == "question":
                 if input("Change back to initial values? (y/n)")[0] == "y":
                     chs = self.changeToInitialValues()

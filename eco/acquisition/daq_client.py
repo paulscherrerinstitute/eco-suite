@@ -126,7 +126,7 @@ class Daq:
         filename_format="run_{:06d}",
         **kwargs,
     ):
-        print("This is tha additional input:", kwargs)
+        # print("This is the additional input:", kwargs)
         if not pgroup:
             pgroup = self.pgroup
         if not pgroup:
@@ -146,7 +146,9 @@ class Daq:
             parameters["channels_list"] = channels_BS
             files_extensions.append("BSDATA")
         if channels_JF:
-            parameters["detectors"] = {tn: self.config_JFs().get(tn,{}) for tn in channels_JF}
+            parameters["detectors"] = {
+                tn: self.config_JFs().get(tn, {}) for tn in channels_JF
+            }
             for ch in channels_JF:
                 files_extensions.append(ch)
         if channels_BSCAM:

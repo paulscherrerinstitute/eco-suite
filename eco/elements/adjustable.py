@@ -191,7 +191,9 @@ def update_changes(Adj):
             if hasattr(self, "add_value_callback"):
 
                 def cbfoo(**kwargs):
-                    print(get_position_str(start, value, kwargs["value"]), end="\r")
+                    present_value = self.get_current_value()
+                    # print(get_position_str(start, value, kwargs["value"]), end="\r")
+                    print(get_position_str(start, value, present_value), end="\r")
 
                 cb_id = self.add_value_callback(cbfoo)
             self._currentChange = self.set_target_value(value)
@@ -252,6 +254,8 @@ def value_property(Adj, wait_for_change=True, value_name="_value"):
                 tmp,
             ),
         )
+
+    Adj.value = property(lambda self: self._value)
     return Adj
 
 

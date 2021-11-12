@@ -245,7 +245,7 @@ class Organic_crystal_breadboard(Assembly):
                 "speed": 250,
                 "home_direction": "back",
             },
-            "crystal_stg": {
+            "crystal": {
                 "id": "-ESB2",
                 "pv_descr": "Motor3:2 crystal rotation",
                 "type": 2,
@@ -253,13 +253,14 @@ class Organic_crystal_breadboard(Assembly):
                 "speed": 250,
                 "home_direction": "back",
             },
-            "wp_stg": {
+            "wp": {
                 "id": "-ESB7",
                 "pv_descr": "Motor5:1 waveplate rotation",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
+                "direction": 1,
             },
         }
 
@@ -278,36 +279,20 @@ class Organic_crystal_breadboard(Assembly):
         #self.polarizer = AdjustableVirtual(
         #    [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
         #)
-        self.crystal = AdjustableVirtual(
-            [self.crystal_stg], self.xtal_wp_get, self.xtal_wp_set, name="crystal"
-        )
-        self.wp = AdjustableVirtual(
-            [self.wp_stg], self.xtal_wp_get, self.xtal_wp_set, name="wp"
-        )
         self.thz_polarization = AdjustableVirtual(
-            [self.crystal_stg, self.wp_stg],
+            [self.crystal, self.wp],
             self.thz_pol_get,
             self.thz_pol_set,
             name="thz_polarization",
         )
 
-    def pol_set(self, val):
-        return 204 / 360 * val
-
-    def pol_get(self, val):
-        return 360 / 204 * val
 
     def thz_pol_set(self, val):
-        return 1.0 / 5 * val, 1 / 2.5 * val
+        return 1.0 * val, 1. / 2 * val
 
     def thz_pol_get(self, val, val2):
-        return 5 / 1.0 * val
+        return 1.0 * val
 
-    def xtal_wp_set(self, val):
-        return 1 / 5.0 * val
-
-    def xtal_wp_get(self, val):
-        return 5 / 1.0 * val
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
@@ -316,6 +301,8 @@ class Organic_crystal_breadboard(Assembly):
             mot.stage_type(config["type"])
             mot.sensor_type(config["sensor"])
             mot.speed(config["speed"])
+            if "direction" in config.keys():
+                mot.direction(config["direction"])
             sleep(0.5)
             mot.calibrate_sensor(1)
 

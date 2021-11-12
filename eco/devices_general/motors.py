@@ -215,18 +215,9 @@ class SmaractStreamdevice(Assembly):
         self.caqtdm_name(self.alias.get_full_name())
 
     def set_target_value(self, value, hold=False, check=True):
-        def changer(value):
-            drive_value = value + self.offset.get_current_value()
-            self._drive.set_target_value(drive_value)
-
-            # self._status_message = _status_messages[self._status]
-            # if self._status < 0:
-            # raise AdjustableError(self._status_message)
-            # elif self._status > 0:
-            # print("\n")
-            # print(self._status_message)
 
         changer = lambda value: self.move(value, check=check)
+
         return Changer(
             target=value,
             parent=self,
@@ -261,7 +252,7 @@ class SmaractStreamdevice(Assembly):
         #     lambda **kwargs: not kwargs["value"] == 0,
         #     lambda **kwargs: kwargs["value"] == 0,
         # )
-        self._drive.set_target_value(value)
+        self._drive.set_target_value(value + self.offset.get_current_value())
         # waiter.wait_until_done(check_interval=update_value_time)
 
         while not self.get_close_to(value, self.accuracy):
@@ -284,15 +275,18 @@ class SmaractStreamdevice(Assembly):
             self._readback._pv.clear_callbacks()
 
     def get_limits(self):
-        return self.limit_low.get_current_value(), self.limit_high.get_current_value()
+        return (
+            self.limit_low.get_current_value() - self.offset.get_current_value(),
+            self.limit_high.get_current_value() - self.offset.get_current_value(),
+        )
 
     def set_limits(self, low_limit, high_limit, relative_to_present=False):
         if relative_to_present:
             tval = self.get_current_value()
             low_limit += tval
             high_limit += tval
-        self.limit_low.set_target_value(low_limit)
-        self.limit_high.set_target_value(high_limit)
+        self.limit_low.set_target_value(low_limit + self.offset.get_current_value())
+        self.limit_high.set_target_value(high_limit + self.offset.get_current_value())
 
     # return string with motor value as variable representation
     def __str__(self):
