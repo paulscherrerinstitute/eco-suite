@@ -2,10 +2,14 @@ from .config import components
 from .config import config as config_berninamesp
 from ..utilities.config import Namespace
 from ..aliases import NamespaceCollection
+import pyttsx3
 
 from ..utilities.path_alias import PathAlias
+import os
+
 
 path_aliases = PathAlias()
+os.sys.path.append("/sf/bernina/config/src/python/bernina_analysis")
 
 namespace = Namespace(
     name="bernina", root_module=__name__, alias_namespace=NamespaceCollection().bernina
@@ -448,16 +452,26 @@ namespace.append_obj(
 
 
 def _append_namesace_status_to_scan(scan):
-    scan.scan_info["scan_parameters"]["namespace_status"] = namespace.get_status()
+    scan.scan_info["scan_parameters"]["namespace_status"] = namespace.get_status(
+        base=None
+    )
 
 
 def _append_namespace_aliases_to_scan(scan):
     scan.scan_info["scan_parameters"]["namespace_aliases"] = namespace.alias.get_all()
 
 
+def _message_end_scan(scan):
+    e = pyttsx3.init()
+    e.say(f"Finished run {scan.run_number}.")
+    e.runAndWait()
+    e.stop()
+
+
 callbacks_start_scan = [lambda scan: namespace.init_all()]
 callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
+callbacks_end_scan = [_message_end_scan]
 
 
 namespace.append_obj(
@@ -468,6 +482,7 @@ namespace.append_obj(
     checker=checker,
     scan_directories=True,
     callbacks_start_scan=callbacks_start_scan,
+    callbacks_end_scan=callbacks_end_scan,
     run_table=run_table,
     elog=elog,
     name="scans",

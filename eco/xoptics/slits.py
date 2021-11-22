@@ -268,10 +268,14 @@ class SlitBlades:
             return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def sethpos(x):
-            return tuple([tx + self.hgap.get_current_value() for tx in [-x / 2, x / 2]])
+            return tuple(
+                [x + tx * self.hgap.get_current_value() for tx in [-1 / 2, +1 / 2]]
+            )
 
         def setvpos(x):
-            return tuple([tx + self.vgap.get_current_value() for tx in [-x / 2, x / 2]])
+            return tuple(
+                [x + tx * self.vgap.get_current_value() for tx in [-1 / 2, 1 / 2]]
+            )
 
         append_object_to_object(
             self,
@@ -363,10 +367,14 @@ class SlitPosWidth:
             return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def sethpos(x):
-            return tuple([tx + self.hgap.get_current_value() for tx in [-x / 2, x / 2]])
+            return tuple(
+                [x + tx * self.hgap.get_current_value() for tx in [-1 / 2, +1 / 2]]
+            )
 
         def setvpos(x):
-            return tuple([tx + self.vgap.get_current_value() for tw in [-x / 2, x / 2]])
+            return tuple(
+                [x + tx * self.vgap.get_current_value() for tx in [-1 / 2, 1 / 2]]
+            )
 
         append_object_to_object(
             self,

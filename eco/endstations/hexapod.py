@@ -116,7 +116,7 @@ class HexapodPI(Assembly):
                 append_aliases=False,
                 change_simultaneously=False,
                 name="x",
-                is_setting=True,
+                is_setting=False,
             )
             self._append(
                 AdjustableVirtual,
@@ -129,7 +129,7 @@ class HexapodPI(Assembly):
                 change_simultaneously=False,
                 append_aliases=False,
                 name="y",
-                is_setting=True,
+                is_setting=False,
             )
             self._append(
                 AdjustableVirtual,
@@ -142,7 +142,7 @@ class HexapodPI(Assembly):
                 append_aliases=False,
                 change_simultaneously=False,
                 name="z",
-                is_setting=True,
+                is_setting=False,
             )
 
     @property

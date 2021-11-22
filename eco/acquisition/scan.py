@@ -8,6 +8,8 @@ import colorama
 from ..elements.adjustable import DummyAdjustable
 from IPython import get_ipython
 from .daq_client import Daq
+from eco.elements.assembly import Assembly
+from rich.progress import Progress
 
 
 inval_chars = [" ", "/"]
@@ -29,6 +31,15 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
+class RunList(Assembly):
+    def __init__(self, scan_info_dir, name=None):
+        super().__init__(name=name)
+        self.scan_info_dir = scan_info_dir
+
+    def get_run_list(self):
+        ...
+
+
 class Scan:
     def __init__(
         self,
@@ -44,7 +55,7 @@ class Scan:
         callbackStartStep=None,
         callbacks_start_scan=[],
         callbacks_end_scan=[],
-        checker_sleep_time=0.2,
+        checker_sleep_time=2,
         return_at_end="question",
         run_table=None,
         run_number=None,
@@ -167,7 +178,7 @@ class Scan:
                     colorama.Fore.RED
                     + f"Condition checker is not happy, waiting for OK conditions since {time()-first_check:5.1f} seconds."
                     + colorama.Fore.RESET,
-                    end="\r",
+                    # end="\r",
                 )
                 sleep(self._checker_sleep_time)
                 checker_unhappy = True
@@ -275,32 +286,39 @@ class Scan:
 
     def scanAll(self, step_info=None):
         done = False
-        try:
-            while not done:
-                done = not self.doNextStep(step_info=step_info)
-        except:
-            tb = traceback.format_exc()
-        else:
-            tb = "Ended all steps without interruption."
-        finally:
-            print(tb)
+        steps_remaining = len(self.values_todo)
+        with Progress() as self._progress:
+            pr_task = self._progress.add_task(
+                "[green]Scanning...", total=steps_remaining
+            )
+            try:
+                while not done:
+                    done = not self.doNextStep(step_info=step_info)
+                    self._progress.update(pr_task, advance=1)
+            except:
+                tb = traceback.format_exc()
+            else:
+                tb = "Ended all steps without interruption."
+            finally:
+                self._progress.stop()
+                print(tb)
 
-            if self.callbacks_end_scan:
-                for caller in self.callbacks_end_scan:
-                    caller(self)
-            if self.return_at_end == "question":
-                if input("Change back to initial values? (y/n)")[0] == "y":
+                if self.callbacks_end_scan:
+                    for caller in self.callbacks_end_scan:
+                        caller(self)
+                if self.return_at_end == "question":
+                    if input("Change back to initial values? (y/n)")[0] == "y":
+                        chs = self.changeToInitialValues()
+                        print("Changing back to value(s) before scan.")
+                        for ch in chs:
+                            ch.wait()
+                elif self.return_at_end:
                     chs = self.changeToInitialValues()
                     print("Changing back to value(s) before scan.")
                     for ch in chs:
                         ch.wait()
-            elif self.return_at_end:
-                chs = self.changeToInitialValues()
-                print("Changing back to value(s) before scan.")
-                for ch in chs:
-                    ch.wait()
-            else:
-                print("Staying at final scan value(s)!")
+                else:
+                    print("Staying at final scan value(s)!")
 
     def changeToInitialValues(self):
         c = []
@@ -318,11 +336,13 @@ class Scans:
         checker=None,
         scan_directories=False,
         callbacks_start_scan=[],
+        callbacks_end_scan=[],
         run_table=None,
         elog=None,
     ):
         self._run_table = run_table
         self.callbacks_start_scan = callbacks_start_scan
+        self.callbacks_end_scan = callbacks_end_scan
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
         if not scan_info_dir.exists():
@@ -385,6 +405,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
             return_at_end=return_at_end,
@@ -423,6 +444,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -463,6 +485,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -503,6 +526,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -546,6 +570,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
@@ -571,7 +596,12 @@ class Scans:
         return_at_end="question",
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
-        positions1 = posList
+        positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
+        # self.prefix
+        #     + f"{runno:{self.Ndigits}0d}"
+        #     + self.separator
+        #     + "*."
+        #     + self.suffix
         values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
         if not counters:
             counters = self._default_counters
@@ -587,6 +617,7 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
         )
@@ -612,6 +643,21 @@ class RunFilenameGenerator:
             int(tf.name.split(self.prefix)[1].split(self.separator)[0]) for tf in fl
         ]
         return runnos
+
+    def get_run_info_file(self, runno):
+        fl = self.path.glob(
+            self.prefix
+            + f"{runno:0{self.Ndigits}d}"
+            + self.separator
+            + "*."
+            + self.suffix
+        )
+        fl = [tf for tf in fl if tf.is_file()]
+        if len(fl) > 1:
+            raise Exception(
+                f"Found multiple files in {self.path} with run number {runno}"
+            )
+        return fl[0]
 
     def get_nextrun_number(self):
         runnos = self.get_existing_runnumbers()

@@ -15,7 +15,7 @@ import escape
 from pathlib import Path
 from ..elements.adjustable import AdjustableVirtual, AdjustableFS
 from ..elements.assembly import Assembly
-
+from ..loptics.bernina_laser import DelayTime
 
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
@@ -36,7 +36,7 @@ class High_field_thz_chamber(Assembly):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        self.par_out_pos = [38,-9.5]
+        self.par_out_pos = [35,-9.5]
         self.motor_configuration = {
             "rx": {
                 "id": "-ESB13",
@@ -274,11 +274,8 @@ class Organic_crystal_breadboard(Assembly):
             )
 
 
-        #self.delay_thz = DelayTime(self.delay_thz_stg, name="delay_thz", direction=-1)
+        self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
 
-        #self.polarizer = AdjustableVirtual(
-        #    [self.polarizer_stg], self.pol_get, self.pol_set, name="polarizer"
-        #)
         self.thz_polarization = AdjustableVirtual(
             [self.crystal, self.wp],
             self.thz_pol_get,
@@ -705,29 +702,4 @@ class Electro_optic_sampling:
     def __repr__(self):
         return self.get_adjustable_positions_str()
 
-
-class DelayTime(AdjustableVirtual):
-    def __init__(
-        self, stage, direction=1, passes=2, reset_current_value_to=True, name=None
-    ):
-        self._direction = direction
-        self._group_velo = 299798458  # m/s
-        self._passes = passes
-        # self.Id = stage.Id + "_delay"
-        self._stage = stage
-        AdjustableVirtual.__init__(
-            self,
-            [stage],
-            self._mm_to_s,
-            self._s_to_mm,
-            reset_current_value_to=reset_current_value_to,
-            name=name,
-            unit="s",
-        )
-
-    def _mm_to_s(self, mm):
-        return mm * 1e-3 * self._passes / self._group_velo * self._direction
-
-    def _s_to_mm(self, s):
-        return s * self._group_velo * 1e3 / self._passes * self._direction
 

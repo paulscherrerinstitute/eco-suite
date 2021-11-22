@@ -139,7 +139,7 @@ class GPS(Assembly):
                 "SARES20-HEX_PI",
                 name="hex",
                 fina_angle_offset=fina_hex_angle_offset,
-                is_setting=False,
+                is_setting=True,
                 is_status="recursive",
             )
 

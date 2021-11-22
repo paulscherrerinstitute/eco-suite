@@ -133,6 +133,14 @@ components = [
         "desc": "First shutter after Undulators",
     },
     {
+        "name": "pshut_fe",
+        "type": "eco.xoptics.shutters:PhotonShutter",
+        "args": ["SARFE10-OPSH059:REQUEST"],
+        "kwargs": {},
+        "z_und": 59,
+        "desc": "Photon shutter end of front end",
+    },
+    {
         "name": "sshut_opt",
         "type": "eco.xoptics.shutters:SafetyShutter",
         "args": ["SGE01-EPKT822:BST1_oeffnen"],
@@ -431,14 +439,30 @@ components = [
             "bsport": 11151,
         },
     },
-    #{
+    {
+        "args": ["SARES20-CAMS142-M1"],
+        "name": "cam_sample_sideview",
+        "z_und": 142,
+        "desc": "",
+        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
+        "kwargs": {},
+    },
+    {
+        "args": ["SARES20-CAMS142-M3"],
+        "name": "cam_sample_inline",
+        "z_und": 142,
+        "desc": "",
+        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
+        "kwargs": {},
+    },
+    # {
     #    "args": ["SARES20-CAMS142-C3"],
     #    "name": "cam_sample_xrd",
     #    "z_und": 142,
     #    "desc": "",
     #    "type": "eco.devices_general.cameras_swissfel:CameraBasler",
     #    "kwargs": {},
-    #},
+    # },
     # {
     # "args": [],
     # "name": "cams_qioptiq",
@@ -464,14 +488,14 @@ components = [
             "camera_pv": config["cams_sigma"]["camera_pv"],
         },
     },
-    {
-        "args": ["SLAAR02-TSPL-EPL"],
-        "name": "phase_shifter",
-        "z_und": 142,
-        "desc": "Experiment laser phase shifter",
-        "type": "eco.devices_general.timing:PhaseShifterAramis",
-        "kwargs": {},
-    },
+    # {
+    #     "args": ["SLAAR02-TSPL-EPL"],
+    #     "name": "phase_shifter",
+    #     "z_und": 142,
+    #     "desc": "Experiment laser phase shifter",
+    #     "type": "eco.devices_general.timing:PhaseShifterAramis",
+    #     "kwargs": {},
+    # },
     {
         "args": ["SLAAR21-LTIM01-EVR0"],
         "name": "laser_shutter",
@@ -674,7 +698,14 @@ components = [
         "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
         "kwargs": {"Id": "SARES23"},
     },
-    
+    {
+        "args": [],
+        "name": "ocb",
+        "z_und": 142,
+        "desc": "Organic Crystal Breadboard",
+        "type": "eco.endstations.bernina_sample_environments:Organic_crystal_breadboard",
+        "kwargs": {"Id": "SARES23"},
+    },
     {
         "args": [],
         "name": "eos",

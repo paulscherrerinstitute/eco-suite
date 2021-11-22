@@ -13,6 +13,7 @@ from ..elements.adjustable import (
     update_changes,
     value_property,
 )
+from ..elements.detector import DetectorGet
 from ..epics import get_from_archive
 from ..utilities.keypress import KeyPress
 import sys, colorama
@@ -20,6 +21,7 @@ from .. import global_config
 from ..elements.assembly import Assembly
 import time
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
+from ..epics.detector import DetectorPvData
 import numpy as np
 from .motor_controller import MforceChannel
 from .detectors import DetectorVirtual
@@ -75,7 +77,7 @@ class SmaractStreamdevice(Assembly):
         name=None,
         elog=None,
         alias_fields={
-            "readback": "MOTRBV",
+            "readback_raw": "MOTRBV",
             "user_set_pos": "SET_POS",
             "user_direction": "DIR",
         },
@@ -211,6 +213,8 @@ class SmaractStreamdevice(Assembly):
                 is_status=False,
             )
 
+        self._append(DetectorGet, self.get_current_value, name="readback")
+
     def update_name_in_panel(self):
         self.caqtdm_name(self.alias.get_full_name())
 
@@ -233,6 +237,16 @@ class SmaractStreamdevice(Assembly):
         self.offset.set_target_value(
             self._readback.get_current_value() - reset_value
         ).wait()
+
+    def init_stage(self):
+        self.calibrate_sensor.set_target_value(1)
+        time.sleep(3)
+        if True:  # not self.is_homed.get_current_value():
+            self.home_forward.set_target_value(1)
+            homed = 0
+            while not homed:
+                homed = self.is_homed.get_current_value()
+                time.sleep(0.1)
 
     def get_close_to(self, value, accuracy):
         movedone = 1
@@ -410,7 +424,8 @@ class MotorRecord(Assembly):
         pvname,
         name=None,
         elog=None,
-        alias_fields={"readback": "RBV"},
+        # alias_fields={"readback": "RBV"},
+        alias_fields={},
         backlash_definition=False,
         schneider_config=None,
         expect_bad_limits=True,
@@ -439,6 +454,13 @@ class MotorRecord(Assembly):
             AdjustablePvEnum, self.pvname + ".DIR", name="direction", is_setting=True
         )
         self._append(AdjustablePv, self.pvname + ".OFF", name="offset", is_setting=True)
+        self._append(
+            DetectorPvData,
+            self.pvname + ".RBV",
+            name="readback",
+            is_setting=False,
+            is_status=True,
+        )
         self._append(
             AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
         )

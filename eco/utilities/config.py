@@ -303,31 +303,38 @@ class Namespace(Assembly):
                 raise expt
 
     def init_all(
-        self, verbose=False, raise_errors=False, print_summary=True, max_workers=5
+        self,
+        verbose=False,
+        raise_errors=False,
+        print_summary=True,
+        max_workers=5,
+        N_cycles=4,
     ):
-        with ThreadPoolExecutor(max_workers=max_workers) as exc:
-            # for name in self.all_names:
-            #     exc.submit(
-            #         self.init_name, name, verbose=verbose, raise_errors=raise_errors
-            #     )
-            list(
-                progress.track(
-                    exc.map(
-                        lambda name: self.init_name(
-                            name, verbose=verbose, raise_errors=raise_errors
+        for i in range(N_cycles):
+            with ThreadPoolExecutor(max_workers=max_workers) as exc:
+                # for name in self.all_names:
+                #     exc.submit(
+                #         self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                #     )
+                list(
+                    progress.track(
+                        exc.map(
+                            lambda name: self.init_name(
+                                name, verbose=verbose, raise_errors=raise_errors
+                            ),
+                            self.all_names,
                         ),
-                        self.all_names,
-                    ),
-                    description="Initializing ...",
-                    total=len(self.all_names),
+                        description="Initializing ...",
+                        total=len(self.all_names),
+                        transient=True,
+                    )
                 )
-            )
 
-            if print_summary:
-                print(
-                    f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
-                )
-                print("Failed objects: " + ", ".join(self.lazy_names))
+        if print_summary:
+            print(
+                f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+            )
+            print("Failed objects: " + ", ".join(self.lazy_names))
 
             # if verbose:
             #     print(("Configuring %s " % (name)).ljust(25), end="")

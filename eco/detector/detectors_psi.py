@@ -3,7 +3,7 @@ from ..aliases import Alias
 from eco import ecocnf
 from epics.pv import PV
 from bsread.bsavail import pollStream
-from bsread import dispatcher
+from bsread import dispatcher, source
 from ..epics import get_from_archive
 
 
@@ -30,6 +30,12 @@ class DetectorBsStream:
 
     def get_stream_state(self, timeout=1):
         return pollStream(self.bs_channel, timeout=1)
+
+    def create_stream_callback(self, foo):
+        with source(channels=[self.bs_channel]) as s:
+            done = False
+            while not done:
+                done = foo(s.receive())
 
 
 @get_from_archive

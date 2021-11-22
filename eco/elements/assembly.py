@@ -106,8 +106,8 @@ class Assembly:
         if view_toplevel_only:
             self.view_toplevel_only.append(self.__dict__[name])
 
-    def get_status(self, base=None, verbose=True):
-        if base is None:
+    def get_status(self, base="self", verbose=True):
+        if base == "self":
             base = self
         settings = {}
         status_indicators = {}
