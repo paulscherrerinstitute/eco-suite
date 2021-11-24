@@ -31,7 +31,7 @@ def addSmarActRecordToSelf(self, Id=None, name=None):
 
 
 class High_field_thz_chamber(Assembly):
-    def __init__(self, name=None, Id=None, alias_namespace=None):
+    def __init__(self, name=None, Id=None, alias_namespace=None, configuration=[]):
         super().__init__(name=name)
         self.Id = Id
         self.name = name
@@ -95,6 +95,10 @@ class High_field_thz_chamber(Assembly):
             name='par_in_pos',
             is_setting=False
         )
+        if "ottifant" in configuration:
+            self._append(MotorRecord,'SARES20-EXP:MOT_RY',name='otti_nu',is_status=True, is_setting=True)
+            self._append(MotorRecord,'SARES20-EXP:MOT_RZ',name='otti_del',is_status=True, is_setting=True)
+
     def moveout(self):
         change_in_pos = str(
             input(
