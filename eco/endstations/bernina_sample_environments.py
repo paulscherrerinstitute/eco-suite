@@ -16,6 +16,13 @@ from pathlib import Path
 from ..elements.adjustable import AdjustableVirtual, AdjustableFS
 from ..elements.assembly import Assembly
 from ..loptics.bernina_laser import DelayTime
+from mpl_toolkits import mplot3d
+import matplotlib.pyplot as plt
+from eco.epics.detector import DetectorPvData
+
+import numpy as np
+from scipy.spatial.transform import Rotation
+
 
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
@@ -25,8 +32,8 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         print(f"Warning! Could not find motor {name} (Id:{Id})")
 
 
-def addSmarActRecordToSelf(self, Id=None, name=None):
-    self.__dict__[name] = SmaractStreamdevice(Id, name=name)
+def addSmarActRecordToSelf(self, Id=None, name=None, **kwargs):
+    self.__dict__[name] = SmaractStreamdevice(Id, name=name, **kwargs)
     self.alias.append(self.__dict__[name].alias)
 
 
@@ -36,7 +43,7 @@ class High_field_thz_chamber(Assembly):
         self.Id = Id
         self.name = name
         self.alias = Alias(name)
-        self.par_out_pos = [35,-9.5]
+        self.par_out_pos = [35, -9.5]
         self.motor_configuration = {
             "rx": {
                 "id": "-ESB13",
@@ -45,6 +52,7 @@ class High_field_thz_chamber(Assembly):
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
+                "kwargs": {"accuracy": 0.01},
             },
             "x": {
                 "id": "-ESB14",
@@ -80,24 +88,60 @@ class High_field_thz_chamber(Assembly):
             },
         }
 
-
         ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
+            if "kwargs" in config.keys():
+                tmp_kwargs = config["kwargs"]
+            else:
+                tmp_kwargs = {}
             self._append(
                 SmaractStreamdevice,
-                pvname = Id + config['id'],
+                pvname=Id + config["id"],
                 name=name,
                 is_setting=True,
+                **tmp_kwargs,
             )
         self._append(
             AdjustableFS,
             "/photonics/home/gac-bernina/eco/reference_values/thc_par_in_pos",
-            name='par_in_pos',
-            is_setting=False
+            name="par_in_pos",
+            is_setting=False,
         )
         if "ottifant" in configuration:
-            self._append(MotorRecord,'SARES20-EXP:MOT_RY',name='otti_nu',is_status=True, is_setting=True)
-            self._append(MotorRecord,'SARES20-EXP:MOT_RZ',name='otti_del',is_status=True, is_setting=True)
+            self._append(
+                MotorRecord,
+                "SARES20-EXP:MOT_RY",
+                name="otti_nu",
+                is_status=True,
+                is_setting=True,
+            )
+            self._append(
+                MotorRecord,
+                "SARES20-EXP:MOT_RZ",
+                name="otti_del",
+                is_status=True,
+                is_setting=True,
+            )
+            self._append(
+                DetectorPvData,
+                "SARES20-EXP:DET_RY.RBV",
+                name="otti_det",
+                is_status=True,
+            )
+            self._append(
+                AdjustablePv,
+                "SARES20-EXP:DET_RY.OFF",
+                name="otti_det_offset",
+                is_status=False,
+                is_setting=True,
+            )
+            self._append(
+                AdjustableFS,
+                "~/eco/reference_values/otti_det_rot_offset.json",
+                name="otti_det_rotation",
+                is_status=True,
+                is_setting=True,
+            )
 
     def moveout(self):
         change_in_pos = str(
@@ -105,14 +149,20 @@ class High_field_thz_chamber(Assembly):
                 f"Do you want to store the current parabola positions as the set values when moving the parabola back in (y/n)? "
             )
         )
-        if change_in_pos == 'y':
-            self.par_in_pos.set_target_value([self.x.get_current_value(), self.z.get_current_value()])
-        print(f'Moving parabola out. Previous positions (x,z): ({self.x.get_current_value()}, {self.z.get_current_value()}), target positions: ({self.par_out_pos[0]}, {self.par_out_pos[1]})')
+        if change_in_pos == "y":
+            self.par_in_pos.set_target_value(
+                [self.x.get_current_value(), self.z.get_current_value()]
+            )
+        print(
+            f"Moving parabola out. Previous positions (x,z): ({self.x.get_current_value()}, {self.z.get_current_value()}), target positions: ({self.par_out_pos[0]}, {self.par_out_pos[1]})"
+        )
         self.z.set_target_value(self.par_out_pos[1]).wait()
         self.x.set_target_value(self.par_out_pos[0])
 
     def movein(self):
-        print(f'Moving parabola in. Target positions (x,z): ({self.par_in_pos()[0]}, {self.par_in_pos()[1]})')
+        print(
+            f"Moving parabola in. Target positions (x,z): ({self.par_in_pos()[0]}, {self.par_in_pos()[1]})"
+        )
         self.x.set_target_value(self.par_in_pos()[0]).wait()
         self.z.set_target_value(self.par_in_pos()[1])
 
@@ -160,6 +210,24 @@ class High_field_thz_chamber(Assembly):
                         )
                     )
                     mot.home_backward(1)
+
+    def calc_otti(
+        self, otti_nu=None, otti_del=None, otti_det=None, plotit=True, **kwargs
+    ):
+        if otti_nu is None:
+            otti_nu = self.otti_nu.get_current_value()
+        if otti_del is None:
+            otti_del = self.otti_del.get_current_value()
+        if otti_det is None:
+            otti_det = (
+                self.otti_det.get_current_value()
+                + self.otti_det_rotation.get_current_value()
+            )
+        elif otti_det == "auto":
+            otti_det = self.otti_det_rotation.get_current_value() - otti_nu
+        print(otti_nu, otti_del, otti_det)
+        return calc_otti(otti_nu, otti_del, ottidet=otti_det, plotit=plotit, **kwargs)
+
 
 class Organic_crystal_breadboard(Assembly):
     def __init__(self, name=None, Id=None, alias_namespace=None):
@@ -272,11 +340,10 @@ class Organic_crystal_breadboard(Assembly):
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractStreamdevice,
-                pvname = Id + config['id'],
+                pvname=Id + config["id"],
                 name=name,
                 is_setting=True,
             )
-
 
         self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
 
@@ -287,13 +354,11 @@ class Organic_crystal_breadboard(Assembly):
             name="thz_polarization",
         )
 
-
     def thz_pol_set(self, val):
-        return 1.0 * val, 1. / 2 * val
+        return 1.0 * val, 1.0 / 2 * val
 
     def thz_pol_get(self, val, val2):
         return 1.0 * val
-
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
@@ -707,3 +772,120 @@ class Electro_optic_sampling:
         return self.get_adjustable_positions_str()
 
 
+def calc_otti(
+    ottinu,
+    ottidel,
+    ottidet=None,
+    ottidetdist=179.287,
+    Nxpix=1024,
+    Nzpix=512,
+    pixsize=75e-3,
+    rotcencoo=np.asarray([46, 77.436, 0]),
+    plotit=False,
+):
+
+    x = np.arange(Nxpix) * pixsize
+    z = np.arange(Nzpix) * pixsize
+    y = np.asarray([ottidetdist])
+    x = x - np.mean(x.ravel())
+    z = z - np.mean(z.ravel())
+    X, Y, Z = np.meshgrid(x, y, z)
+
+    pixcoo = np.vstack([X.ravel(), Y.ravel(), Z.ravel()])
+    detdir = np.asarray([0, -1, 0])
+
+    rotcencoo = np.asarray([46, 77.436, 0])
+    samplecoo = np.asarray([0, 0, 0])
+
+    ottidel = np.radians(ottidel)
+    ottinu = np.radians(ottinu)
+    if ottidet is None:
+        ottidet = -ottinu
+    else:
+        ottidet = np.radians(ottidet)
+
+    pixcoo_ottidet = np.asarray(
+        Rotation.from_rotvec(np.asarray([0, ottidet, 0])).as_matrix()
+        * np.asmatrix(pixcoo)
+    )
+    pixcoo_ottidel = np.asarray(
+        Rotation.from_rotvec(np.asarray([ottidel, 0, 0])).as_matrix()
+        * np.asmatrix(pixcoo_ottidet)
+    )
+    pixcoo_ottinu = np.asarray(
+        Rotation.from_rotvec(np.asarray([0, ottinu, 0])).as_matrix()
+        * np.asmatrix(pixcoo_ottidel)
+    )
+    pixcoo_otti = pixcoo_ottinu + rotcencoo[:, np.newaxis]
+
+    detdir_otti = np.asarray(
+        Rotation.from_rotvec(np.asarray([0, ottinu, 0])).as_matrix()
+        * (
+            Rotation.from_rotvec(np.asarray([ottidel, 0, 0])).as_matrix()
+            * np.asmatrix(detdir[:, np.newaxis])
+        )
+    )
+    rxz = pixcoo_otti[0] ** 2 + pixcoo_otti[2] ** 2
+
+    pixdist = np.sqrt(rxz + pixcoo_otti[1] ** 2).reshape(X.shape[1:])
+    nu = np.arctan2(pixcoo_otti[0], pixcoo_otti[2]).reshape(X.shape[1:])
+    delta = np.arctan2(pixcoo_otti[1], np.sqrt(rxz)).reshape(X.shape[1:])
+
+    if plotit:
+        fig = plt.figure(figsize=[8, 4])
+
+        ax = fig.add_subplot(1, 2, 1, projection="3d")
+
+        plpixcoo = np.roll(pixcoo + rotcencoo[:, np.newaxis], 1, axis=0)
+        plpixcoo_otti = np.roll(pixcoo_otti, 1, axis=0)
+        plrotcencoo = np.roll(rotcencoo, 1, axis=0)
+        plsamplecoo = np.roll(samplecoo, 1, axis=0)
+
+        ax.set_box_aspect(
+            np.ptp(
+                np.concatenate(
+                    [
+                        plpixcoo,
+                        plpixcoo_otti,
+                        plrotcencoo[:, np.newaxis],
+                        plsamplecoo[:, np.newaxis],
+                    ],
+                    axis=1,
+                ),
+                axis=1,
+            )
+        )
+        # ax.set_box_aspect(np.ptp(pixcoo,axis=1))
+        ax.plot(*plrotcencoo, "om")
+
+        ax.plot(*plsamplecoo, "sr")
+        ax.plot(*[get_array_frame(ta.reshape(X.shape[1:])) for ta in plpixcoo], ":b")
+        # ax.plot(*plpixcoo,'.b')
+        # ax.plot(*plpixcoo_otti,'xg')
+        ax.plot(
+            *[get_array_frame(ta.reshape(X.shape[1:])) for ta in plpixcoo_otti], "g"
+        )
+
+        ax.set_xlabel("z / mm")
+        ax.set_ylabel("x / mm")
+        ax.set_zlabel("y / mm")
+        # ax.set_box_aspect((np.ptp(np.concatenate([pixcoo,pixcoo_ottidel,pixcoo_ottidet],axis=0),axis=1)
+
+        axn = fig.add_subplot(1, 2, 2)
+        axn.set_xlabel("nu / °")
+        axn.set_ylabel("delta / °")
+
+        i1 = axn.plot(
+            np.degrees(get_array_frame(nu)), np.degrees(get_array_frame(delta)), "-g"
+        )
+        plt.tight_layout()
+
+        print(f"Average detector distance: {np.mean(pixdist)} mm")
+        print(f"Average nu angle: {np.degrees(np.mean(nu))}°")
+        print(f"Average delta angle: {np.degrees(np.mean(delta))}°")
+        print(detdir_otti)
+    return nu, delta, pixdist
+
+
+def get_array_frame(a):
+    return np.concatenate([a[:, 0], a[-1, 1:], a[-2::-1, -1], a[0, -2::-1]])
