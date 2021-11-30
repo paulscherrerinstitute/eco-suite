@@ -640,16 +640,6 @@ components = [
         "type": "eco.endstations.hexapod:HexapodSymmetrie",
         "kwargs": {"offset": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]},
     },
-    {
-        "args": ["SAROP21-OKBV139", "SAROP21-OKBH140"],
-        "name": "kb",
-        "z_und": 141,
-        "desc": "",
-        "type": "eco.xoptics.kb_bernina:KBMirrorBernina_new",
-        "kwargs": {
-            "usd_table": Component("usd_table"),
-        },
-    },
     # {
     #     "args": ["SARES23-"],
     #     "name": "slit_kb",

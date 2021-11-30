@@ -834,7 +834,7 @@ def calc_otti(
     if plotit:
         fig = plt.figure(figsize=[8, 4])
 
-        ax = fig.add_subplot(1, 2, 1, projection="3d")
+        ax = fig.add_subplot(1, 3, 1, projection="3d")
 
         plpixcoo = np.roll(pixcoo + rotcencoo[:, np.newaxis], 1, axis=0)
         plpixcoo_otti = np.roll(pixcoo_otti, 1, axis=0)
@@ -871,13 +871,20 @@ def calc_otti(
         ax.set_zlabel("y / mm")
         # ax.set_box_aspect((np.ptp(np.concatenate([pixcoo,pixcoo_ottidel,pixcoo_ottidet],axis=0),axis=1)
 
-        axn = fig.add_subplot(1, 2, 2)
+        axn = fig.add_subplot(1, 3, 2)
         axn.set_xlabel("nu / °")
         axn.set_ylabel("delta / °")
 
         i1 = axn.plot(
             np.degrees(get_array_frame(nu)), np.degrees(get_array_frame(delta)), "-g"
         )
+        axp = fig.add_subplot(1, 3, 3, projection="polar")
+        axp.set_ylabel("nu / °")
+        axp.set_xlabel("delta / °")
+        axp.set_rlim(bottom=90, top=45)
+        axp.set_theta_zero_location("N", offset=0.0)
+
+        ip = plt.plot(get_array_frame(nu), np.degrees(get_array_frame(delta)), "-g")
         plt.tight_layout()
 
         print(f"Average detector distance: {np.mean(pixdist)} mm")

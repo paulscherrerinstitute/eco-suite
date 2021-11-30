@@ -1,9 +1,11 @@
+from os import lseek
 import numpy as np
 from scipy import constants
 from ..elements.assembly import Assembly
 from ..devices_general.motors import MotorRecord
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from .kb_mirrors import KbVer, KbHor
+from time import sleep
 
 
 class KBMirrorBernina_new(Assembly):
@@ -12,6 +14,8 @@ class KBMirrorBernina_new(Assembly):
         pvname_ver,
         pvname_hor,
         usd_table=None,
+        diffractometer=None,
+        downstream_diag=None,
         d_kbver=3350.0,
         d_kbhor=2600.0,
         d_hex=1600.0,
@@ -19,6 +23,7 @@ class KBMirrorBernina_new(Assembly):
         d_win2=1330.0,
         d_target=1520.0,
         d_att=1420.0,
+        d_prof_dsd=3725.0,
         name=None,
     ):
         """All distances are from sample interaction point at straight beam (no kb deflection), the units are expected in mm"""
@@ -30,6 +35,8 @@ class KBMirrorBernina_new(Assembly):
         self._append(
             KbHor, pvname_hor, name="hor", is_setting=True, is_status="recursive"
         )
+        self.diffractometer = diffractometer
+
         self.usd_table = usd_table
         self.d_kbver = d_kbver
         self.d_kbhor = d_kbhor
@@ -38,23 +45,28 @@ class KBMirrorBernina_new(Assembly):
         self.d_win2 = d_win2
         self.d_win1 = d_win1
         self.d_target = d_target
+        self.d_prof_dsd = d_prof_dsd
 
     def calc_positions(self, the_kbver, the_kbhor):
         """angles in rad"""
-        y_kbhor = np.tan(2 * the_kbver) * np.abs(self.d_kbver - self.d_kbhor)
-        rx_kbhor = -2 * the_kbver
-        y_hex = np.tan(2 * the_kbver) * np.abs(self.d_kbver - self.d_hex)
-        x_hex = np.tan(2 * the_kbhor) * np.abs(self.d_kbhor - self.d_hex)
-        rx_hex = rx_kbhor
-        ry_hex = 2 * the_kbhor
-        return {
-            "y_kbhor": y_kbhor,
-            "rx_kbhor": rx_kbhor,
-            "x_hex": x_hex,
-            "y_hex": y_hex,
-            "rx_hex": rx_hex,
-            "ry_hex": ry_hex,
-        }
+        pos_calc = {}
+        pos_calc["y_kbhor"] = np.tan(2 * the_kbver) * np.abs(
+            self.d_kbver - self.d_kbhor
+        )
+        pos_calc["rx_kbhor"] = -2 * the_kbver
+        pos_calc["y_hex"] = np.tan(2 * the_kbver) * np.abs(self.d_kbver - self.d_hex)
+        pos_calc["x_hex"] = np.tan(2 * the_kbhor) * np.abs(self.d_kbhor - self.d_hex)
+        pos_calc["rx_hex"] = -2 * the_kbver
+        pos_calc["ry_hex"] = 2 * the_kbhor
+        pos_calc["x_diff"] = np.tan(2 * the_kbhor) * np.abs(self.d_kbhor)
+        pos_calc["y_diff"] = np.tan(2 * the_kbver) * np.abs(self.d_kbver)
+        pos_calc["x_dsd"] = np.tan(2 * the_kbhor) * np.abs(
+            self.d_kbhor + self.d_prof_dsd
+        )
+        pos_calc["y_dsd"] = np.tan(2 * the_kbver) * np.abs(
+            self.d_kbver + self.d_prof_dsd
+        )
+        return pos_calc
 
     def calc_fwhm(self, fwhm_hor, fwhm_ver, z_focver=0, z_fochor=0, E_phot=None):
         """E_phot in eV, length units in mm."""
@@ -116,6 +128,66 @@ class KBMirrorBernina_new(Assembly):
             return
         else:
             self.usd_table.move_to_coordinates(x, y, z, rx, ry, rz)
+
+    def get_current_kb_theta_from_table_usd(self):
+        """Return values in radians"""
+        coo = self.usd_table.get_coordinates()
+        return -coo[3] * np.pi / 180 / 2, coo[4] * np.pi / 180 / 2
+
+    def move_hex_and_diff_for_kb_angles(
+        self, the_kbver, the_kbhor, angle_interval_Rad=30e-6
+    ):
+        """input angles are thetas and in rad and only positive."""
+        the_kbver_0, the_kbhor_0 = self.get_current_kb_theta_from_table_usd()
+        dthe_kbver = the_kbver - the_kbver_0
+        dthe_kbhor = the_kbhor - the_kbhor_0
+        N_intervals = int(np.ceil(max(dthe_kbver, dthe_kbhor) / angle_interval_Rad))
+        thes_path = zip(
+            np.linspace(the_kbver_0, the_kbver, N_intervals + 1)[1:],
+            np.linspace(the_kbhor_0, the_kbhor, N_intervals + 1)[1:],
+        )
+        pos0 = self.calc_positions(the_kbver_0, the_kbhor_0)
+
+        ocoo = self.usd_table.get_coordinates()
+        odiffx = self.diffractometer.xbase.get_current_value()
+        odiffy = self.diffractometer.ybase.get_current_value()
+        odiffrx = self.diffractometer.rxbase.get_current_value()
+        odiffnu = self.diffractometer.nu.get_current_value()
+        odiffmu = self.diffractometer.mu.get_current_value()
+
+        try:
+            for thever, thehor in thes_path:
+                tpos = self.calc_positions(thever, thehor)
+                dx = tpos["x_hex"] - pos0["x_hex"]
+                dy = tpos["y_hex"] - pos0["y_hex"]
+                drx = (tpos["rx_hex"] - pos0["rx_hex"]) * 180 / np.pi
+                dry = (tpos["ry_hex"] - pos0["ry_hex"]) * 180 / np.pi
+                dz = drz = 0.0
+                dcoo = (dx, dy, dz, drx, dry, drz)
+                coo_moveto = [td + to for td, to in zip(dcoo, ocoo)]
+
+                diffx_moveto = (tpos["x_diff"] - pos0["x_diff"]) + odiffx
+                diffy_moveto = (tpos["y_diff"] - pos0["y_diff"]) + odiffy
+
+                print("will move to relative from start:")
+                print(
+                    dcoo,
+                    tpos["x_diff"] - pos0["x_diff"],
+                    tpos["y_diff"] - pos0["y_diff"],
+                )
+
+                self.usd_table.move_to_coordinates(*coo_moveto)
+                self.diffractometer.xbase.mv(diffx_moveto)
+                self.diffractometer.ybase.mv(diffy_moveto)
+
+                print("finished all motions.")
+                sleep(0.5)
+                if input("continue move? (y/n) ") == "y":
+                    continue
+                else:
+                    break
+        except KeyboardInterrupt:
+            pass
 
 
 class KBMirrorBernina:

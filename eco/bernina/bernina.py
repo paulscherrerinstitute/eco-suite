@@ -348,6 +348,15 @@ namespace.append_obj(
     name="xrd",
     lazy=True,
 )
+namespace.append_obj(
+    "KBMirrorBernina_new",
+    "SAROP21-OKBV139",
+    "SAROP21-OKBH140",
+    module_name="eco.xoptics.kb_bernina",
+    usd_table=usd_table,
+    name="kb",
+    diffractometer=gps,
+)
 
 ### channelsfor daq ###
 namespace.append_obj(
