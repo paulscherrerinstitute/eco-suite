@@ -181,11 +181,11 @@ class KBMirrorBernina_new(Assembly):
                 self.diffractometer.ybase.mv(diffy_moveto)
 
                 print("finished all motions.")
-                sleep(0.5)
-                if input("continue move? (y/n) ") == "y":
-                    continue
-                else:
-                    break
+                sleep(0.2)
+                # if input("continue move? (y/n) ") == "y":
+                #     continue
+                # else:
+                #     break
         except KeyboardInterrupt:
             pass
 

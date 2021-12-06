@@ -725,7 +725,7 @@ components = [
         "name": "att_usd",
         "z_und": 142,
         "desc": "USD attenuator",
-        "type": "eco.xoptics.att_usd:att_usd_targets",
+        "type": "eco.xoptics.att_usd:att_usd",
         "kwargs": {"Id": "SARES23", "xp": Component("xp")},
     },
 ]
