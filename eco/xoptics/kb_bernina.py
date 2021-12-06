@@ -6,6 +6,8 @@ from ..devices_general.motors import MotorRecord
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from .kb_mirrors import KbVer, KbHor
 from time import sleep
+from numbers import Number
+from tabulate import tabulate
 
 
 class KBMirrorBernina_new(Assembly):
@@ -189,6 +191,77 @@ class KBMirrorBernina_new(Assembly):
         except KeyboardInterrupt:
             pass
 
+    def calc_beamsizes_at_elements(
+        self, size_before_kb, size_sample=None, size_prof_kb=None
+    ):
+        if isinstance(size_before_kb, Number):
+            size_before_kb = [size_before_kb, size_before_kb]
+
+        if not size_sample is None:
+            # from each mirror
+            focpos_hor = calc_focus_pos_intercept(
+                size_before_kb[0], size_sample[0], self.d_kbhor
+            )
+            focpos_ver = calc_focus_pos_intercept(
+                size_before_kb[1], size_sample[1], self.d_kbver
+            )
+            sz_win1_hor = (
+                size_before_kb[0]
+                / focpos_hor
+                * (focpos_hor - self.d_kbhor + self.d_win1)
+            )
+            sz_win1_ver = (
+                size_before_kb[1]
+                / focpos_ver
+                * (focpos_ver - self.d_kbver + self.d_win1)
+            )
+            sz_win2_hor = (
+                size_before_kb[0]
+                / focpos_hor
+                * (focpos_hor - self.d_kbhor + self.d_win2)
+            )
+            sz_win2_ver = (
+                size_before_kb[1]
+                / focpos_ver
+                * (focpos_ver - self.d_kbver + self.d_win2)
+            )
+            sz_tt_hor = (
+                size_before_kb[0]
+                / focpos_hor
+                * (focpos_hor - self.d_kbhor + self.d_target)
+            )
+            sz_tt_ver = (
+                size_before_kb[1]
+                / focpos_ver
+                * (focpos_ver - self.d_kbver + self.d_target)
+            )
+            sz_attusd_hor = (
+                size_before_kb[0]
+                / focpos_hor
+                * (focpos_hor - self.d_kbhor + self.d_att)
+            )
+            sz_attusd_ver = (
+                size_before_kb[1]
+                / focpos_ver
+                * (focpos_ver - self.d_kbver + self.d_att)
+            )
+
+            out = [
+                [sz_win1_hor, sz_win1_ver],
+                [sz_tt_hor, sz_tt_ver],
+                [sz_attusd_hor, sz_attusd_ver],
+                [sz_win2_hor, sz_win2_ver],
+            ]
+        if True:
+            names = ["Window kb-usd", "Timetool target", "att_usd", "Window usd-lic"]
+            strg = tabulate(
+                [[tn, tx, ty] for tn, (tx, ty) in zip(names, out)],
+                headers=["Element", "horizontal", "vertical"],
+            )
+            print(strg)
+
+        return focpos_hor, focpos_ver, out
+
 
 class KBMirrorBernina:
     def __init__(
@@ -293,3 +366,11 @@ class KBMirrorBernina:
             return
         else:
             self.usd_table.move_to_coordinates(x, y, z, rx, ry, rz)
+
+
+def calc_focus_pos_intercept(size0, size1, distance):
+    """calculates the position of the focus based on simple intercept theorem.
+    position is from where size 0 was measured, and the focus will be between the
+     two positions, in case sign of size0 and size1 differ."""
+
+    return distance / (-size1 / size0 + 1)
