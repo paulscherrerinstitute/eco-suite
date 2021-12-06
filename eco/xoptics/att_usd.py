@@ -266,10 +266,10 @@ class att_usd(Assembly):
         idx, t = self._find_nearest(self.transmissions["t"], value)
         p1, p2 = self.transmissions["pos"][idx]
         self._xp.close()
-        self.transl_1.mv(p1)
-        self.transl_2.mv(p2)
+        self.transl_1.set_target_value(p1)
+        self.transl_2.set_target_value(p2)
         print(f"Set transmission to {t:0.2E} | Moving to pos {[p1, p2]}")
-        while (abs(p1 - self.transl_1.get_current_value()) > 0.05) & (abs(p2 - self.transl_2.get_current_value() > 0.05)):
+        while ((abs(p1 - self.transl_1.get_current_value()) > 0.05) or (abs(p2 - self.transl_2.get_current_value() > 0.05))):
             sleep(0.1)
         print("transmission changed")
         self._xp.open()

@@ -88,6 +88,18 @@ class High_field_thz_chamber(Assembly):
             },
         }
 
+        ### lakeshore temperatures ####
+        self._append(
+            AdjustablePv,
+            pvsetname = 'SARES20-CRYO:TEMP.VAL',
+            pvreadbackname='SARES20-CRYO:TEMP_RBV',
+            accuracy=0.1,
+            name='temp_sample',
+            is_setting=False,
+        )
+
+
+
         ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
             if "kwargs" in config.keys():
