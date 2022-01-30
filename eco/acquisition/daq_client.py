@@ -159,22 +159,36 @@ class Daq:
 
         parameters["pgroup"] = pgroup
         # print("----- debug info ----->\n", parameters, "\n<----- debug info -----")
-        runno = validate_response(
+        response = validate_response(
             requests.post(
                 f"{self.broker_address}/retrieve_from_buffers",
                 json=parameters,
                 timeout=self.timeout,
             ).json()
         )
+        
+        runno = response['run_number']
 
-        filenames = [
-            (directory_base / Path(filename_format.format(runno)))
-            .with_suffix(f".{ext}.h5")
-            .as_posix()
-            for ext in files_extensions
-        ]
+        filenames = response['files']
+
+        # filenames = [
+        #     (directory_base / Path(filename_format.format(runno)))
+        #     .with_suffix(f".{ext}.h5")
+        #     .as_posix()
+        #     for ext in files_extensions
+        # ]
 
         return runno, filenames
+
+    def get_next_run_number(self):
+        return requests.post(
+            f"{self.broker_address}/get_next_run_number",
+            json={'pgroup':self.pgroup},
+            timeout=self.timeout,
+            ).json()
+        # return requests.get(f"{self.broker_address}/get_next_run_number").json()[
+        #     "run_number"
+        # ]
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[
@@ -212,8 +226,7 @@ class Daq:
 
 def validate_response(resp):
     if resp.get("status") == "ok":
-        return int(resp.get("message"))
-
+        return resp
     message = resp.get("message", "Unknown error")
     msg = "An error happened on the server:\n{}".format(message)
     raise Exception(msg)

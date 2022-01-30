@@ -458,6 +458,23 @@ namespace.append_obj(
     module_name="eco.acquisition.daq_client",
     lazy=True,
 )
+namespace.append_obj(
+    "Daq",
+    instrument="bernina",
+    broker_address="http://sf-daq-1:10002",
+    pgroup=config_berninamesp["pgroup"],
+    channels_JF=channels_JF,
+    channels_BS=channels_BS,
+    channels_BSCAM=channels_BSCAM,
+    channels_CA=channels_CA,
+    config_JFs=config_JFs,
+    pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
+    event_master=event_master,
+    detectors_event_code=50,
+    name="daq_dev",
+    module_name="eco.acquisition.daq_client",
+    lazy=True,
+)
 
 
 def _append_namesace_status_to_scan(scan):
@@ -691,17 +708,17 @@ from ..microscopes import MicroscopeMotorRecord
 
 
 # from eco.xoptics import dcm_pathlength_compensation as dpc
-namespace.append_obj(
-    "MonoTimecompensation",
-    # laser2pulse.pump_delay_exp,
-    las.delay_glob,
-    mono,
-    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_timing.json",
-    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_invert_delay.json",
-    lazy=True,
-    name="mono_time_corrected",
-    module_name="eco.xoptics.dcm_pathlength_compensation",
-)
+#namespace.append_obj(
+#    "MonoTimecompensation",
+#    # laser2pulse.pump_delay_exp,
+#    las.delay_glob,
+#    mono,
+#    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_timing.json",
+#    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_invert_delay.json",
+#    lazy=True,
+#    name="mono_time_corrected",
+#    module_name="eco.xoptics.dcm_pathlength_compensation",
+#)
 
 
 # ad hoc interferometric timetool

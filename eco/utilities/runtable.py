@@ -24,7 +24,6 @@ class Run_Table:
     def __init__(
         self,
         pgroup=None,
-        spreadsheet_key=None,
         devices=None,
         alias_namespace=None,
         channels_ca={"pulse_id": "SLAAR11-LTIM01-EVR0:RX-PULSEID"},
@@ -48,15 +47,7 @@ class Run_Table:
         self.adj_df = DataFrame()
         self.unit_df = DataFrame()
         self.gspread_key_df = None
-        self.alias_file_name = (
-            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable"
-        )
-        self.adj_file_name = (
-            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable"
-        )
-        self.unit_file_name = (
-            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable"
-        )
+
         self.gspread_key_file_name = (
             f"/sf/bernina/config/src/python/gspread/gspread_keys"
         )
@@ -74,10 +65,8 @@ class Run_Table:
         self.gc = gspread.authorize(self._credentials)
         self.keys = "metadata midir xrd energy transmission delay lxt pulse_id att_self att_fe_self"
         self.key_order = "metadata xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
-
-        if not spreadsheet_key:
-            spreadsheet_key = self._load_pgroup_gspread_keys(pgroup)
-        self._spreadsheet_key = spreadsheet_key
+        spreadsheet_key=None,
+        self.init_runtable(pgroup)
 
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
@@ -100,7 +89,7 @@ class Run_Table:
         pd.options.display.max_rows = 999
         pd.options.display.max_columns = 999
         pd.set_option("display.float_format", lambda x: "%.5g" % x)
-        self.load()
+
 
     def create_rt_spreadsheet(self, pgroup):
         self.gc = gspread.authorize(self._credentials)
@@ -121,7 +110,7 @@ class Run_Table:
         else:
             self.gspread_key_df.to_pickle(self.gspread_key_file_name + ".pkl")
 
-    def _load_pgroup_gspread_keys(self, pgroup):
+    def init_runtable(self, pgroup):
         if os.path.exists(self.gspread_key_file_name + ".pkl"):
             self.gspread_key_df = pd.read_pickle(self.gspread_key_file_name + ".pkl")
         if self.gspread_key_df is not None and str(pgroup) in self.gspread_key_df.index:
@@ -139,18 +128,33 @@ class Run_Table:
                 gspread_key_df = DataFrame(
                     {"keys": [spreadsheet.id]}, index=[f"{pgroup}"]
                 )
-
+                spreadsheet_key = spreadsheet.id
             else:
+                f_entermanually = input("Do you want to enter a spreadsheet key for the pgroup {pgroup}? (y/n)")
+                if f_entermanually is not 'y':
+                    print('Runtable not initialized')
+                    return
                 spreadsheet_key = str(
                     input(
-                        f"No google spreadsheet id found for pgroup {pgroup}. Please enter the google spreadsheet key, e.g. 1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U: "
+                        f"Please enter the google spreadsheet key, e.g. 1gK--KePLpYCs7U3QfNSPo69XipndbINe1Iz8to9bY1U: "
                     )
                 )
                 gspread_key_df = DataFrame(
                     {"keys": [spreadsheet_key]}, index=[f"{pgroup}"]
                 )
             self._append_to_gspread_key_df(gspread_key_df)
-        return spreadsheet_key
+        self._spreadsheet_key = spreadsheet_key
+        self.alias_file_name = (
+            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable"
+        )
+        self.adj_file_name = (
+            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable"
+        )
+        self.unit_file_name = (
+            f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_unit_runtable"
+        )
+        self.load()
+        return
 
     def _query_by_keys(self, keys="", df=None):
         if df is None:

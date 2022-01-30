@@ -235,7 +235,8 @@ class Scan:
                         "expected_total_number_of_steps": len(self.values_todo)
                         + len(self.values_done),
                     },
-                    "acquisition_run_number": self.run_number,
+                    "run_number": self.run_number,
+                    "user_tag": self.fina,
                 }
                 acq = ctr.acquire(
                     file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars

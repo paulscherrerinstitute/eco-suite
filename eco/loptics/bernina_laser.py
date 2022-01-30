@@ -1,10 +1,11 @@
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord
-from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
+from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS
 from ..timing.lasertiming_edwin import XltEpics
 import colorama
 import datetime
 from pint import UnitRegistry
+import numpy as np
 
 # from time import sleep
 
@@ -43,6 +44,15 @@ class LaserBernina(Assembly):
         self._append(
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
+        self._append(AdjustableFS,'/photonics/home/gac-bernina/eco/configuration/wp_att_calibration',name='wp_att_calibration')
+        
+        def uJ2wp(uJ):
+            return np.interp(uJ,*np.asarray(self.wp_att_calibration())[::-1].T[::-1])
+        def wp2uJ(wp):
+            return np.interp(wp,*np.asarray(self.wp_att_calibration()).T)
+        
+        self._append(AdjustableVirtual,[self.wp_att],wp2uJ,uJ2wp,name='pulse_energy_pump')
+        
         self._append(
             MotorRecord,
             self.pvname + "-M521:MOTOR_1",

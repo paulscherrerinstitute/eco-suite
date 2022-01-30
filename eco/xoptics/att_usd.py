@@ -180,19 +180,23 @@ class att_usd(Assembly):
         self.motor_configuration = {
             "transl_2": {
                 "id": "SARES23-LIC10",
-                "pv_descr": " ",
-                "type": 2,
-                "sensor": 1,
+                "pv_descr": "att_usd transl 2",
+                "type": 1,
+                "sensor": 0,
                 "speed": 500,
                 "home_direction": "back",
+                "hl": 50,
+                "ll": -50,
             },
             "transl_1": {
-                "id": "SLAAR21-LMTS-LAM11",
-                "pv_descr": " ",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-LIC12",
+                "pv_descr": "att_usd transl 1",
+                "type": 1,
+                "sensor": 0,
                 "speed": 500,
                 "home_direction": "back",
+                "hl": 50,
+                "ll": -50,
             },
         }
         self._xp = xp
@@ -213,12 +217,12 @@ class att_usd(Assembly):
         self.targets_2 = {
             "mat": np.array([Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,polyimide, Al2O3]),
             "d": np.array([2800, 2000, 1600, 1200, 800, 550, 420, 320, 240, 175, 125, 75, 30, 125, 0]),
-            "pos": np.array([38.3,  33.4,  27.7,  23.3,  18.8,  13. , 8. , 2.5,-2.8, -7.7, -12.8, -18. , -22. , -26.7, -35.]), 
+            "pos": np.array([38.3,  33.4,  27.7,  23.3,  18.8,  13. , 8. , 2.5,-2.8, -7.7, -12.8, -18. , -22. , -26.7, -35.]),
         }
         self.targets_1 = {
             "mat": np.array([Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,polyimide,polyimide,polyimide, Al2O3]),
             "d": np.array([2800, 1600, 800, 420, 240, 175, 125, 75, 30, 125, 50, 25, 0]),
-            "pos": np.array([-38.7, -32.6, -27.3, -23, -18, -13, -7.8,  -3,  1.7, 7.4, 12.3,  17.1,  25]),
+            "pos": np.array([-37.7, -32.6, -27.3, -23, -18, -13, -7.8,  -3,  1.7, 7.4, 12.6,  17.6,  25]),
         }
 
     def _updateE(self, energy=None, check_once=False):
@@ -289,13 +293,15 @@ class att_usd(Assembly):
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
-            mot = self.__dict__[name]._device
-            mot.put("NAME", config["pv_descr"])
-            mot.put("STAGE_TYPE", config["type"])
-            mot.put("SET_SENSOR_TYPE", config["sensor"])
-            mot.put("CL_MAX_FREQ", config["speed"])
+            mot = self.__dict__[name]
+            mot.caqtdm_name(config["pv_descr"])
+            mot.stage_type(config["type"])
+            mot.sensor_type(config["sensor"])
+            mot.speed(config["speed"])
+            mot.limit_high(config["hl"])
+            mot.limit_low(config["ll"])
             sleep(0.5)
-            mot.put("CALIBRATE.PROC", 1)
+            mot.calibrate_sensor(1)
 
     def home_smaract_stages(self, stages=None):
         if stages == None:
@@ -304,7 +310,7 @@ class att_usd(Assembly):
         print(self.__repr__())
         for name in stages:
             config = self.motor_configuration[name]
-            mot = self.__dict__[name]._device
+            mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
                     name, config["home_direction"]
@@ -312,25 +318,25 @@ class att_usd(Assembly):
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.put("FRM_BACK.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_backward(1)
+                while mot.status_channel().value == 7:
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if mot.is_homed() == 0:
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
-                    mot.put("FRM_FORW.PROC", 1)
+                    mot.home_forward(1)
             elif config["home_direction"] == "forward":
-                mot.put("FRM_FORW.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_forward(1)
+                while mot.status_channel().value == 7:
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if mot.is_homed() == 0:
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.put("FRM_BACK.PROC", 1)
+                    mot.home_backward(1)
 
     def get_adjustable_positions_str(self):
         ostr = "*****att_usd target position******\n"
