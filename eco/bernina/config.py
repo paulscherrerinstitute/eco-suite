@@ -45,8 +45,7 @@ components = [
         "type": "eco.utilities.runtable:Run_Table",
         "kwargs": {
             "pgroup": config["pgroup"],
-            "devices": None,
-            "alias_namespace": None,
+            "devices": "bernina",
             "channels_ca": Component("_env_channels_ca"),
         },
         "lazy": True,

@@ -201,8 +201,8 @@ class SolidTargetDetectorPBPS_new:
         channels = [
             "SLAAR21-LTIM01-EVR0:CALCI.INPG",
             "SLAAR21-LTIM01-EVR0:CALCI.INPH",
-            "SLAAR21-LTIM01-EVR0:CALCI.INPF",
             "SLAAR21-LTIM01-EVR0:CALCI.INPE",
+            "SLAAR21-LTIM01-EVR0:CALCI.INPF",
         ]
         for tc, tv in zip(channels, norm_diodes):
             PV(tc).put(bytes(str(tv), "utf8"), wait=True, timeout=8)
@@ -527,8 +527,8 @@ class SolidTargetDetectorPBPS_new_assembly(Assembly):
         channels = [
             "SLAAR21-LTIM01-EVR0:CALCI.INPG",
             "SLAAR21-LTIM01-EVR0:CALCI.INPH",
-            "SLAAR21-LTIM01-EVR0:CALCI.INPF",
             "SLAAR21-LTIM01-EVR0:CALCI.INPE",
+            "SLAAR21-LTIM01-EVR0:CALCI.INPF",
         ]
         for tc, tv in zip(channels, norm_diodes):
             PV(tc).put(bytes(str(tv), "utf8"))
