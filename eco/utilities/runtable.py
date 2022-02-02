@@ -1,14 +1,17 @@
-import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from pandas import DataFrame
 import pandas as pd
 import warnings
+from ..elements.adjustable import AdjustableFS
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
+warnings.simplefilter(action="ignore", category=UserWarning)
+
 import os
 from pathlib import Path
 from epics import PV
 import numpy as np
+import gspread
 import gspread_dataframe as gd
 import gspread_formatting as gf
 import gspread_formatting.dataframe as gf_dataframe
@@ -759,20 +762,13 @@ class Gsheet_API:
         any of these strings are uploaded. keys = None defaults to self.keys. keys = '' returns all columns
         """
         self.gc = gspread.authorize(self._credentials)
-        if keys is None:
-            keys = self.keys
-        self.ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
-        if len(keys) > 0:
-            keys = keys + " type"
-            upload_df = self._query_by_keys(keys=keys, df=df)
-        else:
-            upload_df = dfrtt()
-        upload_df = upload_df[
-            upload_df["metadata"]["type"].str.contains("scan", na=False)
+        ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
+        upload_df = df[
+            df["metadata.type"].str.contains("scan", na=False)
         ]
-        gd.set_with_dataframe(self.ws, upload_df, include_index=True, col=2)
+        gd.set_with_dataframe(ws, upload_df, include_index=True, col=2)
         gf_dataframe.format_with_dataframe(
-            self.ws, upload_df, include_index=True, include_column_header=True, col=2
+            ws, upload_df, include_index=True, include_column_header=True, col=2
         )
 
     def upload_pos(self, worksheet="positions", keys=None, df=None):
@@ -782,20 +778,13 @@ class Gsheet_API:
         keys = None defaults to self.keys. keys = [] returns all columns
         """
         self.gc = gspread.authorize(self._credentials)
-        if keys is None:
-            keys = self.keys
-        self.ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
-        if len(keys) > 0:
-            keys = keys + " metadata"
-            upload_df = self._query_by_keys(keys=keys, df=df)
-        else:
-            upload_df = df
-        upload_df = upload_df[
-            upload_df["metadata"]["type"].str.contains("pos", na=False)
+        ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
+        upload_df = df[
+            df["metadata.type"].str.contains("pos", na=False)
         ]
-        gd.set_with_dataframe(self.ws, upload_df, include_index=True, col=2)
+        gd.set_with_dataframe(ws, upload_df, include_index=True, col=2)
         gf_dataframe.format_with_dataframe(
-            self.ws, upload_df, include_index=True, include_column_header=True, col=2
+            ws, upload_df, include_index=True, include_column_header=True, col=2
         )
 
     def _upload_all(self, df):
@@ -811,52 +800,134 @@ class Gsheet_API:
         rt = threading.Thread(target=self._upload_all,  kwargs={'df':df})
         rt.start()
 
-    def _query_by_keys(self, keys="", df=None):
-        keys = keys.split(" ")
-        if len(df.columns[0]) > 1:
-            query_df = df[
-                df.columns[
-                    np.array(
-                        [
-                            np.any([np.any([x in i for x in keys]) for i in col])
-                            for col in df.columns
-                        ]
-                    )
-                ]
-            ]
+class Container:
+    def __init__(self, df, name=''):
+        self._cols = df.columns
+        self._top_level_name = name
+        self._df = df
+        self.__dir__()
+    
+    def _slice_df(self):
+        next_level_names = self._get_next_level_names()
+        try:
+            if len(next_level_names)==0:
+                sdf = self._df[self._top_level_name[:-1]]
+            else:
+                columns_to_keep = [f'{self._top_level_name}{n}' for n in next_level_names if f'{self._top_level_name}{n}' in self._cols]
+                sdf = self._df[columns_to_keep]
+        except:
+            sdf = pd.DataFrame(columns=next_level_names)
+        return sdf
+    
+    def _get_next_level_names(self):
+        if len(self._top_level_name) == 0:
+            next_level_names = np.unique(np.array([n.split('.')[0] for n in self._cols]))
         else:
-            query_df = df[
-                df.columns[
-                    np.array([np.any([x in col for x in keys]) for col in df.columns])
-                ]
-            ]
-        return query_df
+            next_level_names = np.unique(np.array([n.split(self._top_level_name)[1].split('.')[0] for n in self._cols if len(n.split(self._top_level_name))>1]))
+        return next_level_names
 
-    def query(self, keys="", index=None, values=None, df=None):
-        """
-        function to show saved data. keys is a string with keys separated by a space.
-        All columns, which contain any of these strings are returned.            self.prefix
-            + f"{runno:{self.Ndigits}0d}"
-            + self.separator
-            + "*."
-            + self.suffix
-        Index can be a list od  indices.
+    def _create_first_level_container(self, names):
+        for n in names:
+            self.__dict__[n]=Container(self._df, name=self._top_level_name+n+'.')
 
-        example: query(keys='xrd delay name', index = [0,5])
-        will return all columns containing either xrd or delay and  show the data for runs 0 and 5
+    def to_dataframe(self):
+        return self._slice_df()
+    
+    def __dir__(self):
+        next_level_names = self._get_next_level_names()
+        to_create = np.array([n for n in next_level_names if not n in self.__dict__.keys()])
+        directory = list(next_level_names)
+        directory.append('to_dataframe')
+        self._create_first_level_container(to_create)
+        return directory
 
-        example 2: query(keys = 'xrd delay name', index = ['p1', 'p2'])
-        will return the same columns for the saved positions 1 and 2
-        """
-        query_df = self._query_by_keys(keys, df)
-        if not values is None:
-            query_df = query_df.query(values)
-        query_df = query_df.T
-        if not index is None:
-            query_df = query_df[index]
-        return query_df
+    def __repr__(self):
+        return self._slice_df().T.__repr__()
 
-class Run_Table_2(DataFrame):
+    def _repr_html_(self):
+        sdf = self._slice_df()
+        if hasattr(sdf, '_repr_html_'):
+            return sdf.T._repr_html_()
+        else:
+            return None
+
+    def __getitem__(self, key):
+        return self._slice_df().loc[key]
+
+class Run_Table2:
+    def __init__(
+        self,
+        data=None,
+        exp_id=None,
+        exp_path=None,
+        keydf_fname=None,
+        cred_fname=None,
+        devices=None,
+        name=None,
+        gsheet_key_path = None,
+    ):
+        self._data=Run_Table_DataFrame(
+            data=data,
+            exp_id=exp_id,
+            exp_path=exp_path,
+            keydf_fname=keydf_fname,
+            cred_fname=cred_fname,
+            devices=devices,
+            name=name,
+            )
+        self.__dir__()
+
+        self.gsheet_keys = AdjustableFS(gsheet_key_path, name="gsheet_keys", default_value='metadata thc gps xrd att att_usd kb')
+    def append_run(self, runno, metadata,):
+        self._data.append_run(runno, metadata)
+        df = self._reduce_df()
+        self._data.google_sheet.upload_all(df=df)
+    def append_pos(self, name,):
+        self._data.append_pos(name)
+        df = self._reduce_df()
+        self._data.google_sheet.upload_all(df=df)
+
+    def _reduce_df(self, keys=None):
+        if keys is None:
+            keys = self.gsheet_keys()
+        dfs = [self.__dict__[key].to_dataframe() for key in keys.split(' ') if key in self.__dir__()]
+        dfc = self._concatenate_dfs(dfs)
+        return dfc
+
+    def _create_container(self):
+        for n in np.unique(np.array([n.split('.')[0] for n in self._data.columns])):
+            self.__dict__[n] = Container(df=self._data, name=n+'.')
+
+    def _concatenate_dfs(self, dfs):
+        dfc = dfs[0]
+        for df in dfs[1:]:
+            dfc = dfc.join(df)
+        return dfc
+
+    def __dir__(self):
+        devs = np.unique(np.array([n.split('.')[0] for n in self._data.columns]))
+        for dev in devs:
+            if dev not in self.__dict__.keys():
+                self.__dict__[dev] = Container(df=self._data, name=dev+'.')
+        directory = self.__dict__.keys()
+        return directory
+
+    def __str__(self):
+        devs = np.unique(np.array([n.split('.')[0] for n in self._data.columns]))
+        devs_abc = np.array([dev[0] for dev in devs])
+        devs_dict = {abc: devs[devs_abc == abc] for abc in np.unique(devs_abc)}
+        devs_str = ''
+        for key, value in devs_dict.items():
+            devs_str = devs_str + f'{key.capitalize()}\n'
+            for val in value:
+                devs_str = devs_str + f'{val}\n'
+            devs_str = devs_str + f'\n'
+        return devs_str
+
+    def __repr__(self):
+        return self.__str__()
+
+class Run_Table_DataFrame(DataFrame):
     def __init__(
         self,
         data=None,
@@ -866,14 +937,14 @@ class Run_Table_2(DataFrame):
         cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
         devices=None,
         name=None,
-
+    ):
         super().__init__(data=data)
 
         ### Load devices to parse for adjustables ###
         devices = eco.__dict__[devices]
         self.devices = devices
         self.name = name
-        self.fname = exp_path + f"{exp_id}_adjustable_runtable"
+        self.fname = exp_path + f"{exp_id}_runtable.pkl"
         self.load()
         self.google_sheet = Gsheet_API(
             keydf_fname,
@@ -894,16 +965,23 @@ class Run_Table_2(DataFrame):
         pd.options.display.max_rows = 100
         pd.options.display.max_columns = 50
         pd.set_option("display.float_format", lambda x: "%.5g" % x)
+    #def _get_values(self):
+    #    is_connected = np.array([pv.connected for pv in self._pvs.values()])
+    #    filtered_dict = {key: pv.value for key, pv in self._pvs.items() if pv.connected}
+    #    return filtered_dict
 
-
-
-    def _get_values(self):
-        is_connected = np.array([pv.connected for pv in self._pvs.values()])
-        filtered_dict = {key: pv.value for key, pv in self._pvs.items() if pv.connected}
-        return filtered_dict
+    @property
+    def df(self):
+        return self
+    @df.setter
+    def df(self, data):
+        super().__init__(data)
+    @df.deleter
+    def df(self):
+        return
 
     def _remove_duplicates(self):
-            self.update_self(data=self[~self.index.duplicated(keep="last")])
+        self.df = self[~self.index.duplicated(keep="last")]
 
     def save(self):
         data_dir = Path(os.path.dirname(self.fname))
@@ -915,14 +993,11 @@ class Run_Table_2(DataFrame):
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")
-        self.to_pickle(self.fname)
+        pd.DataFrame(self).to_pickle(self.fname)
 
     def load(self):
         if os.path.exists(self.fname):
-            self.update_self(pd.read_pickle(self.fname))
-
-    def update_self(self, data):
-        super().__init__(data=data)
+            self.df = pd.read_pickle(self.fname)
 
     def append_run(
         self,
@@ -944,19 +1019,20 @@ class Run_Table_2(DataFrame):
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
         values = np.array([val for adjs in dat.values() for val in adjs.values()])
-        run_df = DataFrame([values], columns=multiindex, index=[runno])
-        self.update_self(self.append(run_df))
+        index = np.array([f'{dev}.{adj}' for dev, adjs in dat.items() for adj in adjs.keys()])
+        #run_df = DataFrame([values], columns=multiindex, index=[runno])
+        run_df = DataFrame([values], columns=index, index=[runno])
+        self.df=self.append(run_df)
         self._remove_duplicates()
-        self.order_df()
+        #self.order_df()
         self.save()
-        self.google_sheet.upload_all(df=self)
 
     def append_pos(self, name=""):
         self.load()
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents()
         try:
-            posno = int(self[self.metadata.type=='pos'].index[-1].split("p")[1]) + 1
+            posno = int(self[self['metadata.type']=='pos'].index[-1].split("p")[1]) + 1
         except:
             posno = 0
         dat = self._get_adjustable_values()
@@ -966,11 +1042,14 @@ class Run_Table_2(DataFrame):
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
         values = np.array([val for adjs in dat.values() for val in adjs.values()])
-        pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
-        self.update_self(self.append(pos_df))
-        self.order_df()
+        index = np.array([f'{dev}.{adj}' for dev, adjs in dat.items() for adj in adjs.keys()])
+        #pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
+        pos_df = DataFrame([values], columns=index, index=[f"p{posno}"])
+
+        self.df=self.append(pos_df)
+        self._remove_duplicates()
+        #self.order_df()
         self.save()
-        self.google_sheet.upload_all(df=self)
 
     def _get_adjustable_values(self, silent=True):
         """
@@ -980,8 +1059,8 @@ class Run_Table_2(DataFrame):
             dat = {}
             for devname, dev in self.good_adjustables.items():
                 dat[devname] = {}
+                bad_adjs = []
                 for adjname, adj in dev.items():
-                    bad_adjs = []
                     try:
                         dat[devname][adjname] = adj.get_current_value()
                     except:
@@ -992,9 +1071,7 @@ class Run_Table_2(DataFrame):
                 for ba in bad_adjs:
                     if not devname in self.bad_adjustables.keys():
                         self.bad_adjustables[devname] = {}
-                    self.bad_adjustables[devname][adjname] = self.good_adjustables[
-                        devname
-                    ].pop(adjname)
+                    self.bad_adjustables[devname][ba] = self.good_adjustables[devname].pop(ba)
         else:
             dat = {
                 devname: {
@@ -1236,6 +1313,5 @@ class Run_Table_2(DataFrame):
         if key_order is None:
             key_order = self.key_order
         devs = [item[0] for item in list(self.columns)]
-        self.update_self(self[self._orderlist(list(self.columns), key_order, orderlist=devs)])
-    def __call__(self, keys):
-        return self.google_sheet._query_by_keys(keys=keys, df=self).T
+        self.df = self[self._orderlist(list(self.columns), key_order, orderlist=devs)]
+
