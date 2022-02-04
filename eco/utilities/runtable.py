@@ -698,6 +698,7 @@ class Gsheet_API:
         cred_fname,
         exp_id,
         exp_path,
+        gsheet_key_path,
     ):
         ### credentials and settings for uploading to gspread ###
         self._scope = [
@@ -705,12 +706,13 @@ class Gsheet_API:
             "https://www.googleapis.com/auth/drive",
         ]
         self._credentials = ServiceAccountCredentials.from_json_keyfile_name(
-            cred_fname, 
-            self._scope
+            "/sf/bernina/config/src/python/gspread/pandas_push", self._scope
         )
+        self.gc = gspread.authorize(self._credentials)
         self._keydf_fname = keydf_fname
         self.keys = "metadata midir xrd energy transmission delay lxt pulse_id att_self att_fe_self"
         self._key_df=DataFrame()
+        self.gsheet_keys = AdjustableFS(gsheet_key_path, name="gsheet_keys", default_value='metadata thc gps xrd att att_usd kb')
         self.init_runtable(exp_id)
 
 
@@ -823,7 +825,7 @@ class Container:
         if len(self._top_level_name) == 0:
             next_level_names = np.unique(np.array([n.split('.')[0] for n in self._cols]))
         else:
-            next_level_names = np.unique(np.array([n.split(self._top_level_name)[1].split('.')[0] for n in self._cols if len(n.split(self._top_level_name))>1]))
+            next_level_names = np.unique(np.array([n.split(self._top_level_name)[1].split('.')[0] for n in self._cols if n[:len(self._top_level_name)]==self._top_level_name]))
         return next_level_names
 
     def _create_first_level_container(self, names):
@@ -858,38 +860,46 @@ class Run_Table2:
     def __init__(
         self,
         data=None,
-        exp_id=None,
-        exp_path=None,
+        exp_id='no_exp_id',
+        exp_path='runtable',
         keydf_fname=None,
         cred_fname=None,
         devices=None,
         name=None,
         gsheet_key_path = None,
     ):
+
         self._data=Run_Table_DataFrame(
             data=data,
             exp_id=exp_id,
             exp_path=exp_path,
-            keydf_fname=keydf_fname,
-            cred_fname=cred_fname,
             devices=devices,
             name=name,
             )
+        if np.all([k is not None for k in [keydf_fname, cred_fname, gsheet_key_path]]):
+            self._google_sheet_api = Gsheet_API(
+                keydf_fname,
+                cred_fname,
+                exp_id,
+                exp_path,
+                gsheet_key_path,
+            )
         self.__dir__()
 
-        self.gsheet_keys = AdjustableFS(gsheet_key_path, name="gsheet_keys", default_value='metadata thc gps xrd att att_usd kb')
     def append_run(self, runno, metadata,):
         self._data.append_run(runno, metadata)
-        df = self._reduce_df()
-        self._data.google_sheet.upload_all(df=df)
+        if self._google_sheet_api is not None:
+            df = self._reduce_df()
+            self._google_sheet_api.upload_all(df=df)
     def append_pos(self, name,):
         self._data.append_pos(name)
-        df = self._reduce_df()
-        self._data.google_sheet.upload_all(df=df)
+        if self._google_sheet_api is not None:
+            df = self._reduce_df()
+            self._google_sheet_api.upload_all(df=df)
 
-    def _reduce_df(self, keys=None):
+    def _reduce_df(self, keys=None,):
         if keys is None:
-            keys = self.gsheet_keys()
+            keys = self._google_sheet_api.gsheet_keys()
         dfs = [self.__dict__[key].to_dataframe() for key in keys.split(' ') if key in self.__dir__()]
         dfc = self._concatenate_dfs(dfs)
         return dfc
@@ -933,25 +943,19 @@ class Run_Table_DataFrame(DataFrame):
         data=None,
         exp_id=None,
         exp_path=None,
-        keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
-        cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
         devices=None,
         name=None,
     ):
         super().__init__(data=data)
 
         ### Load devices to parse for adjustables ###
-        devices = eco.__dict__[devices]
+        if devices is not None:
+            devices = eco.__dict__[devices]
         self.devices = devices
         self.name = name
         self.fname = exp_path + f"{exp_id}_runtable.pkl"
         self.load()
-        self.google_sheet = Gsheet_API(
-            keydf_fname,
-            cred_fname,
-            exp_id,
-            exp_path,
-        )
+
 
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
@@ -1011,6 +1015,9 @@ class Run_Table_DataFrame(DataFrame):
             "steps": 51,
         },
     ):
+        self.load()
+        if len(self.adjustables) == 0:
+            self._parse_parent_fewerparents()
         dat = self._get_adjustable_values()
         dat["metadata"] = metadata
         dat["metadata"]["time"] = datetime.now()
@@ -1187,7 +1194,6 @@ class Run_Table_DataFrame(DataFrame):
                     if np.all(
                         [
                             hasattr(s_class, "__dict__"),
-                            hasattr(s_class, "name"),
                             s_class.__hash__ is not None,
                             "eco" in str(type(s_class)),
                             ~np.any(
@@ -1198,7 +1204,7 @@ class Run_Table_DataFrame(DataFrame):
                             ),
                         ]
                     ):
-                        self.adjustables[s_class.name] = {}
+                        self.adjustables[key] = {}
                         self._parse_child_instances_fewerparents(s_class)
             except Exception as e:
                 print(e)
