@@ -158,7 +158,10 @@ class Scan:
             except:
                 print("elog posting failed")
         if self._run_table:
-            self._run_table.append_run(runno, metadata=metadata)
+            try:
+                self._run_table.append_run(runno, metadata=metadata)
+            except:
+                print("WARNING: issue adding data to run table")
 
     def get_filename(self, stepNo, Ndigits=4):
         fina = os.path.join(self.basepath, Path(self.fina).stem)

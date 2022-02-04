@@ -55,7 +55,7 @@ class LaserBernina(Assembly):
         
         self._append(
             MotorRecord,
-            self.pvname + "-M521:MOTOR_1",
+            self.pvname + "-M522:MOTOR_1",
             name="delaystage_pump",
             is_setting=True,
         )

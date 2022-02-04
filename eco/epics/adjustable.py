@@ -194,7 +194,7 @@ class AdjustablePvString:
         )
 
     def __repr__(self):
-        return self.get_current_value()
+        return str(self.get_current_value())
 
     def __call__(self, string=None):
         if not string is None:
