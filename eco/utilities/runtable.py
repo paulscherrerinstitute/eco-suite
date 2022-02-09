@@ -23,6 +23,13 @@ from epics import caget
 import eco
 import threading
 
+pd.options.display.max_rows = 100
+pd.options.display.max_columns = 50
+pd.options.display.max_colwidth = 50
+pd.options.display.width = None
+pd.set_option("display.float_format", lambda x: "%.5g" % x)
+
+
 class Run_Table:
     def __init__(
         self,
@@ -809,14 +816,20 @@ class Container:
         self._df = df
         self.__dir__()
     
-    def _slice_df(self):
+    def _slice_df(self, add_metadata=False):
         next_level_names = self._get_next_level_names()
         try:
             if len(next_level_names)==0:
-                sdf = self._df[self._top_level_name[:-1]]
+                columns_to_keep = self._top_level_name[:-1]
+                if add_metadata:
+                    col_meta = [k for k in ['metadata.name', 'metadata.time'] if k in self._cols]
+                    columns_to_keep = np.unique([columns_to_keep]+col_meta)
             else:
                 columns_to_keep = [f'{self._top_level_name}{n}' for n in next_level_names if f'{self._top_level_name}{n}' in self._cols]
-                sdf = self._df[columns_to_keep]
+                if add_metadata:
+                    col_meta = [k for k in ['metadata.name', 'metadata.time'] if k in self._cols]
+                    columns_to_keep = np.unique(columns_to_keep+col_meta)
+            sdf = self._df[columns_to_keep]
         except:
             sdf = pd.DataFrame(columns=next_level_names)
         return sdf
@@ -833,7 +846,7 @@ class Container:
             self.__dict__[n]=Container(self._df, name=self._top_level_name+n+'.')
 
     def to_dataframe(self):
-        return self._slice_df()
+        return self._slice_df(add_metadata=False)
     
     def __dir__(self):
         next_level_names = self._get_next_level_names()
@@ -844,6 +857,7 @@ class Container:
         return directory
 
     def __repr__(self):
+        #pd.options.display.width = os.get_terminal_size().columns
         return self._slice_df().T.__repr__()
 
     def _repr_html_(self):
@@ -854,7 +868,9 @@ class Container:
             return None
 
     def __getitem__(self, key):
-        return self._slice_df().loc[key]
+        if type(key) is tuple:
+            key = list(key)
+        return self._slice_df().loc[key].T
 
 class Run_Table2:
     def __init__(
