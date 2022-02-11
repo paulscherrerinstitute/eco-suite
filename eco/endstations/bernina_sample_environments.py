@@ -97,6 +97,14 @@ class High_field_thz_chamber(Assembly):
             name='temp_sample',
             is_setting=False,
         )
+        self._append(
+            AdjustablePv,
+            pvsetname = 'SARES20-CRYO:TEMP-B',
+            pvreadbackname='SARES20-CRYO:TEMP-B_RBV',
+            accuracy=0.1,
+            name='temp_coldfinger',
+            is_setting=False,
+        )
 
 
 
