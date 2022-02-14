@@ -1011,9 +1011,9 @@ class Run_Table_DataFrame(DataFrame):
         self.bad_adjustables = {}
 
         ###parsing options
-        self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan evr _motor Alias".split(" ")
-        self._parse_exclude_class_types = ("__ alias namespace daq scan evr _motor Alias AdjustablePv AxisPTZ".split(" "))
-        self._adj_exclude_class_types = ("__ alias namespace daq scan evr _motor Alias".split(" "))
+        self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(" ")
+        self._parse_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv AxisPTZ".split(" "))
+        self._adj_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias".split(" "))
         self.key_order = "metadata xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
         pd.options.display.max_rows = 100
         pd.options.display.max_columns = 50
@@ -1196,7 +1196,7 @@ class Run_Table_DataFrame(DataFrame):
         self, parent_class, adj_prefix=None, parent_name=None
     ):
         if parent_name is None:
-            parent_name = parent_class.name
+            parent_name = own_name
         self._get_all_adjustables_fewerparents(parent_class, adj_prefix, parent_name)
         if parent_name is not parent_class.name:
             if adj_prefix is not None:
@@ -1205,23 +1205,27 @@ class Run_Table_DataFrame(DataFrame):
                 adj_prefix = parent_class.name
 
         sub_classes = []
+        sub_classnames = []
         for key in parent_class.__dict__.keys():
             if ~np.any([s in key for s in self._parse_exclude_keys]):
                 s_class = parent_class.__dict__[key]
+
                 if np.all(
                     [
-                        hasattr(s_class, "__dict__"),
                         hasattr(s_class, "name"),
+                        hasattr(s_class, "__dict__"),
                         s_class.__hash__ is not None,
-                        "eco" in str(type(s_class)),
+                        "eco" in str(s_class.__class__),
                         ~np.any(
                             [
-                                s in str(type(s_class))
+                                s in str(s_class.__class__)
                                 for s in self._parse_exclude_class_types
                             ]
                         ),
                     ]
                 ):
+                    if s_class.name == None:
+                        s_class.name = key
                     sub_classes.append(s_class)
         return set(sub_classes).union(
             [
@@ -1244,17 +1248,17 @@ class Run_Table_DataFrame(DataFrame):
                         [
                             hasattr(s_class, "__dict__"),
                             s_class.__hash__ is not None,
-                            "eco" in str(type(s_class)),
+                            "eco" in str(s_class.__class__),
                             ~np.any(
                                 [
-                                    s in str(type(s_class))
+                                    s in str(s_class.__class__)
                                     for s in self._parse_exclude_class_types
                                 ]
                             ),
                         ]
                     ):
                         self.adjustables[key] = {}
-                        self._parse_child_instances_fewerparents(s_class)
+                        self._parse_child_instances_fewerparents(s_class, parent_name = key)
             except Exception as e:
                 print(e)
                 print(key)

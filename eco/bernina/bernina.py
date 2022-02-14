@@ -339,15 +339,15 @@ namespace.append_obj(
     fina_hex_angle_offset="~/eco/reference_values/hex_pi_angle_offset.json",
     lazy=True,
 )
-namespace.append_obj(
-    "XRDYou",
-    module_name="eco.endstations.bernina_diffractometers",
-    Id="SARES21-XRD",
-    configuration=config_berninamesp["xrd_config"],
-    diff_detector={"jf_id": "JF01T03V01"},
-    name="xrd",
-    lazy=True,
-)
+#namespace.append_obj(
+#    "XRDYou",
+#    module_name="eco.endstations.bernina_diffractometers",
+#    Id="SARES21-XRD",
+#    configuration=config_berninamesp["xrd_config"],
+#    diff_detector={"jf_id": "JF01T03V01"},
+#    name="xrd",
+#    lazy=True,
+#)
 namespace.append_obj(
     "KBMirrorBernina_new",
     "SAROP21-OKBV139",
@@ -494,9 +494,9 @@ def _message_end_scan(scan):
     e.stop()
 
 callbacks_start_scan = []
-#callbacks_start_scan = [lambda scan: namespace.init_all()]
-#callbacks_start_scan.append(_append_namespace_aliases_to_scan)
-#callbacks_start_scan.append(_append_namesace_status_to_scan)
+callbacks_start_scan = [lambda scan: namespace.init_all()]
+callbacks_start_scan.append(_append_namespace_aliases_to_scan)
+callbacks_start_scan.append(_append_namesace_status_to_scan)
 callbacks_end_scan = [_message_end_scan]
 
 
