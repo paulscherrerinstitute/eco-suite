@@ -3,6 +3,8 @@ from pandas import DataFrame
 import pandas as pd
 import warnings
 from ..elements.adjustable import AdjustableFS
+from ..elements.memory import Memory
+
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
@@ -848,11 +850,39 @@ class Container:
     def to_dataframe(self):
         return self._slice_df(add_metadata=False)
     
+    def recall(self, key, next_level=True, get_status = True):
+        sr = self[key]
+        if next_level:
+            srs = [self.__dict__[k][key] for k in self._get_next_level_names()]
+            srs.insert(0,sr)
+            sr = self._concatenate_srs(srs)
+        idxn = pd.Index([k.split(self._top_level_name)[1] for k in sr.index])
+        sr.index = idxn
+        dev = name2obj(self._df.devices, self._top_level_name)
+        memory = Memory(obj=dev, memory_dir='')
+        if get_status:
+            try:
+                # get setting keys from obj
+                mem = {tk: {ak: sr[ak] for ak in tv.keys() if ak in sr.keys()} for tk, tv in dev.get_status().items()}
+            except:
+                mem = {'settings':{k: v for k, v in sr.items() if not 'readback' in k}}
+        else:
+            mem = {'settings':{k: v for k, v in sr.items() if not 'readback' in k}}
+        memory.recall(input_obj=mem)
+        
+
+    def _concatenate_srs(self, srs):
+        src = srs[0]
+        for sr in srs[1:]:
+            if type(sr) == pd.core.series.Series:
+                src = src.append(sr)
+        return src
+
     def __dir__(self):
         next_level_names = self._get_next_level_names()
         to_create = np.array([n for n in next_level_names if not n in self.__dict__.keys()])
         directory = list(next_level_names)
-        directory.append('to_dataframe')
+        directory.extend(['to_dataframe', 'recall'])
         self._create_first_level_container(to_create)
         return directory
 
@@ -870,7 +900,10 @@ class Container:
     def __getitem__(self, key):
         if type(key) is tuple:
             key = list(key)
-        return self._slice_df().loc[key].T
+        df = self._slice_df().loc[key]
+        if hasattr(df,'T'):
+            df = df.T
+        return df
 
 class Run_Table2:
     def __init__(
@@ -1337,3 +1370,14 @@ class Run_Table_DataFrame(DataFrame):
         devs = [item[0] for item in list(self.columns)]
         self.df = self[self._orderlist(list(self.columns), key_order, orderlist=devs)]
 
+def name2obj(obj_parent, name, delimiter="."):
+    if type(name) is str:
+        name = name.split(delimiter)
+    obj = obj_parent
+    for tn in name:
+        if not tn or tn=='self':
+            obj = obj
+        else:
+            obj = obj.__dict__[tn]
+
+    return obj

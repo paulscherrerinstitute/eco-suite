@@ -128,13 +128,13 @@ class Memory:
         force=False,
     ):
         # if input_obj:
-        mem = self.get_memory(index=memory_index, key=key)
+        mem = self.get_memory(index=memory_index, key=key, input_obj=input_obj,)
         rec = mem["settings"]
         if force:
             select = [True] * len(rec.items())
         else:
             select = self.select_from_memory(
-                memory_index=memory_index, key=key, show_changes_only=show_changes_only
+                memory_index=memory_index, key=key, show_changes_only=show_changes_only, input_obj=input_obj
             )
             if not select:
                 return
@@ -378,7 +378,7 @@ def name2obj(obj_parent, name, delimiter="."):
         name = name.split(delimiter)
     obj = obj_parent
     for tn in name:
-        if not tn:
+        if not tn or tn=='self':
             obj = obj
         else:
             obj = obj.__dict__[tn]
