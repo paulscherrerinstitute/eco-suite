@@ -86,7 +86,7 @@ class Memory:
         self._memories(mem)
 
     def get_memory(self, input_obj=None, index=None, key=None, filter_existing=True):
-        if input_obj:
+        if not input_obj is None:
             if type(input_obj) is dict:
                 mem_full = input_obj
             else:
@@ -159,6 +159,9 @@ class Memory:
             return
         else:
             return changes
+    
+    def recall_from_runtable(self):
+        ...
 
     def get_memory_difference_str(
         self, memory, select=None, ask_select=True, show_changes_only=False

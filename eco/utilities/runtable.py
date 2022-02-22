@@ -818,19 +818,14 @@ class Container:
         self._df = df
         self.__dir__()
     
-    def _slice_df(self, add_metadata=False):
+    def _slice_df(self):
+        self._df.load()
         next_level_names = self._get_next_level_names()
         try:
             if len(next_level_names)==0:
-                columns_to_keep = self._top_level_name[:-1]
-                if add_metadata:
-                    col_meta = [k for k in ['metadata.name', 'metadata.time'] if k in self._cols]
-                    columns_to_keep = np.unique([columns_to_keep]+col_meta)
+                columns_to_keep = [self._top_level_name[:-1]]
             else:
                 columns_to_keep = [f'{self._top_level_name}{n}' for n in next_level_names if f'{self._top_level_name}{n}' in self._cols]
-                if add_metadata:
-                    col_meta = [k for k in ['metadata.name', 'metadata.time'] if k in self._cols]
-                    columns_to_keep = np.unique(columns_to_keep+col_meta)
             sdf = self._df[columns_to_keep]
         except:
             sdf = pd.DataFrame(columns=next_level_names)
@@ -847,8 +842,12 @@ class Container:
         for n in names:
             self.__dict__[n]=Container(self._df, name=self._top_level_name+n+'.')
 
-    def to_dataframe(self):
-        return self._slice_df(add_metadata=False)
+    def to_dataframe(self, full_name=True, next_level=False):
+        df = self._slice_df()
+        if not full_name:
+            coln = pd.Index([k.split(self._top_level_name)[1] for k in df.columns])
+            df.columns = coln
+        return df
     
     def recall(self, key, next_level=True, get_status = True):
         sr = self[key]
@@ -863,13 +862,18 @@ class Container:
         if get_status:
             try:
                 # get setting keys from obj
-                mem = {tk: {ak: sr[ak] for ak in tv.keys() if ak in sr.keys()} for tk, tv in dev.get_status().items()}
+                mem = {tk: {ak: sr[ak] for ak in tv.keys() if ak in sr.index} for tk, tv in dev.get_status().items()}
             except:
                 mem = {'settings':{k: v for k, v in sr.items() if not 'readback' in k}}
         else:
             mem = {'settings':{k: v for k, v in sr.items() if not 'readback' in k}}
         memory.recall(input_obj=mem)
         
+    def _concatenate_dfs(self, dfs):
+        dfc = dfs[0]
+        for df in dfs[1:]:
+            dfc = dfc.join(df)
+        return dfc
 
     def _concatenate_srs(self, srs):
         src = srs[0]
@@ -933,6 +937,8 @@ class Run_Table2:
                 exp_path,
                 gsheet_key_path,
             )
+        else:
+            self._google_sheet_api = None
         self.__dir__()
 
     def append_run(self, runno, metadata,):
@@ -945,6 +951,9 @@ class Run_Table2:
         if self._google_sheet_api is not None:
             df = self._reduce_df()
             self._google_sheet_api.upload_all(df=df)
+
+    def to_dataframe(self):
+        return DataFrame(self._data)
 
     def _reduce_df(self, keys=None,):
         if keys is None:
@@ -1012,7 +1021,7 @@ class Run_Table_DataFrame(DataFrame):
 
         ###parsing options
         self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(" ")
-        self._parse_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv AxisPTZ".split(" "))
+        self._parse_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv".split(" "))
         self._adj_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias".split(" "))
         self.key_order = "metadata xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
         pd.options.display.max_rows = 100
@@ -1246,6 +1255,7 @@ class Run_Table_DataFrame(DataFrame):
                     s_class = parent.__dict__[key]
                     if np.all(
                         [
+                            hasattr(s_class, "name"),
                             hasattr(s_class, "__dict__"),
                             s_class.__hash__ is not None,
                             "eco" in str(s_class.__class__),

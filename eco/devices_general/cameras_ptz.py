@@ -36,12 +36,17 @@ AUTOIRIS = IntEnum("autoiris", {"on": 1, "off": 0})
 
 
 class AxisPTZ(Assembly):
-    def __init__(self, camera_address, name="dummycam"):
+    def __init__(self, camera_address, name="dummycam",timeout=0.1):
         super().__init__(name=name)
         self.camera_address = camera_address
         self.camera_n = 1
         self.camera_ir = 0
-
+        self.timeout = timeout
+        
+        try:
+            self.get_position()
+        except:
+            raise Exception(f'Could not connect to camera {self.name}!!')
         self._append(
             AdjustableGetSet,
             lambda: polyval([0.00290058, 0.99709942], self.get_position()["zoom"]),
@@ -95,6 +100,7 @@ class AxisPTZ(Assembly):
             name="autoiris",
             is_setting=True,
         )
+
 
     # camera_n = 1
     # camera_url = 'http://<<camera address>>/axis-cgi/com/ptz.cgi'
@@ -154,7 +160,7 @@ class AxisPTZ(Assembly):
         }
 
         q_args = merge_dicts(q_cmd, base_q_args)
-        resp = requests.get(self.camera_url, params=q_args)
+        resp = requests.get(self.camera_url, params=q_args, timeout=self.timeout)
         if resp.text.startswith("Error"):
             print(resp.text)
         else:
