@@ -181,14 +181,22 @@ class Daq:
         return runno, filenames
 
     def get_next_run_number(self):
-        return requests.post(
+        res = requests.get(
             f"{self.broker_address}/get_next_run_number",
             json={'pgroup':self.pgroup},
             timeout=self.timeout,
-            ).json()
-        # return requests.get(f"{self.broker_address}/get_next_run_number").json()[
-        #     "run_number"
-        # ]
+            )
+        assert res.ok, f'Getting last run number failed {res.raise_for_status()}'
+        return int(res.json()['message'])
+
+    def get_last_run_number(self):
+        res = requests.get(
+            f"{self.broker_address}/get_last_run_number",
+            json={'pgroup':self.pgroup},
+            timeout=self.timeout,
+            )
+        assert res.ok, f'Getting last run number failed {res.raise_for_status()}'
+        return int(res.json()['message'])
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[

@@ -482,7 +482,6 @@ def _append_namesace_status_to_scan(scan):
         base=None
     )
 
-
 def _append_namespace_aliases_to_scan(scan):
     scan.scan_info["scan_parameters"]["namespace_aliases"] = namespace.alias.get_all()
 
@@ -493,10 +492,29 @@ def _message_end_scan(scan):
     e.runAndWait()
     e.stop()
 
+def _increment_daq_run_number(scan, daq=daq):
+    try:
+        daq_last_run_number = daq.get_last_run_number()
+        if int(scan.run_number) is int(daq_last_run_number)+1:
+            daq_run_number = daq.get_next_run_number()
+        else: 
+            daq_run_number = daq_last_run_number
+        if int(scan.run_number) is not int(daq_run_number):
+            print(f'Difference in run number between eco {int(scan.run_number)} and daq {int(daq_run_number)}: using run number {int(scan.run_number)}')
+            if int(scan.run_number) > int(daq_run_number):
+                n = int(scan.run_number) - int(daq_run_number)
+                print('Increasing daq run_number')
+                for i in range(n):
+                    rn = daq.get_next_run_number()
+                    print(rn)
+    except Exception as e:
+        print(e)
+
 callbacks_start_scan = []
 callbacks_start_scan = [lambda scan: namespace.init_all()]
 callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
+callbacks_start_scan.append(_increment_daq_run_number)
 callbacks_end_scan = [_message_end_scan]
 
 

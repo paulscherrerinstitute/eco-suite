@@ -4,7 +4,7 @@ import pandas as pd
 import warnings
 from ..elements.adjustable import AdjustableFS
 from ..elements.memory import Memory
-
+from subprocess import call
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
@@ -1055,7 +1055,8 @@ class Run_Table_DataFrame(DataFrame):
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")
-        pd.DataFrame(self).to_pickle(self.fname)
+        pd.DataFrame(self).to_pickle(self.fname + 'tmp')
+        call(['mv', self.fname + 'tmp', self.fname])
 
     def load(self):
         if os.path.exists(self.fname):
