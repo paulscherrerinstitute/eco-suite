@@ -226,7 +226,7 @@ namespace.append_obj(
     n_output_rear=16,
     name="evr",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -237,7 +237,7 @@ namespace.append_obj(
     n_output_rear=16,
     name="evr_laser",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -248,7 +248,7 @@ namespace.append_obj(
     n_output_rear=16,
     name="evr_hutch_laser",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -259,7 +259,7 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver72",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -270,7 +270,7 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver83",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -281,7 +281,7 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver84",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -292,7 +292,8 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver85",
     module_name="eco.timing.event_timing_new_new",
-    lazy=True,
+    # lazy=True,
+    lazy=False,
 )
 
 namespace.append_obj(
@@ -327,7 +328,21 @@ namespace.append_obj(
     "GudeStrip",
     "SARES20-CPPS-01",
     lazy=True,
-    name="powerstrip_mobile",
+    name="powerstrip_gps",
+    module_name="eco.devices_general.powersockets",
+)
+namespace.append_obj(
+    "GudeStrip",
+    "SARES20-CPPS-04",
+    lazy=True,
+    name="powerstrip_xrd",
+    module_name="eco.devices_general.powersockets",
+)
+namespace.append_obj(
+    "GudeStrip",
+    "SARES20-CPPS-02",
+    lazy=True,
+    name="powerstrip_patch2",
     module_name="eco.devices_general.powersockets",
 )
 namespace.append_obj(
@@ -339,15 +354,15 @@ namespace.append_obj(
     fina_hex_angle_offset="~/eco/reference_values/hex_pi_angle_offset.json",
     lazy=True,
 )
-#namespace.append_obj(
-#    "XRDYou",
-#    module_name="eco.endstations.bernina_diffractometers",
-#    Id="SARES21-XRD",
-#    configuration=config_berninamesp["xrd_config"],
-#    diff_detector={"jf_id": "JF01T03V01"},
-#    name="xrd",
-#    lazy=True,
-#)
+namespace.append_obj(
+    "XRDYou",
+    module_name="eco.endstations.bernina_diffractometers",
+    Id="SARES21-XRD",
+    configuration=config_berninamesp["xrd_config"],
+    diff_detector={"jf_id": "JF01T03V01"},
+    name="xrd",
+    lazy=True,
+)
 namespace.append_obj(
     "KBMirrorBernina_new",
     "SAROP21-OKBV139",
@@ -355,7 +370,7 @@ namespace.append_obj(
     module_name="eco.xoptics.kb_bernina",
     usd_table=usd_table,
     name="kb",
-    diffractometer=gps,
+    diffractometer=xrd,
 )
 
 ### channelsfor daq ###
@@ -482,6 +497,7 @@ def _append_namesace_status_to_scan(scan):
         base=None
     )
 
+
 def _append_namespace_aliases_to_scan(scan):
     scan.scan_info["scan_parameters"]["namespace_aliases"] = namespace.alias.get_all()
 
@@ -492,23 +508,27 @@ def _message_end_scan(scan):
     e.runAndWait()
     e.stop()
 
+
 def _increment_daq_run_number(scan, daq=daq):
     try:
         daq_last_run_number = daq.get_last_run_number()
-        if int(scan.run_number) is int(daq_last_run_number)+1:
+        if int(scan.run_number) is int(daq_last_run_number) + 1:
             daq_run_number = daq.get_next_run_number()
-        else: 
+        else:
             daq_run_number = daq_last_run_number
         if int(scan.run_number) is not int(daq_run_number):
-            print(f'Difference in run number between eco {int(scan.run_number)} and daq {int(daq_run_number)}: using run number {int(scan.run_number)}')
+            print(
+                f"Difference in run number between eco {int(scan.run_number)} and daq {int(daq_run_number)}: using run number {int(scan.run_number)}"
+            )
             if int(scan.run_number) > int(daq_run_number):
                 n = int(scan.run_number) - int(daq_run_number)
-                print('Increasing daq run_number')
+                print("Increasing daq run_number")
                 for i in range(n):
                     rn = daq.get_next_run_number()
                     print(rn)
     except Exception as e:
         print(e)
+
 
 callbacks_start_scan = []
 callbacks_start_scan = [lambda scan: namespace.init_all()]
@@ -547,24 +567,24 @@ namespace.append_obj(
 #### Beam pointing cameras for THz setups ####
 
 
-namespace.append_obj(
-    "CameraBasler",
-    pvname="SLAAR21-LCAM-C531",
-    lazy=True,
-    name="cam_NIR_position",
-    camserver_group=["Laser", "Bernina"],
-    module_name="eco.devices_general.cameras_swissfel",
-)
-
-
-namespace.append_obj(
-    "CameraBasler",
-    pvname="SLAAR21-LCAM-C511",
-    lazy=True,
-    name="cam_NIR_angle",
-    camserver_group=["Laser", "Bernina"],
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#    "CameraBasler",
+#    pvname="SLAAR21-LCAM-C531",
+#    lazy=True,
+#    name="cam_NIR_position",
+#    camserver_group=["Laser", "Bernina"],
+#    module_name="eco.devices_general.cameras_swissfel",
+# )
+#
+#
+# namespace.append_obj(
+#    "CameraBasler",
+#    pvname="SLAAR21-LCAM-C511",
+#    lazy=True,
+#    name="cam_NIR_angle",
+#    camserver_group=["Laser", "Bernina"],
+#    module_name="eco.devices_general.cameras_swissfel",
+# )
 
 namespace.append_obj(
     "AxisPTZ",
@@ -592,8 +612,17 @@ namespace.append_obj(
 # )
 
 namespace.append_obj(
+    "MicroscopeMotorRecord",
+    "SARES20-CAMS142-C1",
+    lazy=True,
+    pvname_zoom="SARES20-MF1:MOT_16",
+    name="samplecam_microscope",
+    module_name="eco.microscopes",
+)
+
+namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-M1",
+    "SARES20-CAMS142-C2",
     lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
@@ -634,43 +663,98 @@ namespace.append_obj(
     name="las",
     module_name="eco.loptics.bernina_laser",
 )
-namespace.append_obj(
-    "IncouplingCleanBernina",
-    lazy=False,
-    name="las_inc",
-    module_name="eco.loptics.bernina_laser",
-)
+# namespace.append_obj(
+#    "IncouplingCleanBernina",
+#    lazy=False,
+#    name="las_inc",
+#    module_name="eco.loptics.bernina_laser",
+# )
 
 
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice
 
 
+# namespace.append_obj(
+#    "Organic_crystal_breadboard",
+#    lazy=True,
+#    name="ocb",
+#    module_name="eco.endstations.bernina_sample_environments",
+#    Id="SARES23",
+# )
+
+from ..epics.adjustable import AdjustablePv
+
+# ad hoc N2 jet readout
+class N2jet(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+
+        ### lakeshore temperatures ####
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-CRYO:TEMP-C_RBV",
+            pvreadbackname="SARES20-CRYO:TEMP-C_RBV",
+            accuracy=0.1,
+            name="sample_temp",
+            is_setting=False,
+        )
+        ### oxford jet readouts ####
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-OXCS:GasSetPoint",
+            pvreadbackname="SARES20-OXCS:GasSetPoint",
+            accuracy=0.1,
+            name="gas_temp_setpoint",
+            is_setting=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-OXCS:GasTemp",
+            pvreadbackname="SARES20-OXCS:GasTemp",
+            accuracy=0.1,
+            name="gas_temp",
+            is_setting=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-OXCS:GasFlow",
+            pvreadbackname="SARES20-OXCS:GasFlow",
+            accuracy=0.1,
+            name="gas_flow",
+            is_setting=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-OXCS:Remaining",
+            pvreadbackname="SARES20-OXCS:Remaining",
+            accuracy=0.1,
+            name="gas_remaining",
+            is_setting=False,
+        )
+
+
 namespace.append_obj(
-    "Organic_crystal_breadboard",
+    N2jet,
     lazy=True,
-    name="ocb",
-    module_name="eco.endstations.bernina_sample_environments",
-    Id="SARES23",
+    name="jet",
 )
+
 # ad hoc incoupling device
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
+        self._append(SmaractStreamdevice, "SARES23-ESB16", name="tilt", is_setting=True)
         self._append(
-            SmaractStreamdevice, "SARES23-ESB17", name="rx_pump", is_setting=True
-        )
-        self._append(
-            SmaractStreamdevice, "SARES23-ESB18", name="ry_pump", is_setting=True
+            SmaractStreamdevice, "SARES23-ESB17", name="rotation", is_setting=True
         )
 
 
-# namespace.append_obj(
-#    Incoupling,
-#    lazy=True,
-#    name="incoupling",
-# )
-
+namespace.append_obj(
+    Incoupling,
+    lazy=True,
+    name="las_inc",
+)
 from ..devices_general.motors import MotorRecord
 from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
@@ -726,7 +810,7 @@ from ..microscopes import MicroscopeMotorRecord
 
 
 # from eco.xoptics import dcm_pathlength_compensation as dpc
-#namespace.append_obj(
+# namespace.append_obj(
 #    "MonoTimecompensation",
 #    # laser2pulse.pump_delay_exp,
 #    las.delay_glob,
@@ -736,7 +820,7 @@ from ..microscopes import MicroscopeMotorRecord
 #    lazy=True,
 #    name="mono_time_corrected",
 #    module_name="eco.xoptics.dcm_pathlength_compensation",
-#)
+# )
 
 
 # ad hoc interferometric timetool

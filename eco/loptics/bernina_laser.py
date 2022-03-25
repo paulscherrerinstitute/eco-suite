@@ -14,10 +14,11 @@ ureg = UnitRegistry()
 class IncouplingCleanBernina(Assembly):
     def __init__(self,  name=None):
         super().__init__(name=name)
-        self._append(SmaractStreamdevice,"SARES23-LIC13",name='tilt')
-        self._append(SmaractStreamdevice,"SARES23-LIC14",name='rotation')
+        self._append(SmaractStreamdevice,"SARES23-ESB13",name='tilt')
+        self._append(SmaractStreamdevice,"SARES23-ESB14",name='rotation')
         self._append(SmaractStreamdevice,"SARES23-LIC15",name='transl_vertical')
         self._append(MotorRecord,"SARES20-MF2:MOT_5",name='transl_horizontal')
+
 
 
 class LaserBernina(Assembly):
@@ -47,7 +48,10 @@ class LaserBernina(Assembly):
         self._append(AdjustableFS,'/photonics/home/gac-bernina/eco/configuration/wp_att_calibration',name='wp_att_calibration')
         
         def uJ2wp(uJ):
-            return np.interp(uJ,*np.asarray(self.wp_att_calibration())[::-1].T[::-1])
+            direction = 1
+            if np.mean(np.diff(np.asarray(self.wp_att_calibration()).T[1]))<0:
+                direction = -1
+            return np.interp(uJ,*np.asarray(self.wp_att_calibration())[::direction].T[::-1])
         def wp2uJ(wp):
             return np.interp(wp,*np.asarray(self.wp_att_calibration()).T)
         

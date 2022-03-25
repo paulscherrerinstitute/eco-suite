@@ -719,7 +719,7 @@ class Gsheet_API:
         )
         self.gc = gspread.authorize(self._credentials)
         self._keydf_fname = keydf_fname
-        self.keys = "metadata midir xrd energy transmission delay lxt pulse_id att_self att_fe_self"
+        self.keys = "metadata gps jet energy las_inc delay lxt pulse_id att_self att_fe_self"
         self._key_df=DataFrame()
         self.gsheet_keys = AdjustableFS(gsheet_key_path, name="gsheet_keys", default_value='metadata thc gps xrd att att_usd kb')
         self.init_runtable(exp_id)
@@ -1023,7 +1023,7 @@ class Run_Table_DataFrame(DataFrame):
         self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(" ")
         self._parse_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv".split(" "))
         self._adj_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias".split(" "))
-        self.key_order = "metadata xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
+        self.key_order = "metadata gps xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
         pd.options.display.max_rows = 100
         pd.options.display.max_columns = 50
         pd.set_option("display.float_format", lambda x: "%.5g" % x)

@@ -114,7 +114,7 @@ class Memory:
 
             return mem_filt
         else:
-            return mem_all
+            return mem_full
 
     def recall(
         self,

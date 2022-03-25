@@ -57,8 +57,8 @@ class Assembly:
     def __init__(self, name=None, parent=None, is_alias=True):
         self.name = name
         self.alias = Alias(name, parent=parent)
-        self.settings = []
-        self.status_indicators = []
+        # self.settings = []
+        # self.status_indicators = []
         self.settings_collection = Collection(name="settings_collection")
         self.status_indicators_collection = Collection(
             name="status_indicators_collection"
@@ -88,7 +88,7 @@ class Assembly:
         #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
         #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
         if is_setting:
-            self.settings.append(self.__dict__[name])
+            # self.settings.append(self.__dict__[name])
             self.settings_collection.append(self.__dict__[name], recursive=True)
 
         if is_status:
@@ -101,8 +101,8 @@ class Assembly:
                     self.__dict__[name], recursive=False
                 )
 
-        if (not is_setting) and is_status:
-            self.status_indicators.append(self.__dict__[name])
+        # if (not is_setting) and is_status:
+        #     self.status_indicators.append(self.__dict__[name])
         if view_toplevel_only:
             self.view_toplevel_only.append(self.__dict__[name])
 

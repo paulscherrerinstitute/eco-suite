@@ -23,7 +23,7 @@ class MicroscopeMotorRecord(Assembly):
                 CameraBasler,
                 pvname_camera,
                 camserver_alias=camserver_alias,
-                name="camera",
+                name=name,
                 is_setting=True,
                 is_status="recursive",
             )
@@ -62,7 +62,7 @@ class BerninaInlineMicroscope(Assembly):
         self._append(
             CameraBasler,
             pvname_camera,
-            camserver_alias = self.alias.get_full_name() + f" ({pvname_camera})",
+            camserver_alias=self.alias.get_full_name() + f" ({pvname_camera})",
             name="camera",
             is_setting=True,
             is_status="recursive",
@@ -83,7 +83,7 @@ class OptoSigmaZoom(Assembly):
         name=None,
     ):
         super().__init__(name=name)
-        self.settings.append(self)
+        self.settings_collection.append(self)
         self._append(
             AdjustablePv,
             pv_set_position,

@@ -84,7 +84,7 @@ class SmaractStreamdevice(Assembly):
         offset_file=None,
     ):
         super().__init__(name=name)
-        self.settings.append(self)
+        # self.settings.append(self)
         self.settings_collection.append(self, force=True)
 
         self.pvname = pvname
@@ -431,7 +431,7 @@ class MotorRecord(Assembly):
         expect_bad_limits=True,
     ):
         super().__init__(name=name)
-        self.settings.append(self)
+        # self.settings.append(self)
         self.settings_collection.append(self, force=True)
 
         self.pvname = pvname
@@ -537,7 +537,7 @@ class MotorRecord(Assembly):
                 is_status=False,
             )
 
-    def check_bad_limits(self, abs_set_value=2 ** 53):
+    def check_bad_limits(self, abs_set_value=2**53):
         ll, hl = self.get_limits()
         if ll == 0 and hl == 0:
             self.set_limits(-abs_set_value, abs_set_value)
