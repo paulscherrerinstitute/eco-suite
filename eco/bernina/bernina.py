@@ -193,6 +193,7 @@ namespace.append_obj(
     "SIN-TIMAST-TMA",
     name="event_master",
     module_name="eco.timing.event_timing_new_new",
+    # lazy=False,
     lazy=True,
 )
 # namespace.append_obj("TimingSystem",pv_master="SIN-TIMAST-TMA",pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",name='event_system',module_name = "eco.timing.event_timing_new_new",lazy=True)
@@ -237,7 +238,7 @@ namespace.append_obj(
     n_output_rear=16,
     name="evr_laser",
     module_name="eco.timing.event_timing_new_new",
-    lazy=False,
+    lazy=True,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -248,7 +249,8 @@ namespace.append_obj(
     n_output_rear=16,
     name="evr_hutch_laser",
     module_name="eco.timing.event_timing_new_new",
-    lazy=False,
+    lazy=True,
+    # lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -259,7 +261,8 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver72",
     module_name="eco.timing.event_timing_new_new",
-    lazy=False,
+    lazy=True,
+    # lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -270,7 +273,8 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver83",
     module_name="eco.timing.event_timing_new_new",
-    lazy=False,
+    lazy=True,
+    # lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -281,7 +285,8 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver84",
     module_name="eco.timing.event_timing_new_new",
-    lazy=False,
+    lazy=True,
+    # lazy=False,
 )
 namespace.append_obj(
     "EventReceiver",
@@ -292,8 +297,8 @@ namespace.append_obj(
     n_output_rear=0,
     name="evr_camserver85",
     module_name="eco.timing.event_timing_new_new",
-    # lazy=True,
-    lazy=False,
+    lazy=True,
+    # lazy=False,
 )
 
 namespace.append_obj(
