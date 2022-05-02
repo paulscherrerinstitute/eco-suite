@@ -63,6 +63,7 @@ class Assembly:
         self.status_indicators_collection = Collection(
             name="status_indicators_collection"
         )
+        self.display_collection = Collection(name="display_collection")
         self.view_toplevel_only = []
         if memory.global_memory_dir:
             self.memory = memory.Memory(self)

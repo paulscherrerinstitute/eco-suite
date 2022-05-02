@@ -325,11 +325,11 @@ class GPS(Assembly):
 
             def flip_ang(ang):
                 if 1 < abs(ang // np.pi):
-                    return ang - np.sign(ang) * np.pi * 2
+                    return ang - np.sign(ang) * abs(ang)//(2*np.pi) * np.pi * 2
                 else:
                     return ang
 
-            phi_k = flip_ang(phi_k)
+            #phi_k = flip_ang(phi_k)
             eta_k = flip_ang(eta_k)
             kappa = flip_ang(kappa)
 
@@ -836,7 +836,8 @@ class XRDYou(Assembly):
                 else:
                     return ang
 
-            phi_k = flip_ang(phi_k)
+            # phi_k = flip_ang(phi_k)
+            phi_k = phi_k + np.pi*2
             eta_k = flip_ang(eta_k)
             kappa = flip_ang(kappa)
         if degrees:

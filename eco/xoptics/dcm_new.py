@@ -77,7 +77,7 @@ class DoubleCrystalMono(Assembly):
             accuracy=0.5,
             name="energy",
         )
-        self.settings.append(self)
+        self.settings_collection.append(self)
 
     def set_target_value(self, *args, **kwargs):
         return self.energy.set_target_value(*args, **kwargs)
