@@ -154,13 +154,31 @@ class ProfKbBernina(Assembly):
             MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_status=True
         )
 
+    def movein_keep_target(self, wait=False):
+        ch = self.mirror_in.set_target_value(1)
+        if wait:
+            ch.wait()
+
+    def moveout_keep_target(self, wait=False):
+        ch = self.mirror_in.set_target_value(0)
+        if wait:
+            ch.wait()
+
     def movein(self, wait=False):
         ch = self.mirror_in.set_target_value(1)
+        try:
+            self.target_stages.presets.movein()
+        except:
+            print("No movein preset found for target stages.")
         if wait:
             ch.wait()
 
     def moveout(self, wait=False):
         ch = self.mirror_in.set_target_value(0)
+        try:
+            self.target_stages.presets.moveout()
+        except:
+            print("No moveout preset found for target stages.")
         if wait:
             ch.wait()
 

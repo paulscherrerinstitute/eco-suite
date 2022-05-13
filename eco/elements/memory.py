@@ -321,6 +321,9 @@ class Presets:
 
     def __dir__(self):
         return self._setup_presets()
+    def __getattr__(self,name):
+        self._setup_presets()
+        return self.__dict__[name]
 
     def _setup_presets(self):
         self._memory.setup_path()

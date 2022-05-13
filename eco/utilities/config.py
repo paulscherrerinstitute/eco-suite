@@ -264,6 +264,7 @@ class Namespace(Assembly):
         # self.name = name
         self.lazy_items = {}
         self.initialized_items = {}
+        self.names_without_alias = []
         self.root_module = root_module
         self.alias_namespace = alias_namespace
 
@@ -316,6 +317,12 @@ class Namespace(Assembly):
                 #     exc.submit(
                 #         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                 #     )
+
+#                 progress = Progress(
+#     SpinnerColumn(),
+#     *Progress.get_default_columns(),
+#     TimeElapsedColumn(),
+# )
                 list(
                     progress.track(
                         exc.map(
@@ -403,7 +410,7 @@ class Namespace(Assembly):
                             print("error message", e)
                             # traceback.print_tb(e)
                 else:
-                    print(f"object {name} has no alias!")
+                    self.names_without_alias.append(name)
                 return obj_initialized
 
             obj_lazy = Proxy(init_local)
@@ -442,7 +449,7 @@ class Namespace(Assembly):
                         print(f'could not init alias {ta["alias"]}')
                         print("error message", e)
             else:
-                print(f"object {name} has no alias!")
+                self.names_without_alias.append(name)
             return obj
 
     def get_obj(self, name):

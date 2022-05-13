@@ -310,7 +310,7 @@ namespace.append_obj(
     n_output_rear=16,
     name="evr",
     module_name="eco.timing.event_timing_new_new",
-    lazy=False,
+    lazy=True,
 )
 namespace.append_obj(
     "EventReceiver",
