@@ -23,7 +23,7 @@ class MicroscopeMotorRecord(Assembly):
                 CameraBasler,
                 pvname_camera,
                 camserver_alias=camserver_alias,
-                name=name,
+                name='camera',
                 is_setting=True,
                 is_status="recursive",
             )

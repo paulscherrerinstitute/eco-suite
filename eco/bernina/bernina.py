@@ -448,6 +448,7 @@ namespace.append_obj(
     Id="SARES21-XRD",
     configuration=config_bernina.xrd_config(),
     diff_detector={"jf_id": "JF01T03V01"},
+    invert_kappa_ellbow = config_bernina.invert_kappa_ellbow.value,
     name="xrd",
     lazy=True,
 )
@@ -948,6 +949,15 @@ namespace.append_obj(
 from ..devices_general.motors import MotorRecord
 from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
+
+
+class JohannAnalyzer(Assembly):
+    def __init__(self,name=''):
+        super().__init__(name=name)
+        self._append(MotorRecord,"SARES20-MF1:MOT_3",name='pitch', is_setting=True, is_status=True)
+        self._append(MotorRecord,"SARES20-MF1:MOT_4",name='roll', is_setting=True, is_status=True)
+
+namespace.append_obj(JohannAnalyzer,name='analyzer')
 
 # ad hoc 2 pulse setup
 # class Laser2pulse(Assembly):
