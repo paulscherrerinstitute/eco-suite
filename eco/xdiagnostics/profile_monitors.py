@@ -1,4 +1,4 @@
-from ..devices_general.motors import MotorRecord, SmaractStreamdevice
+from ..devices_general.motors import MotorRecord, SmaractStreamdevice, SmaractRecord
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler
 from ..aliases import Alias
@@ -87,7 +87,7 @@ class ProfKbBernina(Assembly):
         pvname_target_x="SARES20-MF2:MOT_1",
         pvname_target_y="SARES20-MF2:MOT_2",
         pvname_target_z="SARES20-MF2:MOT_3",
-        pvname_mirror="SARES23-LIC11",
+        pvname_mirror="SARES23:LIC11",
         mirror_in=15,
         mirror_out=-5,
         pvname_zoom="SARES20-MF2:MOT_4",
@@ -126,7 +126,7 @@ class ProfKbBernina(Assembly):
             is_setting=True,
         )
         self._append(
-            SmaractStreamdevice,
+            SmaractRecord,
             pvname_mirror,
             name="x_mirror_microscope",
             is_setting=True,

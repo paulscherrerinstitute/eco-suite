@@ -45,7 +45,7 @@ class LaserBernina(Assembly):
         self._append(
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
-        self._append(AdjustableFS,'/photonics/home/gac-bernina/eco/configuration/wp_att_calibration',name='wp_att_calibration')
+        self._append(AdjustableFS,'/photonics/home/gac-bernina/eco/configuration/wp_att_calibration',name='wp_att_calibration', is_status=False)
         
         def uJ2wp(uJ):
             direction = 1
@@ -80,12 +80,12 @@ class LaserBernina(Assembly):
             name="delay_eos",
             is_setting=True,
         )
-        self._append(
-            SmaractStreamdevice,
-            pvname="SARES23-ESB18",
-            name="delaystage_thz",
-            is_setting=True,
-        )
+        # self._append(
+        #     SmaractStreamdevice,
+        #     pvname="SARES23-ESB18",
+        #     name="delaystage_thz",
+        #     is_setting=True,
+        # )
 
 class DelayTime(AdjustableVirtual):
     def __init__(

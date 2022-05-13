@@ -105,64 +105,6 @@ class Scan:
             for caller in callbacks_start_scan:
                 caller(self)
 
-        if self._run_table or self._elog:
-            runname = os.path.basename(fina).split(".")[0]
-            runno = int(runname.split("run")[1].split("_")[0])
-            metadata = {
-                "type": "scan",
-                "name": runname.split("_", 1)[1],
-                "scan_info_file": self.scan_info_filename,
-            }
-            for n, adj in enumerate(self.adjustables):
-                nname = None
-                nId = None
-                if hasattr(adj, "Id"):
-                    nId = adj.Id
-                if hasattr(adj, "name"):
-                    nname = adj.name
-
-                metadata.update(
-                    {
-                        f"scan_motor_{n}": nname,
-                        f"from_motor_{n}": self.values_todo[0][n],
-                        f"to_motor_{n}": self.values_todo[-1][n],
-                        f"id_motor_{n}": nId,
-                    }
-                )
-            metadata.update(
-                {
-                    "steps": len(self.values_todo),
-                    "pulses_per_step": Npulses,
-                    "counters": [daq.name for daq in counterCallers],
-                }
-            )
-
-        if self._elog:
-            try:
-                try:
-                    metadata.update({"scan_command": get_ipython().user_ns["In"][-1]})
-                except:
-                    print("Count not retrieve ipython scan command!")
-
-                message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
-                if "scan_command" in metadata.keys():
-                    message_string += metadata["scan_command"] + "\n"
-                message_string += metadata["scan_info_file"] + "\n"
-                self._elog_id = self._elog.post(
-                    message_string, Title=f'Run {runno}: {metadata["name"]}'
-                )
-                metadata.update({"elog_message_id": self._elog_id})
-                metadata.update(
-                    {"elog_post_link": self._elog._log._url + str(self._elog_id)}
-                )
-            except:
-                print("elog posting failed")
-        if self._run_table:
-            try:
-                self._run_table.append_run(runno, metadata=metadata)
-            except:
-                print("WARNING: issue adding data to run table")
-
     def get_filename(self, stepNo, Ndigits=4):
         fina = os.path.join(self.basepath, Path(self.fina).stem)
         if self._scan_directories:

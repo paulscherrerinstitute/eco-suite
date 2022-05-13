@@ -3,12 +3,15 @@ from pathlib import Path
 from time import sleep
 from ..epics.detector import DetectorPvDataStream
 from ..acquisition.utilities import Acquisition
+from ..elements.assembly import Assembly
+from ..utilities.path_alias import PathAlias
 
 
-class Daq:
+class Daq(Assembly):
     def __init__(
         self,
         broker_address="http://sf-daq:10002",
+        broker_address_aux="http://sf-daq:10003",
         timeout=10,
         pgroup=None,
         pulse_id_adj=None,
@@ -22,7 +25,9 @@ class Daq:
         config_JFs=None,
         name=None,
     ):
+        super().__init__(name=name)
         self.channels = {}
+        self.path_alias = PathAlias()
         if channels_JF:
             self.channels["channels_JF"] = channels_JF
         if channels_BS:
@@ -36,6 +41,7 @@ class Daq:
         else:
             self.config_JFs = {}
         self.broker_address = broker_address
+        self.broker_address_aux = broker_address_aux
         self.timeout = timeout
         self.pgroup = pgroup
         if type(pulse_id_adj) is str:
@@ -180,19 +186,23 @@ class Daq:
 
         return runno, filenames
 
-    def get_next_run_number(self):
+    def get_next_run_number(self,pgroup=None):
+        if pgroup is None:
+            pgroup = self.pgroup
         res = requests.get(
             f"{self.broker_address}/get_next_run_number",
-            json={'pgroup':self.pgroup},
+            json={'pgroup':pgroup},
             timeout=self.timeout,
             )
         assert res.ok, f'Getting last run number failed {res.raise_for_status()}'
         return int(res.json()['message'])
 
-    def get_last_run_number(self):
+    def get_last_run_number(self,pgroup=None):
+        if pgroup is None:
+            pgroup = self.pgroup
         res = requests.get(
             f"{self.broker_address}/get_last_run_number",
-            json={'pgroup':self.pgroup},
+            json={'pgroup':pgroup},
             timeout=self.timeout,
             )
         assert res.ok, f'Getting last run number failed {res.raise_for_status()}'
@@ -219,11 +229,13 @@ class Daq:
             f"{self.broker_address}/power_on_detector", json=par
         ).json()
 
-    def take_pedestal(self, JF_list=None):
+    def take_pedestal(self, JF_list=None, pgroup=None):
+        if pgroup is None:
+            pgroup = self.pgroup
         if not JF_list:
             JF_list = self.get_JFs_running()
         parameters = {
-            "pgroup": self.pgroup,
+            "pgroup": pgroup,
             "rate_multiplicator": 1,
             "detectors": {tJF: {} for tJF in JF_list},
         }
@@ -231,6 +243,16 @@ class Daq:
             f"{self.broker_address}/take_pedestal", json=parameters
         ).json()
 
+    def append_aux(self,*file_names,run_number=None,pgroup=None):
+        if pgroup is None:
+            pgroup = self.pgroup
+        if run_number is None:
+            run_number = self.get_last_run_number()
+
+        return requests.post(
+            self.broker_address_aux+'/copy_user_files', 
+            json={'pgroup': pgroup, 'run_number': run_number, 'files': file_names}
+            )
 
 def validate_response(resp):
     if resp.get("status") == "ok":

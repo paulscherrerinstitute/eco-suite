@@ -25,34 +25,6 @@ config = Configuration(
 )
 
 components = [
-    #        {
-    #            'name'  : 'device_alias_name',
-    #            'type'  : 'package.module.submodule:ClassOrFactory',
-    #            'args'  : ['all','the','requires','args'],
-    #            'kwargs': {}
-    #            }
-    {
-        "args": ["/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA"],
-        "name": "_env_channels_ca",
-        "desc": "CA channels added to the run_table",
-        "type": "eco.elements.adjustable:AdjustableFS",
-        "kwargs": {},
-    },
-    {
-        "args": [],
-        "name": "run_table",
-        "desc": "run table for data acquisition",
-        "type": "eco.utilities.runtable:Run_Table2",
-        "kwargs": {
-            "exp_id": config["pgroup"],
-            "exp_path": f"/sf/bernina/data/{config['pgroup']}/res/run_table/",
-            "devices": "bernina",
-            "keydf_fname": "/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
-            "cred_fname": "/sf/bernina/config/src/python/gspread/pandas_push",
-            "gsheet_key_path": "/photonics/home/gac-bernina/eco/reference_values/run_table_gsheet_keys",
-        },
-        "lazy": True,
-    },
     {
         "type": "eco.utilities.config:append_to_path",
         "args": config["path_exp"],
@@ -198,14 +170,6 @@ components = [
         "type": "eco.xdiagnostics.profile_monitors:Pprm",
     },
     {
-        "name": "slit_switch",
-        "z_und": 92,
-        "desc": "Slit in Optics hutch after Photon switchyard and before Bernina optics",
-        "type": "eco.xoptics.slits:SlitBlades",
-        "args": ["SAROP21-OAPU092"],
-        "kwargs": {},
-    },
-    {
         "name": "prof_mirr1",
         "args": ["SAROP21-PPRM094"] * 2,
         "kwargs": {},
@@ -243,7 +207,7 @@ components = [
     },
     {
         "name": "prof_mono",
-        "args": ["SAROP21-PPRM102"] * 2,
+        "args": ["SAROP21-PPRM113"] * 2,
         "kwargs": {},
         "z_und": 102,
         "desc": "Profile monitor after Monochromator",
@@ -324,14 +288,6 @@ components = [
         "type": "eco.xoptics.slits:SlitPosWidth",
     },
     {
-        "name": "mon_att",
-        "args": ["SAROP21-PBPS138"],
-        "z_und": 138,
-        "desc": "Intensity/Position monitor after Attenuator",
-        "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS",
-        "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
-    },
-    {
         "name": "det_dio",
         "args": ["SAROP21-PDIO138"],
         "z_und": 138,
@@ -374,7 +330,7 @@ components = [
     #     "kwargs": {
     #         "Id": "SARES22-GPS",
     #         "configuration": config["gps_config"],
-    #         "fina_hex_angle_offset": "~/eco/reference_values/hex_pi_angle_offset.json",
+    #         "fina_hex_angle_offset": "/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     #     },
     #     "lazy": True,
     # },
@@ -671,38 +627,38 @@ components = [
     #     "kwargs": {},
     #     "lazy": False,
     # },
-    #{
+    # {
     #    "args": [],
     #    "name": "thc",
     #    "z_und": 142,
     #    "desc": "High field THz Chamber",
     #    "type": "eco.endstations.bernina_sample_environments:High_field_thz_chamber",
     #    "kwargs": {"Id": "SARES23", "configuration": ["ottifant"]},
-    #},
-#    {
-#        "args": [],
-#        "name": "ocb",
-#        "z_und": 142,
-#        "desc": "Organic Crystal Breadboard",
-#        "type": "eco.endstations.bernina_sample_environments:Organic_crystal_breadboard",
-#        "kwargs": {"Id": "SARES23"},
-#    },
-#    {
-#        "args": [],
-#        "name": "eos",
-#        "z_und": 142,
-#        "desc": "electro optic sampling stages",
-#        "type": "eco.endstations.bernina_sample_environments:Electro_optic_sampling",
-#        "kwargs": {
-#            "Id": "SARES23",
-#            "pgroup": config["pgroup"],
-#            "diode_channels": {
-#                "d1": "SARES20-LSCP9-FNS:CH1:VAL_GET",
-#                "d2": "SARES20-LSCP9-FNS:CH2:VAL_GET",
-#                "diff": "SARES20-LSCP9-FNS:CH3:VAL_GET",
-#            },
-#        },
-#    },
+    # },
+    #    {
+    #        "args": [],
+    #        "name": "ocb",
+    #        "z_und": 142,
+    #        "desc": "Organic Crystal Breadboard",
+    #        "type": "eco.endstations.bernina_sample_environments:Organic_crystal_breadboard",
+    #        "kwargs": {"Id": "SARES23"},
+    #    },
+    #    {
+    #        "args": [],
+    #        "name": "eos",
+    #        "z_und": 142,
+    #        "desc": "electro optic sampling stages",
+    #        "type": "eco.endstations.bernina_sample_environments:Electro_optic_sampling",
+    #        "kwargs": {
+    #            "Id": "SARES23",
+    #            "pgroup": config["pgroup"],
+    #            "diode_channels": {
+    #                "d1": "SARES20-LSCP9-FNS:CH1:VAL_GET",
+    #                "d2": "SARES20-LSCP9-FNS:CH2:VAL_GET",
+    #                "diff": "SARES20-LSCP9-FNS:CH3:VAL_GET",
+    #            },
+    #        },
+    #    },
     {
         "args": [],
         "name": "dsd",
@@ -710,14 +666,6 @@ components = [
         "desc": "downstream diagnostics",
         "type": "eco.xdiagnostics.dsd:DownstreamDiagnostic",
         "kwargs": {},
-    },
-    {
-        "args": [],
-        "name": "att_usd",
-        "z_und": 142,
-        "desc": "USD attenuator",
-        "type": "eco.xoptics.att_usd:att_usd",
-        "kwargs": {"Id": "SARES23", "xp": Component("xp")},
     },
 ]
 

@@ -24,6 +24,7 @@ class AdjustableObject(Assembly):
         return d[fieldname]
 
     def init_object(self):
+        # super().__init__(name=self.name)
         for k, v in self._base_dict.get_current_value().items():
             tadj = AdjustableGetSet(
                 partial(self.get_field, k), partial(self.set_field, k), name=k

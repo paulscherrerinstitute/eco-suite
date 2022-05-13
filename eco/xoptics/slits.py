@@ -233,27 +233,18 @@ class JJSlitUnd(Assembly):
 
 
 @addSlitRepr
-class SlitBlades:
+class SlitBlades(Assembly):
     def __init__(self, pvname, name=None, elog=None):
-        self.name = name
+        super().__init__(name=name)
         self.Id = pvname
-        self.alias = Alias(name)
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X1", name="right")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X2", name="left")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y1", name="down")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y2", name="up")
-        append_object_to_object(
-            self, MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec"
-        )
-        append_object_to_object(
-            self, MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec"
-        )
-        append_object_to_object(
-            self, MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec"
-        )
-        append_object_to_object(
-            self, MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec"
-        )
+        self._append(MotorRecord, pvname + ":MOTOR_X1", name="right", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_X2", name="left", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_Y1", name="down", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_Y2", name="up", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec")
+        self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec")
+        self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec")
+        self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec")
 
         def getgap(xn, xp):
             return xp - xn

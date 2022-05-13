@@ -635,7 +635,7 @@ class MotorRecord(Assembly):
 
     def gui(self):
         pv, m = tuple(self.pvname.split(":"))
-        self._run_cmd(f'caqtdm -macro "P={pv}:,M={m}" motorx_more.ui')
+        self._run_cmd(f'caqtdm -macro "P={pv}:,M={m}" motorx_all.ui')
 
     # return string with motor value as variable representation
     def __str__(self):
@@ -886,6 +886,8 @@ class SmaractRecord(Assembly):
         self._append(
             AdjustablePv, self.pvname + ".HOMR", name="home_reverse", is_setting=True
         )
+
+
         self._append(
             DetectorPvData,
             self.pvname + ".RBV",
@@ -914,7 +916,13 @@ class SmaractRecord(Assembly):
         self._append(
             DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False
         )
-        self._append(MotorRecordFlags, self._flags, name="flags", is_status="recursive")
+        self._append(
+            SmaractRecordFlags,
+            self.pvname,
+            self._flags,
+            name="flags",
+            is_status="recursive",
+        )
         # self._append(
         #     AdjustablePvEnum,
         #     self.pvname + ".SPMG",
@@ -933,7 +941,7 @@ class SmaractRecord(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + "_CAL_CMD",
-            name="calibrate_sensor",
+            name="_calibrate_sensor",
             is_setting=False,
         )
         self._append(
@@ -968,6 +976,18 @@ class SmaractRecord(Assembly):
                 name="backlash_fraction",
                 is_setting=True,
             )
+    
+    def home(self):
+        self.home_forward(1)
+        time.sleep(0.1)
+        while not self.flags.is_homed.get_current_value():
+            time.sleep(0.1)
+    
+    def calibrate_sensor(self):
+        self._calibrate_sensor(1)
+        time.sleep(0.1)
+        while not self.flags.motion_complete.get_current_value():
+            time.sleep(0.1)
 
     def set_target_value(self, value, hold=False, check=True):
         """Adjustable convention"""
@@ -1062,7 +1082,7 @@ class SmaractRecord(Assembly):
 
     def gui(self):
         pv, m = tuple(self.pvname.split(":"))
-        self._run_cmd(f'caqtdm -macro "P={pv}:,M={m}" motorx_more.ui')
+        self._run_cmd(f'caqtdm -macro "S={pv},M={m}" MCS_expert.ui')
 
     # return string with motor value as variable representation
     def __str__(self):
@@ -1162,39 +1182,39 @@ class SmaractRecord(Assembly):
         return self._tweak_ioc(*args, **kwargs)
 
 
-flag_names_smaract_record = [
-    "direction",
-    "motion_complete",
-    "pos_limit_switch",
-    "home_switch",
-    "unused",
-    "closed_loop_position",
-    "slipstall_detected",
-    "at_home_position",
-    "encoder_is_present",
-    "problem",
-    "moving",
-    "gain_support",
-    "communication_error",
-    "neg_limit_switch",
-    "is_homed",
-]
+flag_names_smaract_record = {
+    0: "direction",
+    1: "motion_complete",
+    # 2:"pos_limit_switch",
+    # 3:"home_switch",
+    # 4:"unused",
+    # 5:"closed_loop_position",
+    # 6:"slipstall_detected",
+    # 7:"at_home_position",
+    # 8:"encoder_is_present",
+    # 9:"problem",
+    # 10:"moving",
+    # 11:"gain_support",
+    # 12:"communication_error",
+    # 13:"neg_limit_switch",
+    14: "is_homed",
+}
 
 
 class SmaractRecordFlags(Assembly):
     def __init__(self, pvname, flags, name="flags"):
         super().__init__(name=name)
         self.pvname = pvname
+        self._append(DetectorPvData, self.pvname + ".MISS", name="has_reached")
         self._flags = flags
-        for flag_name in flag_names_motor_record:
+        for i, flag_name in flag_names_smaract_record.items():
             self._append(
                 DetectorVirtual,
                 [self._flags],
-                partial(self._get_flag_name_value, flag_name=flag_name),
+                partial(self._get_flag_index_value, index=i),
                 name=flag_name,
                 is_status=True,
             )
 
-    def _get_flag_name_value(self, value, flag_name=None):
-        index = flag_names_motor_record.index(flag_name)
+    def _get_flag_index_value(self, value, index):
         return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1

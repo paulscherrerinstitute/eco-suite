@@ -1,3 +1,5 @@
+from eco.elements.adjustable import AdjustableFS
+from eco.motion.smaract import SmaractController
 from .config import components
 from .config import config as config_berninamesp
 from ..utilities.config import Namespace
@@ -5,7 +7,8 @@ from ..aliases import NamespaceCollection
 import pyttsx3
 
 from ..utilities.path_alias import PathAlias
-import sys
+import sys,os
+from IPython import get_ipython
 
 
 path_aliases = PathAlias()
@@ -18,10 +21,16 @@ namespace.alias_namespace.data = []
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
 
+_config_bernina_dict = AdjustableFS('/sf/bernina/config/eco/configuration/bernina_config.json',name='_config_bernina_dict')
+from eco.elements.adj_obj import AdjustableObject
+namespace.append_obj(AdjustableObject,_config_bernina_dict,name='config_bernina')
 
 namespace.append_obj(
+    "DummyAdjustable", module_name="eco.elements.adjustable", name="dummy_adjustable"
+)
+namespace.append_obj(
     "set_global_memory_dir",
-    "~/eco/memory",
+    "/sf/bernina/config/eco/memory",
     module_name="eco.elements.memory",
     name="path_memory",
 )
@@ -40,6 +49,24 @@ namespace.append_obj(
     name="env_log",
     module_name="eco.fel.atmosphere",
     lazy=True,
+)
+namespace.append_obj(
+    "AdjustableFS",
+    "/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA",
+    name="_env_channels_ca",
+    module_name="eco.elements.adjustable",
+)
+namespace.append_obj(
+    "Run_Table2",
+    name= "run_table",
+    module_name= "eco.utilities.runtable",
+    exp_id = config_bernina.pgroup.value,
+    exp_path = f"/sf/bernina/data/{config_bernina.pgroup.value}/res/run_table/",
+    devices = "bernina",
+    keydf_fname = "/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
+    cred_fname = "/sf/bernina/config/src/python/gspread/pandas_push",
+    gsheet_key_path = "/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
+    lazy=True
 )
 
 # adding all stuff from the config components the "old" way of configuring.
@@ -69,71 +96,127 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+namespace.append_obj(
+    "SlitBlades",
+    "SAROP21-OAPU092",
+    name="slit_switch",
+    module_name="eco.xoptics.slits",
+)
+namespace.append_obj(
+    "SlitBlades",
+    "SAROP21-OAPU102",
+    name="slit_mono",
+    module_name="eco.xoptics.slits",
+)
 
-from eco.devices_general.motors import SmaractStreamdevice
+from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
 
 namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_kb",
     def_blade_up={
-        "args": [SmaractStreamdevice, "SARES23-LIC2"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_up.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC2"],
+        "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractStreamdevice, "SARES23-LIC1"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_down.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC1"],
+        "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractStreamdevice, "SARES23-LIC3"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_left.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC9"],
+        "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractStreamdevice, "SARES23-LIC4"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_kb_right.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC4"],
+        "kwargs": {},
     },
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+# namespace.append_obj(
+#     "SlitBladesGeneral",
+#     name="slit_kb",
+#     def_blade_up={
+#         "args": [SmaractStreamdevice, "SARES23-LIC2"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_up.json",
+#         },
+#     },
+#     def_blade_down={
+#         "args": [SmaractStreamdevice, "SARES23-LIC1"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_down.json",
+#         },
+#     },
+#     def_blade_left={
+#         "args": [SmaractStreamdevice, "SARES23-LIC3"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_left.json",
+#         },
+#     },
+#     def_blade_right={
+#         "args": [SmaractStreamdevice, "SARES23-LIC4"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_right.json",
+#         },
+#     },
+#     module_name="eco.xoptics.slits",
+#     lazy=True,
+# )
 
 
 namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_cleanup",
     def_blade_up={
-        "args": [SmaractStreamdevice, "SARES23-LIC6"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_up.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC6"],
+        "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractStreamdevice, "SARES23-LIC5"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_down.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC5"],
+        "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractStreamdevice, "SARES23-LIC8"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_left.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC8"],
+        "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractStreamdevice, "SARES23-LIC7"],
-        "kwargs": {
-            "offset_file": "/photonics/home/gac-bernina/eco/reference_values/slit_cleanup_right.json",
-        },
+        "args": [SmaractRecord, "SARES23:LIC7"],
+        "kwargs": {},
     },
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+# namespace.append_obj(
+#     "SlitBladesGeneral",
+#     name="slit_cleanup",
+#     def_blade_up={
+#         "args": [SmaractStreamdevice, "SARES23-LIC6"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_up.json",
+#         },
+#     },
+#     def_blade_down={
+#         "args": [SmaractStreamdevice, "SARES23-LIC5"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_down.json",
+#         },
+#     },
+#     def_blade_left={
+#         "args": [SmaractStreamdevice, "SARES23-LIC8"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_left.json",
+#         },
+#     },
+#     def_blade_right={
+#         "args": [SmaractStreamdevice, "SARES23-LIC7"],
+#         "kwargs": {
+#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_right.json",
+#         },
+#     },
+#     module_name="eco.xoptics.slits",
+#     lazy=True,
+# )
 
 namespace.append_obj(
     "GasDetector",
@@ -207,13 +290,13 @@ namespace.append_obj(
     "ProfKbBernina",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_kb",
-    pvname_mirror="SARES23-LIC11",
+    pvname_mirror="SARES23:LIC11",
     lazy=True,
 )
 namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
-    pvname_mirror="SARES23-LIC11",
+    pvname_mirror="SARES23:LIC11",
     name="tt_kb",
     lazy=True,
 )
@@ -355,15 +438,15 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_diffractometers",
     name="gps",
     pvname="SARES22-GPS",
-    configuration=config_berninamesp["gps_config"],
-    fina_hex_angle_offset="~/eco/reference_values/hex_pi_angle_offset.json",
+    configuration=config_bernina.gps_config(),
+    fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     lazy=True,
 )
 namespace.append_obj(
     "XRDYou",
     module_name="eco.endstations.bernina_diffractometers",
     Id="SARES21-XRD",
-    configuration=config_berninamesp["xrd_config"],
+    configuration=config_bernina.xrd_config(),
     diff_detector={"jf_id": "JF01T03V01"},
     name="xrd",
     lazy=True,
@@ -422,6 +505,13 @@ namespace.append_obj(
     name="channels_CA_epicsdaq",
 )
 
+namespace.append_obj(
+    "Att_usd",
+    name="att_usd",
+    module_name = "eco.xoptics.att_usd",
+    xp=xp,
+)
+
 
 ### draft new epics daq ###
 # namespace.append_obj(
@@ -465,7 +555,7 @@ namespace.append_obj(
 namespace.append_obj(
     "Daq",
     instrument="bernina",
-    pgroup=config_berninamesp["pgroup"],
+    pgroup=config_bernina.pgroup(),
     channels_JF=channels_JF,
     channels_BS=channels_BS,
     channels_BSCAM=channels_BSCAM,
@@ -482,7 +572,7 @@ namespace.append_obj(
     "Daq",
     instrument="bernina",
     broker_address="http://sf-daq-1:10002",
-    pgroup=config_berninamesp["pgroup"],
+    pgroup=config_bernina.pgroup,
     channels_JF=channels_JF,
     channels_BS=channels_BS,
     channels_BSCAM=channels_BSCAM,
@@ -514,6 +604,16 @@ def _message_end_scan(scan):
     e.stop()
 
 
+def _copy_scan_info_to_raw(scan, daq=daq):
+    run_number = daq.get_last_run_number()
+    pgroup = daq.pgroup
+    print(f"Copying info file to run {run_number} to the raw directory of {pgroup}.")
+    response = daq.append_aux(
+        scan.scan_info_filename, pgroup=pgroup, run_number=run_number
+    )
+    print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+
+
 def _increment_daq_run_number(scan, daq=daq):
     try:
         daq_last_run_number = daq.get_last_run_number()
@@ -541,12 +641,77 @@ callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)
 callbacks_end_scan = [_message_end_scan]
+callbacks_end_scan.append(_copy_scan_info_to_raw)
+
+
+# >>>> Extract for run_table and elog
+
+
+# if self._run_table or self._elog:
+def _create_metadata_structure_start_scan(scan, run_table=run_table, elog=elog):
+    runname = os.path.basename(scan.fina).split(".")[0]
+    runno = int(runname.split("run")[1].split("_")[0])
+    metadata = {
+        "type": "scan",
+        "name": runname.split("_", 1)[1],
+        "scan_info_file": scan.scan_info_filename,
+    }
+    for n, adj in enumerate(scan.adjustables):
+        nname = None
+        nId = None
+        if hasattr(adj, "Id"):
+            nId = adj.Id
+        if hasattr(adj, "name"):
+            nname = adj.name
+
+        metadata.update(
+            {
+                f"scan_motor_{n}": nname,
+                f"from_motor_{n}": scan.values_todo[0][n],
+                f"to_motor_{n}": scan.values_todo[-1][n],
+                f"id_motor_{n}": nId,
+            }
+        )
+    metadata.update(
+        {
+            "steps": len(scan.values_todo),
+            "pulses_per_step": scan.pulses_per_step,
+            "counters": [daq.name for daq in scan.counterCallers],
+        }
+    )
+
+    try:
+        try:
+            metadata.update({"scan_command": get_ipython().user_ns["In"][-1]})
+        except:
+            print("Count not retrieve ipython scan command!")
+
+        message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
+        if "scan_command" in metadata.keys():
+            message_string += metadata["scan_command"] + "\n"
+        message_string += metadata["scan_info_file"] + "\n"
+        scan._elog_id = elog.post(
+            message_string, Title=f'Run {runno}: {metadata["name"]}'
+        )
+        metadata.update({"elog_message_id": scan._elog_id})
+        metadata.update(
+            {"elog_post_link": scan._elog._log._url + str(scan._elog_id)}
+        )
+    except:
+        print("elog posting failed")
+    try:
+        run_table.append_run(runno, metadata=metadata)
+    except:
+        print("WARNING: issue adding data to run table")
+
+# <<<< Extract for run table and elog
+callbacks_start_scan.append(_create_metadata_structure_start_scan)
 
 
 namespace.append_obj(
     "Scans",
     data_base_dir="scan_data",
-    scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
+    scan_info_dir=f"/sf/bernina/data/{config_bernina.pgroup()}/res/scan_info",
     default_counters=[daq],
     checker=checker,
     scan_directories=True,
@@ -749,10 +914,11 @@ namespace.append_obj(
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractStreamdevice, "SARES23-ESB16", name="tilt", is_setting=True)
-        self._append(
-            SmaractStreamdevice, "SARES23-ESB17", name="rotation", is_setting=True
-        )
+        self._append(SmaractRecord, "SARES23:LIC13", name="mirr_table_tilt", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC14", name="mirr_table_roll", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 
 
 namespace.append_obj(
@@ -760,6 +926,25 @@ namespace.append_obj(
     lazy=True,
     name="las_inc",
 )
+
+
+namespace.append_obj(
+    "SmaractController",
+    "SARES23:LIC",
+    lazy=True,
+    name="smaract_ust",
+    module_name="eco.motion.smaract"
+)
+
+namespace.append_obj(
+    "SmaractController",
+    "SARES23:ESB",
+    lazy=True,
+    name="smaract_user",
+    module_name="eco.motion.smaract"
+)
+
+
 from ..devices_general.motors import MotorRecord
 from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
@@ -820,8 +1005,8 @@ from ..microscopes import MicroscopeMotorRecord
 #    # laser2pulse.pump_delay_exp,
 #    las.delay_glob,
 #    mono,
-#    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_timing.json",
-#    "/photonics/home/gac-bernina/eco/reference_values/dcm_reference_invert_delay.json",
+#    "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
+#    "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
 #    lazy=True,
 #    name="mono_time_corrected",
 #    module_name="eco.xoptics.dcm_pathlength_compensation",
@@ -888,9 +1073,9 @@ try:
     import sys
     from ..utilities import TimeoutPath
 
-    if TimeoutPath(f'/sf/bernina/data/{config_berninamesp["pgroup"]}/res/').exists():
+    if TimeoutPath(f'/sf/bernina/data/{config_bernina.pgroup()}/res/').exists():
         pgroup_eco_path = TimeoutPath(
-            f'/sf/bernina/data/{config_berninamesp["pgroup"]}/res/eco'
+            f'/sf/bernina/data/{config_bernina.pgroup()}/res/eco'
         )
         pgroup_eco_path.mkdir(mode=775, exist_ok=True)
         sys.path.append(pgroup_eco_path.as_posix())
@@ -940,3 +1125,5 @@ except:
 #     "desc": "DCM Monochromator",
 #     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
 # },
+
+

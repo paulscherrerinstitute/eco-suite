@@ -123,7 +123,7 @@ class High_field_thz_chamber(Assembly):
             )
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/reference_values/thc_par_in_pos",
+            "/sf/bernina/config/eco/reference_values/thc_par_in_pos",
             name="par_in_pos",
             is_setting=False,
         )
@@ -157,7 +157,7 @@ class High_field_thz_chamber(Assembly):
             )
             self._append(
                 AdjustableFS,
-                "~/eco/reference_values/otti_det_rot_offset.json",
+                "/sf/bernina/config/eco/reference_values/otti_det_rot_offset.json",
                 name="otti_det_rotation",
                 is_status=True,
                 is_setting=True,

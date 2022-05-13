@@ -1,5 +1,5 @@
 from ..elements.assembly import Assembly
-from ..devices_general.motors import SmaractStreamdevice, MotorRecord
+from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
@@ -27,7 +27,7 @@ class TimetoolBerninaUSD(Assembly):
         spectrometer_pvname="SARES20-CAMS142-M5",
         microscope_pvname="SARES20-PROF141-M1",
         delaystage_PV="SLAAR21-LMOT-M524:MOTOR_1",
-        pvname_mirror="SARES23-LIC9",
+        pvname_mirror="SARES23:LIC9",
         pvname_zoom="SARES20-MF1:MOT_8",
         mirror_in=15,
         mirror_out=-5,
@@ -61,7 +61,7 @@ class TimetoolBerninaUSD(Assembly):
             MotorRecord, "SARES20-MF2:MOT_4", name="zoom_microscope", is_setting=True
         )
         self._append(
-            SmaractStreamdevice,
+            SmaractRecord,
             pvname_mirror,
             name="x_mirror_microscope",
             is_setting=True,
