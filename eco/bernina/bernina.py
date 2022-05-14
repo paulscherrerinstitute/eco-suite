@@ -7,7 +7,7 @@ from ..aliases import NamespaceCollection
 import pyttsx3
 
 from ..utilities.path_alias import PathAlias
-import sys,os
+import sys, os
 from IPython import get_ipython
 
 
@@ -21,9 +21,13 @@ namespace.alias_namespace.data = []
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
 
-_config_bernina_dict = AdjustableFS('/sf/bernina/config/eco/configuration/bernina_config.json',name='_config_bernina_dict')
+_config_bernina_dict = AdjustableFS(
+    "/sf/bernina/config/eco/configuration/bernina_config.json",
+    name="_config_bernina_dict",
+)
 from eco.elements.adj_obj import AdjustableObject
-namespace.append_obj(AdjustableObject,_config_bernina_dict,name='config_bernina')
+
+namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
 
 namespace.append_obj(
     "DummyAdjustable", module_name="eco.elements.adjustable", name="dummy_adjustable"
@@ -58,15 +62,15 @@ namespace.append_obj(
 )
 namespace.append_obj(
     "Run_Table2",
-    name= "run_table",
-    module_name= "eco.utilities.runtable",
-    exp_id = config_bernina.pgroup.value,
-    exp_path = f"/sf/bernina/data/{config_bernina.pgroup.value}/res/run_table/",
-    devices = "bernina",
-    keydf_fname = "/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
-    cred_fname = "/sf/bernina/config/src/python/gspread/pandas_push",
-    gsheet_key_path = "/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
-    lazy=True
+    name="run_table",
+    module_name="eco.utilities.runtable",
+    exp_id=config_bernina.pgroup.value,
+    exp_path=f"/sf/bernina/data/{config_bernina.pgroup.value}/res/run_table/",
+    devices="bernina",
+    keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
+    cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
+    gsheet_key_path="/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
+    lazy=True,
 )
 
 # adding all stuff from the config components the "old" way of configuring.
@@ -448,7 +452,7 @@ namespace.append_obj(
     Id="SARES21-XRD",
     configuration=config_bernina.xrd_config(),
     diff_detector={"jf_id": "JF01T03V01"},
-    invert_kappa_ellbow = config_bernina.invert_kappa_ellbow.value,
+    invert_kappa_ellbow=config_bernina.invert_kappa_ellbow.value,
     name="xrd",
     lazy=True,
 )
@@ -509,7 +513,7 @@ namespace.append_obj(
 namespace.append_obj(
     "Att_usd",
     name="att_usd",
-    module_name = "eco.xoptics.att_usd",
+    module_name="eco.xoptics.att_usd",
     xp=xp,
 )
 
@@ -695,15 +699,14 @@ def _create_metadata_structure_start_scan(scan, run_table=run_table, elog=elog):
             message_string, Title=f'Run {runno}: {metadata["name"]}'
         )
         metadata.update({"elog_message_id": scan._elog_id})
-        metadata.update(
-            {"elog_post_link": scan._elog._log._url + str(scan._elog_id)}
-        )
+        metadata.update({"elog_post_link": scan._elog._log._url + str(scan._elog_id)})
     except:
         print("elog posting failed")
     try:
         run_table.append_run(runno, metadata=metadata)
     except:
         print("WARNING: issue adding data to run table")
+
 
 # <<<< Extract for run table and elog
 callbacks_start_scan.append(_create_metadata_structure_start_scan)
@@ -915,8 +918,12 @@ namespace.append_obj(
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:LIC13", name="mirr_table_tilt", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC14", name="mirr_table_roll", is_setting=True)
+        self._append(
+            SmaractRecord, "SARES23:LIC13", name="mirr_table_pitch", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES23:LIC14", name="mirr_table_roll", is_setting=True
+        )
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
@@ -934,7 +941,7 @@ namespace.append_obj(
     "SARES23:LIC",
     lazy=True,
     name="smaract_ust",
-    module_name="eco.motion.smaract"
+    module_name="eco.motion.smaract",
 )
 
 namespace.append_obj(
@@ -942,7 +949,7 @@ namespace.append_obj(
     "SARES23:ESB",
     lazy=True,
     name="smaract_user",
-    module_name="eco.motion.smaract"
+    module_name="eco.motion.smaract",
 )
 
 
@@ -952,12 +959,25 @@ from ..microscopes import MicroscopeMotorRecord
 
 
 class JohannAnalyzer(Assembly):
-    def __init__(self,name=''):
+    def __init__(self, name=""):
         super().__init__(name=name)
-        self._append(MotorRecord,"SARES20-MF1:MOT_3",name='pitch', is_setting=True, is_status=True)
-        self._append(MotorRecord,"SARES20-MF1:MOT_4",name='roll', is_setting=True, is_status=True)
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_3",
+            name="pitch",
+            is_setting=True,
+            is_status=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_4",
+            name="roll",
+            is_setting=True,
+            is_status=True,
+        )
 
-namespace.append_obj(JohannAnalyzer,name='analyzer')
+
+namespace.append_obj(JohannAnalyzer, name="analyzer")
 
 # ad hoc 2 pulse setup
 # class Laser2pulse(Assembly):
@@ -1083,9 +1103,9 @@ try:
     import sys
     from ..utilities import TimeoutPath
 
-    if TimeoutPath(f'/sf/bernina/data/{config_bernina.pgroup()}/res/').exists():
+    if TimeoutPath(f"/sf/bernina/data/{config_bernina.pgroup()}/res/").exists():
         pgroup_eco_path = TimeoutPath(
-            f'/sf/bernina/data/{config_bernina.pgroup()}/res/eco'
+            f"/sf/bernina/data/{config_bernina.pgroup()}/res/eco"
         )
         pgroup_eco_path.mkdir(mode=775, exist_ok=True)
         sys.path.append(pgroup_eco_path.as_posix())
@@ -1135,5 +1155,3 @@ except:
 #     "desc": "DCM Monochromator",
 #     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
 # },
-
-

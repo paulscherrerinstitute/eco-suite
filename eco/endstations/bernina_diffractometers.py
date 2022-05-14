@@ -828,7 +828,7 @@ class XRDYou(Assembly):
         if bernina_kappa:
             eta_k = eta_k - np.pi / 2
             kappa = -kappa
-        if True:
+        if False:
 
             def flip_ang(ang):
                 if 1 < abs(ang // np.pi):

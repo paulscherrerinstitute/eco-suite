@@ -318,11 +318,11 @@ class Namespace(Assembly):
                 #         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                 #     )
 
-#                 progress = Progress(
-#     SpinnerColumn(),
-#     *Progress.get_default_columns(),
-#     TimeElapsedColumn(),
-# )
+                #                 progress = Progress(
+                #     SpinnerColumn(),
+                #     *Progress.get_default_columns(),
+                #     TimeElapsedColumn(),
+                # )
                 list(
                     progress.track(
                         exc.map(
