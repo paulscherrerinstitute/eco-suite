@@ -12,7 +12,7 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         self.__dict__[name] = MotorRecord(Id, name=name)
         self.alias.append(self.__dict__[name].alias)
     except:
-        print("Warning! Could not find motor {name} (Id:{Id})")
+        print(f"Warning! Could not find motor {name} (Id:{Id})")
 
 
 class Pulsepick:

@@ -8,6 +8,7 @@ from ..elements.assembly import Assembly
 from .motors import MotorRecord
 import sys
 from pathlib import Path
+import time
 
 sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
 import bufferutils
@@ -179,7 +180,7 @@ class CameraBasler(Assembly):
         )
         self._append(
             AdjustablePvEnum,
-            self.pvname + ":CAMERA",
+            self.pvname + ":CAMERASTATUS",
             name="running",
             is_setting=True,
             is_status=False,
@@ -313,14 +314,23 @@ class CameraBasler(Assembly):
             is_setting=True,
             is_status=True,
         )
+
+        def set_roi(roi):
+            self._set_params(
+                [self._roixmin, roi[0]],
+                [self._roixmax, roi[1]],
+                [self._roiymin, roi[2]],
+                [self._roiymax, roi[3]],
+            )
+            return (roi[0], roi[1], roi[2], roi[3])
+
         self._append(
             AdjustableVirtual,
             [self._roixmin, self._roixmax, self._roiymin, self._roiymax],
             lambda x_from, x_to, y_from, y_to: [x_from, x_to, y_from, y_to],
-            lambda roi: (roi[0], roi[1], roi[2], roi[3]),
+            set_roi,
             name="roi",
             is_setting=True,
-            is_status=True,
         )
 
     def _set_params(self, *args):
@@ -329,6 +339,11 @@ class CameraBasler(Assembly):
             ob(val)
         self._set_parameters(1)
         self.running(1)
+
+    def gui(self):
+        self._run_cmd(
+            f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
+        )
 
 
 class QioptiqMicroscope(CameraBasler):
@@ -354,7 +369,12 @@ class CameraPCO(Assembly):
         )
         self.config_cs.set_alias()
         self._append(AdjustablePvEnum, self.pvname + ":INIT", name="initialize")
-        self._append(AdjustablePvEnum, self.pvname + ":CAMERA", name="running")
+        self._append(
+            AdjustablePvEnum,
+            self.pvname + ":CAMERASTATUS",
+            name="camera_status",
+            is_status=True,
+        )
         self._append(AdjustablePv, self.pvname + ":BOARD", name="board_no")
         self._append(AdjustablePv, self.pvname + ":SERIALNR", name="serial_no")
         self._append(AdjustablePv, self.pvname + ":EXPOSURE", name="_exposure_time")
@@ -376,6 +396,7 @@ class CameraPCO(Assembly):
         )
         self._append(AdjustablePvEnum, self.pvname + ":TRIGGER", name="trigger_on")
         # append_object_to_object(self,PvEnum,self.pvname+':TRIGGEREDGE',name='trigger_edge')
+
         self._append(
             AdjustableGetSet,
             self._exposure_time.get_current_value,
@@ -385,19 +406,39 @@ class CameraPCO(Assembly):
         )
         self._append(
             AdjustableVirtual,
+            [self.camera_status],
+            lambda stat: stat == 2,
+            lambda running: 2 if running else 1,
+            name="running",
+            is_setting=True,
+        )
+
+        def set_roi(roi):
+            self._set_params(
+                [self._roixmin, roi[0]],
+                [self._roixmax, roi[1]],
+                [self._roiymin, roi[2]],
+                [self._roiymax, roi[3]],
+            )
+            return (roi[0], roi[1], roi[2], roi[3])
+
+        self._append(
+            AdjustableVirtual,
             [self._roixmin, self._roixmax, self._roiymin, self._roiymax],
             lambda x_from, x_to, y_from, y_to: [x_from, x_to, y_from, y_to],
-            lambda roi: (roi[0], roi[1], roi[2], roi[3]),
+            set_roi,
             name="roi",
             is_setting=True,
         )
 
     def _set_params(self, *args):
-        self.running(0)
+        self.running(False)
         for ob, val in args:
             ob(val)
         self._set_parameters(1)
+        self.running(True)
 
-
-False
-False
+    def gui(self):
+        self._run_cmd(
+            f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
+        )

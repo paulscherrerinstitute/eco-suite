@@ -128,13 +128,20 @@ class Memory:
         force=False,
     ):
         # if input_obj:
-        mem = self.get_memory(index=memory_index, key=key, input_obj=input_obj,)
+        mem = self.get_memory(
+            index=memory_index,
+            key=key,
+            input_obj=input_obj,
+        )
         rec = mem["settings"]
         if force:
             select = [True] * len(rec.items())
         else:
             select = self.select_from_memory(
-                memory_index=memory_index, key=key, show_changes_only=show_changes_only, input_obj=input_obj
+                memory_index=memory_index,
+                key=key,
+                show_changes_only=show_changes_only,
+                input_obj=input_obj,
             )
             if not select:
                 return
@@ -159,7 +166,7 @@ class Memory:
             return
         else:
             return changes
-    
+
     def recall_from_runtable(self):
         ...
 
@@ -321,8 +328,11 @@ class Presets:
 
     def __dir__(self):
         return self._setup_presets()
-    def __getattr__(self,name):
+
+    def __getattr__(self, name):
         self._setup_presets()
+        if not name in self.__dict__.keys():
+            raise AttributeError
         return self.__dict__[name]
 
     def _setup_presets(self):
@@ -384,7 +394,7 @@ def name2obj(obj_parent, name, delimiter="."):
         name = name.split(delimiter)
     obj = obj_parent
     for tn in name:
-        if not tn or tn=='self':
+        if not tn or tn == "self":
             obj = obj
         else:
             obj = obj.__dict__[tn]
