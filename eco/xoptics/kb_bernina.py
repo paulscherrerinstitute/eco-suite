@@ -32,10 +32,10 @@ class KBMirrorBernina_new(Assembly):
         super().__init__(name=name)
 
         self._append(
-            KbVer, pvname_ver, name="ver", is_setting=True, is_status="recursive"
+            KbVer, pvname_ver, name="ver", is_setting=True, is_display="recursive"
         )
         self._append(
-            KbHor, pvname_hor, name="hor", is_setting=True, is_status="recursive"
+            KbHor, pvname_hor, name="hor", is_setting=True, is_display="recursive"
         )
         self.diffractometer = diffractometer
 
@@ -80,10 +80,10 @@ class KBMirrorBernina_new(Assembly):
         c = lam / np.pi * 1e3
 
         w0 = lambda w, z: (
-            w ** 2 - (w ** 4 - (2 * c * z) ** 2) ** 0.5
+            w**2 - (w**4 - (2 * c * z) ** 2) ** 0.5
         ) ** 0.5 / np.sqrt(2)
-        w = lambda w0, z: (w0 ** 2 + (c * z / w0) ** 2) ** 0.5
-        zr = lambda w0: w0 ** 2 / c
+        w = lambda w0, z: (w0**2 + (c * z / w0) ** 2) ** 0.5
+        zr = lambda w0: w0**2 / c
 
         fwhm_z = lambda z, w0: w(w0, z) / fwhm_fac
         w0_hor = w0(fwhm_hor * fwhm_fac, self.d_kbhor + z_fochor)
@@ -316,10 +316,10 @@ class KBMirrorBernina:
         c = lam / np.pi * 1e3
 
         w0 = lambda w, z: (
-            w ** 2 - (w ** 4 - (2 * c * z) ** 2) ** 0.5
+            w**2 - (w**4 - (2 * c * z) ** 2) ** 0.5
         ) ** 0.5 / np.sqrt(2)
-        w = lambda w0, z: (w0 ** 2 + (c * z / w0) ** 2) ** 0.5
-        zr = lambda w0: w0 ** 2 / c
+        w = lambda w0, z: (w0**2 + (c * z / w0) ** 2) ** 0.5
+        zr = lambda w0: w0**2 / c
 
         fwhm_z = lambda z, w0: w(w0, z) / fwhm_fac
         w0_hor = w0(fwhm_hor * fwhm_fac, self.d_kbhor + z_fochor)

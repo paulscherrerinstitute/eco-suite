@@ -119,5 +119,5 @@ class AttenuatorAramisStandalone(Assembly):
                 f"{self.pvname}:MOTOR_{n+1}",
                 name=f"motor{n+1}",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )

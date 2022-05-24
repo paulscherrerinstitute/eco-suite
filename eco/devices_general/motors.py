@@ -202,7 +202,7 @@ class SmaractStreamdevice(Assembly):
                 name="offset",
                 default_value=0,
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
         else:
             self._append(
@@ -210,7 +210,7 @@ class SmaractStreamdevice(Assembly):
                 value=0,
                 name="offset",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
 
         self._append(DetectorGet, self.get_current_value, name="readback")
@@ -448,7 +448,7 @@ class MotorRecord(Assembly):
             self.pvname + ".STAT",
             name="status_flag",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePvEnum, self.pvname + ".DIR", name="direction", is_setting=True
@@ -459,7 +459,7 @@ class MotorRecord(Assembly):
             self.pvname + ".RBV",
             name="readback",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
@@ -469,10 +469,13 @@ class MotorRecord(Assembly):
             self.pvname + ".ACCL",
             name="acceleration_time",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
-            AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=True,
+            AdjustablePv,
+            self.pvname + ".LLM",
+            name="limit_low",
+            is_setting=True,
         )
         self._append(
             AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=True
@@ -483,7 +486,9 @@ class MotorRecord(Assembly):
         self._append(
             DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False
         )
-        self._append(MotorRecordFlags, self._flags, name="flags", is_status="recursive")
+        self._append(
+            MotorRecordFlags, self._flags, name="flags", is_display="recursive"
+        )
         self._append(
             AdjustablePvEnum,
             self.pvname + ".SPMG",
@@ -535,7 +540,7 @@ class MotorRecord(Assembly):
                 port,
                 name="controller_settings",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
 
     def check_bad_limits(self, abs_set_value=2**53):
@@ -767,7 +772,7 @@ class MotorRecordFlags(Assembly):
                 [self._flags],
                 partial(self._get_flag_name_value, flag_name=flag_name),
                 name=flag_name,
-                is_status=True,
+                is_display=True,
             )
 
     def _get_flag_name_value(self, value, flag_name=None):
@@ -793,28 +798,28 @@ class MForceSettings(Assembly):
             self.pv_motor + ".MRES",
             name="motor_resolution",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pv_motor + ".ERES",
             name="encoder_resolution",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pv_channel + "_set",
             name="set_controller_command",
             is_setting=False,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pv_channel + "_get",
             name="get_controller_command",
             is_setting=False,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv, self.pv_channel + "_RC", name="run_current", is_setting=True
@@ -866,7 +871,7 @@ class SmaractRecord(Assembly):
             self.pvname + ".STAT",
             name="status_flag",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePvEnum, self.pvname + ".DIR", name="direction", is_setting=True
@@ -888,13 +893,12 @@ class SmaractRecord(Assembly):
             AdjustablePv, self.pvname + ".HOMR", name="home_reverse", is_setting=True
         )
 
-
         self._append(
             DetectorPvData,
             self.pvname + ".RBV",
             name="readback",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
@@ -922,7 +926,7 @@ class SmaractRecord(Assembly):
             self.pvname,
             self._flags,
             name="flags",
-            is_status="recursive",
+            is_display="recursive",
         )
         # self._append(
         #     AdjustablePvEnum,
@@ -977,13 +981,13 @@ class SmaractRecord(Assembly):
                 name="backlash_fraction",
                 is_setting=True,
             )
-    
+
     def home(self):
         self.home_forward(1)
         time.sleep(0.1)
         while not self.flags.is_homed.get_current_value():
             time.sleep(0.1)
-    
+
     def calibrate_sensor(self):
         self._calibrate_sensor(1)
         time.sleep(0.1)
@@ -1214,7 +1218,7 @@ class SmaractRecordFlags(Assembly):
                 [self._flags],
                 partial(self._get_flag_index_value, index=i),
                 name=flag_name,
-                is_status=True,
+                is_display=True,
             )
 
     def _get_flag_index_value(self, value, index):

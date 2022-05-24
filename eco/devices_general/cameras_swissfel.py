@@ -127,7 +127,11 @@ class CamserverConfig(Assembly):
         conditions is a dictionary holding the conditions to select a subset of cameras, e.g. {"group": Bernina}
         fields is a dictionary containing the keys and values that should be updated, e.g. fields={'alias': ['huhu', 'duda']}
         """
-        cams = {cam: self.cc.get_camera_config(cam) for cam in self.cc.get_cameras()}
+        cams = {
+            cam: self.cc.get_camera_config(cam)
+            for cam in self.cc.get_cameras()
+            if not "jungfrau" in cam
+        }
         cams_selected = {}
         for cam, cfg in cams.items():
             try:
@@ -166,7 +170,7 @@ class CameraBasler(Assembly):
             camserver_alias=camserver_alias,
             camserver_group=camserver_group,
             name="config_cs",
-            is_status=False,
+            is_display=False,
         )
         self.config_cs.set_alias()
         if camserver_group is not None:
@@ -176,126 +180,126 @@ class CameraBasler(Assembly):
             self.pvname + ":INIT",
             name="initialize",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":CAMERASTATUS",
             name="running",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":BOARD",
             name="board_no",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":SERIALNR",
             name="serial_no",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":EXPOSURE",
             name="_exposure_time",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":ACQMODE",
             name="_acq_mode",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":RECMODE",
             name="_req_mode",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":STOREMODE",
             name="_store_mode",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":BINY",
             name="_binx",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":BINY",
             name="_biny",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":REGIONX_START",
             name="_roixmin",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":REGIONX_END",
             name="_roixmax",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":REGIONY_START",
             name="_roiymin",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":REGIONY_END",
             name="_roiymax",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":SET_PARAM",
             name="_set_parameters",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":TRIGGER",
             name="trigger_on",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":AMPGAIN",
             name="_gain",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":TRIGGERSOURCE",
             name="trigger_source",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         # append_object_to_object(self,PvEnum,self.pvname+':TRIGGEREDGE',name='trigger_edge')
         self._append(
@@ -304,7 +308,7 @@ class CameraBasler(Assembly):
             lambda value: self._set_params((self._exposure_time, value)),
             name="exposure_time",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustableGetSet,
@@ -312,7 +316,7 @@ class CameraBasler(Assembly):
             lambda value: self._set_params((self._gain, value)),
             name="gain",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
 
         def set_roi(roi):
@@ -373,7 +377,7 @@ class CameraPCO(Assembly):
             AdjustablePvEnum,
             self.pvname + ":CAMERASTATUS",
             name="camera_status",
-            is_status=True,
+            is_display=True,
         )
         self._append(AdjustablePv, self.pvname + ":BOARD", name="board_no")
         self._append(AdjustablePv, self.pvname + ":SERIALNR", name="serial_no")

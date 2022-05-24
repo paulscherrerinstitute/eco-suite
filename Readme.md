@@ -62,7 +62,7 @@ class Myobject(Assembly):
 The `Assembly` object has different methods that help to assemble different other eco objects together.
 ```python
 # in 
-self._append(MySubObject,*args, **kwargs, name='mysubobjname', is_setting=True, is_status=True)
+self._append(MySubObject,*args, **kwargs, name='mysubobjname', is_setting=True, is_display=True)
 ```
 The `is_setting` flag requires that the appended object is an adjustable (can be set afterwards) or has adjustable settings in case it is itself an assembly.
-The `is_status` flag independently determines if the subobject should be used to describe the status of the new assembly, e.g. show up in its representation. In case the subobject is no adjustable itself but has adjustable settings that should be shown in the object status, please use `is_status='recursive'`. 
+The `is_status` flag independently determines if the subobject should be used to describe the status of the new assembly, e.g. show up in its representation. In case the subobject is no adjustable itself but has adjustable settings that should be shown in the object status, please use `is_display='recursive'`. 

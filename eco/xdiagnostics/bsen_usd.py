@@ -84,14 +84,14 @@ class Bsen(Assembly):
             "SARES20-PROF141-M1",
             name="camera_microscope",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             CameraPCO,
             "SARES20-CAMS142-M5",
             name="camera_spectrometer",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,

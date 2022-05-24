@@ -25,7 +25,7 @@ class CtaSequencer(Assembly):
             f"{self.pvname}:SerMaxLen-O",
             name="max_length",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv, self._pvstr("Ctrl-Length-I"), name="length", is_setting=True
@@ -74,7 +74,7 @@ class CtaSequencer(Assembly):
                 element_count=self.max_length.get_current_value(),
                 name=f"seq_code{eventcode}",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
             self.event_code_sequences[eventcode] = self.__dict__[f"seq_code{eventcode}"]
 

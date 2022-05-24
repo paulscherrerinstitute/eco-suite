@@ -15,7 +15,7 @@ from eco.epics import get_from_archive
 class DetectorBsData(Assembly):
     def __init__(self, bschannel, name=None):
         super().__init__(name=name)
-        self.status_indicators_collection.append(self)
+        self.status_collection.append(self)
         self.bschannel = bschannel
         if epics_pv_available & epics_pv_availabe == "same":
             self._pv = PV(pvname)

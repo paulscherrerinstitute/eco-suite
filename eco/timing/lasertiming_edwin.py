@@ -97,27 +97,27 @@ class XltEpics(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         self.settings_collection.append(self, force=True)
-        self.status_indicators_collection.append(self, force=True)
+        self.status_collection.append(self, force=True)
         self._append(
             AdjustablePvEnum,
             self.pvname + ":SHOTDELAY",
             name="oscillator_pulse_offset",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":SHOTMOFFS_ENA",
             name="modulo_offset_mode",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":DELAY_Z_OFFS",
             name="_offset",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustableVirtual,
@@ -126,28 +126,28 @@ class XltEpics(Assembly):
             lambda offset: offset / 1e-12,
             name="offset",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":DELAY",
             name="_set_user_delay_value",
             is_setting=False,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":P_RATIO",
             name="rep_len",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
             "SIN-TIMAST-TMA:Evt-22-Freq-SP",
             name="laser_frequency",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
         self.alias.append(

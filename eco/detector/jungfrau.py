@@ -24,7 +24,7 @@ class Jungfrau(Assembly):
         self._append(
             AdjustablePv,
             pv_trigger,
-            is_status=True,
+            is_display=True,
             is_setting=False,
             name="trigger",
         )
@@ -46,7 +46,7 @@ class Jungfrau(Assembly):
                 "Can not set the pedestal file manually yet."
             ),
             name="pedestal_file",
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustableGetSet,
@@ -55,7 +55,7 @@ class Jungfrau(Assembly):
                 "Can not set the pedestal file manually yet."
             ),
             name="gain_file",
-            is_status=True,
+            is_display=True,
         )
 
     def _set_trigger_enable(self, value):

@@ -17,7 +17,7 @@ class GasDetector(Assembly):
             DetectorPvDataStream,
             "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
             name="fast_calibrated",
-            is_status=True,
+            is_display=True,
         )
 
 
@@ -30,14 +30,14 @@ class FeDigitiza(Assembly):
             pvname + "-WD-gain",
             name="gain",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
             pvname + "-HV_SET",
             name="bias",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
 
         # self.channels = [
@@ -70,32 +70,36 @@ class SolidTargetDetectorPBPS_assi(Assembly):
             pvname + ":PROBE_SP",
             name="target",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             MotorRecord,
             pvname + ":MOTOR_X1",
             name="x_diodes",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             MotorRecord,
             pvname + ":MOTOR_Y1",
             name="y_diodes",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             MotorRecord,
             pvname + ":MOTOR_PROBE",
             name="y_targets",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         for chdigi, tp in pvname_fedigitizerchannels.items():
             self._append(
-                FeDigitiza, tp, name="diode_" + chdigi, is_setting=True, is_status=False
+                FeDigitiza,
+                tp,
+                name="diode_" + chdigi,
+                is_setting=True,
+                is_display=False,
             )
         self._append(
             AdjustableVirtual,
@@ -107,7 +111,7 @@ class SolidTargetDetectorPBPS_assi(Assembly):
             lambda x: (x, x, x, x),
             name="bias",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustableVirtual,
@@ -119,7 +123,7 @@ class SolidTargetDetectorPBPS_assi(Assembly):
             lambda x: (x, x, x, x),
             name="gain",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
 
 

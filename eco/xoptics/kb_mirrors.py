@@ -10,23 +10,27 @@ class KbVer(Assembly):
         self.pvname = pvname
         super().__init__(name=name)
         self._append(
-            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_status=True
+            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_display=True
         )
         self._append(
-            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_status=True
+            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_display=True
         )
         self._append(
             MotorRecord,
             pvname + ":W_RX",
             name="pitch",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
-            MotorRecord, pvname + ":W_RZ", name="roll", is_setting=False, is_status=True
+            MotorRecord,
+            pvname + ":W_RZ",
+            name="roll",
+            is_setting=False,
+            is_display=True,
         )
         self._append(
-            MotorRecord, pvname + ":W_RY", name="yaw", is_setting=False, is_status=True
+            MotorRecord, pvname + ":W_RY", name="yaw", is_setting=False, is_display=True
         )
         self._append(MotorRecord, pvname + ":BU", name="bend1", is_setting=True)
         self._append(MotorRecord, pvname + ":BD", name="bend2", is_setting=True)
@@ -37,7 +41,7 @@ class KbVer(Assembly):
             lambda mn: self._get_benders_set_mean(mn),
             name="bender_mean",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustableVirtual,
@@ -46,7 +50,7 @@ class KbVer(Assembly):
             lambda mn: self._get_benders_set_diff(mn),
             name="bender_diff",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
@@ -98,23 +102,27 @@ class KbHor(Assembly):
         self.pvname = pvname
         super().__init__(name=name)
         self._append(
-            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_status=True
+            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_display=True
         )
         self._append(
-            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_status=True
+            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_display=True
         )
         self._append(
             MotorRecord,
             pvname + ":W_RY",
             name="pitch",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
-            MotorRecord, pvname + ":W_RZ", name="roll", is_setting=False, is_status=True
+            MotorRecord,
+            pvname + ":W_RZ",
+            name="roll",
+            is_setting=False,
+            is_display=True,
         )
         self._append(
-            MotorRecord, pvname + ":W_RX", name="yaw", is_setting=False, is_status=True
+            MotorRecord, pvname + ":W_RX", name="yaw", is_setting=False, is_display=True
         )
         self._append(MotorRecord, pvname + ":BU", name="bend1", is_setting=True)
         self._append(MotorRecord, pvname + ":BD", name="bend2", is_setting=True)
@@ -125,7 +133,7 @@ class KbHor(Assembly):
             lambda mn: self._get_benders_set_mean(mn),
             name="bender_mean",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustableVirtual,
@@ -134,7 +142,7 @@ class KbHor(Assembly):
             lambda mn: self._get_benders_set_diff(mn),
             name="bender_diff",
             is_setting=False,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePv,

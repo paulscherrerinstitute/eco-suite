@@ -23,9 +23,9 @@ class MicroscopeMotorRecord(Assembly):
                 CameraBasler,
                 pvname_camera,
                 camserver_alias=camserver_alias,
-                name='camera',
+                name="camera",
                 is_setting=True,
-                is_status="recursive",
+                is_display="recursive",
             )
         if pvname_zoom:
             pv_base = pvname_zoom.split(":")[0]
@@ -36,7 +36,7 @@ class MicroscopeMotorRecord(Assembly):
                 pvname_zoom,
                 name="zoom",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
                 schneider_config=(pvname_zoom, pv_base + f":{port}"),
             )
         if pvname_focus:
@@ -45,7 +45,7 @@ class MicroscopeMotorRecord(Assembly):
                 pvname_focus,
                 name="focus",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
                 schneider_config=(pvname_zoom, pv_base + f":{port}"),
             )
 
@@ -65,7 +65,7 @@ class BerninaInlineMicroscope(Assembly):
             camserver_alias=self.alias.get_full_name() + f" ({pvname_camera})",
             name="camera",
             is_setting=True,
-            is_status="recursive",
+            is_display="recursive",
         )
         # self._
         self._append(OptoSigmaZoom, name="zoom", is_setting=[True])

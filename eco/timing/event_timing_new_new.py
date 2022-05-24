@@ -16,7 +16,7 @@ class TimingSystem(Assembly):
     def __init__(self, pv_master=None, pv_pulse_id=None, name=None):
         super().__init__(name=name)
         self._append(
-            MasterEventSystem, pv_master, name="event_master", is_status="recursive"
+            MasterEventSystem, pv_master, name="event_master", is_display="recursive"
         )
         self._append(DetectorPvDataStream, pv_pulse_id, name="pulse_id")
 
@@ -189,7 +189,7 @@ class MasterEventSystem(Assembly):
                 self.pvname,
                 slot,
                 name=f"code{code:03d}",
-                is_status="recursive",
+                is_display="recursive",
             )
             self.event_codes[code] = self.__dict__[f"code{code:03d}"]
         for code, delay in event_code_delays_fix.items():
@@ -199,7 +199,7 @@ class MasterEventSystem(Assembly):
                 delay,
                 "fix delay CTA sequencer code",
                 name=f"code{code:03d}",
-                is_status="recursive",
+                is_display="recursive",
             )
             self.event_codes[code] = self.__dict__[f"code{code:03d}"]
 
@@ -250,7 +250,7 @@ class EvrPulser(Assembly):
         self._event_master = event_master
 
         self._append(
-            AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True
+            AdjustablePvString, pv_base + "-Name-I", name="description", is_display=True
         )
         self._append(
             AdjustablePvEnum,
@@ -342,7 +342,7 @@ class EvrOutput(Assembly):
         self._pulsers = pulsers
         # self._update_connected_pulsers()
         self._append(
-            AdjustablePvString, pv_base + "-Name-I", name="description", is_status=True
+            AdjustablePvString, pv_base + "-Name-I", name="description", is_display=True
         )
         self._append(
             AdjustablePvEnum, f"{self.pv_base}-Ena-SP", name="enable", is_setting=True
@@ -522,7 +522,7 @@ class EventReceiver(Assembly):
                 event_master,
                 name=f"pulser{n}",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
             pulsers.append(self.__dict__[f"pulser{n}"])
         self.pulsers = tuple(pulsers)
@@ -534,7 +534,7 @@ class EventReceiver(Assembly):
                 pulsers=pulsers,
                 name=f"output_front{n}",
                 is_setting=True,
-                is_status="recursive",
+                is_display="recursive",
             )
             outputs.append(self.__dict__[f"output_front{n}"])
         for n in range(n_output_rear):
@@ -544,7 +544,7 @@ class EventReceiver(Assembly):
                 pulsers=pulsers,
                 name=f"output_rear{n}",
                 is_setting=True,
-                is_status="recursive",
+                is_display="recursive",
             )
             outputs.append(self.__dict__[f"output_rear{n}"])
         # for to in outputs:

@@ -53,7 +53,7 @@ class Analyzer(Assembly):
                         pvname + f":{pvmot}",
                         name=name,
                         is_setting=True,
-                        is_status=True,
+                        is_display=True,
                         backlash_definition=True,
                         schneider_config=(pvname + f":{pvmot}", pvname + f":{pvmot}"),
                     )
@@ -63,7 +63,7 @@ class Analyzer(Assembly):
                         pvname + f":{pvmot}",
                         name=name,
                         is_setting=True,
-                        is_status=True,
+                        is_display=True,
                         backlash_definition=False,
                         schneider_config=(pvname + f":{pvmot}", pvname + f":{pvmot}"),
                     )
@@ -72,7 +72,7 @@ class Analyzer(Assembly):
             # AdjustableMemory,
             # name=name,
             # is_setting=True,
-            # is_status=True,
+            # is_display=True,
             # )
             # print(f"Initialization of epics motor {name}: {pvname}:{pvmot} failed, replaced by dummy!")
 
@@ -82,7 +82,7 @@ class Analyzer(Assembly):
             self.energy_from_motor_pos,
             self.motor_pos_from_energy,
             is_setting=False,
-            is_status=True,
+            is_display=True,
             name="energy",
             unit="eV",
         )
@@ -92,7 +92,7 @@ class Analyzer(Assembly):
             self.tth_from_motor_pos,
             self.motor_pos_from_tth,
             is_setting=False,
-            is_status=True,
+            is_display=True,
             name="tth",
             unit="deg",
         )
@@ -129,9 +129,11 @@ class Analyzer(Assembly):
         energy = xu.lam2en(
             self.material.planeDistance(*self.hkl) * 2 * np.sin(np.deg2rad(tth / 2))
         )
-        om_calc, chi_calc, phi_calc, tth_calc = self.angs_from_hkl(*self.hkl, energy=energy)
-        if abs(om-om_calc)>0.1:
-            energy=None
+        om_calc, chi_calc, phi_calc, tth_calc = self.angs_from_hkl(
+            *self.hkl, energy=energy
+        )
+        if abs(om - om_calc) > 0.1:
+            energy = None
         return energy
 
     def rowland_intersection(self, beta, tbeta):
@@ -147,7 +149,7 @@ class Analyzer(Assembly):
         x0 = r / 2 * np.cos(b)
         y0 = r / 2 * np.sin(b)
         p = np.cos(tb) * x0 + np.sin(tb) * y0
-        d = p + np.sqrt(p ** 2 + (r / 2) ** 2 - x0 ** 2 - y0 ** 2)
+        d = p + np.sqrt(p**2 + (r / 2) ** 2 - x0**2 - y0**2)
         x, y = np.array([d * np.cos(tb), d * np.sin(tb)])
         return x, y
 
@@ -168,19 +170,21 @@ class Analyzer(Assembly):
         """
         cfg = self.config["rowland"]
         a0 = np.deg2rad(cfg["alpha_lin"])
-        tb = np.deg2rad(180-tth)
-        t_hor, det_t_hor, det_t_ver = [self.t_hor.get_current_value(), self._det.t_hor.get_current_value(), self._det.t_ver.get_current_value()]
+        tb = np.deg2rad(180 - tth)
+        t_hor, det_t_hor, det_t_ver = [
+            self.t_hor.get_current_value(),
+            self._det.t_hor.get_current_value(),
+            self._det.t_ver.get_current_value(),
+        ]
         y_d_cur = np.sin(a0) * det_t_hor + np.cos(a0) * det_t_ver
         x_d_cur = np.cos(a0) * det_t_hor - np.sin(a0) * det_t_ver + t_hor
         d_cryst_det = norm(np.array([x_d_cur, y_d_cur]))
-        x_d = np.cos(tb)*d_cryst_det-t_hor
-        y_d = np.sin(tb)*d_cryst_det
+        x_d = np.cos(tb) * d_cryst_det - t_hor
+        y_d = np.sin(tb) * d_cryst_det
         det_t_hor = np.sin(a0) * y_d + np.cos(a0) * x_d
         det_t_ver = np.cos(a0) * y_d - np.sin(a0) * x_d
         det_rot = -(180 - tth) / 2
         return t_hor, det_t_hor, det_t_ver, det_rot
-
-
 
     def tth_from_motor_pos(self, t_hor, det_t_hor, det_t_ver, det_rot=None):
         """
@@ -195,10 +199,10 @@ class Analyzer(Assembly):
         return 180 - tb
 
     def reset_motors_current_values_to_energy(self, energy):
-        targets  = self.motor_pos_from_energy(energy)
+        targets = self.motor_pos_from_energy(energy)
         motors = [self.om, self.t_hor, self._det.t_hor, self._det.t_ver, self._det.rot]
         for mot, tar in zip(motors, targets):
-            print(f'Resetting {mot.name} from {mot.get_current_value():.5} to {tar:.5}')
+            print(f"Resetting {mot.name} from {mot.get_current_value():.5} to {tar:.5}")
             mot.reset_current_value_to(tar)
 
 
@@ -224,7 +228,7 @@ class Detector(Assembly):
                     pvname + f":{pvmot}",
                     name=name,
                     is_setting=True,
-                    is_status=True,
+                    is_display=True,
                     backlash_definition=False,
                 )
             except:
@@ -232,7 +236,7 @@ class Detector(Assembly):
                     AdjustableMemory,
                     name=name,
                     is_setting=True,
-                    is_status=True,
+                    is_display=True,
                 )
                 print(
                     f"Initialization of epics motor {name}: {pvname}:{pvmot} failed, replaced by dummy!"
@@ -277,7 +281,7 @@ class RIXS(Assembly):
             name="det",
             pvname=pvname,
             is_setting=False,
-            is_status="recursive",
+            is_display="recursive",
         )
         # append an analyzer
         self.append_analyzer(
@@ -326,7 +330,7 @@ class RIXS(Assembly):
             det=det,
             pvname=pvname,
             is_setting=False,
-            is_status="recursive",
+            is_display="recursive",
         )
 
     def gui(self, guiType="xdm"):

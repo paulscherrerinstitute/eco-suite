@@ -11,14 +11,14 @@ import numpy as np
 
 ureg = UnitRegistry()
 
-class IncouplingCleanBernina(Assembly):
-    def __init__(self,  name=None):
-        super().__init__(name=name)
-        self._append(SmaractStreamdevice,"SARES23-ESB13",name='tilt')
-        self._append(SmaractStreamdevice,"SARES23-ESB14",name='rotation')
-        self._append(SmaractStreamdevice,"SARES23-LIC15",name='transl_vertical')
-        self._append(MotorRecord,"SARES20-MF2:MOT_5",name='transl_horizontal')
 
+class IncouplingCleanBernina(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(SmaractStreamdevice, "SARES23-ESB13", name="tilt")
+        self._append(SmaractStreamdevice, "SARES23-ESB14", name="rotation")
+        self._append(SmaractStreamdevice, "SARES23-LIC15", name="transl_vertical")
+        self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
 
 
 class LaserBernina(Assembly):
@@ -41,22 +41,34 @@ class LaserBernina(Assembly):
             MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True
         )
         # Waveplate and Delay stage
-        self._append(MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True)
+        self._append(
+            MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
+        )
         self._append(
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
-        self._append(AdjustableFS,'/photonics/home/gac-bernina/eco/configuration/wp_att_calibration',name='wp_att_calibration', is_status=False)
-        
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/wp_att_calibration",
+            name="wp_att_calibration",
+            is_display=False,
+        )
+
         def uJ2wp(uJ):
             direction = 1
-            if np.mean(np.diff(np.asarray(self.wp_att_calibration()).T[1]))<0:
+            if np.mean(np.diff(np.asarray(self.wp_att_calibration()).T[1])) < 0:
                 direction = -1
-            return np.interp(uJ,*np.asarray(self.wp_att_calibration())[::direction].T[::-1])
+            return np.interp(
+                uJ, *np.asarray(self.wp_att_calibration())[::direction].T[::-1]
+            )
+
         def wp2uJ(wp):
-            return np.interp(wp,*np.asarray(self.wp_att_calibration()).T)
-        
-        self._append(AdjustableVirtual,[self.wp_att],wp2uJ,uJ2wp,name='pulse_energy_pump')
-        
+            return np.interp(wp, *np.asarray(self.wp_att_calibration()).T)
+
+        self._append(
+            AdjustableVirtual, [self.wp_att], wp2uJ, uJ2wp, name="pulse_energy_pump"
+        )
+
         self._append(
             MotorRecord,
             self.pvname + "-M522:MOTOR_1",
@@ -66,7 +78,7 @@ class LaserBernina(Assembly):
         self._append(
             DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
         )
-        self._append(XltEpics, name="xlt", is_setting=True, is_status="recursive")
+        self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
         # Upstairs, Laser 1 LAM
         self._append(
             MotorRecord,
@@ -86,6 +98,7 @@ class LaserBernina(Assembly):
         #     name="delaystage_thz",
         #     is_setting=True,
         # )
+
 
 class DelayTime(AdjustableVirtual):
     def __init__(

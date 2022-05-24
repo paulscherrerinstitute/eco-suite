@@ -16,33 +16,38 @@ class SwissFel(Assembly):
             DetectorPvData,
             "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
             name="aramis_pulse_energy",
-            is_status=True,
+            is_display=True,
+            has_fields=True,
         )
-        self._append(UndulatorK, name="aramis_photon_energy_undulators", is_status=True)
-        self._append(EcolEnergy_new, name="aramis_electron_energy_ecol", is_status=True)
+        self._append(
+            UndulatorK, name="aramis_photon_energy_undulators", is_display=True
+        )
+        self._append(
+            EcolEnergy_new, name="aramis_electron_energy_ecol", is_display=True
+        )
         self._append(
             DetectorPvData,
             "SARUN03-UIND030:FELPHOTENE",
             name="aramis_photon_energy_und03",
-            is_status=True,
+            is_display=True,
         )
         # self._append(
         # DetectorPvData,
         # "SARUN:FELPHOTENE",
         # name="aramis_photon_energy",
-        # is_status=True,
+        # is_display=True,
         # )
         self._append(
             DetectorPvData,
             "SWISSFEL-STATUS:Bunch-1-Appl-Freq-RB",
             name="aramis_rep_rate",
-            is_status=True,
+            is_display=True,
         )
         self._append(
             DetectorPvData,
             "SAR-EVPO-010:DEACTIVATE",
             name="mode_monitor_inactive",
-            is_status=True,
+            is_display=True,
         )
         # PMM disable:
         # 1.
@@ -64,53 +69,53 @@ class SwissFel(Assembly):
             AdjustablePvEnum,
             "SAROP-ARAMIS:BEAMLINE_SP",
             name="aramis_beamline_switch",
-            is_status=True,
+            is_display=True,
             is_setting=True,
         )
         self._append(
             AdjustablePvEnum,
             "SAROP21-ARAMIS:MODE_SP",
             name="bernina_beamline_mode",
-            is_status=True,
+            is_display=True,
             is_setting=True,
         )
         self._append(
             AdjustablePvEnum,
             "SFB_PSICO_AR:ONOFF1",
             name="psico_running",
-            is_status=True,
+            is_display=True,
             is_setting=False,
         )
         self._append(
             DetectorPvEnum,
             "SFB_POINTING_AR_MON:SELECT",
             name="pointing_feedback_monitor",
-            is_status=True,
+            is_display=True,
             is_setting=False,
         )
         self._append(
             AdjustablePvEnum,
             "SFB_POINTING_AR:ONOFF1",
             name="pointing_feedback_running",
-            is_status=True,
+            is_display=True,
             is_setting=False,
         )
         self._append(
             AdjustablePv,
             "SFB_POINTING_AR:SP1",
             name="pointing_feedback_setpoint_x",
-            is_status=True,
+            is_display=True,
             is_setting=False,
         )
         self._append(
             AdjustablePv,
             "SFB_POINTING_AR:SP2",
             name="pointing_feedback_setpoint_y",
-            is_status=True,
+            is_display=True,
             is_setting=False,
         )
         self._append(
-            MessageBoard, name="message", is_setting=True, is_status="recursive"
+            MessageBoard, name="message", is_setting=True, is_display="recursive"
         )
 
         self._append(
@@ -142,48 +147,56 @@ class SwissFel(Assembly):
             "SARUN03-DBPM070:X-REF-FB",
             name="undulator_x_orbit",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-DBPM070:Y-REF-FB",
             name="undulator_y_orbit",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-MQUA080:X",
             name="undulator_quad_mover_x",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-MQUA080:Y",
             name="undulator_quad_mover_y",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-UIND030:GM-X-SET",
             name="undulator_girder_x",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-UIND030:GM-Y-SET",
             name="undulator_girder_y",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-UIND030:GM-YAW-SET",
             name="undulator_girder_yaw",
             is_setting=False,
+            is_display=False,
         )
         self._append(
             DetectorBsStream,
             "SARUN03-UIND030:GM-PITCH-SET",
             name="undulator_girder_pitch",
             is_setting=False,
+            is_display=False,
         )
 
 
@@ -279,7 +292,8 @@ class UndulatorK(Assembly):
             DetectorPvData,
             "SARUN:FELPHOTENE",
             name="aramis_undulator_photon_energy",
-            is_status=True,
+            is_display=True,
+            has_fields=True,
         )
         self.ksets = []
         self.gaps = []
@@ -289,7 +303,7 @@ class UndulatorK(Assembly):
                 f"SARUN{undno:02d}-UIND030:K_SET",
                 name=f"und{undno:02d}_Kset",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self.ksets.append(self.__dict__[f"und{undno:02d}_Kset"])
             self._append(
@@ -299,7 +313,7 @@ class UndulatorK(Assembly):
                 accuracy=0.0002,
                 name=f"und{undno:02d}_gap",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self.gaps.append(self.__dict__[f"und{undno:02d}_gap"])
         self.settings_collection.append(self)
@@ -310,7 +324,7 @@ class UndulatorK(Assembly):
             energy_start = self.aramis_undulator_photon_energy.get_current_value()
         K_start = [tks.get_current_value() for tks in self.ksets]
         return [
-            (energy_start / energy_target * (tK_start ** 2 + 2) - 2) ** 0.5
+            (energy_start / energy_target * (tK_start**2 + 2) - 2) ** 0.5
             for tK_start in K_start
         ]
 

@@ -8,28 +8,28 @@ class AnalogInput(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         self._append(
-            DetectorPvData, self.pvname, name="value", is_setting=False, is_status=True
+            DetectorPvData, self.pvname, name="value", is_setting=False, is_display=True
         )
         self._append(
             AdjustablePvString,
             self.pvname + ".DESC",
             name="description",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             AdjustablePvString,
             self.pvname + ".EGU",
             name="unit",
             is_setting=False,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             DetectorPvData,
             self.pvname + ".RVAL",
             name="raw",
             is_setting=False,
-            is_status=False,
+            is_display=False,
         )
 
     def get_current_value(self):

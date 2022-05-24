@@ -60,9 +60,7 @@ class Assembly:
         # self.settings = []
         # self.status_indicators = []
         self.settings_collection = Collection(name="settings_collection")
-        self.status_indicators_collection = Collection(
-            name="status_indicators_collection"
-        )
+        self.status_collection = Collection(name="status_collection")
         self.display_collection = Collection(name="display_collection")
         self.view_toplevel_only = []
         if memory.global_memory_dir:
@@ -74,6 +72,7 @@ class Assembly:
         *args,
         name=None,
         is_setting=False,
+        is_display=True,
         is_status=True,
         is_alias=True,
         view_toplevel_only=True,
@@ -89,21 +88,16 @@ class Assembly:
         #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
         #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
         if is_setting:
-            # self.settings.append(self.__dict__[name])
             self.settings_collection.append(self.__dict__[name], recursive=True)
 
         if is_status:
-            if is_status == "recursive":
-                self.status_indicators_collection.append(
-                    self.__dict__[name], recursive=True
-                )
+            self.status_collection.append(self.__dict__[name], recursive=True)
+        if is_display:
+            if is_display == "recursive":
+                self.display_collection.append(self.__dict__[name], recursive=True)
             else:
-                self.status_indicators_collection.append(
-                    self.__dict__[name], recursive=False
-                )
+                self.display_collection.append(self.__dict__[name], recursive=False)
 
-        # if (not is_setting) and is_status:
-        #     self.status_indicators.append(self.__dict__[name])
         if view_toplevel_only:
             self.view_toplevel_only.append(self.__dict__[name])
 
@@ -111,7 +105,7 @@ class Assembly:
         if base == "self":
             base = self
         settings = {}
-        status_indicators = {}
+        status = {}
         nodet = []
         geterror = []
         for ts in track(
@@ -132,7 +126,7 @@ class Assembly:
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
         for ts in track(
-            self.status_indicators_collection.get_list(),
+            self.status_collection.get_list(),
             transient=True,
             description="Reading status indicators ...",
         ):
@@ -143,9 +137,7 @@ class Assembly:
             # else:
             if hasattr(ts, "get_current_value"):
                 try:
-                    status_indicators[
-                        ts.alias.get_full_name(base=base)
-                    ] = ts.get_current_value()
+                    status[ts.alias.get_full_name(base=base)] = ts.get_current_value()
                 except:
                     geterror.append(ts.alias.get_full_name(base=base))
             else:
@@ -158,16 +150,23 @@ class Assembly:
                     "Retrieved error while running get_current_value from: "
                     + ", ".join(geterror)
                 )
-        return {"settings": settings, "status_indicators": status_indicators}
+        return {"settings": settings, "status": status}
 
     def status(self, get_string=False):
+        stat = self.get_status()
+        s = tabulate([[name, value] for name, value in stat["status"].items()])
+        if get_string:
+            return s
+        else:
+            print(s)
+
+    def settings(self, get_string=False):
         stat = self.get_status()
         s = tabulate(
             [
                 [colorama.Style.BRIGHT + name + colorama.Style.RESET_ALL, value]
                 for name, value in stat["settings"].items()
             ]
-            + [[name, value] for name, value in stat["status_indicators"].items()]
         )
         if get_string:
             return s
@@ -186,9 +185,9 @@ class Assembly:
         s = tabulate([[name, value] for name, value in stat_filt[stat_field].items()])
         return s
 
-    def get_status_indicator_str(self):
+    def get_display_str(self):
         main_name = self.name
-        stats = self.status_indicators_collection()
+        stats = self.display_collection()
         # stats_dict = {}
         tab = []
         for to in stats:
@@ -206,7 +205,7 @@ class Assembly:
 
     def __repr__(self):
         label = self.alias.get_full_name() + " status\n"
-        return label + self.get_status_indicator_str()
+        return label + self.get_display_str()
 
     def _run_cmd(self, line):
         print(f"Starting following commandline silently:\n" + line)
@@ -230,7 +229,7 @@ class Assembly_old:
         *args,
         name=None,
         is_setting=False,
-        is_status=True,
+        is_display=True,
         is_alias=True,
         view_toplevel_only=True,
         **kwargs,

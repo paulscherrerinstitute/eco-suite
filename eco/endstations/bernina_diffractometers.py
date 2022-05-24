@@ -44,28 +44,28 @@ class GPS(Assembly):
                 pvname + ":MOT_TX",
                 name="xbase",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_TY",
                 name="_ybase_deltatau",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_RX",
                 name="_rxbase_deltatau",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_YU",
                 name="_ybase_upstream",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
                 backlash_definition=True,
             )
             self._append(
@@ -73,7 +73,7 @@ class GPS(Assembly):
                 pvname + ":MOT_YD",
                 name="_ybase_downstream",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
                 backlash_definition=True,
             )
             self._append(
@@ -86,7 +86,7 @@ class GPS(Assembly):
                 ],
                 name="ybase",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 unit="mm",
             )
             self._append(
@@ -100,7 +100,7 @@ class GPS(Assembly):
                 ],
                 name="rxbase",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 unit="deg",
             )
 
@@ -112,7 +112,7 @@ class GPS(Assembly):
                 pvname + ":MOT_NY_RY2TH",
                 name="gamma",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord, pvname + ":MOT_MY_RYTH", name="mu", is_setting=True
@@ -122,7 +122,7 @@ class GPS(Assembly):
                 pvname + ":MOT_MY_RYTH",
                 name="alpha",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
 
@@ -147,7 +147,7 @@ class GPS(Assembly):
                 name="hex",
                 fina_angle_offset=fina_hex_angle_offset,
                 is_setting=True,
-                is_status="recursive",
+                is_display="recursive",
             )
 
         if "hlxz" in self.configuration:
@@ -178,56 +178,56 @@ class GPS(Assembly):
                 self.pvname + ":MOT_KAP_KRX",
                 name="eta_kap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_KAP",
                 name="kappa",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_KPH",
                 name="phi_kap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DTY",
                 name="zkap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DTX",
                 name="xkap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DTZ",
                 name="ykap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DRX",
                 name="rxkap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DRZ",
                 name="rykap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
 
@@ -325,11 +325,11 @@ class GPS(Assembly):
 
             def flip_ang(ang):
                 if 1 < abs(ang // np.pi):
-                    return ang - np.sign(ang) * abs(ang)//(2*np.pi) * np.pi * 2
+                    return ang - np.sign(ang) * abs(ang) // (2 * np.pi) * np.pi * 2
                 else:
                     return ang
 
-            #phi_k = flip_ang(phi_k)
+            # phi_k = flip_ang(phi_k)
             eta_k = flip_ang(eta_k)
             kappa = flip_ang(kappa)
 
@@ -420,28 +420,28 @@ class XRDYou(Assembly):
                 pvname + ":MOT_TX",
                 name="xbase",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_TY",
                 name="_ybase_deltatau",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_RX",
                 name="_rxbase_deltatau",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_YU",
                 name="_ybase_upstream",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
                 backlash_definition=True,
             )
             self._append(
@@ -449,7 +449,7 @@ class XRDYou(Assembly):
                 pvname + ":MOT_YD",
                 name="_ybase_downstream",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
                 backlash_definition=True,
             )
             self._append(
@@ -462,7 +462,7 @@ class XRDYou(Assembly):
                 ],
                 name="ybase",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 unit="mm",
             )
             self._append(
@@ -476,7 +476,7 @@ class XRDYou(Assembly):
                 ],
                 name="rxbase",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 unit="deg",
             )
             self._append(
@@ -484,7 +484,7 @@ class XRDYou(Assembly):
                 Id + ":MOT_MY_RYTH",
                 name="mu",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self.set_base_off = DeltaTauCurrOff("SARES21-XRD:asyn4.AOUT")
 
@@ -495,14 +495,14 @@ class XRDYou(Assembly):
                 Id + ":MOT_NY_RY2TH",
                 name="nu",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 Id + ":MOT_DT_RX2TH",
                 name="delta",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             ### motors XRD area detector branch ###
             self._append(
@@ -510,7 +510,7 @@ class XRDYou(Assembly):
                 Id + ":MOT_D_T",
                 name="tdet",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
 
             ### motors XRD polarisation analyzer branch ###
@@ -519,7 +519,7 @@ class XRDYou(Assembly):
                 Id + ":MOT_P_T",
                 name="tpol",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             # missing: slits of flight tube
             self.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
@@ -531,14 +531,14 @@ class XRDYou(Assembly):
                 Id + ":MOT_TBL_TX",
                 name="xhl",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 Id + ":MOT_TBL_TZ",
                 name="zhl",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
         if "hly" in self.configuration:
@@ -547,7 +547,7 @@ class XRDYou(Assembly):
                 Id + ":MOT_TBL_TY",
                 name="yhl",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 
@@ -558,7 +558,7 @@ class XRDYou(Assembly):
                     Id + ":MOT_TBL_RX",
                     name="rxhl",
                     is_setting=True,
-                    is_status=True,
+                    is_display=True,
                 )
             except:
                 print("XRD.rxhl not found")
@@ -569,7 +569,7 @@ class XRDYou(Assembly):
                     Id + ":MOT_TBL_RY",
                     name="rzhl",
                     is_setting=True,
-                    is_status=True,
+                    is_display=True,
                 )
             except:
                 print("XRD.rzhl not found")
@@ -582,14 +582,14 @@ class XRDYou(Assembly):
                 Id + ":MOT_HEX_TX",
                 name="tphi",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 Id + ":MOT_HEX_RX",
                 name="phi",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
 
         if "phi_hex" in self.configuration:
@@ -643,56 +643,56 @@ class XRDYou(Assembly):
                 self.pvname + ":MOT_KAP_KRX",
                 name="eta_kap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_KAP",
                 name="kappa",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_KPH",
                 name="phi_kap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DTY",
                 name="zkap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DTX",
                 name="xkap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DTZ",
                 name="ykap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DRX",
                 name="rxkap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 self.pvname + ":MOT_KAP_DRZ",
                 name="rykap",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
 
@@ -763,7 +763,7 @@ class XRDYou(Assembly):
                 diff_detector["jf_id"],
                 name="det_diff",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
                 view_toplevel_only=True,
             )
 
@@ -837,7 +837,7 @@ class XRDYou(Assembly):
                     return ang
 
             # phi_k = flip_ang(phi_k)
-            phi_k = phi_k + np.pi*2
+            phi_k = phi_k + np.pi * 2
             eta_k = flip_ang(eta_k)
             kappa = flip_ang(kappa)
         if degrees:
@@ -943,28 +943,28 @@ class XRD(Assembly):
                 pvname + ":MOT_TX",
                 name="xbase",
                 is_setting=True,
-                is_status=True,
+                is_display=True,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_TY",
                 name="_ybase_deltatau",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_RX",
                 name="_rxbase_deltatau",
                 is_setting=False,
-                is_status=False,
+                is_display=False,
             )
             self._append(
                 MotorRecord,
                 pvname + ":MOT_YU",
                 name="_ybase_upstream",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
                 backlash_definition=True,
             )
             self._append(
@@ -972,7 +972,7 @@ class XRD(Assembly):
                 pvname + ":MOT_YD",
                 name="_ybase_downstream",
                 is_setting=True,
-                is_status=False,
+                is_display=False,
                 backlash_definition=True,
             )
             self._append(
@@ -985,7 +985,7 @@ class XRD(Assembly):
                 ],
                 name="ybase",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 unit="mm",
             )
             self._append(
@@ -999,7 +999,7 @@ class XRD(Assembly):
                 ],
                 name="rxbase",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 unit="deg",
             )
 
@@ -1151,7 +1151,7 @@ class XRD(Assembly):
                 diff_detector["jf_id"],
                 name="det_diff",
                 is_setting=False,
-                is_status=True,
+                is_display=True,
                 view_toplevel_only=True,
             )
 

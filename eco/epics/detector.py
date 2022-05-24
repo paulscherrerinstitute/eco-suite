@@ -15,16 +15,17 @@ from eco.epics import get_from_archive
 # @value_property
 @get_from_archive
 class DetectorPvData(Assembly):
-    def __init__(self, pvname, name=None):
+    def __init__(self, pvname, name=None, has_fields=False):
         super().__init__(name=name)
-        self.status_indicators_collection.append(self)
+        self.status_collection.append(self)
         self.pvname = pvname
         self._pv = PV(pvname)
         self.name = name
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
-        self._append(
-            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
-        )
+        if has_fields:
+            self._append(
+                AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+            )
 
     def get_current_value(self):
         return self._pv.get()
@@ -110,15 +111,16 @@ class DetectorPvString:
 # @value_property
 @get_from_archive
 class DetectorPvDataStream(Assembly):
-    def __init__(self, pvname, name=None):
+    def __init__(self, pvname, name=None, has_fields=False):
         super().__init__(name=name)
         self.Id = pvname
         self.pvname = pvname
         self._pv = PV(pvname)
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
-        self._append(
-            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
-        )
+        if has_fields:
+            self._append(
+                AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+            )
         # self._append(
         #     PvString, self.pvname + ".DESC", name="description", is_setting=False
         # )

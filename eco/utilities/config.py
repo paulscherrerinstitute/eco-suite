@@ -15,6 +15,7 @@ from importlib import import_module
 from lazy_object_proxy import Proxy as Proxy_orig
 from tabulate import tabulate
 from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 from tqdm import tqdm
 from rich import progress
 from inspect import signature
@@ -310,19 +311,40 @@ class Namespace(Assembly):
         print_summary=True,
         max_workers=5,
         N_cycles=4,
+        silent=True,
     ):
-        for i in range(N_cycles):
-            with ThreadPoolExecutor(max_workers=max_workers) as exc:
-                # for name in self.all_names:
-                #     exc.submit(
-                #         self.init_name, name, verbose=verbose, raise_errors=raise_errors
-                #     )
+        if silent:
+            print(
+                f"Initializeing all items in namespace {self.name} silently in background.\n Be aware of unrelated output!"
+            )
 
-                #                 progress = Progress(
-                #     SpinnerColumn(),
-                #     *Progress.get_default_columns(),
-                #     TimeElapsedColumn(),
-                # )
+            def init():
+                exc = ThreadPoolExecutor(max_workers=max_workers)
+                jobs = [
+                    exc.submit(
+                        self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                    )
+                    for name in self.all_names
+                ]
+                exc.shutdown(wait=True)
+                exc = ThreadPoolExecutor(max_workers=1)
+                jobs = [
+                    exc.submit(
+                        self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                    )
+                    for name in (self.all_names - self.initialized_names)
+                ]
+                exc.shutdown(wait=True)
+                if print_summary:
+                    print(
+                        f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+                    )
+                    print("Failed objects: " + ", ".join(self.lazy_names))
+
+            Thread(target=init).start()
+        else:
+
+            with ThreadPoolExecutor(max_workers=max_workers) as exc:
                 list(
                     progress.track(
                         exc.map(
@@ -336,12 +358,29 @@ class Namespace(Assembly):
                         transient=True,
                     )
                 )
+            print("Initializing in single thead...")
+            with ThreadPoolExecutor(max_workers=1) as exc:
+                list(
+                    progress.track(
+                        exc.map(
+                            lambda name: self.init_name(
+                                name, verbose=verbose, raise_errors=raise_errors
+                            ),
+                            self.all_names,
+                        ),
+                        description="Initializing ...",
+                        total=len(self.all_names),
+                        transient=True,
+                    )
+                )
+                # )
+                #     # )
 
-        if print_summary:
-            print(
-                f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
-            )
-            print("Failed objects: " + ", ".join(self.lazy_names))
+            if print_summary:
+                print(
+                    f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+                )
+                print("Failed objects: " + ", ".join(self.lazy_names))
 
             # if verbose:
             #     print(("Configuring %s " % (name)).ljust(25), end="")
@@ -396,7 +435,7 @@ class Namespace(Assembly):
                         obj_initialized,
                         name=name,
                         is_setting=True,
-                        is_status="recursive",
+                        is_display="recursive",
                         call_obj=False,
                     )
                 if self.alias_namespace and hasattr(obj_initialized, "alias"):
@@ -436,7 +475,7 @@ class Namespace(Assembly):
                     obj,
                     name=name,
                     is_setting=True,
-                    is_status="recursive",
+                    is_display="recursive",
                     call_obj=False,
                 )
             if self.alias_namespace and hasattr(obj, "alias"):

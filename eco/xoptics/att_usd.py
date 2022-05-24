@@ -40,7 +40,7 @@ class att_usd_targets(Assembly):
                 pvname=Id + config["id"],
                 name=name,
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
 
         Al = materials.Al
@@ -163,18 +163,17 @@ class att_usd_targets(Assembly):
         return self.get_adjustable_positions_str()
 
 
-
-
 class Att_usd(Assembly):
     """This is an adjusted smaract record compatible version of the original att_usd by roman."""
+
     def __init__(self, name=None, Id=None, alias_namespace=None, xp=None):
         super().__init__(name=name)
         self.Id = Id
         self.E = None
         self.E_min = 1500
         self._sleeptime = 1
-        self._append(SmaractRecord,"SARES23:LIC10",name='transl_2',  is_setting=True)
-        self._append(SmaractRecord,"SARES23:LIC3",name='transl_1',  is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC10", name="transl_2", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC3", name="transl_1", is_setting=True)
         self.motor_configuration = {
             "transl_2": {
                 "id": "SARES23-LIC10",
@@ -200,19 +199,92 @@ class Att_usd(Assembly):
         self._xp = xp
         self.E = None
 
-
         Al2O3 = materials.Al2O3
-        Si3N4 = materials.Amorphous(name='Si3N4', density=3440)
-        polyimide = materials.Amorphous(name='C35H28N2O7', density=1440)
+        Si3N4 = materials.Amorphous(name="Si3N4", density=3440)
+        polyimide = materials.Amorphous(name="C35H28N2O7", density=1440)
         self.targets_2 = {
-            "mat": np.array([Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,polyimide, Al2O3]),
-            "d": np.array([2800, 2000, 1600, 1200, 800, 550, 420, 320, 240, 175, 125, 75, 30, 125, 0]),
-            "pos": np.array([38.3,  33.4,  27.7,  23.3,  18.8,  13. , 8. , 2.5,-2.8, -7.7, -12.8, -18. , -22. , -26.7, -35.]),
+            "mat": np.array(
+                [
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    polyimide,
+                    Al2O3,
+                ]
+            ),
+            "d": np.array(
+                [
+                    2800,
+                    2000,
+                    1600,
+                    1200,
+                    800,
+                    550,
+                    420,
+                    320,
+                    240,
+                    175,
+                    125,
+                    75,
+                    30,
+                    125,
+                    0,
+                ]
+            ),
+            "pos": np.array(
+                [
+                    38.3,
+                    33.4,
+                    27.7,
+                    23.3,
+                    18.8,
+                    13.0,
+                    8.0,
+                    2.5,
+                    -2.8,
+                    -7.7,
+                    -12.8,
+                    -18.0,
+                    -22.0,
+                    -26.7,
+                    -35.0,
+                ]
+            ),
         }
         self.targets_1 = {
-            "mat": np.array([Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,polyimide,polyimide,polyimide, Al2O3]),
-            "d": np.array([2800, 1600, 800, 420, 240, 175, 125, 75, 30, 125, 50, 25, 0]),
-            "pos": np.array([-37.7, -32.6, -27.3, -23, -18, -13, -7.8,  -3,  1.7, 7.4, 12.6,  17.6,  25]),
+            "mat": np.array(
+                [
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    polyimide,
+                    polyimide,
+                    polyimide,
+                    Al2O3,
+                ]
+            ),
+            "d": np.array(
+                [2800, 1600, 800, 420, 240, 175, 125, 75, 30, 125, 50, 25, 0]
+            ),
+            "pos": np.array(
+                [-37.7, -32.6, -27.3, -23, -18, -13, -7.8, -3, 1.7, 7.4, 12.6, 17.6, 25]
+            ),
         }
 
     def _updateE(self, energy=None, check_once=False):
@@ -244,10 +316,13 @@ class Att_usd(Assembly):
             ]
         )
         self.targets_2["t"] = t2
-        t_comb = ((np.expand_dims(t1, axis=0)).T*(np.expand_dims(t2, axis=0))).flatten()
-        pos_comb = np.array([[p1, p2] for p1 in self.targets_1['pos'] for p2 in self.targets_2['pos']])
-        self.transmissions = {'t':t_comb, 'pos': pos_comb}
-
+        t_comb = (
+            (np.expand_dims(t1, axis=0)).T * (np.expand_dims(t2, axis=0))
+        ).flatten()
+        pos_comb = np.array(
+            [[p1, p2] for p1 in self.targets_1["pos"] for p2 in self.targets_2["pos"]]
+        )
+        self.transmissions = {"t": t_comb, "pos": pos_comb}
 
     def _find_nearest(self, a, a0):
         "Element in nd array `a` closest to the scalar value `a0`"
@@ -263,7 +338,9 @@ class Att_usd(Assembly):
         self.transl_1.set_target_value(p1)
         self.transl_2.set_target_value(p2)
         print(f"Set transmission to {t:0.2E} | Moving to pos {[p1, p2]}")
-        while ((abs(p1 - self.transl_1.get_current_value()) > 0.05) or (abs(p2 - self.transl_2.get_current_value() > 0.05))):
+        while (abs(p1 - self.transl_1.get_current_value()) > 0.05) or (
+            abs(p2 - self.transl_2.get_current_value() > 0.05)
+        ):
             sleep(0.1)
         print("transmission changed")
         self._xp.open()
@@ -274,12 +351,12 @@ class Att_usd(Assembly):
         idx1, p1 = self._find_nearest(
             self.targets_1["pos"], self.transl_1.get_current_value()
         )
-        t1 =  self.targets_1["t"][idx1]
+        t1 = self.targets_1["t"][idx1]
         idx2, p2 = self._find_nearest(
             self.targets_2["pos"], self.transl_2.get_current_value()
         )
-        t2 =  self.targets_2["t"][idx2]
-        return t1*t2
+        t2 = self.targets_2["t"][idx2]
+        return t1 * t2
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
@@ -346,7 +423,6 @@ class Att_usd(Assembly):
         return self.get_adjustable_positions_str()
 
 
-
 class att_usd(Assembly):
     def __init__(self, name=None, alias_namespace=None, xp=None):
         super().__init__(name=name)
@@ -386,21 +462,95 @@ class att_usd(Assembly):
                 pvname=config["id"],
                 name=name,
                 is_setting=True,
-                is_status=False,
+                is_display=False,
             )
 
         Al2O3 = materials.Al2O3
-        Si3N4 = materials.Amorphous(name='Si3N4', density=3440)
-        polyimide = materials.Amorphous(name='C35H28N2O7', density=1440)
+        Si3N4 = materials.Amorphous(name="Si3N4", density=3440)
+        polyimide = materials.Amorphous(name="C35H28N2O7", density=1440)
         self.targets_2 = {
-            "mat": np.array([Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,polyimide, Al2O3]),
-            "d": np.array([2800, 2000, 1600, 1200, 800, 550, 420, 320, 240, 175, 125, 75, 30, 125, 0]),
-            "pos": np.array([38.3,  33.4,  27.7,  23.3,  18.8,  13. , 8. , 2.5,-2.8, -7.7, -12.8, -18. , -22. , -26.7, -35.]),
+            "mat": np.array(
+                [
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    polyimide,
+                    Al2O3,
+                ]
+            ),
+            "d": np.array(
+                [
+                    2800,
+                    2000,
+                    1600,
+                    1200,
+                    800,
+                    550,
+                    420,
+                    320,
+                    240,
+                    175,
+                    125,
+                    75,
+                    30,
+                    125,
+                    0,
+                ]
+            ),
+            "pos": np.array(
+                [
+                    38.3,
+                    33.4,
+                    27.7,
+                    23.3,
+                    18.8,
+                    13.0,
+                    8.0,
+                    2.5,
+                    -2.8,
+                    -7.7,
+                    -12.8,
+                    -18.0,
+                    -22.0,
+                    -26.7,
+                    -35.0,
+                ]
+            ),
         }
         self.targets_1 = {
-            "mat": np.array([Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,Al2O3,polyimide,polyimide,polyimide, Al2O3]),
-            "d": np.array([2800, 1600, 800, 420, 240, 175, 125, 75, 30, 125, 50, 25, 0]),
-            "pos": np.array([-37.7, -32.6, -27.3, -23, -18, -13, -7.8,  -3,  1.7, 7.4, 12.6,  17.6,  25]),
+            "mat": np.array(
+                [
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    Al2O3,
+                    polyimide,
+                    polyimide,
+                    polyimide,
+                    Al2O3,
+                ]
+            ),
+            "d": np.array(
+                [2800, 1600, 800, 420, 240, 175, 125, 75, 30, 125, 50, 25, 0]
+            ),
+            "pos": np.array(
+                [-37.7, -32.6, -27.3, -23, -18, -13, -7.8, -3, 1.7, 7.4, 12.6, 17.6, 25]
+            ),
         }
 
     def _updateE(self, energy=None, check_once=False):
@@ -432,10 +582,13 @@ class att_usd(Assembly):
             ]
         )
         self.targets_2["t"] = t2
-        t_comb = ((np.expand_dims(t1, axis=0)).T*(np.expand_dims(t2, axis=0))).flatten()
-        pos_comb = np.array([[p1, p2] for p1 in self.targets_1['pos'] for p2 in self.targets_2['pos']])
-        self.transmissions = {'t':t_comb, 'pos': pos_comb}
-
+        t_comb = (
+            (np.expand_dims(t1, axis=0)).T * (np.expand_dims(t2, axis=0))
+        ).flatten()
+        pos_comb = np.array(
+            [[p1, p2] for p1 in self.targets_1["pos"] for p2 in self.targets_2["pos"]]
+        )
+        self.transmissions = {"t": t_comb, "pos": pos_comb}
 
     def _find_nearest(self, a, a0):
         "Element in nd array `a` closest to the scalar value `a0`"
@@ -451,7 +604,9 @@ class att_usd(Assembly):
         self.transl_1.set_target_value(p1)
         self.transl_2.set_target_value(p2)
         print(f"Set transmission to {t:0.2E} | Moving to pos {[p1, p2]}")
-        while ((abs(p1 - self.transl_1.get_current_value()) > 0.05) or (abs(p2 - self.transl_2.get_current_value() > 0.05))):
+        while (abs(p1 - self.transl_1.get_current_value()) > 0.05) or (
+            abs(p2 - self.transl_2.get_current_value() > 0.05)
+        ):
             sleep(0.1)
         print("transmission changed")
         self._xp.open()
@@ -462,12 +617,12 @@ class att_usd(Assembly):
         idx1, p1 = self._find_nearest(
             self.targets_1["pos"], self.transl_1.get_current_value()
         )
-        t1 =  self.targets_1["t"][idx1]
+        t1 = self.targets_1["t"][idx1]
         idx2, p2 = self._find_nearest(
             self.targets_2["pos"], self.transl_2.get_current_value()
         )
-        t2 =  self.targets_2["t"][idx2]
-        return t1*t2
+        t2 = self.targets_2["t"][idx2]
+        return t1 * t2
 
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():

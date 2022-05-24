@@ -40,9 +40,9 @@ class AdjustableObject(Assembly):
                     call_obj=False,
                     is_setting=False,
                     name=ln,
-                    is_status="recursive",
+                    is_display="recursive",
                 )
             else:
                 self._append(
-                    tadj, call_obj=False, is_setting=False, is_status=True, name=ln
+                    tadj, call_obj=False, is_setting=False, is_display=True, name=ln
                 )

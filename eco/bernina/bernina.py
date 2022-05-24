@@ -966,14 +966,14 @@ class JohannAnalyzer(Assembly):
             "SARES20-MF1:MOT_3",
             name="pitch",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
         self._append(
             MotorRecord,
             "SARES20-MF1:MOT_4",
             name="roll",
             is_setting=True,
-            is_status=True,
+            is_display=True,
         )
 
 
@@ -995,7 +995,7 @@ namespace.append_obj(JohannAnalyzer, name="analyzer")
 #            self.pump_exp_delaystage,
 #            name="pump_delay_exp",
 #            is_setting=False,
-#            is_status=True,
+#            is_display=True,
 #            reset_current_value_to=False,
 #        )
 #        self._append(SmaractStreamdevice, "SARES23-ESB5", name="wp", is_setting=True)
@@ -1010,7 +1010,7 @@ namespace.append_obj(JohannAnalyzer, name="analyzer")
 #            self.pump_2_delaystage,
 #            name="pump_2_delay",
 #            is_setting=False,
-#            is_status=True,
+#            is_display=True,
 #            reset_current_value_to=False,
 #        )
 #        self._append(SmaractStreamdevice, "SARES23-ESB6", name="ratio", is_setting=True)
@@ -1065,7 +1065,7 @@ namespace.append_obj(JohannAnalyzer, name="analyzer")
 #            self.delaystage,
 #            name="delay",
 #            is_setting=True,
-#            is_status=True,
+#            is_display=True,
 #        )
 #        self._append(
 #            SmaractStreamdevice,
@@ -1083,7 +1083,7 @@ namespace.append_obj(JohannAnalyzer, name="analyzer")
 #            camserver_alias="tt_spatial",
 #            pvname_zoom="SARES20-MF1:MOT_15",
 #            is_setting=True,
-#            is_status="recursive",
+#            is_display="recursive",
 #            name="microscope",
 #        )
 #

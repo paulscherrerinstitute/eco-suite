@@ -14,21 +14,21 @@ class PowerSocket(Assembly):
             is_setting=True,
         )
         self._append(
-            DetectorPvEnum, pvname + ":POWERONOFF-RB", name="stat", is_status=True
+            DetectorPvEnum, pvname + ":POWERONOFF-RB", name="stat", is_display=True
         )
         self._append(
             AdjustablePvEnum,
             pvname + ":POWERONOFF",
             name="on_switch",
             is_setting=True,
-            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvString,
             pvname + ":POWERCYCLE",
             name="powercycle_for_10s",
             is_setting=False,
-            is_status=False,
+            is_display=False,
         )
 
     def toggle(self):
@@ -55,13 +55,13 @@ class GudeStrip(Assembly):
             self._append(
                 PowerSocket,
                 pvbase + f"-CH{n}",
-                is_status="recursive",
+                is_display="recursive",
                 is_setting=True,
                 name=f"ch{n}",
             )
         self._append(
-            DetectorPvData, pvbase + ":CURRENT", is_status=True, name="current"
+            DetectorPvData, pvbase + ":CURRENT", is_display=True, name="current"
         )
         self._append(
-            DetectorPvData, pvbase + ":VOLTAGE", is_status=True, name="voltage"
+            DetectorPvData, pvbase + ":VOLTAGE", is_display=True, name="voltage"
         )
