@@ -89,7 +89,6 @@ class Assembly:
         #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
         if is_setting:
             self.settings_collection.append(self.__dict__[name], recursive=True)
-
         if is_status:
             self.status_collection.append(self.__dict__[name], recursive=True)
         if is_display:

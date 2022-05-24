@@ -52,6 +52,9 @@ class DetectorVirtual(Assembly):
         self._foo_get_current_value = foo_get_current_value
         if unit:
             self.unit = AdjustableMemory(unit, name="unit")
+        self.settings_collection.append(self, force=True)
+        self.status_collection.append(self, force=True)
+        self.display_collection.append(self, force=True)
 
     def get_current_value(self):
         return self._foo_get_current_value(

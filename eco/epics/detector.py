@@ -21,8 +21,8 @@ class DetectorPvData(Assembly):
         self.status_collection.append(self)
         self.pvname = pvname
         singular = (unit is None) and (not has_unit)
-        if name == "aramis_undulator_photon_energy":
-            print(f"singular is {singular}", unit, has_unit)
+        # if name == "aramis_undulator_photon_energy":
+        #     print(f"singular is {singular}", unit, has_unit)
 
         if unit:
             self._append(AdjustableMemory, unit, name="unit")

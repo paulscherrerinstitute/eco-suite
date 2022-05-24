@@ -491,10 +491,19 @@ class MotorRecord(Assembly):
             AdjustablePvEnum, self.pvname + ".SPMG", name="mode", is_setting=False
         )
         self._append(
-            DetectorPvData, self.pvname + ".MSTA", name="_flags", is_setting=False
+            DetectorPvData,
+            self.pvname + ".MSTA",
+            name="_flags",
+            is_setting=False,
+            is_display=False,
         )
         self._append(
-            MotorRecordFlags, self._flags, name="flags", is_display="recursive"
+            MotorRecordFlags,
+            self._flags,
+            name="flags",
+            is_display="recursive",
+            is_setting=False,
+            is_status=True,
         )
         self._append(
             AdjustablePvEnum,
@@ -779,6 +788,7 @@ class MotorRecordFlags(Assembly):
                 [self._flags],
                 partial(self._get_flag_name_value, flag_name=flag_name),
                 name=flag_name,
+                is_status=True,
                 is_display=True,
             )
 
@@ -944,6 +954,7 @@ class SmaractRecord(Assembly):
             self._flags,
             name="flags",
             is_display="recursive",
+            is_status=True,
         )
         # self._append(
         #     AdjustablePvEnum,
