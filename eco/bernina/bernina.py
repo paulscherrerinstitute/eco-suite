@@ -641,7 +641,7 @@ def _increment_daq_run_number(scan, daq=daq):
 
 
 callbacks_start_scan = []
-callbacks_start_scan = [lambda scan: namespace.init_all()]
+callbacks_start_scan = [lambda scan: namespace.init_all(silent=False)]
 callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)

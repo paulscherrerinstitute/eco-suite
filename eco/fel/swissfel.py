@@ -17,7 +17,7 @@ class SwissFel(Assembly):
             "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
             name="aramis_pulse_energy",
             is_display=True,
-            has_fields=True,
+            has_unit=True,
         )
         self._append(
             UndulatorK, name="aramis_photon_energy_undulators", is_display=True
@@ -293,7 +293,7 @@ class UndulatorK(Assembly):
             "SARUN:FELPHOTENE",
             name="aramis_undulator_photon_energy",
             is_display=True,
-            has_fields=True,
+            has_unit=True,
         )
         self.ksets = []
         self.gaps = []

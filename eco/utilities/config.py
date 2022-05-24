@@ -314,27 +314,29 @@ class Namespace(Assembly):
         silent=True,
     ):
         if silent:
+            self.silently_initializing = True
             print(
                 f"Initializeing all items in namespace {self.name} silently in background.\n Be aware of unrelated output!"
             )
 
             def init():
-                exc = ThreadPoolExecutor(max_workers=max_workers)
+                self.exc_init = ThreadPoolExecutor(max_workers=max_workers)
                 jobs = [
-                    exc.submit(
+                    self.exc_init.submit(
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
                     for name in self.all_names
                 ]
-                exc.shutdown(wait=True)
-                exc = ThreadPoolExecutor(max_workers=1)
+                self.exc_init.shutdown(wait=True)
+                self.exc_init = ThreadPoolExecutor(max_workers=1)
                 jobs = [
-                    exc.submit(
+                    self.exc_init.submit(
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
                     for name in (self.all_names - self.initialized_names)
                 ]
-                exc.shutdown(wait=True)
+                self.exc_init.shutdown(wait=True)
+                self.silently_initializing = False
                 if print_summary:
                     print(
                         f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
@@ -343,7 +345,8 @@ class Namespace(Assembly):
 
             Thread(target=init).start()
         else:
-
+            if hasattr(self, "exc_init"):
+                self.exc_init.shutdown(wait=False)
             with ThreadPoolExecutor(max_workers=max_workers) as exc:
                 list(
                     progress.track(
@@ -358,7 +361,7 @@ class Namespace(Assembly):
                         transient=True,
                     )
                 )
-            print("Initializing in single thead...")
+            print("Initializing in single thread...")
             with ThreadPoolExecutor(max_workers=1) as exc:
                 list(
                     progress.track(

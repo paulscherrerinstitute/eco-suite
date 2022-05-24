@@ -106,12 +106,16 @@ class SmaractStreamdevice(Assembly):
             self.pvname + ":FRM_BACK.PROC",
             name="home_backward",
             is_setting=False,
+            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":FRM_FORW.PROC",
             name="home_forward",
             is_setting=False,
+            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv, self.pvname + ":GET_HOMED", name="is_homed", is_setting=False
@@ -121,6 +125,8 @@ class SmaractStreamdevice(Assembly):
             self.pvname + ":CALIBRATE.PROC",
             name="calibrate_sensor",
             is_setting=False,
+            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
@@ -460,6 +466,7 @@ class MotorRecord(Assembly):
             name="readback",
             is_setting=False,
             is_display=True,
+            is_status=True,
         )
         self._append(
             AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
@@ -887,10 +894,20 @@ class SmaractRecord(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv, self.pvname + ".HOMR", name="home_forward", is_setting=True
+            AdjustablePv,
+            self.pvname + ".HOMR",
+            name="home_forward",
+            is_setting=True,
+            is_status=False,
+            is_display=False,
         )
         self._append(
-            AdjustablePv, self.pvname + ".HOMR", name="home_reverse", is_setting=True
+            AdjustablePv,
+            self.pvname + ".HOMR",
+            name="home_reverse",
+            is_setting=True,
+            is_status=False,
+            is_display=False,
         )
 
         self._append(
@@ -948,6 +965,8 @@ class SmaractRecord(Assembly):
             self.pvname + "_CAL_CMD",
             name="_calibrate_sensor",
             is_setting=False,
+            is_status=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
