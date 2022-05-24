@@ -629,7 +629,7 @@ class MotorRecord(Assembly):
         """
         _keywordChecker([("posType", posType, _posTypes)])
         ll_name, hl_name = "LLM", "HLM"
-        if posType is "dial":
+        if posType == "dial":
             ll_name, hl_name = "DLLM", "DHLM"
         if relative_to_present:
             v = self.get_current_value(posType=posType)
@@ -651,7 +651,7 @@ class MotorRecord(Assembly):
         """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         ll_name, hl_name = "LLM", "HLM"
-        if posType is "dial":
+        if posType == "dial":
             ll_name, hl_name = "DLLM", "DHLM"
         return self._motor.get(ll_name), self._motor.get(hl_name)
 
@@ -1089,7 +1089,7 @@ class SmaractRecord(Assembly):
         """
         _keywordChecker([("posType", posType, _posTypes)])
         ll_name, hl_name = "LLM", "HLM"
-        if posType is "dial":
+        if posType == "dial":
             ll_name, hl_name = "DLLM", "DHLM"
         if relative_to_present:
             v = self.get_current_value(posType=posType)
@@ -1111,7 +1111,7 @@ class SmaractRecord(Assembly):
         """Adjustable convention"""
         _keywordChecker([("posType", posType, _posTypes)])
         ll_name, hl_name = "LLM", "HLM"
-        if posType is "dial":
+        if posType == "dial":
             ll_name, hl_name = "DLLM", "DHLM"
         return self._motor.get(ll_name), self._motor.get(hl_name)
 

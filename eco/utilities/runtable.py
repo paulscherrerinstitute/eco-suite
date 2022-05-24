@@ -65,7 +65,7 @@ class Run_Table:
         self.gc = gspread.authorize(self._credentials)
         self.keys = "metadata midir xrd energy transmission delay lxt pulse_id att_self att_fe_self"
         self.key_order = "metadata xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
-        spreadsheet_key=None,
+        spreadsheet_key = (None,)
         self.init_runtable(pgroup)
 
         ### dicts holding adjustables and bad (not connected) adjustables ###
@@ -129,9 +129,11 @@ class Run_Table:
                 )
                 spreadsheet_key = spreadsheet.id
             else:
-                f_entermanually = input(f"Do you want to enter a spreadsheet key for the pgroup {pgroup}? (y/n)")
-                if f_entermanually is not 'y':
-                    print('Runtable not initialized')
+                f_entermanually = input(
+                    f"Do you want to enter a spreadsheet key for the pgroup {pgroup}? (y/n)"
+                )
+                if f_entermanually != "y":
+                    print("Runtable not initialized")
                     return
                 spreadsheet_key = str(
                     input(
@@ -143,9 +145,9 @@ class Run_Table:
                 )
             self._append_to_gspread_key_df(gspread_key_df)
         self._spreadsheet_key = spreadsheet_key
-        #self.alias_file_name = (
+        # self.alias_file_name = (
         #    f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_alias_runtable"
-        #)
+        # )
         self.adj_file_name = (
             f"/sf/bernina/data/{pgroup}/res/runtables/{pgroup}_adjustable_runtable"
         )
@@ -212,7 +214,7 @@ class Run_Table:
 
     def _remove_duplicates(self):
         self.adj_df = self.adj_df[~self.adj_df.index.duplicated(keep="last")]
-        #self.alias_df = self.alias_df[~self.alias_df.index.duplicated(keep="last")]
+        # self.alias_df = self.alias_df[~self.alias_df.index.duplicated(keep="last")]
         self.unit_df = self.unit_df[~self.unit_df.index.duplicated(keep="last")]
 
     def save(self):
@@ -225,12 +227,12 @@ class Run_Table:
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")
-        #self.alias_df.to_pickle(self.alias_file_name + ".pkl")
+        # self.alias_df.to_pickle(self.alias_file_name + ".pkl")
         self.adj_df.to_pickle(self.adj_file_name + ".pkl")
         self.unit_df.to_pickle(self.unit_file_name + ".pkl")
 
     def load(self):
-        #if os.path.exists(self.alias_file_name + ".pkl"):
+        # if os.path.exists(self.alias_file_name + ".pkl"):
         #    self.alias_df = pd.read_pickle(self.alias_file_name + ".pkl")
         if os.path.exists(self.adj_file_name + ".pkl"):
             self.adj_df = pd.read_pickle(self.adj_file_name + ".pkl")
@@ -252,11 +254,11 @@ class Run_Table:
         self.load()
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents()
-        #dat = self._get_values()
-        #dat.update(metadata)
-        #dat["time"] = datetime.now()
-        #run_df = DataFrame([dat.values()], columns=dat.keys(), index=[runno])
-        #self.alias_df = self.alias_df.append(run_df)
+        # dat = self._get_values()
+        # dat.update(metadata)
+        # dat["time"] = datetime.now()
+        # run_df = DataFrame([dat.values()], columns=dat.keys(), index=[runno])
+        # self.alias_df = self.alias_df.append(run_df)
 
         dat = self._get_adjustable_values()
         dat["metadata"] = metadata
@@ -285,16 +287,14 @@ class Run_Table:
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents()
         try:
-            posno = (
-                int(self.adj_df.query('type == "pos"').index[-1].split("p")[1]) + 1
-            )
+            posno = int(self.adj_df.query('type == "pos"').index[-1].split("p")[1]) + 1
         except:
             posno = 0
-        #dat = self._get_values()
-        #dat.update([("name", name), ("type", "pos")])
-        #dat["time"] = datetime.now()
-        #pos_df = DataFrame([dat.values()], columns=dat.keys(), index=[f"p{posno}"])
-        #self.alias_df = self.alias_df.append(pos_df)
+        # dat = self._get_values()
+        # dat.update([("name", name), ("type", "pos")])
+        # dat["time"] = datetime.now()
+        # pos_df = DataFrame([dat.values()], columns=dat.keys(), index=[f"p{posno}"])
+        # self.alias_df = self.alias_df.append(pos_df)
 
         dat = self._get_adjustable_values()
         dat["metadata"] = {"time": datetime.now(), "name": name, "type": "pos"}
@@ -409,9 +409,9 @@ class Run_Table:
         """
         if key_order is None:
             key_order = self.key_order
-        #self.alias_df = self.alias_df[
+        # self.alias_df = self.alias_df[
         #    self._orderlist(list(self.alias_df.columns), key_order)
-        #]
+        # ]
         devs = [item[0] for item in list(self.adj_df.columns)]
         self.adj_df = self.adj_df[
             self._orderlist(list(self.adj_df.columns), key_order, orderlist=devs)
@@ -700,6 +700,7 @@ class Run_Table:
         return_df = self._query_by_keys(self.keys)
         return return_df.T.__repr__()
 
+
 class Gsheet_API:
     def __init__(
         self,
@@ -719,11 +720,16 @@ class Gsheet_API:
         )
         self.gc = gspread.authorize(self._credentials)
         self._keydf_fname = keydf_fname
-        self.keys = "metadata gps jet energy las_inc delay lxt pulse_id att_self att_fe_self"
-        self._key_df=DataFrame()
-        self.gsheet_keys = AdjustableFS(gsheet_key_path, name="gsheet_keys", default_value='metadata thc gps xrd att att_usd kb')
+        self.keys = (
+            "metadata gps jet energy las_inc delay lxt pulse_id att_self att_fe_self"
+        )
+        self._key_df = DataFrame()
+        self.gsheet_keys = AdjustableFS(
+            gsheet_key_path,
+            name="gsheet_keys",
+            default_value="metadata thc gps xrd att att_usd kb",
+        )
         self.init_runtable(exp_id)
-
 
     def create_rt_spreadsheet(self, exp_id):
         self.gc = gspread.authorize(self._credentials)
@@ -760,7 +766,8 @@ class Gsheet_API:
                 spreadsheet = self.create_rt_spreadsheet(exp_id=exp_id)
                 print("created")
                 gspread_key_df = DataFrame(
-                    {"keys": [spreadsheet.id]}, index=[f"{exp_id}"],
+                    {"keys": [spreadsheet.id]},
+                    index=[f"{exp_id}"],
                 )
                 spreadsheet_key = spreadsheet.id
             self._append_to_gspread_key_df(gspread_key_df)
@@ -774,9 +781,7 @@ class Gsheet_API:
         """
         self.gc = gspread.authorize(self._credentials)
         ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
-        upload_df = df[
-            df["metadata.type"].str.contains("scan", na=False)
-        ]
+        upload_df = df[df["metadata.type"].str.contains("scan", na=False)]
         gd.set_with_dataframe(ws, upload_df, include_index=True, col=2)
         gf_dataframe.format_with_dataframe(
             ws, upload_df, include_index=True, include_column_header=True, col=2
@@ -790,9 +795,7 @@ class Gsheet_API:
         """
         self.gc = gspread.authorize(self._credentials)
         ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
-        upload_df = df[
-            df["metadata.type"].str.contains("pos", na=False)
-        ]
+        upload_df = df[df["metadata.type"].str.contains("pos", na=False)]
         gd.set_with_dataframe(ws, upload_df, include_index=True, col=2)
         gf_dataframe.format_with_dataframe(
             ws, upload_df, include_index=True, include_column_header=True, col=2
@@ -808,39 +811,54 @@ class Gsheet_API:
             )
 
     def upload_all(self, df):
-        rt = threading.Thread(target=self._upload_all,  kwargs={'df':df})
+        rt = threading.Thread(target=self._upload_all, kwargs={"df": df})
         rt.start()
 
+
 class Container:
-    def __init__(self, df, name=''):
+    def __init__(self, df, name=""):
         self._cols = df.columns
         self._top_level_name = name
         self._df = df
         self.__dir__()
-    
+
     def _slice_df(self):
         self._df.load()
         next_level_names = self._get_next_level_names()
         try:
-            if len(next_level_names)==0:
+            if len(next_level_names) == 0:
                 columns_to_keep = [self._top_level_name[:-1]]
             else:
-                columns_to_keep = [f'{self._top_level_name}{n}' for n in next_level_names if f'{self._top_level_name}{n}' in self._cols]
+                columns_to_keep = [
+                    f"{self._top_level_name}{n}"
+                    for n in next_level_names
+                    if f"{self._top_level_name}{n}" in self._cols
+                ]
             sdf = self._df[columns_to_keep]
         except:
             sdf = pd.DataFrame(columns=next_level_names)
         return sdf
-    
+
     def _get_next_level_names(self):
         if len(self._top_level_name) == 0:
-            next_level_names = np.unique(np.array([n.split('.')[0] for n in self._cols]))
+            next_level_names = np.unique(
+                np.array([n.split(".")[0] for n in self._cols])
+            )
         else:
-            next_level_names = np.unique(np.array([n.split(self._top_level_name)[1].split('.')[0] for n in self._cols if n[:len(self._top_level_name)]==self._top_level_name]))
+            next_level_names = np.unique(
+                np.array(
+                    [
+                        n.split(self._top_level_name)[1].split(".")[0]
+                        for n in self._cols
+                        if n[: len(self._top_level_name)] == self._top_level_name
+                    ]
+                )
+            )
         return next_level_names
 
     def _create_first_level_container(self, names):
         for n in names:
-            self.__dict__[n]=Container(self._df, name=self._top_level_name+n+'.')
+            self.__dict__[n] = Container(self._df, name=self._top_level_name + n + ".")
 
     def to_dataframe(self, full_name=True, next_level=False):
         df = self._slice_df()
@@ -848,27 +866,30 @@ class Container:
             coln = pd.Index([k.split(self._top_level_name)[1] for k in df.columns])
             df.columns = coln
         return df
-    
-    def recall(self, key, next_level=True, get_status = True):
+
+    def recall(self, key, next_level=True, get_status=True):
         sr = self[key]
         if next_level:
             srs = [self.__dict__[k][key] for k in self._get_next_level_names()]
-            srs.insert(0,sr)
+            srs.insert(0, sr)
             sr = self._concatenate_srs(srs)
         idxn = pd.Index([k.split(self._top_level_name)[1] for k in sr.index])
         sr.index = idxn
         dev = name2obj(self._df.devices, self._top_level_name)
-        memory = Memory(obj=dev, memory_dir='')
+        memory = Memory(obj=dev, memory_dir="")
         if get_status:
             try:
                 # get setting keys from obj
-                mem = {tk: {ak: sr[ak] for ak in tv.keys() if ak in sr.index} for tk, tv in dev.get_status().items()}
+                mem = {
+                    tk: {ak: sr[ak] for ak in tv.keys() if ak in sr.index}
+                    for tk, tv in dev.get_status().items()
+                }
             except:
-                mem = {'settings':{k: v for k, v in sr.items() if not 'readback' in k}}
+                mem = {"settings": {k: v for k, v in sr.items() if not "readback" in k}}
         else:
-            mem = {'settings':{k: v for k, v in sr.items() if not 'readback' in k}}
+            mem = {"settings": {k: v for k, v in sr.items() if not "readback" in k}}
         memory.recall(input_obj=mem)
-        
+
     def _concatenate_dfs(self, dfs):
         dfc = dfs[0]
         for df in dfs[1:]:
@@ -884,19 +905,21 @@ class Container:
 
     def __dir__(self):
         next_level_names = self._get_next_level_names()
-        to_create = np.array([n for n in next_level_names if not n in self.__dict__.keys()])
+        to_create = np.array(
+            [n for n in next_level_names if not n in self.__dict__.keys()]
+        )
         directory = list(next_level_names)
-        directory.extend(['to_dataframe', 'recall'])
+        directory.extend(["to_dataframe", "recall"])
         self._create_first_level_container(to_create)
         return directory
 
     def __repr__(self):
-        #pd.options.display.width = os.get_terminal_size().columns
+        # pd.options.display.width = os.get_terminal_size().columns
         return self._slice_df().T.__repr__()
 
     def _repr_html_(self):
         sdf = self._slice_df()
-        if hasattr(sdf, '_repr_html_'):
+        if hasattr(sdf, "_repr_html_"):
             return sdf.T._repr_html_()
         else:
             return None
@@ -905,30 +928,31 @@ class Container:
         if type(key) is tuple:
             key = list(key)
         df = self._slice_df().loc[key]
-        if hasattr(df,'T'):
+        if hasattr(df, "T"):
             df = df.T
         return df
+
 
 class Run_Table2:
     def __init__(
         self,
         data=None,
-        exp_id='no_exp_id',
-        exp_path='runtable',
+        exp_id="no_exp_id",
+        exp_path="runtable",
         keydf_fname=None,
         cred_fname=None,
         devices=None,
         name=None,
-        gsheet_key_path = None,
+        gsheet_key_path=None,
     ):
 
-        self._data=Run_Table_DataFrame(
+        self._data = Run_Table_DataFrame(
             data=data,
             exp_id=exp_id,
             exp_path=exp_path,
             devices=devices,
             name=name,
-            )
+        )
         if np.all([k is not None for k in [keydf_fname, cred_fname, gsheet_key_path]]):
             self._google_sheet_api = Gsheet_API(
                 keydf_fname,
@@ -941,12 +965,20 @@ class Run_Table2:
             self._google_sheet_api = None
         self.__dir__()
 
-    def append_run(self, runno, metadata,):
+    def append_run(
+        self,
+        runno,
+        metadata,
+    ):
         self._data.append_run(runno, metadata)
         if self._google_sheet_api is not None:
             df = self._reduce_df()
             self._google_sheet_api.upload_all(df=df)
-    def append_pos(self, name,):
+
+    def append_pos(
+        self,
+        name,
+    ):
         self._data.append_pos(name)
         if self._google_sheet_api is not None:
             df = self._reduce_df()
@@ -955,16 +987,23 @@ class Run_Table2:
     def to_dataframe(self):
         return DataFrame(self._data)
 
-    def _reduce_df(self, keys=None,):
+    def _reduce_df(
+        self,
+        keys=None,
+    ):
         if keys is None:
             keys = self._google_sheet_api.gsheet_keys()
-        dfs = [self.__dict__[key].to_dataframe() for key in keys.split(' ') if key in self.__dir__()]
+        dfs = [
+            self.__dict__[key].to_dataframe()
+            for key in keys.split(" ")
+            if key in self.__dir__()
+        ]
         dfc = self._concatenate_dfs(dfs)
         return dfc
 
     def _create_container(self):
-        for n in np.unique(np.array([n.split('.')[0] for n in self._data.columns])):
-            self.__dict__[n] = Container(df=self._data, name=n+'.')
+        for n in np.unique(np.array([n.split(".")[0] for n in self._data.columns])):
+            self.__dict__[n] = Container(df=self._data, name=n + ".")
 
     def _concatenate_dfs(self, dfs):
         dfc = dfs[0]
@@ -973,27 +1012,28 @@ class Run_Table2:
         return dfc
 
     def __dir__(self):
-        devs = np.unique(np.array([n.split('.')[0] for n in self._data.columns]))
+        devs = np.unique(np.array([n.split(".")[0] for n in self._data.columns]))
         for dev in devs:
             if dev not in self.__dict__.keys():
-                self.__dict__[dev] = Container(df=self._data, name=dev+'.')
+                self.__dict__[dev] = Container(df=self._data, name=dev + ".")
         directory = self.__dict__.keys()
         return directory
 
     def __str__(self):
-        devs = np.unique(np.array([n.split('.')[0] for n in self._data.columns]))
+        devs = np.unique(np.array([n.split(".")[0] for n in self._data.columns]))
         devs_abc = np.array([dev[0] for dev in devs])
         devs_dict = {abc: devs[devs_abc == abc] for abc in np.unique(devs_abc)}
-        devs_str = ''
+        devs_str = ""
         for key, value in devs_dict.items():
-            devs_str = devs_str + f'{key.capitalize()}\n'
+            devs_str = devs_str + f"{key.capitalize()}\n"
             for val in value:
-                devs_str = devs_str + f'{val}\n'
-            devs_str = devs_str + f'\n'
+                devs_str = devs_str + f"{val}\n"
+            devs_str = devs_str + f"\n"
         return devs_str
 
     def __repr__(self):
         return self.__str__()
+
 
 class Run_Table_DataFrame(DataFrame):
     def __init__(
@@ -1014,20 +1054,26 @@ class Run_Table_DataFrame(DataFrame):
         self.fname = exp_path + f"{exp_id}_runtable.pkl"
         self.load()
 
-
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
         self.bad_adjustables = {}
 
         ###parsing options
-        self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(" ")
-        self._parse_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv".split(" "))
-        self._adj_exclude_class_types = ("__ alias namespace daq scan MasterEventSystem _motor Alias".split(" "))
+        self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(
+            " "
+        )
+        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv".split(
+            " "
+        )
+        self._adj_exclude_class_types = (
+            "__ alias namespace daq scan MasterEventSystem _motor Alias".split(" ")
+        )
         self.key_order = "metadata gps xrd midir env_thc temperature1_rbk temperature2_rbk  time name gps gps_hex thc ocb eos las lxt phase_shifter mono att att_fe slit_und slit_switch slit_att slit_kb slit_cleanup pulse_id mono_energy_rbk att_transmission att_fe_transmission"
         pd.options.display.max_rows = 100
         pd.options.display.max_columns = 50
         pd.set_option("display.float_format", lambda x: "%.5g" % x)
-    #def _get_values(self):
+
+    # def _get_values(self):
     #    is_connected = np.array([pv.connected for pv in self._pvs.values()])
     #    filtered_dict = {key: pv.value for key, pv in self._pvs.items() if pv.connected}
     #    return filtered_dict
@@ -1035,9 +1081,11 @@ class Run_Table_DataFrame(DataFrame):
     @property
     def df(self):
         return self
+
     @df.setter
     def df(self, data):
         super().__init__(data)
+
     @df.deleter
     def df(self):
         return
@@ -1055,8 +1103,8 @@ class Run_Table_DataFrame(DataFrame):
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")
-        pd.DataFrame(self).to_pickle(self.fname + 'tmp')
-        call(['mv', self.fname + 'tmp', self.fname])
+        pd.DataFrame(self).to_pickle(self.fname + "tmp")
+        call(["mv", self.fname + "tmp", self.fname])
 
     def load(self):
         if os.path.exists(self.fname):
@@ -1085,12 +1133,14 @@ class Run_Table_DataFrame(DataFrame):
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
         values = np.array([val for adjs in dat.values() for val in adjs.values()])
-        index = np.array([f'{dev}.{adj}' for dev, adjs in dat.items() for adj in adjs.keys()])
-        #run_df = DataFrame([values], columns=multiindex, index=[runno])
+        index = np.array(
+            [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
+        )
+        # run_df = DataFrame([values], columns=multiindex, index=[runno])
         run_df = DataFrame([values], columns=index, index=[runno])
-        self.df=self.append(run_df)
+        self.df = self.append(run_df)
         self._remove_duplicates()
-        #self.order_df()
+        # self.order_df()
         self.save()
 
     def append_pos(self, name=""):
@@ -1098,7 +1148,9 @@ class Run_Table_DataFrame(DataFrame):
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents()
         try:
-            posno = int(self[self['metadata.type']=='pos'].index[-1].split("p")[1]) + 1
+            posno = (
+                int(self[self["metadata.type"] == "pos"].index[-1].split("p")[1]) + 1
+            )
         except:
             posno = 0
         dat = self._get_adjustable_values()
@@ -1108,13 +1160,15 @@ class Run_Table_DataFrame(DataFrame):
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
         values = np.array([val for adjs in dat.values() for val in adjs.values()])
-        index = np.array([f'{dev}.{adj}' for dev, adjs in dat.items() for adj in adjs.keys()])
-        #pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
+        index = np.array(
+            [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
+        )
+        # pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
         pos_df = DataFrame([values], columns=index, index=[f"p{posno}"])
 
-        self.df=self.append(pos_df)
+        self.df = self.append(pos_df)
         self._remove_duplicates()
-        #self.order_df()
+        # self.order_df()
         self.save()
 
     def _get_adjustable_values(self, silent=True):
@@ -1137,7 +1191,9 @@ class Run_Table_DataFrame(DataFrame):
                 for ba in bad_adjs:
                     if not devname in self.bad_adjustables.keys():
                         self.bad_adjustables[devname] = {}
-                    self.bad_adjustables[devname][ba] = self.good_adjustables[devname].pop(ba)
+                    self.bad_adjustables[devname][ba] = self.good_adjustables[
+                        devname
+                    ].pop(ba)
         else:
             dat = {
                 devname: {
@@ -1269,7 +1325,9 @@ class Run_Table_DataFrame(DataFrame):
                         ]
                     ):
                         self.adjustables[key] = {}
-                        self._parse_child_instances_fewerparents(s_class, parent_name = key)
+                        self._parse_child_instances_fewerparents(
+                            s_class, parent_name=key
+                        )
             except Exception as e:
                 print(e)
                 print(key)
@@ -1385,12 +1443,13 @@ class Run_Table_DataFrame(DataFrame):
         devs = [item[0] for item in list(self.columns)]
         self.df = self[self._orderlist(list(self.columns), key_order, orderlist=devs)]
 
+
 def name2obj(obj_parent, name, delimiter="."):
     if type(name) is str:
         name = name.split(delimiter)
     obj = obj_parent
     for tn in name:
-        if not tn or tn=='self':
+        if not tn or tn == "self":
             obj = obj
         else:
             obj = obj.__dict__[tn]
