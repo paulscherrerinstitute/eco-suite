@@ -354,6 +354,8 @@ class Organic_crystal_breadboard(Assembly):
             },
         }
 
+
+
         ### smaract motors ###
         for name, config in self.motor_configuration.items():
             self._append(

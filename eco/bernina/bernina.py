@@ -1,4 +1,6 @@
 from eco.elements.adjustable import AdjustableFS
+
+# from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
 from .config import components
 from .config import config as config_berninamesp
@@ -386,6 +388,20 @@ namespace.append_obj(
     module_name="eco.timing.event_timing_new_new",
     lazy=True,
     # lazy=False,
+)
+namespace.append_obj(
+    "DigitizerIoxos",
+    "SARES20-LSCP9-FNS",
+    name="digitizer_ioxos_user",
+    module_name="eco.devices_general.digitizers",
+    lazy=True,
+)
+namespace.append_obj(
+    "DigitizerIoxos",
+    "SLAAR21-LSCP1-FNS",
+    name="digitizer_ioxos_laser",
+    module_name="eco.devices_general.digitizers",
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -935,6 +951,43 @@ namespace.append_obj(
     name="las_inc",
 )
 
+
+class THz_in_air(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+
+        self._append(SmaractRecord, "SARES23:ESB4", name="eos_rot", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB12", name="eos_tilt", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB5", name="crystal_ROT", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC15", name="ir_1_z", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC13", name="ir_1_Ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC14", name="ir_1_Rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB10", name="ir_2_Rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB7", name="ir_2_Ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB9", name="para_2_x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB3", name="thz_mir_x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB1", name="thz_mir_z", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB8", name="thz_mir_Ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB2", name="thz_mir_Rz", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB6", name="focus_x", is_setting=True)
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_4",
+            name="focus_y",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(SmaractRecord, "SARES23:ESB14", name="focus_z", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB13", name="focus_Rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB15", name="focus_Ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rz", is_setting=True)
+
+
+namespace.append_obj(
+    THz_in_air,
+    lazy=True,
+    name="tia",
+)
 
 namespace.append_obj(
     "SmaractController",

@@ -71,7 +71,7 @@ class CtaSequencer(Assembly):
             self._append(
                 AdjustablePv,
                 self._pvstr(f"Ser{i}-Data-I"),
-                element_count=self.max_length.get_current_value(),
+                # element_count=self.max_length.get_current_value(),
                 name=f"seq_code{eventcode}",
                 is_setting=True,
                 is_display=False,
@@ -104,7 +104,22 @@ class CtaSequencer(Assembly):
             )
         oldlength = self.length.get_current_value()
         newlength = oldlength + step_delay
-        self.event_code_sequences[code]._value[newlength - 1] = 1
+        changes = []
+        for i, ec in self.event_code_sequences.items():
+            if oldlength == 0:
+                o = []
+            else:
+                o = list(ec.get_current_value())
+            if i == code:
+                n = o + [0] * (newlength - oldlength - 1) + [1]
+            else:
+                n = o + [0] * (newlength - oldlength)
+            # print(o, n)
+            changes.append(ec.set_target_value(n))
+        for change in changes:
+            change.wait()
+
+        # self.event_code_sequences[code]._value[newlength - 1] = 1
 
         self.length.set_target_value(newlength).wait()
 

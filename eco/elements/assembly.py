@@ -1,3 +1,8 @@
+from tkinter import W
+
+from numpy import isin
+
+from eco.elements.protocols import Detector
 from ..aliases import Alias
 from tabulate import tabulate
 import colorama
@@ -6,6 +11,7 @@ from enum import Enum
 import os
 import subprocess
 from rich.progress import track
+from eco import Adjustable, Detector
 
 
 class Collection:
@@ -87,8 +93,12 @@ class Assembly:
         # except:
         #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
         #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
+        if is_setting == "auto":
+            is_setting = isinstance(self.__dict__[name], Adjustable)
         if is_setting:
             self.settings_collection.append(self.__dict__[name], recursive=True)
+        if is_status == "auto":
+            is_status = isinstance(self.__dict__[name], Detector)
         if is_status:
             self.status_collection.append(self.__dict__[name], recursive=True)
         if is_display:
@@ -192,13 +202,19 @@ class Assembly:
         for to in stats:
             name = to.alias.get_full_name(base=self)
             value = to.get_current_value()
+            is_adjustable = isinstance(to, Adjustable)
+            if is_adjustable:
+                typechar = "✏️"
+            else:
+                typechar = "👁️"
+            is_detector = isinstance(to, Detector)
             if isinstance(value, Enum):
                 value = f"{value.value} ({value.name})"
             try:
                 unit = to.unit()
             except:
                 unit = None
-            tab.append([".".join([main_name, name]), value, unit])
+            tab.append([".".join([main_name, name]), value, unit, typechar])
         s = tabulate(tab)
         return s
 

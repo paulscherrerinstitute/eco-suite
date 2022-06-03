@@ -1,6 +1,6 @@
 try:
-    from elements.protocols import Adjustable, Detector
+    from eco.elements.protocols import Adjustable, Detector
 except:
     print("cannot import Prototypic protocol classes")
 
-from .elements.assembly import Assembly
+from eco.elements.assembly import Assembly
