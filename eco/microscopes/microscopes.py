@@ -11,8 +11,6 @@ class MicroscopeMotorRecord(Assembly):
     def __init__(
         self,
         pvname_camera=None,
-        camserver_alias=None,
-        # camserver_alias=None,
         pvname_zoom=None,
         pvname_focus=None,
         name=None,
@@ -22,7 +20,7 @@ class MicroscopeMotorRecord(Assembly):
             self._append(
                 CameraBasler,
                 pvname_camera,
-                camserver_alias=camserver_alias,
+                camserver_alias=name,
                 name="camera",
                 is_setting=True,
                 is_display="recursive",

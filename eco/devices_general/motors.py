@@ -907,7 +907,7 @@ class SmaractRecord(Assembly):
             AdjustablePv,
             self.pvname + ".HOMR",
             name="home_forward",
-            is_setting=True,
+            is_setting=False,
             is_status=False,
             is_display=False,
         )
@@ -915,7 +915,7 @@ class SmaractRecord(Assembly):
             AdjustablePv,
             self.pvname + ".HOMR",
             name="home_reverse",
-            is_setting=True,
+            is_setting=False,
             is_status=False,
             is_display=False,
         )

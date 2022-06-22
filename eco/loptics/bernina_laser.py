@@ -1,6 +1,11 @@
+from eco.loptics.position_monitors import CameraPositionMonitor
 from ..elements.assembly import Assembly
+from functools import partial
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics.detector import DetectorPvData
+from ..devices_general.detectors import DetectorVirtual
 from ..timing.lasertiming_edwin import XltEpics
 import colorama
 import datetime
@@ -20,6 +25,106 @@ class IncouplingCleanBernina(Assembly):
         self._append(SmaractStreamdevice, "SARES23-LIC15", name="transl_vertical")
         self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
 
+flag_names_filter_wheel = [
+    "error",
+    "proc_tongle",
+    "connected",
+    "moving",
+    "homed",
+    "remote_operation",
+]
+
+
+class FilterWheelFlags(Assembly):
+    def __init__(self, flags, name="flags"):
+        super().__init__(name=name)
+        self._flags = flags
+        for flag_name in flag_names_filter_wheel:
+            self._append(
+                DetectorVirtual,
+                [self._flags],
+                partial(self._get_flag_name_value, flag_name=flag_name),
+                name=flag_name,
+                is_status=True,
+                is_display=True,
+            )
+
+    def _get_flag_name_value(self, value, flag_name=None):
+        index = flag_names_filter_wheel.index(flag_name)
+        return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
+
+
+class FilterWheel(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(AdjustablePvEnum, f"{pvname}.VAL", name = "_val", is_setting=True)
+        self._append(AdjustablePvEnum, f"{pvname}.RBV", name = "_rb",  is_setting=True)
+        self._append(AdjustablePv, f"{pvname}.CMD", name = "_cmd", is_setting=False)
+        self.set_remote_operation()
+        self._append(
+            DetectorPvData,
+            self.pvname + ".STA",
+            name="_flags",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            FilterWheelFlags,
+            self._flags,
+            name="flags",
+            is_display="recursive",
+            is_setting=False,
+            is_status=True,
+        )
+
+    def set_remote_operation(self):
+        self._val(7)
+
+    def set_manual_operation(self):
+        self._val(8)
+
+    def home(self):
+        self.set_remote_operation()
+        self._val(6)
+    
+    def is_moving(self):
+       pass 
+
+
+
+
+class FilterWheelAttenuator(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self._append(FilterWheel, pvname = pvname + "IFW_A", name="wheel_1")
+        self._append(FilterWheel, pvname = pvname + "IFW_B", name="wheel_2")
+
+        self.targets_1 = {
+            "t": 10**-np.array([0.2, 0.3, 0.5, 0.6, 1.0]),
+            "pos": np.array([1,2,3,4,5]),
+        }
+        self.targets_2 = {
+            "t":10**-np.array([0.2, 0.3, 0.4, 0.5, 0.6]),
+            "pos": np.array([1,2,3,4,5]),
+        }
+
+        self._calc_transmission()
+
+    def _calc_transmission(self):
+        t1 = self.targets_1["t"]
+        t2 = self.targets_2["t"]
+        t_comb = (
+            (np.expand_dims(t1, axis=0)).T * (np.expand_dims(t2, axis=0))
+        ).flatten()
+        pos_comb = np.array(
+            [[p1, p2] for p1 in self.targets_1["pos"] for p2 in self.targets_2["pos"]]
+        )
+        self.transmissions = {"t": t_comb, "pos": pos_comb}
+
+    def home(self):
+        self.wheel_1.home()
+        self.wheel_2.home()
 
 class LaserBernina(Assembly):
     def __init__(self, pvname, name=None):
@@ -181,3 +286,13 @@ class DelayCompensation(AdjustableVirtual):
         s += f"{(self.get_current_value()*ureg.second).to_compact():P~6.3f}"
         s += f"{colorama.Style.RESET_ALL}"
         return s
+
+
+
+class PositionMonitors(Assembly):
+    def __init__(self,name=None):
+        super().__init__(name=name)
+        self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C551', name='post_compressor_focus', is_display='recursive', is_status=True)
+        self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C552', name='post_compressor_position', is_display='recursive', is_status=True)
+        # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C541', name='cam541')
+        # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C542', name='cam542')

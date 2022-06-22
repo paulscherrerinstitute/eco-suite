@@ -1,4 +1,9 @@
+import json
+from pathlib import Path
+from eco.acquisition.scan import NumpyEncoder
 from eco.elements.adjustable import AdjustableFS
+from eco.elements.adjustable import AdjustableVirtual
+from eco.loptics.bernina_experiment import DelayCompensation
 
 # from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
@@ -608,10 +613,36 @@ namespace.append_obj(
 )
 
 
-def _append_namesace_status_to_scan(scan):
-    scan.scan_info["scan_parameters"]["namespace_status"] = namespace.get_status(
-        base=None
+def _append_namesace_status_to_scan(scan, daq=daq, namespace=namespace):
+    namespace_status = namespace.get_status(base=None)
+    stat = {"status_run_start": namespace_status}
+    scan.status = stat
+
+
+def _write_namespace_status_to_scan(scan, daq=daq, namespace=namespace):
+    namespace_status = namespace.get_status(base=None)
+    scan.status["status_run_end"] = namespace_status
+    runno = daq.get_last_run_number()
+    pgroup = daq.pgroup
+    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/stat_run{runno:04d}")
+    tmpdir.mkdir(exist_ok=True, parents=True)
+    statusfile = tmpdir / Path("status.json")
+    if not Path(statusfile).exists():
+        with open(statusfile, "w") as f:
+            json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+    else:
+        with open(statusfile, "r+") as f:
+            f.seek(0)
+            json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+            f.truncate()
+    response = daq.append_aux(
+        statusfile.resolve().as_posix(),
+        pgroup=pgroup,
+        run_number=runno,
     )
+    print("################")
+    print(response.json())
+    print("################")
 
 
 def _append_namespace_aliases_to_scan(scan):
@@ -625,12 +656,61 @@ def _message_end_scan(scan):
     e.stop()
 
 
-def _copy_scan_info_to_raw(scan, daq=daq):
-    run_number = daq.get_last_run_number()
+# def _copy_scan_info_to_raw(scan, daq=daq):
+#     run_number = daq.get_last_run_number()
+#     pgroup = daq.pgroup
+#     print(f"Copying info file to run {run_number} to the raw directory of {pgroup}.")
+#     response = daq.append_aux(
+#         scan.scan_info_filename, pgroup=pgroup, run_number=run_number
+#     )
+#     print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+
+def _create_general_run_info(scan,daq=daq):
+    with open(scan.scan_info_filename,'r') as f:
+        si = json.load(f)
+
+    info = {}
+    # general info, potentially automatically filled
+    info['general'] = {}
+    # individual data filled by daq/writers/user through api
+    info['start'] = {}
+    info['end'] = {}
+    info['steps'] = []
+
+
+def _copy_scan_info_to_raw(scan,daq=daq):
+    
+    # get data that should come later from api or similar.
+    run_directory = list(Path(f"/sf/bernina/data/{daq.pgroup}/raw").glob(f'run{scan.run_number:04d}*'))[0].as_posix()
+    with open(scan.scan_info_filename,'r') as f:
+        si = json.load(f)
+
+    # correct some data in there (relative paths for now)
+    from os.path import relpath
+    newfiles = []
+    for files in si['scan_files']:
+        newfiles.append([relpath(file,run_directory) for file in files])
+    
+    si['scan_files'] = newfiles
+
+    # save temprary file and send then to raw
+    runno = daq.get_last_run_number()
     pgroup = daq.pgroup
-    print(f"Copying info file to run {run_number} to the raw directory of {pgroup}.")
+    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/info_run{runno:04d}")
+    tmpdir.mkdir(exist_ok=True, parents=True)
+    scaninfofile = tmpdir / Path("scan_info_rel.json")
+    if not Path(scaninfofile).exists():
+        with open(scaninfofile, "w") as f:
+            json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+    else:
+        with open(scaninfofile, "r+") as f:
+            f.seek(0)
+            json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+            f.truncate()
+    
+    print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
     response = daq.append_aux(
-        scan.scan_info_filename, pgroup=pgroup, run_number=run_number
+        scaninfofile.as_posix(), pgroup=pgroup, run_number=runno
     )
     print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
 
@@ -658,10 +738,11 @@ def _increment_daq_run_number(scan, daq=daq):
 
 callbacks_start_scan = []
 callbacks_start_scan = [lambda scan: namespace.init_all(silent=False)]
-callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
+callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)
 callbacks_end_scan = [_message_end_scan]
+callbacks_end_scan.append(_write_namespace_status_to_scan)
 callbacks_end_scan.append(_copy_scan_info_to_raw)
 
 
@@ -853,6 +934,14 @@ namespace.append_obj(
     name="las",
     module_name="eco.loptics.bernina_laser",
 )
+
+namespace.append_obj(
+    "PositionMonitors",
+    lazy=True,
+    name="las_pointing",
+    module_name="eco.loptics.bernina_laser",
+)
+
 # namespace.append_obj(
 #    "IncouplingCleanBernina",
 #    lazy=False,
@@ -969,7 +1058,7 @@ class THz_in_air(Assembly):
         self._append(SmaractRecord, "SARES23:ESB1", name="thz_mir_z", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB8", name="thz_mir_Ry", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB2", name="thz_mir_Rz", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB6", name="focus_x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB6", name="focus_z", is_setting=True)
         self._append(
             MotorRecord,
             "SARES20-MF1:MOT_4",
@@ -977,11 +1066,44 @@ class THz_in_air(Assembly):
             is_setting=True,
             is_display=True,
         )
-        self._append(SmaractRecord, "SARES23:ESB14", name="focus_z", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB13", name="focus_Rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB14", name="focus_x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB13", name="focus_Rz", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB15", name="focus_Ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rz", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC18", name="thz_wp", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC16", name="delaystage_thz", is_setting=True)
+        self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=True)
+        self._append(MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage_800_pump", is_setting=True)
+        self._append(DelayTime, self.delaystage_800_pump, name="delay_800_pump", is_setting=True)
+        
+        self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
 
+        self.thz_polarization = AdjustableVirtual(
+            [self.crystal_ROT, self.thz_wp],
+            self.thz_pol_get,
+            self.thz_pol_set,
+            name="thz_polarization",
+            
+
+        )
+        self.combined_delay = AdjustableVirtual(
+            [self.delay_thz, self.delay_800_pump],
+            self.delay_get,
+            self.delay_set,
+            name="combined_delay",
+            
+        )
+    def thz_pol_set(self, val):
+        return 1.0 * val, 1.0 / 2 * val
+
+    def thz_pol_get(self, val, val2):
+        return 1.0 * val
+
+    def delay_set(self, val):
+        return 1.0 * val, 1.0 * val
+
+    def delay_get(self, val, val2):
+        return 1.0 * val
 
 namespace.append_obj(
     THz_in_air,
@@ -1174,6 +1296,8 @@ except:
 
 # namespace.append_obj("Xom", module_name="xom", name="xom", lazy=True)
 
+
+namespace.init_all()
 
 ############## maybe to be recycled ###################
 

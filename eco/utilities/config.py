@@ -406,7 +406,7 @@ class Namespace(Assembly):
             #     if raise_errors:
             #         raise expt
 
-    def get_initialized_aliases(self):
+    def get_initialized_aliases(self, channeltypes=[]):
         aliases = []
         has_no_aliases = []
         for tn, tv in self.initialized_items.items():
@@ -414,6 +414,13 @@ class Namespace(Assembly):
                 aliases += tv.alias.get_all()
             except:
                 has_no_aliases.append(tn)
+        aliases_out = []
+        for channeltype in channeltypes:
+            for alias in aliases:
+                if alias['channeltype']==channeltype:
+                    aliases_out.append(alias)
+        if not channeltypes:
+            aliases_out = aliases
         return aliases, has_no_aliases
 
     def append_obj(

@@ -97,29 +97,47 @@ class CtaSequencer(Assembly):
 
         return arrays
 
-    def append_sequence_step(self, code, step_delay):
+    def append_sequence_step(self, code, step_delay, send_immediately=True):
         if code not in self.event_code_sequences.keys():
             raise Exception(
                 f"Eventcode {code} is not within the allowed or configured eventcodes for the sequencer"
             )
         oldlength = self.length.get_current_value()
         newlength = oldlength + step_delay
-        changes = []
+
+        self.new_sequences = {}
         for i, ec in self.event_code_sequences.items():
             if oldlength == 0:
                 o = []
             else:
                 o = list(ec.get_current_value())
             if i == code:
-                n = o + [0] * (newlength - oldlength - 1) + [1]
+                ind = newlength - oldlength - 1
+                if ind < 0:
+                    o[newlength-1] = 1
+                    n=o
+                else:
+                    n = o + [0] * (newlength - oldlength - 1) + [1]
             else:
                 n = o + [0] * (newlength - oldlength)
+            self.new_sequences[i] = n
             # print(o, n)
-            changes.append(ec.set_target_value(n))
+
+        if send_immediately:
+            self.send_new_sequences()
+
+    def send_new_sequences(self):
+        for i, n in self.new_sequences.items():
+
+            changes = []
+            changes.append(self.event_code_sequences[i].set_target_value(n))
         for change in changes:
             change.wait()
 
         # self.event_code_sequences[code]._value[newlength - 1] = 1
+        lengths = [len(n) for i, n in self.new_sequences.items()]
+        newlength = lengths[0]
+        print(f"newlength is {newlength}, lengths are {lengths}")
 
         self.length.set_target_value(newlength).wait()
 
@@ -142,7 +160,7 @@ class CtaSequencer(Assembly):
             tsteps = is_present_array.nonzero()[0]
             for step in tsteps:
                 if not step in seq_red.keys():
-                    seq_red[step] = []
+                    seq_red[int(step)] = []
                 seq_red[step].append(code)
 
         return seq_red

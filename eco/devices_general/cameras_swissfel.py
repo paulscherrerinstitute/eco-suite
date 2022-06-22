@@ -338,11 +338,11 @@ class CameraBasler(Assembly):
         )
 
     def _set_params(self, *args):
-        self.running(0)
+        self.running(1)
         for ob, val in args:
             ob(val)
         self._set_parameters(1)
-        self.running(1)
+        self.running(2)
 
     def gui(self):
         self._run_cmd(

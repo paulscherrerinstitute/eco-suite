@@ -68,12 +68,12 @@ class Jungfrau(Assembly):
         filepath = Path(f"/sf/jungfrau/config/gainMaps/{self.jf_id}/gains.h5")
 
         if filepath.exists():
-            return filepath.resolve().as_posix()
+            return filepath.as_posix()
         else:
-            raise Exception(f"File {filepath.resolve().as_posix()} seems not to exist!")
+            raise Exception(f"File {filepath.as_posix()} seems not to exist!")
 
     def get_present_pedestal_filename(self):
         searchpath = Path(f"/sf/jungfrau/data/pedestal/{self.jf_id}")
         filelist = list(searchpath.glob("*.h5"))
         times = [datetime.strptime(f.stem, "%Y%m%d_%H%M%S") for f in filelist]
-        return filelist[times.index(max(times))].resolve().as_posix()
+        return filelist[times.index(max(times))].as_posix()

@@ -10,6 +10,7 @@ from ..elements.adjustable import (
     tweak_option,
 )
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics.detector import DetectorPvData 
 from ..aliases import append_object_to_object, Alias
 from ..elements.assembly import Assembly
 
@@ -98,6 +99,7 @@ class XltEpics(Assembly):
         self.pvname = pvname
         self.settings_collection.append(self, force=True)
         self.status_collection.append(self, force=True)
+        self.display_collection.append(self, force=True)
         self._append(
             AdjustablePvEnum,
             self.pvname + ":SHOTDELAY",
@@ -149,6 +151,14 @@ class XltEpics(Assembly):
             is_setting=True,
             is_display=True,
         )
+        # self._append(
+        #     DetectorPvData,
+        #     "SLAAR-LGEN:DLY_OFFS2",
+        #     name="delay_dial",
+        #     is_setting=False,
+        #     is_display=True,
+        # )
+        
         self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
         self.alias.append(
             Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
