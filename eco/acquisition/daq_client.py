@@ -172,10 +172,10 @@ class Daq(Assembly):
                 timeout=self.timeout,
             ).json()
         )
-        
-        runno = response['run_number']
 
-        filenames = response['files']
+        runno = response["run_number"]
+
+        filenames = response["files"]
 
         # filenames = [
         #     (directory_base / Path(filename_format.format(runno)))
@@ -186,27 +186,27 @@ class Daq(Assembly):
 
         return runno, filenames
 
-    def get_next_run_number(self,pgroup=None):
+    def get_next_run_number(self, pgroup=None):
         if pgroup is None:
             pgroup = self.pgroup
         res = requests.get(
             f"{self.broker_address}/get_next_run_number",
-            json={'pgroup':pgroup},
+            json={"pgroup": pgroup},
             timeout=self.timeout,
-            )
-        assert res.ok, f'Getting last run number failed {res.raise_for_status()}'
-        return int(res.json()['message'])
+        )
+        assert res.ok, f"Getting last run number failed {res.raise_for_status()}"
+        return int(res.json()["message"])
 
-    def get_last_run_number(self,pgroup=None):
+    def get_last_run_number(self, pgroup=None):
         if pgroup is None:
             pgroup = self.pgroup
         res = requests.get(
             f"{self.broker_address}/get_last_run_number",
-            json={'pgroup':pgroup},
+            json={"pgroup": pgroup},
             timeout=self.timeout,
-            )
-        assert res.ok, f'Getting last run number failed {res.raise_for_status()}'
-        return int(res.json()['message'])
+        )
+        assert res.ok, f"Getting last run number failed {res.raise_for_status()}"
+        return int(res.json()["message"])
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[
@@ -243,16 +243,17 @@ class Daq(Assembly):
             f"{self.broker_address}/take_pedestal", json=parameters
         ).json()
 
-    def append_aux(self,*file_names,run_number=None,pgroup=None):
+    def append_aux(self, *file_names, run_number=None, pgroup=None):
         if pgroup is None:
             pgroup = self.pgroup
         if run_number is None:
             run_number = self.get_last_run_number()
 
         return requests.post(
-            self.broker_address_aux+'/copy_user_files', 
-            json={'pgroup': pgroup, 'run_number': run_number, 'files': file_names}
-            )
+            self.broker_address_aux + "/copy_user_files",
+            json={"pgroup": pgroup, "run_number": run_number, "files": file_names},
+        )
+
 
 def validate_response(resp):
     if resp.get("status") == "ok":

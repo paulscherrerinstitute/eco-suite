@@ -71,8 +71,8 @@ namespace.append_obj(
     "Run_Table2",
     name="run_table",
     module_name="eco.utilities.runtable",
-    exp_id=config_bernina.pgroup.value,
-    exp_path=f"/sf/bernina/data/{config_bernina.pgroup.value}/res/run_table/",
+    exp_id=config_bernina.pgroup._value,
+    exp_path=f"/sf/bernina/data/{config_bernina.pgroup._value}/res/run_table/",
     devices="bernina",
     keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
     cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
@@ -473,7 +473,7 @@ namespace.append_obj(
     Id="SARES21-XRD",
     configuration=config_bernina.xrd_config(),
     diff_detector={"jf_id": "JF01T03V01"},
-    invert_kappa_ellbow=config_bernina.invert_kappa_ellbow.value,
+    invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
     name="xrd",
     lazy=True,
 )
@@ -665,33 +665,37 @@ def _message_end_scan(scan):
 #     )
 #     print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
 
-def _create_general_run_info(scan,daq=daq):
-    with open(scan.scan_info_filename,'r') as f:
+
+def _create_general_run_info(scan, daq=daq):
+    with open(scan.scan_info_filename, "r") as f:
         si = json.load(f)
 
     info = {}
     # general info, potentially automatically filled
-    info['general'] = {}
+    info["general"] = {}
     # individual data filled by daq/writers/user through api
-    info['start'] = {}
-    info['end'] = {}
-    info['steps'] = []
+    info["start"] = {}
+    info["end"] = {}
+    info["steps"] = []
 
 
-def _copy_scan_info_to_raw(scan,daq=daq):
-    
+def _copy_scan_info_to_raw(scan, daq=daq):
+
     # get data that should come later from api or similar.
-    run_directory = list(Path(f"/sf/bernina/data/{daq.pgroup}/raw").glob(f'run{scan.run_number:04d}*'))[0].as_posix()
-    with open(scan.scan_info_filename,'r') as f:
+    run_directory = list(
+        Path(f"/sf/bernina/data/{daq.pgroup}/raw").glob(f"run{scan.run_number:04d}*")
+    )[0].as_posix()
+    with open(scan.scan_info_filename, "r") as f:
         si = json.load(f)
 
     # correct some data in there (relative paths for now)
     from os.path import relpath
+
     newfiles = []
-    for files in si['scan_files']:
-        newfiles.append([relpath(file,run_directory) for file in files])
-    
-    si['scan_files'] = newfiles
+    for files in si["scan_files"]:
+        newfiles.append([relpath(file, run_directory) for file in files])
+
+    si["scan_files"] = newfiles
 
     # save temprary file and send then to raw
     runno = daq.get_last_run_number()
@@ -707,11 +711,9 @@ def _copy_scan_info_to_raw(scan,daq=daq):
             f.seek(0)
             json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
             f.truncate()
-    
+
     print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
-    response = daq.append_aux(
-        scaninfofile.as_posix(), pgroup=pgroup, run_number=runno
-    )
+    response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
     print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
 
 
@@ -1071,39 +1073,68 @@ class THz_in_air(Assembly):
         self._append(SmaractRecord, "SARES23:ESB15", name="focus_Ry", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rx", is_setting=True)
         self._append(SmaractRecord, "SARES23:LIC18", name="thz_wp", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC16", name="delaystage_thz", is_setting=True)
+        self._append(
+            SmaractRecord, "SARES23:LIC16", name="delaystage_thz", is_setting=True
+        )
         self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=True)
-        self._append(MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage_800_pump", is_setting=True)
-        self._append(DelayTime, self.delaystage_800_pump, name="delay_800_pump", is_setting=True)
-        
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage_800_pump",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime, self.delaystage_800_pump, name="delay_800_pump", is_setting=True
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/combined_delta",
+            name="combined_delta",
+            default_value=0,
+            is_setting=True,
+        )
         self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
 
-        self.thz_polarization = AdjustableVirtual(
+        self._append(
+            AdjustableVirtual,
             [self.crystal_ROT, self.thz_wp],
             self.thz_pol_get,
             self.thz_pol_set,
             name="thz_polarization",
-            
-
         )
-        self.combined_delay = AdjustableVirtual(
+        # self.thz_polarization = AdjustableVirtual(
+        #     [self.crystal_ROT, self.thz_wp],
+        #     self.thz_pol_get,
+        #     self.thz_pol_set,
+        #     name="thz_polarization",
+        # )
+        self._append(
+            AdjustableVirtual,
             [self.delay_thz, self.delay_800_pump],
             self.delay_get,
             self.delay_set,
             name="combined_delay",
-            
         )
+
+        # self.combined_delay = AdjustableVirtual(
+        #     [self.delay_thz, self.delay_800_pump],
+        #     self.delay_get,
+        #     self.delay_set,
+        #     name="combined_delay",
+        # )
+
     def thz_pol_set(self, val):
         return 1.0 * val, 1.0 / 2 * val
 
     def thz_pol_get(self, val, val2):
-        return 1.0 * val
+        return 1.0 * val2
 
     def delay_set(self, val):
-        return 1.0 * val, 1.0 * val
+        return 1.0 * val + self.combined_delta(), 1.0 * val
 
     def delay_get(self, val, val2):
         return 1.0 * val
+
 
 namespace.append_obj(
     THz_in_air,

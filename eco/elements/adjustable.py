@@ -246,19 +246,34 @@ def update_changes(Adj):
 def value_property(Adj, wait_for_change=True, value_name="_value"):
     if wait_for_change:
 
-        def tmp(Adj, value):
-            Adj.set_target_value(value, hold=False).wait()
+        def set_target_value_wait(self, value):
+            self.set_target_value(value, hold=False).wait()
+
+        def get_current_value(self):
+            o = self.get_current_value()
+            if hasattr(o, "__setitem__"):
+                # print("overwriting output class")
+
+                class TempObj(o.__class__):
+                    def __setitem__(oself, *args):
+                        o.__class__.__setitem__(oself, *args)
+                        self._set_target_value_wait(oself)
+
+                return TempObj(o)
+            else:
+                return o
+
+        Adj._set_target_value_wait = set_target_value_wait
+        Adj._get_current_value = get_current_value
 
         setattr(
             Adj,
             value_name,
             property(
-                Adj.get_current_value,
-                tmp,
+                Adj._get_current_value,
+                Adj._set_target_value_wait,
             ),
         )
-
-    Adj.value = property(lambda self: self._value)
     return Adj
 
 
