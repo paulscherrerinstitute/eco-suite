@@ -4,8 +4,9 @@ import time
 from json import load, dump
 from pathlib import Path
 from threading import Thread
-
+import itertools
 import colorama
+import numpy as np
 
 from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
@@ -498,6 +499,14 @@ class AdjustableVirtual:
         return self._foo_get_current_value(
             *[adj.get_current_value() for adj in self._adjustables]
         )
+
+    def get_limits(self):
+        try:
+            limits = [adj.get_limits() for adj in self._adjustables]
+            vals = np.array([self._foo_get_current_value(*prod) for prod in itertools.product(*limits)])
+            return [np.min(vals), np.max(vals)]
+        except Exception as e:
+            print(str(e))
 
     def reset_current_value_to(self, value):
         if not self._reset_current_value_to:
