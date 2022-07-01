@@ -500,13 +500,13 @@ class AdjustableVirtual:
             *[adj.get_current_value() for adj in self._adjustables]
         )
 
-    def get_limits(self):
-        try:
-            limits = [adj.get_limits() for adj in self._adjustables]
-            vals = np.array([self._foo_get_current_value(*prod) for prod in itertools.product(*limits)])
-            return [np.min(vals), np.max(vals)]
-        except Exception as e:
-            print(str(e))
+    def check_target_value_within_limits(self, value):
+        in_lims = []
+        values = self._foo_set_target_value_current_value(value)
+        for val, adj in zip(values, self._adjustables):
+            lim_low, lim_high = adj.get_limits()
+            in_lims.append((lim_low < val) and (val < lim_high))
+        return all(in_lims)
 
     def reset_current_value_to(self, value):
         if not self._reset_current_value_to:

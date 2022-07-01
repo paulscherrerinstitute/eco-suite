@@ -1,3 +1,5 @@
+from eco.elements.assembly import Assembly
+from eco.loptics.position_monitors import CameraPositionMonitor
 from ..aliases import Alias
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
@@ -364,3 +366,5 @@ class Laser_Exp:
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
+
+

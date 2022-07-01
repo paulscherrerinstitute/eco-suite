@@ -5,6 +5,7 @@ from epics.pv import PV
 from bsread.bsavail import pollStream
 from bsread import dispatcher, source
 from ..epics import get_from_archive
+from escape import stream
 
 
 @get_from_archive
@@ -19,6 +20,8 @@ class DetectorBsStream:
         if self.pvname:
             self._pv = PV(self.pvname)
         self.alias = Alias(name, channel=bs_channel, channeltype="BS")
+
+        self.stream = stream.EscData(source=stream.EventSource(self.bs_channel, None))
 
     def get_current_value(self, force_bsstream=False):
         if not force_bsstream:

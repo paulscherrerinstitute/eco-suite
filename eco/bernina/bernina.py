@@ -56,6 +56,13 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
+    "EventWorker",
+    name="bs_worker",
+    module_name="escape.stream",
+    lazy=False,
+)
+
+namespace.append_obj(
     "BerninaEnv",
     name="env_log",
     module_name="eco.fel.atmosphere",
@@ -1133,7 +1140,7 @@ class THz_in_air(Assembly):
         return 1.0 * val + self.combined_delta(), 1.0 * val
 
     def delay_get(self, val, val2):
-        return 1.0 * val
+        return 1.0 * val2
 
 
 namespace.append_obj(
