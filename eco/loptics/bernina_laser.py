@@ -1,7 +1,7 @@
 from eco.loptics.position_monitors import CameraPositionMonitor
 from ..elements.assembly import Assembly
 from functools import partial
-from ..devices_general.motors import SmaractStreamdevice, MotorRecord
+from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
@@ -174,27 +174,27 @@ class LaserBernina(Assembly):
             AdjustableVirtual, [self.wp_att], wp2uJ, uJ2wp, name="pulse_energy_pump"
         )
 
-        self._append(
-            MotorRecord,
-            self.pvname + "-M522:MOTOR_1",
-            name="delaystage_pump",
-            is_setting=True,
-        )
-        self._append(
-            DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
-        )
+        #self._append(
+        #    MotorRecord,
+        #    self.pvname + "-M522:MOTOR_1",
+        #    name="delaystage_pump",
+        #    is_setting=True,
+        #)
+        #self._append(
+        #    DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
+        #)
         self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
         # Upstairs, Laser 1 LAM
         self._append(
             MotorRecord,
             "SLAAR21-LMOT-M521:MOTOR_1",
-            name="delaystage_eos",
+            name="delaystage_pump",
             is_setting=True,
         )
         self._append(
             DelayTime,
-            self.delaystage_eos,
-            name="delay_eos",
+            self.delaystage_pump,
+            name="delay_pump",
             is_setting=True,
         )
         # self._append(
@@ -203,6 +203,12 @@ class LaserBernina(Assembly):
         #     name="delaystage_thz",
         #     is_setting=True,
         # )
+        self._append(
+            SmaractRecord, "SARES23:ESB3", name="pump_hor", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES23:ESB18", name="pump_ver", is_setting=True
+        )
 
 
 class DelayTime(AdjustableVirtual):

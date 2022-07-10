@@ -386,22 +386,6 @@ components = [
             "bsport": 11151,
         },
     },
-    {
-        "args": ["SARES20-CAMS142-M1"],
-        "name": "cam_sample_sideview",
-        "z_und": 142,
-        "desc": "",
-        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
-        "kwargs": {},
-    },
-    {
-        "args": ["SARES20-CAMS142-M3"],
-        "name": "cam_sample_inline",
-        "z_und": 142,
-        "desc": "",
-        "type": "eco.devices_general.cameras_swissfel:CameraBasler",
-        "kwargs": {},
-    },
     # {
     #    "args": ["SARES20-CAMS142-C3"],
     #    "name": "cam_sample_xrd",
@@ -423,18 +407,6 @@ components = [
     # "camera_pv": config["cams_qioptiq"]["camera_pv"],
     # },
     # },
-    {
-        "args": [],
-        "name": "cams_sigma",
-        "z_und": 142,
-        "desc": "Sigma objective",
-        "type": "eco.endstations.bernina_cameras:Sigma",
-        "kwargs": {
-            "bshost": "sf-daqsync-01.psi.ch",
-            "bsport": 11149,
-            "camera_pv": config["cams_sigma"]["camera_pv"],
-        },
-    },
     # {
     #     "args": ["SLAAR02-TSPL-EPL"],
     #     "name": "phase_shifter",

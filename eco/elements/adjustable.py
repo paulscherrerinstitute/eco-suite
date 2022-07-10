@@ -168,18 +168,23 @@ class ValueInRange:
 
 def update_changes(Adj):
     def get_position_str(start, end, value):
-        start = float(start)
-        value = float(value)
-        end = float(end)
-        s = ValueInRange(start, end, bar_width=30, unit="", fmt="1.5g").get_str(value)
-        return (
-            colorama.Style.BRIGHT
-            + f"{value:1.5}".rjust(10)
-            + colorama.Style.RESET_ALL
-            + "  "
-            + s
-            + 2 * "\t"
-        )
+        vals = [v if hasattr(v,"__iter__") else [v] for v in [start, end, value]]
+        bars = ""
+        for s, v, e in zip(*vals):
+            s = float(s)
+            v = float(v)
+            e = float(e)
+            s = ValueInRange(s, e, bar_width=30, unit="", fmt="1.5g").get_str(v)
+            bars = bars + (
+                colorama.Style.BRIGHT
+                + f"{v:1.5}".rjust(10)
+                + colorama.Style.RESET_ALL
+                + "  "
+                + s
+                + 2 * "\t"
+                + "\n"
+            )
+        return bars
 
     def update_change(self, value, elog=None):
         start = self.get_current_value()

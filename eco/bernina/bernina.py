@@ -891,14 +891,14 @@ namespace.append_obj(
 #    pvname_zoom="SARES20-MF1:MOT_16",
 # )
 
-namespace.append_obj(
-    "MicroscopeMotorRecord",
-    "SARES20-CAMS142-C1",
-    lazy=True,
-    pvname_zoom="SARES20-MF1:MOT_16",
-    name="samplecam_microscope",
-    module_name="eco.microscopes",
-)
+#namespace.append_obj(
+#    "MicroscopeMotorRecord",
+#    "SARES20-CAMS142-C1",
+#    lazy=True,
+#    pvname_zoom="SARES20-MF1:MOT_16",
+#    name="samplecam_microscope",
+#    module_name="eco.microscopes",
+#)
 
 namespace.append_obj(
     "CameraBasler",
@@ -908,13 +908,13 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_swissfel",
 )
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C3",
-    lazy=True,
-    name="samplecam_xrd",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+#namespace.append_obj(
+#    "CameraBasler",
+#    "SARES20-CAMS142-C3",
+#    lazy=True,
+#    name="samplecam_xrd",
+#    module_name="eco.devices_general.cameras_swissfel",
+#)
 
 # namespace.append_obj(
 #     "PaseShifterAramis",
@@ -1029,25 +1029,25 @@ namespace.append_obj(
 )
 
 # ad hoc incoupling device
-class Incoupling(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(
-            SmaractRecord, "SARES23:LIC13", name="mirr_table_pitch", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES23:LIC14", name="mirr_table_roll", is_setting=True
-        )
-        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
-        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
-        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
-
-
-namespace.append_obj(
-    Incoupling,
-    lazy=True,
-    name="las_inc",
-)
+#class Incoupling(Assembly):
+#    def __init__(self, name=None):
+#        super().__init__(name=name)
+#        self._append(
+#            SmaractRecord, "SARES23:LIC13", name="mirr_table_pitch", is_setting=True
+#        )
+#        self._append(
+#            SmaractRecord, "SARES23:LIC14", name="mirr_table_roll", is_setting=True
+#        )
+#        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
+#        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
+#        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
+#
+#
+#namespace.append_obj(
+#    Incoupling,
+#    lazy=True,
+#    name="las_inc",
+#)
 
 
 class THz_in_air(Assembly):
@@ -1143,11 +1143,11 @@ class THz_in_air(Assembly):
         return 1.0 * val2
 
 
-namespace.append_obj(
-    THz_in_air,
-    lazy=True,
-    name="tia",
-)
+#namespace.append_obj(
+#    THz_in_air,
+#    lazy=True,
+#    name="tia",
+#)
 
 namespace.append_obj(
     "SmaractController",
@@ -1370,3 +1370,19 @@ namespace.init_all()
 #     "desc": "DCM Monochromator",
 #     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
 # },
+def pgroup2name(pgroup):
+    tp = "/sf/bernina/exp/"
+    d = Path(tp)
+    dirs = [i for i in d.glob("*") if i.is_symlink()]
+    names = [i.name for i in dirs]
+    targets = [i.resolve().name for i in dirs]
+    return names[targets.index(pgroup)]
+
+
+def name2pgroups(name):
+    tp = "/sf/bernina/exp/"
+    d = Path(tp)
+    dirs = [i for i in d.glob("*") if i.is_symlink()]
+    names = [i.name for i in dirs]
+    targets = [i.resolve().name for i in dirs]
+    return [[i_n, i_p] for i_n, i_p in zip(names, targets) if name in i_n]

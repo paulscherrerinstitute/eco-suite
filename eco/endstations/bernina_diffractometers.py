@@ -14,7 +14,7 @@ from ..elements.assembly import Assembly
 from ..detector.jungfrau import Jungfrau
 from .kappa_conversion import kappa2you, you2kappa
 import numpy as np
-
+from ..utilities.recspace import Crystals
 
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
@@ -273,6 +273,9 @@ class GPS(Assembly):
                 name="phi",
                 unit="deg",
             )
+
+        #self._append(Crystals, diffractometer_you=self, name="crystals", is_display="recursive")
+
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
@@ -766,6 +769,7 @@ class XRDYou(Assembly):
                 is_display=False,
                 view_toplevel_only=True,
             )
+        self._append(Crystals, diffractometer_you=self, name="crystals", is_setting=False, is_display=False)
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
