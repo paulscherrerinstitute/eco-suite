@@ -223,7 +223,8 @@ class DiffGeometryYou(Assembly):
         for ori in self.orientations():
             self.ubcalc.add_orientation(ori.pop("hkl"), ori.pop("xyz"), **ori)
         for refl in self.reflections():
-            self.ubcalc.add_reflection(refl.pop("hkl"), **refl)
+            position = Position(*refl.pop("position"))
+            self.ubcalc.add_reflection(refl.pop("hkl"), position, refl.pop("energy"), **refl)
         self._u_ub_to_dc()
 
 
@@ -249,10 +250,11 @@ class DiffGeometryYou(Assembly):
         angs = [curval if setval == None else setval for setval, curval in zip(setvals, curvals)]
         if energy is None:
             energy = self.get_energy()
+        position = Position(*angs)
         self.ubcalc.add_reflection(hkl, position, energy, tag=tag)
         self.reflections.set_target_value(
             self.reflections()
-            + [{"hkl": hkl, "position": position, "energy": energy, "tag": tag}]
+            + [{"hkl": hkl, "position": angs, "energy": energy, "tag": tag}]
         )
 
     def del_reflection(self, idx):
@@ -263,7 +265,7 @@ class DiffGeometryYou(Assembly):
         idx : int
             index of the deleted reflection
         """
-        self.hklcalc.del_reflection(idx)
+        self.ubcalc.del_reflection(idx)
         refls = self.reflections()
         removed = refls.pop(idx)
         self.reflections.set_target_value(refls)
@@ -334,7 +336,7 @@ class DiffGeometryYou(Assembly):
         im = Image.open('/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png')
         im.show()
 
-    def fit_ub(self, refine_lattice=False, refine_umatrix=False):
+    def fit_ub(self, indices, refine_lattice=False, refine_umatrix=False):
         """Refine UB matrix using reference reflections.
 
         Parameters
@@ -352,7 +354,7 @@ class DiffGeometryYou(Assembly):
             Refined U matrix as NumPy array and refined crystal lattice parameters.
         """
         self.recalculate()
-        self.ubcalc.fit_ub( refine_lattice, refine_umatrix)
+        self.ubcalc.fit_ub(indices, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
         self._u_ub_from_dc()
         if refine_lattice:
             self._lat_from_dc()

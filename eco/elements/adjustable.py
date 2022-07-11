@@ -169,6 +169,7 @@ class ValueInRange:
 def update_changes(Adj):
     def get_position_str(start, end, value):
         vals = [v if hasattr(v,"__iter__") else [v] for v in [start, end, value]]
+#        bars = []
         bars = ""
         for s, v, e in zip(*vals):
             s = float(s)
@@ -182,8 +183,15 @@ def update_changes(Adj):
                 + "  "
                 + s
                 + 2 * "\t"
-                + "\n"
             )
+#            bars.append((
+#                colorama.Style.BRIGHT
+#                + f"{v:1.5}".rjust(10)
+#                + colorama.Style.RESET_ALL
+#                + "  "
+#                + s
+#                + 2 * "\t"
+#            ))
         return bars
 
     def update_change(self, value, elog=None):
@@ -194,14 +202,16 @@ def update_changes(Adj):
             )
         except TypeError:
             print(f"Changing {self.name} from {start} to {value}")
-
+        #for pos in get_position_str(start, value, start):
+        #    print(pos, end="\r")
         print(get_position_str(start, value, start), end="\r")
         try:
             if hasattr(self, "add_value_callback"):
 
                 def cbfoo(**kwargs):
                     present_value = self.get_current_value()
-                    # print(get_position_str(start, value, kwargs["value"]), end="\r")
+                    #for pos in get_position_str(start, value, present_value):
+                    #    print(pos, end="\r")
                     print(get_position_str(start, value, present_value), end="\r")
 
                 cb_id = self.add_value_callback(cbfoo)

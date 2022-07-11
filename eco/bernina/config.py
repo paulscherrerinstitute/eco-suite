@@ -287,14 +287,14 @@ components = [
         "desc": "Slits behind attenuator",
         "type": "eco.xoptics.slits:SlitPosWidth",
     },
-    {
-        "name": "det_dio",
-        "args": ["SAROP21-PDIO138"],
-        "z_und": 138,
-        "desc": "Diode digitizer for exp data",
-        "type": "eco.devices_general.detectors:DiodeDigitizer",
-        "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
-    },
+    # {
+    #     "name": "det_dio",
+    #     "args": ["SAROP21-PDIO138"],
+    #     "z_und": 138,
+    #     "desc": "Diode digitizer for exp data",
+    #     "type": "eco.devices_general.detectors:DiodeDigitizer",
+    #     "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
+    # },
     {
         "name": "prof_att",
         "args": ["SAROP21-PPRM138"] * 2,
