@@ -339,7 +339,7 @@ class Att_usd(Assembly):
         self.transl_2.set_target_value(p2)
         print(f"Set transmission to {t:0.2E} | Moving to pos {[p1, p2]}")
         while (abs(p1 - self.transl_1.get_current_value()) > 0.05) or (
-            abs(p2 - self.transl_2.get_current_value() > 0.05)
+            (abs(p2 - self.transl_2.get_current_value()) > 0.05)
         ):
             sleep(0.1)
         print("transmission changed")

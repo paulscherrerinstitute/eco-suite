@@ -354,17 +354,6 @@ components = [
     # "diff_detector": {"jf_id": "JF01T03V01"},
     # },
     # },
-    {
-        "args": [],
-        "name": "vonHamos",
-        "z_und": 142,
-        "desc": "Kern experiment, von Hamos vertical and horizontal stages ",
-        "type": "eco.devices_general.micos_stage:stage",
-        "kwargs": {
-            "vonHamos_horiz_pv": config["Kern"]["vonHamos_horiz"],
-            "vonHamos_vert_pv": config["Kern"]["vonHamos_vert"],
-        },
-    },
     # {
     #     "args": [],
     #     "name": "gasjet",

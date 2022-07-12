@@ -545,8 +545,14 @@ class Run_Table:
                                 for s in self._parse_exclude_class_types
                             ]
                         ),
+                        ~np.any(
+                            [
+                                key in s for s in parent_name.split(".")
+                            ]
+                        ),
                     ]
                 ):
+                    print(key)
                     sub_classes.append(s_class)
         return set(sub_classes).union(
             [
@@ -558,7 +564,7 @@ class Run_Table:
             ]
         )
 
-    def _parse_parent_fewerparents(self, parent=None):
+    def _parse_parent_fewerparents(self, parent=None, verbose=False):
         if parent == None:
             parent = self.devices
         for key in parent.__dict__.keys():
@@ -580,6 +586,8 @@ class Run_Table:
                         ]
                     ):
                         self.adjustables[s_class.name] = {}
+                        if verbose:
+                            print(key)
                         self._parse_child_instances_fewerparents(s_class)
             except Exception as e:
                 print(e)
@@ -589,6 +597,8 @@ class Run_Table:
             self.adjustables[f"env_{name}"] = {
                 key: PvRecord(pvsetname=ch) for key, ch in value.items()
             }
+        if verbose:
+            print("Done parsing, checking adjustables")
         self._check_adjustables()
 
     def _parse_child_instances(self, parent_class, pp_name=None):
@@ -1062,7 +1072,7 @@ class Run_Table_DataFrame(DataFrame):
         self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(
             " "
         )
-        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv".split(
+        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv Collection".split(
             " "
         )
         self._adj_exclude_class_types = (
@@ -1229,7 +1239,7 @@ class Run_Table_DataFrame(DataFrame):
             self.adjustables[name][".".join([name, "self"])] = device
 
     def _get_all_adjustables_fewerparents(
-        self, device, adj_prefix=None, parent_name=None
+        self, device, adj_prefix=None, parent_name=None, verbose=False
     ):
         if adj_prefix is not None:
             name = ".".join([adj_prefix, device.name])
@@ -1252,6 +1262,8 @@ class Run_Table_DataFrame(DataFrame):
                     if parent_name == device.name:
                         self.adjustables[parent_name][key] = value
                     else:
+                        #print("GET ADJ", parent_name, name, key)
+                        
                         self.adjustables[parent_name][".".join([name, key])] = value
 
         if parent_name == device.name:
@@ -1259,16 +1271,17 @@ class Run_Table_DataFrame(DataFrame):
                 self.adjustables[parent_name]["self"] = device
 
     def _parse_child_instances_fewerparents(
-        self, parent_class, adj_prefix=None, parent_name=None
+        self, parent_class, adj_prefix=None, parent_name=None, verbose=False
     ):
         if parent_name is None:
             parent_name = own_name
-        self._get_all_adjustables_fewerparents(parent_class, adj_prefix, parent_name)
+        self._get_all_adjustables_fewerparents(parent_class, adj_prefix, parent_name, verbose=verbose)
         if parent_name is not parent_class.name:
             if adj_prefix is not None:
                 adj_prefix = ".".join([adj_prefix, parent_class.name])
             else:
                 adj_prefix = parent_class.name
+
 
         sub_classes = []
         sub_classnames = []
@@ -1288,11 +1301,13 @@ class Run_Table_DataFrame(DataFrame):
                                 for s in self._parse_exclude_class_types
                             ]
                         ),
+
                     ]
                 ):
-                    if s_class.name == None:
-                        s_class.name = key
-                    sub_classes.append(s_class)
+                    if adj_prefix is None or ~np.any([key == s for s in ".".join([parent_name,adj_prefix]).split(".")]):
+                        if s_class.name == None:
+                            s_class.name = key
+                        sub_classes.append(s_class)
         return set(sub_classes).union(
             [
                 s
@@ -1303,7 +1318,7 @@ class Run_Table_DataFrame(DataFrame):
             ]
         )
 
-    def _parse_parent_fewerparents(self, parent=None):
+    def _parse_parent_fewerparents(self, parent=None, verbose=False):
         if parent == None:
             parent = self.devices
         for key in parent.__dict__.keys():
@@ -1326,7 +1341,7 @@ class Run_Table_DataFrame(DataFrame):
                     ):
                         self.adjustables[key] = {}
                         self._parse_child_instances_fewerparents(
-                            s_class, parent_name=key
+                            s_class, parent_name=key, verbose=verbose
                         )
             except Exception as e:
                 print(e)

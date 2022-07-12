@@ -1335,7 +1335,7 @@ except:
 # namespace.append_obj("Xom", module_name="xom", name="xom", lazy=True)
 
 
-namespace.init_all()
+#namespace.init_all()
 
 ############## maybe to be recycled ###################
 
