@@ -120,12 +120,12 @@ namespace.append_obj(
     name="slit_switch",
     module_name="eco.xoptics.slits",
 )
-namespace.append_obj(
-    "SlitBlades",
-    "SAROP21-OAPU102",
-    name="slit_mono",
-    module_name="eco.xoptics.slits",
-)
+# namespace.append_obj(
+#    "SlitBlades",
+#    "SAROP21-OAPU102",
+#    name="slit_mono",
+#    module_name="eco.xoptics.slits",
+# )
 
 from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
 
@@ -245,7 +245,7 @@ namespace.append_obj(
 namespace.append_obj(
     "RefLaser_Aramis",
     "SAROP21-OLAS136",
-    module_name="eco.xoptics.reflaser_new",
+    module_name="eco.xoptics.reflaser",
     name="reflaser",
     lazy=True,
 )
@@ -485,13 +485,14 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
-    "KBMirrorBernina_new",
+    "KBMirrorBernina",
     "SAROP21-OKBV139",
     "SAROP21-OKBH140",
     module_name="eco.xoptics.kb_bernina",
     usd_table=usd_table,
     name="kb",
     diffractometer=xrd,
+    lazy=True,
 )
 
 ### channelsfor daq ###
@@ -543,6 +544,7 @@ namespace.append_obj(
     name="att_usd",
     module_name="eco.xoptics.att_usd",
     xp=xp,
+    lazy=True,
 )
 
 
@@ -891,14 +893,14 @@ namespace.append_obj(
 #    pvname_zoom="SARES20-MF1:MOT_16",
 # )
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    "MicroscopeMotorRecord",
 #    "SARES20-CAMS142-C1",
 #    lazy=True,
 #    pvname_zoom="SARES20-MF1:MOT_16",
 #    name="samplecam_microscope",
 #    module_name="eco.microscopes",
-#)
+# )
 
 namespace.append_obj(
     "CameraBasler",
@@ -908,13 +910,13 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_swissfel",
 )
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    "CameraBasler",
 #    "SARES20-CAMS142-C3",
 #    lazy=True,
 #    name="samplecam_xrd",
 #    module_name="eco.devices_general.cameras_swissfel",
-#)
+# )
 
 # namespace.append_obj(
 #     "PaseShifterAramis",
@@ -1029,7 +1031,7 @@ namespace.append_obj(
 )
 
 # ad hoc incoupling device
-#class Incoupling(Assembly):
+# class Incoupling(Assembly):
 #    def __init__(self, name=None):
 #        super().__init__(name=name)
 #        self._append(
@@ -1043,11 +1045,11 @@ namespace.append_obj(
 #        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 #
 #
-#namespace.append_obj(
+# namespace.append_obj(
 #    Incoupling,
 #    lazy=True,
 #    name="las_inc",
-#)
+# )
 
 
 class THz_in_air(Assembly):
@@ -1143,11 +1145,11 @@ class THz_in_air(Assembly):
         return 1.0 * val2
 
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    THz_in_air,
 #    lazy=True,
 #    name="tia",
-#)
+# )
 
 namespace.append_obj(
     "SmaractController",
@@ -1335,7 +1337,7 @@ except:
 # namespace.append_obj("Xom", module_name="xom", name="xom", lazy=True)
 
 
-#namespace.init_all()
+# namespace.init_all()
 
 ############## maybe to be recycled ###################
 

@@ -1003,11 +1003,18 @@ class Run_Table2:
     ):
         if keys is None:
             keys = self._google_sheet_api.gsheet_keys()
-        dfs = [
-            self.__dict__[key].to_dataframe()
-            for key in keys.split(" ")
-            if key in self.__dir__()
-        ]
+        dfs = []
+        for key in keys.split(" "):
+            d = self
+            add = True
+            for k in key.split("."):
+                if k in d.__dict__.keys():
+                    d = d.__dict__[k]
+                else:
+                    add = False
+            if all([hasattr(d, "to_dataframe"), add]):
+                dfs.append(d.to_dataframe())
+
         dfc = self._concatenate_dfs(dfs)
         return dfc
 

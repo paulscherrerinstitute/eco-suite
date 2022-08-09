@@ -336,6 +336,45 @@ class DiffGeometryYou(Assembly):
         im = Image.open('/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png')
         im.show()
 
+    def refine_ub(self, hkl, mu=None, delta=None, nu=None, eta=None, chi=None, phi=None, energy=None, refine_lattice=False, refine_umatrix=False):
+        """
+        Refine UB matrix to using single reflection.
+
+        Refine UB matrix to match diffractometer position for the specified
+        reflection. Refined U matrix will be accurate up to an azimuthal rotation
+        around the specified scattering vector.
+
+        Parameters
+        ----------
+        hkl: Tuple[float, float, float] Miller indices of the reflection.
+        pos: Position Diffractometer position object.
+        wavelength: float Radiation wavelength.
+        refine_lattice: Optional[bool], default = False
+
+        Apply refined lattice parameters to the current UB calculation object.
+        refine_umatrix: Optional[bool], default = False
+        Apply refined U matrix to the current UB calculation object.
+
+        Returns
+        -------
+        Tuple[np.ndarray, Tuple[str, float, float, float, float, float, float]]
+        Refined U matrix as NumPy array and refined crystal lattice parameters.
+
+        """
+        setvals = [mu, delta, nu, eta, chi, phi]
+        curvals = self.get_diffractometer_angles()
+        angs = [curval if setval == None else setval for setval, curval in zip(setvals, curvals)]
+        if energy is None:
+            energy = self.get_energy()
+        wl = self.en2lam(energy)
+        position = Position(*angs)
+        self.recalculate()
+        self.ubcalc.refine_ub(hkl, position=position, wavelength=wl, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
+        self._u_ub_from_dc()
+        if refine_lattice:
+            print("not implemented")
+            #self._lat_from_dc()
+
     def fit_ub(self, indices, refine_lattice=False, refine_umatrix=False):
         """Refine UB matrix using reference reflections.
 

@@ -9,6 +9,7 @@ class Adjustable(Protocol):
     def set_target_value(self, value):
         ...
 
+
     # def set_target_value(self,value) -> Changer:...
 
 

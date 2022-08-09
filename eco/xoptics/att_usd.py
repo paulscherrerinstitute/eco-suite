@@ -289,8 +289,7 @@ class Att_usd(Assembly):
 
     def _updateE(self, energy=None, check_once=False):
         while not energy:
-            energy = PV("SARUN03-UIND030:FELPHOTENE").value
-            energy = energy * 1000
+            energy = PV("SAROP21-ARAMIS:ENERGY").value
             if energy < self.E_min:
                 energy = None
                 print(
@@ -298,7 +297,7 @@ class Att_usd(Assembly):
                 )
                 sleep(self._sleeptime)
         self.E = energy
-        print("Set energy to %s eV" % energy)
+        print("Calculating transmission for %s eV" % energy)
         return
 
     def _calc_transmission(self):
