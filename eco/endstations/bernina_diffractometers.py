@@ -16,6 +16,7 @@ from .kappa_conversion import kappa2you, you2kappa
 import numpy as np
 from ..utilities.recspace import Crystals
 
+
 def addMotorRecordToSelf(self, name=None, Id=None):
     try:
         self.__dict__[name] = MotorRecord(Id, name=name)
@@ -274,8 +275,7 @@ class GPS(Assembly):
                 unit="deg",
             )
 
-        #self._append(Crystals, diffractometer_you=self, name="crystals", is_display="recursive")
-
+        # self._append(Crystals, diffractometer_you=self, name="crystals", is_display="recursive")
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
@@ -405,6 +405,7 @@ class XRDYou(Assembly):
         configuration=["base"],
         diff_detector=None,
         invert_kappa_ellbow=True,
+        pgroup_adj=None,
     ):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
@@ -767,9 +768,16 @@ class XRDYou(Assembly):
                 name="det_diff",
                 is_setting=False,
                 is_display=False,
+                pgroup_adj=pgroup_adj,
                 view_toplevel_only=True,
             )
-        self._append(Crystals, diffractometer_you=self, name="crystals", is_setting=False, is_display=False)
+        self._append(
+            Crystals,
+            diffractometer_you=self,
+            name="crystals",
+            is_setting=False,
+            is_display=False,
+        )
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
@@ -931,7 +939,14 @@ class XRDYou(Assembly):
 
 
 class XRD(Assembly):
-    def __init__(self, name=None, Id=None, configuration=["base"], diff_detector=None):
+    def __init__(
+        self,
+        name=None,
+        Id=None,
+        configuration=["base"],
+        diff_detector=None,
+        pgroup_adj=None,
+    ):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
@@ -1156,6 +1171,7 @@ class XRD(Assembly):
                 name="det_diff",
                 is_setting=False,
                 is_display=True,
+                pgroup_adj=pgroup_adj,
                 view_toplevel_only=True,
             )
 

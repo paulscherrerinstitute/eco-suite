@@ -1,3 +1,4 @@
+import shutil
 from tkinter import W
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet
 from ..epics.adjustable import AdjustablePv
@@ -16,11 +17,12 @@ class Jungfrau(Assembly):
         trigger_on=254,
         trigger_off=255,
         broker_address="http://sf-daq:10002",
+        pgroup_adj=None,
         name=None,
     ):
         super().__init__(name=name)
         self.alias = Alias(name, channel=jf_id, channeltype="JF")
-
+        self.pgroup = pgroup_adj
         self.jf_id = jf_id
         self.broker_address = broker_address
         self._append(
@@ -59,6 +61,24 @@ class Jungfrau(Assembly):
             name="gain_file",
             is_display=True,
         )
+        self._append(
+            AdjustableGetSet,
+            self.get_present_pedestal_filename_in_run,
+            lambda value: NotImplementedError(
+                "Can not set the pedestal file manually yet."
+            ),
+            name="pedestal_file_in_run",
+            is_display=True,
+        )
+        self._append(
+            AdjustableGetSet,
+            self.get_present_gain_filename_in_run,
+            lambda value: NotImplementedError(
+                "Can not set the pedestal file manually yet."
+            ),
+            name="gain_file_in_run",
+            is_display=True,
+        )
 
     def _set_trigger_enable(self, value):
         if value:
@@ -74,11 +94,36 @@ class Jungfrau(Assembly):
         else:
             raise Exception(f"File {filepath.as_posix()} seems not to exist!")
 
+    def get_present_gain_filename_in_run(self, intempdir=False):
+        f = Path(self.get_present_gain_filename())
+        dest = Path(
+            f"/sf/bernina/data/{self.pgroup()}/res/tmp/gainmaps_{self.jf_id}.h5"
+        )
+        if not dest.exists():
+            shutil.copyfile(f, dest)
+        if intempdir:
+            return dest.as_posix()
+        else:
+            return f"aux/{dest.name}"
+
     def get_present_pedestal_filename(self):
         searchpath = Path(f"/sf/jungfrau/data/pedestal/{self.jf_id}")
         filelist = list(searchpath.glob("*.h5"))
         times = [datetime.strptime(f.stem, "%Y%m%d_%H%M%S") for f in filelist]
         return filelist[times.index(max(times))].as_posix()
+
+    def get_present_pedestal_filename_in_run(self, intempdir=False):
+        f = Path(self.get_present_pedestal_filename())
+        dest = Path(
+            f"/sf/bernina/data/{self.pgroup()}/res/tmp/pedestal_{self.jf_id}_{f.stem}.h5"
+        )
+        if not dest.exists():
+            shutil.copyfile(f, dest)
+
+        if intempdir:
+            return dest.as_posix()
+        else:
+            return f"aux/{dest.name}"
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[

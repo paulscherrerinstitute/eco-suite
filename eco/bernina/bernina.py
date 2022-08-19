@@ -263,7 +263,6 @@ namespace.append_obj(
     lazy=True,
 )
 
-
 namespace.append_obj(
     "Pprm_dsd",
     pvname="SARES20-DSDPPRM",
@@ -480,6 +479,7 @@ namespace.append_obj(
     Id="SARES21-XRD",
     configuration=config_bernina.xrd_config(),
     diff_detector={"jf_id": "JF01T03V01"},
+    pgroup_adj=config_bernina.pgroup,
     invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
     name="xrd",
     lazy=True,
@@ -726,6 +726,38 @@ def _copy_scan_info_to_raw(scan, daq=daq):
     print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
 
 
+from eco.detector import Jungfrau
+
+
+def _copy_selected_JF_pedestals_to_raw(scan, daq=daq):
+    runno = daq.get_last_run_number()
+    pgroup = daq.pgroup
+    for jf_id in daq.channels["channels_JF"]():
+        jf = Jungfrau(jf_id, name="noname", pgroup_adj=config_bernina.pgroup)
+        print(
+            f"Copying {jf_id} pedestal to run {runno} in the raw directory of {pgroup}."
+        )
+        response = daq.append_aux(
+            jf.get_present_pedestal_filename_in_run(intempdir=True),
+            pgroup=pgroup,
+            run_number=runno,
+        )
+        print(
+            f"Status: {response.json()['status']} Message: {response.json()['message']}"
+        )
+        print(
+            f"Copying {jf_id} gainmap to run {runno} in the raw directory of {pgroup}."
+        )
+        response = daq.append_aux(
+            jf.get_present_gain_filename_in_run(intempdir=True),
+            pgroup=pgroup,
+            run_number=runno,
+        )
+        print(
+            f"Status: {response.json()['status']} Message: {response.json()['message']}"
+        )
+
+
 def _increment_daq_run_number(scan, daq=daq):
     try:
         daq_last_run_number = daq.get_last_run_number()
@@ -755,6 +787,7 @@ callbacks_start_scan.append(_increment_daq_run_number)
 callbacks_end_scan = [_message_end_scan]
 callbacks_end_scan.append(_write_namespace_status_to_scan)
 callbacks_end_scan.append(_copy_scan_info_to_raw)
+callbacks_end_scan.append(_copy_selected_JF_pedestals_to_raw)
 
 
 # >>>> Extract for run_table and elog
