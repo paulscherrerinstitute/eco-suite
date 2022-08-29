@@ -120,12 +120,12 @@ namespace.append_obj(
     name="slit_switch",
     module_name="eco.xoptics.slits",
 )
-# namespace.append_obj(
-#    "SlitBlades",
-#    "SAROP21-OAPU102",
-#    name="slit_mono",
-#    module_name="eco.xoptics.slits",
-# )
+namespace.append_obj(
+    "SlitBlades",
+    "SAROP21-OAPU102",
+    name="slit_mono",
+    module_name="eco.xoptics.slits",
+)
 
 from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
 
