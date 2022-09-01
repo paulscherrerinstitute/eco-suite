@@ -126,6 +126,12 @@ namespace.append_obj(
     name="slit_mono",
     module_name="eco.xoptics.slits",
 )
+namespace.append_obj(
+    "SolidTargetDetectorPBPS",
+    "SAROP21-PBPS103",
+    name="mon_mono",
+    module_name="eco.xdiagnostics.intensity_monitors",
+)
 
 from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
 
@@ -243,6 +249,13 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
+    "SolidTargetDetectorPBPS",
+    "SARFE10-PBPS053",
+    name="mon_und",
+    module_name="eco.xdiagnostics.intensity_monitors",
+)
+
+namespace.append_obj(
     "RefLaser_Aramis",
     "SAROP21-OLAS136",
     module_name="eco.xoptics.reflaser",
@@ -261,6 +274,10 @@ namespace.append_obj(
     name="mon_opt_dev",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
+)
+
+namespace.append_obj(
+    "DownstreamDiagnostic", name="dsd", module_name="eco.xdiagnostics.dsd"
 )
 
 namespace.append_obj(
@@ -441,6 +458,13 @@ namespace.append_obj(
     "SARES20-CWAG-GPS01",
     lazy=True,
     name="analog_inputs",
+    module_name="eco.devices_general.wago",
+)
+namespace.append_obj(
+    "WagoAnalogOutputs",
+    "SARES20-CWAG-GPS01",
+    lazy=True,
+    name="analog_outputs",
     module_name="eco.devices_general.wago",
 )
 namespace.append_obj(
@@ -1345,6 +1369,17 @@ namespace.append_obj(JohannAnalyzer, name="analyzer")
 
 ############## experiment specific #############
 
+
+namespace.append_obj(
+    "Bernina_XEYE",
+    zoomstage_pv=config_bernina.xeye.zoomstage_pv._value,
+    camera_pv=config_bernina.xeye.camera_pv._value,
+    bshost=config_bernina.xeye.bshost._value,
+    bsport=config_bernina.xeye.bsport._value,
+    name="xeye",
+    module_name="eco.xdiagnostics.profile_monitors",
+)
+
 # try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
 try:
 
@@ -1363,6 +1398,17 @@ try:
         )
 except:
     print("Did not succed to append an eco folder in current prgoup")
+
+
+class Xspect_EH55(Assembly):
+    def __init__(self, name="xspect_bernina"):
+        super().__init__(name=name)
+        self._append(MotorRecord, "SARES20-MF1:MOT_15", name="x_crystal")
+        self._append(MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal")
+        # self._append(SmaractRecord,'SARES20-MF1:MOT_16',name='theta_crystal')
+
+
+namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 
 
 #### pgroup specific appending, might be temporary at this location ####

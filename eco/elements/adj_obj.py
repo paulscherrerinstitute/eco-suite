@@ -23,6 +23,12 @@ class AdjustableObject(Assembly):
             raise Exception(f"{fieldname} is not in dictionary")
         return d[fieldname]
 
+    def update_base_dict(self, updatedict):
+        tmp = self._base_dict.get_current_value()
+        tmp.update(updatedict)
+        self._base_dict.set_target_value(tmp)
+        self.__init__(self._base_dict, name=self.name)
+
     def init_object(self):
         # super().__init__(name=self.name)
         for k, v in self._base_dict.get_current_value().items():

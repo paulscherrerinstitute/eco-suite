@@ -40,6 +40,7 @@ class KbVer(Assembly):
             lambda b1, b2: float(np.mean([b1, b2])),
             lambda mn: self._get_benders_set_mean(mn),
             name="bender_mean",
+            unit="mm",
             is_setting=False,
             is_display=True,
         )
@@ -49,6 +50,7 @@ class KbVer(Assembly):
             lambda b1, b2: float(np.diff([b1, b2])),
             lambda mn: self._get_benders_set_diff(mn),
             name="bender_diff",
+            unit="mm",
             is_setting=False,
             is_display=True,
         )
@@ -68,11 +70,21 @@ class KbVer(Assembly):
         )
 
         #### actual motors ###
-        self._append(MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True)
-        self._append(MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True)
-        self._append(MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True)
-        self._append(MotorRecord, pvname + ":TX1", name="_X1", is_setting=True)
-        self._append(MotorRecord, pvname + ":TX2", name="_X2", is_setting=True)
+        self._append(
+            MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TX1", name="_X1", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False
+        )
 
     def _get_bend_mean(self):
         return float(
@@ -132,6 +144,7 @@ class KbHor(Assembly):
             lambda b1, b2: float(np.mean([b1, b2])),
             lambda mn: self._get_benders_set_mean(mn),
             name="bender_mean",
+            unit="mm",
             is_setting=False,
             is_display=True,
         )
@@ -141,6 +154,7 @@ class KbHor(Assembly):
             lambda b1, b2: float(np.diff([b1, b2])),
             lambda mn: self._get_benders_set_diff(mn),
             name="bender_diff",
+            unit="mm",
             is_setting=False,
             is_display=True,
         )
@@ -160,11 +174,21 @@ class KbHor(Assembly):
         )
 
         #### actual motors ###
-        self._append(MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True)
-        self._append(MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True)
-        self._append(MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True)
-        self._append(MotorRecord, pvname + ":TX1", name="_X1", is_setting=True)
-        self._append(MotorRecord, pvname + ":TX2", name="_X2", is_setting=True)
+        self._append(
+            MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TX1", name="_X1", is_setting=True, is_display=False
+        )
+        self._append(
+            MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False
+        )
 
     def _get_bend_mean(self):
         return float(

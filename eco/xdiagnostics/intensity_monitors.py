@@ -63,7 +63,7 @@ class SolidTargetDetectorPBPS(Assembly):
         # ch_left=15,
         # ch_right=14,
         # elog=None,
-        # name=None,
+        name=None,
         # calc=None,
         # calc_calib={},
     ):
@@ -94,6 +94,167 @@ class SolidTargetDetectorPBPS(Assembly):
         self._append(
             DetectorPvDataStream, pvname + ":YPOS", name="ypos", is_setting=False
         )
+
+        # Calibration calculation record
+
+        # Intensity
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.INPA",
+            name="calc_intensity_input_A",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.INPB",
+            name="calc_intensity_input_B",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.INPC",
+            name="calc_intensity_input_C",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.INPD",
+            name="calc_intensity_input_D",
+            is_setting=True,
+            is_display=False,
+        )
+
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.E",
+            name="calc_intensity_const_E",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.F",
+            name="calc_intensity_const_F",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.G",
+            name="calc_intensity_const_G",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.H",
+            name="calc_intensity_const_H",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":INTENSITY.CALC",
+            name="calc_intensity_function",
+            is_setting=True,
+            is_display=False,
+        )
+        # X position
+        self._append(
+            AdjustablePv,
+            pvname + ":XPOS.INPA",
+            name="calc_xpos_input_A",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":XPOS.INPB",
+            name="calc_xpos_input_B",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":XPOS.CALC",
+            name="calc_xpos_function",
+            is_setting=True,
+            is_display=False,
+        )
+
+        # self._append(
+        #     AdjustablePv, pvname + ":XPOS.INPD", name="calc_input_D", is_setting=True, is_display=False
+        # )
+
+        # self._append(
+        #     AdjustablePv, pvname + ":XPOS.IE", name="calc_input_E", is_setting=True, is_display=False
+
+        # self._append(
+        #     AdjustablePv, pvname + ":XPOS.IF", name="calc_input_F", is_setting=True, is_display=False
+        # )
+        # self._append(
+        #     AdjustablePv, pvname + ":XPOS.INPG", name="calc_input_G", is_setting=True, is_display=False
+        # )
+        # self._append(
+        #     AdjustablePv, pvname + ":XPOS.INPH", name="calc_input_H", is_setting=True, is_display=False
+        # )
+        # self._append(
+        #     AdjustablePv, pvname + ":XPOS.CALC", name="calc_function", is_setting=True, is_display=False
+        # )
+
+        # # Intensity
+        # # Set channels
+        # # Input data
+        # ep.PV(Devive_prefix+'INTENSITY.INPA').put(bytes(channels[0], "utf8"))
+        # ep.PV(Devive_prefix+'INTENSITY.INPB').put(bytes(channels[1], "utf8"))
+        # ep.PV(Devive_prefix+'INTENSITY.INPC').put(bytes(channels[2], "utf8"))
+        # ep.PV(Devive_prefix+'INTENSITY.INPD').put(bytes(channels[3], "utf8"))
+        # # Calibration values
+        # ep.PV(Devive_prefix+'INTENSITY.E').put(bytes(str(norm_diodes[0,0]), "utf8"))
+        # ep.PV(Devive_prefix+'INTENSITY.F').put(bytes(str(norm_diodes[0,1]), "utf8"))
+        # ep.PV(Devive_prefix+'INTENSITY.G').put(bytes(str(norm_diodes[0,2]), "utf8"))
+        # ep.PV(Devive_prefix+'INTENSITY.H').put(bytes(str(norm_diodes[0,3]), "utf8"))
+        # # Calculation
+        # ep.PV(Devive_prefix+'INTENSITY.CALC').put(bytes("A*E+B*F+C*G+D*H", "utf8"))
+
+        # # XPOS
+        # # Set channels
+        # ep.PV(Devive_prefix+'XPOS.INPA').put(bytes(channels[2], "utf8"))
+        # ep.PV(Devive_prefix+'XPOS.INPB').put(bytes(channels[3], "utf8"))
+        # # Threshold value
+        # ep.PV(Devive_prefix+'XPOS.D').put(bytes(str(0.2), "utf8"))
+        # # Diode calibration value
+        # ep.PV(Devive_prefix+'XPOS.E').put(bytes(str(norm_diodes[0,2]), "utf8"))
+        # ep.PV(Devive_prefix+'XPOS.F').put(bytes(str(norm_diodes[0,3]), "utf8"))
+        # # Null value
+        # ep.PV(Devive_prefix+'XPOS.G').put(bytes(str(0), "utf8"))
+        # # Position calibration value
+        # ep.PV(Devive_prefix+'XPOS.I').put(bytes(str((Scan_x_range[1]-Scan_x_range[0])/ np.diff(scan_x_norm).mean()), "utf8"))
+        # # Intensity threshold value
+        # ep.PV(Devive_prefix+'XPOS.INPJ').put(bytes(Devive_prefix+'INTENSITY', "utf8"))
+        # # Calculation
+        # ep.PV(Devive_prefix+'XPOS.CALC').put(bytes("J<D?G:I*(A*E-B*F)/(A*E+B*F)", "utf8"))
+
+        # # YPOS
+        # # Set channels
+        # ep.PV(Devive_prefix+'YPOS.INPA').put(bytes(channels[0], "utf8"))
+        # ep.PV(Devive_prefix+'YPOS.INPB').put(bytes(channels[1], "utf8"))
+        # # Threshold value
+        # ep.PV(Devive_prefix+'YPOS.D').put(bytes(str(0.2), "utf8"))
+        # # Diode calibration value
+        # ep.PV(Devive_prefix+'YPOS.E').put(bytes(str(norm_diodes[0,0]), "utf8"))
+        # ep.PV(Devive_prefix+'YPOS.F').put(bytes(str(norm_diodes[0,1]), "utf8"))
+        # # Null value
+        # ep.PV(Devive_prefix+'YPOS.G').put(bytes(str(0), "utf8"))
+        # # Position calibration value
+        # ep.PV(Devive_prefix+'YPOS.I').put(bytes(str((Scan_y_range[1]-Scan_y_range[0])/ np.diff(scan_y_norm).mean()), "utf8"))
+        # # Intensity threshold value
+        # ep.PV(Devive_prefix+'YPOS.INPJ').put(bytes(Devive_prefix+'INTENSITY', "utf8"))
+        # # Calculation
+        # ep.PV(Devive_prefix+'YPOS.CALC').put(bytes("J<D?G:I*(A*E-B*F)/(A*E+B*F)", "utf8"))
 
         # if VME_crate:
         #     self.diode_up = FeDigitizer("%s:Lnk%dCh%d" % (VME_crate, link, ch_up))

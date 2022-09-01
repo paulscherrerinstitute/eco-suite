@@ -125,6 +125,7 @@ class Memory:
         show_changes_only=True,
         set_changes_only=True,
         check_limits=True,
+        change_serially=False,
         force=False,
     ):
         # if input_obj:
@@ -160,6 +161,8 @@ class Memory:
                     changes.append(to.set_target_value(val, check=check_limits))
                 else:
                     changes.append(to.set_target_value(val))
+                if change_serially:
+                    changes[-1].wait()
         if wait:
             for change in changes:
                 change.wait()

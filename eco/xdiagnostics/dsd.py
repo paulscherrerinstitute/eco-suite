@@ -10,6 +10,7 @@ from ..elements.assembly import Assembly
 from .profile_monitors import Pprm_dsd
 from .intensity_monitors import SolidTargetDetectorPBPS_new_assembly
 import numpy as np
+from epics import PV
 
 
 class DownstreamDiagnostic(Assembly):
@@ -24,9 +25,14 @@ class DownstreamDiagnostic(Assembly):
         self._append(
             MotorRecord, "SARES20-DSD:MOTOR_DSDY", name="ybase", is_setting=True
         )
-        
 
     def get_xyposition_for_kb_angles_in_rad(self, theta_kbver, theta_kbhor):
         y = np.tan(2 * theta_kbver) * 7075
         x = np.tan(2 * theta_kbhor) / np.cos(2 * theta_kbver) * 6325
         return x, y
+
+    def home(self):
+        self._run_cmd("python /ioc/qt/ESB_DSD_home.py SARES20-DSD")
+
+    def gui(self):
+        self._run_cmd("caqtdm -noMsg  -macro P=SARES20-DSD  /ioc/qt/ESB_DSD_motors.ui")

@@ -1,3 +1,5 @@
+from enum import Enum
+from eco.elements.adjustable import AdjustableGetSet
 from ..devices_general.motors import MotorRecord
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -5,7 +7,7 @@ from ..elements.assembly import Assembly
 
 
 class RefLaser_Aramis(Assembly):
-    def __init__(self, Id, elog=None, name=None, inpos=-18.818, outpos=-5):
+    def __init__(self, Id, elog=None, name=None, inpos=-13.7, outpos=-5):
         super().__init__(name=name)
         self.Id = Id
         self.elog = elog
@@ -13,21 +15,37 @@ class RefLaser_Aramis(Assembly):
 
         self._inpos = inpos
         self._outpos = outpos
+
+        self._append(
+            AdjustableGetSet,
+            self.get_in_status,
+            self.set,
+            name="state",
+            is_setting=False,
+        )
+
         self._append(MotorRecord, self.Id + ":MOTOR_1", name="mirror", is_setting=True)
-        self._append(MotorRecord, self.Id + ":MOTOR_X1", name="x1", is_setting=True)
-        self._append(MotorRecord, self.Id + ":MOTOR_Z1", name="z1", is_setting=True)
+
         self._append(
-            MotorRecord, self.Id + ":MOTOR_ROT_X1", name="rx1", is_setting=True
+            RefLaserLaser,
+            self.Id,
+            name="laser",
+            is_setting=True,
+            is_display="recursive",
         )
         self._append(
-            MotorRecord, self.Id + ":MOTOR_ROT_Z1", name="rz1", is_setting=True
+            RefLaserAperture,
+            "SAROP21-OLIR136",
+            name="aperture",
+            is_setting=True,
+            is_display="recursive",
         )
-        pv_lir0 = "SAROP21-OLIR136"  # TODO hardcoded
-        self._append(MotorRecord, pv_lir0 + ":MOTOR_MX", name="x_ap1", is_setting=True)
-        self._append(MotorRecord, pv_lir0 + ":MOTOR_MY", name="y_ap1", is_setting=True)
-        pv_lir1 = "SAROP21-OLIR138"  # TODO hardcoded
-        self._append(MotorRecord, pv_lir1 + ":MOTOR_MX", name="x_ap2", is_setting=True)
-        self._append(MotorRecord, pv_lir1 + ":MOTOR_MY", name="y_ap2", is_setting=True)
+
+        # self._append(MotorRecord, pv_lir0 + ":MOTOR_MX", name="x_ap1", is_setting=True)
+        # self._append(MotorRecord, pv_lir0 + ":MOTOR_MY", name="y_ap1", is_setting=True)
+        # pv_lir1 = "SAROP21-OLIR138"  # TODO hardcoded
+        # self._append(MotorRecord, pv_lir1 + ":MOTOR_MX", name="x_ap2", is_setting=True)
+        # self._append(MotorRecord, pv_lir1 + ":MOTOR_MY", name="y_ap2", is_setting=True)
         self.mirror.set_limits(-20, 0)
 
     def __call__(self, *args, **kwargs):
@@ -50,7 +68,7 @@ class RefLaser_Aramis(Assembly):
             isin = False
         else:
             isin = None
-        return isin
+        return State(isin)
 
     def set(self, value):
         if type(value) is str:
@@ -73,3 +91,38 @@ class RefLaser_Aramis(Assembly):
 
     def __repr__(self):
         return self.__str__() + "\n" + super().__repr__()
+
+
+class RefLaserAperture(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self._append(
+            MotorRecord,
+            pvname + ":MOTOR_MX",
+            name="x",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            MotorRecord,
+            pvname + ":MOTOR_MY",
+            name="y",
+            is_setting=True,
+            is_display=True,
+        )
+
+
+class RefLaserLaser(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+
+        self._append(MotorRecord, pvname + ":MOTOR_X1", name="x", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_Z1", name="z", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_ROT_X1", name="rx", is_setting=True)
+        self._append(MotorRecord, pvname + ":MOTOR_ROT_Z1", name="rz", is_setting=True)
+
+
+class State(Enum):
+    IN = 1
+    OUT = 0
+    UNDEFINED = None

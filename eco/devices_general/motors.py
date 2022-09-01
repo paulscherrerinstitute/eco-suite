@@ -883,6 +883,35 @@ class SmaractRecord(Assembly):
                 Alias(an, channel=".".join([pvname, af]), channeltype="CA")
             )
         self._currentChange = None
+
+        self._append(
+            AdjustablePvEnum,
+            self.pvname + "_POS_TYPE_RB",
+            pvname_set=self.pvname + "_POS_TYPE_SP",
+            name="sensor_type",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + "_MAX_FREQ",
+            name="max_frequency",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".ACCL",
+            name="acceleration_time",
+            is_setting=False,
+        )
+        self._append(
+            AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=False
+        )
+        self._append(
+            AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=False
+        )
         self._append(
             AdjustablePvEnum,
             self.pvname + ".STAT",
@@ -903,6 +932,7 @@ class SmaractRecord(Assembly):
             name="autoset_unit",
             is_setting=True,
         )
+
         self._append(
             AdjustablePv,
             self.pvname + ".HOMR",
@@ -927,21 +957,7 @@ class SmaractRecord(Assembly):
             is_setting=False,
             is_display=True,
         )
-        self._append(
-            AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
-        )
-        self._append(
-            AdjustablePv,
-            self.pvname + ".ACCL",
-            name="acceleration_time",
-            is_setting=False,
-        )
-        self._append(
-            AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=False
-        )
-        self._append(
-            AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=False
-        )
+
         self._append(
             AdjustablePvEnum, self.pvname + ".SPMG", name="mode", is_setting=False
         )
@@ -978,13 +994,6 @@ class SmaractRecord(Assembly):
             is_setting=False,
             is_status=False,
             is_display=False,
-        )
-        self._append(
-            AdjustablePvEnum,
-            self.pvname + "_POS_TYPE_RB",
-            pvname_set=self.pvname + "_POS_TYPE_SP",
-            name="sensor_type",
-            is_setting=True,
         )
         if backlash_definition:
             self._append(
