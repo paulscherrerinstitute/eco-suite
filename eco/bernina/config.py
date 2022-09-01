@@ -620,14 +620,6 @@ components = [
     #            },
     #        },
     #    },
-    {
-        "args": [],
-        "name": "dsd",
-        "z_und": 146,
-        "desc": "downstream diagnostics",
-        "type": "eco.xdiagnostics.dsd:DownstreamDiagnostic",
-        "kwargs": {},
-    },
 ]
 
 try:

@@ -83,7 +83,7 @@ class AnalogOutput(Assembly):
 
     def __call__(self, *args):
         if args:
-            self.value(*args).wait()
+            self.value.set_target_Value(*args).wait()
         else:
             return self.value.get_current_value()
 
