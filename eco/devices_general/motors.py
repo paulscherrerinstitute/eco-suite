@@ -897,20 +897,18 @@ class SmaractRecord(Assembly):
             name="max_frequency",
             is_setting=True,
         )
-        self._append(
-            AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=False
-        )
+        self._append(AdjustablePv, self.pvname + ".VELO", name="speed", is_setting=True)
         self._append(
             AdjustablePv,
             self.pvname + ".ACCL",
             name="acceleration_time",
-            is_setting=False,
+            is_setting=True,
         )
         self._append(
-            AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=False
+            AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=True
         )
         self._append(
-            AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=False
+            AdjustablePv, self.pvname + ".HLM", name="limit_high", is_setting=True
         )
         self._append(
             AdjustablePvEnum,
@@ -972,26 +970,21 @@ class SmaractRecord(Assembly):
             is_display="recursive",
             is_status=True,
         )
-        # self._append(
-        #     AdjustablePvEnum,
-        #     self.pvname + ".SPMG",
-        #     name="motor_state",
-        #     is_setting=False,
-        # )
+
         self._append(
-            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
+            AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=True
         )
         self._append(
             AdjustablePvString,
             self.pvname + ".DESC",
             name="description",
-            is_setting=False,
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
             self.pvname + "_CAL_CMD",
             name="_calibrate_sensor",
-            is_setting=False,
+            is_setting=True,
             is_status=False,
             is_display=False,
         )

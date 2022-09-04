@@ -2,6 +2,7 @@ import json
 import importlib
 from pathlib import Path
 import sys
+from time import time
 from colorama import Fore as _color
 from functools import partial
 
@@ -313,6 +314,7 @@ class Namespace(Assembly):
         N_cycles=4,
         silent=True,
     ):
+        starttime = time()
         if silent:
             self.silently_initializing = True
             print(
@@ -384,6 +386,7 @@ class Namespace(Assembly):
                     f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
                 )
                 print("Failed objects: " + ", ".join(self.lazy_names))
+                print(f"Initialisation took {time()-starttime} seconds")
 
             # if verbose:
             #     print(("Configuring %s " % (name)).ljust(25), end="")
@@ -417,7 +420,7 @@ class Namespace(Assembly):
         aliases_out = []
         for channeltype in channeltypes:
             for alias in aliases:
-                if alias['channeltype']==channeltype:
+                if alias["channeltype"] == channeltype:
                     aliases_out.append(alias)
         if not channeltypes:
             aliases_out = aliases

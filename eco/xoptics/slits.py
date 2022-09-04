@@ -329,15 +329,16 @@ class SlitBlades(Assembly):
 
 
 @addSlitRepr
-class SlitPosWidth:
+class SlitPosWidth(Assembly):
     def __init__(self, pvname, name=None, elog=None):
-        self.name = name
-        self.Id = pvname
-        self.alias = Alias(name)
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_X", name="hpos")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_Y", name="vpos")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_W", name="hgap")
-        append_object_to_object(self, MotorRecord, pvname + ":MOTOR_H", name="vgap")
+        super().__init__(name=name)
+
+        self.pvname = pvname
+
+        self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos")
+        self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos")
+        self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap")
+        self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap")
 
         def getblade(pos, gap, direction=1):
             return pos + direction * gap / 2
@@ -367,8 +368,7 @@ class SlitPosWidth:
                 [x + tx * self.vgap.get_current_value() for tx in [-1 / 2, 1 / 2]]
             )
 
-        append_object_to_object(
-            self,
+        self._append(
             AdjustableVirtual,
             [self.vpos, self.vgap],
             partial(getblade, direction=1),
@@ -376,8 +376,7 @@ class SlitPosWidth:
             reset_current_value_to=True,
             name="up",
         )
-        append_object_to_object(
-            self,
+        self._append(
             AdjustableVirtual,
             [self.vpos, self.vgap],
             partial(getblade, direction=-1),
@@ -385,8 +384,7 @@ class SlitPosWidth:
             reset_current_value_to=True,
             name="down",
         )
-        append_object_to_object(
-            self,
+        self._append(
             AdjustableVirtual,
             [self.hpos, self.hgap],
             partial(getblade, direction=1),
@@ -394,8 +392,7 @@ class SlitPosWidth:
             reset_current_value_to=True,
             name="left",
         )
-        append_object_to_object(
-            self,
+        self._append(
             AdjustableVirtual,
             [self.hpos, self.hgap],
             partial(getblade, direction=-1),

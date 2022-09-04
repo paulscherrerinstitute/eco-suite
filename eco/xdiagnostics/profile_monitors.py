@@ -18,6 +18,11 @@ class Pprm(Assembly):
     def __init__(self, pvname, pvname_camera, name=None):
         super().__init__(name=name)
         self.pvname = pvname
+
+        self._append(
+            AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True
+        )
+
         self._append(
             MotorRecord,
             pvname_camera + ":MOTOR_PROBE",
@@ -31,12 +36,10 @@ class Pprm(Assembly):
             camserver_alias=f"{name} ({pvname_camera})",
             name="camera",
             is_setting=True,
+            is_display="recursive",
         )
         self._append(
             AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True
-        )
-        self._append(
-            AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True
         )
 
     def movein(self, target=1):
@@ -45,10 +48,10 @@ class Pprm(Assembly):
     def moveout(self, target=0):
         self.target.set_target_value(target)
 
-    def __repr__(self):
-        s = f"**Profile Monitor {self.name}**\n"
-        s += f"Target in beam: {self.target.get_current_value().name}\n"
-        return s
+    # def __repr__(self):
+    #     s = f"**Profile Monitor {self.name}**\n"
+    #     s += f"Target in beam: {self.target.get_current_value().name}\n"
+    #     return s
 
 
 class Target_xyz(Assembly):

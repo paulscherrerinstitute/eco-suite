@@ -50,6 +50,83 @@ class FeDigitiza(Assembly):
         # ]
 
 
+class CalibrationRecord(Assembly):
+    def __init__(self, pvbase, name=None):
+        self.pvbase = pvbase
+        super().__init__(name)
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".INPA",
+            name="input_A",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".INPB",
+            name="input_B",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".INPC",
+            name="input_C",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".INPD",
+            name="input_D",
+            is_setting=True,
+            is_display=True,
+        )
+
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".E",
+            name="const_E",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".F",
+            name="const_F",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".G",
+            name="const_G",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".H",
+            name="const_H",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".I",
+            name="const_I",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ".CALC",
+            name="function",
+            is_setting=True,
+            is_display=True,
+        )
+
+
 class SolidTargetDetectorPBPS(Assembly):
     def __init__(
         self,
@@ -97,90 +174,25 @@ class SolidTargetDetectorPBPS(Assembly):
 
         # Calibration calculation record
 
-        # Intensity
+        # Calibration
         self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.INPA",
-            name="calc_intensity_input_A",
+            CalibrationRecord,
+            pvname + ":INTENSITY",
+            name="calib_intensity",
             is_setting=True,
             is_display=False,
         )
         self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.INPB",
-            name="calc_intensity_input_B",
+            CalibrationRecord,
+            pvname + ":XPOS",
+            name="calib_xpos",
             is_setting=True,
             is_display=False,
         )
         self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.INPC",
-            name="calc_intensity_input_C",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.INPD",
-            name="calc_intensity_input_D",
-            is_setting=True,
-            is_display=False,
-        )
-
-        self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.E",
-            name="calc_intensity_const_E",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.F",
-            name="calc_intensity_const_F",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.G",
-            name="calc_intensity_const_G",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.H",
-            name="calc_intensity_const_H",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":INTENSITY.CALC",
-            name="calc_intensity_function",
-            is_setting=True,
-            is_display=False,
-        )
-        # X position
-        self._append(
-            AdjustablePv,
-            pvname + ":XPOS.INPA",
-            name="calc_xpos_input_A",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":XPOS.INPB",
-            name="calc_xpos_input_B",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            AdjustablePv,
-            pvname + ":XPOS.CALC",
-            name="calc_xpos_function",
+            CalibrationRecord,
+            pvname + ":YPOS",
+            name="calib_ypos",
             is_setting=True,
             is_display=False,
         )

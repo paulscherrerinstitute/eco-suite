@@ -212,7 +212,7 @@ class MasterEventSystem(Assembly):
         for s, c in zip(slots, codes):
             if not c == None:
                 if c in codes_out:
-                    print(f"Code {c} exists multiple times!")
+                    # print(f"Code {c} exists multiple times!")
                     continue
                 slots_out.append(s)
                 codes_out.append(c)
@@ -550,6 +550,17 @@ class EventReceiver(Assembly):
         # for to in outputs:
         #     to._pulsers = self.pulsers
         self.outputs = outputs
+
+        self._append(
+            AdjustablePv,
+            self.pvname + ":SYSRESET",
+            is_status=False,
+            is_setting=False,
+            name="restart_ioc_pv",
+        )
+
+    def restart_ioc(self):
+        self.restart_ioc_pv.set_target_value(1)
 
     def gui(self):
         dev = self.pvname.split("-")[-1]

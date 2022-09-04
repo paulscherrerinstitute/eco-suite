@@ -277,6 +277,56 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
+    "Pprm",
+    "SARFE10-PPRM064",
+    "SARFE10-PPRM064",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_fe",
+)
+
+namespace.append_obj(
+    "Pprm",
+    "SAROP11-PPRM066",
+    "SAROP11-PPRM066",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_mirr_alv1",
+)
+
+namespace.append_obj(
+    "Pprm",
+    "SAROP21-PPRM094",
+    "SAROP21-PPRM094",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_mirr1",
+)
+
+namespace.append_obj(
+    "Pprm",
+    "SAROP21-PPRM113",
+    "SAROP21-PPRM113",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_mono",
+)
+
+
+namespace.append_obj(
+    "Pprm",
+    "SAROP21-PPRM133",
+    "SAROP21-PPRM133",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_opt",
+)
+
+
+namespace.append_obj(
+    "Pprm",
+    "SAROP21-PPRM138",
+    "SAROP21-PPRM138",
+    module_name="eco.xdiagnostics.profile_monitors",
+    name="prof_att",
+)
+
+namespace.append_obj(
     "DownstreamDiagnostic", name="dsd", module_name="eco.xdiagnostics.dsd"
 )
 
@@ -334,7 +384,6 @@ namespace.append_obj(
     name="tt_kb",
     lazy=True,
 )
-
 namespace.append_obj(
     "EventReceiver",
     "SARES20-CVME-01-EVR0",
@@ -377,6 +426,30 @@ namespace.append_obj(
     n_output_front=16,
     n_output_rear=0,
     name="evr_camserver72",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+    # lazy=False,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-73-EVR0",
+    event_master,
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver73",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+    # lazy=False,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-74-EVR0",
+    event_master,
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver74",
     module_name="eco.timing.event_timing_new_new",
     lazy=True,
     # lazy=False,
@@ -453,6 +526,17 @@ namespace.append_obj(
     name="cam_south",
     module_name="eco.devices_general.cameras_ptz",
 )
+namespace.append_obj(
+    "Xspect",
+    name="xspect",
+    module_name="eco.xdiagnostics.xspect",
+)
+namespace.append_obj(
+    "SlitPosWidth",
+    "SAROP21-OAPU136",
+    name="slit_att",
+    module_name="eco.xoptics.slits",
+),
 namespace.append_obj(
     "WagoAnalogInputs",
     "SARES20-CWAG-GPS01",
