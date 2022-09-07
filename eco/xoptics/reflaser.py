@@ -7,7 +7,7 @@ from ..elements.assembly import Assembly
 
 
 class RefLaser_Aramis(Assembly):
-    def __init__(self, Id, elog=None, name=None, inpos=-13.7, outpos=-5):
+    def __init__(self, Id, elog=None, name=None, inpos=-19, outpos=-5):
         super().__init__(name=name)
         self.Id = Id
         self.elog = elog

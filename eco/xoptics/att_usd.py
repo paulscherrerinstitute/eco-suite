@@ -290,6 +290,8 @@ class Att_usd(Assembly):
     def _updateE(self, energy=None, check_once=False):
         while not energy:
             energy = PV("SAROP21-ARAMIS:ENERGY").value
+            if np.isnan(energy):
+                energy = PV("SARUN:FELPHOTENE").value*1000
             if energy < self.E_min:
                 energy = None
                 print(
