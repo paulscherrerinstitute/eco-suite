@@ -841,10 +841,10 @@ class SlitBladesGeneral(Assembly):
             return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def sethpos(x):
-            return tuple([tx + self.hgap.get_current_value() for tx in [-x / 2, x / 2]])
+            return tuple([x + tx for tx in [-self.hgap.get_current_value()/2, self.hgap.get_current_value()/2]])
 
         def setvpos(x):
-            return tuple([tx + self.vgap.get_current_value() for tx in [-x / 2, x / 2]])
+            return tuple([x + tx for tx in [-self.vgap.get_current_value()/2, self.vgap.get_current_value()/2]])
 
         self._append(
             AdjustableVirtual,
