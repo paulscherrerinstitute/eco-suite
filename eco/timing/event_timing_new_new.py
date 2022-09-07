@@ -491,14 +491,14 @@ class EvrOutput(Assembly):
     def pulserA(self):
         try:
             return self._pulsers[self.pulserA_number.get_current_value()]
-        except IndexError:
+        except (IndexError, TypeError):
             return DummyPulser()
 
     @property
     def pulserB(self):
         try:
             return self._pulsers[self.pulserA_number.get_current_value()]
-        except IndexError:
+        except (IndexError, TypeError):
             return DummyPulser()
 
 

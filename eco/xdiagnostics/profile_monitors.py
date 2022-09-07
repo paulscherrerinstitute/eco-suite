@@ -15,9 +15,10 @@ def addMotorRecordToSelf(self, Id=None, name=None):
 
 
 class Pprm(Assembly):
-    def __init__(self, pvname, pvname_camera, name=None):
+    def __init__(self, pvname, pvname_camera, name=None, in_target=1):
         super().__init__(name=name)
         self.pvname = pvname
+        self.in_target = in_target
 
         self._append(
             AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True
@@ -42,7 +43,9 @@ class Pprm(Assembly):
             AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True
         )
 
-    def movein(self, target=1):
+    def movein(self, target=None):
+        if target == None:
+            target = self.in_target
         self.target.set_target_value(target)
 
     def moveout(self, target=0):

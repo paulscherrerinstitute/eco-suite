@@ -882,7 +882,10 @@ class SlitBladesGeneral(Assembly):
     def _apply_on_all_blades(self, method_name, *args, **kwargs):
         out = []
         for blade in self.blade_motors:
-            out.append(blade.__dict__[method_name](*args, **kwargs))
+            if method_name in blade.__dict__.keys():
+                out.append(blade.__dict__[method_name](*args, **kwargs))
+            else:
+                out.append(blade.__getattribute__(method_name)(*args, **kwargs))
         return out
 
     def home_all_blades(self):

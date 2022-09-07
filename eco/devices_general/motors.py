@@ -433,6 +433,7 @@ class MotorRecord(Assembly):
         # alias_fields={"readback": "RBV"},
         alias_fields={},
         backlash_definition=False,
+        is_psi_mforce=False,
         schneider_config=None,
         expect_bad_limits=True,
     ):
@@ -546,8 +547,38 @@ class MotorRecord(Assembly):
                 is_setting=True,
             )
 
-        if expect_bad_limits:
-            self.check_bad_limits()
+        if is_psi_mforce:
+            controller_base, tmp = self.pvname.split(":")
+            channel = int(tmp.split("_")[1])
+            mforce_base = controller_base + ":" + str(channel)
+
+            self._append(
+                AdjustablePv,
+                mforce_base + "_RC",
+                name="run_current",
+                is_setting=True,
+            )
+            self._append(
+                AdjustablePv,
+                mforce_base + "_HC",
+                name="hold_current",
+                is_setting=True,
+            )
+            self._append(
+                AdjustablePv,
+                mforce_base + "_set",
+                name="m_code_set",
+                is_setting=False,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePv,
+                mforce_base + "_get",
+                name="m_code_get",
+                is_setting=False,
+                is_display=False,
+            )
+
         if schneider_config:
             pv_base, port = schneider_config
             self._append(
@@ -558,6 +589,8 @@ class MotorRecord(Assembly):
                 is_setting=True,
                 is_display=False,
             )
+        if expect_bad_limits:
+            self.check_bad_limits()
 
     def check_bad_limits(self, abs_set_value=2**53):
         ll, hl = self.get_limits()
@@ -870,6 +903,7 @@ class SmaractRecord(Assembly):
         # alias_fields={"readback": "RBV"},
         alias_fields={},
         backlash_definition=False,
+        expect_bad_limits=True,
     ):
         super().__init__(name=name)
         # self.settings.append(self)
@@ -1013,6 +1047,13 @@ class SmaractRecord(Assembly):
                 name="backlash_fraction",
                 is_setting=True,
             )
+        if expect_bad_limits:
+            self.check_bad_limits()
+
+    def check_bad_limits(self, abs_set_value=2**53):
+        ll, hl = self.get_limits()
+        if ll == 0 and hl == 0:
+            self.set_limits(-abs_set_value, abs_set_value)
 
     def home(self):
         self.home_forward(1)

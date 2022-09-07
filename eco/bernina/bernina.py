@@ -73,6 +73,7 @@ namespace.append_obj(
     "/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA",
     name="_env_channels_ca",
     module_name="eco.elements.adjustable",
+    lazy=True,
 )
 namespace.append_obj(
     "Run_Table2",
@@ -119,18 +120,27 @@ namespace.append_obj(
     "SAROP21-OAPU092",
     name="slit_switch",
     module_name="eco.xoptics.slits",
+    lazy=True,
 )
 namespace.append_obj(
     "SlitBlades",
     "SAROP21-OAPU102",
     name="slit_mono",
     module_name="eco.xoptics.slits",
+    lazy=True,
 )
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SAROP21-PBPS103",
+    diode_channels_raw={
+        "up": "SAROP21-CVME-PBPS1:Lnk9Ch3-DATA-SUM",
+        "down": "SAROP21-CVME-PBPS1:Lnk9Ch4-DATA-SUM",
+        "left": "SAROP21-CVME-PBPS1:Lnk9Ch2-DATA-SUM",
+        "right": "SAROP21-CVME-PBPS1:Lnk9Ch1-DATA-SUM",
+    },
     name="mon_mono",
     module_name="eco.xdiagnostics.intensity_monitors",
+    lazy=True,
 )
 
 from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
@@ -251,8 +261,15 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SARFE10-PBPS053",
+    diode_channels_raw={
+        "up": "SARFE10-CVME-PHO6212:Lnk9Ch13-DATA-SUM",
+        "down": "SARFE10-CVME-PHO6212:Lnk9Ch12-DATA-SUM",
+        "left": "SARFE10-CVME-PHO6212:Lnk9Ch14-DATA-SUM",
+        "right": "SARFE10-CVME-PHO6212:Lnk9Ch15-DATA-SUM",
+    },
     name="mon_und",
     module_name="eco.xdiagnostics.intensity_monitors",
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -263,14 +280,14 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
-    "SolidTargetDetectorPBPS_assi",
+    "SolidTargetDetectorPBPS",
     "SAROP21-PBPS133",
-    pvname_fedigitizerchannels=dict(
-        up="SAROP21-CVME-PBPS1:Lnk9Ch0",
-        down="SAROP21-CVME-PBPS1:Lnk9Ch12",
-        left="SAROP21-CVME-PBPS1:Lnk9Ch15",
-        right="SAROP21-CVME-PBPS1:Lnk9Ch13",
-    ),
+    # pvname_fedigitizerchannels=dict(
+    #     up="SAROP21-CVME-PBPS1:Lnk9Ch0",
+    #     down="SAROP21-CVME-PBPS1:Lnk9Ch12",
+    #     left="SAROP21-CVME-PBPS1:Lnk9Ch15",
+    #     right="SAROP21-CVME-PBPS1:Lnk9Ch13",
+    # ),
     name="mon_opt_dev",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
@@ -282,6 +299,8 @@ namespace.append_obj(
     "SARFE10-PPRM064",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_fe",
+    in_target=3,
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -290,6 +309,8 @@ namespace.append_obj(
     "SAROP11-PPRM066",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_mirr_alv1",
+    in_target=3,
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -298,6 +319,8 @@ namespace.append_obj(
     "SAROP21-PPRM094",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_mirr1",
+    in_target=3,
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -306,6 +329,8 @@ namespace.append_obj(
     "SAROP21-PPRM113",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_mono",
+    in_target=3,
+    lazy=True,
 )
 
 
@@ -315,6 +340,8 @@ namespace.append_obj(
     "SAROP21-PPRM133",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_opt",
+    in_target=3,
+    lazy=True,
 )
 
 
@@ -324,10 +351,15 @@ namespace.append_obj(
     "SAROP21-PPRM138",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_att",
+    in_target=3,
+    lazy=True,
 )
 
 namespace.append_obj(
-    "DownstreamDiagnostic", name="dsd", module_name="eco.xdiagnostics.dsd"
+    "DownstreamDiagnostic",
+    name="dsd",
+    module_name="eco.xdiagnostics.dsd",
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -339,8 +371,14 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
-    "SolidTargetDetectorPBPS_new_assembly",
-    pvname="SARES20-DSDPBPS",
+    "SolidTargetDetectorPBPS",
+    "SARES20-DSDPBPS",
+    # diode_channels_raw={
+    #     "up":   "",
+    #     "down": "",
+    #     "left": "",
+    #     "right":"",
+    # },
     module_name="eco.xdiagnostics.intensity_monitors",
     name="mon_dsd",
     lazy=True,
@@ -1489,11 +1527,34 @@ class Xspect_EH55(Assembly):
         super().__init__(name=name)
         self._append(MotorRecord, "SARES20-MF1:MOT_15", name="x_crystal")
         self._append(MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal")
-        # self._append(SmaractRecord,'SARES20-MF1:MOT_16',name='theta_crystal')
+        self._append(SmaractRecord, "SARES23:ESB17", name="theta_crystal")
 
 
 namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 
+
+namespace.append_obj(
+    "SlitBladesGeneral",
+    name="slit_cleanup_air",
+    def_blade_up={
+        "args": [MotorRecord, "SARES20-MF1:MOT_10"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    def_blade_down={
+        "args": [MotorRecord, "SARES20-MF1:MOT_11"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    def_blade_left={
+        "args": [MotorRecord, "SARES20-MF1:MOT_13"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    def_blade_right={
+        "args": [MotorRecord, "SARES20-MF1:MOT_12"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    module_name="eco.xoptics.slits",
+    lazy=True,
+)
 
 #### pgroup specific appending, might be temporary at this location ####
 
@@ -1535,6 +1596,8 @@ namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 #     "desc": "DCM Monochromator",
 #     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
 # },
+
+
 def pgroup2name(pgroup):
     tp = "/sf/bernina/exp/"
     d = Path(tp)

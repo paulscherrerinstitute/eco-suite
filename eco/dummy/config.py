@@ -373,19 +373,7 @@ components = [
     #     "type": "tof:jet",
     #     "kwargs": {},
     # },
-    {
-        "args": [],
-        "name": "xeye",
-        "z_und": 142,
-        "desc": "Mobile X-ray eye in Bernina hutch",
-        "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
-        "kwargs": {
-            "zoomstage_pv": config["xeye"]["zoomstage_pv"],
-            "camera_pv": config["xeye"]["camera_pv"],
-            "bshost": "sf-daqsync-01.psi.ch",
-            "bsport": 11151,
-        },
-    },
+
     {
         "args": ["SARES20-CAMS142-M1"],
         "name": "cam_sample_sideview",

@@ -6,7 +6,7 @@ from ..aliases import Alias
 from ..elements.adjustable import AdjustableFS
 from ..epics.adjustable import AdjustablePvEnum
 from ..elements.assembly import Assembly
-
+from numpy import isnan
 
 class AttenuatorAramis:
     def __init__(
@@ -46,6 +46,8 @@ class AttenuatorAramis:
     def updateE(self, energy=None):
         while not energy:
             energy = PV("SAROP21-ARAMIS:ENERGY").value
+            if isnan(energy):
+                energy = PV("SARUN:FELPHOTENE").value*1000
             if energy < self.E_min:
                 energy = None
                 print(

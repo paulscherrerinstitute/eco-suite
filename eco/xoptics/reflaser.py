@@ -68,7 +68,8 @@ class RefLaser_Aramis(Assembly):
             isin = False
         else:
             isin = None
-        return State(isin)
+        # return State(isin)
+        return isin
 
     def set(self, value):
         if type(value) is str:
