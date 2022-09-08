@@ -233,7 +233,7 @@ class CameraBasler(Assembly):
         )
         self._append(
             AdjustablePv,
-            self.pvname + ":BINY",
+            self.pvname + ":BINX",
             name="_binx",
             is_setting=True,
             is_display=False,

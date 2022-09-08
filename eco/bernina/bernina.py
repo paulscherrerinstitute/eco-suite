@@ -4,7 +4,7 @@ from eco.acquisition.scan import NumpyEncoder
 from eco.elements.adjustable import AdjustableFS
 from eco.elements.adjustable import AdjustableVirtual
 from eco.loptics.bernina_experiment import DelayCompensation
-
+from eco.devices_general.cameras_swissfel import CameraBasler
 # from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
 from .config import components
@@ -1525,9 +1525,18 @@ except:
 class Xspect_EH55(Assembly):
     def __init__(self, name="xspect_bernina"):
         super().__init__(name=name)
-        self._append(MotorRecord, "SARES20-MF1:MOT_15", name="x_crystal")
-        self._append(MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal")
-        self._append(SmaractRecord, "SARES23:ESB17", name="theta_crystal")
+        self._append(
+            MotorRecord, "SARES20-MF1:MOT_15", name="x_crystal", is_setting=True
+        )
+        self._append(
+            MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES23:ESB17", name="theta_crystal", is_setting=True
+        )
+        self._append(
+            CameraBasler,"SARES20-CAMS142-M3",name="camera_bsss", is_display=False, is_setting=False
+        )
 
 
 namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)

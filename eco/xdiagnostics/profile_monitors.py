@@ -179,18 +179,18 @@ class ProfKbBernina(Assembly):
     def movein(self, wait=False):
         ch = self.mirror_in.set_target_value(1)
         try:
-            self.target_stages.presets.movein()
+            self.presets.movein()
         except:
-            print("No movein preset found for target stages.")
+            print("No movein preset found for prof_kb.")
         if wait:
             ch.wait()
 
     def moveout(self, wait=False):
         ch = self.mirror_in.set_target_value(0)
         try:
-            self.target_stages.presets.moveout()
+            self.presets.moveout()
         except:
-            print("No moveout preset found for target stages.")
+            print("No moveout preset found for prof_kb.")
         if wait:
             ch.wait()
 
