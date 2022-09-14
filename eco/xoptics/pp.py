@@ -38,12 +38,12 @@ class Pulsepick:
 
     def open(self):
         self._openclose.put(1)
-        self._evrsrc.put(62)
+        #self._evrsrc.put(62)
         print("Opened Pulse Picker")
 
     def close(self):
         self._openclose.put(0)
-        self._evrsrc.put(62)
+        #self._evrsrc.put(62)
         print("Closed Pulse Picker")
 
     def trigger(self):
