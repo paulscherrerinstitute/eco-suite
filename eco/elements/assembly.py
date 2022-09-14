@@ -201,20 +201,36 @@ class Assembly:
         tab = []
         for to in stats:
             name = to.alias.get_full_name(base=self)
-            value = to.get_current_value()
+
             is_adjustable = isinstance(to, Adjustable)
-            if is_adjustable:
-                typechar = "✏️"
-            else:
-                typechar = "👁️"
             is_detector = isinstance(to, Detector)
+            typechar = ""
+            if is_adjustable:
+                typechar += "✏️"
+            elif is_detector:
+                typechar += "👁️"
+            if hasattr(to, "settings_collection"):
+                typechar += " ↳"
+
+            try:
+                value = to.get_current_value()
+            except AttributeError:
+                if hasattr(to, "settings_collection"):
+                    value = "\x1b[3mhas lower level items\x1b[0m"
+
             if isinstance(value, Enum):
                 value = f"{value.value} ({value.name})"
             try:
-                unit = to.unit()
+                unit = to.unit.get_current_value()
             except:
                 unit = None
-            tab.append([".".join([main_name, name]), value, unit, typechar])
+            try:
+                description = to.description.get_current_value()
+            except:
+                description = None
+            tab.append(
+                [".".join([main_name, name]), value, unit, typechar, description]
+            )
         s = tabulate(tab)
         return s
 

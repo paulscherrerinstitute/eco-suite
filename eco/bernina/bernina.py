@@ -1,10 +1,12 @@
 import json
 from pathlib import Path
+from threading import Thread
 from eco.acquisition.scan import NumpyEncoder
 from eco.elements.adjustable import AdjustableFS
 from eco.elements.adjustable import AdjustableVirtual
 from eco.loptics.bernina_experiment import DelayCompensation
 from eco.devices_general.cameras_swissfel import CameraBasler
+
 # from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
 from .config import components
@@ -745,6 +747,7 @@ namespace.append_obj(
     pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
     event_master=event_master,
     detectors_event_code=50,
+    rate_multiplicator=4,
     name="daq",
     module_name="eco.acquisition.daq_client",
     lazy=True,
@@ -766,6 +769,13 @@ namespace.append_obj(
     module_name="eco.acquisition.daq_client",
     lazy=True,
 )
+
+
+def _wait_for_tasks(scan):
+    print("checking remaining tasks from previous scan ...")
+    for task in scan.remaining_tasks:
+        task.join()
+    print("... done.")
 
 
 def _append_namesace_status_to_scan(scan, daq=daq, namespace=namespace):
@@ -795,16 +805,40 @@ def _write_namespace_status_to_scan(scan, daq=daq, namespace=namespace):
         pgroup=pgroup,
         run_number=runno,
     )
-    print("################")
+    print("####### transfer status #######")
     print(response.json())
-    print("################")
+    print("###############################")
+    scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
 
 
-def _append_namespace_aliases_to_scan(scan):
-    scan.scan_info["scan_parameters"]["namespace_aliases"] = namespace.alias.get_all()
+def _write_namespace_aliases_to_scan(scan, daq=daq):
+    namespace_aliases = namespace.alias.get_all()
+    runno = daq.get_last_run_number()
+    pgroup = daq.pgroup
+    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/aliases_run{runno:04d}")
+    tmpdir.mkdir(exist_ok=True, parents=True)
+    aliasfile = tmpdir / Path("aliases.json")
+    if not Path(aliasfile).exists():
+        with open(aliasfile, "w") as f:
+            json.dump(namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+    else:
+        with open(aliasfile, "r+") as f:
+            f.seek(0)
+            json.dump(namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+            f.truncate()
+    response = daq.append_aux(
+        aliasfile.resolve().as_posix(),
+        pgroup=pgroup,
+        run_number=runno,
+    )
+    print("####### transfer aliases #######")
+    print(response.json())
+    print("################################")
+    scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
 
 
 def _message_end_scan(scan):
+    print(f"Finished run {scan.run_number}.")
     e = pyttsx3.init()
     e.say(f"Finished run {scan.run_number}.")
     e.runAndWait()
@@ -835,6 +869,8 @@ def _create_general_run_info(scan, daq=daq):
 
 
 def _copy_scan_info_to_raw(scan, daq=daq):
+
+    scan.writeScanInfo()
 
     # get data that should come later from api or similar.
     run_directory = list(
@@ -876,32 +912,38 @@ from eco.detector import Jungfrau
 
 
 def _copy_selected_JF_pedestals_to_raw(scan, daq=daq):
-    runno = daq.get_last_run_number()
-    pgroup = daq.pgroup
-    for jf_id in daq.channels["channels_JF"]():
-        jf = Jungfrau(jf_id, name="noname", pgroup_adj=config_bernina.pgroup)
-        print(
-            f"Copying {jf_id} pedestal to run {runno} in the raw directory of {pgroup}."
-        )
-        response = daq.append_aux(
-            jf.get_present_pedestal_filename_in_run(intempdir=True),
-            pgroup=pgroup,
-            run_number=runno,
-        )
-        print(
-            f"Status: {response.json()['status']} Message: {response.json()['message']}"
-        )
-        print(
-            f"Copying {jf_id} gainmap to run {runno} in the raw directory of {pgroup}."
-        )
-        response = daq.append_aux(
-            jf.get_present_gain_filename_in_run(intempdir=True),
-            pgroup=pgroup,
-            run_number=runno,
-        )
-        print(
-            f"Status: {response.json()['status']} Message: {response.json()['message']}"
-        )
+    def copy_to_aux(daq):
+        runno = daq.get_last_run_number()
+        pgroup = daq.pgroup
+
+        for jf_id in daq.channels["channels_JF"]():
+            jf = Jungfrau(jf_id, name="noname", pgroup_adj=config_bernina.pgroup)
+            print(
+                f"Copying {jf_id} pedestal to run {runno} in the raw directory of {pgroup}."
+            )
+            response = daq.append_aux(
+                jf.get_present_pedestal_filename_in_run(intempdir=True),
+                pgroup=pgroup,
+                run_number=runno,
+            )
+            print(
+                f"Status: {response.json()['status']} Message: {response.json()['message']}"
+            )
+            print(
+                f"Copying {jf_id} gainmap to run {runno} in the raw directory of {pgroup}."
+            )
+
+            response = daq.append_aux(
+                jf.get_present_gain_filename_in_run(intempdir=True),
+                pgroup=pgroup,
+                run_number=runno,
+            )
+            print(
+                f"Status: {response.json()['status']} Message: {response.json()['message']}"
+            )
+
+    scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq]))
+    scan.remaining_tasks[-1].start()
 
 
 def _increment_daq_run_number(scan, daq=daq):
@@ -927,13 +969,15 @@ def _increment_daq_run_number(scan, daq=daq):
 
 callbacks_start_scan = []
 callbacks_start_scan = [lambda scan: namespace.init_all(silent=False)]
+callbacks_start_scan.append(_wait_for_tasks)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
-callbacks_start_scan.append(_append_namespace_aliases_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)
-callbacks_end_scan = [_message_end_scan]
+callbacks_end_scan = []
 callbacks_end_scan.append(_write_namespace_status_to_scan)
+callbacks_end_scan.append(_write_namespace_aliases_to_scan)
 callbacks_end_scan.append(_copy_scan_info_to_raw)
 callbacks_end_scan.append(_copy_selected_JF_pedestals_to_raw)
+callbacks_end_scan.append(_message_end_scan)
 
 
 # >>>> Extract for run_table and elog
@@ -1535,7 +1579,11 @@ class Xspect_EH55(Assembly):
             SmaractRecord, "SARES23:ESB17", name="theta_crystal", is_setting=True
         )
         self._append(
-            CameraBasler,"SARES20-CAMS142-M3",name="camera_bsss", is_display=False, is_setting=False
+            CameraBasler,
+            "SARES20-CAMS142-M3",
+            name="camera_bsss",
+            is_display=False,
+            is_setting=False,
         )
 
 
@@ -1564,6 +1612,88 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+
+
+from eco.devices_general.wago import AnalogOutput
+from eco.detector import Jungfrau
+from eco.timing.event_timing_new_new import EvrOutput
+from eco.devices_general.digitizers import DigitizerIoxosBoxcarChannel
+
+
+class Tapedrive(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            AdjustablePv, "KERNVARIABLES:DELAYBETWEENXFELANDLASER", name="delay"
+        )
+        self._append(SmaractRecord, "SARES23:ESB18", name="freespace_pitch")
+        self._append(SmaractRecord, "SARES23:ESB13", name="freespace_roll")
+        self._append(MotorRecord, "SARES20-MF1:MOT_7", name="rot_analyzer_hor")
+        self._append(MotorRecord, "SARES20-MF1:MOT_8", name="rot_analyzer_ver")
+
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC03", name="shutter3")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC04", name="shutter4")
+
+        self._append(
+            EvrOutput,
+            f"SARES20-CVME-01-EVR0:RearUniv0",
+            pulsers=evr.pulsers,
+            name=f"trigger_patch1_bnc6",
+            is_setting=True,
+            # is_display="recursive",
+        )
+        self._append(
+            EvrOutput,
+            f"SARES20-CVME-01-EVR0:RearUniv1",
+            pulsers=evr.pulsers,
+            name=f"trigger_patch2_bnc6",
+            is_setting=True,
+            # is_display="recursive",
+        )
+
+        self._append(
+            Jungfrau,
+            "JF07T32V01",
+            config_adj=daq.config_JFs,
+            pgroup_adj=config_bernina.pgroup,
+            name="det_diff",
+            is_setting=True,
+            is_status=True,
+            # is_display="recursive",
+        )
+        self._append(
+            Jungfrau,
+            "JF05T01V01",
+            config_adj=daq.config_JFs,
+            pgroup_adj=config_bernina.pgroup,
+            name="det_spect",
+            is_setting=True,
+            is_status=True,
+            # is_display="recursive",
+        )
+        self._append(
+            Jungfrau,
+            "JF03T01V01",
+            config_adj=daq.config_JFs,
+            pgroup_adj=config_bernina.pgroup,
+            name="det_imon",
+            is_setting=True,
+            is_status=True,
+            # is_display="recursive",
+        )
+
+        self._append(
+            DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH1", name="diode_1"
+        )
+        self._append(
+            DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
+        )
+
+
+namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
+
 
 #### pgroup specific appending, might be temporary at this location ####
 

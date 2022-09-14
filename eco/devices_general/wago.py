@@ -1,6 +1,11 @@
 from eco.elements.assembly import Assembly
 from eco.epics.detector import DetectorPvData
-from eco.epics.adjustable import AdjustablePvString, AdjustablePv
+from eco.epics.adjustable import (
+    AdjustablePvString,
+    AdjustablePv,
+    spec_convenience,
+    tweak_option,
+)
 
 
 class AnalogInput(Assembly):
@@ -44,6 +49,8 @@ class WagoAnalogInputs(Assembly):
             self._append(AnalogInput, pvbase + f":ADC{n:02d}", name=f"ch{n:d}")
 
 
+@spec_convenience
+@tweak_option
 class AnalogOutput(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
@@ -51,7 +58,6 @@ class AnalogOutput(Assembly):
         self._append(
             AdjustablePv,
             self.pvname,
-            self.pvname + "_RB",
             name="value",
             is_setting=True,
             is_display=True,
@@ -81,6 +87,9 @@ class AnalogOutput(Assembly):
     def get_current_value(self):
         return self.value.get_current_value()
 
+    def set_target_value(self, *args, **kwargs):
+        return self.value.set_target_value(*args, **kwargs)
+
     def __call__(self, *args):
         if args:
             self.value.set_target_Value(*args).wait()
@@ -93,4 +102,10 @@ class WagoAnalogOutputs(Assembly):
         super().__init__(name=name)
         self.pvbase = pvbase
         for n in range(1, 9):
-            self._append(AnalogOutput, pvbase + f":DAC{n:02d}", name=f"ch{n:d}")
+            self._append(
+                AnalogOutput,
+                pvbase + f":DAC{n:02d}",
+                name=f"ch{n:d}",
+                is_setting=True,
+                is_display=True,
+            )

@@ -94,6 +94,7 @@ class Scan:
         self._checker_sleep_time = checker_sleep_time
         self._elog = elog
         self.run_number = run_number
+        self.remaining_tasks = []
         self.callbacks_end_scan = callbacks_end_scan
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:

@@ -23,6 +23,7 @@ class Daq(Assembly):
         channels_BSCAM=None,
         channels_CA=None,
         config_JFs=None,
+        rate_multiplicator=None,
         name=None,
     ):
         super().__init__(name=name)
@@ -53,6 +54,8 @@ class Daq(Assembly):
         self._detectors_event_code = detectors_event_code
         self.name = name
         self._default_file_path = None
+
+        self.rate_multiplicator = rate_multiplicator
 
     def acquire(self, file_name=None, Npulses=100, acq_pars={}):
         print(file_name, Npulses)
@@ -164,6 +167,7 @@ class Daq(Assembly):
             parameters["directory_name"] = directory_relative.as_posix()
 
         parameters["pgroup"] = pgroup
+        parameters["rate_multiplicator"] = self.rate_multiplicator
         # print("----- debug info ----->\n", parameters, "\n<----- debug info -----")
         response = validate_response(
             requests.post(

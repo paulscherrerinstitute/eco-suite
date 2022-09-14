@@ -1,6 +1,8 @@
 import shutil
 from tkinter import W
-from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet
+
+from eco.base.adjustable import Adjustable
+from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
 from ..epics.adjustable import AdjustablePv
 from ..elements.assembly import Assembly
 from ..aliases import Alias
@@ -18,6 +20,7 @@ class Jungfrau(Assembly):
         trigger_off=255,
         broker_address="http://sf-daq:10002",
         pgroup_adj=None,
+        config_adj=None,
         name=None,
     ):
         super().__init__(name=name)
@@ -79,6 +82,16 @@ class Jungfrau(Assembly):
             name="gain_file_in_run",
             is_display=True,
         )
+        if config_adj:
+            self._append(
+                JungfrauDaqConfig,
+                jf_id,
+                config_adj,
+                name="config_daq",
+                is_setting=True,
+                is_status=True,
+                is_display="recursive",
+            )
 
     def _set_trigger_enable(self, value):
         if value:
@@ -168,3 +181,112 @@ class Jungfrau(Assembly):
     #     return requests.post(
     #         f"{self.broker_address}/take_pedestal", json=parameters
     #     ).json()
+
+
+class JungfrauDaqConfig(Assembly):
+    def __init__(self, jf_id, jf_daq_cfg: Adjustable, name=None):
+        super().__init__(name=name)
+        self._jf_id = jf_id
+        self._jf_daq_cfg = jf_daq_cfg
+        cfg = self._jf_daq_cfg.get_current_value()
+        if self._jf_id not in cfg.keys():
+            cfg[self._jf_id] = {}
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+
+        self._append(
+            AdjustableGetSet,
+            self._get_adc_to_energy,
+            self._set_adc_to_energy,
+            name="convert_adc_to_energy",
+            is_display=True,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableGetSet,
+            self._get_compressed_bitshuffle,
+            self._set_compressed_bitshuffle,
+            name="compress_bitshuffle",
+            is_display=True,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableGetSet,
+            self._get_keep_raw_data,
+            self._set_keep_raw_data,
+            name="keep_raw_data",
+            is_display=True,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableGetSet,
+            self._get_large_pixel_processing,
+            self._set_large_pixel_processing,
+            name="large_pixel_processing",
+            is_display=True,
+            is_setting=True,
+        )
+
+    def _get_adc_to_energy(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["adc_to_energy"]
+        except KeyError:
+            return False
+
+    def _set_adc_to_energy(self, value):
+        if value:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["adc_to_energy"] = True
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+        else:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["adc_to_energy"] = False
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_compressed_bitshuffle(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["compression"]
+        except KeyError:
+            return False
+
+    def _set_compressed_bitshuffle(self, value):
+        if value:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["compression"] = True
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+        else:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["compression"] = False
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_keep_raw_data(self, *args):
+        try:
+            return not self._jf_daq_cfg.get_current_value()[self._jf_id][
+                "remove_raw_file"
+            ]
+        except KeyError:
+            # raise Exception("unclear what the default for keeping raw files is!")
+            return None
+
+    def _set_keep_raw_data(self, value):
+        if value:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["remove_raw_file"] = False
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+        else:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["remove_raw_file"] = True
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_large_pixel_processing(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id][
+                "double_pixels_action"
+            ]
+        except KeyError:
+            # raise Exception("unclear what the default for double pixels is!")
+            return None
+
+    def _set_large_pixel_processing(self, value):
+        cfg = self._jf_daq_cfg.get_current_value()
+        cfg[self._jf_id]["double_pixels_action"] = value
+        self._jf_daq_cfg.set_target_value(cfg).wait()
