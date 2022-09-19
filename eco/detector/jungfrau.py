@@ -225,6 +225,14 @@ class JungfrauDaqConfig(Assembly):
             is_display=True,
             is_setting=True,
         )
+        self._append(
+            AdjustableGetSet,
+            self._get_rounding_factor,
+            self._set_rounding_factor,
+            name="rounding_factor_keV",
+            is_display=True,
+            is_setting=True,
+        )
 
     def _get_adc_to_energy(self, *args):
         try:
@@ -261,7 +269,7 @@ class JungfrauDaqConfig(Assembly):
     def _get_keep_raw_data(self, *args):
         try:
             return not self._jf_daq_cfg.get_current_value()[self._jf_id][
-                "remove_raw_file"
+                "remove_raw_files"
             ]
         except KeyError:
             # raise Exception("unclear what the default for keeping raw files is!")
@@ -270,11 +278,11 @@ class JungfrauDaqConfig(Assembly):
     def _set_keep_raw_data(self, value):
         if value:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["remove_raw_file"] = False
+            cfg[self._jf_id]["remove_raw_files"] = False
             self._jf_daq_cfg.set_target_value(cfg).wait()
         else:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["remove_raw_file"] = True
+            cfg[self._jf_id]["remove_raw_files"] = True
             self._jf_daq_cfg.set_target_value(cfg).wait()
 
     def _get_large_pixel_processing(self, *args):
@@ -289,4 +297,16 @@ class JungfrauDaqConfig(Assembly):
     def _set_large_pixel_processing(self, value):
         cfg = self._jf_daq_cfg.get_current_value()
         cfg[self._jf_id]["double_pixels_action"] = value
+        self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_rounding_factor(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["factor"]
+        except KeyError:
+            # raise Exception("unclear what the default for double pixels is!")
+            return None
+
+    def _set_rounding_factor(self, value):
+        cfg = self._jf_daq_cfg.get_current_value()
+        cfg[self._jf_id]["factor"] = value
         self._jf_daq_cfg.set_target_value(cfg).wait()

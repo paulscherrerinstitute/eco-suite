@@ -358,7 +358,8 @@ class AlvraDCM_FEL:
         # 		self.IOCstatus = PV('ALVRA:running')					# bool 0 running, 1 not running
         self._FELcoupling = PV("SGE-OP2E-ARAMIS:MODE_SP")  # string "Off" or "e-beam"
         self._setEnergy = PV("SAROP11-ARAMIS:ENERGY_SP_USER")  # float eV
-        self._getEnergy = PV("SAROP11-ARAMIS:ENERGY")  # float eV
+        #self._getEnergy = PV("SAROP11-ARAMIS:ENERGY")  # float eV
+        self._getEnergy = PV("SAROP21-ODCM098:ENERGY")  # float eV
         self.ebeamEnergy = PV("SARCL02-MBND100:P-READ")  # float MeV/c
         # 		self.ebeamEnergySP = PV('ALVRA:Energy_SP')				# float MeV
         self.dcmStop = PV("SAROP11-ODCM105:STOP.PROC")  # stop the DCM motors

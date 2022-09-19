@@ -747,7 +747,7 @@ namespace.append_obj(
     pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
     event_master=event_master,
     detectors_event_code=50,
-    rate_multiplicator=4,
+    rate_multiplicator=2,
     name="daq",
     module_name="eco.acquisition.daq_client",
     lazy=True,
@@ -1008,10 +1008,14 @@ def _create_metadata_structure_start_scan(scan, run_table=run_table, elog=elog):
                 f"id_motor_{n}": nId,
             }
         )
+    if np.mean(np.diff(scan.pulses_per_step))<1:
+        pulses_per_step = scan.pulses_per_step[0]
+    else:
+        pulses_per_step = scan.pulses_per_step
     metadata.update(
         {
             "steps": len(scan.values_todo),
-            "pulses_per_step": scan.pulses_per_step,
+            "pulses_per_step": pulses_per_step,
             "counters": [daq.name for daq in scan.counterCallers],
         }
     )
@@ -1618,8 +1622,8 @@ from eco.devices_general.wago import AnalogOutput
 from eco.detector import Jungfrau
 from eco.timing.event_timing_new_new import EvrOutput
 from eco.devices_general.digitizers import DigitizerIoxosBoxcarChannel
-
-
+from eco.elements.adjustable import AdjustableVirtual
+import numpy as np
 class Tapedrive(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
@@ -1691,6 +1695,32 @@ class Tapedrive(Assembly):
             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
         )
 
+
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
+            name="mono_und_calib",
+            default_value=[[6500,0],[7100,0]],
+            is_setting=True,
+        )
+
+        def en_set(en):
+            ofs = np.array(self.mono_und_calib()).T
+            fel_ofs = ofs[1][np.argmin(abs(ofs[0]-en))]
+            return en , en/1000 - fel_ofs
+        def en_get(monoen, felen):
+            return monoen
+        self._append(
+            AdjustableVirtual,
+            [mono, fel.aramis_photon_energy_undulators],
+            en_get,
+            en_set,
+            name="mono_und_energy",
+        )
+    def add_mono_und_calibration(self):
+        mono_energy = mono.get_current_value()
+        fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
+        self.mono_und_calib.mvr([[mono_energy,fel_offset]])
 
 namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
 

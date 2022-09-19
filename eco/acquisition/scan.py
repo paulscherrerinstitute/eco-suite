@@ -1,3 +1,4 @@
+from numbers import Number
 import os
 import json
 import numpy as np
@@ -65,10 +66,16 @@ class Scan:
             raise ScanNameError
         self.Nsteps = len(values)
         self._run_table = run_table
-        self.pulses_per_step = Npulses
+        if not isinstance(Npulses, Number):
+            if not len(Npulses) == len(values):
+                raise ValueError("steps for Number of pulses and values must match!")
+            self.pulses_per_step = Npulses
+        else:
+            self.pulses_per_step = [Npulses] * len(values)
         self.adjustables = adjustables
         self.values_todo = values
         self.values_done = []
+        self.pulses_done = []
         self.readbacks = []
         self.counterCallers = counterCallers
         self.fina = fina
@@ -185,10 +192,10 @@ class Scan:
                     "user_tag": self.fina,
                 }
                 acq = ctr.acquire(
-                    file_name=fina, Npulses=self.pulses_per_step, acq_pars=acq_pars
+                    file_name=fina, Npulses=self.pulses_per_step[0], acq_pars=acq_pars
                 )
             else:
-                acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step)
+                acq = ctr.acquire(file_name=fina, Npulses=self.pulses_per_step[0])
             acs.append(acq)
         filenames = []
         for ta in acs:
@@ -205,6 +212,7 @@ class Scan:
         else:
             tstepinfo = step_info
         self.values_done.append(self.values_todo.pop(0))
+        self.pulses_done.append(self.pulses_per_step.pop(0))
         self.readbacks.append(readbacks_step)
         self.appendScanInfo(
             values_step, readbacks_step, step_files=filenames, step_info=tstepinfo
