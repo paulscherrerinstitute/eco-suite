@@ -294,6 +294,11 @@ namespace.append_obj(
         "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
         "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
     },
+    calibration_records={
+        "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
+        "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+        "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+    },
     name="mon_opt",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
@@ -404,10 +409,19 @@ namespace.append_obj(
     "SIN-TIMAST-TMA",
     name="event_master",
     module_name="eco.timing.event_timing_new_new",
+    # pv_eventset="SAR-CVME-TIFALL5:EvtSet",
     # lazy=False,
     lazy=True,
 )
-# namespace.append_obj("TimingSystem",pv_master="SIN-TIMAST-TMA",pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",name='event_system',module_name = "eco.timing.event_timing_new_new",lazy=True)
+namespace.append_obj(
+    "TimingSystem",
+    pv_master="SIN-TIMAST-TMA",
+    pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
+    pv_eventset="SAR-CVME-TIFALL5:EvtSet",
+    name="event_system",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
 
 # namespace.append_obj('Daq', instrument= "bernina",pgroup= config_berninamesp["pgroup"], channels_JF=channels_JF, channels_BS=channels_BS,channels_BSCAM=channels_BSCAM,channels_CA=channels_CA,pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",event_master=event_system.event_master,detectors_event_code=50,name='daq',module_name='eco.acquisition.daq_client')
 

@@ -2,6 +2,7 @@ from epics import caget_many
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
 from ..epics.detector import DetectorPvData, DetectorPvDataStream
+from ..detector.detectors_psi import DetectorBsStream
 from eco.epics.utilities_epics import EpicsString
 import logging
 from ..elements.assembly import Assembly
@@ -13,12 +14,15 @@ logging.getLogger("cta_lib").setLevel(logging.WARNING)
 class TimingSystem(Assembly):
     """This is a wrapper object for the global timing system at SwissFEL"""
 
-    def __init__(self, pv_master=None, pv_pulse_id=None, name=None):
+    def __init__(self, pv_master=None, pv_pulse_id=None, pv_eventset=None, name=None):
         super().__init__(name=name)
         self._append(
             MasterEventSystem, pv_master, name="event_master", is_display="recursive"
         )
         self._append(DetectorPvDataStream, pv_pulse_id, name="pulse_id")
+
+        if pv_eventset:
+            self._append(DetectorBsStream, pv_eventset, name="eventset")
 
 
 # EVR output mapping
