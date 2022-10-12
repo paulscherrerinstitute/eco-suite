@@ -9,7 +9,6 @@ from epics import PV
 from ..aliases import Alias, append_object_to_object
 from time import sleep
 import escape.parse.swissfel as sf
-from ..bernina import config
 import pylab as plt
 import escape
 from pathlib import Path

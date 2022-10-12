@@ -146,12 +146,16 @@ class SolidTargetDetectorPBPS(Assembly):
         # VME_crate=None,
         # pipeline=None,
         # link=None,
+        channel_xpos=None,
+        channel_ypos=None,
+        channel_intensity=None,
         diode_channels_raw={},
         # ch_up=12,
         # ch_down=13,
         # ch_left=15,
         # ch_right=14,
         # elog=None,
+        use_calibration=True,
         name=None,
         # calc=None,
         # calc_calib={},
@@ -170,19 +174,37 @@ class SolidTargetDetectorPBPS(Assembly):
         self._append(
             AdjustablePvEnum, pvname + ":PROBE_SP", name="target", is_setting=True
         )
+        if channel_intensity:
+            self._append(
+                DetectorPvDataStream,
+                channel_intensity,
+                name="intensity",
+                is_setting=False,
+            )
+        else:
+            self._append(
+                DetectorPvDataStream,
+                pvname + ":INTENSITY",
+                name="intensity",
+                is_setting=False,
+            )
 
-        self._append(
-            DetectorPvDataStream,
-            pvname + ":INTENSITY",
-            name="intensity",
-            is_setting=False,
-        )
-        self._append(
-            DetectorPvDataStream, pvname + ":XPOS", name="xpos", is_setting=False
-        )
-        self._append(
-            DetectorPvDataStream, pvname + ":YPOS", name="ypos", is_setting=False
-        )
+        if channel_xpos:
+            self._append(
+                DetectorPvDataStream, channel_xpos, name="xpos", is_setting=False
+            )
+        else:
+            self._append(
+                DetectorPvDataStream, pvname + ":XPOS", name="xpos", is_setting=False
+            )
+        if channel_ypos:
+            self._append(
+                DetectorPvDataStream, channel_ypos, name="ypos", is_setting=False
+            )
+        else:
+            self._append(
+                DetectorPvDataStream, pvname + ":YPOS", name="ypos", is_setting=False
+            )
 
         if diode_channels_raw:
             self._append(
@@ -210,30 +232,31 @@ class SolidTargetDetectorPBPS(Assembly):
                 is_setting=False,
             )
 
-        # Calibration calculation record
+        if use_calibration:
+            # Calibration calculation record
 
-        # Calibration
-        self._append(
-            CalibrationRecord,
-            pvname + ":INTENSITY",
-            name="calib_intensity",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            CalibrationRecord,
-            pvname + ":XPOS",
-            name="calib_xpos",
-            is_setting=True,
-            is_display=False,
-        )
-        self._append(
-            CalibrationRecord,
-            pvname + ":YPOS",
-            name="calib_ypos",
-            is_setting=True,
-            is_display=False,
-        )
+            # Calibration
+            self._append(
+                CalibrationRecord,
+                pvname + ":INTENSITY",
+                name="calib_intensity",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                CalibrationRecord,
+                pvname + ":XPOS",
+                name="calib_xpos",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                CalibrationRecord,
+                pvname + ":YPOS",
+                name="calib_ypos",
+                is_setting=True,
+                is_display=False,
+            )
 
     def get_calibration_values(self, seconds=5):
         self.x_diodes.set_target_value(0).wait()

@@ -10,7 +10,8 @@ from eco.devices_general.cameras_swissfel import CameraBasler
 # from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
 from .config import components
-from .config import config as config_berninamesp
+
+# from .config import config as config_berninamesp
 from ..utilities.config import Namespace
 from ..aliases import NamespaceCollection
 import pyttsx3
@@ -284,13 +285,16 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SAROP21-PBPS133",
-    # pvname_fedigitizerchannels=dict(
-    #     up="SAROP21-CVME-PBPS1:Lnk9Ch0",
-    #     down="SAROP21-CVME-PBPS1:Lnk9Ch12",
-    #     left="SAROP21-CVME-PBPS1:Lnk9Ch15",
-    #     right="SAROP21-CVME-PBPS1:Lnk9Ch13",
-    # ),
-    name="mon_opt_dev",
+    channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
+    channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
+    channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
+    diode_channels_raw={
+        "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+        "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+        "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+        "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+    },
+    name="mon_opt",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
 )
@@ -747,7 +751,7 @@ namespace.append_obj(
     pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
     event_master=event_master,
     detectors_event_code=50,
-    rate_multiplicator=2,
+    rate_multiplicator=1,
     name="daq",
     module_name="eco.acquisition.daq_client",
     lazy=True,
@@ -1008,7 +1012,7 @@ def _create_metadata_structure_start_scan(scan, run_table=run_table, elog=elog):
                 f"id_motor_{n}": nId,
             }
         )
-    if np.mean(np.diff(scan.pulses_per_step))<1:
+    if np.mean(np.diff(scan.pulses_per_step)) < 1:
         pulses_per_step = scan.pulses_per_step[0]
     else:
         pulses_per_step = scan.pulses_per_step
@@ -1258,118 +1262,114 @@ namespace.append_obj(
 )
 
 # ad hoc incoupling device
-# class Incoupling(Assembly):
-#    def __init__(self, name=None):
-#        super().__init__(name=name)
-#        self._append(
-#            SmaractRecord, "SARES23:LIC13", name="mirr_table_pitch", is_setting=True
-#        )
-#        self._append(
-#            SmaractRecord, "SARES23:LIC14", name="mirr_table_roll", is_setting=True
-#        )
-#        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
-#        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
-#        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
-#
-#
-# namespace.append_obj(
-#    Incoupling,
-#    lazy=True,
-#    name="las_inc",
-# )
-
-
-class THz_in_air(Assembly):
+class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
+        self._append(SmaractRecord, "SARES23:ESB16", name="pitch", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB3", name="roll", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 
-        self._append(SmaractRecord, "SARES23:ESB4", name="eos_rot", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB12", name="eos_tilt", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB5", name="crystal_ROT", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC15", name="ir_1_z", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC13", name="ir_1_Ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC14", name="ir_1_Rx", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB10", name="ir_2_Rx", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB7", name="ir_2_Ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB9", name="para_2_x", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB3", name="thz_mir_x", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB1", name="thz_mir_z", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB8", name="thz_mir_Ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB2", name="thz_mir_Rz", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB6", name="focus_z", is_setting=True)
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_4",
-            name="focus_y",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(SmaractRecord, "SARES23:ESB14", name="focus_x", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB13", name="focus_Rz", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB15", name="focus_Ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rx", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC18", name="thz_wp", is_setting=True)
-        self._append(
-            SmaractRecord, "SARES23:LIC16", name="delaystage_thz", is_setting=True
-        )
-        self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=True)
-        self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M521:MOTOR_1",
-            name="delaystage_800_pump",
-            is_setting=True,
-        )
-        self._append(
-            DelayTime, self.delaystage_800_pump, name="delay_800_pump", is_setting=True
-        )
-        self._append(
-            AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/combined_delta",
-            name="combined_delta",
-            default_value=0,
-            is_setting=True,
-        )
-        self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
 
-        self._append(
-            AdjustableVirtual,
-            [self.crystal_ROT, self.thz_wp],
-            self.thz_pol_get,
-            self.thz_pol_set,
-            name="thz_polarization",
-        )
-        # self.thz_polarization = AdjustableVirtual(
-        #     [self.crystal_ROT, self.thz_wp],
-        #     self.thz_pol_get,
-        #     self.thz_pol_set,
-        #     name="thz_polarization",
-        # )
-        self._append(
-            AdjustableVirtual,
-            [self.delay_thz, self.delay_800_pump],
-            self.delay_get,
-            self.delay_set,
-            name="combined_delay",
-        )
+namespace.append_obj(
+    Incoupling,
+    lazy=True,
+    name="las_inc",
+)
 
-        # self.combined_delay = AdjustableVirtual(
-        #     [self.delay_thz, self.delay_800_pump],
-        #     self.delay_get,
-        #     self.delay_set,
-        #     name="combined_delay",
-        # )
 
-    def thz_pol_set(self, val):
-        return 1.0 * val, 1.0 / 2 * val
+# class THz_in_air(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
 
-    def thz_pol_get(self, val, val2):
-        return 1.0 * val2
+#         self._append(SmaractRecord, "SARES23:ESB4", name="eos_rot", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB12", name="eos_tilt", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB5", name="crystal_ROT", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC15", name="ir_1_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC13", name="ir_1_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC14", name="ir_1_Rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB10", name="ir_2_Rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB7", name="ir_2_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB9", name="para_2_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB3", name="thz_mir_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB1", name="thz_mir_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB8", name="thz_mir_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB2", name="thz_mir_Rz", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB6", name="focus_z", is_setting=True)
+#         self._append(
+#             MotorRecord,
+#             "SARES20-MF1:MOT_4",
+#             name="focus_y",
+#             is_setting=True,
+#             is_display=True,
+#         )
+#         self._append(SmaractRecord, "SARES23:ESB14", name="focus_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB13", name="focus_Rz", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB15", name="focus_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC18", name="thz_wp", is_setting=True)
+#         self._append(
+#             SmaractRecord, "SARES23:LIC16", name="delaystage_thz", is_setting=True
+#         )
+#         self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=True)
+#         self._append(
+#             MotorRecord,
+#             "SLAAR21-LMOT-M521:MOTOR_1",
+#             name="delaystage_800_pump",
+#             is_setting=True,
+#         )
+#         self._append(
+#             DelayTime, self.delaystage_800_pump, name="delay_800_pump", is_setting=True
+#         )
+#         self._append(
+#             AdjustableFS,
+#             "/photonics/home/gac-bernina/eco/configuration/combined_delta",
+#             name="combined_delta",
+#             default_value=0,
+#             is_setting=True,
+#         )
+#         self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
 
-    def delay_set(self, val):
-        return 1.0 * val + self.combined_delta(), 1.0 * val
+#         self._append(
+#             AdjustableVirtual,
+#             [self.crystal_ROT, self.thz_wp],
+#             self.thz_pol_get,
+#             self.thz_pol_set,
+#             name="thz_polarization",
+#         )
+#         # self.thz_polarization = AdjustableVirtual(
+#         #     [self.crystal_ROT, self.thz_wp],
+#         #     self.thz_pol_get,
+#         #     self.thz_pol_set,
+#         #     name="thz_polarization",
+#         # )
+#         self._append(
+#             AdjustableVirtual,
+#             [self.delay_thz, self.delay_800_pump],
+#             self.delay_get,
+#             self.delay_set,
+#             name="combined_delay",
+#         )
 
-    def delay_get(self, val, val2):
-        return 1.0 * val2
+#         # self.combined_delay = AdjustableVirtual(
+#         #     [self.delay_thz, self.delay_800_pump],
+#         #     self.delay_get,
+#         #     self.delay_set,
+#         #     name="combined_delay",
+#         # )
+
+#     def thz_pol_set(self, val):
+#         return 1.0 * val, 1.0 / 2 * val
+
+#     def thz_pol_get(self, val, val2):
+#         return 1.0 * val2
+
+#     def delay_set(self, val):
+#         return 1.0 * val + self.combined_delta(), 1.0 * val
+
+#     def delay_get(self, val, val2):
+#         return 1.0 * val2
 
 
 # namespace.append_obj(
@@ -1624,105 +1624,106 @@ from eco.timing.event_timing_new_new import EvrOutput
 from eco.devices_general.digitizers import DigitizerIoxosBoxcarChannel
 from eco.elements.adjustable import AdjustableVirtual
 import numpy as np
-class Tapedrive(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(
-            AdjustablePv, "KERNVARIABLES:DELAYBETWEENXFELANDLASER", name="delay"
-        )
-        self._append(SmaractRecord, "SARES23:ESB18", name="freespace_pitch")
-        self._append(SmaractRecord, "SARES23:ESB13", name="freespace_roll")
-        self._append(MotorRecord, "SARES20-MF1:MOT_7", name="rot_analyzer_hor")
-        self._append(MotorRecord, "SARES20-MF1:MOT_8", name="rot_analyzer_ver")
 
-        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
-        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")
-        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC03", name="shutter3")
-        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC04", name="shutter4")
+# class Tapedrive(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
+#         self._append(
+#             AdjustablePv, "KERNVARIABLES:DELAYBETWEENXFELANDLASER", name="delay"
+#         )
+#         self._append(SmaractRecord, "SARES23:ESB18", name="freespace_pitch")
+#         self._append(SmaractRecord, "SARES23:ESB13", name="freespace_roll")
+#         self._append(MotorRecord, "SARES20-MF1:MOT_7", name="rot_analyzer_hor")
+#         self._append(MotorRecord, "SARES20-MF1:MOT_8", name="rot_analyzer_ver")
 
-        self._append(
-            EvrOutput,
-            f"SARES20-CVME-01-EVR0:RearUniv0",
-            pulsers=evr.pulsers,
-            name=f"trigger_patch1_bnc6",
-            is_setting=True,
-            # is_display="recursive",
-        )
-        self._append(
-            EvrOutput,
-            f"SARES20-CVME-01-EVR0:RearUniv1",
-            pulsers=evr.pulsers,
-            name=f"trigger_patch2_bnc6",
-            is_setting=True,
-            # is_display="recursive",
-        )
+#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
+#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")
+#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC03", name="shutter3")
+#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC04", name="shutter4")
 
-        self._append(
-            Jungfrau,
-            "JF07T32V01",
-            config_adj=daq.config_JFs,
-            pgroup_adj=config_bernina.pgroup,
-            name="det_diff",
-            is_setting=True,
-            is_status=True,
-            # is_display="recursive",
-        )
-        self._append(
-            Jungfrau,
-            "JF05T01V01",
-            config_adj=daq.config_JFs,
-            pgroup_adj=config_bernina.pgroup,
-            name="det_spect",
-            is_setting=True,
-            is_status=True,
-            # is_display="recursive",
-        )
-        self._append(
-            Jungfrau,
-            "JF03T01V01",
-            config_adj=daq.config_JFs,
-            pgroup_adj=config_bernina.pgroup,
-            name="det_imon",
-            is_setting=True,
-            is_status=True,
-            # is_display="recursive",
-        )
+#         self._append(
+#             EvrOutput,
+#             f"SARES20-CVME-01-EVR0:RearUniv0",
+#             pulsers=evr.pulsers,
+#             name=f"trigger_patch1_bnc6",
+#             is_setting=True,
+#             # is_display="recursive",
+#         )
+#         self._append(
+#             EvrOutput,
+#             f"SARES20-CVME-01-EVR0:RearUniv1",
+#             pulsers=evr.pulsers,
+#             name=f"trigger_patch2_bnc6",
+#             is_setting=True,
+#             # is_display="recursive",
+#         )
 
-        self._append(
-            DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH1", name="diode_1"
-        )
-        self._append(
-            DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
-        )
+#         self._append(
+#             Jungfrau,
+#             "JF07T32V01",
+#             config_adj=daq.config_JFs,
+#             pgroup_adj=config_bernina.pgroup,
+#             name="det_diff",
+#             is_setting=True,
+#             is_status=True,
+#             # is_display="recursive",
+#         )
+#         self._append(
+#             Jungfrau,
+#             "JF05T01V01",
+#             config_adj=daq.config_JFs,
+#             pgroup_adj=config_bernina.pgroup,
+#             name="det_spect",
+#             is_setting=True,
+#             is_status=True,
+#             # is_display="recursive",
+#         )
+#         self._append(
+#             Jungfrau,
+#             "JF03T01V01",
+#             config_adj=daq.config_JFs,
+#             pgroup_adj=config_bernina.pgroup,
+#             name="det_imon",
+#             is_setting=True,
+#             is_status=True,
+#             # is_display="recursive",
+#         )
+
+#         self._append(
+#             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH1", name="diode_1"
+#         )
+#         self._append(
+#             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
+#         )
 
 
-        self._append(
-            AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
-            name="mono_und_calib",
-            default_value=[[6500,0],[7100,0]],
-            is_setting=True,
-        )
+#         self._append(
+#             AdjustableFS,
+#             "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
+#             name="mono_und_calib",
+#             default_value=[[6500,0],[7100,0]],
+#             is_setting=True,
+#         )
 
-        def en_set(en):
-            ofs = np.array(self.mono_und_calib()).T
-            fel_ofs = ofs[1][np.argmin(abs(ofs[0]-en))]
-            return en , en/1000 - fel_ofs
-        def en_get(monoen, felen):
-            return monoen
-        self._append(
-            AdjustableVirtual,
-            [mono, fel.aramis_photon_energy_undulators],
-            en_get,
-            en_set,
-            name="mono_und_energy",
-        )
-    def add_mono_und_calibration(self):
-        mono_energy = mono.get_current_value()
-        fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
-        self.mono_und_calib.mvr([[mono_energy,fel_offset]])
+#         def en_set(en):
+#             ofs = np.array(self.mono_und_calib()).T
+#             fel_ofs = ofs[1][np.argmin(abs(ofs[0]-en))]
+#             return en , en/1000 - fel_ofs
+#         def en_get(monoen, felen):
+#             return monoen
+#         self._append(
+#             AdjustableVirtual,
+#             [mono, fel.aramis_photon_energy_undulators],
+#             en_get,
+#             en_set,
+#             name="mono_und_energy",
+#         )
+#     def add_mono_und_calibration(self):
+#         mono_energy = mono.get_current_value()
+#         fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
+#         self.mono_und_calib.mvr([[mono_energy,fel_offset]])
 
-namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
+# namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
 
 
 #### pgroup specific appending, might be temporary at this location ####

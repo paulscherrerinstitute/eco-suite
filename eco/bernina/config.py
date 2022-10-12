@@ -234,7 +234,7 @@ components = [
     #    "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9},
     # },
     {
-        "name": "mon_opt",
+        "name": "mon_opt_old",
         "z_und": 133,
         "desc": "Intensity/position monitor after Optics hutch",
         "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
