@@ -141,6 +141,12 @@ namespace.append_obj(
         "left": "SAROP21-CVME-PBPS1:Lnk9Ch2-DATA-SUM",
         "right": "SAROP21-CVME-PBPS1:Lnk9Ch1-DATA-SUM",
     },
+    fe_digi_channels={
+        "left": "SAROP21-CVME-PBPS1:Lnk9Ch2",
+        "right": "SAROP21-CVME-PBPS1:Lnk9Ch1",
+        "up": "SAROP21-CVME-PBPS1:Lnk9Ch3",
+        "down": "SAROP21-CVME-PBPS1:Lnk9Ch4",
+    },
     name="mon_mono",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
@@ -283,6 +289,21 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
+    "SpectralEncoder",
+    "SAROP21-PSEN135",
+    module_name="eco.xdiagnostics.timetools",
+    name="tt_opt",
+    mirror_stages={
+        "las_in_rx": "SLAAR21-LMOT-M538:MOT",
+        "las_in_ry": "SLAAR21-LMOT-M537:MOT",
+        "las_out_rx": "SLAAR21-LMOT-M536:MOT",
+        "las_out_ry": "SLAAR21-LMOT-M535:MOT",
+    },
+    lazy=True,
+)
+
+
+namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SAROP21-PBPS133",
     channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
@@ -365,6 +386,21 @@ namespace.append_obj(
     in_target=3,
     lazy=True,
 )
+
+namespace.append_obj(
+    "SolidTargetDetectorBerninaUSD",
+    "SARES23:LIC12",
+    # diode_channels_raw={
+    #     "up":   "",
+    #     "down": "",
+    #     "left": "",
+    #     "right":"",
+    # },
+    module_name="eco.xdiagnostics.intensity_monitors",
+    name="mon_kb",
+    lazy=True,
+)
+
 
 namespace.append_obj(
     "DownstreamDiagnostic",
@@ -657,7 +693,7 @@ namespace.append_obj(
     module_name="eco.xoptics.kb_bernina",
     usd_table=usd_table,
     name="kb",
-    diffractometer=xrd,
+    diffractometer=gps,
     lazy=True,
 )
 
@@ -1149,9 +1185,17 @@ namespace.append_obj(
 
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-C2",
+    "SARES20-CAMS142-M2",
     lazy=True,
     name="samplecam_sideview",
+    module_name="eco.devices_general.cameras_swissfel",
+)
+
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C2",
+    lazy=True,
+    name="samplecam_sideview_45deg",
     module_name="eco.devices_general.cameras_swissfel",
 )
 
@@ -1269,12 +1313,6 @@ class N2jet(Assembly):
         )
 
 
-namespace.append_obj(
-    N2jet,
-    lazy=True,
-    name="jet",
-)
-
 # ad hoc incoupling device
 class Incoupling(Assembly):
     def __init__(self, name=None):
@@ -1286,10 +1324,17 @@ class Incoupling(Assembly):
         # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 
 
+# namespace.append_obj(
+#    Incoupling,
+#    lazy=True,
+#    name="las_inc",
+# )
+
 namespace.append_obj(
-    Incoupling,
+    "High_field_thz_chamber",
+    name="thc",
     lazy=True,
-    name="las_inc",
+    module_name="eco.endstations.bernina_sample_environments",
 )
 
 

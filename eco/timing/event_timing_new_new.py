@@ -16,13 +16,15 @@ class TimingSystem(Assembly):
 
     def __init__(self, pv_master=None, pv_pulse_id=None, pv_eventset=None, name=None):
         super().__init__(name=name)
+        self._append(MasterEventSystem, pv_master, name="event_master", is_display=True)
+        # self._append(DetectorPvDataStream, pv_pulse_id, name="pulse_id")
         self._append(
-            MasterEventSystem, pv_master, name="event_master", is_display="recursive"
+            DetectorBsStream, "pulse_id", cachannel=pv_pulse_id, name="pulse_id"
         )
-        self._append(DetectorPvDataStream, pv_pulse_id, name="pulse_id")
+        self._append(DetectorBsStream, "lab_time", cachannel=None, name="lab_time")
 
         if pv_eventset:
-            self._append(DetectorBsStream, pv_eventset, name="eventset")
+            self._append(DetectorBsStream, pv_eventset, cachannel=None, name="eventset")
 
 
 # EVR output mapping

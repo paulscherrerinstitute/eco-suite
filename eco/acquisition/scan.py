@@ -51,6 +51,7 @@ class Scan:
         Npulses=100,
         basepath="",
         scan_info_dir="",
+        settling_time=0,
         checker=None,
         scan_directories=False,
         callbackStartStep=None,
@@ -78,6 +79,7 @@ class Scan:
         self.pulses_done = []
         self.readbacks = []
         self.counterCallers = counterCallers
+        self.settling_time = settling_time
         self.fina = fina
         self.nextStep = 0
         self.basepath = basepath
@@ -157,6 +159,10 @@ class Scan:
             ms.append(adj.set_target_value(tv))
         for tm in ms:
             tm.wait()
+
+        # settling
+        sleep(self.settling_time)
+
         readbacks_step = []
         adjs_name = []
         adjs_offset = []
@@ -376,6 +382,7 @@ class Scans:
         file_name="",
         counters=[],
         start_immediately=True,
+        settling_time=0,
         step_info=None,
         return_at_end=True,
     ):
@@ -396,6 +403,7 @@ class Scans:
             Npulses=N_pulses,
             basepath=self.data_base_dir,
             scan_info_dir=self.scan_info_dir,
+            settling_time=settling_time,
             checker=self.checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
@@ -421,6 +429,7 @@ class Scans:
         start_immediately=True,
         step_info=None,
         return_at_end="question",
+        settling_time=0,
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         values = [[tp] for tp in positions]
@@ -437,6 +446,7 @@ class Scans:
             basepath=self.data_base_dir,
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
+            settling_time=settling_time,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
@@ -459,6 +469,7 @@ class Scans:
         file_name="",
         counters=[],
         start_immediately=True,
+        settling_time=0,
         step_info=None,
         return_at_end="question",
     ):
@@ -480,6 +491,7 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
+            settling_time=settling_time,
             callbacks_start_scan=self.callbacks_start_scan,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
@@ -504,6 +516,7 @@ class Scans:
         file_name=None,
         counters=[],
         start_immediately=True,
+        settling_time=0,
         step_info=None,
         return_at_end="question",
     ):
@@ -523,6 +536,7 @@ class Scans:
             scan_info_dir=self.scan_info_dir,
             checker=self.checker,
             scan_directories=self._scan_directories,
+            settling_time=settling_time,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
             callbacks_end_scan=self.callbacks_end_scan,

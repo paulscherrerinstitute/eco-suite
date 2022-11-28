@@ -7,6 +7,7 @@ from bsread import dispatcher, source
 from ..epics import get_from_archive
 from escape import stream
 from time import time, sleep
+from eco.acquisition.utilities import Acquisition
 
 
 @get_from_archive
@@ -25,7 +26,10 @@ class DetectorBsStream:
         self.stream = stream.EscData(source=stream.EventSource(self.bs_channel, None))
 
     def get_current_value(self, force_bsstream=False):
+
         if not force_bsstream:
+            if not hasattr(self, "_pv"):
+                return None
             return self._pv.get()
         else:
             raise NotImplementedError(

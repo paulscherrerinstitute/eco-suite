@@ -25,6 +25,18 @@ class IncouplingCleanBernina(Assembly):
         self._append(SmaractStreamdevice, "SARES23-LIC15", name="transl_vertical")
         self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
 
+
+class Spectrometer(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(self, AdjustablePvEnum, pvname + ":TRIGGER", name="trigger_mode")
+        self._append(self, AdjustablePvEnum, pvname + ":INIT", name="state")
+        self._append(self, AdjustablePv, pvname + ":EXPOSURE", name="exposure_time")
+        self._append(self, AdjustablePv, pvname + ":EXPOSURE", name="exposure_time")
+        self._append(self, DetectorPvData, pvname + ":CENTRE", name="center")
+
+
 flag_names_filter_wheel = [
     "error",
     "proc_tongle",
@@ -58,9 +70,9 @@ class FilterWheel(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(AdjustablePvEnum, f"{pvname}.VAL", name = "_val", is_setting=True)
-        self._append(AdjustablePvEnum, f"{pvname}.RBV", name = "_rb",  is_setting=True)
-        self._append(AdjustablePv, f"{pvname}.CMD", name = "_cmd", is_setting=False)
+        self._append(AdjustablePvEnum, f"{pvname}.VAL", name="_val", is_setting=True)
+        self._append(AdjustablePvEnum, f"{pvname}.RBV", name="_rb", is_setting=True)
+        self._append(AdjustablePv, f"{pvname}.CMD", name="_cmd", is_setting=False)
         self.set_remote_operation()
         self._append(
             DetectorPvData,
@@ -87,26 +99,24 @@ class FilterWheel(Assembly):
     def home(self):
         self.set_remote_operation()
         self._val(6)
-    
+
     def is_moving(self):
-       pass 
-
-
+        pass
 
 
 class FilterWheelAttenuator(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
-        self._append(FilterWheel, pvname = pvname + "IFW_A", name="wheel_1")
-        self._append(FilterWheel, pvname = pvname + "IFW_B", name="wheel_2")
+        self._append(FilterWheel, pvname=pvname + "IFW_A", name="wheel_1")
+        self._append(FilterWheel, pvname=pvname + "IFW_B", name="wheel_2")
 
         self.targets_1 = {
-            "t": 10**-np.array([0.2, 0.3, 0.5, 0.6, 1.0]),
-            "pos": np.array([1,2,3,4,5]),
+            "t": 10 ** -np.array([0.2, 0.3, 0.5, 0.6, 1.0]),
+            "pos": np.array([1, 2, 3, 4, 5]),
         }
         self.targets_2 = {
-            "t":10**-np.array([0.2, 0.3, 0.4, 0.5, 0.6]),
-            "pos": np.array([1,2,3,4,5]),
+            "t": 10 ** -np.array([0.2, 0.3, 0.4, 0.5, 0.6]),
+            "pos": np.array([1, 2, 3, 4, 5]),
         }
 
         self._calc_transmission()
@@ -125,6 +135,7 @@ class FilterWheelAttenuator(Assembly):
     def home(self):
         self.wheel_1.home()
         self.wheel_2.home()
+
 
 class LaserBernina(Assembly):
     def __init__(self, pvname, name=None):
@@ -168,21 +179,24 @@ class LaserBernina(Assembly):
             )
 
         def wp2uJ(wp):
-            return np.interp(wp, *np.asarray(self.wp_att_calibration()).T)
+            try:
+                return np.interp(wp, *np.asarray(self.wp_att_calibration()).T)
+            except:
+                return np.nan
 
         self._append(
             AdjustableVirtual, [self.wp_att], wp2uJ, uJ2wp, name="pulse_energy_pump"
         )
 
-        #self._append(
+        # self._append(
         #    MotorRecord,
         #    self.pvname + "-M522:MOTOR_1",
         #    name="delaystage_pump",
         #    is_setting=True,
-        #)
-        #self._append(
+        # )
+        # self._append(
         #    DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
-        #)
+        # )
         self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
         # Upstairs, Laser 1 LAM
         self._append(
@@ -203,12 +217,8 @@ class LaserBernina(Assembly):
         #     name="delaystage_thz",
         #     is_setting=True,
         # )
-        self._append(
-            SmaractRecord, "SARES23:ESB3", name="pump_hor", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES23:ESB18", name="pump_ver", is_setting=True
-        )
+        self._append(SmaractRecord, "SARES23:ESB3", name="pump_hor", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB18", name="pump_ver", is_setting=True)
 
 
 class DelayTime(AdjustableVirtual):
@@ -294,13 +304,36 @@ class DelayCompensation(AdjustableVirtual):
         return s
 
 
-
 class PositionMonitors(Assembly):
-    def __init__(self,name=None):
+    def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C551', name='post_compressor_focus', is_display='recursive', is_status=True)
-        self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C552', name='post_compressor_position', is_display='recursive', is_status=True)
-        self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C531', name='opaout_position', is_display='recursive', is_status=True)
-        self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C511', name='opaout_focus', is_display='recursive', is_status=True)
+        self._append(
+            CameraPositionMonitor,
+            "SLAAR21-LCAM-C551",
+            name="post_compressor_focus",
+            is_display="recursive",
+            is_status=True,
+        )
+        self._append(
+            CameraPositionMonitor,
+            "SLAAR21-LCAM-C552",
+            name="post_compressor_position",
+            is_display="recursive",
+            is_status=True,
+        )
+        self._append(
+            CameraPositionMonitor,
+            "SLAAR21-LCAM-C531",
+            name="opaout_position",
+            is_display="recursive",
+            is_status=True,
+        )
+        self._append(
+            CameraPositionMonitor,
+            "SLAAR21-LCAM-C511",
+            name="opaout_focus",
+            is_display="recursive",
+            is_status=True,
+        )
         # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C541', name='cam541')
         # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C542', name='cam542')

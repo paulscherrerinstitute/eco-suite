@@ -1,3 +1,4 @@
+from eco.elements.adjustable import AdjustableMemory
 from eco.elements.assembly import Assembly
 from eco.aliases import Alias
 

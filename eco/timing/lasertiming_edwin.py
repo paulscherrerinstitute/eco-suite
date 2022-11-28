@@ -2,6 +2,8 @@ from epics import PV
 import os
 import numpy as np
 import time
+
+from eco.elements.detector import DetectorVirtual
 from ..devices_general.utilities import Changer
 from ..elements.adjustable import (
     spec_convenience,
@@ -10,7 +12,7 @@ from ..elements.adjustable import (
     tweak_option,
 )
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData 
+from ..epics.detector import DetectorPvData
 from ..aliases import append_object_to_object, Alias
 from ..elements.assembly import Assembly
 
@@ -97,9 +99,50 @@ class XltEpics(Assembly):
     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
         super().__init__(name=name)
         self.pvname = pvname
-        self.settings_collection.append(self, force=True)
-        self.status_collection.append(self, force=True)
-        self.display_collection.append(self, force=True)
+        # self.settings_collection.append(self, force=True)
+        # self.status_collection.append(self, force=True)
+        # self.display_collection.append(self, force=True)
+        self._append(
+            AdjustablePv,
+            self.pvname + ":DELAY_Z_OFFS",
+            name="_offset",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            DetectorPvData,
+            "SLAAR-LGEN:DLY_OFFS2",
+            unit="µs",
+            name="delay_dial_rb",
+            is_setting=False,
+            is_display=True,
+        )
+        # SLAAR-LGEN:DLY_OFFS2
+        self._append(
+            AdjustableVirtual,
+            [self._offset],
+            lambda offset: offset * 1e-12,
+            lambda offset: offset / 1e-12,
+            name="offset",
+            unit="s",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorVirtual,
+            [self.delay_dial_rb, self.offset],
+            lambda dialrb, offset: dialrb * 1e-6 - offset,
+            unit="s",
+            name="readback",
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":WINDOW_REQ",
+            name="phase_shifter_window_start",
+            is_setting=True,
+            is_display=True,
+            unit="ps",
+        )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":SHOTDELAY",
@@ -115,19 +158,24 @@ class XltEpics(Assembly):
             is_display=True,
         )
         self._append(
-            AdjustablePv,
-            self.pvname + ":DELAY_Z_OFFS",
-            name="_offset",
+            AdjustablePvEnum,
+            self.pvname + ":ONEINN_MODE",
+            name="reference_mode",
             is_setting=True,
-            is_display=False,
+            is_display=True,
         )
         self._append(
-            AdjustableVirtual,
-            [self._offset],
-            lambda offset: offset * 1e-12,
-            lambda offset: offset / 1e-12,
-            name="offset",
-            is_setting=False,
+            AdjustablePvEnum,
+            self.pvname + ":USE_EXT_EVT",
+            name="use_ext_reference_event",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":ALT_EXT_EVT",
+            name="ext_reference_event",
+            is_setting=True,
             is_display=True,
         )
         self._append(
@@ -158,18 +206,27 @@ class XltEpics(Assembly):
         #     is_setting=False,
         #     is_display=True,
         # )
-        
-        self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
-        self.alias.append(
-            Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
-        )
+
+        # self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
+        # self.alias.append(
+        #     Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
+        # )
         self.waiting_for_change = PV(self.pvname + ":WAITING")
 
-    def get_current_dial_value(self):
-        return self._delay_dial_rb.get() * 1e-6
+    # def get_current_dial_value(self):
+    #     return self.delay_dial_rb.get_current_value() * 1e-6
 
-    def get_current_value(self):
-        return self.get_current_dial_value() - self.offset.get_current_value()
+    # def get_current_value(self):
+    #     return self.get_current_dial_value() - self.offset.get_current_value()
+
+    # def get_current_dial_value(self):
+    #     return self.delay_dial_rb.get_current_value() * 1e-6
+
+    # def get_current_user_value(self):
+    #     return (
+    #         self.delay_dial_rb.get_current_value() * 1e-6
+    #         - self.offset.get_current_value()
+    #     )
 
     def change_user_and_wait(self, value, check_interval=0.03):
         if np.abs(value) > 0.1:

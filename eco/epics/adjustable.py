@@ -5,7 +5,12 @@ import numpy as np
 from epics import PV
 
 from eco.aliases import Alias
-from eco.elements.adjustable import tweak_option, spec_convenience, value_property
+from eco.elements.adjustable import (
+    AdjustableMemory,
+    tweak_option,
+    spec_convenience,
+    value_property,
+)
 from . import get_from_archive
 from eco.devices_general.utilities import Changer
 from ..elements.assembly import Assembly
@@ -24,6 +29,7 @@ class AdjustablePv:
         name=None,
         elog=None,
         element_count=None,
+        unit=None,
     ):
 
         #        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
@@ -38,6 +44,8 @@ class AdjustablePv:
         self._pv = PV(self.Id, connection_timeout=0.05, count=element_count)
         self._currentChange = None
         self.accuracy = accuracy
+        if unit:
+            self.unit = AdjustableMemory(unit, name="unit")
 
         if pvreadbackname is None:
             self._pvreadback = PV(self.Id, count=element_count, connection_timeout=0.05)

@@ -1,8 +1,7 @@
 import sys
 
 sys.path.append("..")
-from ..devices_general.motors import MotorRecord, SmaractStreamdevice
-from ..devices_general.smaract import SmarActRecord
+from ..devices_general.motors import MotorRecord, SmaractRecord
 from ..epics.adjustable import AdjustablePv
 import numpy as np
 from epics import PV
@@ -32,20 +31,19 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 
 def addSmarActRecordToSelf(self, Id=None, name=None, **kwargs):
-    self.__dict__[name] = SmaractStreamdevice(Id, name=name, **kwargs)
+    self.__dict__[name] = SmaractRecord(Id, name=name, **kwargs)
     self.alias.append(self.__dict__[name].alias)
 
 
 class High_field_thz_chamber(Assembly):
-    def __init__(self, name=None, Id=None, alias_namespace=None, configuration=[]):
+    def __init__(self, name=None, alias_namespace=None, configuration=[]):
         super().__init__(name=name)
-        self.Id = Id
         self.name = name
         self.alias = Alias(name)
         self.par_out_pos = [35, -9.5]
         self.motor_configuration = {
             "rx": {
-                "id": "-ESB13",
+                "id": "SARES23:ESB13",
                 "pv_descr": "Motor7:1 THz Chamber Rx",
                 "type": 2,
                 "sensor": 1,
@@ -54,7 +52,7 @@ class High_field_thz_chamber(Assembly):
                 "kwargs": {"accuracy": 0.01},
             },
             "x": {
-                "id": "-ESB14",
+                "id": "SARES23:ESB14",
                 "pv_descr": "Motor7:2 THz Chamber x ",
                 "type": 1,
                 "sensor": 0,
@@ -62,7 +60,7 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "z": {
-                "id": "-ESB10",
+                "id": "SARES23:ESB10",
                 "pv_descr": "Motor6:1 THz Chamber z ",
                 "type": 1,
                 "sensor": 0,
@@ -70,7 +68,7 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "ry": {
-                "id": "-ESB11",
+                "id": "SARES23:ESB11",
                 "pv_descr": "Motor6:2 THz Chamber Ry",
                 "type": 2,
                 "sensor": 1,
@@ -78,7 +76,7 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "rz": {
-                "id": "-ESB12",
+                "id": "SARES23:ESB12",
                 "pv_descr": "Motor6:3 THz Chamber Rz",
                 "type": 2,
                 "sensor": 1,
@@ -90,33 +88,41 @@ class High_field_thz_chamber(Assembly):
         ### lakeshore temperatures ####
         self._append(
             AdjustablePv,
-            pvsetname="SARES20-CRYO:TEMP.VAL",
-            pvreadbackname="SARES20-CRYO:TEMP_RBV",
+            pvsetname="SARES20-LS336:LOOP1_SP",
+            pvreadbackname="SARES20-LS336:A_RBV",
             accuracy=0.1,
             name="temp_sample",
             is_setting=False,
         )
         self._append(
             AdjustablePv,
-            pvsetname="SARES20-CRYO:TEMP-B",
-            pvreadbackname="SARES20-CRYO:TEMP-B_RBV",
+            pvsetname="SARES20-LS336:LOOP2_SP",
+            pvreadbackname="SARES20-LS336:B_RBV",
             accuracy=0.1,
             name="temp_coldfinger",
             is_setting=False,
         )
 
         ### in vacuum smaract motors ###
+        #for name, config in self.motor_configuration.items():
+        #    if "kwargs" in config.keys():
+        #        tmp_kwargs = config["kwargs"]
+        #    else:
+        #        tmp_kwargs = {}
+        #    self._append(
+        #        SmaractStreamdevice,
+        #        pvname=Id + config["id"],
+        #        name=name,
+        #        is_setting=True,
+        #        **tmp_kwargs,
+        #    )
+        ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
-            if "kwargs" in config.keys():
-                tmp_kwargs = config["kwargs"]
-            else:
-                tmp_kwargs = {}
             self._append(
-                SmaractStreamdevice,
-                pvname=Id + config["id"],
+                SmaractRecord,
+                pvname=config["id"],
                 name=name,
                 is_setting=True,
-                **tmp_kwargs,
             )
         self._append(
             AdjustableFS,
@@ -186,12 +192,12 @@ class High_field_thz_chamber(Assembly):
     def set_stage_config(self):
         for name, config in self.motor_configuration.items():
             mot = self.__dict__[name]
-            mot.caqtdm_name(config["pv_descr"])
-            mot.stage_type(config["type"])
+            mot.description(config["pv_descr"])
+            #mot.stage_type(config["type"])
             mot.sensor_type(config["sensor"])
-            mot.speed(config["speed"])
+            mot.max_frequency(config["speed"])
             sleep(0.5)
-            mot.calibrate_sensor(1)
+            mot.calibrate_sensor()
 
     def home_smaract_stages(self, stages=None):
         if stages == None:
@@ -208,25 +214,27 @@ class High_field_thz_chamber(Assembly):
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.home_backward(1)
-                while mot.status_channel().value == 7:
+                mot.home_reverse(1)
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.is_homed() == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
                     mot.home_forward(1)
             elif config["home_direction"] == "forward":
                 mot.home_forward(1)
-                while mot.status_channel().value == 7:
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.is_homed() == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.home_backward(1)
+                    mot.home_reverse(1)
 
     def calc_otti(
         self, otti_nu=None, otti_del=None, otti_det=None, plotit=True, **kwargs

@@ -116,27 +116,10 @@ class ProfKbBernina(Assembly):
             pvname_z="SARES20-MF2:MOT_3",
             name="target_stages",
             is_display="recursive",
+            is_setting=True,
         )
         self.target = self.target_stages.presets
 
-        self._append(
-            MotorRecord,
-            pvname_target_x,
-            name="x_target",
-            is_setting=True,
-        )
-        self._append(
-            MotorRecord,
-            pvname_target_y,
-            name="y_target",
-            is_setting=True,
-        )
-        self._append(
-            MotorRecord,
-            pvname_target_z,
-            name="z_target",
-            is_setting=True,
-        )
         self._append(
             SmaractRecord,
             pvname_mirror,

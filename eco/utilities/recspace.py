@@ -183,8 +183,8 @@ class DiffGeometryYou(Assembly):
     def new_ub(self):
         ### missing: clear ub ###
         ### missing: check ub ###
-        crystal_name = input(f"Name of the crystal: ({self.name})" or self.name)
-        a = float(input(f"Lattice constant a ({self.unit_cell()['a']}): ") or {self.unit_cell['a']})
+        crystal_name = input(f"Name of the crystal: ({self.name})" or str(self.name))
+        a = float(input(f"Lattice constant a (1): ") or 1)
         b = float(input(f"Lattice constant b ({a}): ") or a)
         c = float(input(f"Lattice constant c ({a}): ") or a)
         alpha = float(input("Angle alpha (90): ") or 90)
@@ -224,7 +224,7 @@ class DiffGeometryYou(Assembly):
             self.ubcalc.add_orientation(ori.pop("hkl"), ori.pop("xyz"), **ori)
         for refl in self.reflections():
             position = Position(*refl.pop("position"))
-            self.ubcalc.add_reflection(refl.pop("hkl"), position, refl.pop("energy"), **refl)
+            self.ubcalc.add_reflection(refl.pop("hkl"), position, refl.pop("energy")*1e-3, **refl)
         self._u_ub_to_dc()
 
 
@@ -311,7 +311,7 @@ class DiffGeometryYou(Assembly):
         self.recalculate()
 
 
-    def calc_ub(self, idx1=None, idx2=None):
+    def calc_ub(self, idx1=0, idx2=1):
         """Calculate UB matrix.
 
         Calculate UB matrix using two reference reflections and/or
@@ -361,6 +361,9 @@ class DiffGeometryYou(Assembly):
         Refined U matrix as NumPy array and refined crystal lattice parameters.
 
         """
+        if refine_lattice:
+            print("fitting the lattice is not yet implemented")
+            return
         setvals = [mu, delta, nu, eta, chi, phi]
         curvals = self.get_diffractometer_angles()
         angs = [curval if setval == None else setval for setval, curval in zip(setvals, curvals)]
@@ -371,11 +374,9 @@ class DiffGeometryYou(Assembly):
         self.recalculate()
         self.ubcalc.refine_ub(hkl, position=position, wavelength=wl, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
         self._u_ub_from_dc()
-        if refine_lattice:
-            print("not implemented")
-            #self._lat_from_dc()
 
-    def fit_ub(self, indices, refine_lattice=False, refine_umatrix=False):
+
+    def fit_ub(self, indices=None, refine_lattice=False, refine_umatrix=True):
         """Refine UB matrix using reference reflections.
 
         Parameters
@@ -393,7 +394,28 @@ class DiffGeometryYou(Assembly):
             Refined U matrix as NumPy array and refined crystal lattice parameters.
         """
         self.recalculate()
-        self.ubcalc.fit_ub(indices, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
+        if indices is None:
+            indices = list(range(len(self.reflections())))
+        ub, lat = self.ubcalc.fit_ub(indices, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
+        if refine_umatrix:
+            print("\nFitted UB matrix applied")
+        else:
+            print("\nFitted UB matrix not applied. To apply it, set refine_umatrix=True")
+        print(ub)
+        if refine_lattice:
+            print("\nFitted lattice applied")
+        else:
+            print("\nFitted lattice not applied. To apply it, set refine_lattice=True")
+        for k, val in {
+                "name": lat[0],
+                "a": lat[1],
+                "b": lat[2],
+                "c": lat[3],
+                "alpha": lat[4],
+                "beta": lat[5],
+                "gamma": lat[6],
+            }.items():
+            print(f"{k:8}: {val}")
         self._u_ub_from_dc()
         if refine_lattice:
             self._lat_from_dc()
@@ -475,7 +497,7 @@ class DiffGeometryYou(Assembly):
             self.ubcalc.set_u(self.u_matrix())
 
     def _lat_from_dc(self):
-        self.set_unit_cell(*self.ubcalc.crystal.get_lattice()[1:])
+        self.set_unit_cell(*self.ubcalc.crystal.get_lattice())
 
     def en2lam(self, en):
         """input: energy in eV, returns wavelength in A"""

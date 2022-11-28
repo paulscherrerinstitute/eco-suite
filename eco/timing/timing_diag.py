@@ -22,7 +22,7 @@ class TimetoolBerninaUSD(Assembly):
         self,
         name=None,
         processing_pipeline="SARES20-CAMS142-M5_psen_db",
-        processing_instance="SARES20-CAMS142-M5_psen_db1",
+        processing_instance="SARES20-CAMS142-M5_psen_db",
         spectrometer_camera_channel="SARES20-CAMS142-M5:FPICTURE",
         spectrometer_pvname="SARES20-CAMS142-M5",
         microscope_pvname="SARES20-PROF141-M1",
