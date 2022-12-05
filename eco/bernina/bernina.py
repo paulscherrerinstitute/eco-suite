@@ -6,6 +6,9 @@ from eco.elements.adjustable import AdjustableFS
 from eco.elements.adjustable import AdjustableVirtual
 from eco.loptics.bernina_experiment import DelayCompensation
 from eco.devices_general.cameras_swissfel import CameraBasler
+from epics import PV
+import time
+import pickle
 
 # from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
@@ -1021,16 +1024,115 @@ def _increment_daq_run_number(scan, daq=daq):
         print(e)
 
 
+class Monitor:
+    def __init__(self, pvname, start_immediately=True):
+        self.data = {}
+        self.print = False
+        self.pv = PV(pvname)
+        self.cb_index = None
+        if start_immediately:
+            self.start_callback()
+
+    def start_callback(self):
+        self.cb_index = self.pv.add_callback(self.append)
+
+    def stop_callback(self):
+        self.pv.remove_callback(self.cb_index)
+
+    def append(self, pvname=None, value=None, timestamp=None, **kwargs):
+        if not (pvname in self.data):
+            self.data[pvname] = []
+        ts_local = time.time()
+        self.data[pvname].append(
+            {"value": value, "timestamp": timestamp, "timestamp_local": ts_local}
+        )
+        if self.print:
+            print(
+                f"{pvname}:  {value};  time: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
+            )
+
+
+import traceback
+
+
+def append_scan_monitors(scan, daq=daq):
+    scan.monitors = {}
+    for adj in scan.adjustables:
+        try:
+            tname = adj.alias.get_full_name()
+        except Exception:
+            tname = adj.name
+            traceback.print_exc()
+        try:
+            scan.monitors[tname] = Monitor(adj.pvname)
+        except Exception:
+            print(f"Could not add CA monitor for {tname}")
+            traceback.print_exc()
+        try:
+            rname = adj.readback.alias.get_full_name()
+        except Exception:
+            print("no readback configured")
+            traceback.print_exc()
+        try:
+            scan.monitors[rname] = Monitor(adj.readback.pvname)
+        except Exception:
+            print(f"Could not add CA readback monitor for {tname}")
+            traceback.print_exc()
+
+    try:
+        tname = daq.pulse_id.alias.get_full_name()
+        scan.monitors[tname] = Monitor(daq.pulse_id.pvname)
+    except Exception:
+        print(f"Could not add daq.pulse_id monitor")
+        traceback.print_exc()
+
+
+def end_scan_monitors(scan, daq=daq):
+    for tmon in scan.monitors:
+        scan.monitors[tmon].stop_callback()
+
+    monitor_result = {tmon: scan.monitors[tmon].data for tmon in scan.monitors}
+
+    #######
+    # get data that should come later from api or similar.
+    run_directory = list(
+        Path(f"/sf/bernina/data/{daq.pgroup}/raw").glob(f"run{scan.run_number:04d}*")
+    )[0].as_posix()
+
+    # correct some data in there (relative paths for now)
+    from os.path import relpath
+
+    # save temprary file and send then to raw
+    runno = daq.get_last_run_number()
+    pgroup = daq.pgroup
+    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/info_run{runno:04d}")
+    tmpdir.mkdir(exist_ok=True, parents=True)
+    scanmonitorfile = tmpdir / Path("scan_monitor.pkl")
+    if not Path(scanmonitorfile).exists():
+        with open(scanmonitorfile, "wb") as f:
+            pickle.dump(monitor_result, f)
+
+    print(f"Copying monitor file to run {runno} to the raw directory of {pgroup}.")
+    response = daq.append_aux(
+        scanmonitorfile.as_posix(), pgroup=pgroup, run_number=runno
+    )
+    print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+
+    # scan.monitors = None
+
+
 callbacks_start_scan = []
 callbacks_start_scan = [lambda scan: namespace.init_all(silent=False)]
 callbacks_start_scan.append(_wait_for_tasks)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)
+callbacks_start_scan.append(append_scan_monitors)
 callbacks_end_scan = []
 callbacks_end_scan.append(_write_namespace_status_to_scan)
 callbacks_end_scan.append(_write_namespace_aliases_to_scan)
 callbacks_end_scan.append(_copy_scan_info_to_raw)
 callbacks_end_scan.append(_copy_selected_JF_pedestals_to_raw)
+callbacks_end_scan.append(end_scan_monitors)
 callbacks_end_scan.append(_message_end_scan)
 
 
@@ -1183,6 +1285,7 @@ namespace.append_obj(
 #    module_name="eco.microscopes",
 # )
 
+
 namespace.append_obj(
     "CameraBasler",
     "SARES20-CAMS142-M2",
@@ -1252,6 +1355,7 @@ namespace.append_obj(
 
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice
+from ..loptics.bernina_laser import DelayTime
 
 
 # namespace.append_obj(
@@ -1263,6 +1367,49 @@ from ..devices_general.motors import SmaractStreamdevice
 # )
 
 from ..epics.adjustable import AdjustablePv
+
+
+class Double_Pulse_Pump(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+
+        ### dp smaract stages ####
+
+        self.motor_configuration = {
+            "delaystage_both": {
+                "id": "SARES23:ESB15",
+            },
+            "delaystage_pulse2": {
+                "id": "SARES23:ESB1",
+            },
+            "wp_both": {
+                "id": "SARES23:ESB3",
+            },
+            "wp_pulse2": {
+                "id": "SARES23:ESB2",
+            },
+        }
+        for name, config in self.motor_configuration.items():
+            self._append(
+                SmaractRecord,
+                pvname=config["id"],
+                name=name,
+                is_setting=True,
+            )
+        self._append(
+            DelayTime, self.delaystage_both, name="delay_both", is_setting=True
+        )
+        self._append(
+            DelayTime, self.delaystage_pulse2, name="delay_pulse2", is_setting=True
+        )
+
+
+namespace.append_obj(
+    Double_Pulse_Pump,
+    lazy=True,
+    name="pump",
+)
+
 
 # ad hoc N2 jet readout
 class N2jet(Assembly):
@@ -1335,6 +1482,7 @@ namespace.append_obj(
     name="thc",
     lazy=True,
     module_name="eco.endstations.bernina_sample_environments",
+    configuration=["ottifant"],
 )
 
 
