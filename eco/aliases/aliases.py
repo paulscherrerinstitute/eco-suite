@@ -33,7 +33,7 @@ class Alias:
         o = self.children[i]
         o.parent = None
 
-    def get_all(self, joiner="."):
+    def get_all(self, joiner=".", channeltypes=None):
         aa = []
         if self.channel:
             ta = {}
@@ -41,18 +41,20 @@ class Alias:
             ta["channel"] = self.channel
             if self.channeltype:
                 ta["channeltype"] = self.channeltype
-            aa.append(ta)
+            if (not channeltypes) or (ta["channeltype"] in channeltypes):
+                aa.append(ta)
         if self.children:
             for tc in self.children:
                 taa = tc.get_all()
                 for ta in taa:
-                    aa.append(
-                        {
-                            "alias": joiner.join([self.alias, ta["alias"]]),
-                            "channel": ta["channel"],
-                            "channeltype": ta["channeltype"],
-                        }
-                    )
+                    if (not channeltypes) or (ta["channeltype"] in channeltypes):
+                        aa.append(
+                            {
+                                "alias": joiner.join([self.alias, ta["alias"]]),
+                                "channel": ta["channel"],
+                                "channeltype": ta["channeltype"],
+                            }
+                        )
         return aa
 
     def get_full_name(self, base=None, joiner="."):

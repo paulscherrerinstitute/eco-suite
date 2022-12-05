@@ -110,11 +110,13 @@ class Assembly:
         if view_toplevel_only:
             self.view_toplevel_only.append(self.__dict__[name])
 
-    def get_status(self, base="self", verbose=True):
+    def get_status(self, base="self", verbose=True, channeltypes=None):
         if base == "self":
             base = self
         settings = {}
+        settings_channels = {}
         status = {}
+        status_channels = {}
         nodet = []
         geterror = []
         for ts in track(
@@ -129,7 +131,16 @@ class Assembly:
             # else:
             if hasattr(ts, "get_current_value"):
                 try:
-                    settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
+                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
+                        settings[
+                            ts.alias.get_full_name(base=base)
+                        ] = ts.get_current_value()
+                        try:
+                            settings_channels[
+                                ts.alias.get_full_name(base=base)
+                            ] = ts.alias.channel
+                        except:
+                            pass
                 except:
                     geterror.append(ts.alias.get_full_name(base=base))
             else:
@@ -146,7 +157,16 @@ class Assembly:
             # else:
             if hasattr(ts, "get_current_value"):
                 try:
-                    status[ts.alias.get_full_name(base=base)] = ts.get_current_value()
+                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
+                        status[
+                            ts.alias.get_full_name(base=base)
+                        ] = ts.get_current_value()
+                        try:
+                            status_channels[
+                                ts.alias.get_full_name(base=base)
+                            ] = ts.alias.channel
+                        except:
+                            pass
                 except:
                     geterror.append(ts.alias.get_full_name(base=base))
             else:
@@ -159,7 +179,12 @@ class Assembly:
                     "Retrieved error while running get_current_value from: "
                     + ", ".join(geterror)
                 )
-        return {"settings": settings, "status": status}
+        return {
+            "settings": settings,
+            "status": status,
+            "settings_channels": settings_channels,
+            "status_channels": status_channels,
+        }
 
     def status(self, get_string=False):
         stat = self.get_status()
@@ -242,6 +267,35 @@ class Assembly:
         print(f"Starting following commandline silently:\n" + line)
         with open(os.devnull, "w") as FNULL:
             subprocess.Popen(line, shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
+
+
+import epics.pv
+import time
+
+
+class Monitor:
+    def __init__(self, assembly):
+        self.assembly = assembly
+        self.data = {}
+        self.callbacks = {}
+
+    def start_monitoring(self):
+        o = self.assembly.get_status(channeltypes=["CA"])
+        self.data = {k: [v] for k, v in o["status"].items()}
+        self.channelkeys = {v: k for k, v in o["status_channels"].items()}
+        for cik, civ in epics.pv._PVcache_.items():
+            if cik[0] in o["status_channels"].keys():
+                tname = self.channelkeys[cik[0]]
+                tpv = civ
+                self.callbacks[tname] = tpv.add_callback(self.append)
+
+    def append(self, pvname=None, value=None, timestamp=None, **kwargs):
+        if not (pvname in self.data):
+            self.data[pvname] = []
+        ts_local = time.time()
+        self.data[self.channelkeys[pvname]].append(
+            {"value": value, "timestamp": timestamp, "timestamp_local": ts_local}
+        )
 
 
 class Assembly_old:
