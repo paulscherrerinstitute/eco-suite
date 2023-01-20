@@ -278,20 +278,27 @@ class Monitor:
         self.assembly = assembly
         self.data = {}
         self.callbacks = {}
+        self.pvs = {}
 
     def start_monitoring(self):
         o = self.assembly.get_status(channeltypes=["CA"])
-        self.data = {k: [v] for k, v in o["status"].items()}
+        # self.data = {k: [v] for k, v in o["status"].items()}
         self.channelkeys = {v: k for k, v in o["status_channels"].items()}
-        for cik, civ in epics.pv._PVcache_.items():
-            if cik[0] in o["status_channels"].keys():
-                tname = self.channelkeys[cik[0]]
-                tpv = civ
-                self.callbacks[tname] = tpv.add_callback(self.append)
+        self.pvs = {k: epics.pv.PV(v) for k, v in o["status_channels"].items()}
+        # for cik, civ in epics.pv._PVcache_.items():
+        #     if cik[0] in o["status_channels"].keys():
+        #         tname = self.channelkeys[cik[0]]
+        #         tpv = civ
+        for tname, tpv in self.pvs.items():
+            self.callbacks[tname] = tpv.add_callback(self.append)
+
+    def stop_monitoring(self):
+        for tname in self.pvs:
+            self.pvs[tname].remove_callback(index=self.callbacks[tname])
 
     def append(self, pvname=None, value=None, timestamp=None, **kwargs):
-        if not (pvname in self.data):
-            self.data[pvname] = []
+        if not (self.channelkeys[pvname] in self.data):
+            self.data[self.channelkeys[pvname]] = []
         ts_local = time.time()
         self.data[self.channelkeys[pvname]].append(
             {"value": value, "timestamp": timestamp, "timestamp_local": ts_local}

@@ -17,80 +17,153 @@ from ..aliases import append_object_to_object, Alias
 from ..elements.assembly import Assembly
 
 
-@spec_convenience
-class XltEpics:
-    def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
-        self.pvname = pvname
-        self.alias = Alias(name)
-        append_object_to_object(
-            self,
-            AdjustablePvEnum,
-            self.pvname + ":SHOTDELAY",
-            name="oscialltor_pulse_offset",
-        )
-        append_object_to_object(
-            self,
-            AdjustablePvEnum,
-            self.pvname + ":SHOTMOFFS_ENA",
-            name="modulo_offset_mode",
-        )
-        append_object_to_object(
-            self, AdjustablePv, self.pvname + ":DELAY_Z_OFFS", name="_offset"
-        )
-        self.offset = AdjustableVirtual(
-            [self._offset],
-            lambda offset: offset * 1e-12,
-            lambda offset: offset / 1e-12,
-            name="offset",
-        )
-        append_object_to_object(
-            self, AdjustablePv, self.pvname + ":DELAY", name="_set_user_delay_value"
-        )
-        self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
-        self.alias.append(
-            Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
-        )
-        self.waiting_for_change = PV(self.pvname + ":WAITING")
+# @spec_convenience
+# class XltEpics:
+#     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
+#         self.pvname = pvname
+#         self.alias = Alias(name)
+#         append_object_to_object(
+#             self,
+#             AdjustablePvEnum,
+#             self.pvname + ":SHOTDELAY",
+#             name="oscialltor_pulse_offset",
+#         )
+#         append_object_to_object(
+#             self,
+#             AdjustablePvEnum,
+#             self.pvname + ":SHOTMOFFS_ENA",
+#             name="modulo_offset_mode",@spec_convenience
+# class XltEpics:
+#     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
+#         self.pvname = pvname
+#         self.alias = Alias(name)
+#         append_object_to_object(
+#             self,
+#             AdjustablePvEnum,
+#             self.pvname + ":SHOTDELAY",
+#             name="oscialltor_pulse_offset",
+#         )
+#         append_object_to_object(
+#             self,
+#             AdjustablePvEnum,
+#             self.pvname + ":SHOTMOFFS_ENA",
+#             name="modulo_offset_mode",
+#         )
+#         append_object_to_object(
+#             self, AdjustablePv, self.pvname + ":DELAY_Z_OFFS", name="_offset"
+#         )
+#         self.offset = AdjustableVirtual(
+#             [self._offset],
+#             lambda offset: offset * 1e-12,
+#             lambda offset: offset / 1e-12,
+#             name="offset",
+#         )
+#         append_object_to_object(
+#             self, AdjustablePv, self.pvname + ":DELAY", name="_set_user_delay_value"
+#         )
+#         self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
+#         self.alias.append(
+#             Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
+#         )
+#         self.waiting_for_change = PV(self.pvname + ":WAITING")
 
-    def get_current_dial_value(self):
-        return self._delay_dial_rb.get() * 1e-6
+#     def get_current_dial_value(self):
+#         return self._delay_dial_rb.get() * 1e-6
 
-    def get_current_value(self):
-        return self.get_current_dial_value() - self.offset.get_current_value()
+#     def get_current_value(self):
+#         return self.get_current_dial_value() - self.offset.get_current_value()
 
-    def change_user_and_wait(self, value, check_interval=0.03):
-        if np.abs(value) > 0.1:
-            raise Exception("Very large value! This value is counted in seconds!")
-        if not self.waiting_for_change.get():
-            raise Exception("lxt is still moving!")
-        self.is_moving = False
-        self.is_stopped = False
+#     def change_user_and_wait(self, value, check_interval=0.03):
+#         if np.abs(value) > 0.1:
+#             raise Exception("Very large value! This value is counted in seconds!")
+#         if not self.waiting_for_change.get():
+#             raise Exception("lxt is still moving!")
+#         self.is_moving = False
+#         self.is_stopped = False
 
-        def set_is_stopped(**kwargs):
-            old_status = self.is_moving
-            new_status = not bool(kwargs["value"])
-            if (not new_status) and old_status:
-                self.is_stopped = True
-            self.is_moving = new_status
+#         def set_is_stopped(**kwargs):
+#             old_status = self.is_moving
+#             new_status = not bool(kwargs["value"])
+#             if (not new_status) and old_status:
+#                 self.is_stopped = True
+#             self.is_moving = new_status
 
-        self.waiting_for_change.add_callback(callback=set_is_stopped)
-        self._set_user_delay_value.set_target_value(value / 1e-12)
+#         self.waiting_for_change.add_callback(callback=set_is_stopped)
+#         self._set_user_delay_value.set_target_value(value / 1e-12)
 
-        while not self.is_stopped:
-            time.sleep(check_interval)
-        self.waiting_for_change.clear_callbacks()
+#         while not self.is_stopped:
+#             time.sleep(check_interval)
+#         self.waiting_for_change.clear_callbacks()
 
-    def set_target_value(self, value, hold=False):
-        return Changer(
-            target=value,
-            parent=self,
-            changer=self.change_user_and_wait,
-            hold=hold,
-            stopper=None,
-        )
+#     def set_target_value(self, value, hold=False):
+#         return Changer(
+#             target=value,
+#             parent=self,
+#             changer=self.change_user_and_wait,
+#             hold=hold,
+#             stopper=None,
+#         )
 
-    def reset_current_value_to(self, value):
-        self.offset.set_target_value((self.get_current_dial_value() - value)).wait()
+#     def reset_current_value_to(self, value):
+#         self.offset.set_target_value((self.get_current_dial_value() - value)).wait()
+#         )
+#         append_object_to_object(
+#             self, AdjustablePv, self.pvname + ":DELAY_Z_OFFS", name="_offset"
+#         )
+#         self.offset = AdjustableVirtual(
+#             [self._offset],
+#             lambda offset: offset * 1e-12,
+#             lambda offset: offset / 1e-12,
+#             name="offset",
+#         )
+#         append_object_to_object(
+#             self, AdjustablePv, self.pvname + ":DELAY", name="_set_user_delay_value"
+#         )
+#         self._delay_dial_rb = PV("SLAAR-LGEN:DLY_OFFS2")
+#         self.alias.append(
+#             Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
+#         )
+#         self.waiting_for_change = PV(self.pvname + ":WAITING")
+
+#     def get_current_dial_value(self):
+#         return self._delay_dial_rb.get() * 1e-6
+
+#     def get_current_value(self):
+#         return self.get_current_dial_value() - self.offset.get_current_value()
+
+#     def change_user_and_wait(self, value, check_interval=0.03):
+#         if np.abs(value) > 0.1:
+#             raise Exception("Very large value! This value is counted in seconds!")
+#         if not self.waiting_for_change.get():
+#             raise Exception("lxt is still moving!")
+#         self.is_moving = False
+#         self.is_stopped = False
+
+#         def set_is_stopped(**kwargs):
+#             old_status = self.is_moving
+#             new_status = not bool(kwargs["value"])
+#             if (not new_status) and old_status:
+#                 self.is_stopped = True
+#             self.is_moving = new_status
+
+#         self.waiting_for_change.add_callback(callback=set_is_stopped)
+#         self._set_user_delay_value.set_target_value(value / 1e-12)
+
+#         while not self.is_stopped:
+#             time.sleep(check_interval)
+#         self.waiting_for_change.clear_callbacks()
+
+#     def set_target_value(self, value, hold=False):
+#         return Changer(
+#             target=value,
+#             parent=self,
+#             changer=self.change_user_and_wait,
+#             hold=hold,
+#             stopper=None,
+#         )
+
+#     def reset_current_value_to(self, value):
+#         self.offset.set_target_value((self.get_current_dial_value() - value)).wait()
 
 
 @spec_convenience
@@ -113,9 +186,9 @@ class XltEpics(Assembly):
             DetectorPvData,
             "SLAAR-LGEN:DLY_OFFS2",
             unit="µs",
-            name="delay_dial_rb",
+            name="delay_user_rb",
             is_setting=False,
-            is_display=True,
+            is_display=False,
         )
         # SLAAR-LGEN:DLY_OFFS2
         self._append(
@@ -130,8 +203,8 @@ class XltEpics(Assembly):
         )
         self._append(
             DetectorVirtual,
-            [self.delay_dial_rb, self.offset],
-            lambda dialrb, offset: dialrb * 1e-6 - offset,
+            [self.delay_user_rb],
+            lambda dialrb: dialrb * 1e-6,
             unit="s",
             name="readback",
         )
@@ -181,7 +254,7 @@ class XltEpics(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + ":DELAY",
-            name="_set_user_delay_value",
+            name="_set_dial_delay_value",
             is_setting=False,
             is_display=False,
         )
@@ -216,8 +289,8 @@ class XltEpics(Assembly):
     # def get_current_dial_value(self):
     #     return self.delay_dial_rb.get_current_value() * 1e-6
 
-    # def get_current_value(self):
-    #     return self.get_current_dial_value() - self.offset.get_current_value()
+    def get_current_value(self):
+        return self.readback.get_current_value()
 
     # def get_current_dial_value(self):
     #     return self.delay_dial_rb.get_current_value() * 1e-6
@@ -244,7 +317,9 @@ class XltEpics(Assembly):
             self.is_moving = new_status
 
         self.waiting_for_change.add_callback(callback=set_is_stopped)
-        self._set_user_delay_value.set_target_value(value / 1e-12)
+        self._set_dial_delay_value.set_target_value(
+            (value - self.offset.get_current_value()) / 1e-12
+        )
 
         while not self.is_stopped:
             time.sleep(check_interval)
@@ -261,3 +336,10 @@ class XltEpics(Assembly):
 
     def reset_current_value_to(self, value):
         self.offset.set_target_value((self.get_current_dial_value() - value)).wait()
+
+        # caqtdm -noMsg  -macro S=SLAAR02-LTIM-PDLY  /sf/laser/config/qt/SLAAR02-L-SET_DELAY.ui
+
+    def gui(self):
+        self._run_cmd(
+            f"caqtdm -noMsg  -macro S=SLAAR02-LTIM-PDLY  /sf/laser/config/qt/SLAAR02-L-SET_DELAY.ui"
+        )

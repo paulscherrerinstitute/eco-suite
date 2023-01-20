@@ -15,6 +15,7 @@ from typing import Tuple, Optional
 from eco.elements.adj_obj import AdjustableObject
 from epics import PV
 
+
 class CrystalNew(Assembly):
     def __init__(self, *args, name=None, **kwargs):
         Assembly.__init__(self, name=name)
@@ -42,17 +43,36 @@ class Crystals(Assembly):
     def __init__(self, diffractometer_you=None, name=None):
         super().__init__(name=name)
         self.diffractometer = diffractometer_you
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_list', name="crystal_list", default_value={}, is_setting=True)
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_list",
+            name="crystal_list",
+            default_value={},
+            is_setting=True,
+        )
         for key, date in self.crystal_list().items():
-            self._append(DiffGeometryYou, diffractometer_you=self.diffractometer, name=key)
+            self._append(
+                DiffGeometryYou, diffractometer_you=self.diffractometer, name=key
+            )
+
     def append_crystal(self, name=None):
-        if name==None:
-            name = input("Please choose a name for your crystal (no spaces or other special characters):")
+        if name == None:
+            name = input(
+                "Please choose a name for your crystal (no spaces or other special characters):"
+            )
         specials = np.array([" ", "/", "(", ")", "[", "]"])
         in_name = np.array([s in name for s in specials])
         if np.any(in_name):
-            raise Exception(f"Special character(s) {specials[in_name]} in name not allowed")
-        self._append(DiffGeometryYou, diffractometer_you=self.diffractometer, name=name, is_setting=True, is_display=False)
+            raise Exception(
+                f"Special character(s) {specials[in_name]} in name not allowed"
+            )
+        self._append(
+            DiffGeometryYou,
+            diffractometer_you=self.diffractometer,
+            name=name,
+            is_setting=True,
+            is_display=False,
+        )
         crystals = self.crystal_list()
         crystals[name] = str(datetime.now())
         self.crystal_list.mv(crystals)
@@ -62,22 +82,40 @@ class Crystals(Assembly):
         """
         Remove crystal with a given name, deletes also the files.
         """
-        sure = 'n'
-        sure = input(f"are you sure you want to permanently remove the crystal {name} and its UB matrix and memories (y/n)? ")
-        if sure == 'y':
+        sure = "n"
+        sure = input(
+            f"are you sure you want to permanently remove the crystal {name} and its UB matrix and memories (y/n)? "
+        )
+        if sure == "y":
             crystals = self.crystal_list()
             removed = crystals.pop(name)
             self.crystal_list.mv(crystals)
-            attrs = ["unit_cell", "u_matrix", "ub_matrix", "orientations", "reflections", "constraints"]
+            attrs = [
+                "unit_cell",
+                "u_matrix",
+                "ub_matrix",
+                "orientations",
+                "reflections",
+                "constraints",
+            ]
             for a in attrs:
-                if os.path.exists(f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"):
-                    os.remove(f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}")
+                if os.path.exists(
+                    f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"
+                ):
+                    os.remove(
+                        f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"
+                    )
+
 
 class DiffGeometryYou(Assembly):
     def __init__(self, diffractometer_you=None, name=None):
         super().__init__(name=name)
         # self._append(diffractometer_you,call_obj=False, name='diffractometer')
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_unit_cell', name="unit_cell", default_value={
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_unit_cell",
+            name="unit_cell",
+            default_value={
                 "name": name,
                 "a": 1,
                 "b": 1,
@@ -85,98 +123,181 @@ class DiffGeometryYou(Assembly):
                 "alpha": 90,
                 "beta": 90,
                 "gamma": 90,
-            }, is_setting=True)
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_u_matrix', name="u_matrix", default_value=[], is_setting=True, is_display=False)
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_ub_matrix', name="ub_matrix", default_value=[], is_setting=True, is_display=False)
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_orientations', name="orientations", default_value=[], is_setting=True)
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_reflections', name="reflections", default_value=[], is_setting=True)
+            },
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_u_matrix",
+            name="u_matrix",
+            default_value=[],
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_ub_matrix",
+            name="ub_matrix",
+            default_value=[],
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_orientations",
+            name="orientations",
+            default_value=[],
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_reflections",
+            name="reflections",
+            default_value=[],
+            is_setting=True,
+        )
         self.diffractometer = diffractometer_you
         cons = {
-            'mu': None, 
-            'eta': None, 
-            'chi': None, 
-            'phi': None, 
-            'delta': None, 
-            'nu': None, 
-            'a_eq_b': None, 
-            'bin_eq_bout': None, 
-            'betain': None, 
-            'betaout': None, 
-            'qaz': None, 
-            'naz': None, 
-            'alpha': None, 
-            'beta': None, 
-            'bisect': None,
-            'psi': None, 
-            'omega': None,
+            "mu": None,
+            "eta": None,
+            "chi": None,
+            "phi": None,
+            "delta": None,
+            "nu": None,
+            "a_eq_b": None,
+            "bin_eq_bout": None,
+            "betain": None,
+            "betaout": None,
+            "qaz": None,
+            "naz": None,
+            "alpha": None,
+            "beta": None,
+            "bisect": None,
+            "psi": None,
+            "omega": None,
         }
-        self._append(AdjustableFS, f'/photonics/home/gac-bernina/eco/configuration/crystals/{name}_constraints', name="_constraints", default_value=cons, is_setting=True, is_display=False)
-        self._append(AdjustableObject, self._constraints, name="constraints", is_setting=False, is_display='recursive') 
-
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_constraints",
+            name="_constraints",
+            default_value=cons,
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustableObject,
+            self._constraints,
+            name="constraints",
+            is_setting=False,
+            is_display="recursive",
+        )
 
         cfg = self.diffractometer.configuration
-        adjs = ['nu', 'mu', 'delta', 'eta', 'chi', 'phi']
-        if 'kappa' in cfg:
-            adjs = ['nu', 'mu', 'delta', 'eta_kap', 'kappa', 'phi_kap']
-        adj_keys = [adj if adj in self.diffractometer.__dict__.keys() else adj+'_manual' for adj in adjs]
-        self._diff_adjs = {adj: self.diffractometer.__dict__[adj_key] for adj, adj_key in zip(adjs, adj_keys)}
-        
+        adjs = ["nu", "mu", "delta", "eta", "chi", "phi"]
+        adjs = []
+        if "base" in cfg:
+            adjs += ["mu"]
+        if "arm" in cfg:
+            adjs += ["nu", "delta"]
+        if "kappa" in cfg:
+            adjs += ["eta_kap", "kappa", "phi_kap"]
+        adj_keys = [
+            adj if adj in self.diffractometer.__dict__.keys() else adj + "_manual"
+            for adj in adjs
+        ]
+        self._diff_adjs = {
+            adj: self.diffractometer.__dict__[adj_key]
+            for adj, adj_key in zip(adjs, adj_keys)
+        }
 
         def get_h(*args, **kwargs):
             return self.calc_hkl()[0]
+
         def set_h(val):
-            return self._calc_angles_unique_diffractometer([val,None,None])
+            return self._calc_angles_unique_diffractometer([val, None, None])
+
         def get_k(*args, **kwargs):
             return self.calc_hkl()[1]
+
         def set_k(val):
-            return self._calc_angles_unique_diffractometer([None,val,None])
+            return self._calc_angles_unique_diffractometer([None, val, None])
+
         def get_l(*args, **kwargs):
             return self.calc_hkl()[2]
+
         def set_l(val):
-            return self._calc_angles_unique_diffractometer([None,None,val])
+            return self._calc_angles_unique_diffractometer([None, None, val])
+
         def get_hkl(*args, **kwargs):
             return self.calc_hkl()
+
         def set_hkl(val):
             return self._calc_angles_unique_diffractometer(val)
 
-
-        self._append(AdjustableVirtual, list(self._diff_adjs.values()), get_h, set_h, name="h")
-        self._append(AdjustableVirtual, list(self._diff_adjs.values()), get_k, set_k, name="k")
-        self._append(AdjustableVirtual, list(self._diff_adjs.values()), get_l, set_l, name="l")
-        self._append(AdjustableVirtual, list(self._diff_adjs.values()), get_hkl, self._calc_angles_unique_diffractometer, name="hkl")
+        self._append(
+            AdjustableVirtual, list(self._diff_adjs.values()), get_h, set_h, name="h"
+        )
+        self._append(
+            AdjustableVirtual, list(self._diff_adjs.values()), get_k, set_k, name="k"
+        )
+        self._append(
+            AdjustableVirtual, list(self._diff_adjs.values()), get_l, set_l, name="l"
+        )
+        self._append(
+            AdjustableVirtual,
+            list(self._diff_adjs.values()),
+            get_hkl,
+            self._calc_angles_unique_diffractometer,
+            name="hkl",
+        )
         self.recalculate()
 
     def convert_from_you(self, **kwargs):
         cfg = self.diffractometer.configuration
-        if 'kappa' in cfg:
-            eta_kap, kappa, phi_kap = self.diffractometer.calc_you2kappa(kwargs["eta"],kwargs["chi"],kwargs["phi"])
+        if "kappa" in cfg:
+            eta_kap, kappa, phi_kap = self.diffractometer.calc_you2kappa(
+                kwargs["eta"], kwargs["chi"], kwargs["phi"]
+            )
             kwargs.update({"eta_kap": eta_kap, "kappa": kappa, "phi_kap": phi_kap})
         return [kwargs[key] for key in self._diff_adjs.keys()]
 
-    def convert_to_you(self, nu=None, mu=None, delta=None, eta=None, chi=None, phi=None, eta_kap=None, kappa=None, phi_kap=None):
+    def convert_to_you(
+        self,
+        nu=None,
+        mu=None,
+        delta=None,
+        eta=None,
+        chi=None,
+        phi=None,
+        eta_kap=None,
+        kappa=None,
+        phi_kap=None,
+    ):
         cfg = self.diffractometer.configuration
-        if 'kappa' in cfg:
+        if "kappa" in cfg:
             eta, chi, phi = self.diffractometer.calc_kappa2you(eta_kap, kappa, phi_kap)
         return nu, mu, delta, eta, chi, phi
 
     def get_diffractometer_angles(self):
         ### assume that all angles exist in diffractometer at least as manual adjustable ###
-        nu, mu, delta, eta, chi, phi = self.convert_to_you(**{key: adj() for key, adj in self._diff_adjs.items()})
+        nu, mu, delta, eta, chi, phi = self.convert_to_you(
+            **{key: adj() for key, adj in self._diff_adjs.items()}
+        )
         return mu, delta, nu, eta, chi, phi
 
-    def _calc_angles_unique_diffractometer(self,hkl):
+    def _calc_angles_unique_diffractometer(self, hkl):
         angles = self.calc_angles_unique(*hkl)
         return self.convert_from_you(**angles)
 
     def check_target_value_within_limits(self, **kwargs):
-        ### virtual adjustables got a new function check_target_value_within_limits(values) 
+        ### virtual adjustables got a new function check_target_value_within_limits(values)
         in_lims = []
         target_values = self.convert_from_you(**kwargs)
         for val, adj in zip(target_values, self._diff_adjs.values()):
-            if hasattr(adj, 'get_limits'):
+            if hasattr(adj, "get_limits"):
                 lim_low, lim_high = adj.get_limits()
                 in_lims.append((lim_low < val) and (val < lim_high))
-            else: 
+            else:
                 raise Exception(f"Failed to get limits of adjustable {adj.name}")
         return all(in_lims)
 
@@ -190,14 +311,32 @@ class DiffGeometryYou(Assembly):
         alpha = float(input("Angle alpha (90): ") or 90)
         beta = float(input(f"Angle beta ({alpha}): ") or alpha)
         gamma = float(input(f"Angle gamma ({alpha}): ") or alpha)
-        im = Image.open('/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png')
-        normal = [float(val) for val in input("(h,k,l) surface normal (along YOU z-axis), e.g. 0,0,1: ").split(",") or [0,0,1]]
-        inplane = [float(val) for val in input("(h,k,l) in-plane orientation along beam (YOU y-axis), e.g. 1,0,0: ").split(",") or [1,0,0]]
+        im = Image.open(
+            "/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png"
+        )
+        normal = [
+            float(val)
+            for val in input(
+                "(h,k,l) surface normal (along YOU z-axis), e.g. 0,0,1: "
+            ).split(",")
+            or [0, 0, 1]
+        ]
+        inplane = [
+            float(val)
+            for val in input(
+                "(h,k,l) in-plane orientation along beam (YOU y-axis), e.g. 1,0,0: "
+            ).split(",")
+            or [1, 0, 0]
+        ]
         self.set_unit_cell(crystal_name, a, b, c, alpha, beta, gamma)
-        self.add_orientation(normal, (0,0,1), tag='surface normal')
-        self.add_orientation(inplane, (0,1,0), tag='in-plane along x-ray beam direction')
+        self.add_orientation(normal, (0, 0, 1), tag="surface normal")
+        self.add_orientation(
+            inplane, (0, 1, 0), tag="in-plane along x-ray beam direction"
+        )
         self.calc_ub()
-        print("UB was calculated - next please set the constraints (.constraints) and the limits of the diffractometer motors")
+        print(
+            "UB was calculated - next please set the constraints (.constraints) and the limits of the diffractometer motors"
+        )
 
     def set_unit_cell(
         self, name_crystal, a=None, b=None, c=None, alpha=None, beta=None, gamma=None
@@ -217,18 +356,30 @@ class DiffGeometryYou(Assembly):
 
     def recalculate(self):
         self.ubcalc = dccalc.UBCalculation("you")
-        #self.ubcalc.n_phi = [0,0,1]
+        # self.ubcalc.n_phi = [0,0,1]
         uc = self.unit_cell()
         self.ubcalc.set_lattice(uc.pop("name"), **uc)
         for ori in self.orientations():
             self.ubcalc.add_orientation(ori.pop("hkl"), ori.pop("xyz"), **ori)
         for refl in self.reflections():
             position = Position(*refl.pop("position"))
-            self.ubcalc.add_reflection(refl.pop("hkl"), position, refl.pop("energy")*1e-3, **refl)
+            self.ubcalc.add_reflection(
+                refl.pop("hkl"), position, refl.pop("energy") * 1e-3, **refl
+            )
         self._u_ub_to_dc()
 
-
-    def add_reflection(self, hkl, mu=None, delta=None, nu=None, eta=None, chi=None, phi=None, energy=None, tag=None,):
+    def add_reflection(
+        self,
+        hkl,
+        mu=None,
+        delta=None,
+        nu=None,
+        eta=None,
+        chi=None,
+        phi=None,
+        energy=None,
+        tag=None,
+    ):
         """Add a reference reflection.
 
         Adds a reflection position in degrees and in the systems internal
@@ -247,7 +398,10 @@ class DiffGeometryYou(Assembly):
         """
         setvals = [mu, delta, nu, eta, chi, phi]
         curvals = self.get_diffractometer_angles()
-        angs = [curval if setval == None else setval for setval, curval in zip(setvals, curvals)]
+        angs = [
+            curval if setval == None else setval
+            for setval, curval in zip(setvals, curvals)
+        ]
         if energy is None:
             energy = self.get_energy()
         position = Position(*angs)
@@ -271,7 +425,6 @@ class DiffGeometryYou(Assembly):
         self.reflections.set_target_value(refls)
         print(f"Removed reflection {removed}")
         self.recalculate()
-
 
     def add_orientation(self, hkl, xyz, position=None, tag=None):
         """Add a reference orientation.
@@ -310,7 +463,6 @@ class DiffGeometryYou(Assembly):
         print(f"Removed reflection {removed}")
         self.recalculate()
 
-
     def calc_ub(self, idx1=0, idx2=1):
         """Calculate UB matrix.
 
@@ -333,10 +485,24 @@ class DiffGeometryYou(Assembly):
         self._u_ub_from_dc()
 
     def show_you_geometry(self):
-        im = Image.open('/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png')
+        im = Image.open(
+            "/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png"
+        )
         im.show()
 
-    def refine_ub(self, hkl, mu=None, delta=None, nu=None, eta=None, chi=None, phi=None, energy=None, refine_lattice=False, refine_umatrix=False):
+    def refine_ub(
+        self,
+        hkl,
+        mu=None,
+        delta=None,
+        nu=None,
+        eta=None,
+        chi=None,
+        phi=None,
+        energy=None,
+        refine_lattice=False,
+        refine_umatrix=False,
+    ):
         """
         Refine UB matrix to using single reflection.
 
@@ -366,15 +532,23 @@ class DiffGeometryYou(Assembly):
             return
         setvals = [mu, delta, nu, eta, chi, phi]
         curvals = self.get_diffractometer_angles()
-        angs = [curval if setval == None else setval for setval, curval in zip(setvals, curvals)]
+        angs = [
+            curval if setval == None else setval
+            for setval, curval in zip(setvals, curvals)
+        ]
         if energy is None:
             energy = self.get_energy()
         wl = self.en2lam(energy)
         position = Position(*angs)
         self.recalculate()
-        self.ubcalc.refine_ub(hkl, position=position, wavelength=wl, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
+        self.ubcalc.refine_ub(
+            hkl,
+            position=position,
+            wavelength=wl,
+            refine_lattice=refine_lattice,
+            refine_umatrix=refine_umatrix,
+        )
         self._u_ub_from_dc()
-
 
     def fit_ub(self, indices=None, refine_lattice=False, refine_umatrix=True):
         """Refine UB matrix using reference reflections.
@@ -396,63 +570,87 @@ class DiffGeometryYou(Assembly):
         self.recalculate()
         if indices is None:
             indices = list(range(len(self.reflections())))
-        ub, lat = self.ubcalc.fit_ub(indices, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix)
+        ub, lat = self.ubcalc.fit_ub(
+            indices, refine_lattice=refine_lattice, refine_umatrix=refine_umatrix
+        )
         if refine_umatrix:
             print("\nFitted UB matrix applied")
         else:
-            print("\nFitted UB matrix not applied. To apply it, set refine_umatrix=True")
+            print(
+                "\nFitted UB matrix not applied. To apply it, set refine_umatrix=True"
+            )
         print(ub)
         if refine_lattice:
             print("\nFitted lattice applied")
         else:
             print("\nFitted lattice not applied. To apply it, set refine_lattice=True")
         for k, val in {
-                "name": lat[0],
-                "a": lat[1],
-                "b": lat[2],
-                "c": lat[3],
-                "alpha": lat[4],
-                "beta": lat[5],
-                "gamma": lat[6],
-            }.items():
+            "name": lat[0],
+            "a": lat[1],
+            "b": lat[2],
+            "c": lat[3],
+            "alpha": lat[4],
+            "beta": lat[5],
+            "gamma": lat[6],
+        }.items():
             print(f"{k:8}: {val}")
         self._u_ub_from_dc()
         if refine_lattice:
             self._lat_from_dc()
 
-    def calc_angles(self, h=None,k=None,l=None, energy=None):
-        """calculate diffractometer angles for a given h,k,l and energy in eV. 
-        If any of the h, k, l are not given, their current value is used instead. 
+    def calc_angles(self, h=None, k=None, l=None, energy=None):
+        """calculate diffractometer angles for a given h,k,l and energy in eV.
+        If any of the h, k, l are not given, their current value is used instead.
         energy: float energy of the x-ray beam, if not given, the mono or machine energy are used depending on the beamline mode
         Shows all solutions neglecting diffractometer limits"""
-        setvals = [h,k,l]
-        curvals =  [self.h, self.k, self.l]
-        h,k,l = [curval() if setval == None else setval for setval, curval in zip(setvals, curvals)]
+        setvals = [h, k, l]
+        curvals = [self.h, self.k, self.l]
+        h, k, l = [
+            curval() if setval == None else setval
+            for setval, curval in zip(setvals, curvals)
+        ]
         self.recalculate()
         cons = Constraints(self._constraints())
         hklcalc = HklCalculation(self.ubcalc, cons)
         if energy is None:
             energy = self.get_energy()
         lam = self.en2lam(energy)
-        result = hklcalc.get_position(h,k,l,lam)
-        result = pd.concat([pd.DataFrame.from_dict({**tres[0].asdict,**tres[1]},orient='index', columns=[f'sol. {n}']) for n,tres in enumerate(result)],axis=1)
+        result = hklcalc.get_position(h, k, l, lam)
+        result = pd.concat(
+            [
+                pd.DataFrame.from_dict(
+                    {**tres[0].asdict, **tres[1]}, orient="index", columns=[f"sol. {n}"]
+                )
+                for n, tres in enumerate(result)
+            ],
+            axis=1,
+        )
         return result.T
 
-    def calc_angles_unique(self, h=None,k=None,l=None, energy=None):
-        """calculate unique solution of diffractometer angles for a given h,k,l and energy in eV. 
-        If any of the h, k, l are not given, their current value is used instead. 
+    def calc_angles_unique(self, h=None, k=None, l=None, energy=None):
+        """calculate unique solution of diffractometer angles for a given h,k,l and energy in eV.
+        If any of the h, k, l are not given, their current value is used instead.
         If the energy is not given, the monochromator energy is used."""
-        df = self.calc_angles(h,k,l,energy)
-        in_lims = np.array([self.check_target_value_within_limits(**df.loc[idx].to_dict()) for idx in df.index])
+        df = self.calc_angles(h, k, l, energy)
+        in_lims = np.array(
+            [
+                self.check_target_value_within_limits(**df.loc[idx].to_dict())
+                for idx in df.index
+            ]
+        )
         idx_in = df.index[in_lims]
         idx_out = df.index[~in_lims]
 
         if len(idx_in) > 1:
-            print(f"There is not a unique angular configuration to reach ({h},{k},{l}), please change the diffractometer motor soft limits to allow only one of the solutions shown below:")
+            print(
+                f"There is not a unique angular configuration to reach ({h},{k},{l}), please change the diffractometer motor soft limits to allow only one of the solutions shown below:"
+            )
             print(df.loc[idx_in])
             raise Exception("No unique solution")
-        elif len(idx_in) ==0:
-            print("There is no angular configuration, which is allowed for the current diffractometer motor soft limits. please check the diffractometer limits.")
+        elif len(idx_in) == 0:
+            print(
+                "There is no angular configuration, which is allowed for the current diffractometer motor soft limits. please check the diffractometer limits."
+            )
             print("Solutions")
             print(df)
             raise Exception("No unique solution")
@@ -460,14 +658,18 @@ class DiffGeometryYou(Assembly):
 
         return solution_unique.to_dict()
 
-
-    def calc_hkl(self, mu=None, delta=None, nu=None, eta=None, chi=None, phi=None, energy=None):
-        """calculate (h,k,l) for given diffractometer angles and energy in eV. 
-        If any of the diffractometer angles are not given, their current value is used instead. 
+    def calc_hkl(
+        self, mu=None, delta=None, nu=None, eta=None, chi=None, phi=None, energy=None
+    ):
+        """calculate (h,k,l) for given diffractometer angles and energy in eV.
+        If any of the diffractometer angles are not given, their current value is used instead.
         If the energy is not given, the monochromator energy is used"""
         setvals = [mu, delta, nu, eta, chi, phi]
         curvals = self.get_diffractometer_angles()
-        angs = [curval if setval == None else setval for setval, curval in zip(setvals, curvals)]
+        angs = [
+            curval if setval == None else setval
+            for setval, curval in zip(setvals, curvals)
+        ]
         pos = Position(*angs)
         self.recalculate()
         if energy is None:
@@ -486,13 +688,12 @@ class DiffGeometryYou(Assembly):
         energy = PV("SAROP21-ARAMIS:ENERGY").value
         return energy
 
-
     def _u_ub_from_dc(self):
         self.ub_matrix(self.ubcalc.UB.tolist())
         self.u_matrix(self.ubcalc.U.tolist())
 
     def _u_ub_to_dc(self):
-        if len(self.ub_matrix())>0:
+        if len(self.ub_matrix()) > 0:
             self.ubcalc.set_ub(self.ub_matrix())
             self.ubcalc.set_u(self.u_matrix())
 
@@ -501,11 +702,11 @@ class DiffGeometryYou(Assembly):
 
     def en2lam(self, en):
         """input: energy in eV, returns wavelength in A"""
-        return 12398.419843320025/en
+        return 12398.419843320025 / en
 
     def lam2en(self, lam):
         """input: wavelength in A, returns energy in eV"""
-        return 12398.419843320025/lam
+        return 12398.419843320025 / lam
 
     pass
     # def __init__(sel):

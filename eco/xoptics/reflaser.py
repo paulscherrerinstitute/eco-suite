@@ -35,7 +35,7 @@ class RefLaser_Aramis(Assembly):
         )
         self._append(
             RefLaserAperture,
-            "SAROP21-OLIR136",
+            "SAROP21-OLIR134",
             name="aperture",
             is_setting=True,
             is_display="recursive",

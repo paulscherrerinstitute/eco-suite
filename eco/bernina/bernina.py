@@ -62,6 +62,13 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
+    "get_strip_chart_function",
+    name="strip_chart",
+    module_name="eco.dbase.strip_chart",
+    lazy=True,
+)
+
+namespace.append_obj(
     "EventWorker",
     name="bs_worker",
     module_name="escape.stream",
@@ -286,7 +293,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "RefLaser_Aramis",
-    "SAROP21-OLAS136",
+    "SAROP21-OLAS134",
     module_name="eco.xoptics.reflaser",
     name="reflaser",
     lazy=True,
@@ -630,7 +637,7 @@ namespace.append_obj(
 )
 namespace.append_obj(
     "SlitPosWidth",
-    "SAROP21-OAPU136",
+    "SAROP21-OAPU138",
     name="slit_att",
     module_name="eco.xoptics.slits",
 ),

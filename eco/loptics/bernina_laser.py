@@ -30,11 +30,31 @@ class Spectrometer(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(self, AdjustablePvEnum, pvname + ":TRIGGER", name="trigger_mode")
-        self._append(self, AdjustablePvEnum, pvname + ":INIT", name="state")
-        self._append(self, AdjustablePv, pvname + ":EXPOSURE", name="exposure_time")
-        self._append(self, AdjustablePv, pvname + ":EXPOSURE", name="exposure_time")
-        self._append(self, DetectorPvData, pvname + ":CENTRE", name="center")
+        self._append(
+            AdjustablePvEnum,
+            pvname + ":TRIGGER",
+            name="trigger_mode",
+            is_setting=True,
+        )
+        self._append(AdjustablePvEnum, pvname + ":INIT", name="state", is_setting=True)
+        self._append(
+            AdjustablePv,
+            pvname + ":EXPOSURE",
+            name="exposure_time",
+            is_setting=True,
+        )
+        self._append(DetectorPvData, pvname + ":CENTRE", name="center")
+        self._append(DetectorPvData, pvname + ":FWHM", name="fwhm")
+        self._append(DetectorPvData, pvname + ":AMPLITUDE", name="amplitude")
+        self._append(DetectorPvData, pvname + ":INTEGRAL", name="integral")
+        self._append(DetectorPvData, pvname + ":BASER_HEIGHT", name="base_value")
+        self._append(
+            AdjustablePv, pvname + ":XVAL1", name="spectrum_min", is_setting=True
+        )
+        self._append(
+            AdjustablePv, pvname + ":XVAL2", name="spectrum_max", is_setting=True
+        )
+        # SLAAR02-LSPC-OSC:SERIALNR
 
 
 flag_names_filter_wheel = [
@@ -168,6 +188,13 @@ class LaserBernina(Assembly):
             "/photonics/home/gac-bernina/eco/configuration/wp_att_calibration",
             name="wp_att_calibration",
             is_display=False,
+        )
+        self._append(
+            Spectrometer,
+            "SLAAR02-LSPC-OSC",
+            name="oscillator_spectrum",
+            is_setting=False,
+            is_display=True,
         )
 
         def uJ2wp(uJ):

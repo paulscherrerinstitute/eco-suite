@@ -25,6 +25,11 @@ class DetectorBsStream:
 
         self.stream = stream.EscData(source=stream.EventSource(self.bs_channel, None))
 
+    def bs_avail(self):
+        return self.bs_channel in [
+            tmp["name"] for tmp in dispatcher.get_current_channels()
+        ]
+
     def get_current_value(self, force_bsstream=False):
 
         if not force_bsstream:

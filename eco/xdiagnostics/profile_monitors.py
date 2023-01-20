@@ -148,6 +148,8 @@ class ProfKbBernina(Assembly):
         self._append(
             MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_display=True
         )
+        ix = self.settings_collection._list.index(self.zoom.offset)
+        self.settings_collection._list.pop(ix)
 
     def movein_keep_target(self, wait=False):
         ch = self.mirror_in.set_target_value(1)

@@ -1,3 +1,4 @@
+from eco.detector.detectors_psi import DetectorBsStream
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
@@ -126,6 +127,14 @@ class TimetoolBerninaUSD(Assembly):
             name="las_out_ry",
             accuracy=10,
             is_setting=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SAROP21-ATT01:arrival_time",
+            cachannel=None,
+            name="edge_position",
+            is_setting=False,
+            is_display=True,
         )
 
     def get_online_data(self):

@@ -570,7 +570,7 @@ class XRDYou(Assembly):
             try:
                 self._append(
                     MotorRecord_new,
-                    Id + ":MOT_TBL_RY",
+                    Id + ":MOT_TBL_RZ",
                     name="rzhl",
                     is_setting=True,
                     is_display=True,
