@@ -62,6 +62,7 @@ class Scan:
         run_table=None,
         run_number=None,
         elog=None,
+        **kwargs_callbacks,
     ):
         if np.any([char in fina for char in inval_chars]):
             raise ScanNameError
@@ -105,6 +106,7 @@ class Scan:
         self.run_number = run_number
         self.remaining_tasks = []
         self.callbacks_end_scan = callbacks_end_scan
+        self.callbacks_kwargs = kwargs_callbacks
         print(f"Scan info in file {self.scan_info_filename}.")
         for adj in self.adjustables:
             tv = adj.get_current_value()
@@ -113,7 +115,7 @@ class Scan:
 
         if callbacks_start_scan:
             for caller in callbacks_start_scan:
-                caller(self)
+                caller(self, **self.callbacks_kwargs)
 
     def get_filename(self, stepNo, Ndigits=4):
         fina = os.path.join(self.basepath, Path(self.fina).stem)
@@ -266,7 +268,7 @@ class Scan:
 
                 if self.callbacks_end_scan:
                     for caller in self.callbacks_end_scan:
-                        caller(self)
+                        caller(self, **self.callbacks_kwargs)
                 if self.return_at_end == "question":
                     if input("Change back to initial values? (y/n)")[0] == "y":
                         chs = self.changeToInitialValues()
@@ -349,6 +351,7 @@ class Scans:
         start_immediately=True,
         step_info=None,
         return_at_end="question",
+        **kwargs_callbacks,
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
         positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
@@ -370,6 +373,7 @@ class Scans:
             run_table=self._run_table,
             elog=self._elog,
             return_at_end=return_at_end,
+            **kwargs_callbacks,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -385,6 +389,7 @@ class Scans:
         settling_time=0,
         step_info=None,
         return_at_end=True,
+        **kwargs_callbacks,
     ):
 
         adjustable = DummyAdjustable()
@@ -412,6 +417,7 @@ class Scans:
             elog=self._elog,
             run_number=run_number,
             return_at_end=return_at_end,
+            **kwargs_callbacks,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -430,6 +436,7 @@ class Scans:
         step_info=None,
         return_at_end="question",
         settling_time=0,
+        **kwargs_callbacks,
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         values = [[tp] for tp in positions]
@@ -454,6 +461,7 @@ class Scans:
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
+            **kwargs_callbacks,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -472,6 +480,7 @@ class Scans:
         settling_time=0,
         step_info=None,
         return_at_end="question",
+        **kwargs_callbacks,
     ):
         positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         current = adjustable.get_current_value()
@@ -497,6 +506,7 @@ class Scans:
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
+            **kwargs_callbacks,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -519,6 +529,7 @@ class Scans:
         settling_time=0,
         step_info=None,
         return_at_end="question",
+        **kwargs_callbacks,
     ):
         positions = posList
         values = [[tp] for tp in positions]
@@ -543,6 +554,7 @@ class Scans:
             run_table=self._run_table,
             elog=self._elog,
             run_number=run_number,
+            **kwargs_callbacks,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)
@@ -563,6 +575,7 @@ class Scans:
         start_immediately=True,
         step_info=None,
         return_at_end="question",
+        **kwargs_callbacks,
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
         positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
@@ -589,6 +602,7 @@ class Scans:
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
+            **kwargs_callbacks,
         )
         if start_immediately:
             s.scanAll(step_info=step_info)

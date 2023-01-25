@@ -37,6 +37,9 @@ class KBMirrorBernina(Assembly):
         self._append(
             KbHor, pvname_hor, name="hor", is_setting=True, is_display="recursive"
         )
+        self._append(
+            AdjustablePvEnum, "SAROP21-OKB:MODE_SP", name="mode", is_setting=False
+        )
         self.diffractometer = diffractometer
 
         self.usd_table = usd_table
@@ -70,8 +73,11 @@ class KBMirrorBernina(Assembly):
         )
         return pos_calc
 
-    def calc_fwhm(self, fwhm_hor, fwhm_ver, z_focver=0, z_fochor=0, E_phot=None):
-        """E_phot in eV, length units in mm."""
+    def calc_fwhm(
+        self, fwhm_hor, fwhm_ver, z_focver=0, z_fochor=0, distances={}, E_phot=None
+    ):
+        """calculates beamsize at different locations based on the Beam size before kb focusing.
+        E_phot in eV, length units in mm."""
         lam = constants.c * constants.h / constants.electron_volt / E_phot
         print(lam * 1e10)
         fwhm_fac = 1 / np.sqrt(2 * np.log(2))  # w = fwhm_fac*fwhm
@@ -109,6 +115,13 @@ class KBMirrorBernina(Assembly):
         res["sample"] = (fwhm_z(z_fochor, w0_hor), fwhm_z(z_focver, w0_ver))
         # res['fwhm_kbver'] = (fwhm_z(self.d_kbver+z_fochor,w0_hor),fwhm_z(self.d_kbver+z_focver,w0_ver))
         # res['fwhm_kbhor'] = (fwhm_z(self.d_kbhor+z_fochor,w0_hor),fwhm_z(self.d_kbhor+z_focver,w0_ver))
+
+        for tdn, tdv in distances.items():
+            res[tdn] = (
+                fwhm_z(tdv + z_fochor, w0_hor),
+                fwhm_z(tdv + z_focver, w0_ver),
+            )
+
         return res
 
     def move_hex_for_kb_angles(self, the_kbver, the_kbhor):

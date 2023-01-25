@@ -412,28 +412,6 @@ components = [
         "type": "eco.loptics.laser_shutter:laser_shutter",
         "kwargs": {},
     },
-    {
-        "args": [],
-        "name": "epics_channel_list",
-        "desc": "epics channel list",
-        "type": "eco.utilities.config:ChannelList",
-        "kwargs": {
-            "file_name": "/sf/bernina/config/channel_lists/default_channel_list_epics"
-        },
-        "lazy": True,
-    },
-    {
-        "args": [],
-        "name": "epics_daq",
-        "z_und": 142,
-        "desc": "epics data acquisition",
-        "type": "eco.acquisition.epics_data:Epicstools",
-        "kwargs": {
-            "channel_list": Component("epics_channel_list"),
-            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/epics_daq/",
-        },
-        "lazy": True,
-    },
     # {
     #     "args": [],
     #     "name": "daq_dia_old",

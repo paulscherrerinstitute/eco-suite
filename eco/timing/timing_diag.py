@@ -128,6 +128,37 @@ class TimetoolBerninaUSD(Assembly):
             accuracy=10,
             is_setting=True,
         )
+
+        # SARES20-CAMS142-M5.bsen_signal_x_profile
+        # SARES20-CAMS142-M5.processing_parameters
+        # SARES20-CAMS142-M5.psen_signal_x_profile
+        #
+        #
+
+        self._append(
+            DetectorBsStream,
+            "SARES20-CAMS142-M5.roi_signal_x_profile",
+            cachannel=None,
+            name="spectrum_signal",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CAMS142-M5.roi_background_x_prof",
+            cachannel=None,
+            name="spectrum_background",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CAMS142-M5.bsen_signal_x_profilef",
+            cachannel=None,
+            name="spectrum_bsen",
+            is_setting=False,
+            is_display=True,
+        )
         self._append(
             DetectorBsStream,
             "SAROP21-ATT01:arrival_time",

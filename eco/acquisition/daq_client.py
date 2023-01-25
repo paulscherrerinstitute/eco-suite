@@ -2,6 +2,7 @@ import requests
 from pathlib import Path
 from time import sleep
 from ..epics.detector import DetectorPvDataStream
+from epics import PV
 from ..acquisition.utilities import Acquisition
 from ..elements.assembly import Assembly
 from ..utilities.path_alias import PathAlias
@@ -47,6 +48,7 @@ class Daq(Assembly):
         self.pgroup = pgroup
         if type(pulse_id_adj) is str:
             self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
+            self._pid_wo_automonitor = PV("SGE-CPCW-85-EVR0:RX-PULSEID", connection_timeout=0.05, auto_monitor=False)
         else:
             self.pulse_id = pulse_id_adj
         self.running = []
@@ -91,6 +93,8 @@ class Daq(Assembly):
 
     def start(self, label=None, **kwargs):
         start_id = self.pulse_id.get_current_value()
+        print(f"PID stream        : {start_id}")
+        print(f"PID wo automonitor: {self._pid_wo_automonitor.get()}")
         acq_pars = {
             "label": label,
             "start_id": start_id,

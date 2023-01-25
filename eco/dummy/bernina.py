@@ -456,6 +456,14 @@ namespace.append_obj(
     name="xrd",
     lazy=True,
 )
+
+namespace.append_obj(
+    "HexapodSymmetrie",
+    name="usd_table",
+    module_name="eco.endstations.hexapod",
+    offset=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+)
+
 namespace.append_obj(
     "KBMirrorBernina_new",
     "SAROP21-OKBV139",

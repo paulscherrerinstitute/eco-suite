@@ -835,20 +835,38 @@ namespace.append_obj(
 )
 
 
-def _wait_for_tasks(scan):
+namespace.append_obj(
+    "Epicstools",
+    name="epics_daq",
+    module_name="eco.acquisition.epics_data",
+    channel_list=channels_CA_epicsdaq,
+    default_file_path=f"/sf/bernina/data/{config_bernina.pgroup}/res/epics_daq/",
+    lazy=True,
+)
+
+
+def _wait_for_tasks(scan, **kwargs):
     print("checking remaining tasks from previous scan ...")
     for task in scan.remaining_tasks:
         task.join()
     print("... done.")
 
 
-def _append_namesace_status_to_scan(scan, daq=daq, namespace=namespace):
+def _append_namesace_status_to_scan(
+    scan, daq=daq, namespace=namespace, append_status_info=True, **kwargs
+):
+    if not append_status_info:
+        return
     namespace_status = namespace.get_status(base=None)
     stat = {"status_run_start": namespace_status}
     scan.status = stat
 
 
-def _write_namespace_status_to_scan(scan, daq=daq, namespace=namespace):
+def _write_namespace_status_to_scan(
+    scan, daq=daq, namespace=namespace, append_status_info=True, **kwargs
+):
+    if not append_status_info:
+        return
     namespace_status = namespace.get_status(base=None)
     scan.status["status_run_end"] = namespace_status
     runno = daq.get_last_run_number()
@@ -875,7 +893,7 @@ def _write_namespace_status_to_scan(scan, daq=daq, namespace=namespace):
     scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
 
 
-def _write_namespace_aliases_to_scan(scan, daq=daq):
+def _write_namespace_aliases_to_scan(scan, daq=daq, **kwargs):
     namespace_aliases = namespace.alias.get_all()
     runno = daq.get_last_run_number()
     pgroup = daq.pgroup
@@ -901,7 +919,7 @@ def _write_namespace_aliases_to_scan(scan, daq=daq):
     scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
 
 
-def _message_end_scan(scan):
+def _message_end_scan(scan, **kwargs):
     print(f"Finished run {scan.run_number}.")
     e = pyttsx3.init()
     e.say(f"Finished run {scan.run_number}.")
@@ -919,7 +937,7 @@ def _message_end_scan(scan):
 #     print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
 
 
-def _create_general_run_info(scan, daq=daq):
+def _create_general_run_info(scan, daq=daq, **kwargs):
     with open(scan.scan_info_filename, "r") as f:
         si = json.load(f)
 
@@ -932,7 +950,7 @@ def _create_general_run_info(scan, daq=daq):
     info["steps"] = []
 
 
-def _copy_scan_info_to_raw(scan, daq=daq):
+def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
 
     scan.writeScanInfo()
 
@@ -975,7 +993,9 @@ def _copy_scan_info_to_raw(scan, daq=daq):
 from eco.detector import Jungfrau
 
 
-def _copy_selected_JF_pedestals_to_raw(scan, daq=daq):
+def _copy_selected_JF_pedestals_to_raw(
+    scan, daq=daq, copy_selected_JF_pedestals_to_raw=True, **kwargs
+):
     def copy_to_aux(daq):
         runno = daq.get_last_run_number()
         pgroup = daq.pgroup
@@ -1006,11 +1026,12 @@ def _copy_selected_JF_pedestals_to_raw(scan, daq=daq):
                 f"Status: {response.json()['status']} Message: {response.json()['message']}"
             )
 
-    scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq]))
-    scan.remaining_tasks[-1].start()
+    if copy_selected_JF_pedestals_to_raw:
+        scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq]))
+        scan.remaining_tasks[-1].start()
 
 
-def _increment_daq_run_number(scan, daq=daq):
+def _increment_daq_run_number(scan, daq=daq, **kwargs):
     try:
         daq_last_run_number = daq.get_last_run_number()
         if int(scan.run_number) is int(daq_last_run_number) + 1:
@@ -1062,7 +1083,7 @@ class Monitor:
 import traceback
 
 
-def append_scan_monitors(scan, daq=daq):
+def append_scan_monitors(scan, daq=daq, **kwargs):
     scan.monitors = {}
     for adj in scan.adjustables:
         try:
@@ -1094,7 +1115,7 @@ def append_scan_monitors(scan, daq=daq):
         traceback.print_exc()
 
 
-def end_scan_monitors(scan, daq=daq):
+def end_scan_monitors(scan, daq=daq, **kwargs):
     for tmon in scan.monitors:
         scan.monitors[tmon].stop_callback()
 
@@ -1128,8 +1149,14 @@ def end_scan_monitors(scan, daq=daq):
     # scan.monitors = None
 
 
+def _init_all(scan, append_status_info=True, **kwargs):
+    if not append_status_info:
+        return
+    namespace.init_all(silent=False)
+
+
 callbacks_start_scan = []
-callbacks_start_scan = [lambda scan: namespace.init_all(silent=False)]
+callbacks_start_scan.append(_init_all)
 callbacks_start_scan.append(_wait_for_tasks)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)
@@ -1147,7 +1174,11 @@ callbacks_end_scan.append(_message_end_scan)
 
 
 # if self._run_table or self._elog:
-def _create_metadata_structure_start_scan(scan, run_table=run_table, elog=elog):
+def _create_metadata_structure_start_scan(
+    scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
+):
+    if not append_status_info:
+        return
     runname = os.path.basename(scan.fina).split(".")[0]
     runno = int(runname.split("run")[1].split("_")[0])
     metadata = {
@@ -1266,22 +1297,22 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 
-namespace.append_obj(
-    "BerninaInlineMicroscope",
-    pvname_camera="SARES20-CAMS142-M3",
-    lazy=True,
-    name="samplecam_inline",
-    module_name="eco.microscopes",
-)
-
 # namespace.append_obj(
-#    "MicroscopeMotorRecord",
-#    pvname_camera="SARES20-CAMS142-C1",
-#    lazy=True,
-#    name="samplecam",
-#    module_name="eco.microscopes",
-#    pvname_zoom="SARES20-MF1:MOT_16",
+#     "BerninaInlineMicroscope",
+#     pvname_camera="SARES20-CAMS142-M3",
+#     lazy=True,
+#     name="samplecam_inline",
+#     module_name="eco.microscopes",
 # )
+
+namespace.append_obj(
+    "MicroscopeMotorRecord",
+    pvname_camera="SARES20-CAMS142-C1",
+    lazy=True,
+    name="samplecam",
+    module_name="eco.microscopes",
+    pvname_zoom="SARES20-MF1:MOT_16",
+)
 
 # namespace.append_obj(
 #    "MicroscopeMotorRecord",
@@ -1293,9 +1324,17 @@ namespace.append_obj(
 # )
 
 
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-M2",
+#     lazy=True,
+#     name="samplecam_sideview",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
+
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-M2",
+    "SARES20-CAMS142-C3",
     lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
@@ -1305,7 +1344,7 @@ namespace.append_obj(
     "CameraBasler",
     "SARES20-CAMS142-C2",
     lazy=True,
-    name="samplecam_sideview_45deg",
+    name="samplecam_sideview_45deg_THC",
     module_name="eco.devices_general.cameras_swissfel",
 )
 

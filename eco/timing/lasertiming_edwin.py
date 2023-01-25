@@ -272,6 +272,13 @@ class XltEpics(Assembly):
             is_setting=True,
             is_display=True,
         )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":LONG_DELAY_THRESH",
+            name="long_delay_threshold",
+            is_setting=True,
+            is_display=True,
+        )
         # self._append(
         #     DetectorPvData,
         #     "SLAAR-LGEN:DLY_OFFS2",

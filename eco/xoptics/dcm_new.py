@@ -1,5 +1,6 @@
 from ..devices_general.motors import MotorRecord, MotorRecord_new
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics.detector import DetectorPvData
 from epics import PV
 from ..devices_general.utilities import Changer
 from time import sleep
@@ -76,6 +77,13 @@ class DoubleCrystalMono(Assembly):
             pvreadbackname=energy_rb,
             accuracy=0.5,
             name="energy",
+        )
+        self._append(
+            DetectorPvData,
+            energy_rb,
+            name="readback",
+            is_setting=False,
+            is_display=False,
         )
         self.settings_collection.append(self)
 
