@@ -6,6 +6,7 @@ from ..epics.detector import DetectorPvData, DetectorPvEnum
 from ..aliases import Alias
 from datetime import datetime
 from time import sleep
+import numpy as np
 from ..detector.detectors_psi import DetectorBsStream
 
 
@@ -248,6 +249,7 @@ class MessageBoard(Assembly):
         self._append(Message, "SF-OP:ESF-MSG", name="furka_message", is_setting=True)
 
 
+@spec_convenience
 class Message:
     def __init__(self, pvstem, name=None):
         self.pvname = pvstem
@@ -258,36 +260,39 @@ class Message:
             AdjustablePvString(self.pvname + f":OP-DATE{n + 1}") for n in range(5)
         ]
         self.alias = Alias(name, channel=self.pvname + ":OP-MSG1", channeltype="CA")
+        self.pv_tmp = AdjustablePvString(self.pvname + ":OP-MSG-tmp")
 
     def set_new_message(self, message):
-        for i in range(3, -1, -1):
-            self.pvs_msg[i + 1].set_target_value(
-                self.pvs_msg[i].get_current_value()
-            ).wait()
-            self.pvs_date[i + 1].set_target_value(
-                self.pvs_date[i].get_current_value()
-            ).wait()
-        timestr = datetime.now().strftime("%a %d-%b-%Y %H:%M:%S")
-        self.pvs_msg[0].set_target_value(message).wait()
-        self.pvs_date[0].set_target_value(timestr).wait()
+        # for i in range(3, -1, -1):
+        #     self.pvs_msg[i + 1].set_target_value(
+        #         self.pvs_msg[i].get_current_value()
+        #     ).wait()
+        #     self.pvs_date[i + 1].set_target_value(
+        #         self.pvs_date[i].get_current_value()
+        #     ).wait()
+        self.pv_tmp.set_target_value(message).wait()
+        # timestr = datetime.now().strftime("%a %d-%b-%Y %H:%M:%S")
+        # self.pvs_msg[0].set_target_value(message).wait()
+        # self.pvs_date[0].set_target_value(timestr).wait()
 
     def get_current_value(self):
         return self.pvs_msg[0].get_current_value()
 
-    def set_target_value(self, value):
+    def set_target_value(self, value, hold=False):
         return Changer(
             target=value,
             parent=self,
             changer=self.set_new_message,
-            hold=True,
+            hold=hold,
             stopper=None,
         )
 
 
 @spec_convenience
 class UndulatorK(Assembly):
-    def __init__(self, name=None):
+    def __init__(self, maximum_energy_change_keV=1.0, name=None):
         super().__init__(name=name)
+        self.maximum_energy_change_keV = maximum_energy_change_keV
         self._append(
             DetectorPvData,
             "SARUN:FELPHOTENE",
@@ -332,6 +337,9 @@ class UndulatorK(Assembly):
         return self.aramis_undulator_photon_energy.get_current_value()
 
     def change_energy(self, energy):
+        if np.abs(energy - self.get_current_value()) > self.maximum_energy_change_keV:
+            raise Exception("Likely too large undulator energy change requested!!!")
+
         vals = self.calc_new_Ksets(energy)
         for kset, val in zip(self.ksets, vals):
             kset.set_target_value(val)

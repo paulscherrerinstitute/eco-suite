@@ -11,6 +11,7 @@ import colorama
 import datetime
 from pint import UnitRegistry
 import numpy as np
+import time
 
 # from time import sleep
 
@@ -177,25 +178,37 @@ class LaserBernina(Assembly):
             MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True
         )
         # Waveplate and Delay stage
-        self._append(
-            MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
-        )
-        self._append(
-            MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
-        )
+        # self._append(
+        #     MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
+        # )
+
+        # self._append(
+        #     MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
+        # )
+
+        # ad hoc for 500nm setup
+        self._append(SmaractRecord, "SARES23:ESB3", name="wp_att", is_setting=True)
+
         self._append(
             AdjustableFS,
             "/photonics/home/gac-bernina/eco/configuration/wp_att_calibration",
             name="wp_att_calibration",
             is_display=False,
         )
-        self._append(
-            Spectrometer,
-            "SLAAR02-LSPC-OSC",
-            name="oscillator_spectrum",
-            is_setting=False,
-            is_display=True,
-        )
+        tmptime = time.time()
+        while (time.time() - tmptime) < 10:
+            try:
+                self._append(
+                    Spectrometer,
+                    "SLAAR02-LSPC-OSC",
+                    name="oscillator_spectrum",
+                    is_setting=False,
+                    is_display=True,
+                )
+                print("SUCCESS: oscillator spectrometer configured!")
+                break
+            except:
+                pass
 
         def uJ2wp(uJ):
             direction = 1
@@ -226,9 +239,15 @@ class LaserBernina(Assembly):
         # )
         self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
         # Upstairs, Laser 1 LAM
+        # self._append(
+        #     MotorRecord,
+        #     "SLAAR21-LMOT-M521:MOTOR_1",
+        #     name="delaystage_pump",
+        #     is_setting=True,
+        # )
         self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M521:MOTOR_1",
+            SmaractRecord,
+            "SARES23:ESB1",
             name="delaystage_pump",
             is_setting=True,
         )

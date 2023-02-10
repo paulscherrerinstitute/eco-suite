@@ -2,6 +2,9 @@ import elog as _elog_ha
 from getpass import getuser as _getuser
 from getpass import getpass as _getpass
 import os, datetime, subprocess
+import urllib3
+
+urllib3.disable_warnings()
 
 
 def getDefaultElogInstance(url, **kwargs):

@@ -93,8 +93,6 @@ class Daq(Assembly):
 
     def start(self, label=None, **kwargs):
         start_id = self.pulse_id.get_current_value()
-        print(f"PID stream        : {start_id}")
-        print(f"PID wo automonitor: {self._pid_wo_automonitor.get()}")
         acq_pars = {
             "label": label,
             "start_id": start_id,

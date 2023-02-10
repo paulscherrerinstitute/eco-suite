@@ -603,12 +603,16 @@ class MotorRecord(Assembly):
         def changer(value):
             statflag_start = self.status_flag.get_current_value()
             if not statflag_start.value == 0:
-                raise AdjustableError(f'Motor {self.alias.get_full_name()}({self.pvname}) cannot start moving with status flag {statflag_start.name} .')
+                raise AdjustableError(
+                    f"Motor {self.alias.get_full_name()}({self.pvname}) cannot start moving with status flag {statflag_start.name} ."
+                )
             self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
             self._status_message = _status_messages[self._status]
             statflag_end = self.status_flag.get_current_value()
             if not statflag_end.value == 0:
-                raise AdjustableError(f'Motor {self.alias.get_full_name()}({self.pvname}) cannot finish move with status flag {statflag_end.name} .')
+                raise AdjustableError(
+                    f"Motor {self.alias.get_full_name()}({self.pvname}) cannot finish move with status flag {statflag_end.name} ."
+                )
 
             if self._status < 0:
                 raise AdjustableError(self._status_message)

@@ -9,6 +9,7 @@ from ..aliases import Alias
 from pathlib import Path
 from ..elements import memory
 from datetime import datetime
+import requests
 
 
 class Jungfrau(Assembly):
@@ -151,6 +152,11 @@ class Jungfrau(Assembly):
             ]
         )
         return is_available
+
+    def get_vis_url(self):
+        tmp = requests.get(f"{self.broker_address}/get_allowed_detectors_list").json()
+        ix = tmp["detectors"].index(self.jf_id)
+        return tmp["visualisation_address"][ix]
 
     def get_isrunning(self):
         is_running = (

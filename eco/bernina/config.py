@@ -46,13 +46,21 @@ components = [
         "args": [],
         "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
     },
-    {
-        "name": "fel",
-        "type": "eco.fel.swissfel:SwissFel",
-        "args": [],
-        "kwargs": {},
-        "desc": "Fel related control and feedback",
-    },
+#    {
+#        "name": "fel",
+#        "type": "eco.fel.swissfel:SwissFel",
+#        "args": [],
+#        "kwargs": {},
+#        "desc": "Fel related control and feedback",
+#    },
+#    {
+#        "name": "mono",
+#        "args": ["SAROP21-ODCM098"],
+#        "kwargs": {},
+#        "z_und": 98,
+#        "desc": "DCM Monochromator",
+#        "type": "eco.xoptics.dcm_new:DoubleCrystalMono",
+#    },
     # {
     # "name": "slit_und",
     # "type": "eco.xoptics.slits:SlitFourBlades_old",
@@ -185,14 +193,6 @@ components = [
         "desc": "offset mirrors in pink mode",
         "type": "eco.xoptics.offsetMirrors_new:OffsetMirrorsBernina",
         "kwargs": {},
-    },
-    {
-        "name": "mono",
-        "args": ["SAROP21-ODCM098"],
-        "kwargs": {},
-        "z_und": 98,
-        "desc": "DCM Monochromator",
-        "type": "eco.xoptics.dcm_new:DoubleCrystalMono",
     },
     {
         "name": "mono_old",

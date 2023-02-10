@@ -835,14 +835,14 @@ namespace.append_obj(
 )
 
 
-namespace.append_obj(
-    "Epicstools",
-    name="epics_daq",
-    module_name="eco.acquisition.epics_data",
-    channel_list=channels_CA_epicsdaq,
-    default_file_path=f"/sf/bernina/data/{config_bernina.pgroup}/res/epics_daq/",
-    lazy=True,
-)
+# namespace.append_obj(
+#     "Epicstools",
+#     name="epics_daq",
+#     module_name="eco.acquisition.epics_data",
+#     channel_list=channels_CA_epicsdaq,
+#     default_file_path=f"/sf/bernina/data/{config_bernina.pgroup}/res/epics_daq/",
+#     lazy=True,
+# )
 
 
 def _wait_for_tasks(scan, **kwargs):
@@ -1177,8 +1177,6 @@ callbacks_end_scan.append(_message_end_scan)
 def _create_metadata_structure_start_scan(
     scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
 ):
-    if not append_status_info:
-        return
     runname = os.path.basename(scan.fina).split(".")[0]
     runno = int(runname.split("run")[1].split("_")[0])
     metadata = {
@@ -1231,6 +1229,8 @@ def _create_metadata_structure_start_scan(
         metadata.update({"elog_post_link": scan._elog._log._url + str(scan._elog_id)})
     except:
         print("elog posting failed")
+    if not append_status_info:
+        return
     try:
         run_table.append_run(runno, metadata=metadata)
     except:
@@ -1311,7 +1311,7 @@ namespace.append_obj(
     lazy=True,
     name="samplecam",
     module_name="eco.microscopes",
-    pvname_zoom="SARES20-MF1:MOT_16",
+    pvname_zoom="SARES20-MF1:MOT_5",
 )
 
 # namespace.append_obj(
@@ -1510,26 +1510,26 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB16", name="pitch", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB3", name="roll", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB10", name="pitch", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB13", name="roll", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 
 
-# namespace.append_obj(
-#    Incoupling,
-#    lazy=True,
-#    name="las_inc",
-# )
-
 namespace.append_obj(
-    "High_field_thz_chamber",
-    name="thc",
+    Incoupling,
     lazy=True,
-    module_name="eco.endstations.bernina_sample_environments",
-    configuration=["ottifant"],
+    name="las_inc",
 )
+
+# namespace.append_obj(
+#     "High_field_thz_chamber",
+#     name="thc",
+#     lazy=True,
+#     module_name="eco.endstations.bernina_sample_environments",
+#     configuration=["ottifant"],
+# )
 
 
 # class THz_in_air(Assembly):
@@ -1674,6 +1674,29 @@ class JohannAnalyzer(Assembly):
 
 namespace.append_obj(JohannAnalyzer, name="analyzer")
 
+
+class GratingHolder(Assembly):
+    def __init__(self, name=""):
+        super().__init__(name=name)
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_7",
+            name="vertical",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23:ESB6",
+            name="horizontal",
+            is_setting=True,
+            is_display=True,
+        )
+
+
+namespace.append_obj(GratingHolder, name="grating_holder")
+
+
 # ad hoc 2 pulse setup
 # class Laser2pulse(Assembly):
 #    def __init__(self, name=None):
@@ -1725,17 +1748,58 @@ namespace.append_obj(JohannAnalyzer, name="analyzer")
 
 
 # from eco.xoptics import dcm_pathlength_compensation as dpc
-# namespace.append_obj(
-#    "MonoTimecompensation",
-#    # laser2pulse.pump_delay_exp,
-#    las.delay_glob,
-#    mono,
-#    "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
-#    "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
-#    lazy=True,
-#    name="mono_time_corrected",
-#    module_name="eco.xoptics.dcm_pathlength_compensation",
+
+# namespace._append(
+#     "MotorRecord",
+#     "SLAAR21-LMOT-M523:MOTOR_1",
+#     name="delaystage_glob",
+#     is_setting=True,
+#     module_name="eco.devices_general.motors",
 # )
+# namespace.append(
+#     "DelayTime",
+#     delaystage_glob,
+#     name="delay_glob",
+#     is_setting=True,
+#     module_name="eco.loptics.bernina_laser",
+# )
+
+
+delaystage_glob = MotorRecord(
+    "SLAAR21-LMOT-M523:MOTOR_1",
+    name="delaystage_glob",
+)
+
+delay_glob = DelayTime(
+    delaystage_glob,
+    name="delay_glob",
+)
+
+namespace.append_obj(
+    "SwissFel",
+    name="fel",
+    lazy=True,
+    module_name="eco.fel.swissfel",
+)
+namespace.append_obj(
+    "DoubleCrystalMono",
+    pvname="SAROP21-ODCM098",
+    fel=fel,
+    undulator_deadband_eV=2.0,
+    name="mono",
+    lazy=True,
+    module_name="eco.xoptics.dcm_new",
+)
+namespace.append_obj(
+    "MonoTimecompensation",
+    delay_glob,
+    mono.mono_und_energy,
+    "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
+    "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+    lazy=True,
+    name="mono_time_corrected",
+    module_name="eco.xoptics.dcm_pathlength_compensation",
+)
 
 
 # ad hoc interferometric timetool
@@ -1878,6 +1942,58 @@ from eco.devices_general.digitizers import DigitizerIoxosBoxcarChannel
 from eco.elements.adjustable import AdjustableVirtual
 import numpy as np
 
+
+class LiquidJetSpectroscopy(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_2",
+            name="x_jet",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_4",
+            name="y_jet",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_6",
+            name="z_jet",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_3",
+            name="x_analyzer",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES21-XRD:MOT_P_T",
+            name="y_vhdet",
+            is_setting=True,
+        )
+        self._append(
+            Jungfrau, "JF03T01V02", name="det_i0", pgroup_adj=config_bernina.pgroup
+        )
+        self._append(
+            Jungfrau, "JF04T01V01", name="det_em", pgroup_adj=config_bernina.pgroup
+        )
+        self._append(
+            Jungfrau, "JF14T01V01", name="det_vhamos", pgroup_adj=config_bernina.pgroup
+        )
+
+
+namespace.append_obj(LiquidJetSpectroscopy, name="jet", lazy=True)
+
+
 # class Tapedrive(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
@@ -1886,8 +2002,7 @@ import numpy as np
 #         )
 #         self._append(SmaractRecord, "SARES23:ESB18", name="freespace_pitch")
 #         self._append(SmaractRecord, "SARES23:ESB13", name="freespace_roll")
-#         self._append(MotorRecord, "SARES20-MF1:MOT_7", name="rot_analyzer_hor")
-#         self._append(MotorRecord, "SARES20-MF1:MOT_8", name="rot_analyzer_ver")
+
 
 #         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
 #         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")

@@ -1061,6 +1061,8 @@ class Run_Table_DataFrame(DataFrame):
         devices=None,
         name=None,
     ):
+        if type(data) is str:
+            data = pd.read_pickle(data)
         super().__init__(data=data)
 
         ### Load devices to parse for adjustables ###

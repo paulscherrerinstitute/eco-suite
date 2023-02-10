@@ -10,6 +10,7 @@ from ..elements.adjustable import (
     AdjustableFS,
     AdjustableVirtual,
     tweak_option,
+    value_property,
 )
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
@@ -168,9 +169,11 @@ from ..elements.assembly import Assembly
 
 @spec_convenience
 @tweak_option
+@value_property
 class XltEpics(Assembly):
     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
         super().__init__(name=name)
+        self.settings_collection.append(self, force=True)
         self.pvname = pvname
         # self.settings_collection.append(self, force=True)
         # self.status_collection.append(self, force=True)
@@ -181,11 +184,11 @@ class XltEpics(Assembly):
             name="_offset",
             is_setting=True,
             is_display=False,
-        )
+        )  # in picoseconds
         self._append(
             DetectorPvData,
             "SLAAR-LGEN:DLY_OFFS2",
-            unit="µs",
+            unit="ps",
             name="delay_user_rb",
             is_setting=False,
             is_display=False,
@@ -261,7 +264,7 @@ class XltEpics(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + ":P_RATIO",
-            name="rep_len",
+            name="ref_pattern_len",
             is_setting=True,
             is_display=True,
         )
@@ -269,13 +272,24 @@ class XltEpics(Assembly):
             AdjustablePv,
             "SIN-TIMAST-TMA:Evt-22-Freq-SP",
             name="laser_frequency",
+            unit="Hz",
             is_setting=True,
             is_display=True,
         )
         self._append(
             AdjustablePv,
             self.pvname + ":LONG_DELAY_THRESH",
+            name="_long_delay_threshold",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustableVirtual,
+            [self._long_delay_threshold],
+            lambda offset: offset * 1e-12,
+            lambda offset: offset / 1e-12,
             name="long_delay_threshold",
+            unit="s",
             is_setting=True,
             is_display=True,
         )
@@ -308,7 +322,7 @@ class XltEpics(Assembly):
     #         - self.offset.get_current_value()
     #     )
 
-    def change_user_and_wait(self, value, check_interval=0.03):
+    def change_user_and_wait(self, value, check_interval=0.03, evr_wait_time=0.01):
         if np.abs(value) > 0.1:
             raise Exception("Very large value! This value is counted in seconds!")
         if not self.waiting_for_change.get():
@@ -323,10 +337,18 @@ class XltEpics(Assembly):
                 self.is_stopped = True
             self.is_moving = new_status
 
-        self.waiting_for_change.add_callback(callback=set_is_stopped)
+        is_phasshift = not (
+            self.long_delay_threshold.get_current_value() < np.abs(value)
+        )
+        if is_phasshift:
+            self.waiting_for_change.add_callback(callback=set_is_stopped)
+
         self._set_dial_delay_value.set_target_value(
             (value - self.offset.get_current_value()) / 1e-12
         )
+        if not is_phasshift:
+            time.sleep(evr_wait_time)
+            self.is_stopped = True
 
         while not self.is_stopped:
             time.sleep(check_interval)

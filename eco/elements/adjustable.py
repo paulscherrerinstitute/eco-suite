@@ -495,14 +495,16 @@ class AdjustableVirtual:
                 self._active_changers = [
                     adj.set_target_value(val, hold=False)
                     for val, adj in zip(vals, self._adjustables)
+                    if val is not None
                 ]
                 for tc in self._active_changers:
                     tc.wait()
             else:
 
                 for val, adj in zip(vals, self._adjustables):
-                    self._active_changers = [adj.set_target_value(val, hold=False)]
-                    self._active_changers[0].wait()
+                    if val is not None:
+                        self._active_changers = [adj.set_target_value(val, hold=False)]
+                        self._active_changers[0].wait()
 
         def stopper():
             for tc in self._active_changers:

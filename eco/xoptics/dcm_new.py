@@ -1,4 +1,5 @@
 from ..devices_general.motors import MotorRecord, MotorRecord_new
+from eco.elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
 from epics import PV
@@ -22,12 +23,16 @@ from ..elements.assembly import Assembly
 class DoubleCrystalMono(Assembly):
     def __init__(
         self,
-        pvname,
+        pvname=None,
         name=None,
         energy_sp="SAROP21-ARAMIS:ENERGY_SP",
         energy_rb="SAROP21-ARAMIS:ENERGY",
+        fel=None,
+        undulator_deadband_eV=None,
     ):
         super().__init__(name=name)
+        self.fel = fel
+        self.undulator_deadband_eV = undulator_deadband_eV
         self.pvname = pvname
         self._append(
             MotorRecord_new,
@@ -86,6 +91,51 @@ class DoubleCrystalMono(Assembly):
             is_display=False,
         )
         self.settings_collection.append(self)
+        if self.fel is not None:
+            self._append(
+                AdjustableFS,
+                "/photonics/home/gac-bernina/eco/configuration/mono_und_offset",
+                name="mono_und_calib",
+                default_value=[[6500, 0], [7100, 0]],
+                is_setting=True,
+            )
+
+            def en_set(en):
+                ofs = np.array(self.mono_und_calib()).T
+                fel_ofs = ofs[1][np.argmin(abs(ofs[0] - en))]
+                e_und_curr = (
+                    self.fel.aramis_photon_energy_undulators.get_current_value()
+                )
+
+                if (
+                    np.abs(en - (e_und_curr + fel_ofs) * 1000)
+                    < self.undulator_deadband_eV
+                ):
+                    return en, None
+                else:
+                    return en, en / 1000 - fel_ofs
+
+            def en_get(monoen, felen):
+                return monoen
+
+            self._append(
+                AdjustableVirtual,
+                [self.energy, self.fel.aramis_photon_energy_undulators],
+                en_get,
+                en_set,
+                name="mono_und_energy",
+            )
+
+    def add_mono_und_calibration_point(self):
+        mono_energy = self.energy.get_current_value()
+        fel_offset = (
+            self.energy.get_current_value() / 1000
+            - self.fel.aramis_photon_energy_undulators.get_current_value()
+        )
+        self.mono_und_calib.mvr([[mono_energy, fel_offset]])
+
+    def reset_mono_und_calibration(self):
+        self.mono_und_calib.mv([])
 
     def set_target_value(self, *args, **kwargs):
         return self.energy.set_target_value(*args, **kwargs)

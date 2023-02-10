@@ -279,14 +279,14 @@ components = [
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
     },
-    {
-        "name": "slit_att",
-        "args": ["SAROP21-OAPU136"],
-        "kwargs": {},
-        "z_und": 136,
-        "desc": "Slits behind attenuator",
-        "type": "eco.xoptics.slits:SlitPosWidth",
-    },
+    # {
+    #     "name": "slit_att",
+    #     "args": ["SAROP21-OAPU136"],
+    #     "kwargs": {},
+    #     "z_und": 136,
+    #     "desc": "Slits behind attenuator",
+    #     "type": "eco.xoptics.slits:SlitPosWidth",
+    # },
     {
         "name": "det_dio",
         "args": ["SAROP21-PDIO138"],
@@ -373,7 +373,6 @@ components = [
     #     "type": "tof:jet",
     #     "kwargs": {},
     # },
-
     {
         "args": ["SARES20-CAMS142-M1"],
         "name": "cam_sample_sideview",
@@ -566,14 +565,6 @@ components = [
             },
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
-    },
-    {
-        "args": [],
-        "name": "usd_table",
-        "z_und": 141,
-        "desc": "Upstream diagnostics table",
-        "type": "eco.endstations.hexapod:HexapodSymmetrie",
-        "kwargs": {"offset": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]},
     },
     # {
     #     "args": ["SARES23-"],
