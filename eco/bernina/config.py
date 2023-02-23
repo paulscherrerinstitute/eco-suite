@@ -46,21 +46,21 @@ components = [
         "args": [],
         "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
     },
-#    {
-#        "name": "fel",
-#        "type": "eco.fel.swissfel:SwissFel",
-#        "args": [],
-#        "kwargs": {},
-#        "desc": "Fel related control and feedback",
-#    },
-#    {
-#        "name": "mono",
-#        "args": ["SAROP21-ODCM098"],
-#        "kwargs": {},
-#        "z_und": 98,
-#        "desc": "DCM Monochromator",
-#        "type": "eco.xoptics.dcm_new:DoubleCrystalMono",
-#    },
+    #    {
+    #        "name": "fel",
+    #        "type": "eco.fel.swissfel:SwissFel",
+    #        "args": [],
+    #        "kwargs": {},
+    #        "desc": "Fel related control and feedback",
+    #    },
+    #    {
+    #        "name": "mono",
+    #        "args": ["SAROP21-ODCM098"],
+    #        "kwargs": {},
+    #        "z_und": 98,
+    #        "desc": "DCM Monochromator",
+    #        "type": "eco.xoptics.dcm_new:DoubleCrystalMono",
+    #    },
     # {
     # "name": "slit_und",
     # "type": "eco.xoptics.slits:SlitFourBlades_old",
@@ -153,14 +153,14 @@ components = [
     #    "args": ["SARFE10-PBPS053"],
     #    "kwargs": {},
     # },
-    {
-        "name": "xspect",
-        "z_und": 53,
-        "desc": "X-ray single shot spectrometer",
-        "type": "eco.xdiagnostics.xspect:Xspect",
-        "args": [],
-        "kwargs": {},
-    },
+    # {
+    #     "name": "xspect",
+    #     "z_und": 53,
+    #     "desc": "X-ray single shot spectrometer",
+    #     "type": "eco.xdiagnostics.xspect:Xspect",
+    #     "args": [],
+    #     "kwargs": {},
+    # },
     {
         "name": "prof_fe",
         "args": ["SARFE10-PPRM064"] * 2,
@@ -194,17 +194,17 @@ components = [
         "type": "eco.xoptics.offsetMirrors_new:OffsetMirrorsBernina",
         "kwargs": {},
     },
-    {
-        "name": "mono_old",
-        "args": ["SAROP21-ODCM098"],
-        "kwargs": {
-            "energy_sp": "SAROP21-ARAMIS:ENERGY_SP",
-            "energy_rb": "SAROP21-ARAMIS:ENERGY",
-        },
-        "z_und": 98,
-        "desc": "DCM Monochromator",
-        "type": "eco.xoptics.dcm:Double_Crystal_Mono",
-    },
+    # {
+    #     "name": "mono_old",
+    #     "args": ["SAROP21-ODCM098"],
+    #     "kwargs": {
+    #         "energy_sp": "SAROP21-ARAMIS:ENERGY_SP",
+    #         "energy_rb": "SAROP21-ARAMIS:ENERGY",
+    #     },
+    #     "z_und": 98,
+    #     "desc": "DCM Monochromator",
+    #     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
+    # },
     {
         "name": "prof_mono",
         "args": ["SAROP21-PPRM113"] * 2,
@@ -279,14 +279,14 @@ components = [
         "desc": "Attenuator Bernina",
         "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
     },
-    {
-        "name": "slit_att",
-        "args": ["SAROP21-OAPU136"],
-        "kwargs": {},
-        "z_und": 136,
-        "desc": "Slits behind attenuator",
-        "type": "eco.xoptics.slits:SlitPosWidth",
-    },
+    # {
+    #     "name": "slit_att",
+    #     "args": ["SAROP21-OAPU136"],
+    #     "kwargs": {},
+    #     "z_und": 136,
+    #     "desc": "Slits behind attenuator",
+    #     "type": "eco.xoptics.slits:SlitPosWidth",
+    # },
     # {
     #     "name": "det_dio",
     #     "args": ["SAROP21-PDIO138"],
@@ -452,21 +452,6 @@ components = [
     # },
     # {
     #     "args": [],
-    #     "name": "scans_epics",
-    #     "desc": "epics non beam synchronous based acquisition",
-    #     "type": "eco.acquisition.scan:Scans",
-    #     "kwargs": {
-    #         "data_base_dir": "scan_data",
-    #         "scan_info_dir": f"/sf/bernina/data/{config['pgroup']}/res/scan_info",
-    #         "default_counters": [Component("epics_daq")],
-    #         "checker": Component("checker_epics"),
-    #         "scan_directories": True,
-    #         "run_table": Component("run_table"),
-    #     },
-    #     "lazy": True,
-    # },
-    # {
-    #     "args": [],
     #     "name": "lxt",
     #     "desc": "laser timing with pockels cells and phase shifter",
     #     "type": "eco.timing.lasertiming:Lxt",
@@ -542,20 +527,20 @@ components = [
     #    "type": "eco.xoptics.slit_USD:Upstream_diagnostic_slits",
     #    "kwargs": {"right": "LIC7", "left": "LIC8", "up": "LIC8", "down": "LIC5"},
     # },
-    {
-        "args": [
-            [
-                Component("slit_und"),
-                Component("slit_switch"),
-                Component("slit_att"),
-                Component("slit_kb"),
-            ]
-        ],
-        "name": "slits",
-        "desc": "collection of all slits",
-        "type": "eco.utilities.beamline:Slits",
-        "kwargs": {},
-    },
+    # {
+    #     "args": [
+    #         [
+    #             Component("slit_und"),
+    #             Component("slit_switch"),
+    #             Component("slit_att"),
+    #             Component("slit_kb"),
+    #         ]
+    #     ],
+    #     "name": "slits",
+    #     "desc": "collection of all slits",
+    #     "type": "eco.utilities.beamline:Slits",
+    #     "kwargs": {},
+    # },
     # {
     #     "args": [
     #         [Component("slit_switch"), Component("slit_att"), Component("slit_kb"),]

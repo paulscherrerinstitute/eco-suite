@@ -355,31 +355,32 @@ class PositionMonitors(Assembly):
         super().__init__(name=name)
         self._append(
             CameraPositionMonitor,
+            "SLAAR21-LCAM-C541",
+            name="table1_angle",
+            is_display="recursive",
+            is_status=True,
+        )
+        self._append(
+            CameraPositionMonitor,
             "SLAAR21-LCAM-C551",
-            name="post_compressor_focus",
+            name="table2_angle",
             is_display="recursive",
             is_status=True,
         )
         self._append(
             CameraPositionMonitor,
             "SLAAR21-LCAM-C552",
-            name="post_compressor_position",
+            name="table2_position",
             is_display="recursive",
             is_status=True,
         )
-        self._append(
-            CameraPositionMonitor,
-            "SLAAR21-LCAM-C531",
-            name="opaout_position",
-            is_display="recursive",
-            is_status=True,
-        )
-        self._append(
-            CameraPositionMonitor,
-            "SLAAR21-LCAM-C511",
-            name="opaout_focus",
-            is_display="recursive",
-            is_status=True,
-        )
+
+        # self._append(
+        #     CameraPositionMonitor,
+        #     "SLAAR21-LCAM-C511",
+        #     name="opaout_focus",
+        #     is_display="recursive",
+        #     is_status=True,
+        # )
         # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C541', name='cam541')
         # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C542', name='cam542')

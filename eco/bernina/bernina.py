@@ -43,13 +43,17 @@ from eco.elements.adj_obj import AdjustableObject
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
 
 namespace.append_obj(
-    "DummyAdjustable", module_name="eco.elements.adjustable", name="dummy_adjustable"
+    "DummyAdjustable",
+    module_name="eco.elements.adjustable",
+    lazy=True,
+    name="dummy_adjustable",
 )
 namespace.append_obj(
     "set_global_memory_dir",
     "/sf/bernina/config/eco/memory",
     module_name="eco.elements.memory",
     name="path_memory",
+    lazy=False,
 )
 
 namespace.append_obj(
@@ -58,7 +62,7 @@ namespace.append_obj(
     module_name="eco.dbase.archiver",
     pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
     add_to_cnf=True,
-    lazy=False,
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -86,18 +90,6 @@ namespace.append_obj(
     "/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA",
     name="_env_channels_ca",
     module_name="eco.elements.adjustable",
-    lazy=True,
-)
-namespace.append_obj(
-    "Run_Table2",
-    name="run_table",
-    module_name="eco.utilities.runtable",
-    exp_id=config_bernina.pgroup._value,
-    exp_path=f"/sf/bernina/data/{config_bernina.pgroup._value}/res/run_table/",
-    devices="bernina",
-    keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
-    cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
-    gsheet_key_path="/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
     lazy=True,
 )
 
@@ -633,12 +625,14 @@ namespace.append_obj(
 namespace.append_obj(
     "Xspect",
     name="xspect",
+    lazy=True,
     module_name="eco.xdiagnostics.xspect",
 )
 namespace.append_obj(
     "SlitPosWidth",
     "SAROP21-OAPU138",
     name="slit_att",
+    lazy=True,
     module_name="eco.xoptics.slits",
 ),
 namespace.append_obj(
@@ -834,15 +828,18 @@ namespace.append_obj(
     lazy=True,
 )
 
-
-# namespace.append_obj(
-#     "Epicstools",
-#     name="epics_daq",
-#     module_name="eco.acquisition.epics_data",
-#     channel_list=channels_CA_epicsdaq,
-#     default_file_path=f"/sf/bernina/data/{config_bernina.pgroup}/res/epics_daq/",
-#     lazy=True,
-# )
+namespace.append_obj(
+    "Run_Table2",
+    name="run_table",
+    module_name="eco.utilities.runtable",
+    exp_id=config_bernina.pgroup._value,
+    exp_path=f"/sf/bernina/data/{config_bernina.pgroup._value}/res/run_table/",
+    devices="bernina",
+    keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
+    cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
+    gsheet_key_path="/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
+    lazy=True,
+)
 
 
 def _wait_for_tasks(scan, **kwargs):
@@ -951,6 +948,7 @@ def _create_general_run_info(scan, daq=daq, **kwargs):
 
 
 def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
+    t_start = time.time()
 
     scan.writeScanInfo()
 
@@ -985,9 +983,12 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
             json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
             f.truncate()
 
-    print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
+    # print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
     response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
-    print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+    # print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+    # print(
+    #     f"--> creating and copying file took{time.time()-t_start} s, presently adding to deadtime."
+    # )
 
 
 from eco.detector import Jungfrau
@@ -1161,6 +1162,8 @@ callbacks_start_scan.append(_wait_for_tasks)
 callbacks_start_scan.append(_append_namesace_status_to_scan)
 callbacks_start_scan.append(_increment_daq_run_number)
 callbacks_start_scan.append(append_scan_monitors)
+callbacks_end_step = []
+callbacks_end_step.append(_copy_scan_info_to_raw)
 callbacks_end_scan = []
 callbacks_end_scan.append(_write_namespace_status_to_scan)
 callbacks_end_scan.append(_write_namespace_aliases_to_scan)
@@ -1231,10 +1234,12 @@ def _create_metadata_structure_start_scan(
         print("elog posting failed")
     if not append_status_info:
         return
+    t_start_rt = time.time()
     try:
         run_table.append_run(runno, metadata=metadata)
     except:
         print("WARNING: issue adding data to run table")
+    print(f"RT appending: {time.time()-t_start_rt:.3f} s")
 
 
 # <<<< Extract for run table and elog
@@ -1249,6 +1254,7 @@ namespace.append_obj(
     checker=checker,
     scan_directories=True,
     callbacks_start_scan=callbacks_start_scan,
+    callbacks_end_step=callbacks_end_step,
     callbacks_end_scan=callbacks_end_scan,
     run_table=run_table,
     elog=elog,
@@ -1297,13 +1303,13 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 
-# namespace.append_obj(
-#     "BerninaInlineMicroscope",
-#     pvname_camera="SARES20-CAMS142-M3",
-#     lazy=True,
-#     name="samplecam_inline",
-#     module_name="eco.microscopes",
-# )
+namespace.append_obj(
+    "BerninaInlineMicroscope",
+    pvname_camera="SARES20-CAMS142-M3",
+    lazy=True,
+    name="samplecam_inline",
+    module_name="eco.microscopes",
+)
 
 namespace.append_obj(
     "MicroscopeMotorRecord",
@@ -1523,13 +1529,13 @@ namespace.append_obj(
     name="las_inc",
 )
 
-# namespace.append_obj(
-#     "High_field_thz_chamber",
-#     name="thc",
-#     lazy=True,
-#     module_name="eco.endstations.bernina_sample_environments",
-#     configuration=["ottifant"],
-# )
+namespace.append_obj(
+    "High_field_thz_chamber",
+    name="thc",
+    lazy=True,
+    module_name="eco.endstations.bernina_sample_environments",
+    configuration=["ottifant"],
+)
 
 
 # class THz_in_air(Assembly):
@@ -1653,48 +1659,48 @@ from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
 
 
-class JohannAnalyzer(Assembly):
-    def __init__(self, name=""):
-        super().__init__(name=name)
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_3",
-            name="pitch",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_4",
-            name="roll",
-            is_setting=True,
-            is_display=True,
-        )
+# class JohannAnalyzer(Assembly):
+#     def __init__(self, name=""):
+#         super().__init__(name=name)
+#         self._append(
+#             MotorRecord,
+#             "SARES20-MF1:MOT_3",
+#             name="pitch",
+#             is_setting=True,
+#             is_display=True,
+#         )
+#         self._append(
+#             MotorRecord,
+#             "SARES20-MF1:MOT_4",
+#             name="roll",
+#             is_setting=True,
+#             is_display=True,
+#         )
 
 
-namespace.append_obj(JohannAnalyzer, name="analyzer")
+# namespace.append_obj(JohannAnalyzer, name="analyzer", lazy=True)
 
 
-class GratingHolder(Assembly):
-    def __init__(self, name=""):
-        super().__init__(name=name)
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_7",
-            name="vertical",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SARES23:ESB6",
-            name="horizontal",
-            is_setting=True,
-            is_display=True,
-        )
+# class GratingHolder(Assembly):
+#     def __init__(self, name=""):
+#         super().__init__(name=name)
+#         self._append(
+#             MotorRecord,
+#             "SARES20-MF1:MOT_7",
+#             name="vertical",
+#             is_setting=True,
+#             is_display=True,
+#         )
+#         self._append(
+#             SmaractRecord,
+#             "SARES23:ESB6",
+#             name="horizontal",
+#             is_setting=True,
+#             is_display=True,
+#         )
 
 
-namespace.append_obj(GratingHolder, name="grating_holder")
+# namespace.append_obj(GratingHolder, name="grating_holder")
 
 
 # ad hoc 2 pulse setup
@@ -1790,16 +1796,16 @@ namespace.append_obj(
     lazy=True,
     module_name="eco.xoptics.dcm_new",
 )
-namespace.append_obj(
-    "MonoTimecompensation",
-    delay_glob,
-    mono.mono_und_energy,
-    "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
-    "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
-    lazy=True,
-    name="mono_time_corrected",
-    module_name="eco.xoptics.dcm_pathlength_compensation",
-)
+# namespace.append_obj(
+#     "MonoTimecompensation",
+#     delay_glob,
+#     mono.mono_und_energy,
+#     "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
+#     "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+#     lazy=True,
+#     name="mono_time_corrected",
+#     module_name="eco.xoptics.dcm_pathlength_compensation",
+# )
 
 
 # ad hoc interferometric timetool
@@ -1864,6 +1870,7 @@ namespace.append_obj(
     bshost=config_bernina.xeye.bshost._value,
     bsport=config_bernina.xeye.bsport._value,
     name="xeye",
+    lazy=True,
     module_name="eco.xdiagnostics.profile_monitors",
 )
 
@@ -1989,9 +1996,10 @@ class LiquidJetSpectroscopy(Assembly):
         self._append(
             Jungfrau, "JF14T01V01", name="det_vhamos", pgroup_adj=config_bernina.pgroup
         )
+        self._append(CameraBasler, "SARES20-CAMS142-M2", name="prof_pump")
 
 
-namespace.append_obj(LiquidJetSpectroscopy, name="jet", lazy=True)
+# namespace.append_obj(LiquidJetSpectroscopy, name="jet", lazy=True)
 
 
 # class Tapedrive(Assembly):

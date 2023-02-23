@@ -54,8 +54,9 @@ class Scan:
         settling_time=0,
         checker=None,
         scan_directories=False,
-        callbackStartStep=None,
         callbacks_start_scan=[],
+        callbacks_start_step=[],
+        callbacks_end_step=[],
         callbacks_end_scan=[],
         checker_sleep_time=2,
         return_at_end="question",
@@ -105,6 +106,8 @@ class Scan:
         self._elog = elog
         self.run_number = run_number
         self.remaining_tasks = []
+        self.callbacks_start_step = callbacks_start_step
+        self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
         self.callbacks_kwargs = kwargs_callbacks
         print(f"Scan info in file {self.scan_info_filename}.")
@@ -146,6 +149,10 @@ class Scan:
                     + colorama.Fore.RESET
                 )
             self.checker.clear_and_start_counting()
+
+        if self.callbacks_start_step:
+            for caller in self.callbacks_start_step:
+                caller(self, **self.callbacks_kwargs)
 
         if not len(self.values_todo) > 0:
             return False
@@ -226,7 +233,11 @@ class Scan:
             values_step, readbacks_step, step_files=filenames, step_info=tstepinfo
         )
         self.writeScanInfo()
+        if self.callbacks_end_step:
+            for caller in self.callbacks_end_step:
+                caller(self, **self.callbacks_kwargs)
         self.nextStep += 1
+
         return True
 
     def appendScanInfo(
@@ -299,12 +310,16 @@ class Scans:
         checker=None,
         scan_directories=False,
         callbacks_start_scan=[],
+        callbacks_start_step=[],
+        callbacks_end_step=[],
         callbacks_end_scan=[],
         run_table=None,
         elog=None,
     ):
         self._run_table = run_table
         self.callbacks_start_scan = callbacks_start_scan
+        self.callbacks_start_step = callbacks_start_step
+        self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
         self.data_base_dir = data_base_dir
         scan_info_dir = Path(scan_info_dir)
@@ -369,6 +384,8 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
@@ -412,6 +429,8 @@ class Scans:
             checker=self.checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
@@ -457,6 +476,8 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
@@ -502,6 +523,8 @@ class Scans:
             return_at_end=return_at_end,
             settling_time=settling_time,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
@@ -550,6 +573,8 @@ class Scans:
             settling_time=settling_time,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
@@ -599,6 +624,8 @@ class Scans:
             scan_directories=self._scan_directories,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
             elog=self._elog,
