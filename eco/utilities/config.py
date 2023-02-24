@@ -327,6 +327,7 @@ class Namespace(Assembly):
         N_cycles=4,
         silent=True,
         giveup_failed=True,
+        exclude_names=[],
     ):
         starttime = time()
 
@@ -346,7 +347,7 @@ class Namespace(Assembly):
                     self.exc_init.submit(
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
-                    for name in self.all_names
+                    for name in (self.all_names - set(exclude_names))
                 ]
                 self.exc_init.shutdown(wait=True)
                 self.exc_init = ThreadPoolExecutor(max_workers=1)
@@ -354,7 +355,9 @@ class Namespace(Assembly):
                     self.exc_init.submit(
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
-                    for name in (self.all_names - self.initialized_names)
+                    for name in (
+                        self.all_names - self.initialized_names - set(exclude_names)
+                    )
                 ]
                 self.exc_init.shutdown(wait=True)
                 self.silently_initializing = False
@@ -383,10 +386,12 @@ class Namespace(Assembly):
                             lambda name: self.init_name(
                                 name, verbose=verbose, raise_errors=raise_errors
                             ),
-                            self.all_names - self.initialized_names,
+                            self.all_names - self.initialized_names - exclude_names,
                         ),
                         description="Initializing ...",
-                        total=len(self.all_names - self.initialized_names),
+                        total=len(
+                            self.all_names - self.initialized_names - exclude_names
+                        ),
                         transient=True,
                     )
                 )
@@ -398,10 +403,12 @@ class Namespace(Assembly):
                             lambda name: self.init_name(
                                 name, verbose=verbose, raise_errors=raise_errors
                             ),
-                            self.all_names - self.initialized_names,
+                            self.all_names - self.initialized_names - exclude_names,
                         ),
                         description="Initializing ...",
-                        total=len(self.all_names - self.initialized_names),
+                        total=len(
+                            self.all_names - self.initialized_names - exclude_names
+                        ),
                         transient=True,
                     )
                 )

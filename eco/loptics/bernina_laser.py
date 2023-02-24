@@ -178,16 +178,16 @@ class LaserBernina(Assembly):
             MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True
         )
         # Waveplate and Delay stage
-        # self._append(
-        #     MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
-        # )
+        self._append(
+            MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
+        )
 
-        # self._append(
-        #     MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
-        # )
+        self._append(
+            MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
+        )
 
         # ad hoc for 500nm setup
-        self._append(SmaractRecord, "SARES23:ESB3", name="wp_att", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB3", name="wp_att", is_setting=True)
 
         self._append(
             AdjustableFS,
