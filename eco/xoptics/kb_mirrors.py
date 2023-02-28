@@ -3,6 +3,7 @@ from ..devices_general.motors import MotorRecord
 from ..elements.adjustable import AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 import numpy as np
+from epics import PV
 
 
 class KbVer(Assembly):
@@ -85,6 +86,22 @@ class KbVer(Assembly):
         self._append(
             MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False
         )
+        self._pv_sync_world = PV(pvname + ":SYNC_AXES")
+        self._pv_amp_reset = PV(pvname + ":RESET_AMP.PROC")
+        self._pv_parkall = PV(pvname + "::KILL_ALL.PROC")
+        self._pv_enable_all = PV(pvname + ":ENABLE_ALL.PROC")
+        self._pv_sync_all_axes = PV(pvname + ":SYNC.PROC")
+        self._pv_safety_on = PV(pvname + ":SAFETY_ON.PROC")
+        self._pv_safety_off = PV(pvname + ":SAFETY_OFF.PROC")
+
+    def sync_world(self):
+        self._pv_sync_world.put(1)
+
+    def sync_phys_axes(self):
+        self._pv_sync_all_axes.put(1)
+
+    def park_all(self):
+        self._pv_parkall.put(1)
 
     def _get_bend_mean(self):
         return float(
@@ -189,6 +206,22 @@ class KbHor(Assembly):
         self._append(
             MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False
         )
+        self._pv_sync_world = PV(pvname + ":SYNC_AXES")
+        self._pv_amp_reset = PV(pvname + ":RESET_AMP.PROC")
+        self._pv_parkall = PV(pvname + "::KILL_ALL.PROC")
+        self._pv_enable_all = PV(pvname + ":ENABLE_ALL.PROC")
+        self._pv_sync_all_axes = PV(pvname + ":SYNC.PROC")
+        self._pv_safety_on = PV(pvname + ":SAFETY_ON.PROC")
+        self._pv_safety_off = PV(pvname + ":SAFETY_OFF.PROC")
+
+    def sync_world(self):
+        self._pv_sync_world.put(1)
+
+    def sync_phys_axes(self):
+        self._pv_sync_all_axes.put(1)
+
+    def park_all(self):
+        self._pv_parkall.put(1)
 
     def _get_bend_mean(self):
         return float(

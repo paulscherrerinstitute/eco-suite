@@ -50,10 +50,11 @@ class Crystals(Assembly):
             default_value={},
             is_setting=True,
         )
-        for key, date in self.crystal_list().items():
-            self._append(
-                DiffGeometryYou, diffractometer_you=self.diffractometer, name=key
-            )
+        for key, [date, active] in self.crystal_list().items():
+            if active:
+                self._append(
+                    DiffGeometryYou, diffractometer_you=self.diffractometer, name=key
+                )
 
     def append_crystal(self, name=None):
         if name == None:
@@ -74,7 +75,7 @@ class Crystals(Assembly):
             is_display=False,
         )
         crystals = self.crystal_list()
-        crystals[name] = str(datetime.now())
+        crystals[name] = [str(datetime.now()), 1]
         self.crystal_list.mv(crystals)
         self.__dict__[name].new_ub()
 
@@ -106,6 +107,41 @@ class Crystals(Assembly):
                         f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"
                     )
 
+    def activate_crystal(self):
+        crystals = self.crystal_list()
+        inactive_crystals = [k for k in crystals.keys() if crystals[k][1]==0]
+        idx = ''
+        input_message = "Select the crystal to activate:\n"
+        for index, crystal in enumerate(inactive_crystals):
+            input_message += f'{index:2}) {crystal:15}\n'
+        input_message += 'Your choice: '
+        while idx not in range(len(inactive_crystals)):
+            idx = int(input(input_message))
+            print(f'Selected crystal: {inactive_crystals[idx]}')
+        name = inactive_crystals[idx]
+        self._append(
+            DiffGeometryYou, diffractometer_you=self.diffractometer, name=name
+        )
+
+
+
+    def deactivate_crystal(self):
+        crystals = self.crystal_list()
+        active_crystals = [k for k in crystals.keys() if crystals[k][1]==1]
+        idx = ''
+        input_message = "Select the crystal to activate:\n"
+        for index, crystal in enumerate(active_crystals):
+            input_message += f'{index:2}) {crystal:15}\n'
+        input_message += 'Your choice: '
+        while idx not in range(len(active_crystals)):
+            idx = int(input(input_message))
+            print(f'Selected crystal: {active_crystals[idx]}')
+        name = active_crystals[idx]
+        meta = crystals[name]
+        meta[1] = 0
+        crystals[name] = meta
+        self.crystal_list.mv(crystals)
+        removed = self.__dict__.pop(name)
 
 class DiffGeometryYou(Assembly):
     def __init__(self, diffractometer_you=None, name=None):

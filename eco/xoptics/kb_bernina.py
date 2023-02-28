@@ -53,7 +53,7 @@ class KBMirrorBernina(Assembly):
         self.d_prof_dsd = d_prof_dsd
 
     def calc_positions(self, the_kbver, the_kbhor):
-        """angles in rad"""
+        """angles in rad, positive only (i.e. describe incidence angles to KBs)"""
         pos_calc = {}
         pos_calc["y_kbhor"] = np.tan(2 * the_kbver) * np.abs(
             self.d_kbver - self.d_kbhor
@@ -166,6 +166,8 @@ class KBMirrorBernina(Assembly):
         ocoo = self.usd_table.get_coordinates()
         odiffx = self.diffractometer.xbase.get_current_value()
         odiffy = self.diffractometer.ybase.get_current_value()
+
+        # TODO implement motions for the angles as well. ISSUE is that the rx motion somehow decreases the distance to the usd too much for the shurt bellows (as of Feb 27 2023).
         odiffrx = self.diffractometer.rxbase.get_current_value()
         odiffnu = self.diffractometer.nu.get_current_value()
         odiffmu = self.diffractometer.mu.get_current_value()

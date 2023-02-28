@@ -246,8 +246,8 @@ class LaserBernina(Assembly):
         #     is_setting=True,
         # )
         self._append(
-            SmaractRecord,
-            "SARES23:ESB1",
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
             name="delaystage_pump",
             is_setting=True,
         )

@@ -1516,7 +1516,7 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB10", name="pitch", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB11", name="pitch", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB13", name="roll", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)

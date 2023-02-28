@@ -386,11 +386,13 @@ class Namespace(Assembly):
                             lambda name: self.init_name(
                                 name, verbose=verbose, raise_errors=raise_errors
                             ),
-                            self.all_names - self.initialized_names - exclude_names,
+                            self.all_names
+                            - self.initialized_names
+                            - set(exclude_names),
                         ),
                         description="Initializing ...",
                         total=len(
-                            self.all_names - self.initialized_names - exclude_names
+                            self.all_names - self.initialized_names - set(exclude_names)
                         ),
                         transient=True,
                     )
@@ -403,11 +405,13 @@ class Namespace(Assembly):
                             lambda name: self.init_name(
                                 name, verbose=verbose, raise_errors=raise_errors
                             ),
-                            self.all_names - self.initialized_names - exclude_names,
+                            self.all_names
+                            - self.initialized_names
+                            - set(exclude_names),
                         ),
                         description="Initializing ...",
                         total=len(
-                            self.all_names - self.initialized_names - exclude_names
+                            self.all_names - self.initialized_names - set(exclude_names)
                         ),
                         transient=True,
                     )
