@@ -14,7 +14,7 @@ from ..elements.assembly import Assembly
 from ..detector.jungfrau import Jungfrau
 from .kappa_conversion import kappa2you, you2kappa
 import numpy as np
-from ..utilities.recspace import Crystals
+from ..utilities.recspace import Crystals, DiffGeometryYou
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -33,6 +33,7 @@ class GPS(Assembly):
         configuration=["base"],
         alias_namespace=None,
         fina_hex_angle_offset=None,
+        diffcalc=False,
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -275,7 +276,15 @@ class GPS(Assembly):
                 unit="deg",
             )
 
-        # self._append(Crystals, diffractometer_you=self, name="crystals", is_display="recursive")
+        if diffcalc:
+            self._append(
+                Crystals,
+                diffractometer_you=self,
+                name="diffcalc",
+                is_setting=False,
+                is_display=False,
+            )
+
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
@@ -406,6 +415,7 @@ class XRDYou(Assembly):
         diff_detector=None,
         invert_kappa_ellbow=True,
         pgroup_adj=None,
+        diffcalc=True,
     ):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
@@ -771,13 +781,14 @@ class XRDYou(Assembly):
                 pgroup_adj=pgroup_adj,
                 view_toplevel_only=True,
             )
-        self._append(
-            Crystals,
-            diffractometer_you=self,
-            name="crystals",
-            is_setting=False,
-            is_display=False,
-        )
+        if diffcalc:
+            self._append(
+                Crystals,
+                diffractometer_you=self,
+                name="diffcalc",
+                is_setting=False,
+                is_display=False,
+            )
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"

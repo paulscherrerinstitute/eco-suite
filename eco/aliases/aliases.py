@@ -30,7 +30,7 @@ class Alias:
 
     def pop_object(self, obj):
         i = self.children.index(obj)
-        o = self.children[i]
+        o = self.children.pop(i)
         o.parent = None
 
     def get_all(self, joiner=".", channeltypes=None):

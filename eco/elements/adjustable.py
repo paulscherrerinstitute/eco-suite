@@ -309,7 +309,7 @@ class DummyAdjustable:
         self.alias = Alias(name)
 
         self.current_value = 0
-
+        self.limits = [-100,100]
     def get_current_value(self):
         return self.current_value
 
@@ -320,6 +320,10 @@ class DummyAdjustable:
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
+    def get_limits(self):
+        return self.limits
+    def set_limits(self, limits):
+        self.limits = limits
 
     def __repr__(self):
         name = self.name

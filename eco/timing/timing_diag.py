@@ -81,7 +81,7 @@ class TimetoolBerninaUSD(Assembly):
             CameraBasler,
             pvname=microscope_pvname,
             name="camera_microscope",
-            camserver_alias=f"{name} ({microscope_pvname})",
+            camserver_alias="PROF_KB (SARES20-PROF141-M1)",
             is_setting=True,
             is_display=False,
         )

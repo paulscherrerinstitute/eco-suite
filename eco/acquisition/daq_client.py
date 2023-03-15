@@ -48,7 +48,11 @@ class Daq(Assembly):
         self.pgroup = pgroup
         if type(pulse_id_adj) is str:
             self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
-            self._pid_wo_automonitor = PV("SGE-CPCW-85-EVR0:RX-PULSEID", connection_timeout=0.05, auto_monitor=False)
+            self._pid_wo_automonitor = PV(
+                "SGE-CPCW-85-EVR0:RX-PULSEID",
+                connection_timeout=0.05,
+                auto_monitor=False,
+            )
         else:
             self.pulse_id = pulse_id_adj
         self.running = []
@@ -60,6 +64,7 @@ class Daq(Assembly):
         self.rate_multiplicator = rate_multiplicator
 
     def acquire(self, file_name=None, Npulses=100, acq_pars={}):
+        # print(acq_pars)
         print(file_name, Npulses)
         acquisition = Acquisition(
             acquire=None,

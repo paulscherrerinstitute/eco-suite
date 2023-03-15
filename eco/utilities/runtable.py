@@ -300,8 +300,9 @@ class Run_Table2:
         self,
         runno,
         metadata,
+        d={},
     ):
-        self._data.append_run(runno, metadata)
+        self._data.append_run(runno, metadata, d=d)
         if self._google_sheet_api is not None:
             df = self._reduce_df()
             self._google_sheet_api.upload_all(df=df)
@@ -317,9 +318,19 @@ class Run_Table2:
 
     def to_dataframe(self):
         return DataFrame(self._data)
+    ###### diagnostic and convencience functions ######
 
-    def benchmark_times(self, plot=True, repeats=1):
-        return self._data.benchmark_times(plot=plot, repeats=repeats)
+    def run_table_from_other_pgroup(pgroup):
+        """
+        returns a run_table instance of the specified pgroup
+        note: this does neither replace the current run_table nor switch the automatic appending of data to a new run_table or pgroup
+
+        usage: run_table_pxxx = run_table.run_table_from_other_pgroup('pxxx')
+        """
+        return Run_Table2(data=f'/sf/bernina/data/{pgroup}/res/run_table/{pgroup}_runtable.pkl')
+
+    def check_timeouts(self, include_bad_adjustables=True, plot=True, repeats=1):
+        return self._data.check_timeouts(include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats)
 
     def _reduce_df(
         self,
@@ -374,6 +385,13 @@ class Run_Table2:
 
     def __repr__(self):
         return self.__str__()
+
+    ###### diagnostic and convencience functions ######
+    def run_table_from_old_pgroup(pgroup):
+        return 
+
+    def check_timeouts(self, include_bad_adjustables=True, plot=True, repeats=1):
+        return self._data.check_timeouts(include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats)
 
 
 class Run_Table_DataFrame(DataFrame):
@@ -464,11 +482,12 @@ class Run_Table_DataFrame(DataFrame):
             "to": 2,
             "steps": 51,
         },
+        d={},
     ):
         self.load()
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents()
-        dat = self._get_adjustable_values()
+        dat = self._get_adjustable_values(d=d)
         dat["metadata"] = metadata
         dat["metadata"]["time"] = datetime.now()
         names = ["device", "adjustable"]
@@ -514,7 +533,7 @@ class Run_Table_DataFrame(DataFrame):
         # self.order_df()
         self.save()
 
-    def _get_adjustable_values(self, silent=True):
+    def _get_adjustable_values(self, silent=True, d={}):
         """
         This function gets the values of all adjustables in good adjustables and raises an error, when an adjustable is not connected anymore
         """
@@ -524,6 +543,9 @@ class Run_Table_DataFrame(DataFrame):
                 dat[devname] = {}
                 bad_adjs = []
                 for adjname, adj in dev.items():
+                    if f'{devname}.{adjname}' in d.keys():
+                        dat[devname][adjname] = d[f'{devname}.{adjname}']
+                        continue
                     try:
                         dat[devname][adjname] = adj.get_current_value()
                     except:
@@ -540,7 +562,7 @@ class Run_Table_DataFrame(DataFrame):
         else:
             dat = {
                 devname: {
-                    adjname: adj.get_current_value() for adjname, adj in dev.items()
+                    adjname: d[f'{devname}.{adjname}'] if f'{devname}.{adjname}' in d.keys() else adj.get_current_value() for adjname, adj in dev.items()
                 }
                 for devname, dev in self.good_adjustables.items()
             }
@@ -791,28 +813,46 @@ class Run_Table_DataFrame(DataFrame):
         devs = [item[0] for item in list(self.columns)]
         self.df = self[self._orderlist(list(self.columns), key_order, orderlist=devs)]
 
-    def benchmark_times(self, repeats=1, plot=True):
-         ts = []
-         devs=[]
-         def get_dev_adjs(dev):
-             for k, adj in dev.items():
-                 val = adj.get_current_value()
-         for k, dev in self.good_adjustables.items():
-             def func(dev=dev):
-                 return get_dev_adjs(dev)
-             t = timeit.timeit(func, number=repeats)
-             ts.append(float(t))
-             devs.append(k)
-             print(k, t)
-         idx = np.argsort(ts)
-         print('results stored in run_table._data.times')
-         self.times = [np.array(devs)[idx], np.array(ts)[idx]]
-         if plot:
-             import pylab as plt
-             plt.figure('Run_table times required to get values')
-             plt.barh(self.times[0], self.times[1])
-             plt.xlabel('time (s)')
-         return self.times
+
+    #### diagnostic and convenience functions ####
+    def check_timeouts(self, include_bad_adjustables=True, repeats=1, plot=True):
+        if len(self.adjustables) == 0:
+            self._parse_parent_fewerparents()
+        ts = []
+        devs=[]
+        def get_dev_adjs(dev):
+            for k, adj in dev.items():
+                val = adj.get_current_value()
+        for k, dev in self.good_adjustables.items():
+            def func(dev=dev):
+                return get_dev_adjs(dev)
+            t = timeit.timeit(func, number=repeats)
+            ts.append(float(t))
+            devs.append(k)
+            print(k, t)
+        idx = np.argsort(ts)
+        self.times = [np.array(devs)[idx], np.array(ts)[idx]]
+        print('recorded adjustable results stored in run_table._data.times')
+        if include_bad_adjustables:
+            for k, dev in self.bad_adjustables.items():
+                def func(dev=dev):
+                    return get_dev_adjs(dev)
+                t = timeit.timeit(func, number=repeats)
+                ts.append(float(t))
+                devs.append(k)
+                print(k, t)
+            idx = np.argsort(ts)
+            print('rejected timed out adjustable results stored in run_table._data.times_rejected')
+            self.times_rejected = [np.array(devs)[idx], np.array(ts)[idx]]
+
+        if plot:
+            import pylab as plt
+            fig, ax = plt.subplots(1)
+            if include_bad_adjustables:
+                plt.barh(self.times_rejected[0], self.times_rejected[1], color='red', label='rejected adjustables')
+            plt.barh(self.times[0], self.times[1], label='recorded adjustables', color='seagreen')
+            plt.xlabel('time (s)')
+            plt.legend()
 
 
 

@@ -10,11 +10,20 @@ from PIL import Image
 
 # from diffcalc.ub import calc calc import UBCalculation, Crystal
 from eco.elements.assembly import Assembly
-from eco.elements.adjustable import AdjustableMemory, AdjustableFS, AdjustableVirtual
+from eco.elements.adjustable import AdjustableMemory, AdjustableFS, AdjustableVirtual, DummyAdjustable
 from typing import Tuple, Optional
 from eco.elements.adj_obj import AdjustableObject
 from epics import PV
 
+class Diffractometer_Dummy(Assembly):
+    def __init__(self, *args, name=None, **kwargs):
+        Assembly.__init__(self, name=name)
+        self.configuration = ["base", "arm"]
+        adjs = ["nu", "mu", "delta", "eta", "chi", "phi"]
+        for adj in adjs:
+            self._append(DummyAdjustable, name=adj, is_setting=True, is_display=True)
+
+diffractometer_dummy = Diffractometer_Dummy(name = "dummy")
 
 class CrystalNew(Assembly):
     def __init__(self, *args, name=None, **kwargs):
@@ -40,7 +49,7 @@ class CrystalNew(Assembly):
 
 
 class Crystals(Assembly):
-    def __init__(self, diffractometer_you=None, name=None):
+    def __init__(self, diffractometer_you=diffractometer_dummy, name=None):
         super().__init__(name=name)
         self.diffractometer = diffractometer_you
         self._append(
@@ -50,22 +59,22 @@ class Crystals(Assembly):
             default_value={},
             is_setting=True,
         )
-        for key, [date, active] in self.crystal_list().items():
-            if active:
+        for key, meta in self.crystal_list().items():
+            if self.diffractometer.name in meta:
                 self._append(
                     DiffGeometryYou, diffractometer_you=self.diffractometer, name=key
                 )
 
-    def append_crystal(self, name=None):
+    def create_crystal(self, name=None):
         if name == None:
             name = input(
                 "Please choose a name for your crystal (no spaces or other special characters):"
             )
-        specials = np.array([" ", "/", "(", ")", "[", "]"])
+        specials = np.array([" ", "/", "(", ")", "[", "]"]+list(self.crystal_list.keys()))
         in_name = np.array([s in name for s in specials])
         if np.any(in_name):
             raise Exception(
-                f"Special character(s) {specials[in_name]} in name not allowed"
+                f"Special character(s) {specials[in_name]} in name not allowed or name already exists"
             )
         self._append(
             DiffGeometryYou,
@@ -75,21 +84,38 @@ class Crystals(Assembly):
             is_display=False,
         )
         crystals = self.crystal_list()
-        crystals[name] = [str(datetime.now()), 1]
+        crystals[name] = [str(datetime.now()), self.diffractometer.name]
         self.crystal_list.mv(crystals)
         self.__dict__[name].new_ub()
 
-    def remove_crystal(self, name=None):
+    def delete_crystal(self, name=None):
         """
-        Remove crystal with a given name, deletes also the files.
+        Delete crystal with a given name, deletes also the files.
         """
+        if name==None:
+            crystal_names = list(self.crystal_list().keys())
+            input_message = "Select the crystal to delete:\nq) quit\n"
+            for index, crystal in enumerate(crystal_names):
+                input_message += f'{index:2}) {crystal:15}\n'
+            input_message += 'Your choice: '
+            idx = ''
+            while idx not in range(len(crystal_names)):
+                if idx == 'q':
+                    break
+                idx = int(input(input_message))
+                print(f'Selected crystal: {crystal_names[idx]}')
+            name = crystal_names[idx]
         sure = "n"
         sure = input(
             f"are you sure you want to permanently remove the crystal {name} and its UB matrix and memories (y/n)? "
         )
         if sure == "y":
             crystals = self.crystal_list()
+            meta = crystals[name]
+            if self.diffractometer.name in meta:
+                self.deactivate_crystal(name=name)
             removed = crystals.pop(name)
+            del removed
             self.crystal_list.mv(crystals)
             attrs = [
                 "unit_cell",
@@ -107,41 +133,58 @@ class Crystals(Assembly):
                         f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"
                     )
 
-    def activate_crystal(self):
+    def activate_crystal(self, name=None):
         crystals = self.crystal_list()
-        inactive_crystals = [k for k in crystals.keys() if crystals[k][1]==0]
-        idx = ''
-        input_message = "Select the crystal to activate:\n"
-        for index, crystal in enumerate(inactive_crystals):
-            input_message += f'{index:2}) {crystal:15}\n'
-        input_message += 'Your choice: '
-        while idx not in range(len(inactive_crystals)):
-            idx = int(input(input_message))
-            print(f'Selected crystal: {inactive_crystals[idx]}')
-        name = inactive_crystals[idx]
+        if name==None:
+            inactive_crystals = [k for k in crystals.keys() if not self.diffractometer.name in crystals[k]]
+            idx = ''
+            input_message = "Select the crystal to activate:\nq) quit\n"
+            for index, crystal in enumerate(inactive_crystals):
+                input_message += f'{index:2}) {crystal:15}\n'
+            input_message += 'Your choice: '
+            while idx not in range(len(inactive_crystals)):
+                if idx == 'q':
+                    break
+                idx = int(input(input_message))
+                print(f'Activated crystal: {inactive_crystals[idx]}')
+            name = inactive_crystals[idx]
         self._append(
-            DiffGeometryYou, diffractometer_you=self.diffractometer, name=name
+            DiffGeometryYou,
+            diffractometer_you=self.diffractometer,
+            name=name,
+            is_setting=True,
+            is_display=False,
         )
-
-
-
-    def deactivate_crystal(self):
-        crystals = self.crystal_list()
-        active_crystals = [k for k in crystals.keys() if crystals[k][1]==1]
-        idx = ''
-        input_message = "Select the crystal to activate:\n"
-        for index, crystal in enumerate(active_crystals):
-            input_message += f'{index:2}) {crystal:15}\n'
-        input_message += 'Your choice: '
-        while idx not in range(len(active_crystals)):
-            idx = int(input(input_message))
-            print(f'Selected crystal: {active_crystals[idx]}')
-        name = active_crystals[idx]
         meta = crystals[name]
-        meta[1] = 0
+        if not self.diffractometer.name in meta:
+            meta = meta + [self.diffractometer.name]
+        crystals[name] = meta
+        self.crystal_list.mv(crystals)
+
+    def deactivate_crystal(self, name=None):
+        crystals = self.crystal_list()
+        if name==None:
+            active_crystals = [k for k in crystals.keys() if self.diffractometer.name in crystals[k]]
+            idx = ''
+            input_message = "Select the crystal to activate:\nq) quit\n"
+            for index, crystal in enumerate(active_crystals):
+                input_message += f'{index:2}) {crystal:15}\n'
+            input_message += 'Your choice: '
+            while idx not in range(len(active_crystals)):
+                if idx == "q":
+                    break
+                idx = int(input(input_message))
+                print(f'Selected crystal: {active_crystals[idx]}')
+            name = active_crystals[idx]
+        meta = crystals[name]
+        if self.diffractometer.name in meta:
+            i = meta.index(self.diffractometer.name)
+            meta.pop(i)
         crystals[name] = meta
         self.crystal_list.mv(crystals)
         removed = self.__dict__.pop(name)
+        self.alias.pop_object(removed.alias)
+        del removed
 
 class DiffGeometryYou(Assembly):
     def __init__(self, diffractometer_you=None, name=None):
@@ -228,22 +271,16 @@ class DiffGeometryYou(Assembly):
             is_display="recursive",
         )
 
-        cfg = self.diffractometer.configuration
+
         adjs = ["nu", "mu", "delta", "eta", "chi", "phi"]
-        adjs = []
-        if "base" in cfg:
-            adjs += ["mu"]
-        if "arm" in cfg:
-            adjs += ["nu", "delta"]
+        cfg = []
+        if hasattr(self.diffractometer, "configuration"):
+            cfg = self.diffractometer.configuration
         if "kappa" in cfg:
-            adjs += ["eta_kap", "kappa", "phi_kap"]
-        adj_keys = [
-            adj if adj in self.diffractometer.__dict__.keys() else adj + "_manual"
-            for adj in adjs
-        ]
+            adjs = ["nu", "mu", "delta", "eta_kap", "kappa", "phi_kap"]
         self._diff_adjs = {
-            adj: self.diffractometer.__dict__[adj_key]
-            for adj, adj_key in zip(adjs, adj_keys)
+            adj: self.diffractometer.__dict__[adj] if adj in self.diffractometer.__dict__.keys() else DummyAdjustable(name = adj+"dummy")
+            for adj in adjs
         }
 
         def get_h(*args, **kwargs):

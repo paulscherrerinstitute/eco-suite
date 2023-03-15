@@ -145,6 +145,57 @@ class Assembly:
                     geterror.append(ts.alias.get_full_name(base=base))
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
+
+        #  with ThreadPoolExecutor(max_workers=max_workers) as exc:
+        #         list(
+        #             progress.track(
+        #                 exc.map(
+        #                     lambda name: self.init_name(
+        #                         name, verbose=verbose, raise_errors=raise_errors
+        #                     ),
+        #                     self.all_names
+        #                     - self.initialized_names
+        #                     - set(exclude_names),
+        #                 ),
+        #                 description="Initializing ...",
+        #                 total=len(
+        #                     self.all_names - self.initialized_names - set(exclude_names)
+        #                 ),
+        #                 transient=True,
+        #             )
+        #         )
+
+        def get_stat_one_assembly(ts):
+            if hasattr(ts, "get_current_value"):
+                try:
+                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
+                        status[
+                            ts.alias.get_full_name(base=base)
+                        ] = ts.get_current_value()
+                        try:
+                            status_channels[
+                                ts.alias.get_full_name(base=base)
+                            ] = ts.alias.channel
+                        except:
+                            pass
+                except:
+                    geterror.append(ts.alias.get_full_name(base=base))
+            else:
+                nodet.append(ts.alias.get_full_name(base=base))
+
+        #  with ThreadPoolExecutor(max_workers=max_workers) as exc:
+        #         list(
+        #             progress.track(
+        #                 exc.map(
+        #                     get_stat_one_assembly,
+        #                     self.status_collection.get_list(),
+        #                 ),
+        #             description="Getting status...",
+        #             total=len(self.status_collection.get_list()),
+        #             transient=True,
+        #             )
+        #         )
+
         for ts in track(
             self.status_collection.get_list(),
             transient=True,

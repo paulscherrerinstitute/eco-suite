@@ -419,19 +419,19 @@ namespace.append_obj(
     name="prof_dsd",
     lazy=True,
 )
-namespace.append_obj(
-    "SolidTargetDetectorPBPS",
-    "SARES20-DSDPBPS",
-    # diode_channels_raw={
-    #     "up":   "",
-    #     "down": "",
-    #     "left": "",
-    #     "right":"",
-    # },
-    module_name="eco.xdiagnostics.intensity_monitors",
-    name="mon_dsd",
-    lazy=True,
-)
+# namespace.append_obj(
+#    "SolidTargetDetectorPBPS",
+#    "SARES20-DSDPBPS",
+#    # diode_channels_raw={
+#    #     "up":   "",
+#    #     "down": "",
+#    #     "left": "",
+#    #     "right":"",
+#    # },
+#    module_name="eco.xdiagnostics.intensity_monitors",
+#    name="mon_dsd",
+#    lazy=True,
+# )
 
 ## general components ##
 namespace.append_obj(
@@ -688,6 +688,12 @@ namespace.append_obj(
     pgroup_adj=config_bernina.pgroup,
     invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
     name="xrd",
+    lazy=True,
+)
+namespace.append_obj(
+    "Crystals",
+    module_name="eco.utilities.recspace",
+    name="diffcalc",
     lazy=True,
 )
 namespace.append_obj(
@@ -1235,8 +1241,16 @@ def _create_metadata_structure_start_scan(
     if not append_status_info:
         return
     t_start_rt = time.time()
+    d = {}
+    ## use values from status for run_table
     try:
-        run_table.append_run(runno, metadata=metadata)
+        status = scan.status["status_run_start"]
+        d = status["settings"]
+        d.update(status["status"])
+    except:
+        print("Tranferring values from status to run_table did not work")
+    try:
+        run_table.append_run(runno, metadata=metadata, d=d)
     except:
         print("WARNING: issue adding data to run table")
     print(f"RT appending: {time.time()-t_start_rt:.3f} s")
@@ -1399,7 +1413,7 @@ namespace.append_obj(
 
 # namespace.append_obj(
 #    "IncouplingCleanBernina",
-#    lazy=False,
+#    lazy=True,
 #    name="las_inc",
 #    module_name="eco.loptics.bernina_laser",
 # )
@@ -1512,13 +1526,12 @@ class N2jet(Assembly):
         )
 
 
-# ad hoc incoupling device
+# # ad hoc incoupling device
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB11", name="pitch", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB10", name="pitch", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB13", name="roll", is_setting=True)
-        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 
@@ -1534,7 +1547,8 @@ namespace.append_obj(
     name="thc",
     lazy=True,
     module_name="eco.endstations.bernina_sample_environments",
-    configuration=["ottifant"],
+    # configuration=["ottifant"],
+    configuration=[],
 )
 
 
@@ -2160,3 +2174,19 @@ def name2pgroups(name):
     names = [i.name for i in dirs]
     targets = [i.resolve().name for i in dirs]
     return [[i_n, i_p] for i_n, i_p in zip(names, targets) if name in i_n]
+
+
+namespace.append_obj(
+    "Jungfrau",
+    "JF03T01V02",
+    name="det_i0",
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector",
+)
+namespace.append_obj(
+    "Jungfrau",
+    "JF01T03V01",
+    name="data",
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector",
+)

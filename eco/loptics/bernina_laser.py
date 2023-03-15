@@ -21,9 +21,9 @@ ureg = UnitRegistry()
 class IncouplingCleanBernina(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractStreamdevice, "SARES23-ESB13", name="tilt")
-        self._append(SmaractStreamdevice, "SARES23-ESB14", name="rotation")
-        self._append(SmaractStreamdevice, "SARES23-LIC15", name="transl_vertical")
+        self._append(SmaractRecord, "SARES23:LIC17", name="tilt")
+        self._append(SmaractRecord, "SARES23:LIC18", name="rotation")
+        self._append(SmaractRecord, "SARES23:LIC16", name="transl_vertical")
         self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
 
 
@@ -263,8 +263,7 @@ class LaserBernina(Assembly):
         #     name="delaystage_thz",
         #     is_setting=True,
         # )
-        self._append(SmaractRecord, "SARES23:ESB3", name="pump_hor", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB18", name="pump_ver", is_setting=True)
+
 
 
 class DelayTime(AdjustableVirtual):
@@ -355,26 +354,32 @@ class PositionMonitors(Assembly):
         super().__init__(name=name)
         self._append(
             CameraPositionMonitor,
-            "SLAAR21-LCAM-C541",
+            "SLAAR21-LCAM-CS844",
             name="table1_angle",
             is_display="recursive",
             is_status=True,
         )
         self._append(
             CameraPositionMonitor,
-            "SLAAR21-LCAM-C551",
+            "SLAAR21-LCAM-CS843",
+            name="table1_position",
+            is_display="recursive",
+            is_status=True,
+        )
+        self._append(
+            CameraPositionMonitor,
+            "SLAAR21-LCAM-CS842",
             name="table2_angle",
             is_display="recursive",
             is_status=True,
         )
         self._append(
             CameraPositionMonitor,
-            "SLAAR21-LCAM-C552",
+            "SLAAR21-LCAM-CS841",
             name="table2_position",
             is_display="recursive",
             is_status=True,
         )
-
         # self._append(
         #     CameraPositionMonitor,
         #     "SLAAR21-LCAM-C511",
