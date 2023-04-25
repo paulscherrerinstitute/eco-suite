@@ -64,7 +64,7 @@ class Daq(Assembly):
         self.rate_multiplicator = rate_multiplicator
 
     def acquire(self, file_name=None, Npulses=100, acq_pars={}):
-        # print(acq_pars)
+        print(acq_pars)
         print(file_name, Npulses)
         acquisition = Acquisition(
             acquire=None,

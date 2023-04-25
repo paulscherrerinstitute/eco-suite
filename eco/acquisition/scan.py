@@ -60,7 +60,6 @@ class Scan:
         callbacks_end_scan=[],
         checker_sleep_time=2,
         return_at_end="question",
-        run_table=None,
         run_number=None,
         elog=None,
         **kwargs_callbacks,
@@ -68,7 +67,6 @@ class Scan:
         if np.any([char in fina for char in inval_chars]):
             raise ScanNameError
         self.Nsteps = len(values)
-        self._run_table = run_table
         if not isinstance(Npulses, Number):
             if not len(Npulses) == len(values):
                 raise ValueError("steps for Number of pulses and values must match!")

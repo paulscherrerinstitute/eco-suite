@@ -287,9 +287,17 @@ namespace.append_obj(
     "RefLaser_Aramis",
     "SAROP21-OLAS134",
     module_name="eco.xoptics.reflaser",
+    name="reflaser_beamline",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "RefLaser_BerninaUSD",
+    module_name="eco.xoptics.reflaser",
     name="reflaser",
     lazy=True,
 )
+
 namespace.append_obj(
     "SpectralEncoder",
     "SAROP21-PSEN135",
@@ -1042,6 +1050,7 @@ def _increment_daq_run_number(scan, daq=daq, **kwargs):
     try:
         daq_last_run_number = daq.get_last_run_number()
         if int(scan.run_number) is int(daq_last_run_number) + 1:
+            print('############ incremented ##########')
             daq_run_number = daq.get_next_run_number()
         else:
             daq_run_number = daq_last_run_number
@@ -1785,15 +1794,15 @@ from ..microscopes import MicroscopeMotorRecord
 # )
 
 
-delaystage_glob = MotorRecord(
-    "SLAAR21-LMOT-M523:MOTOR_1",
-    name="delaystage_glob",
-)
+# delaystage_glob = MotorRecord(
+#     "SLAAR21-LMOT-M523:MOTOR_1",
+#     name="delaystage_glob",
+# )
 
-delay_glob = DelayTime(
-    delaystage_glob,
-    name="delay_glob",
-)
+# delay_glob = DelayTime(
+#     delaystage_glob,
+#     name="delay_glob",
+# )
 
 namespace.append_obj(
     "SwissFel",
@@ -1936,19 +1945,19 @@ namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_cleanup_air",
     def_blade_up={
-        "args": [MotorRecord, "SARES20-MF1:MOT_10"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_down={
-        "args": [MotorRecord, "SARES20-MF1:MOT_11"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_left={
-        "args": [MotorRecord, "SARES20-MF1:MOT_13"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_3"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_right={
-        "args": [MotorRecord, "SARES20-MF1:MOT_12"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_2"],
         "kwargs": {"is_psi_mforce": True},
     },
     module_name="eco.xoptics.slits",

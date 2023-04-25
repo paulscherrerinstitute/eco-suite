@@ -1,5 +1,9 @@
 {
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true,
-    "python.pythonPath": "/sf/bernina/applications/bm/envs/bernina38/bin/python"
+    "python.pythonPath": "/sf/bernina/applications/bm/envs/bernina38/bin/python",
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "python.formatting.provider": "none"
 }
