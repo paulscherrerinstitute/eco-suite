@@ -26,6 +26,7 @@ class KBMirrorBernina(Assembly):
         d_target=1520.0,
         d_att=1420.0,
         d_prof_dsd=3725.0,
+        d_plate_mondsd=3147.5,
         name=None,
     ):
         """All distances are from sample interaction point at straight beam (no kb deflection), the units are expected in mm"""
@@ -51,6 +52,7 @@ class KBMirrorBernina(Assembly):
         self.d_win1 = d_win1
         self.d_target = d_target
         self.d_prof_dsd = d_prof_dsd
+        self.d_plate_mondsd = d_plate_mondsd
 
     def calc_positions(self, the_kbver, the_kbhor):
         """angles in rad, positive only (i.e. describe incidence angles to KBs)"""
@@ -65,11 +67,17 @@ class KBMirrorBernina(Assembly):
         pos_calc["ry_hex"] = 2 * the_kbhor
         pos_calc["x_diff"] = np.tan(2 * the_kbhor) * np.abs(self.d_kbhor)
         pos_calc["y_diff"] = np.tan(2 * the_kbver) * np.abs(self.d_kbver)
-        pos_calc["x_dsd"] = np.tan(2 * the_kbhor) * np.abs(
+        pos_calc["x_prof_dsd"] = np.tan(2 * the_kbhor) * np.abs(
             self.d_kbhor + self.d_prof_dsd
         )
-        pos_calc["y_dsd"] = np.tan(2 * the_kbver) * np.abs(
+        pos_calc["y_prof_dsd"] = np.tan(2 * the_kbver) * np.abs(
             self.d_kbver + self.d_prof_dsd
+        )
+        pos_calc["x_plate_mon_dsd"] = np.tan(2 * the_kbhor) * np.abs(
+            self.d_kbhor + self.d_plate_mondsd
+        )
+        pos_calc["y_plate_mon_dsd"] = np.tan(2 * the_kbver) * np.abs(
+            self.d_kbver + self.d_plate_mondsd
         )
         return pos_calc
 

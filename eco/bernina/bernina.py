@@ -1945,11 +1945,11 @@ namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_cleanup_air",
     def_blade_up={
-        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_down={
-        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_left={
