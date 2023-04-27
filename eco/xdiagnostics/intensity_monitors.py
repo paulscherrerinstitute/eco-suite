@@ -305,7 +305,7 @@ class SolidTargetDetectorPBPS(Assembly):
                     is_display=False,
                 )
 
-    def get_calibration_values(self, seconds=5):
+    def get_calibration_values(self, seconds=5, return_data=False):
         self.x_diodes.set_target_value(0).wait()
         self.y_diodes.set_target_value(0).wait()
         ds = [
@@ -322,6 +322,8 @@ class SolidTargetDetectorPBPS(Assembly):
 
         print(f"Got {nsamples} samples in {seconds} s.")
         norm_diodes = [1 / tm / 4 for tm in mean]
+        if return_data:
+            return data,norm_diodes
         return norm_diodes
 
     def set_calibration_values(self, norm_diodes):
@@ -989,7 +991,7 @@ class SolidTargetDetectorPBPS_assembly(Assembly):
                 DetectorPvDataStream, calc["ypos"], name="ypos", is_setting=False
             )
 
-    def get_calibration_values(self, seconds=5):
+    def get_calibration_values(self, seconds=5, return_data=False):
         self.x_diodes.set_target_value(0).wait()
         self.y_diodes.set_target_value(0).wait()
         ds = [self.signal_up, self.signal_down, self.signal_left, self.signal_right]
@@ -998,6 +1000,8 @@ class SolidTargetDetectorPBPS_assembly(Assembly):
         mean = [np.mean(td) for td in data]
         std = [np.std(td) for td in data]
         norm_diodes = [1 / tm / 4 for tm in mean]
+        if return_data:
+            return data,norm_diodes
         return norm_diodes
 
     def set_calibration_values(self, norm_diodes):
