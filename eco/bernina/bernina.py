@@ -1539,9 +1539,9 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB11", name="pitch", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB13", name="roll", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB10", name="transl", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB11", name="rz", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB13", name="ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB10", name="x", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
         # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
 
@@ -1551,6 +1551,21 @@ namespace.append_obj(
     lazy=True,
     name="las_inc",
 )
+
+class LaserSteering(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(SmaractRecord, "SARES23:ESB3", name="mirr1_pitch", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB4", name="mirr1_roll", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB12", name="mirr2_roll", is_setting=True)
+        
+namespace.append_obj(
+    LaserSteering,
+    lazy=True,
+    name="las_pointing",
+)
+
 
 namespace.append_obj(
     "High_field_thz_chamber",
