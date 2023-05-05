@@ -25,6 +25,8 @@ class AdjustablePv:
         self,
         pvsetname,
         pvreadbackname=None,
+        pvlowlimname=None,
+        pvhighlimname=None,
         accuracy=None,
         name=None,
         elog=None,
@@ -56,6 +58,19 @@ class AdjustablePv:
                 pvreadbackname, count=element_count, connection_timeout=0.05
             )
             self.pvname = pvreadbackname
+
+        if pvlowlimname:
+            self._pvlowlim = PV(
+                pvlowlimname, count=element_count, connection_timeout=0.05
+            )
+        else:
+            self._pvlowlim = None
+        if pvhighlimname:
+            self._pvhighlim = PV(
+                pvhighlimname, count=element_count, connection_timeout=0.05
+            )
+        else:
+            self._pvhighlim = None
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
     def get_current_value(self, readback=True):
@@ -81,6 +96,13 @@ class AdjustablePv:
         return change_done
 
     def change(self, value):
+        if self._pvlowlim:
+            if value < self._pvlowlim.get():
+                raise Exception(f'Target value of {self.name} is smaller than limit value!')
+        if self._pvhighlim:
+            if self._pvhighlim.get() < value:
+                raise Exception(f'Target value of {self.name} is higher than limit value!')
+        
         self._pv.put(value)
         time.sleep(0.1)
         while self.get_change_done() == 0:

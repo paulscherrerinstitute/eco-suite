@@ -1416,7 +1416,7 @@ namespace.append_obj(
 namespace.append_obj(
     "PositionMonitors",
     lazy=True,
-    name="las_pointing",
+    name="las_pointing_monitors",
     module_name="eco.loptics.bernina_laser",
 )
 
@@ -1566,6 +1566,16 @@ namespace.append_obj(
     name="las_pointing",
 )
 
+class RobotDetectorArm(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(Jungfrau,'JF07T32V02',pgroup_adj=config_bernina.pgroup,name='det_diff')
+
+namespace.append_obj(
+    RobotDetectorArm,
+    lazy=True,
+    name="robot",
+)
 
 namespace.append_obj(
     "High_field_thz_chamber",
