@@ -234,28 +234,6 @@ components = [
     #    "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9},
     # },
     {
-        "name": "mon_opt_old",
-        "z_und": 133,
-        "desc": "Intensity/position monitor after Optics hutch",
-        "type": "eco.xdiagnostics.intensity_monitors:SolidTargetDetectorPBPS_new",
-        "args": ["SAROP21-PBPS133"],
-        "kwargs": {
-            "VME_crate": "SAROP21-CVME-PBPS1",
-            "link": 9,
-            "channels": {
-                "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
-                "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
-                "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
-                "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
-            },
-            "calc": {
-                "itot": "SLAAR21-LTIM01-EVR0:CALCI",
-                "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
-                "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
-            },
-        },
-    },
-    {
         "name": "prof_opt",
         "args": ["SAROP21-PPRM133"] * 2,
         "kwargs": {},
@@ -503,14 +481,7 @@ components = [
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
     },
-    {
-        "args": [],
-        "name": "usd_table",
-        "z_und": 141,
-        "desc": "Upstream diagnostics table",
-        "type": "eco.endstations.hexapod:HexapodSymmetrie",
-        "kwargs": {"offset": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]},
-    },
+    
     # {
     #     "args": ["SARES23-"],
     #     "name": "slit_kb",

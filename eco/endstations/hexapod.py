@@ -1,6 +1,7 @@
 from epics import PV
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics.detector import DetectorPvData
 from time import sleep
 from ..aliases import append_object_to_object, Alias
 from scipy.spatial.transform import Rotation
@@ -364,16 +365,17 @@ class HexapodPI_old:
         return self.__str__()
 
 
-class HexapodSymmetrie:
+class HexapodSymmetrie(Assembly):
     def __init__(
         self, pv_master="SARES20-HEXSYM", name="hex_usd", offset=[0, 0, 0, 0, 0, 0]
     ):
-        self.name = name
+        super().__init__(name=name)
         self.offset = offset
         self.pvname = pv_master
         self.coordinate_switch = AdjustablePvEnum(
             f"{self.pvname}:MOVE#PARAM:CM", name="hex_usd_coordinate_switch"
         )
+
         self.pvs_setpos = {
             "x": PV(f"{self.pvname}:MOVE#PARAM:X.VAL"),
             "y": PV(f"{self.pvname}:MOVE#PARAM:Y.VAL"),
@@ -390,6 +392,14 @@ class HexapodSymmetrie:
             "ry": PV(f"{self.pvname}:POSMACH:RY"),
             "rz": PV(f"{self.pvname}:POSMACH:RZ"),
         }
+
+        self._append(DetectorPvData, f"{self.pvname}:POSMACH:X", name="x")
+        self._append(DetectorPvData, f"{self.pvname}:POSMACH:Y", name="y")
+        self._append(DetectorPvData, f"{self.pvname}:POSMACH:Z", name="z")
+        self._append(DetectorPvData, f"{self.pvname}:POSMACH:RX", name="rx")
+        self._append(DetectorPvData, f"{self.pvname}:POSMACH:RY", name="ry")
+        self._append(DetectorPvData, f"{self.pvname}:POSMACH:RZ", name="rz")
+
         self._ctrl_pv = PV(f"{self.pvname}:STATE#PANEL:SET.VAL")
 
     def set_coordinates(self, x, y, z, rx, ry, rz, relative_to_eco_offset=True):

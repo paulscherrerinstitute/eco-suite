@@ -414,7 +414,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "DownstreamDiagnostic",
-    name="dsd",
+    name="dsd_table",
     module_name="eco.xdiagnostics.dsd",
     lazy=True,
 )
@@ -488,6 +488,14 @@ namespace.append_obj(
     name="tt_kb",
     lazy=True,
 )
+namespace.append_obj(
+    "HexapodSymmetrie",
+    name="usd_table",
+    module_name="eco.endstations.hexapod",
+    offset=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    lazy=True,
+)
+
 namespace.append_obj(
     "EventReceiver",
     "SARES20-CVME-01-EVR0",
@@ -1050,7 +1058,7 @@ def _increment_daq_run_number(scan, daq=daq, **kwargs):
     try:
         daq_last_run_number = daq.get_last_run_number()
         if int(scan.run_number) is int(daq_last_run_number) + 1:
-            print('############ incremented ##########')
+            print("############ incremented ##########")
             daq_run_number = daq.get_next_run_number()
         else:
             daq_run_number = daq_last_run_number
@@ -1552,24 +1560,32 @@ namespace.append_obj(
     name="las_inc",
 )
 
+
 class LaserSteering(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(SmaractRecord, "SARES23:ESB3", name="mirr1_pitch", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB4", name="mirr1_roll", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True)
+        self._append(
+            SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True
+        )
         self._append(SmaractRecord, "SARES23:ESB12", name="mirr2_roll", is_setting=True)
-        
+
+
 namespace.append_obj(
     LaserSteering,
     lazy=True,
     name="las_pointing",
 )
 
+
 class RobotDetectorArm(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(Jungfrau,'JF07T32V02',pgroup_adj=config_bernina.pgroup,name='det_diff')
+        self._append(
+            Jungfrau, "JF07T32V02", pgroup_adj=config_bernina.pgroup, name="det_diff"
+        )
+
 
 namespace.append_obj(
     RobotDetectorArm,
@@ -1911,6 +1927,79 @@ namespace.append_obj(
 
 ############## experiment specific #############
 
+##combined delaystage with phase shifter motion##
+
+
+class Stage_LXT_Delay(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p20794_phase_shifter_threshold",
+            name="thr",
+            default_value=-280e-12,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p20794_phase_shifter_offset",
+            name="ps0",
+            default_value=-2.5006914999999344e-08,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p20794_delay_stage_offset",
+            name="dp0",
+            default_value=0,
+            is_setting=True,
+        )
+
+        def get_comb_delay(pd, ps):
+            ps_rel = ps - self.ps0()
+            pd_rel = pd - self.dp0()
+            return ps_rel + pd_rel
+
+        def set_comb_delay(delay):
+            if delay > self.thr():
+                if np.abs(las.xlt() - self.ps0()) > 50e-15:
+                    ps_pos = self.ps0()
+                else:
+                    ps_pos = None
+                pd_pos = self.dp0() + delay
+            else:
+                ps_pos = self.ps0() + delay
+                pd_pos = self.dp0()
+            return pd_pos, ps_pos
+
+        self._append(
+            AdjustableVirtual,
+            [las.delay_pump, las.xlt],
+            get_comb_delay,
+            set_comb_delay,
+            name="delay_combined",
+        )
+
+
+namespace.append_obj(
+    Stage_LXT_Delay,
+    name="stage_ps_delay",
+    lazy=True,
+)
+
+#         # self.combined_delay = AdjustableVirtual(
+#         #     [self.delay_thz, self.delay_800_pump],
+#         #     self.delay_get,
+#         #     self.delay_set,
+#         #     name="combined_delay",
+#         # )
+
+#     def thz_pol_set(self, val):
+#         return 1.0 * val, 1.0 / 2 * val
+
+#     def thz_pol_get(self, val, val2):
+#         return 1.0 * val2
+
 
 namespace.append_obj(
     "Bernina_XEYE",
@@ -1925,7 +2014,6 @@ namespace.append_obj(
 
 # try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
 try:
-
     import sys
     from ..utilities import TimeoutPath
 

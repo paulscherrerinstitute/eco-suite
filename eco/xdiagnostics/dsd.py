@@ -31,8 +31,8 @@ class DownstreamDiagnostic(Assembly):
         x = np.tan(2 * theta_kbhor) / np.cos(2 * theta_kbver) * 6325
         return x, y
 
-    def home(self):
-        self._run_cmd("python /ioc/qt/ESB_DSD_home.py SARES20-DSD")
+    def home(self,**kwargs):
+        self._run_cmd("python /ioc/qt/ESB_DSD_home.py SARES20-DSD", **kwargs)
 
     def gui(self):
         self._run_cmd("caqtdm -noMsg  -macro P=SARES20-DSD  /ioc/qt/ESB_DSD_motors.ui")
