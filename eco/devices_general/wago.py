@@ -10,6 +10,9 @@ from eco.epics.adjustable import (
 
 class AnalogInput(Assembly):
     def __init__(self, pvname, name=None):
+        """Analog input, which is defined by a PV name. There are linear calibration 
+        options (hidden adjustment and visible linear_calibration values):
+        value = raw*linear_calibration_slope + linear_calibration_offset"""
         super().__init__(name=name)
         self.pvname = pvname
         self._append(
@@ -68,6 +71,27 @@ class AnalogInput(Assembly):
     def get_current_value(self):
         return self.value.get_current_value()
 
+    def reset_offset_current_value_to(self,value=0):
+        self.linear_calibration_offset.set_target_value(
+            (-1) 
+            * self.raw.get_current_value()
+            * self.linear_calibration_slope.get_current_value()
+            * self._adj_slope.get_current_value()
+            + value
+            ).wait()
+
+    def reset_slope_current_value_to(self,value=1):
+        oslo = self.linear_calibration_slope.get_current_value()
+        ooff = self.linear_calibration_offset.get_current_value()
+        self.linear_calibration_offset.set_target_value(
+            ooff/oslo
+            * self._adj_slope.get_current_value()
+            * value
+            ).wait()
+        ooff_raw = ooff / oslo / self._adj_slope.get_current_value()
+        nslo = value / (self.raw.get_current_value()-ooff_raw)
+        self.linear_calibration_slope.set_target_value(nslo).wait()
+    
 
 class WagoAnalogInputs(Assembly):
     def __init__(self, pvbase, name=None):
