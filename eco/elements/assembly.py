@@ -2,7 +2,7 @@ from tkinter import W
 
 from numpy import isin
 
-from eco.elements.protocols import Detector
+from eco.elements.protocols import Detector, InitialisationWaitable
 from ..aliases import Alias
 from tabulate import tabulate
 import colorama
@@ -314,11 +314,18 @@ class Assembly:
         label = self.alias.get_full_name() + " status\n"
         return label + self.get_display_str()
 
-    def _run_cmd(self, line, silent = True):
+    def _wait_for_initialisation(self, timeout=2):
+        for ton, to in self.__dict__.items():
+            if isinstance(to, InitialisationWaitable):
+                to._wait_for_initialisation()
+
+    def _run_cmd(self, line, silent=True):
         if silent:
             print(f"Starting following commandline silently:\n" + line)
             with open(os.devnull, "w") as FNULL:
-                subprocess.Popen(line, shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
+                subprocess.Popen(
+                    line, shell=True, stdout=FNULL, stderr=subprocess.STDOUT
+                )
         else:
             subprocess.Popen(line, shell=True)
 

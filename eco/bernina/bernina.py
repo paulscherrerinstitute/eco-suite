@@ -1334,22 +1334,30 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 
+#namespace.append_obj(
+#    "BerninaInlineMicroscope",
+#    pvname_camera="SARES20-CAMS142-M3",
+#    lazy=True,
+#    name="samplecam_inline",
+#    module_name="eco.microscopes",
+#)
+
 namespace.append_obj(
-    "BerninaInlineMicroscope",
-    pvname_camera="SARES20-CAMS142-M3",
+    "CameraBasler",
+    "SARES20-CAMS142-C1",
     lazy=True,
-    name="samplecam_inline",
+    name="samplecam_front",
     module_name="eco.microscopes",
 )
 
-namespace.append_obj(
-    "MicroscopeMotorRecord",
-    pvname_camera="SARES20-CAMS142-C1",
-    lazy=True,
-    name="samplecam",
-    module_name="eco.microscopes",
-    pvname_zoom="SARES20-MF1:MOT_5",
-)
+#namespace.append_obj(
+#    "MicroscopeMotorRecord",
+#    pvname_camera="SARES20-CAMS142-C1",
+#    lazy=True,
+#    name="samplecam",
+#    module_name="eco.microscopes",
+#    pvname_zoom="SARES20-MF1:MOT_5",
+#)
 
 # namespace.append_obj(
 #    "MicroscopeMotorRecord",
@@ -1368,22 +1376,23 @@ namespace.append_obj(
 #     name="samplecam_sideview",
 #     module_name="eco.devices_general.cameras_swissfel",
 # )
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C2",
+    lazy=True,
+    name="samplecam_back_racks",
+    module_name="eco.devices_general.cameras_swissfel",
+)
 
 namespace.append_obj(
     "CameraBasler",
     "SARES20-CAMS142-C3",
     lazy=True,
-    name="samplecam_sideview",
+    name="samplecam_back_door",
     module_name="eco.devices_general.cameras_swissfel",
 )
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C2",
-    lazy=True,
-    name="samplecam_sideview_45deg_THC",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+
 
 # namespace.append_obj(
 #    "CameraBasler",
@@ -1487,11 +1496,11 @@ class Double_Pulse_Pump(Assembly):
         )
 
 
-namespace.append_obj(
-    Double_Pulse_Pump,
-    lazy=True,
-    name="pump",
-)
+#namespace.append_obj(
+#    Double_Pulse_Pump,
+#    lazy=True,
+#    name="pump",
+#)
 
 
 # ad hoc N2 jet readout
@@ -1550,65 +1559,178 @@ class Incoupling(Assembly):
         self._append(SmaractRecord, "SARES23:ESB11", name="rz", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB13", name="ry", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB10", name="x", is_setting=True)
-        # self._append(SmaractRecord, "SARES23:ESB16", name="tilt", is_setting=True)
-        # self._append(SmaractRecord, "SARES23:ESB17", name="rotation", is_setting=True)
-
+        self._append(MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage_eos", is_setting=True,)
+        self._append(DelayTime, self.delaystage_eos, name="delay_eos", is_setting=False, is_display=True)
 
 namespace.append_obj(
     Incoupling,
     lazy=True,
-    name="las_inc",
+    name="eos",
 )
 
+
+class Jungfraus(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            Jungfrau, "JF07T32V02", pgroup_adj=config_bernina.pgroup, name="diff"
+        )
+        self._append(
+            Jungfrau, "JF03T01V02", name="i0", pgroup_adj=config_bernina.pgroup
+        )
+
+namespace.append_obj(
+    Jungfraus,
+    lazy=True,
+    name="jfs",
+)
+
+#namespace.append_obj(
+#    "High_field_thz_chamber",
+#    name="thc",
+#    lazy=True,
+#    module_name="eco.endstations.bernina_sample_environments",
+    # configuration=["ottifant"],
+#    configuration=[],
+#)
+
+class Sample_stages(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(MotorRecord, "SARES20-MF1:MOT_11", name="x", is_setting=True)
+        self._append(MotorRecord, "SARES20-MF1:MOT_9", name="y", is_setting=True)
+
+namespace.append_obj(
+   Sample_stages,
+   lazy=True,
+   name="sample",
+)
 
 class LaserSteering(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(SmaractRecord, "SARES23:ESB3", name="mirr1_pitch", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB4", name="mirr1_roll", is_setting=True)
-        self._append(
-            SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True
-        )
+        self._append(SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True)
         self._append(SmaractRecord, "SARES23:ESB12", name="mirr2_roll", is_setting=True)
 
-
-namespace.append_obj(
-    LaserSteering,
-    lazy=True,
-    name="las_pointing",
-)
-
-
-class RobotDetectorArm(Assembly):
+class THzGeneration(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
+        self._append(SmaractRecord, "SARES23:LIC16", name="par_x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB8", name="mirr_x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB7", name="mirr_z", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC18", name="mirr_ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB9", name="mirr_rz", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC15", name="polarizer", is_setting=True)
+
+class THzVirtualStages(Assembly):
+    def __init__(self, name=None, mx=None, mz=None, px=None, pz=None):
+        super().__init__(name=name)
+        self._mx = mx
+        self._mz = mz
+        self._px = px
+        self._pz = pz
         self._append(
-            Jungfrau, "JF07T32V02", pgroup_adj=config_bernina.pgroup, name="det_diff"
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_x0",
+            name="offset_mirr_x",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_z0",
+            name="offset_mirr_z",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21145_par_x0",
+            name="offset_par_x",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21145_par_z0",
+            name="offset_par_z",
+            default_value=0,
+            is_setting=True,
         )
 
+        def get_divergence(mx, px):
+            return px - self.offset_par_x()
+        def set_divergence(x):
+            mx = self.offset_mirr_x() + x
+            px = self.offset_par_x() + x
+            return mx,px
+
+        def get_focus_z(mx, pz):
+            return pz - self.offset_par_z()
+        def set_focus_z(z):
+            mz = self.offset_mirr_z() + z
+            pz = self.offset_par_z() + z
+            return mz, pz
+        self._append(
+            AdjustableVirtual,
+            [mx, px],
+            get_divergence,
+            set_divergence,
+            name="divergence_virtual",
+        )
+        self._append(
+            AdjustableVirtual,
+            [mz, pz],
+            get_focus_z,
+            set_focus_z,
+            name="focus_virtual",
+        )
+    def set_offsets_to_current_value(self):
+        self.offset_mirr_x.mv(self._mx())
+        self.offset_mirr_z.mv(self._mz())
+        self.offset_par_x.mv(self._px())
+        self.offset_par_z.mv(self._pz())
+
+
+
+
+class THz(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(SmaractRecord, "SARES23:ESB6", name="par_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-MF1:MOT_10", name="par_y", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC13", name="par_z", is_setting=True)
+        self._append(SmaractRecord, "SARES23:LIC14", name="par_rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB15", name="par_ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB1", name="delaystage_thz", is_setting=True,)
+        self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=False, is_display=True,)     
+        self._append(LaserSteering, name="ir_pointing", is_setting=False)
+        self._append(THzGeneration, name="generation", is_setting=False)
+   
+        ### Virtual stages ###
+        self._append(
+            THzVirtualStages, 
+            name="virtual_stages", 
+            mx=self.generation.mirr_x, 
+            mz=self.generation.mirr_z, 
+            px=self.generation.par_x, 
+            pz = self.par_z, 
+            is_setting=False)
+
+
 
 namespace.append_obj(
-    RobotDetectorArm,
-    lazy=True,
-    name="robot",
+   THz,
+   lazy=True,
+   name="thz",
 )
-
-namespace.append_obj(
-    "High_field_thz_chamber",
-    name="thc",
-    lazy=True,
-    module_name="eco.endstations.bernina_sample_environments",
-    # configuration=["ottifant"],
-    configuration=[],
-)
-
 
 # class THz_in_air(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
 
-#         self._append(SmaractRecord, "SARES23:ESB4", name="eos_rot", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB12", name="eos_tilt", is_setting=True)
 #         self._append(SmaractRecord, "SARES23:ESB5", name="crystal_ROT", is_setting=True)
 #         self._append(SmaractRecord, "SARES23:LIC15", name="ir_1_z", is_setting=True)
 #         self._append(SmaractRecord, "SARES23:LIC13", name="ir_1_Ry", is_setting=True)
@@ -1699,8 +1821,10 @@ namespace.append_obj(
 # namespace.append_obj(
 #    THz_in_air,
 #    lazy=True,
-#    name="tia",
+#    name="thz",
 # )
+
+
 
 namespace.append_obj(
     "SmaractController",
@@ -1981,11 +2105,11 @@ class Stage_LXT_Delay(Assembly):
         )
 
 
-namespace.append_obj(
-    Stage_LXT_Delay,
-    name="stage_ps_delay",
-    lazy=True,
-)
+#namespace.append_obj(
+#    Stage_LXT_Delay,
+#    name="stage_ps_delay",
+#    lazy=True,
+#)
 
 #         # self.combined_delay = AdjustableVirtual(
 #         #     [self.delay_thz, self.delay_800_pump],
@@ -2001,16 +2125,16 @@ namespace.append_obj(
 #         return 1.0 * val2
 
 
-namespace.append_obj(
-    "Bernina_XEYE",
-    zoomstage_pv=config_bernina.xeye.zoomstage_pv._value,
-    camera_pv=config_bernina.xeye.camera_pv._value,
-    bshost=config_bernina.xeye.bshost._value,
-    bsport=config_bernina.xeye.bsport._value,
-    name="xeye",
-    lazy=True,
-    module_name="eco.xdiagnostics.profile_monitors",
-)
+#namespace.append_obj(
+#    "Bernina_XEYE",
+#    zoomstage_pv=config_bernina.xeye.zoomstage_pv._value,
+#    camera_pv=config_bernina.xeye.camera_pv._value,
+#    bshost=config_bernina.xeye.bshost._value,
+#    bsport=config_bernina.xeye.bsport._value,
+#    name="xeye",
+#    lazy=True,
+#    module_name="eco.xdiagnostics.profile_monitors",
+#)
 
 # try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
 try:
@@ -2299,17 +2423,17 @@ def name2pgroups(name):
     return [[i_n, i_p] for i_n, i_p in zip(names, targets) if name in i_n]
 
 
-namespace.append_obj(
-    "Jungfrau",
-    "JF03T01V02",
-    name="det_i0",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector",
-)
-namespace.append_obj(
-    "Jungfrau",
-    "JF01T03V01",
-    name="data",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector",
-)
+#namespace.append_obj(
+#    "Jungfrau",
+#    "JF03T01V02",
+#    name="det_i0",
+#    pgroup_adj=config_bernina.pgroup,
+#    module_name="eco.detector",
+#)
+#namespace.append_obj(
+#    "Jungfrau",
+#    "JF01T03V01",
+#    name="data",
+#    pgroup_adj=config_bernina.pgroup,
+#    module_name="eco.detector",
+#)

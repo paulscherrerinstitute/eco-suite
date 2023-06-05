@@ -44,7 +44,7 @@ class I2cModule(Assembly):
 
 
 class BerninaEnvironment(Assembly):
-    def __init__(self,pvbases=['SLAAR21-LI2C01', 'SARES20-CI2C'],channels=[[1,2],[4,5,6,7,8]], name=None):
+    def __init__(self,pvbases=['SLAAR21-LI2C01', 'SARES20-CI2C'],channels=[[1,2,3],[4,5,7,8]], name=None):
         super().__init__(name=name)
         for pvbase,channelnumbers in zip(pvbases,channels):
             for n in channelnumbers:
