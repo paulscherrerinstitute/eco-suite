@@ -43,7 +43,8 @@ class High_field_thz_chamber(Assembly):
         self.par_out_pos = [35, -9.5]
         self.motor_configuration = {
             "rx": {
-                "id": "SARES23:ESB13",
+                # "id": "SARES23:ESB13",
+                "id": "SARES23:ESB6",
                 "pv_descr": "Motor7:1 THz Chamber Rx",
                 "type": 2,
                 "sensor": 1,
@@ -52,7 +53,8 @@ class High_field_thz_chamber(Assembly):
                 "kwargs": {"accuracy": 0.01},
             },
             "x": {
-                "id": "SARES23:ESB14",
+                # "id": "SARES23:ESB14",
+                "id": "SARES23:ESB15",
                 "pv_descr": "Motor7:2 THz Chamber x ",
                 "type": 1,
                 "sensor": 0,
@@ -60,7 +62,8 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "z": {
-                "id": "SARES23:ESB10",
+                # "id": "SARES23:ESB10",
+                "id": "SARES23:LIC16",
                 "pv_descr": "Motor6:1 THz Chamber z ",
                 "type": 1,
                 "sensor": 0,
@@ -68,7 +71,8 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "ry": {
-                "id": "SARES23:ESB11",
+                # "id": "SARES23:ESB11",
+                "id": "SARES23:LIC15",
                 "pv_descr": "Motor6:2 THz Chamber Ry",
                 "type": 2,
                 "sensor": 1,
@@ -76,7 +80,8 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "rz": {
-                "id": "SARES23:ESB12",
+                # "id": "SARES23:ESB12",
+                "id": "SARES23:ESB4",
                 "pv_descr": "Motor6:3 THz Chamber Rz",
                 "type": 2,
                 "sensor": 1,
@@ -262,40 +267,45 @@ class Organic_crystal_breadboard(Assembly):
         self.alias = Alias(name)
 
         self.motor_configuration = {
-            "mirr2_x": {
-                "id": "-LIC17",
+            "mir_x": {
+                # "id": "-LIC17",
+                "id": ":ESB8",
                 "pv_descr": "Motor8:2 THz mirror x ",
                 "type": 1,
                 "sensor": 13,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "mirr2_rz": {
-                "id": "-LIC18",
+            "mir_rz": {
+                # "id": "-LIC18",
+                "id": ":ESB9",
                 "pv_descr": "Motor8:3 THz mirror rz ",
                 "type": 1,
                 "sensor": 13,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "mirr2_ry": {
-                "id": "-ESB1",
+            "mir_ry": {
+                # "id": "-ESB1",
+                "id": ":LIC18",
                 "pv_descr": "Motor3:1 THz mirror ry ",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "forward",
             },
-            "mirr2_z": {
-                "id": "-LIC16",
+            "mir_z": {
+                # "id": "-LIC16",
+                "id": ":ESB7",
                 "pv_descr": "Motor8:1 THz mirror z",
                 "type": 1,
                 "sensor": 13,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "par2_x": {
-                "id": "-ESB3",
+            "par_x": {
+                # "id": "-ESB3",
+                "id": ":LIC17",
                 "pv_descr": "Motor3:3 THz parabola2 x",
                 "type": 1,
                 "sensor": 0,
@@ -303,39 +313,43 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "delaystage_thz": {
-                "id": "-ESB18",
+                # "id": "-ESB18",
+                "id": ":ESB1",
                 "pv_descr": "Motor8:3 NIR delay stage",
                 "type": 1,
                 "sensor": 0,
                 "speed": 100,
                 "home_direction": "back",
             },
-            "nir_mirr1_ry": {
-                "id": "-ESB17",
+            "nir_m1_ry": {
+                # "id": "-ESB17",
+                "id": ":ESB3",
                 "pv_descr": "Motor8:2 near IR mirror 1 ry",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "nir_mirr1_rx": {
-                "id": "-ESB16",
+            "nir_m1_rx": {
+                "id": ":ESB16",
                 "pv_descr": "Motor8:1 near IR mirror 1 rx",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "nir_mirr2_ry": {
-                "id": "-ESB9",
+            "nir_m2_ry": {
+                # "id": "-ESB9",
+                "id": ":ESB14",
                 "pv_descr": "Motor5:3 near IR mirror 2 ry",
                 "type": 2,
                 "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "nir_mirr2_rx": {
-                "id": "-ESB4",
+            "nir_m2_rx": {
+                # "id": ":ESB4",
+                "id": ":ESB12",
                 "pv_descr": "Motor4:1 near IR mirror 2 rx",
                 "type": 1,
                 "sensor": 13,
@@ -343,7 +357,7 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "crystal": {
-                "id": "-ESB2",
+                "id": ":ESB2",
                 "pv_descr": "Motor3:2 crystal rotation",
                 "type": 2,
                 "sensor": 1,
@@ -351,7 +365,7 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "wp": {
-                "id": "-ESB7",
+                "id": ":ESB7",
                 "pv_descr": "Motor5:1 waveplate rotation",
                 "type": 2,
                 "sensor": 1,
@@ -366,7 +380,7 @@ class Organic_crystal_breadboard(Assembly):
         ### smaract motors ###
         for name, config in self.motor_configuration.items():
             self._append(
-                SmaractStreamdevice,
+                SmaractRecord,
                 pvname=Id + config["id"],
                 name=name,
                 is_setting=True,

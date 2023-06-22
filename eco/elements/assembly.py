@@ -14,6 +14,9 @@ from rich.progress import track
 from eco import Adjustable, Detector
 
 
+_initializing_assemblies = []
+
+
 class Collection:
     def __init__(self, name=None):
         if name is None:
@@ -314,10 +317,24 @@ class Assembly:
         label = self.alias.get_full_name() + " status\n"
         return label + self.get_display_str()
 
-    def _wait_for_initialisation(self, timeout=2):
-        for ton, to in self.__dict__.items():
-            if isinstance(to, InitialisationWaitable):
-                to._wait_for_initialisation()
+    # def _wait_for_initialisation(self, timeout=2):
+    #     for ton, to in self.__dict__.items():
+    #         try:
+    #             iswaitable = isinstance(to, InitialisationWaitable)
+    #             if iswaitable:
+    #                 to._wait_for_initialisation()
+    #         except:
+    #             pass
+
+    def _wait_for_initialisation(self):
+        for item in self.status_collection.get_list():
+            if isinstance(item, Assembly) and (item in _initializing_assemblies):
+                continue
+            if isinstance(item, InitialisationWaitable):
+                if isinstance(item,Assembly):
+                    _initializing_assemblies.append(item)
+                item._wait_for_initialisation()
+
 
     def _run_cmd(self, line, silent=True):
         if silent:

@@ -33,7 +33,6 @@ class AdjustablePv:
         element_count=None,
         unit=None,
     ):
-
         #        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
         #    ):
         self.Id = pvsetname
@@ -73,6 +72,15 @@ class AdjustablePv:
             self._pvhighlim = None
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
+    def _wait_for_initialisation(self):
+        self._pv.wait_for_connection()
+        if hasattr(self, "_pv_readback") and self._pv_readback:
+            self._pv_readback.wait_for_connection()
+        if hasattr(self, "_pv_lowlim") and self._pv_lowlim:
+            self._pv_lowlim.wait_for_connection()
+        if hasattr(self, "_pv_highlim") and self._pv_highlim:
+            self._pv_highlim.wait_for_connection()
+    
     def get_current_value(self, readback=True):
         if readback:
             currval = self._pvreadback.get()
@@ -98,11 +106,15 @@ class AdjustablePv:
     def change(self, value):
         if self._pvlowlim:
             if value < self._pvlowlim.get():
-                raise Exception(f'Target value of {self.name} is smaller than limit value!')
+                raise Exception(
+                    f"Target value of {self.name} is smaller than limit value!"
+                )
         if self._pvhighlim:
             if self._pvhighlim.get() < value:
-                raise Exception(f'Target value of {self.name} is higher than limit value!')
-        
+                raise Exception(
+                    f"Target value of {self.name} is higher than limit value!"
+                )
+
         self._pv.put(value)
         time.sleep(0.1)
         while self.get_change_done() == 0:
@@ -166,6 +178,11 @@ class AdjustablePvEnum:
             enumname, {tstr: n for n, tstr in enumerate(self.enum_strs)}
         )
         self.alias = Alias(name, channel=self.Id, channeltype="CA")
+
+    def _wait_for_initialisation(self):
+        self._pv.wait_for_connection()
+        if hasattr(self, "_pv_set") and self._pv_set:
+            self._pv_set.wait_for_connection()
 
     def validate(self, value):
         if type(value) is str:

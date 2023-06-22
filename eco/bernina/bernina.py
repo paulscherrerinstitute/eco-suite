@@ -665,6 +665,16 @@ namespace.append_obj(
     name="analog_outputs",
     module_name="eco.devices_general.wago",
 )
+
+namespace.append_obj(
+    "AnalogInput",
+    "SARES20-CWAG-GPS01:ADC08",
+    lazy=True,
+    name="oxygen_sensor",
+    module_name="eco.devices_general.wago",
+)
+
+
 namespace.append_obj(
     "GudeStrip",
     "SARES20-CPPS-01",
@@ -1369,13 +1379,13 @@ namespace.append_obj(
 # )
 
 
-# namespace.append_obj(
-#     "CameraBasler",
-#     "SARES20-CAMS142-M2",
-#     lazy=True,
-#     name="samplecam_sideview",
-#     module_name="eco.devices_general.cameras_swissfel",
-# )
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-M2",
+    lazy=True,
+    name="samplecam_sideview",
+    module_name="eco.devices_general.cameras_swissfel",
+)
 namespace.append_obj(
     "CameraBasler",
     "SARES20-CAMS142-C2",
@@ -1450,50 +1460,50 @@ from ..devices_general.motors import SmaractStreamdevice
 from ..loptics.bernina_laser import DelayTime
 
 
-# namespace.append_obj(
-#    "Organic_crystal_breadboard",
-#    lazy=True,
-#    name="ocb",
-#    module_name="eco.endstations.bernina_sample_environments",
-#    Id="SARES23",
-# )
+namespace.append_obj(
+   "Organic_crystal_breadboard",
+   lazy=True,
+   name="ocb",
+   module_name="eco.endstations.bernina_sample_environments",
+   Id="SARES23",
+)
 
 from ..epics.adjustable import AdjustablePv
 
 
-class Double_Pulse_Pump(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
+# class Double_Pulse_Pump(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
 
-        ### dp smaract stages ####
+#         ### dp smaract stages ####
 
-        self.motor_configuration = {
-            "delaystage_both": {
-                "id": "SARES23:ESB15",
-            },
-            "delaystage_pulse2": {
-                "id": "SARES23:ESB1",
-            },
-            "wp_both": {
-                "id": "SARES23:ESB3",
-            },
-            "wp_pulse2": {
-                "id": "SARES23:ESB2",
-            },
-        }
-        for name, config in self.motor_configuration.items():
-            self._append(
-                SmaractRecord,
-                pvname=config["id"],
-                name=name,
-                is_setting=True,
-            )
-        self._append(
-            DelayTime, self.delaystage_both, name="delay_both", is_setting=True
-        )
-        self._append(
-            DelayTime, self.delaystage_pulse2, name="delay_pulse2", is_setting=True
-        )
+#         self.motor_configuration = {
+#             "delaystage_both": {
+#                 "id": "SARES23:ESB15",
+#             },
+#             "delaystage_pulse2": {
+#                 "id": "SARES23:ESB1",
+#             },
+#             "wp_both": {
+#                 "id": "SARES23:ESB3",
+#             },
+#             "wp_pulse2": {
+#                 "id": "SARES23:ESB2",
+#             },
+#         }
+#         for name, config in self.motor_configuration.items():
+#             self._append(
+#                 SmaractRecord,
+#                 pvname=config["id"],
+#                 name=name,
+#                 is_setting=True,
+#             )
+#         self._append(
+#             DelayTime, self.delaystage_both, name="delay_both", is_setting=True
+#         )
+#         self._append(
+#             DelayTime, self.delaystage_pulse2, name="delay_pulse2", is_setting=True
+#         )
 
 
 #namespace.append_obj(
@@ -1556,9 +1566,9 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB11", name="rz", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB13", name="ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB10", name="x", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB10", name="ver", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB13", name="hor", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB11", name="x", is_setting=True)
         self._append(MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage_eos", is_setting=True,)
         self._append(DelayTime, self.delaystage_eos, name="delay_eos", is_setting=False, is_display=True)
 
@@ -1585,44 +1595,44 @@ namespace.append_obj(
     name="jfs",
 )
 
-#namespace.append_obj(
-#    "High_field_thz_chamber",
-#    name="thc",
-#    lazy=True,
-#    module_name="eco.endstations.bernina_sample_environments",
-    # configuration=["ottifant"],
-#    configuration=[],
-#)
-
-class Sample_stages(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(MotorRecord, "SARES20-MF1:MOT_11", name="x", is_setting=True)
-        self._append(MotorRecord, "SARES20-MF1:MOT_9", name="y", is_setting=True)
-
 namespace.append_obj(
-   Sample_stages,
+   "High_field_thz_chamber",
+   name="thc",
    lazy=True,
-   name="sample",
+   module_name="eco.endstations.bernina_sample_environments",
+    # configuration=["ottifant"],
+   configuration=[],
 )
 
-class LaserSteering(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB3", name="mirr1_pitch", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB4", name="mirr1_roll", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB12", name="mirr2_roll", is_setting=True)
+# class Sample_stages(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
+#         self._append(MotorRecord, "SARES20-MF1:MOT_11", name="x", is_setting=True)
+#         self._append(MotorRecord, "SARES20-MF1:MOT_9", name="y", is_setting=True)
 
-class THzGeneration(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:LIC16", name="par_x", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB8", name="mirr_x", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB7", name="mirr_z", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC18", name="mirr_ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB9", name="mirr_rz", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC15", name="polarizer", is_setting=True)
+# namespace.append_obj(
+#    Sample_stages,
+#    lazy=True,
+#    name="sample",
+# )
+
+# class LaserSteering(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
+#         self._append(SmaractRecord, "SARES23:ESB3", name="mirr1_pitch", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB4", name="mirr1_roll", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB12", name="mirr2_roll", is_setting=True)
+
+# class THzGeneration(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
+#         self._append(SmaractRecord, "SARES23:LIC16", name="par_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB8", name="mirr_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB7", name="mirr_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC18", name="mirr_ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB9", name="mirr_rz", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC15", name="polarizer", is_setting=True)
 
 class THzVirtualStages(Assembly):
     def __init__(self, name=None, mx=None, mz=None, px=None, pz=None):
@@ -1696,36 +1706,36 @@ class THzVirtualStages(Assembly):
 
 
 
-class THz(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB6", name="par_x", is_setting=True)
-        self._append(MotorRecord, "SARES20-MF1:MOT_10", name="par_y", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC13", name="par_z", is_setting=True)
-        self._append(SmaractRecord, "SARES23:LIC14", name="par_rx", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB15", name="par_ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB1", name="delaystage_thz", is_setting=True,)
-        self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=False, is_display=True,)     
-        self._append(LaserSteering, name="ir_pointing", is_setting=False)
-        self._append(THzGeneration, name="generation", is_setting=False)
+# class THz(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
+#         self._append(SmaractRecord, "SARES23:ESB6", name="par_x", is_setting=True)
+#         self._append(MotorRecord, "SARES20-MF1:MOT_10", name="par_y", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC13", name="par_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:LIC14", name="par_rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB15", name="par_ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23:ESB1", name="delaystage_thz", is_setting=True,)
+#         self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=False, is_display=True,)     
+#         self._append(LaserSteering, name="ir_pointing", is_setting=False)
+#         self._append(THzGeneration, name="generation", is_setting=False)
    
         ### Virtual stages ###
-        self._append(
-            THzVirtualStages, 
-            name="virtual_stages", 
-            mx=self.generation.mirr_x, 
-            mz=self.generation.mirr_z, 
-            px=self.generation.par_x, 
-            pz = self.par_z, 
-            is_setting=False)
+        # self._append(
+        #     THzVirtualStages, 
+        #     name="virtual_stages", 
+        #     mx=self.generation.mirr_x, 
+        #     mz=self.generation.mirr_z, 
+        #     px=self.generation.par_x, 
+        #     pz = self.par_z, 
+        #     is_setting=False)
 
 
 
-namespace.append_obj(
-   THz,
-   lazy=True,
-   name="thz",
-)
+# namespace.append_obj(
+#    THz,
+#    lazy=True,
+#    name="thz",
+# )
 
 # class THz_in_air(Assembly):
 #     def __init__(self, name=None):
@@ -2054,62 +2064,60 @@ namespace.append_obj(
 ##combined delaystage with phase shifter motion##
 
 
-class Stage_LXT_Delay(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(
-            AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p20794_phase_shifter_threshold",
-            name="thr",
-            default_value=-280e-12,
-            is_setting=True,
-        )
-        self._append(
-            AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p20794_phase_shifter_offset",
-            name="ps0",
-            default_value=-2.5006914999999344e-08,
-            is_setting=True,
-        )
-        self._append(
-            AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p20794_delay_stage_offset",
-            name="dp0",
-            default_value=0,
-            is_setting=True,
-        )
+# class Stage_LXT_Delay(Assembly):
+#     def __init__(self, delay_adj, delay_adj_offset_fina, name=None):
+#         super().__init__(name=name)
+#         self.delay_adj = delay_adj
+#         self.delay_adj_offset_fina = delay_adj_offset_fina
+#         self._append(
+#             AdjustableFS,
+#             "/photonics/home/gac-bernina/eco/configuration/p21145_phase_shifter_threshold",
+#             name="thr",
+#             default_value=-50e-12,
+#             is_setting=True,
+#         )
+#         self._append(
+#             AdjustableFS,
+#             "/photonics/home/gac-bernina/eco/configuration/p21145_phase_shifter_offset",
+#             name="ps0",
+#             default_value=9.490000000000003e-09,
+#             is_setting=True,
+#         )
+#         self._append(
+#             AdjustableFS,
+#             self.delay_adj_offset_fina,
+#             name="dp0",
+#             default_value=0,
+#             is_setting=True,
+#         )
 
-        def get_comb_delay(pd, ps):
-            ps_rel = ps - self.ps0()
-            pd_rel = pd - self.dp0()
-            return ps_rel + pd_rel
+#         def get_comb_delay(pd, ps):
+#             ps_rel = ps - self.ps0()
+#             pd_rel = pd - self.dp0()
+#             return ps_rel + pd_rel
 
-        def set_comb_delay(delay):
-            if delay > self.thr():
-                if np.abs(las.xlt() - self.ps0()) > 50e-15:
-                    ps_pos = self.ps0()
-                else:
-                    ps_pos = None
-                pd_pos = self.dp0() + delay
-            else:
-                ps_pos = self.ps0() + delay
-                pd_pos = self.dp0()
-            return pd_pos, ps_pos
+#         def set_comb_delay(delay):
+#             if delay > self.thr():
+#                 if np.abs(las.xlt() - self.ps0()) > 50e-15:
+#                     ps_pos = self.ps0()
+#                 else:
+#                     ps_pos = None
+#                 pd_pos = self.dp0() + delay
+#             else:
+#                 ps_pos = self.ps0() + delay
+#                 pd_pos = self.dp0()
+#             return pd_pos, ps_pos
 
-        self._append(
-            AdjustableVirtual,
-            [las.delay_pump, las.xlt],
-            get_comb_delay,
-            set_comb_delay,
-            name="delay_combined",
-        )
+#         self._append(
+#             AdjustableVirtual,
+#             [self.delay_adj, las.xlt],
+#             get_comb_delay,
+#             set_comb_delay,
+#             name="delay_combined",
+#         )
+# thz._append(Stage_LXT_Delay, thz.delay_thz, "/photonics/home/gac-bernina/eco/configuration/p21145_delay_stage_offset", name="delay_thz_phase_shifter", is_setting=False, is_display=True,)
 
-
-#namespace.append_obj(
-#    Stage_LXT_Delay,
-#    name="stage_ps_delay",
-#    lazy=True,
-#)
+# thz._append(Stage_LXT_Delay, eos.delay_eos, "/photonics/home/gac-bernina/eco/configuration/p21145_delayeos_stage_offset", name="delay_eos_phase_shifter", is_setting=False, is_display=True,)     
 
 #         # self.combined_delay = AdjustableVirtual(
 #         #     [self.delay_thz, self.delay_800_pump],

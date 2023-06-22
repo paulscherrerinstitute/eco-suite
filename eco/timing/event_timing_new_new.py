@@ -301,31 +301,36 @@ class EvrPulser(Assembly):
             is_setting=True,
         )
         self.description = EpicsString(pv_base + "-Name-I")
-        self._append(
-            AdjustableVirtual,
-            [self._eventcode.frequency],
-            lambda x: x,
-            lambda x: x,
-            name="frequency",
-        )
-        self._append(
-            AdjustableVirtual,
-            [self._eventcode.delay],
-            lambda x: x,
-            lambda x: x,
-            name="delay_eventcode",
-        )
-        self._append(
-            AdjustableVirtual,
-            [self.delay_pulser],
-            lambda tp: self.delay_eventcode.get_current_value() + tp,
-            lambda x: x - self.delay_eventcode.get_current_value(),
-            name="delay",
-        )
+
+        if True: #self._eventcode is not None:
+            self._append(
+                AdjustableVirtual,
+                [self._eventcode.frequency],
+                lambda x: x,
+                lambda x: x,
+                name="frequency",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self._eventcode.delay],
+                lambda x: x,
+                lambda x: x,
+                name="delay_eventcode",
+            )
+            self._append(
+                AdjustableVirtual,
+                [self.delay_pulser],
+                lambda tp: self.delay_eventcode.get_current_value() + tp,
+                lambda x: x - self.delay_eventcode.get_current_value(),
+                name="delay",
+            )
 
     @property
     def _eventcode(self):
-        return self._event_master.event_codes[self.eventcode.get_current_value()]
+        try:
+            return self._event_master.event_codes[self.eventcode.get_current_value()]
+        except KeyError:
+            return None
 
 
 class DummyPulser(Assembly):

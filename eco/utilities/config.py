@@ -1,6 +1,7 @@
 import json
 import importlib
 from pathlib import Path
+from eco.elements.protocols import InitialisationWaitable
 import sys
 from time import time
 from colorama import Fore as _color
@@ -298,7 +299,11 @@ class Namespace(Assembly):
         #     sys.stdout.flush()
         starttime = time()
         try:
-            dir(self.get_obj(name))
+            titem = self.get_obj(name)
+            if isinstance(titem, InitialisationWaitable):
+                titem._wait_for_initialisation()
+            else:
+                dir(titem)
 
             if verbose:
                 print(

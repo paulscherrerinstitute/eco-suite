@@ -219,6 +219,14 @@ class XltEpics(Assembly):
             is_display=True,
             unit="ps",
         )
+        # self._append(
+        #     AdjustablePvEnum,
+        #     self.pvname + ":MODE_SET1",
+        #     pvname_set = self.pvname + ':MODESELECT',
+        #     name="reference_mode",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":SHOTDELAY",

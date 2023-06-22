@@ -30,8 +30,9 @@ class AnalogInput(Assembly):
             self.pvname + ".EGU",
             name="unit",
             is_setting=False,
-            is_display=False,
+            is_display=True,
         )
+        self.value.unit = self.unit
         self._append(
             DetectorPvData,
             self.pvname + ".RVAL",
@@ -83,14 +84,17 @@ class AnalogInput(Assembly):
     def reset_slope_current_value_to(self,value=1):
         oslo = self.linear_calibration_slope.get_current_value()
         ooff = self.linear_calibration_offset.get_current_value()
-        self.linear_calibration_offset.set_target_value(
-            ooff/oslo
-            * self._adj_slope.get_current_value()
-            * value
-            ).wait()
         ooff_raw = ooff / oslo / self._adj_slope.get_current_value()
-        nslo = value / (self.raw.get_current_value()-ooff_raw)
+        # print(ooff_raw)
+
+        
+        nslo = value / (self.raw.get_current_value()+ooff_raw)
         self.linear_calibration_slope.set_target_value(nslo).wait()
+        self.linear_calibration_offset.set_target_value(
+            ooff_raw
+            * nslo
+            * self._adj_slope.get_current_value()
+            ).wait()
     
 
 class WagoAnalogInputs(Assembly):
