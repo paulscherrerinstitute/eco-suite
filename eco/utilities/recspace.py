@@ -70,7 +70,7 @@ class Crystals(Assembly):
             name = input(
                 "Please choose a name for your crystal (no spaces or other special characters):"
             )
-        specials = np.array([" ", "/", "(", ")", "[", "]"]+list(self.crystal_list.keys()))
+        specials = np.array([".", " ", "/", "(", ")", "[", "]"]+list(self.crystal_list().keys()))
         in_name = np.array([s in name for s in specials])
         if np.any(in_name):
             raise Exception(
@@ -195,7 +195,7 @@ class DiffGeometryYou(Assembly):
             f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_unit_cell",
             name="unit_cell",
             default_value={
-                "name": name,
+                "name": "",
                 "a": 1,
                 "b": 1,
                 "c": 1,

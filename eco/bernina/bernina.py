@@ -1344,21 +1344,21 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 
-#namespace.append_obj(
-#    "BerninaInlineMicroscope",
-#    pvname_camera="SARES20-CAMS142-M3",
-#    lazy=True,
-#    name="samplecam_inline",
-#    module_name="eco.microscopes",
-#)
-
 namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C1",
-    lazy=True,
-    name="samplecam_front",
-    module_name="eco.microscopes",
+   "BerninaInlineMicroscope",
+   pvname_camera="SARES20-CAMS142-M3",
+   lazy=True,
+   name="samplecam_inline",
+   module_name="eco.microscopes",
 )
+
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-C1",
+#     lazy=True,
+#     name="samplecam_front",
+#     module_name="eco.microscopes",
+# )
 
 #namespace.append_obj(
 #    "MicroscopeMotorRecord",
@@ -1386,21 +1386,21 @@ namespace.append_obj(
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
 )
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C2",
-    lazy=True,
-    name="samplecam_back_racks",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-C2",
+#     lazy=True,
+#     name="samplecam_back_racks",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C3",
-    lazy=True,
-    name="samplecam_back_door",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-C3",
+#     lazy=True,
+#     name="samplecam_back_door",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
 
 
@@ -1468,7 +1468,7 @@ namespace.append_obj(
    Id="SARES23",
 )
 
-from ..epics.adjustable import AdjustablePv
+from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 
 
 # class Double_Pulse_Pump(Assembly):
@@ -1571,6 +1571,8 @@ class Incoupling(Assembly):
         self._append(SmaractRecord, "SARES23:ESB11", name="x", is_setting=True)
         self._append(MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage_eos", is_setting=True,)
         self._append(DelayTime, self.delaystage_eos, name="delay_eos", is_setting=False, is_display=True)
+        self._append(AdjustablePvEnum, "SLAAR21-LDIO-LAS6991:SET_BO02", name='eos_is_shut', is_setting=True)
+
 
 namespace.append_obj(
     Incoupling,

@@ -6,7 +6,7 @@ from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, Adjustabl
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
 from ..devices_general.detectors import DetectorVirtual
-from ..timing.lasertiming_edwin import XltEpics
+from ..timing.lasertiming_edwin import XltEpics, LaserRateControl
 import colorama
 import datetime
 from pint import UnitRegistry
@@ -236,6 +236,7 @@ class LaserBernina(Assembly):
         # self._append(
         #    DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
         # )
+        self._append(LaserRateControl, name="rate", is_setting=True, is_display="recursive")
         self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
         # Upstairs, Laser 1 LAM
         # self._append(
