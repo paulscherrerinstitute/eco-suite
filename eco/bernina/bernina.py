@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from threading import Thread
 from eco.acquisition.scan import NumpyEncoder
+from eco.devices_general.powersockets import MpodModule
 from eco.elements.adjustable import AdjustableFS
 from eco.elements.adjustable import AdjustableVirtual
 from eco.loptics.bernina_experiment import DelayCompensation
@@ -785,6 +786,54 @@ namespace.append_obj(
     lazy=True,
 )
 
+namespace.append_obj(
+    "DetectorRobot",
+    JF_detector_id='JF01T03V01',
+    JF_detector_name='det_diff',
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.endstations.bernina_robot",
+    name='robot',
+)
+
+namespace.append_obj(
+    "MpodModule",
+    "SARES21-CPCL-PS7071",
+    [1,2,3,4], 
+    ['ch1','ch2','ch3','ch4'], 
+    module_string='LV_OMPV_1', 
+    name="power_LV_patch1",
+    module_name="eco.devices_general.powersockets",
+)
+
+namespace.append_obj(
+    "MpodModule",
+    "SARES21-CPCL-PS7071",
+    [5,6,7,8], 
+    ['ch1','ch2','ch3','ch4'], 
+    module_string='LV_OMPV_1', 
+    name="power_LV_patch2",
+    module_name="eco.devices_general.powersockets",
+)
+
+namespace.append_obj(
+    "MpodModule",
+    "SARES21-CPCL-PS7071",
+    [1,2,3,4], 
+    ['ch1','ch2','ch3','ch4'], 
+    module_string='HV_EHS_3', 
+    name="power_HV_patch1",
+    module_name="eco.devices_general.powersockets",
+)
+
+namespace.append_obj(
+    "MpodModule",
+    "SARES21-CPCL-PS7071",
+    [5,6,7,8], 
+    ['ch1','ch2','ch3','ch4'], 
+    module_string='HV_EHS_3', 
+    name="power_HV_patch2",
+    module_name="eco.devices_general.powersockets",
+)
 
 ### draft new epics daq ###
 # namespace.append_obj(
@@ -1572,6 +1621,14 @@ class Incoupling(Assembly):
         self._append(MotorRecord, "SLAAR21-LMOT-M521:MOTOR_1", name="delaystage_eos", is_setting=True,)
         self._append(DelayTime, self.delaystage_eos, name="delay_eos", is_setting=False, is_display=True)
         self._append(AdjustablePvEnum, "SLAAR21-LDIO-LAS6991:SET_BO02", name='eos_is_shut', is_setting=True)
+        self._append(DigitizerIoxosBoxcarChannel,"SARES20-LSCP9-FNS:CH1",
+                name=f"signal_pol0",
+                is_setting=True,
+            )
+        self._append(DigitizerIoxosBoxcarChannel,"SARES20-LSCP9-FNS:CH3",
+                name=f"signal_pol1",
+                is_setting=True,
+            )
 
 
 namespace.append_obj(
@@ -1602,6 +1659,7 @@ namespace.append_obj(
    name="thc",
    lazy=True,
    module_name="eco.endstations.bernina_sample_environments",
+   illumination_mpod = [{'pvbase':'SARES21-CPCL-PS7071' ,'channel_number':5 ,'module_string':'LV_OMPV_1' ,'name': 'illumination'}],
     # configuration=["ottifant"],
    configuration=[],
 )

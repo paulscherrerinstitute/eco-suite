@@ -1,3 +1,4 @@
+from eco.devices_general.powersockets import MpodChannel
 import sys
 
 sys.path.append("..")
@@ -36,7 +37,7 @@ def addSmarActRecordToSelf(self, Id=None, name=None, **kwargs):
 
 
 class High_field_thz_chamber(Assembly):
-    def __init__(self, name=None, alias_namespace=None, configuration=[]):
+    def __init__(self, name=None, alias_namespace=None, configuration=[], illumination_mpod = None):
         super().__init__(name=name)
         self.name = name
         self.alias = Alias(name)
@@ -170,6 +171,9 @@ class High_field_thz_chamber(Assembly):
                 is_display=True,
                 is_setting=True,
             )
+        if illumination_mpod:
+            for illu in illumination_mpod:
+                self._append(MpodChannel,illu['pvbase'], illu['channel_number'], module_string=illu['module_string'], name=illu['name'])
 
     def moveout(self):
         change_in_pos = str(

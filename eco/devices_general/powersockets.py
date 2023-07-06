@@ -128,7 +128,7 @@ class MpodChannel(Assembly):
         return self.on.set_target_value(*args,**kwargs)
 
 class MpodModule(Assembly):
-    def __init__(self,pvbase,N_channels=8, module_string='LV_OMPV_1', name=None):
+    def __init__(self,pvbase,channelnumbers, channelnames, module_string='LV_OMPV_1', name=None):
         super().__init__(name=name)
-        for n in range(1,N_channels+1):
-            self._append(MpodChannel,pvbase,channel_number=n, module_string=module_string,name=f'ch{n}')
+        for channelnumber,channelname in zip(channelnumbers,channelnames):
+            self._append(MpodChannel,pvbase,channel_number=channelnumber, module_string=module_string,name=channelname)

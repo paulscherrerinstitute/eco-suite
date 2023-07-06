@@ -237,50 +237,6 @@ class XltEpics(Assembly):
             is_setting=True,
             is_display=True,
         )
-
-        # self._append(
-        #     AdjustablePvEnum,
-        #     self.pvname + ":MODE_SET1",
-        #     pvname_set = self.pvname + ':MODESELECT',
-        #     name="reference_mode",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
-        self._append(
-            AdjustablePvEnum,
-            self.pvname + ":SHOTDELAY",
-            name="oscillator_pulse_offset",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePvEnum,
-            self.pvname + ":SHOTMOFFS_ENA",
-            name="modulo_offset_mode",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePvEnum,
-            self.pvname + ":ONEINN_MODE",
-            name="reference_mode",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePvEnum,
-            self.pvname + ":USE_EXT_EVT",
-            name="use_ext_reference_event",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePv,
-            self.pvname + ":ALT_EXT_EVT",
-            name="ext_reference_event",
-            is_setting=True,
-            is_display=True,
-        )
         self._append(
             AdjustablePv,
             self.pvname + ":DELAY",
@@ -288,21 +244,7 @@ class XltEpics(Assembly):
             is_setting=False,
             is_display=False,
         )
-        self._append(
-            AdjustablePv,
-            self.pvname + ":P_RATIO",
-            name="ref_pattern_len",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePv,
-            "SIN-TIMAST-TMA:Evt-22-Freq-SP",
-            name="laser_frequency",
-            unit="Hz",
-            is_setting=True,
-            is_display=True,
-        )
+
 
 
         # self._append(
