@@ -406,17 +406,17 @@ components = [
     #         "default_file_path": None,
     #     },
     # },
-    {
-        "args": [
-            config["checker_PV"],
-            config["checker_thresholds"],
-            config["checker_fractionInThreshold"],
-        ],  #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
-        "name": "checker",
-        "desc": "checker functions for data acquisition",
-        "type": "eco.acquisition.checkers:CheckerCA",
-        "kwargs": {},
-    },
+    #{
+    #    "args": [
+    #        config["checker_PV"],
+    #        config["checker_thresholds"],
+    #        config["checker_fractionInThreshold"],
+    #    ],  #'SARFE10-PBPG050:HAMP-INTENSITY-CAL',[60,700],.7],
+    #    "name": "checker",
+    #    "desc": "checker functions for data acquisition",
+    #    "type": "eco.acquisition.checkers:CheckerCA",
+    #    "kwargs": {},
+    #},
     # {
     #     "args": [
     #         "SARES20-LSCP9-FNS:CH1:VAL_GET",

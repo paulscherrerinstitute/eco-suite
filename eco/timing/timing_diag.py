@@ -1,4 +1,5 @@
 from eco.detector.detectors_psi import DetectorBsStream
+from eco.devices_general.pipelines_swissfel import Pipeline
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
@@ -44,6 +45,7 @@ class TimetoolBerninaUSD(Assembly):
 
         self.proc_client = PipelineClient()
         self.proc_pipeline = processing_pipeline
+        self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
         self.proc_instance = processing_instance
         self.spectrometer_camera_channel = spectrometer_camera_channel
         self._append(

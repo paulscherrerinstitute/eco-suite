@@ -1,3 +1,4 @@
+from eco.devices_general.pipelines_swissfel import Pipeline
 from ..devices_general.motors import MotorRecord, SmaractRecord
 from ..devices_general.detectors import FeDigitizer
 from ..epics.detector import DetectorPvDataStream
@@ -161,6 +162,7 @@ class SolidTargetDetectorPBPS(Assembly):
         fe_digi_channels={},
         # calc=None,
         # calc_calib={},
+        pipeline_computation=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -304,6 +306,8 @@ class SolidTargetDetectorPBPS(Assembly):
                     is_setting=True,
                     is_display=False,
                 )
+        if pipeline_computation:
+            self._append(Pipeline, pipeline_computation,name='pipeline_comp', is_setting=True, is_display=False)
 
     def get_calibration_values(self, seconds=5, return_data=False):
         self.x_diodes.set_target_value(0).wait()

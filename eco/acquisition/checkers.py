@@ -7,7 +7,7 @@ from ..elements.assembly import Assembly
 
 
 class CheckerCA(Assembly):
-    def __init__(self, pvname, thresholds, required_fraction, name=None):
+    def __init__(self, pvname=None, thresholds=None, required_fraction=None, name=None):
         super().__init__(name=name)
         self._append(DetectorPvDataStream, pvname, name="monitor")
         self._append(

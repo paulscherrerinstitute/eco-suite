@@ -337,6 +337,30 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
+    "SolidTargetDetectorPBPS",
+    "SAROP21-PBPS133",
+    # channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
+    # channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
+    # channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
+    # diode_channels_raw={
+    #     "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+    #     "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+    #     "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+    #     "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+    # },
+    # calibration_records={
+    #     "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
+    #     "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+    #     "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+    # },
+    name="mon_opt_new",
+    module_name="eco.xdiagnostics.intensity_monitors",
+    pipeline_computation='SAROP21-PBPS133_proc',
+    lazy=True,
+)
+
+
+namespace.append_obj(
     "Pprm",
     "SARFE10-PPRM064",
     "SARFE10-PPRM064",
@@ -795,45 +819,45 @@ namespace.append_obj(
     name='robot',
 )
 
-namespace.append_obj(
-    "MpodModule",
-    "SARES21-CPCL-PS7071",
-    [1,2,3,4], 
-    ['ch1','ch2','ch3','ch4'], 
-    module_string='LV_OMPV_1', 
-    name="power_LV_patch1",
-    module_name="eco.devices_general.powersockets",
-)
-
-namespace.append_obj(
-    "MpodModule",
-    "SARES21-CPCL-PS7071",
-    [5,6,7,8], 
-    ['ch1','ch2','ch3','ch4'], 
-    module_string='LV_OMPV_1', 
-    name="power_LV_patch2",
-    module_name="eco.devices_general.powersockets",
-)
-
-namespace.append_obj(
-    "MpodModule",
-    "SARES21-CPCL-PS7071",
-    [1,2,3,4], 
-    ['ch1','ch2','ch3','ch4'], 
-    module_string='HV_EHS_3', 
-    name="power_HV_patch1",
-    module_name="eco.devices_general.powersockets",
-)
-
-namespace.append_obj(
-    "MpodModule",
-    "SARES21-CPCL-PS7071",
-    [5,6,7,8], 
-    ['ch1','ch2','ch3','ch4'], 
-    module_string='HV_EHS_3', 
-    name="power_HV_patch2",
-    module_name="eco.devices_general.powersockets",
-)
+#namespace.append_obj(
+#    "MpodModule",
+#    "SARES21-CPCL-PS7071",
+#    [1,2,3,4], 
+#    ['ch1','ch2','ch3','ch4'], 
+#    module_string='LV_OMPV_1', 
+#    name="power_LV_patch1",
+#    module_name="eco.devices_general.powersockets",
+#)
+#
+#namespace.append_obj(
+#    "MpodModule",
+#    "SARES21-CPCL-PS7071",
+#    [5,6,7,8], 
+#    ['ch1','ch2','ch3','ch4'], 
+#    module_string='LV_OMPV_1', 
+#    name="power_LV_patch2",
+#    module_name="eco.devices_general.powersockets",
+#)
+#
+#namespace.append_obj(
+#    "MpodModule",
+#    "SARES21-CPCL-PS7071",
+#    [1,2,3,4], 
+#    ['ch1','ch2','ch3','ch4'], 
+#    module_string='HV_EHS_3', 
+#    name="power_HV_patch1",
+#    module_name="eco.devices_general.powersockets",
+#)
+#
+#namespace.append_obj(
+#    "MpodModule",
+#    "SARES21-CPCL-PS7071",
+#    [5,6,7,8], 
+#    ['ch1','ch2','ch3','ch4'], 
+#    module_string='HV_EHS_3', 
+#    name="power_HV_patch2",
+#    module_name="eco.devices_general.powersockets",
+#)
 
 ### draft new epics daq ###
 # namespace.append_obj(
@@ -1335,6 +1359,14 @@ def _create_metadata_structure_start_scan(
 # <<<< Extract for run table and elog
 callbacks_start_scan.append(_create_metadata_structure_start_scan)
 
+namespace.append_obj(
+    'CheckerCA',
+    module_name='eco.acquisition.checkers',
+    pvname='SLAAR21-LTIM01-EVR0:CALCI', 
+    thresholds=[0.2,10], 
+    required_fraction=0.6,
+    name="checker",
+)
 
 namespace.append_obj(
     "Scans",
@@ -1660,6 +1692,7 @@ namespace.append_obj(
    lazy=True,
    module_name="eco.endstations.bernina_sample_environments",
    illumination_mpod = [{'pvbase':'SARES21-CPCL-PS7071' ,'channel_number':5 ,'module_string':'LV_OMPV_1' ,'name': 'illumination'}],
+   helium_control_valve = {'pvbase':'SARES21-CPCL-PS7071' ,'channel_number':4 ,'module_string':'LV_OMPV_1' ,'name': 'helium_control_valve'},
     # configuration=["ottifant"],
    configuration=[],
 )

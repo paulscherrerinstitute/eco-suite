@@ -35,9 +35,8 @@ def addSmarActRecordToSelf(self, Id=None, name=None, **kwargs):
     self.__dict__[name] = SmaractRecord(Id, name=name, **kwargs)
     self.alias.append(self.__dict__[name].alias)
 
-
 class High_field_thz_chamber(Assembly):
-    def __init__(self, name=None, alias_namespace=None, configuration=[], illumination_mpod = None):
+    def __init__(self, name=None, alias_namespace=None, configuration=[], illumination_mpod = None, helium_control_valve=None):
         super().__init__(name=name)
         self.name = name
         self.alias = Alias(name)
@@ -174,6 +173,26 @@ class High_field_thz_chamber(Assembly):
         if illumination_mpod:
             for illu in illumination_mpod:
                 self._append(MpodChannel,illu['pvbase'], illu['channel_number'], module_string=illu['module_string'], name=illu['name'])
+        if helium_control_valve:
+            self._append(MpodChannel,helium_control_valve['pvbase'], helium_control_valve['channel_number'], module_string=helium_control_valve['module_string'], name="_helium_valve_mpod_ch", is_display=True, is_setting=True)
+
+            def get_valve(voltage):
+                if voltage < 2.9:
+                    val=0
+                elif voltage > 5.5:
+                    val=100
+                else:
+                    val = (voltage-2.9)/(5.5-2.9)*100
+                return val
+
+            def set_valve(val):
+                if val <1:
+                    voltage = .5
+                else:
+                    voltage = val*(5.5-2.9)/100+2.9
+                return voltage
+            
+            self._append(AdjustableVirtual, [self._helium_valve_mpod_ch.voltage], get_valve, set_valve, name=helium_control_valve["name"], is_display=True, is_setting=False)
 
     def moveout(self):
         change_in_pos = str(
