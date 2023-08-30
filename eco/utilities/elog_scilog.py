@@ -8,19 +8,15 @@ from pathlib import Path
 urllib3.disable_warnings()
 
 
-
-
 def getDefaultElogInstance(
-        url='https://scilog.psi.ch/api/v1', 
-        user="swissfelaramis-bernina@psi.ch", 
-        pgroup = None,
-        **kwargs
-        ):
-    
-
+    url="https://scilog.psi.ch/api/v1",
+    user="swissfelaramis-bernina@psi.ch",
+    pgroup=None,
+    **kwargs,
+):
     home = str(Path.home())
     if not user:
-       user=_getuser()
+        user = _getuser()
 
     if not ("password" in kwargs.keys()):
         try:
@@ -30,14 +26,13 @@ def getDefaultElogInstance(
             print("Enter scilog password for user: %s" % kwargs["user"])
             _pw = _getpass()
         kwargs.update(dict(password=_pw))
-    log = SciLog(url,options={"username": user, "password":kwargs['_pw']})
+    log = SciLog(url, options={"username": user, "password": kwargs["password"]})
     if pgroup:
         lbs = log.get_logbooks(ownerGroup=pgroup)
-        if len(lbs)> 1:
-            raise Exception(f'Found more than one elog for user group {pgroup}')
+        if len(lbs) > 1:
+            raise Exception(f"Found more than one elog for user group {pgroup}")
         log.select_logbook(lbs[0])
     return log, user
-
 
 
 class Elog:
@@ -72,7 +67,6 @@ class Screenshot:
             self.user = kwargs["user"]
 
     def show_directory(self):
-
         p = subprocess.Popen(
             ["nautilus", self._screenshot_directory],
             stdout=subprocess.PIPE,

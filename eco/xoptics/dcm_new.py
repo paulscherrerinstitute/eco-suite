@@ -15,7 +15,7 @@ from ..elements.adjustable import (
 )
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
-
+from eco.xoptics.dcm_pathlength_compensation import MonoTimecompensation
 
 @spec_convenience
 @update_changes
@@ -28,10 +28,12 @@ class DoubleCrystalMono(Assembly):
         energy_sp="SAROP21-ARAMIS:ENERGY_SP",
         energy_rb="SAROP21-ARAMIS:ENERGY",
         fel=None,
+        las = None,
         undulator_deadband_eV=None,
     ):
         super().__init__(name=name)
-        self.fel = fel
+        self._fel = fel
+        self._las = las
         self.undulator_deadband_eV = undulator_deadband_eV
         self.pvname = pvname
         self._append(
@@ -91,7 +93,7 @@ class DoubleCrystalMono(Assembly):
             is_display=False,
         )
         self.settings_collection.append(self)
-        if self.fel is not None:
+        if self._fel is not None:
             self._append(
                 AdjustableFS,
                 "/photonics/home/gac-bernina/eco/configuration/mono_und_offset",
@@ -104,7 +106,7 @@ class DoubleCrystalMono(Assembly):
                 ofs = np.array(self.mono_und_calib()).T
                 fel_ofs = ofs[1][np.argmin(abs(ofs[0] - en))]
                 e_und_curr = (
-                    self.fel.aramis_photon_energy_undulators.get_current_value()
+                    self._fel.aramis_photon_energy_undulators.get_current_value()
                 )
 
                 if (
@@ -120,17 +122,39 @@ class DoubleCrystalMono(Assembly):
 
             self._append(
                 AdjustableVirtual,
-                [self.energy, self.fel.aramis_photon_energy_undulators],
+                [self.energy, self._fel.aramis_photon_energy_undulators],
                 en_get,
                 en_set,
                 name="mono_und_energy",
+            )
+            if self._las is not None:
+                self._append(
+                    MonoTimecompensation,
+                    self._las.delay_glob,
+                    self.mono_und_energy,
+                    "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
+                    "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+                    name="mono_und_energy_time_corrected",
+                    is_setting=False,
+                    is_display=True,
+                )
+        if self._las is not None:
+            self._append(
+                MonoTimecompensation,
+                self._las.delay_glob,
+                self.energy,
+                "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
+                "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+                name="mono_time_corrected",
+                is_setting=False,
+                is_display=True,
             )
 
     def add_mono_und_calibration_point(self):
         mono_energy = self.energy.get_current_value()
         fel_offset = (
             self.energy.get_current_value() / 1000
-            - self.fel.aramis_photon_energy_undulators.get_current_value()
+            - self._fel.aramis_photon_energy_undulators.get_current_value()
         )
         self.mono_und_calib.mvr([[mono_energy, fel_offset]])
 

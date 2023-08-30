@@ -24,6 +24,7 @@ class TimetoolBerninaUSD(Assembly):
         self,
         name=None,
         processing_pipeline="SARES20-CAMS142-M5_psen_db",
+        edge_finding_pipeline="SAROP21-ATT01_proc",
         processing_instance="SARES20-CAMS142-M5_psen_db",
         spectrometer_camera_channel="SARES20-CAMS142-M5:FPICTURE",
         spectrometer_pvname="SARES20-CAMS142-M5",
@@ -47,6 +48,8 @@ class TimetoolBerninaUSD(Assembly):
         self.proc_pipeline = processing_pipeline
         self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
         self.proc_instance = processing_instance
+        self.proc_pipeline_edge = edge_finding_pipeline
+        self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
         self.spectrometer_camera_channel = spectrometer_camera_channel
         self._append(
             Target_xyz,

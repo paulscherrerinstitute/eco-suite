@@ -1,14 +1,18 @@
 from cam_server import CamClient, PipelineClient
-
+from matplotlib.backend_bases import MouseButton
 from eco.devices_general.utilities import Changer
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
+from eco.elements.detector import DetectorGet
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from eco.elements.adj_obj import AdjustableObject, DetectorObject
+from .pipelines_swissfel import Pipeline
 from ..elements.assembly import Assembly
 from .motors import MotorRecord
 import sys
 from pathlib import Path
 import time
+import matplotlib.pyplot as plt
 
 sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
 import bufferutils
@@ -30,6 +34,120 @@ def get_pipelineclient():
         PIPELINE_CLIENT = PipelineClient()
     return PIPELINE_CLIENT
 
+@value_property
+class CamserverConfig2(Assembly):
+    def __init__(self, cam_id, camserver_alias=None, name=None, camserver_group=None):
+        super().__init__(name=name)
+        self.cam_id = cam_id
+        self.camserver_alias = camserver_alias
+        self.camserver_group = camserver_group
+        self._cross = None
+        self._append(AdjustableGetSet, 
+                     self._get_config, 
+                     self._set_config, 
+                     cache_get_seconds =.05, 
+                     precision=0, 
+                     check_interval=None, 
+                     name='_config', 
+                     is_setting=False, 
+                     is_display=False)
+        
+        self._append(AdjustableObject, self._config, name='config',is_setting=True, is_display='recursive')
+        self._append(DetectorGet, self._get_info, cache_get_seconds =.05, name='_info', is_setting=False, is_display=False)
+        self._append(DetectorObject, self._info, name='info', is_display='recursive', is_setting=False)
+
+    @property
+    def pc(self):
+        return get_pipelineclient()
+
+    @property
+    def cc(self):
+        return get_camclient()
+
+    def _get_config(self):
+        return  self.cc.get_camera_config(self.cam_id)
+
+    def _set_config(self, value, hold=False):
+        return Changer(
+            target=value,
+            changer=lambda v: self.cc.set_camera_config(self.cam_id, v),
+            hold=hold,
+        )
+
+    def _get_info(self):
+        fields = {
+            "camera_geometry": self.cc.get_camera_geometry(self.cam_id),
+            "pipelines": self._get_pipelines(),
+        }
+        return  fields
+
+    ### convenience functions ###
+    def get_camera_image(self):
+        im = self.cc.get_camera_array(self.cam_id)
+        return im
+
+    def set_alias(self, alias=None):
+        """creates an alias in the camera config on the server. If no alias is provided, it defaults to the camera name"""
+        if not alias:
+            alias = self.camserver_alias
+        self.set_config_fields({"alias": [alias.upper()]})
+
+    def set_group(self, group=None):
+        """adds the camera to the given group"""
+        if not group:
+            group = self.camserver_group
+        self.config.group(group)
+
+    def _get_pipelines(self):
+        return [p for p in self.pc.get_pipelines() if self.cam_id in p]
+
+    def set_config_fields(self, fields):
+        """fields is a dictionary containing the keys and values that should be updated, e.g. fields={'group': ['Laser', 'Bernina']}"""
+        config = self.cc.get_camera_config(self.cam_id)
+        config.update(fields)
+        self.cc.set_camera_config(self.cam_id, config)
+
+    def set_config_fields_multiple_cams(self, conditions, fields):
+        """
+        conditions is a dictionary holding the conditions to select a subset of cameras, e.g. {"group": Bernina}
+        fields is a dictionary containing the keys and values that should be updated, e.g. fields={'alias': ['huhu', 'duda']}
+        """
+        cams = {
+            cam: self.cc.get_camera_config(cam)
+            for cam in self.cc.get_cameras()
+            if not "jungfrau" in cam
+        }
+        cams_selected = {}
+        for cam, cfg in cams.items():
+            try:
+                if all([value in cfg[key] for key, value in conditions.items()]):
+                    cfg.update(fields)
+                    self.cc.set_camera_config(cam, cfg)
+                    cams_selected[cam] = cfg
+            except Exception as e:
+                print(f"{type(e)} {e} in cam {cam}")
+        return cams_selected
+
+    def clear_all_bernina_aliases(self, verbose=True):
+        cams_selected = self.set_config_fields_multiple_cams(
+            conditions={"group": "Bernina"}, fields={"alias": []}
+        )
+        if verbose:
+            print(f"Reset alias of {len(cams_selected)} cameras")
+            print(cams_selected.keys())
+
+    def _run_cmd(self, line, silent=True):
+        if silent:
+            print(f"Starting following commandline silently:\n" + line)
+            with open(os.devnull, "w") as FNULL:
+                subprocess.Popen(
+                    line, shell=True, stdout=FNULL, stderr=subprocess.STDOUT
+                )
+        else:
+            subprocess.Popen(line, shell=True)
+
+    def gui(self):
+        self._run_cmd(f'csm')
 
 @value_property
 class CamserverConfig(Assembly):
@@ -50,7 +168,7 @@ class CamserverConfig(Assembly):
     def get_current_value(self):
         return self.cc.get_camera_config(self.cam_id)
 
-    def set_target_calue(self, value, hold=False):
+    def set_target_value(self, value, hold=False):
         return Changer(
             target=value,
             changer=lambda v: self.cc.set_camera_config(self.cam_id, v),
@@ -165,13 +283,14 @@ class CameraBasler(Assembly):
         if not camserver_alias:
             camserver_alias = self.alias.get_full_name() + f" ({pvname})"
         self._append(
-            CamserverConfig,
+            CamserverConfig2,
             self.pvname,
             camserver_alias=camserver_alias,
             camserver_group=camserver_group,
             name="config_cs",
             is_display=False,
         )
+
         self.config_cs.set_alias()
         if camserver_group is not None:
             self.config_cs.set_group()
@@ -343,6 +462,66 @@ class CameraBasler(Assembly):
             ob(val)
         self._set_parameters(1)
         self.running(2)
+
+    def set_cross(self, x=None, y=None, x_um_per_px=None, y_um_per_px=None):
+        """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given"""
+        def prompt(x,y,x_um_per_px,y_um_per_px):
+            x=int(x)
+            y=int(y)
+            answer = input(f"Set the new cross position [{x}, {y}] with calibration [{x_um_per_px:.3}, {y_um_per_px:.3}] ([y]/n)?") or "y"
+            if answer == "y":
+                calib.reference_marker([x - 1, y - 1, x + 1, y + 1])
+                calib.reference_marker_width(2 * x_um_per_px)
+                calib.reference_marker_height(2 * y_um_per_px)
+                print("\nNew calibration:")
+                print(calib)
+            else:
+                print("aborted")
+
+        calib = self.config_cs.config.camera_calibration
+        print("Current calibration:")
+        print(calib)
+        try:
+            w = calib.reference_marker_width() 
+            h = calib.reference_marker_height() 
+            rm = calib.reference_marker()
+            if not x_um_per_px:
+                x_um_per_px = w / abs(rm[2] - rm[0])
+            if not y_um_per_px:
+                y_um_per_px = h / abs(rm[3] - rm[1])
+        except:
+            rm=[0,0,0,0]
+            x_um_per_px = 1
+            y_um_per_px = 1
+        if x is None or y is None:
+            x = (rm[2] + rm[0])/2
+            y = (rm[3] + rm[1])/2
+            img = self.config_cs.get_camera_image()
+            
+            run = True
+            def on_click(event):
+                if event.button is MouseButton.LEFT:
+                    x = event.xdata
+                    y = event.ydata
+                    cross_plot.set_data(x,y)
+                    plt.draw()
+                    print(f'cross at x: {x:.4} and y: {y:.4}')
+                    self.config_cs._cross = [x,y]
+                else:
+                    plt.disconnect(bid)
+                    plt.close(self.config_cs.cam_id)
+                    
+            fig = plt.figure(num=self.config_cs.cam_id)
+            plt.title(f"Set cross: left mouse click, Finish: right click")
+            plt.imshow(img)
+            cross_plot = plt.plot(x,y, '+r', markersize=10)[0]
+            bid = fig.canvas.mpl_connect('button_press_event', on_click)
+            plt.show(block=True)
+            x, y = self.config_cs._cross
+            print(x,y)
+        prompt(x,y,x_um_per_px,y_um_per_px)
+        
+
 
     def gui(self):
         self._run_cmd(

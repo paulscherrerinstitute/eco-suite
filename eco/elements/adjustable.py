@@ -304,12 +304,12 @@ def value_property(Adj, wait_for_change=True, value_name="_value"):
 @tweak_option
 @value_property
 class DummyAdjustable:
-    def __init__(self, name="no_adjustable"):
+    def __init__(self, name="no_adjustable", limits=[-100,100]):
         self.name = name
         self.alias = Alias(name)
 
         self.current_value = 0
-        self.limits = [-100,100]
+        self.limits = tuple(limits)
     def get_current_value(self):
         return self.current_value
 
@@ -320,10 +320,12 @@ class DummyAdjustable:
         return Changer(
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
+    
     def get_limits(self):
         return self.limits
-    def set_limits(self, limits):
-        self.limits = limits
+    
+    def set_limits(self, lowlim,highlim):
+        self.limits = (lowlim,highlim)
 
     def __repr__(self):
         name = self.name
@@ -467,6 +469,7 @@ class AdjustableVirtual:
         append_aliases=False,
         name=None,
         unit=None,
+        check_limits=False,
     ):
         self.name = name
         self.alias = Alias(name)
@@ -482,6 +485,7 @@ class AdjustableVirtual:
         self._foo_get_current_value = foo_get_current_value
         self._reset_current_value_to = reset_current_value_to
         self._change_simultaneously = change_simultaneously
+        self._check_limits = check_limits
         if reset_current_value_to:
             for adj in self._adjustables:
                 if not hasattr(adj, "reset_current_value_to"):
@@ -495,6 +499,12 @@ class AdjustableVirtual:
             vals = (vals,)
 
         def changer(value):
+            if self._check_limits:
+                if not self.check_target_value_within_limits(value):
+                    raise Exception(
+                        f"Target value of virtual adjustable {self.name} is higher than limit values of {[adj.name for adj in self._adjustables]}!"
+                    )
+
             if self._change_simultaneously:
                 self._active_changers = [
                     adj.set_target_value(val, hold=False)

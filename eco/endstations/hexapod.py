@@ -1,3 +1,4 @@
+import time
 from epics import PV
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
@@ -25,13 +26,43 @@ class Hexapod_PI:
             for i in "RST"
         ]
 
+class AdjustablePiHex(AdjustablePv):
+    def __init__(self, pvname=None, pvreadbackname=None, accuracy=None, name=None):
+        super().__init__(pvname, pvreadbackname=pvreadbackname, accuracy=accuracy, name=name)
+        self.limit_high = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_high.json', default_value=0)
+        self.limit_low = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_low.json', default_value=0)
+
+
+    def change(self, value):
+        if self.limit_low:
+            if value < self.limit_low():
+                raise Exception(
+                    f"Target value of {self.name} is smaller than limit value!"
+                )
+        if self.limit_high:
+            if self.limit_high() < value:
+                raise Exception(
+                    f"Target value of {self.name} is higher than limit value!"
+                )
+        self._pv.put(value)
+        time.sleep(0.1)
+        while self.get_change_done() == 0:
+            time.sleep(0.1)
+
+    def get_limits(self):
+        return (self.limit_low(), self.limit_high())
+
+    def set_limits(self, limit_low, limit_high):
+        self.limit_low(limit_low)
+        self.limit_high(limit_high)
+
 
 class HexapodPI(Assembly):
     def __init__(self, pvname, name=None, fina_angle_offset=None):
         super().__init__(name=name)
         self.pvname = pvname
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-POSI-X",
             pvreadbackname=self.pvname + ":POSI-X",
             accuracy=0.001,
@@ -39,7 +70,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-POSI-Y",
             pvreadbackname=self.pvname + ":POSI-Y",
             accuracy=0.001,
@@ -47,7 +78,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-POSI-Z",
             pvreadbackname=self.pvname + ":POSI-Z",
             accuracy=0.001,
@@ -55,7 +86,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-POSI-U",
             pvreadbackname=self.pvname + ":POSI-U",
             accuracy=0.001,
@@ -63,7 +94,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-POSI-V",
             pvreadbackname=self.pvname + ":POSI-V",
             accuracy=0.001,
@@ -71,7 +102,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-POSI-W",
             pvreadbackname=self.pvname + ":POSI-W",
             accuracy=0.001,
@@ -79,7 +110,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-PIVOT-R",
             pvreadbackname=self.pvname + ":PIVOT-R",
             accuracy=0.001,
@@ -87,7 +118,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-PIVOT-S",
             pvreadbackname=self.pvname + ":PIVOT-S",
             accuracy=0.001,
@@ -95,7 +126,7 @@ class HexapodPI(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            AdjustablePiHex,
             self.pvname + ":SET-PIVOT-T",
             pvreadbackname=self.pvname + ":PIVOT-T",
             accuracy=0.001,
@@ -116,6 +147,7 @@ class HexapodPI(Assembly):
                 reset_current_value_to=False,
                 append_aliases=False,
                 change_simultaneously=False,
+                check_limits=True,
                 name="x",
                 is_setting=False,
             )
@@ -128,6 +160,7 @@ class HexapodPI(Assembly):
                 ),
                 reset_current_value_to=False,
                 change_simultaneously=False,
+                check_limits=True,
                 append_aliases=False,
                 name="y",
                 is_setting=False,
@@ -142,6 +175,7 @@ class HexapodPI(Assembly):
                 reset_current_value_to=False,
                 append_aliases=False,
                 change_simultaneously=False,
+                check_limits=True,
                 name="z",
                 is_setting=False,
             )

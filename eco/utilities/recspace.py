@@ -21,7 +21,7 @@ class Diffractometer_Dummy(Assembly):
         self.configuration = ["base", "arm"]
         adjs = ["nu", "mu", "delta", "eta", "chi", "phi"]
         for adj in adjs:
-            self._append(DummyAdjustable, name=adj, is_setting=True, is_display=True)
+            self._append(DummyAdjustable, name=adj, is_setting=True, is_display=True, limits=[-180,180])
 
 diffractometer_dummy = Diffractometer_Dummy(name = "dummy")
 
@@ -332,7 +332,7 @@ class DiffGeometryYou(Assembly):
                 kwargs["eta"], kwargs["chi"], kwargs["phi"]
             )
             kwargs.update({"eta_kap": eta_kap, "kappa": kappa, "phi_kap": phi_kap})
-        return [kwargs[key] for key in self._diff_adjs.keys()]
+        return {key:kwargs[key] for key in self._diff_adjs.keys()}
 
     def convert_to_you(
         self,
@@ -360,16 +360,21 @@ class DiffGeometryYou(Assembly):
 
     def _calc_angles_unique_diffractometer(self, hkl):
         angles = self.calc_angles_unique(*hkl)
-        return self.convert_from_you(**angles)
+        angles_diff_dict = self.convert_from_you(**angles)
+        return [angles_diff_dict[tk] for tk in self._diff_adjs.keys()]
 
     def check_target_value_within_limits(self, **kwargs):
         ### virtual adjustables got a new function check_target_value_within_limits(values)
         in_lims = []
-        target_values = self.convert_from_you(**kwargs)
-        for val, adj in zip(target_values, self._diff_adjs.values()):
+        target_dict = self.convert_from_you(**kwargs)
+        for axname, target_value in target_dict.items():
+            adj = self._diff_adjs[axname]
+            
+        # for val, adj in zip(target_dict, self._diff_adjs.values()):
             if hasattr(adj, "get_limits"):
                 lim_low, lim_high = adj.get_limits()
-                in_lims.append((lim_low < val) and (val < lim_high))
+                in_lims.append((lim_low < target_value) and (target_value < lim_high))
+                # print(axname,lim_low,target_value,lim_high)
             else:
                 raise Exception(f"Failed to get limits of adjustable {adj.name}")
         return all(in_lims)

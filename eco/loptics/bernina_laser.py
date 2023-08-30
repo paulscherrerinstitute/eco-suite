@@ -157,6 +157,55 @@ class FilterWheelAttenuator(Assembly):
         self.wheel_1.home()
         self.wheel_2.home()
 
+class Stage_LXT_Delay(AdjustableVirtual):
+    def __init__(self, fine_delay_adj, coarse_delay_adj, direction=1, name=None):
+        self._fine_delay_adj = fine_delay_adj
+        self._coarse_delay_adj = coarse_delay_adj
+        self._direction=direction
+        self.switch_threshold = AdjustableFS(
+            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_delay_phase_shifter_threshold",
+            name="switch_threshold",
+            default_value=50e-12,
+        )
+        self.offset_fine_adj = AdjustableFS(
+            f"/photonics/home/gac-bernina/eco/configuration/{name}_conbined_fine_adj_offset",
+            name="offset_fine_adj",
+            default_value=0.,
+        )
+        self.offset_coarse_adj = AdjustableFS(
+            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_coarse_adj_offset",
+            name="offset_coarse_adj",
+            default_value=0.,
+        )
+
+
+        AdjustableVirtual.__init__(
+            self,
+            [self._fine_delay_adj, self._coarse_delay_adj],
+            self._get_comb_delay,
+            self._set_comb_delay,
+            name=name,
+            unit="s",
+        )
+
+    def _get_comb_delay(self, pd, ps):
+        ps_rel = ps - self.offset_coarse_adj()
+        pd_rel = pd - self.offset_fine_adj()
+        return (ps_rel + pd_rel)*self._direction
+ 
+    def _set_comb_delay(self, delay):
+        if delay < abs(self.switch_threshold()):
+            ### check to prevent slow phaseshifter corrections <50fs
+            if np.abs(self._coarse_delay_adj() - self.offset_coarse_adj()) > 50e-15:
+                ps_pos = self.offset_coarse_adj()
+            else:
+                ps_pos = None
+            pd_pos = self.offset_fine_adj() + delay
+        else:
+            ps_pos = self.offset_coarse_adj() + delay
+            pd_pos = self.offset_fine_adj()
+        return self._direction*pd_pos, self._direction*ps_pos
+
 
 class LaserBernina(Assembly):
     def __init__(self, pvname, name=None):
@@ -257,6 +306,13 @@ class LaserBernina(Assembly):
             name="delay_pump",
             is_setting=True,
         )
+        # self._append(
+        #     Stage_LXT_Delay,
+        #     self.delay_glob,
+        #     self.xlt,
+        #     direction=1,
+        #     name="delay",
+        # )
         # self._append(
         #     SmaractStreamdevice,
         #     pvname="SARES23-ESB18",

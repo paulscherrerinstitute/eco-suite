@@ -415,6 +415,7 @@ class XRDYou(Assembly):
         diff_detector=None,
         invert_kappa_ellbow=True,
         pgroup_adj=None,
+        fina_hex_angle_offset=None,
         diffcalc=True,
     ):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
@@ -607,49 +608,63 @@ class XRDYou(Assembly):
             )
 
         if "phi_hex" in self.configuration:
+
             ### motors PI hexapod ###
-            append_object_to_object(
-                self,
-                AdjustablePv,
-                "SARES20-HEX_PI:SET-POSI-X",
-                pvreadbackname="SARES20-HEX_PI:POSI-X",
-                name="xhex",
+            if fina_hex_angle_offset:
+                fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
+
+            self._append(
+                HexapodPI,
+                "SARES20-HEX_PI",
+                name="hex",
+                fina_angle_offset=fina_hex_angle_offset,
+                is_setting=True,
+                is_display="recursive",
             )
-            append_object_to_object(
-                self,
-                AdjustablePv,
-                "SARES20-HEX_PI:SET-POSI-Y",
-                pvreadbackname="SARES20-HEX_PI:POSI-Y",
-                name="yhex",
-            )
-            append_object_to_object(
-                self,
-                AdjustablePv,
-                "SARES20-HEX_PI:SET-POSI-Z",
-                pvreadbackname="SARES20-HEX_PI:POSI-Z",
-                name="zhex",
-            )
-            append_object_to_object(
-                self,
-                AdjustablePv,
-                "SARES20-HEX_PI:SET-POSI-U",
-                pvreadbackname="SARES20-HEX_PI:POSI-U",
-                name="uhex",
-            )
-            append_object_to_object(
-                self,
-                AdjustablePv,
-                "SARES20-HEX_PI:SET-POSI-V",
-                pvreadbackname="SARES20-HEX_PI:POSI-V",
-                name="vhex",
-            )
-            append_object_to_object(
-                self,
-                AdjustablePv,
-                "SARES20-HEX_PI:SET-POSI-W",
-                pvreadbackname="SARES20-HEX_PI:POSI-W",
-                name="whex",
-            )
+#        if "phi_hex" in self.configuration:
+#            ### motors PI hexapod ###
+#            append_object_to_object(
+#                self,
+#                AdjustablePv,
+#                "SARES20-HEX_PI:SET-POSI-X",
+#                pvreadbackname="SARES20-HEX_PI:POSI-X",
+#                name="xhex",
+#            )
+#            append_object_to_object(
+#                self,
+#                AdjustablePv,
+#                "SARES20-HEX_PI:SET-POSI-Y",
+#                pvreadbackname="SARES20-HEX_PI:POSI-Y",
+#                name="yhex",
+#            )
+#            append_object_to_object(
+#                self,
+#                AdjustablePv,
+#                "SARES20-HEX_PI:SET-POSI-Z",
+#                pvreadbackname="SARES20-HEX_PI:POSI-Z",
+#                name="zhex",
+#            )
+#            append_object_to_object(
+#                self,
+#                AdjustablePv,
+#                "SARES20-HEX_PI:SET-POSI-U",
+#                pvreadbackname="SARES20-HEX_PI:POSI-U",
+#                name="uhex",
+#            )
+#            append_object_to_object(
+#                self,
+#                AdjustablePv,
+#                "SARES20-HEX_PI:SET-POSI-V",
+#                pvreadbackname="SARES20-HEX_PI:POSI-V",
+#                name="vhex",
+#            )
+#            append_object_to_object(
+#                self,
+#                AdjustablePv,
+#                "SARES20-HEX_PI:SET-POSI-W",
+#                pvreadbackname="SARES20-HEX_PI:POSI-W",
+#                name="whex",
+#            )
 
         if "kappa" in self.configuration:
             self._append(

@@ -87,6 +87,13 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
+    "BerninaEnvironment",
+    name="env",
+    module_name="eco.devices_general.env_sensors",
+    lazy=True,
+)
+
+namespace.append_obj(
     "AdjustableFS",
     "/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA",
     name="_env_channels_ca",
@@ -738,6 +745,7 @@ namespace.append_obj(
     diff_detector={"jf_id": "JF01T03V01"},
     pgroup_adj=config_bernina.pgroup,
     invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
+    fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     name="xrd",
     lazy=True,
 )
@@ -2063,15 +2071,6 @@ from ..microscopes import MicroscopeMotorRecord
 # )
 
 
-# delaystage_glob = MotorRecord(
-#     "SLAAR21-LMOT-M523:MOTOR_1",
-#     name="delaystage_glob",
-# )
-
-# delay_glob = DelayTime(
-#     delaystage_glob,
-#     name="delay_glob",
-# )
 
 namespace.append_obj(
     "SwissFel",
@@ -2083,6 +2082,7 @@ namespace.append_obj(
     "DoubleCrystalMono",
     pvname="SAROP21-ODCM098",
     fel=fel,
+    las=las,
     undulator_deadband_eV=2.0,
     name="mono",
     lazy=True,
@@ -2090,12 +2090,12 @@ namespace.append_obj(
 )
 # namespace.append_obj(
 #     "MonoTimecompensation",
-#     delay_glob,
+#     las.delay_glob,
 #     mono.mono_und_energy,
 #     "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
 #     "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
 #     lazy=True,
-#     name="mono_time_corrected",
+#     name="mono_und_time_corrected",
 #     module_name="eco.xoptics.dcm_pathlength_compensation",
 # )
 
@@ -2153,7 +2153,23 @@ namespace.append_obj(
 
 
 ############## experiment specific #############
+from eco.loptics.bernina_laser import Stage_LXT_Delay
+class Laser_Xray_Timing(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            Stage_LXT_Delay,
+            las.delay_glob,
+            las.xlt,
+            direction=-1,
+            name="delay",
+        )
 
+namespace.append_obj(
+    Laser_Xray_Timing,
+    lazy=True,
+    name="lxt",
+)
 ##combined delaystage with phase shifter motion##
 
 
