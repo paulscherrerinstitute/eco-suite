@@ -595,14 +595,14 @@ class XRDYou(Assembly):
             self._append(
                 MotorRecord_new,
                 Id + ":MOT_HEX_TX",
-                name="tphi",
+                name="transl_eta",
                 is_setting=True,
                 is_display=True,
             )
             self._append(
                 MotorRecord_new,
                 Id + ":MOT_HEX_RX",
-                name="phi",
+                name="eta",
                 is_setting=True,
                 is_display=True,
             )

@@ -27,8 +27,8 @@ class Hexapod_PI:
         ]
 
 class AdjustablePiHex(AdjustablePv):
-    def __init__(self, pvname=None, pvreadbackname=None, accuracy=None, name=None):
-        super().__init__(pvname, pvreadbackname=pvreadbackname, accuracy=accuracy, name=name)
+    def __init__(self, pvname=None, pvreadbackname=None, accuracy=None, unit=None, name=None):
+        super().__init__(pvname, pvreadbackname=pvreadbackname, accuracy=accuracy, unit=unit, name=name)
         self.limit_high = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_high.json', default_value=0)
         self.limit_low = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_low.json', default_value=0)
 
@@ -66,6 +66,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-POSI-X",
             pvreadbackname=self.pvname + ":POSI-X",
             accuracy=0.001,
+            unit="mm",
             name="x_raw",
             is_setting=True,
         )
@@ -74,6 +75,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-POSI-Y",
             pvreadbackname=self.pvname + ":POSI-Y",
             accuracy=0.001,
+            unit="mm",
             name="y_raw",
             is_setting=True,
         )
@@ -82,6 +84,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-POSI-Z",
             pvreadbackname=self.pvname + ":POSI-Z",
             accuracy=0.001,
+            unit="mm",
             name="z_raw",
             is_setting=True,
         )
@@ -90,6 +93,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-POSI-U",
             pvreadbackname=self.pvname + ":POSI-U",
             accuracy=0.001,
+            unit="deg",
             name="rx_raw",
             is_setting=True,
         )
@@ -98,6 +102,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-POSI-V",
             pvreadbackname=self.pvname + ":POSI-V",
             accuracy=0.001,
+            unit="deg",
             name="ry_raw",
             is_setting=True,
         )
@@ -106,6 +111,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-POSI-W",
             pvreadbackname=self.pvname + ":POSI-W",
             accuracy=0.001,
+            unit="deg",
             name="rz_raw",
             is_setting=True,
         )
@@ -114,6 +120,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-PIVOT-R",
             pvreadbackname=self.pvname + ":PIVOT-R",
             accuracy=0.001,
+            unit="mm",
             name="pivot_x",
             is_setting=True,
         )
@@ -122,6 +129,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-PIVOT-S",
             pvreadbackname=self.pvname + ":PIVOT-S",
             accuracy=0.001,
+            unit="mm",
             name="pivot_y",
             is_setting=True,
         )
@@ -130,6 +138,7 @@ class HexapodPI(Assembly):
             self.pvname + ":SET-PIVOT-T",
             pvreadbackname=self.pvname + ":PIVOT-T",
             accuracy=0.001,
+            unit="mm",
             name="pivot_z",
             is_setting=True,
         )
@@ -148,6 +157,7 @@ class HexapodPI(Assembly):
                 append_aliases=False,
                 change_simultaneously=False,
                 check_limits=True,
+                unit="mm",
                 name="x",
                 is_setting=False,
             )
@@ -162,6 +172,7 @@ class HexapodPI(Assembly):
                 change_simultaneously=False,
                 check_limits=True,
                 append_aliases=False,
+                unit="mm",
                 name="y",
                 is_setting=False,
             )
@@ -176,6 +187,7 @@ class HexapodPI(Assembly):
                 append_aliases=False,
                 change_simultaneously=False,
                 check_limits=True,
+                unit="mm",
                 name="z",
                 is_setting=False,
             )
