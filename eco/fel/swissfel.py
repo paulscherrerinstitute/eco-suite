@@ -68,7 +68,8 @@ class SwissFel(Assembly):
         # SAR-EVPO-010:DEACTIVATE "FALSE"
         self._append(
             AdjustablePvEnum,
-            "SAROP-ARAMIS:BEAMLINE_SP",
+            "SAROP-ARAMIS:BEAMLINE",
+            pvname_set = "SAROP-ARAMIS:BEAMLINE_SP",
             name="aramis_beamline_switch",
             is_display=True,
             is_setting=True,

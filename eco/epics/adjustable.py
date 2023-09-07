@@ -16,6 +16,111 @@ from eco.devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
 
+
+# Work in progress! TODO
+@spec_convenience
+@get_from_archive
+@tweak_option
+@value_property
+class AdjustableAtomicPv:
+    def __init__(
+        self,
+        pvsetname,
+    ):
+        #        alias_fields={"setpv": pvsetname, "readback": pvreadbackname},
+        #    ):
+        self.pvname = pvsetname
+        self.name = name
+        #        for an, af in alias_fields.items():
+        #            self.alias.append(
+        #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
+        #            )
+
+        self._pv = PV(self.pvname, connection_timeout=0.05, count=element_count)
+        self._currentChange = None
+        self.accuracy = accuracy
+
+        if pvreadbackname is None:
+            self._pvreadback = PV(self.pvname, count=element_count, connection_timeout=0.05)
+            pvreadbackname = self.pvname
+            self.pvname = self.pvname
+        else:
+            self._pvreadback = PV(
+                pvreadbackname, count=element_count, connection_timeout=0.05
+            )
+            self.pvname = pvreadbackname
+
+        if pvlowlimname:
+            self._pvlowlim = PV(
+                pvlowlimname, count=element_count, connection_timeout=0.05
+            )
+        else:
+            self._pvlowlim = None
+        if pvhighlimname:
+            self._pvhighlim = PV(
+                pvhighlimname, count=element_count, connection_timeout=0.05
+            )
+        else:
+            self._pvhighlim = None
+        self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
+
+    def _wait_for_initialisation(self):
+        self._pv.wait_for_connection()
+        if hasattr(self, "_pv_readback") and self._pv_readback:
+            self._pv_readback.wait_for_connection()
+        if hasattr(self, "_pv_lowliself.accuracy = accuracym") and self._pv_lowlim:
+            self._pv_lowlim.wait_for_connection()
+        if hasattr(self, "_pv_highlim") and self._pv_highlim:
+            self._pv_highlim.wait_for_connection()
+    
+    def get_current_value(self, readback=True):
+        if readback:
+            currval = self._pvreadback.get()
+        if not readback:
+            currval = self._pv.get()
+        return currval
+
+    def get_change_done(self):
+        """Adjustable convention"""
+        """ 0: moving 1: move done"""
+        change_done = 1
+        if self.accuracy is not None:
+            if (
+                np.abs(
+                    self.get_current_value(readback=False)
+                    - self.get_current_value(readback=True)
+                )
+                > self.accuracy
+            ):
+                change_done = 0
+        return change_done
+
+    def change(self, value):
+        if self._pvlowlim:
+            if value < self._pvlowlim.get():
+                raise Exception(
+                    f"Target value of {self.name} is smaller than limit value!"
+                )
+        if self._pvhighlim:
+            if self._pvhighlim.get() < value:
+                raise Exception(
+                    f"Target value of {self.name} is higher than limit value!"
+                )
+
+        self._pv.put(value)
+        time.sleep(0.1)
+        while self.get_change_done() == 0:
+            time.sleep(0.1)
+
+    def set_target_value(self, value, hold=False):
+        """Adjustable convention"""
+
+        changer = lambda value: self.change(value)
+        return Changer(
+            target=value, parent=self, changer=changer, hold=hold, stopper=None
+        )
+
+
 @spec_convenience
 @get_from_archive
 @tweak_option
@@ -164,8 +269,8 @@ class AdjustablePvEnum:
         if pvname_set:
             self._pv_set = PV(pvname_set, connection_timeout=0.05)
             tstrs = self._pv_set.enum_strs
-            if not (tstrs == self.enum_strs):
-                raise Exception("pv enum setter strings do not match the values!")
+            if not all([tstr in self.enum_strs for tstr in tstrs]):
+                raise Exception("pv enum setter strings are not all a readback option!")
 
         else:
             self._pv_set = None

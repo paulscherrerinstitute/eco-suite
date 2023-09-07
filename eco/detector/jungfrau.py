@@ -209,6 +209,15 @@ class JungfrauDaqConfig(Assembly):
         )
         self._append(
             AdjustableGetSet,
+            self._get_geometry_corr,
+            self._set_geometry_corr,
+            name="apply_tile_geometry",
+            is_display=True,
+            is_setting=True,
+        )
+
+        self._append(
+            AdjustableGetSet,
             self._get_compressed_bitshuffle,
             self._set_compressed_bitshuffle,
             name="compress_bitshuffle",
@@ -239,6 +248,14 @@ class JungfrauDaqConfig(Assembly):
             is_display=True,
             is_setting=True,
         )
+        self._append(
+            AdjustableGetSet,
+            self._get_disabled_modules,
+            self._set_disabled_modules,
+            name="disabled_tiles",
+            is_display=True,
+            is_setting=True,
+        )
 
     def _get_adc_to_energy(self, *args):
         try:
@@ -250,6 +267,22 @@ class JungfrauDaqConfig(Assembly):
         if value:
             cfg = self._jf_daq_cfg.get_current_value()
             cfg[self._jf_id]["adc_to_energy"] = True
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+        else:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["adc_to_energy"] = False
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_geometry_corr(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["geometry"]
+        except KeyError:
+            return "not sure what happens"
+
+    def _set_geometry_corr(self, value):
+        if value:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["geometry"] = True
             self._jf_daq_cfg.set_target_value(cfg).wait()
         else:
             cfg = self._jf_daq_cfg.get_current_value()
@@ -316,3 +349,62 @@ class JungfrauDaqConfig(Assembly):
         cfg = self._jf_daq_cfg.get_current_value()
         cfg[self._jf_id]["factor"] = value
         self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_disabled_modules(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["disabled_modules"]
+        except KeyError:
+            return []
+
+    def _set_disabled_modules(self, value):
+        cfg = self._jf_daq_cfg.get_current_value()
+        if value == []:
+            cfg[self._jf_id].pop("disabled_modules")
+        else:
+            cfg[self._jf_id]["disabled_modules"] = value
+        self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_binning(self, *args):
+        try:
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["downsample"]
+        except KeyError:
+            return [1, 1]
+
+    def _set_binning(self, value):
+        cfg = self._jf_daq_cfg.get_current_value()
+        if value == [1, 1]:
+            cfg[self._jf_id].pop("downsample")
+        else:
+            cfg[self._jf_id]["downsample"] = value
+        self._jf_daq_cfg.set_target_value(cfg).wait()
+
+    def _get_keepraw(self, *args):
+        try:
+            remove_raw = self._jf_daq_cfg.get_current_value()[self._jf_id][
+                "remove_raw_files"
+            ]
+            # if type(remove_raw) is bool:
+            return remove_raw
+
+        except KeyError:
+            return "not sure what happens"
+
+    def _set_keepraw(self, value):
+        cfg = self._jf_daq_cfg.get_current_value()
+        cfg[self._jf_id]["remove_raw_files"] = value
+        self._jf_daq_cfg.set_target_value(cfg).wait()
+
+
+#          {
+#     "adc_to_energy": true,
+#     "compression": true,
+#     "double_pixels_actions": "interpolate",
+#     "downsample": [
+#         1,
+#         1
+#     ],
+#     "factor": 0.25,x
+#     "geometry": true,
+#     "remove_raw_files": false
+#   "disabled_modules": [],
+# },

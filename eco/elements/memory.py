@@ -84,6 +84,8 @@ class Memory:
         tmp = AdjustableFS(self.dir / Path(key + ".json"))
         tmp(stat_now)
         self._memories(mem)
+        print(f"Saved memory for {self.obj_parent.alias.get_full_name()}: {message}")
+        print(f"memory file:  {tmp.file_path.as_posix()}")
 
     def get_memory(self, input_obj=None, index=None, key=None, filter_existing=True):
         if not input_obj is None:
@@ -116,6 +118,15 @@ class Memory:
         else:
             return mem_full
 
+    def clear_memory(self, index=None, key=None):
+        if not (index is None):
+            key = list(self._memories().keys())[index]
+        if key is None:
+            raise Exception("memory key or index to be deleted needs to be specified!")
+        mem = self._memories.get_current_value()
+        mem.pop(key)
+        self._memories.set_target_value(mem).wait()
+
     def recall(
         self,
         memory_index=None,
@@ -128,6 +139,23 @@ class Memory:
         change_serially=False,
         force=False,
     ):
+        """Recall a memory_index, from an index in the default meory list, from a
+        dictionary containing the memory information, or from a path to a file containing the memory.
+
+        Args:
+            memory_index (integer, optional): index in memory list. Defaults to None.
+            input_obj (dictionary or string, optional): direct passing memory as dict or s filepath (string) to the memory file. Defaults to None.
+            key (string, optional): key of memory in memory list (if not defined by the index). Defaults to None.
+            wait (bool, optional): Wait for the memory recall changes to complete. Defaults to True.
+            show_changes_only (bool, optional): in rpreview show only changes that are different to present setting. Defaults to True.
+            set_changes_only (bool, optional): setting only the changes that changed. Defaults to True.
+            check_limits (bool, optional): check limits before changing. Defaults to True.
+            change_serially (bool, optional): change and wait each change after each other, not simultaneously. Defaults to False.
+            force (bool, optional): force the change without previous preview. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
         # if input_obj:
         mem = self.get_memory(
             index=memory_index,
@@ -233,7 +261,6 @@ class Memory:
     def select_from_memory(
         self, input_obj=None, key=None, memory_index=None, show_changes_only=True
     ):
-
         mem = self.get_memory(input_obj=input_obj, key=key, index=memory_index)
         rec = mem["settings"]
         k = KeyPress()
@@ -388,7 +415,6 @@ class Preset:
         return s
 
     def __repr__(self):
-
         return self.__str__()
 
 

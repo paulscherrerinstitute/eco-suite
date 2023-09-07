@@ -1,3 +1,4 @@
+from eco.detector.detectors_psi import DetectorBsStream
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice, SmaractRecord
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler
@@ -15,7 +16,7 @@ def addMotorRecordToSelf(self, Id=None, name=None):
 
 
 class Pprm(Assembly):
-    def __init__(self, pvname, pvname_camera, name=None, in_target=1):
+    def __init__(self, pvname, pvname_camera, name=None, in_target=1, bs_channels={}):
         super().__init__(name=name)
         self.pvname = pvname
         self.in_target = in_target
@@ -42,6 +43,14 @@ class Pprm(Assembly):
         self._append(
             AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True
         )
+        for bscn,bscc in bs_channels.items():
+            self._append(
+                DetectorBsStream,
+                bscc,
+                name=bscn,
+                is_setting=False,
+            )
+
 
     def movein(self, target=None):
         if target == None:

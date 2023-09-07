@@ -1,6 +1,6 @@
 from eco import Assembly
 from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
-from eco.epics.detector import DetectorPvData
+from eco.epics.detector import DetectorPvData, DetectorPvEnum
 from epics import PV
 
 
@@ -50,4 +50,18 @@ class BerninaEnvironment(Assembly):
             for n,tname in zip(channelnumbers,tnames):
                 self._append(I2cChannel,pvbase,channelnumber=n,name=tname)
 
+
+class WagoSensor(Assembly):
+    def __init__(self,pvbase='SARES20-CWAG-GPS01:TEMP-T9', name=None):
+        super().__init__(name=name)
+        self.pvbase = pvbase
+        self._append(DetectorPvData,f'{self.pvbase}', unit='°C', name='temperature')
+        self._append(DetectorPvEnum,f'{self.pvbase}-SS', name='status')
+        self._append(AdjustablePv,f'{self.pvbase}-WLEN', name='cable_length', unit='m', is_setting=True)
+        self.unit = self.temperature.unit
+    
+    def get_current_value(self):
+        return self.temperature.get_current_value()
+    
+    
 

@@ -1,4 +1,5 @@
-from scilog import SciLog
+from markdown import markdown
+from scilog import SciLog, LogbookMessage
 from getpass import getuser as _getuser
 from getpass import getpass as _getpass
 import os, datetime, subprocess
@@ -26,7 +27,8 @@ def getDefaultElogInstance(
             print("Enter scilog password for user: %s" % kwargs["user"])
             _pw = _getpass()
         kwargs.update(dict(password=_pw))
-    log = SciLog(url, options={"username": user, "password": kwargs["password"]})
+    log = SciLog(url, options := {"username": user, "password": kwargs["password"]})
+    print(options)
     if pgroup:
         lbs = log.get_logbooks(ownerGroup=pgroup)
         if len(lbs) > 1:
@@ -36,21 +38,40 @@ def getDefaultElogInstance(
 
 
 class Elog:
-    def __init__(self, url, screenshot_directory="", **kwargs):
-        self._log, self.user = getDefaultElogInstance(url, **kwargs)
+    def __init__(
+        self,
+        url="https://scilog.psi.ch/api/v1",
+        pgroup=None,
+        screenshot_directory="",
+        **kwargs,
+    ):
+        self._log, self.user = getDefaultElogInstance(url, pgroup=pgroup, **kwargs)
         self._screenshot = Screenshot(screenshot_directory)
         # self.read = self._log.read
 
-    def post(self, *args, Title=None, Author=None, Encoding="html", **kwargs):
+    def post(self, *args, tags=[], text_encoding="markdown", **kwargs):
         """ """
-        if Encoding == "html":
-            args = list(args)
-            args[0] = args[0].replace("\n", "<br />\n")
-        if not Author:
-            Author = self.user
-        return self._log.post(
-            *args, Title=Title, Author=Author, Encoding=Encoding, **kwargs
-        )
+        msg = LogbookMessage()
+        for targ in args:
+            if not ((type(targ) is str) or isinstance(targ, Path)):
+                raise Exception("Log messages should be of type string!")
+
+            try:
+                print("trying file")
+                if Path(targ).expanduser().exists():
+                    print("file exists")
+                    msg.add_file(targ)
+            except:
+                print("this is text")
+                if text_encoding == "markdown":
+                    print("markdown warning")
+                    msg.add_text(markdown(targ))
+                else:
+                    msg.add_text(targ)
+        for tag in tags:
+            msg.add_tag(tag)
+
+        self._log.send_logbook_message(msg)
 
     def screenshot(self, message="", window=False, desktop=False, delay=3, **kwargs):
         filepath = self._screenshot.shoot()[0]
