@@ -98,7 +98,7 @@ class Elog(Assembly):
         for tag in tags:
             msg.add_tag(tag)
 
-        self._log.send_logbook_message(msg)
+        return self._log.send_logbook_message(msg)
 
     def screenshot(self, message="", window=False, desktop=False, delay=3, **kwargs):
         filepath = self._screenshot.shoot()[0]

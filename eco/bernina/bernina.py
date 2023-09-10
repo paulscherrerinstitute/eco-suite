@@ -2252,8 +2252,19 @@ class Laser_Xray_Timing(Assembly):
 namespace.append_obj(
     Laser_Xray_Timing,
     lazy=True,
-    name="lxt",
+    name="lxt_01",
 )
+
+namespace.append_obj(
+    "StageLxtDelay",
+    las.delay_glob,
+    las.xlt,
+    lazy=True,
+    name="lxt",
+    direction=-1,
+    module_name="eco.loptics.bernina_laser",
+)
+
 ##combined delaystage with phase shifter motion##
 
 

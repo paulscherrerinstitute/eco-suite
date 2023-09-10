@@ -158,6 +158,71 @@ class FilterWheelAttenuator(Assembly):
         self.wheel_2.home()
 
 
+class StageLxtDelay(Assembly):
+    def __init__(self, fine_delay_adj, coarse_delay_adj, direction=1, name=None):
+        super().__init__(name=name)
+        self._append(fine_delay_adj, name="_fine_delay_adj", is_setting=True)
+        self._append(coarse_delay_adj, name="_coarse_delay_adj", is_setting=True)
+        self._append(AdjustableMemory, direction, name="_direction", is_setting=True)
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_delay_phase_shifter_threshold",
+            name="switch_threshold",
+            default_value=50e-12,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/{name}_conbined_fine_adj_offset",
+            name="offset_fine_adj",
+            default_value=0.0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_coarse_adj_offset",
+            name="offset_coarse_adj",
+            default_value=0.0,
+            is_setting=True,
+        )
+
+        self._append(
+            AdjustableVirtual,
+            [self._fine_delay_adj, self._coarse_delay_adj],
+            self._get_comb_delay,
+            self._set_comb_delay,
+            name="delay",
+            unit="s",
+        )
+
+    def _get_comb_delay(self, pd, ps):
+        ps_rel = ps - self.offset_coarse_adj()
+        pd_rel = pd - self.offset_fine_adj()
+        return (ps_rel + pd_rel) * self._direction.get_current_value()
+
+    def _set_comb_delay(self, delay):
+        if delay < abs(self.switch_threshold.get_current_value()):
+            ### check to prevent slow phaseshifter corrections <50fs
+            if (
+                np.abs(
+                    self._coarse_delay_adj.get_current_value()
+                    - self.offset_coarse_adj.get_current_value()
+                )
+                > 50e-15
+            ):
+                ps_pos = self.offset_coarse_adj.get_current_value()
+            else:
+                ps_pos = None
+            pd_pos = self.offset_fine_adj.get_current_value() + delay
+        else:
+            ps_pos = self.offset_coarse_adj.get_current_value() + delay
+            pd_pos = self.offset_fine_adj.get_current_value()
+        return (
+            self._direction.get_current_value() * pd_pos,
+            self._direction.get_current_value() * ps_pos,
+        )
+
+
 class Stage_LXT_Delay(AdjustableVirtual):
     def __init__(self, fine_delay_adj, coarse_delay_adj, direction=1, name=None):
         self._fine_delay_adj = fine_delay_adj
