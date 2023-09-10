@@ -1,6 +1,13 @@
+from datetime import datetime
+from inspect import isclass
+import json
+from pathlib import Path
 from tkinter import W
+from markdown import markdown
 
 from numpy import isin
+
+# from eco.acquisition.scan import NumpyEncoder
 
 from eco.elements.protocols import Detector, InitialisationWaitable
 from ..aliases import Alias
@@ -12,6 +19,8 @@ import os
 import subprocess
 from rich.progress import track
 from eco import Adjustable, Detector
+
+import eco
 
 
 _initializing_assemblies = []
@@ -63,7 +72,7 @@ class Collection:
 
 
 class Assembly:
-    def __init__(self, name=None, parent=None, is_alias=True):
+    def __init__(self, name=None, parent=None, is_alias=True, elog=None):
         self.name = name
         self.alias = Alias(name, parent=parent)
         # self.settings = []
@@ -74,6 +83,10 @@ class Assembly:
         self.view_toplevel_only = []
         if memory.global_memory_dir:
             self.memory = memory.Memory(self)
+        if elog:
+            self.__elog = elog
+        else:
+            self.__class__.__elog = property(lambda dum: ELOG)
 
     def _append(
         self,
@@ -86,9 +99,16 @@ class Assembly:
         is_alias=True,
         view_toplevel_only=True,
         call_obj=True,
+        append_property_with_name=False,
         **kwargs,
     ):
-        if call_obj and callable(foo_obj_init):
+        if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
+            self.__dict__[name] = foo_obj_init
+        elif isinstance(foo_obj_init, Detector) and not isclass(foo_obj_init):
+            self.__dict__[name] = foo_obj_init
+        elif isinstance(foo_obj_init, Assembly) and not isclass(foo_obj_init):
+            self.__dict__[name] = foo_obj_init
+        elif call_obj and callable(foo_obj_init):
             self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
         else:
             self.__dict__[name] = foo_obj_init
@@ -96,6 +116,17 @@ class Assembly:
         # except:
         #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
         #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
+        if append_property_with_name:
+            if isinstance(self.__dict__[name], Adjustable):
+                self.__class__.__dict__[append_property_with_name] = property(
+                    self.__dict__[name].get_current_value,
+                    lambda val: self.__dict__[name].set_target_value(val).wait(),
+                )
+            elif isinstance(self.__dict__[name], Detector):
+                self.__class__.__dict__[append_property_with_name] = property(
+                    self.__dict__[name].get_current_value,
+                )
+
         if is_setting == "auto":
             is_setting = isinstance(self.__dict__[name], Adjustable)
         if is_setting:
@@ -273,7 +304,7 @@ class Assembly:
         s = tabulate([[name, value] for name, value in stat_filt[stat_field].items()])
         return s
 
-    def get_display_str(self):
+    def get_display_str(self, tablefmt="simple"):
         main_name = self.name
         stats = self.display_collection()
         # stats_dict = {}
@@ -310,8 +341,46 @@ class Assembly:
             tab.append(
                 [".".join([main_name, name]), value, unit, typechar, description]
             )
-        s = tabulate(tab)
+        s = tabulate(tab, tablefmt=tablefmt)
         return s
+
+    def status_to_elog(
+        self,
+        text="",
+        text_encoding="markdown",
+        auto_title=True,
+        attach_display=True,
+        attach_status_file=True,
+    ):
+        elog = self._get_elog()
+        message = ""
+        files = []
+        if auto_title:
+            message += markdown(f"#### Status {self.alias.get_full_name()}")
+
+        if text:
+            if text_encoding == "markdown":
+                message += markdown(text)
+        if attach_display:
+            message += self.get_display_str(tablefmt="html")
+
+        if attach_status_file:
+            stat = self.get_status()
+            tmppath = Path("/tmp")
+            filepath = tmppath / Path(
+                f"status_{self.alias.get_full_name}_{datetime.now().isoformat()}.json"
+            )
+            with open(filepath, "w") as f:
+                # json.dump(stat, f, cls=NumpyEncoder, indent=4)
+                json.dump(stat, f, indent=4)
+            files.append(filepath)
+
+        elog.post(
+            message,
+            *files,
+            text_encoding="html",
+        )
+        # tags=[],
 
     def __repr__(self):
         label = self.alias.get_full_name() + " status\n"
@@ -331,10 +400,9 @@ class Assembly:
             if isinstance(item, Assembly) and (item in _initializing_assemblies):
                 continue
             if isinstance(item, InitialisationWaitable):
-                if isinstance(item,Assembly):
+                if isinstance(item, Assembly):
                     _initializing_assemblies.append(item)
                 item._wait_for_initialisation()
-
 
     def _run_cmd(self, line, silent=True):
         if silent:
@@ -345,6 +413,16 @@ class Assembly:
                 )
         else:
             subprocess.Popen(line, shell=True)
+
+    def _get_elog(self):
+        if hasattr(self, "_elog") and self._elog:
+            return self._elog
+        elif hasattr(self, "__elog") and self.__elog:
+            return self.__elog
+        elif eco.ELOG:
+            return eco.ELOG
+        else:
+            return None
 
 
 import epics.pv

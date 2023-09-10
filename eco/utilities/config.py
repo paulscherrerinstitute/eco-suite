@@ -274,6 +274,10 @@ class Namespace(Assembly):
         self.alias_namespace = alias_namespace
 
     @property
+    def initialisation_times_sorted(self):
+        return dict(sorted(self.initialisation_times.items(), key=lambda w: w[1]))
+
+    @property
     def initialized_names(self):
         return set(self.initialized_items.keys())
 

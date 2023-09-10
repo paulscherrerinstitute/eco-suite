@@ -32,20 +32,12 @@ components = [
         "kwargs": {},
         "lazy": True,
     },
-    {
-        "name": "elog",
-        "type": "eco.utilities.elog:Elog",
-        "args": ["https://elog-gfa.psi.ch/Bernina"],
-        "kwargs": {
-            "screenshot_directory": "/tmp",
-        },
-    },
-    {
-        "name": "screenshot",
-        "type": "eco.utilities.elog:Screenshot",
-        "args": [],
-        "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
-    },
+    # {
+    #     "name": "screenshot",
+    #     "type": "eco.utilities.elog:Screenshot",
+    #     "args": [],
+    #     "kwargs": {"screenshot_directory": "/sf/bernina/config/screenshots"},
+    # },
     #    {
     #        "name": "fel",
     #        "type": "eco.fel.swissfel:SwissFel",
@@ -406,7 +398,7 @@ components = [
     #         "default_file_path": None,
     #     },
     # },
-    #{
+    # {
     #    "args": [
     #        config["checker_PV"],
     #        config["checker_thresholds"],
@@ -416,7 +408,7 @@ components = [
     #    "desc": "checker functions for data acquisition",
     #    "type": "eco.acquisition.checkers:CheckerCA",
     #    "kwargs": {},
-    #},
+    # },
     # {
     #     "args": [
     #         "SARES20-LSCP9-FNS:CH1:VAL_GET",
@@ -481,7 +473,6 @@ components = [
             "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
         },
     },
-    
     # {
     #     "args": ["SARES23-"],
     #     "name": "slit_kb",

@@ -157,11 +157,12 @@ class FilterWheelAttenuator(Assembly):
         self.wheel_1.home()
         self.wheel_2.home()
 
+
 class Stage_LXT_Delay(AdjustableVirtual):
     def __init__(self, fine_delay_adj, coarse_delay_adj, direction=1, name=None):
         self._fine_delay_adj = fine_delay_adj
         self._coarse_delay_adj = coarse_delay_adj
-        self._direction=direction
+        self._direction = direction
         self.switch_threshold = AdjustableFS(
             f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_delay_phase_shifter_threshold",
             name="switch_threshold",
@@ -170,14 +171,13 @@ class Stage_LXT_Delay(AdjustableVirtual):
         self.offset_fine_adj = AdjustableFS(
             f"/photonics/home/gac-bernina/eco/configuration/{name}_conbined_fine_adj_offset",
             name="offset_fine_adj",
-            default_value=0.,
+            default_value=0.0,
         )
         self.offset_coarse_adj = AdjustableFS(
             f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_coarse_adj_offset",
             name="offset_coarse_adj",
-            default_value=0.,
+            default_value=0.0,
         )
-
 
         AdjustableVirtual.__init__(
             self,
@@ -191,8 +191,8 @@ class Stage_LXT_Delay(AdjustableVirtual):
     def _get_comb_delay(self, pd, ps):
         ps_rel = ps - self.offset_coarse_adj()
         pd_rel = pd - self.offset_fine_adj()
-        return (ps_rel + pd_rel)*self._direction
- 
+        return (ps_rel + pd_rel) * self._direction
+
     def _set_comb_delay(self, delay):
         if delay < abs(self.switch_threshold()):
             ### check to prevent slow phaseshifter corrections <50fs
@@ -204,7 +204,7 @@ class Stage_LXT_Delay(AdjustableVirtual):
         else:
             ps_pos = self.offset_coarse_adj() + delay
             pd_pos = self.offset_fine_adj()
-        return self._direction*pd_pos, self._direction*ps_pos
+        return self._direction * pd_pos, self._direction * ps_pos
 
 
 class LaserBernina(Assembly):
@@ -234,8 +234,6 @@ class LaserBernina(Assembly):
         self._append(
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
-
-
 
         self._append(
             AdjustableFS,
@@ -285,7 +283,9 @@ class LaserBernina(Assembly):
         # self._append(
         #    DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
         # )
-        self._append(LaserRateControl, name="rate", is_setting=True, is_display="recursive")
+        self._append(
+            LaserRateControl, name="rate", is_setting=True, is_display="recursive"
+        )
         self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
         # Upstairs, Laser 1 LAM
         # self._append(
@@ -319,7 +319,6 @@ class LaserBernina(Assembly):
         #     name="delaystage_thz",
         #     is_setting=True,
         # )
-
 
 
 class DelayTime(AdjustableVirtual):

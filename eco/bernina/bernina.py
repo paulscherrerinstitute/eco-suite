@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from threading import Thread
+import eco
 from eco.acquisition.scan import NumpyEncoder
 from eco.devices_general.powersockets import MpodModule
 from eco.elements.adjustable import AdjustableFS
@@ -35,7 +36,6 @@ namespace = Namespace(
 namespace.alias_namespace.data = []
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
-
 _config_bernina_dict = AdjustableFS(
     "/sf/bernina/config/eco/configuration/bernina_config.json",
     name="_config_bernina_dict",
@@ -43,6 +43,31 @@ _config_bernina_dict = AdjustableFS(
 from eco.elements.adj_obj import AdjustableObject
 
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
+
+namespace.append_obj(
+    "Elog",
+    "https://elog-gfa.psi.ch/Bernina",
+    screenshot_directory="/tmp",
+    name="elog_gfa",
+    module_name="eco.utilities.elog",
+)
+
+namespace.append_obj(
+    "Elog",
+    pgroup_adj=config_bernina.pgroup,
+    name="scilog",
+    module_name="eco.utilities.elog_scilog",
+)
+
+namespace.append_obj(
+    "ElogsMultiplexer",
+    scilog,
+    elog_gfa,
+    name="elog",
+    module_name="eco.utilities.elog",
+)
+
+eco.ELOG = elog
 
 namespace.append_obj(
     "DummyAdjustable",
@@ -854,23 +879,23 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
-   "MpodModule",
-   "SARES21-CPCL-PS7071",
-   [1,2,3,4],
-   ['ch1','ch2','ch3','ch4'],
-   module_string='LV_OMPV_1',
-   name="power_LV_patch1",
-   module_name="eco.devices_general.powersockets",
+    "MpodModule",
+    "SARES21-CPCL-PS7071",
+    [1, 2, 3, 4],
+    ["ch1", "ch2", "ch3", "ch4"],
+    module_string="LV_OMPV_1",
+    name="power_LV_patch1",
+    module_name="eco.devices_general.powersockets",
 )
 
 namespace.append_obj(
-   "MpodModule",
-   "SARES21-CPCL-PS7071",
-   [5,6,7,8],
-   ['ch1','ch2','ch3','ch4'],
-   module_string='LV_OMPV_1',
-   name="power_LV_patch2",
-   module_name="eco.devices_general.powersockets",
+    "MpodModule",
+    "SARES21-CPCL-PS7071",
+    [5, 6, 7, 8],
+    ["ch1", "ch2", "ch3", "ch4"],
+    module_string="LV_OMPV_1",
+    name="power_LV_patch2",
+    module_name="eco.devices_general.powersockets",
 )
 
 #
@@ -936,7 +961,7 @@ namespace.append_obj(
 namespace.append_obj(
     "Daq",
     instrument="bernina",
-    pgroup=config_bernina.pgroup(),
+    pgroup=config_bernina.pgroup,
     channels_JF=channels_JF,
     channels_BS=channels_BS,
     channels_BSCAM=channels_BSCAM,
@@ -1365,15 +1390,25 @@ def _create_metadata_structure_start_scan(
         except:
             print("Count not retrieve ipython scan command!")
 
-        message_string = f'Acquisition run {runno}: {metadata["name"]}\n'
+        message_string = f"#### Run {runno}"
+        if metadata["name"]:
+            message_string += f': {metadata["name"]}\n'
+        else:
+            message_string += "\n"
+
         if "scan_command" in metadata.keys():
-            message_string += metadata["scan_command"] + "\n"
-        message_string += metadata["scan_info_file"] + "\n"
-        scan._elog_id = elog.post(
-            message_string, Title=f'Run {runno}: {metadata["name"]}'
+            message_string += "`" + metadata["scan_command"] + "`\n"
+        message_string += "`" + metadata["scan_info_file"] + "`\n"
+        elog_ids = elog.post(
+            message_string,
+            Title=f'Run {runno}: {metadata["name"]}',
+            text_encoding="markdown",
         )
+        scan._elog_id = elog_ids[1]
         metadata.update({"elog_message_id": scan._elog_id})
-        metadata.update({"elog_post_link": scan._elog._log._url + str(scan._elog_id)})
+        metadata.update(
+            {"elog_post_link": scan._elog[1]._log._url + str(scan._elog_id)}
+        )
     except:
         print("elog posting failed")
     if not append_status_info:
@@ -1685,40 +1720,40 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB10", name="ver", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB13", name="hor", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB11", name="x", is_setting=True)
-        self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M521:MOTOR_1",
-            name="delaystage_eos",
-            is_setting=True,
-        )
-        self._append(
-            DelayTime,
-            self.delaystage_eos,
-            name="delay_eos",
-            is_setting=False,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePvEnum,
-            "SLAAR21-LDIO-LAS6991:SET_BO02",
-            name="eos_is_shut",
-            is_setting=True,
-        )
-        self._append(
-            DigitizerIoxosBoxcarChannel,
-            "SARES20-LSCP9-FNS:CH1",
-            name=f"signal_pol0",
-            is_setting=True,
-        )
-        self._append(
-            DigitizerIoxosBoxcarChannel,
-            "SARES20-LSCP9-FNS:CH3",
-            name=f"signal_pol1",
-            is_setting=True,
-        )
+        self._append(SmaractRecord, "SARES23:ESB12", name="ver", is_setting=True)
+        self._append(SmaractRecord, "SARES23:ESB11", name="hor", is_setting=True)
+        # self._append(SmaractRecord, "SARES23:ESB11", name="x", is_setting=True)
+        # self._append(
+        #     MotorRecord,
+        #     "SLAAR21-LMOT-M521:MOTOR_1",
+        #     name="delaystage_eos",
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     DelayTime,
+        #     self.delaystage_eos,
+        #     name="delay_eos",
+        #     is_setting=False,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     AdjustablePvEnum,
+        #     "SLAAR21-LDIO-LAS6991:SET_BO02",
+        #     name="eos_is_shut",
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     DigitizerIoxosBoxcarChannel,
+        #     "SARES20-LSCP9-FNS:CH1",
+        #     name=f"signal_pol0",
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     DigitizerIoxosBoxcarChannel,
+        #     "SARES20-LSCP9-FNS:CH3",
+        #     name=f"signal_pol1",
+        #     is_setting=True,
+        # )
 
 
 namespace.append_obj(
@@ -1726,8 +1761,6 @@ namespace.append_obj(
     lazy=True,
     name="las_inc",
 )
-
-
 
 
 # namespace.append_obj(
@@ -2373,12 +2406,20 @@ namespace.append_obj(
 ## N2 sample heater setup
 
 from eco.devices_general.env_sensors import WagoSensor
+
+
 class SampleHeaterJet(Assembly):
-    def __init__(self,name='sampleheaterjet'):
+    def __init__(self, name="sampleheaterjet"):
         super().__init__(name=name)
-        self._append(WagoSensor,pvbase='SARES20-CWAG-GPS01:TEMP-T9', name='sensor_sample')
-        self._append(WagoSensor,pvbase='SARES20-CWAG-GPS01:TEMP-T10', name='sensor_jet_mount')
-        self._append(WagoSensor,pvbase='SARES20-CWAG-GPS01:TEMP-T11', name='sensor_hexapod')
+        self._append(
+            WagoSensor, pvbase="SARES20-CWAG-GPS01:TEMP-T9", name="sensor_sample"
+        )
+        self._append(
+            WagoSensor, pvbase="SARES20-CWAG-GPS01:TEMP-T10", name="sensor_jet_mount"
+        )
+        self._append(
+            WagoSensor, pvbase="SARES20-CWAG-GPS01:TEMP-T11", name="sensor_hexapod"
+        )
 
 
 namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
@@ -2386,16 +2427,26 @@ namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 
 ## sample illumination
 from eco.devices_general.powersockets import MpodChannel
+
+
 class IlluminatorsLasers(Assembly):
-    def __init__(self,name='sample_illumination'):
+    def __init__(self, name="sample_illumination"):
         super().__init__(name=name)
-        self._append(MpodChannel,pvbase='SARES21-CPCL-PS7071', channel_number=2, name='illumination_1')
-        self._append(MpodChannel,pvbase='SARES21-CPCL-PS7071', channel_number=2, name='flattening_laser')
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
+            channel_number=2,
+            name="illumination_1",
+        )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
+            channel_number=2,
+            name="flattening_laser",
+        )
 
 
 namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
-
-
 
 
 ## LIQUID jet setup

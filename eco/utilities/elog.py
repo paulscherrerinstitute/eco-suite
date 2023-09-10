@@ -1,10 +1,27 @@
+from pathlib import Path
 import elog as _elog_ha
 from getpass import getuser as _getuser
 from getpass import getpass as _getpass
 import os, datetime, subprocess
+from markdown import markdown
 import urllib3
 
 urllib3.disable_warnings()
+
+
+######################
+class ElogsMultiplexer:
+    def __init__(self, *args):
+        self.elogs = args
+
+    def post(self, *args, **kwargs):
+        mids = []
+        for elog in self.elogs:
+            mids.append(elog.post(*args, **kwargs))
+        return mids
+
+
+##########################
 
 
 def getDefaultElogInstance(url, **kwargs):
@@ -32,16 +49,73 @@ class Elog:
         self._screenshot = Screenshot(screenshot_directory)
         self.read = self._log.read
 
-    def post(self, *args, Title=None, Author=None, Encoding="html", **kwargs):
+    def post(
+        self,
+        *args,
+        text_encoding="markdown",
+        markdown_extensions=["fenced_code"],
+        tags=[],
+        Title=None,
+        Author=None,
+        **kwargs,
+    ):
         """ """
-        if Encoding == "html":
-            args = list(args)
-            args[0] = args[0].replace("\n", "<br />\n")
+
+        message = ""
+        file_paths = []
+
+        for targ in args:
+            if not (isinstance(targ, str) or isinstance(targ, Path)):
+                raise Exception(
+                    "Log messages should be of type string or pathlib.Path!"
+                )
+
+            if isinstance(targ, Path):
+                if Path(targ).expanduser().exists():
+                    print("file exists")
+                    file_paths.append(targ.as_posix())
+                    if targ.suffix[1:] in ["jpg", "png"]:
+                        if text_encoding in ["markdown", "html"]:
+                            message += f'<p><img alt="" src="temporarypath-attachment_{len(file_paths)-1}" /></p>'
+            else:
+                targ = str(targ)
+                if text_encoding == "markdown":
+                    message += markdown(targ, extensions=markdown_extensions)
+                    Encoding = "html"
+                elif text_encoding == "html":
+                    Encoding = "html"
+                else:
+                    message += targ + "\n"
+                    Encoding = "plain"
+
         if not Author:
             Author = self.user
-        return self._log.post(
-            *args, Title=Title, Author=Author, Encoding=Encoding, **kwargs
+
+        if file_paths:
+            attachments = file_paths
+        else:
+            attachments = None
+        mid = self._log.post(
+            message,
+            attachments=attachments,
+            Title=Title,
+            Author=Author,
+            Encoding=Encoding,
+            **kwargs,
         )
+
+        if file_paths:
+            pm, patt, pa = self._log.read(mid)
+            for ntpa, tpa in enumerate(pa):
+                filename = "".join(Path(tpa).parts[-1].split("_")[2:])
+                print(filename)
+                Nocc = pm.count(f"temporarypath-attachment_{ntpa}")
+                print(Nocc)
+                if Nocc:
+                    pm = pm.replace(f"temporarypath-attachment_{ntpa}", tpa)
+            self._log.post(pm, msg_id=mid)
+
+        return mid
 
     def screenshot(self, message="", window=False, desktop=False, delay=3, **kwargs):
         filepath = self._screenshot.shoot()[0]
@@ -58,7 +132,6 @@ class Screenshot:
             self.user = kwargs["user"]
 
     def show_directory(self):
-
         p = subprocess.Popen(
             ["nautilus", self._screenshot_directory],
             stdout=subprocess.PIPE,

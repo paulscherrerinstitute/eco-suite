@@ -5,6 +5,10 @@ from ..utilities.keypress import KeyPress
 from tabulate import tabulate
 import sys, colorama
 from inspect import getargspec
+import eco
+from ansi2html import Ansi2HTMLConverter
+
+conv = Ansi2HTMLConverter()
 
 global_memory_dir = None
 
@@ -60,8 +64,23 @@ class Memory:
         # print(self.get_memory_difference_str(index))
         self.recall(memory_index=index)
 
+    def _get_elog(self):
+        if hasattr(self, "_elog") and self._elog:
+            return self._elog
+        elif hasattr(self, "__elog") and self.__elog:
+            return self.__elog
+        elif eco.ELOG:
+            return eco.ELOG
+        else:
+            return None
+
     def memorize(
-        self, message=None, attributes={}, force_message=True, preset_varname=None
+        self,
+        message=None,
+        attributes={},
+        force_message=True,
+        preset_varname=None,
+        to_elog=True,
     ):
         self.setup_path()
         stat_now = self.obj_parent.get_status(base=self.obj_parent)
@@ -86,6 +105,13 @@ class Memory:
         self._memories(mem)
         print(f"Saved memory for {self.obj_parent.alias.get_full_name()}: {message}")
         print(f"memory file:  {tmp.file_path.as_posix()}")
+        if to_elog:
+            elog = self._get_elog()
+            elog.post(
+                f"Saved memory for {self.obj_parent.alias.get_full_name()}: {message}",
+                tmp.file_path,
+                text_encoding="markdown",
+            )
 
     def get_memory(self, input_obj=None, index=None, key=None, filter_existing=True):
         if not input_obj is None:
@@ -202,7 +228,12 @@ class Memory:
         ...
 
     def get_memory_difference_str(
-        self, memory, select=None, ask_select=True, show_changes_only=False
+        self,
+        memory,
+        select=None,
+        ask_select=True,
+        show_changes_only=False,
+        tablefmt="plain",
     ):
         # mem = self.get_memory(index=memory_index)
         mem = memory
@@ -218,12 +249,15 @@ class Memory:
                 tselstr = " "
             if present_value == recall_value:
                 changed = False
-                comp_indicator = (
-                    colorama.Fore.GREEN
-                    + colorama.Style.BRIGHT
-                    + "=="
-                    + colorama.Style.RESET_ALL
-                )
+                if tablefmt == "html":
+                    comp_indicator = "=="
+                else:
+                    comp_indicator = (
+                        colorama.Fore.GREEN
+                        + colorama.Style.BRIGHT
+                        + "=="
+                        + colorama.Style.RESET_ALL
+                    )
             else:
                 changed = True
                 if not tsel:
@@ -233,14 +267,18 @@ class Memory:
                         tdiff = f"{recall_value - present_value:+g}"
                     except TypeError:
                         tdiff = "special"
-                    comp_indicator = (
-                        colorama.Fore.RED
-                        + colorama.Style.BRIGHT
-                        + f"{tdiff:s}"
-                        + colorama.Style.RESET_ALL
-                    )
+                    if tablefmt == "html":
+                        comp_indicator = f"{tdiff:s}"
+                    else:
+                        comp_indicator = (
+                            colorama.Fore.RED
+                            + colorama.Style.BRIGHT
+                            + f"{tdiff:s}"
+                            + colorama.Style.RESET_ALL
+                        )
             if show_changes_only and (not changed):
                 continue
+
             table.append([n, tselstr, key, present_value, comp_indicator, recall_value])
 
         if len(table) == 0:
@@ -256,6 +294,7 @@ class Memory:
                 "memory",
             ],
             colalign=("decimal", "center", "left", "decimal", "center", "decimal"),
+            tablefmt=tablefmt,
         )
 
     def select_from_memory(

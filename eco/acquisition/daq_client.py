@@ -1,6 +1,8 @@
 import requests
 from pathlib import Path
 from time import sleep
+
+from eco.elements.protocols import Adjustable
 from ..epics.detector import DetectorPvDataStream
 from epics import PV
 from ..acquisition.utilities import Acquisition
@@ -45,7 +47,7 @@ class Daq(Assembly):
         self.broker_address = broker_address
         self.broker_address_aux = broker_address_aux
         self.timeout = timeout
-        self.pgroup = pgroup
+        self._pgroup = pgroup
         if type(pulse_id_adj) is str:
             self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
             self._pid_wo_automonitor = PV(
@@ -62,6 +64,20 @@ class Daq(Assembly):
         self._default_file_path = None
 
         self.rate_multiplicator = rate_multiplicator
+
+    @property
+    def pgroup(self):
+        if isinstance(self._pgroup, Adjustable):
+            return self._pgroup.get_current_value()
+        else:
+            return self._pgroup
+
+    @pgroup.setter
+    def pgroup(self, value):
+        if isinstance(self._pgroup, Adjustable):
+            self._pgroup.set_target_value(value).wait()
+        else:
+            self._pgroup = value
 
     def acquire(self, file_name=None, Npulses=100, acq_pars={}):
         print(acq_pars)

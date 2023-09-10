@@ -1,3 +1,4 @@
+from functools import lru_cache
 from markdown import markdown
 from scilog import SciLog, LogbookMessage
 from getpass import getuser as _getuser
@@ -5,6 +6,8 @@ from getpass import getpass as _getpass
 import os, datetime, subprocess
 import urllib3
 from pathlib import Path
+
+from eco.elements.assembly import Assembly
 
 urllib3.disable_warnings()
 
@@ -28,7 +31,6 @@ def getDefaultElogInstance(
             _pw = _getpass()
         kwargs.update(dict(password=_pw))
     log = SciLog(url, options := {"username": user, "password": kwargs["password"]})
-    print(options)
     if pgroup:
         lbs = log.get_logbooks(ownerGroup=pgroup)
         if len(lbs) > 1:
@@ -37,37 +39,62 @@ def getDefaultElogInstance(
     return log, user
 
 
-class Elog:
+class Elog(Assembly):
     def __init__(
         self,
         url="https://scilog.psi.ch/api/v1",
-        pgroup=None,
+        pgroup_adj=None,
         screenshot_directory="",
+        name="scilog",
         **kwargs,
     ):
-        self._log, self.user = getDefaultElogInstance(url, pgroup=pgroup, **kwargs)
+        super().__init__(name=name)
+        self.scilog_url = url
+        self._append(pgroup_adj, name="pgroup")
+        dummy, self.user = getDefaultElogInstance(
+            url, pgroup=pgroup_adj.get_current_value(), **kwargs
+        )
+        self.__class__._log = property(
+            lambda dum: self._get_scilog_dynamically(
+                self.scilog_url, self.pgroup.get_current_value()
+            )
+        )
         self._screenshot = Screenshot(screenshot_directory)
         # self.read = self._log.read
 
-    def post(self, *args, tags=[], text_encoding="markdown", **kwargs):
-        """ """
+    @lru_cache
+    def _get_scilog_dynamically(self, url, pgroup):
+        log, user = getDefaultElogInstance(url, pgroup=pgroup)
+        self.user = user
+        return log
+
+    def post(
+        self,
+        *args,
+        tags=[],
+        text_encoding="markdown",
+        markdown_extensions=["fenced_code"],
+        **kwargs,
+    ):
+        """args can be text or pathlibPath instances (for files to be uploaded)"""
         msg = LogbookMessage()
         for targ in args:
-            if not ((type(targ) is str) or isinstance(targ, Path)):
+            if not (isinstance(targ, str) or isinstance(targ, Path)):
                 raise Exception("Log messages should be of type string!")
 
-            try:
-                print("trying file")
+            if isinstance(targ, Path):
                 if Path(targ).expanduser().exists():
                     print("file exists")
-                    msg.add_file(targ)
-            except:
-                print("this is text")
+                    msg.add_file(targ.as_posix())
+            else:
+                targ = str(targ)
                 if text_encoding == "markdown":
-                    print("markdown warning")
-                    msg.add_text(markdown(targ))
+                    msg.add_text(markdown(targ, extensions=markdown_extensions))
+                elif text_encoding == "html":
+                    msg.add_text(targ)
                 else:
                     msg.add_text(targ)
+
         for tag in tags:
             msg.add_tag(tag)
 

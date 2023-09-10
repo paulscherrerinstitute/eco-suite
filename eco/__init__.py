@@ -4,3 +4,5 @@ except:
     print("cannot import Prototypic protocol classes")
 
 from eco.elements.assembly import Assembly
+
+ELOG = None
