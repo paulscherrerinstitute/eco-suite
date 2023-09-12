@@ -427,6 +427,11 @@ namespace.append_obj(
     "Pprm",
     "SAROP21-PPRM113",
     "SAROP21-PPRM113",
+    bs_channels={
+        "intensity": "SAROP21-PPRM113:intensity",
+        "xpos": "SAROP21-PPRM113:x_fit_mean",
+        "ypos": "SAROP21-PPRM113:y_fit_mean",
+    },
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_mono",
     in_target=3,

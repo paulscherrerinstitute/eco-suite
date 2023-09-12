@@ -774,6 +774,11 @@ class Run_Table_DataFrame(DataFrame):
             good_dev_adj = {}
             bad_dev_adj = {}
             for name, adj in adjs.items():
+                try:
+                    adj.get_current_value()
+                except Exception as e:
+                    print(f"get_current_value() method of {name} failed with {e}")
+                    continue
                 if check_for_current_none_values and (adj.get_current_value() is None):
                     bad_dev_adj[name] = adj
                 else:
