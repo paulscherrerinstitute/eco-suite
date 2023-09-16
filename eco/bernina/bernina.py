@@ -44,31 +44,37 @@ from eco.elements.adj_obj import AdjustableObject
 
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
 
+#namespace.append_obj(
+#    "Elog",
+#    "https://elog-gfa.psi.ch/Bernina",
+#    screenshot_directory="/tmp",
+#    name="elog_gfa",
+#    module_name="eco.utilities.elog",
+#)
+
+#namespace.append_obj(
+#    "Elog",
+#    pgroup_adj=config_bernina.pgroup,
+#    name="scilog",
+#    module_name="eco.utilities.elog_scilog",
+#)
+
+#namespace.append_obj(
+#    "ElogsMultiplexer",
+#    scilog,
+#    elog_gfa,
+#    name="elog",
+#    module_name="eco.utilities.elog",
+#)
 namespace.append_obj(
     "Elog",
     "https://elog-gfa.psi.ch/Bernina",
     screenshot_directory="/tmp",
-    name="elog_gfa",
-    module_name="eco.utilities.elog",
-)
-
-namespace.append_obj(
-    "Elog",
-    pgroup_adj=config_bernina.pgroup,
-    name="scilog",
-    module_name="eco.utilities.elog_scilog",
-)
-
-namespace.append_obj(
-    "ElogsMultiplexer",
-    scilog,
-    elog_gfa,
     name="elog",
     module_name="eco.utilities.elog",
 )
 
 eco.ELOG = elog
-
 namespace.append_obj(
     "DummyAdjustable",
     module_name="eco.elements.adjustable",
@@ -1418,7 +1424,6 @@ def _create_metadata_structure_start_scan(
         print("elog posting failed")
     if not append_status_info:
         return
-    t_start_rt = time.time()
     d = {}
     ## use values from status for run_table
     try:
@@ -1427,6 +1432,7 @@ def _create_metadata_structure_start_scan(
         d.update(status["status"])
     except:
         print("Tranferring values from status to run_table did not work")
+    t_start_rt = time.time()
     try:
         run_table.append_run(runno, metadata=metadata, d=d)
     except:
@@ -1441,6 +1447,15 @@ namespace.append_obj(
     "CheckerCA",
     module_name="eco.acquisition.checkers",
     pvname="SLAAR21-LTIM01-EVR0:CALCI",
+    thresholds=[0.2, 10],
+    required_fraction=0.6,
+    name="checker_ioxos_old",
+)
+
+namespace.append_obj(
+    "CheckerBS",
+    module_name="eco.acquisition.checkers",
+    bs_channel="SAROP21-PBPS133:INTENSITY",
     thresholds=[0.2, 10],
     required_fraction=0.6,
     name="checker",
@@ -2262,7 +2277,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "StageLxtDelay",
-    las.delay_glob,
+    las.delay_pump,
     las.xlt,
     lazy=True,
     name="lxt",
@@ -2457,12 +2472,23 @@ class IlluminatorsLasers(Assembly):
         self._append(
             MpodChannel,
             pvbase="SARES21-CPCL-PS7071",
-            channel_number=2,
+            channel_number=4,
             name="flattening_laser",
         )
 
 
 namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
+
+## Timetool feedback
+namespace.append_obj(
+    "Feedback_Timetool",
+    name="tt_kb_feedback",
+    pvname="SLAAR21-SPECTT:AT",
+    control_adj=dummy_adjustable,
+    lazy=True,
+    module_name="eco.utilities.feedback",
+)
+
 
 
 ## LIQUID jet setup

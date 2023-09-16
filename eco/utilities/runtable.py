@@ -386,10 +386,6 @@ class Run_Table2:
     def __repr__(self):
         return self.__str__()
 
-    ###### diagnostic and convencience functions ######
-    def run_table_from_old_pgroup(pgroup):
-        return 
-
     def check_timeouts(self, include_bad_adjustables=True, plot=True, repeats=1):
         return self._data.check_timeouts(include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats)
 

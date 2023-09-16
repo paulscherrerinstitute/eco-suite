@@ -84,9 +84,17 @@ class Scan:
         self.nextStep = 0
         self.basepath = basepath
         self.scan_info_dir = scan_info_dir
+
+        anames = []
+        for ta in adjustables:
+            try:
+                anames.append(ta.alias.get_full_name())
+            except:
+                anames.append(ta.name)
+
         self.scan_info = {
             "scan_parameters": {
-                "name": [ta.name for ta in adjustables],
+                "name": anames,
                 "Id": [ta.Id if hasattr(ta, "Id") else "noId" for ta in adjustables],
             },
             "scan_values_all": values,
@@ -406,7 +414,6 @@ class Scans:
         return_at_end=True,
         **kwargs_callbacks,
     ):
-
         adjustable = DummyAdjustable()
 
         positions = list(range(N_repetitions))

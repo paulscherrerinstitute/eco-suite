@@ -436,6 +436,7 @@ class MotorRecord(Assembly):
         is_psi_mforce=False,
         schneider_config=None,
         expect_bad_limits=True,
+        has_park_pv=False,
     ):
         super().__init__(name=name)
         # self.settings.append(self)
@@ -521,6 +522,14 @@ class MotorRecord(Assembly):
             name="description",
             is_setting=True,
         )
+
+        if has_park_pv:
+            self._append(
+                AdjustablePv,
+                self.pvname + "_KILL",
+                name="parked",
+                is_setting=True,
+            )
         if backlash_definition:
             self._append(
                 AdjustablePv,

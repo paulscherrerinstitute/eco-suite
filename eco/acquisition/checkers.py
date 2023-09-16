@@ -3,6 +3,8 @@ import numpy as np
 from ..elements.adjustable import AdjustableFS
 from ..epics.adjustable import AdjustablePv
 from ..epics.detector import DetectorPvDataStream
+from ..detector.detectors_psi import DetectorBsStream
+
 from ..elements.assembly import Assembly
 
 
@@ -10,6 +12,51 @@ class CheckerCA(Assembly):
     def __init__(self, pvname=None, thresholds=None, required_fraction=None, name=None):
         super().__init__(name=name)
         self._append(DetectorPvDataStream, pvname, name="monitor")
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
+            default_value=sorted(thresholds),
+            name="thresholds",
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+            default_value=required_fraction,
+            name="required_fraction",
+        )
+
+    def check_now(self):
+        cv = self.monitor.get_current_value()
+        thresholds = self.thresholds()
+        if cv > thresholds[0] and cv < thresholds[1]:
+            return True
+        else:
+            return False
+
+    # def append_to_data(self, **kwargs):
+    #     self.data.append(kwargs["value"])
+
+    def clear_and_start_counting(self):
+        self.monitor.accumulate_start()
+
+    # def stopcounting(self):
+    #     self.PV.clear_callbacks()
+
+    def stop_and_analyze(self):
+        data = np.asarray(self.monitor.accumulate_stop())
+        thresholds = self.thresholds()
+        good = np.logical_and(data > thresholds[0], data < thresholds[1])
+        fraction = good.sum() / len(good)
+        isgood = fraction >= self.required_fraction()
+        if not isgood:
+            print(f"Checker: {fraction*100}% inside limits {self.thresholds()},")
+            print(f"         given limit was {self.required_fraction()*100}%.")
+        return fraction >= self.required_fraction()
+
+class CheckerBS(Assembly):
+    def __init__(self, bs_channel=None, thresholds=None, required_fraction=None, name=None):
+        super().__init__(name=name)
+        self._append(DetectorBsStream, bs_channel, name="monitor")
         self._append(
             AdjustableFS,
             "/photonics/home/gac-bernina/eco/configuration/checker_thresholds",

@@ -217,10 +217,16 @@ class StageLxtDelay(Assembly):
         else:
             ps_pos = self.offset_coarse_adj.get_current_value() + delay
             pd_pos = self.offset_fine_adj.get_current_value()
-        return (
-            self._direction.get_current_value() * pd_pos,
-            self._direction.get_current_value() * ps_pos,
-        )
+        
+        if pd_pos is None:
+            outfine = None
+        else:
+            outfine = self._direction.get_current_value() * pd_pos,
+        if ps_pos is None:
+            outcoarse = None
+        else:
+            outcoarse = self._direction.get_current_value() * ps_pos,
+        return (outfine,outcoarse)
 
 
 class Stage_LXT_Delay(AdjustableVirtual):

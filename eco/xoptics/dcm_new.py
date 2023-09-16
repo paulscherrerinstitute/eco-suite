@@ -17,6 +17,7 @@ from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 from eco.xoptics.dcm_pathlength_compensation import MonoTimecompensation
 
+
 @spec_convenience
 @update_changes
 @tweak_option
@@ -28,7 +29,7 @@ class DoubleCrystalMono(Assembly):
         energy_sp="SAROP21-ARAMIS:ENERGY_SP",
         energy_rb="SAROP21-ARAMIS:ENERGY",
         fel=None,
-        las = None,
+        las=None,
         undulator_deadband_eV=None,
     ):
         super().__init__(name=name)
@@ -36,6 +37,29 @@ class DoubleCrystalMono(Assembly):
         self._las = las
         self.undulator_deadband_eV = undulator_deadband_eV
         self.pvname = pvname
+
+        self._append(
+            AdjustablePvEnum,
+            self.pvname + ":MODE",
+            pvname_set=self.pvname + ":MODE_SP",
+            name="mode",
+        )
+
+        self._append(
+            AdjustablePvEnum,
+            self.pvname + ":CRYSTAL",
+            pvname_set=self.pvname + ":CRYSTAL_SP",
+            name="crystal",
+        )
+
+        self._append(
+            AdjustablePvEnum,
+            self.pvname + ":DIFF_ORDER",
+            name="diffraction_order",
+        )
+
+        self._append(DcmConfig, self.pvname, name="mono_config")
+
         self._append(
             MotorRecord_new,
             pvname + ":RX12",
@@ -62,6 +86,15 @@ class DoubleCrystalMono(Assembly):
             pvname + ":RZ1",
             name="roll1",
             is_setting=True,
+            has_park_pv=True,
+            view_toplevel_only=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":PIEZO1_VOLTAGE_SP",
+            pvreadbackname=pvname + ":PIEZO1_VOLTAGE",
+            name="roll1_piezo",
+            is_setting=True,
             view_toplevel_only=True,
         )
         self._append(
@@ -76,12 +109,21 @@ class DoubleCrystalMono(Assembly):
             pvname + ":RX2",
             name="pitch2",
             is_setting=True,
+            has_park_pv=True,
+            view_toplevel_only=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvname + ":PIEZO2_VOLTAGE_SP",
+            pvreadbackname=pvname + ":PIEZO2_VOLTAGE",
+            name="pitch2_piezo",
+            is_setting=True,
             view_toplevel_only=True,
         )
         self._append(
             AdjustablePv,
             energy_sp,
-            # pvreadbackname=energy_rb,
+            pvreadbackname=energy_rb,
             accuracy=0.5,
             name="energy",
         )
@@ -178,6 +220,62 @@ class DoubleCrystalMono(Assembly):
             self.energy._pvreadback.remove_callback(index)
         else:
             self.energy._pvreadback.clear_callbacks()
+
+
+class DcmConfig(Assembly):
+    def __init__(self, pvbase, name=None):
+        super().__init__(name=name)
+        self.pvbase = pvbase
+
+        self._append(DetectorPvData, self.pvbase + ":PITCH1_OFF", name="pitch1_offset")
+        self._append(DetectorPvData, self.pvbase + ":ROLL1_OFF", name="roll1_offset")
+        self._append(DetectorPvData, self.pvbase + ":PITCH2_OFF", name="pitch2_offset")
+        self._append(DetectorPvData, self.pvbase + ":ROLL2_OFF", name="roll2_offset")
+        self._append(DetectorPvData, self.pvbase + ":T2_OFF", name="gap_offset")
+        self._append(DetectorPvData, self.pvbase + ":TX_OFF", name="x_offset")
+        self._append(DetectorPvData, self.pvbase + ":T2_MIN", name="gap_min")
+        self._append(DetectorPvData, self.pvbase + ":T2_MAX", name="gap_max")
+        self._append(DcmConfigSet, self.pvbase, "CRY1", name="config_Si111")
+        self._append(DcmConfigSet, self.pvbase, "CRY2", name="config_Si311")
+        self._append(DcmConfigSet, self.pvbase, "CRY3", name="config_InSb111")
+
+
+class DcmConfigSet(Assembly):
+    # SAROP21-ODCM098:PITCH1_CRY1_OFF
+    def __init__(self, pvbase, par_set_name=None, name=None):
+        super().__init__(name=name)
+        self.pvbase = pvbase
+        self.par_set_name = par_set_name
+        self._append(
+            AdjustablePv,
+            self.pvbase + ":PITCH1_" + self.par_set_name + "_OFF",
+            name="pitch1_offset",
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ":ROLL1_" + self.par_set_name + "_OFF",
+            name="roll1_offset",
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ":PITCH2_" + self.par_set_name + "_OFF",
+            name="pitch2_offset",
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ":ROLL2_" + self.par_set_name + "_OFF",
+            name="roll2_offset",
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ":T2_" + self.par_set_name + "_OFF",
+            name="gap_offset",
+        )
+        self._append(
+            AdjustablePv,
+            self.pvbase + ":TX_" + self.par_set_name + "_OFF",
+            name="x_offset",
+        )
 
 
 @spec_convenience
