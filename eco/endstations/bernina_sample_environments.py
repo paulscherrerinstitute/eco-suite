@@ -43,8 +43,8 @@ class High_field_thz_chamber(Assembly):
         self.par_out_pos = [35, -9.5]
         self.motor_configuration = {
             "rx": {
-                # "id": "SARES23:ESB13",
-                "id": "SARES23:ESB6",
+                # "id": "SARES23-USR:MOT_13",
+                "id": "SARES23-USR:MOT_6",
                 "pv_descr": "Motor7:1 THz Chamber Rx",
                 "type": 2,
                 "sensor": 1,
@@ -53,8 +53,8 @@ class High_field_thz_chamber(Assembly):
                 "kwargs": {"accuracy": 0.01},
             },
             "x": {
-                # "id": "SARES23:ESB14",
-                "id": "SARES23:ESB15",
+                # "id": "SARES23-USR:MOT_14",
+                "id": "SARES23-USR:MOT_15",
                 "pv_descr": "Motor7:2 THz Chamber x ",
                 "type": 1,
                 "sensor": 0,
@@ -62,8 +62,8 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "z": {
-                # "id": "SARES23:ESB10",
-                "id": "SARES23:LIC16",
+                # "id": "SARES23-USR:MOT_10",
+                "id": "SARES23-LIC:MOT_16",
                 "pv_descr": "Motor6:1 THz Chamber z ",
                 "type": 1,
                 "sensor": 0,
@@ -71,8 +71,8 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "ry": {
-                # "id": "SARES23:ESB11",
-                "id": "SARES23:LIC15",
+                # "id": "SARES23-USR:MOT_11",
+                "id": "SARES23-LIC:MOT_15",
                 "pv_descr": "Motor6:2 THz Chamber Ry",
                 "type": 2,
                 "sensor": 1,
@@ -80,8 +80,8 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "rz": {
-                # "id": "SARES23:ESB12",
-                "id": "SARES23:ESB4",
+                # "id": "SARES23-USR:MOT_12",
+                "id": "SARES23-USR:MOT_4",
                 "pv_descr": "Motor6:3 THz Chamber Rz",
                 "type": 2,
                 "sensor": 1,
@@ -292,7 +292,7 @@ class Organic_crystal_breadboard(Assembly):
         self.motor_configuration = {
             "mir_x": {
                 # "id": "-LIC17",
-                "id": ":ESB8",
+                "id": "-USR:MOT_8",
                 "pv_descr": "Motor8:2 THz mirror x ",
                 "type": 1,
                 "sensor": 13,
@@ -301,7 +301,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "mir_rz": {
                 # "id": "-LIC18",
-                "id": ":ESB9",
+                "id": "-USR:MOT_9",
                 "pv_descr": "Motor8:3 THz mirror rz ",
                 "type": 1,
                 "sensor": 13,
@@ -310,7 +310,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "mir_ry": {
                 # "id": "-ESB1",
-                "id": ":LIC18",
+                "id": "-LIC:MOT_18",
                 "pv_descr": "Motor3:1 THz mirror ry ",
                 "type": 2,
                 "sensor": 1,
@@ -319,7 +319,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "mir_z": {
                 # "id": "-LIC16",
-                "id": ":ESB7",
+                "id": "-USR:MOT_7",
                 "pv_descr": "Motor8:1 THz mirror z",
                 "type": 1,
                 "sensor": 13,
@@ -328,7 +328,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "par_x": {
                 # "id": "-ESB3",
-                "id": ":LIC17",
+                "id": "-LIC:MOT_17",
                 "pv_descr": "Motor3:3 THz parabola2 x",
                 "type": 1,
                 "sensor": 0,
@@ -337,7 +337,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "delaystage_thz": {
                 # "id": "-ESB18",
-                "id": ":ESB1",
+                "id": "-USR:MOT_1",
                 "pv_descr": "Motor8:3 NIR delay stage",
                 "type": 1,
                 "sensor": 0,
@@ -346,7 +346,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "nir_m1_ry": {
                 # "id": "-ESB17",
-                "id": ":ESB3",
+                "id": "-USR:MOT_3",
                 "pv_descr": "Motor8:2 near IR mirror 1 ry",
                 "type": 2,
                 "sensor": 1,
@@ -354,7 +354,7 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "nir_m1_rx": {
-                "id": ":ESB16",
+                "id": "-USR:MOT_16",
                 "pv_descr": "Motor8:1 near IR mirror 1 rx",
                 "type": 2,
                 "sensor": 1,
@@ -363,7 +363,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "nir_m2_ry": {
                 # "id": "-ESB9",
-                "id": ":ESB14",
+                "id": "-USR:MOT_14",
                 "pv_descr": "Motor5:3 near IR mirror 2 ry",
                 "type": 2,
                 "sensor": 1,
@@ -371,8 +371,8 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "nir_m2_rx": {
-                # "id": ":ESB4",
-                "id": ":ESB12",
+                # "id": "-USR:MOT_4",
+                "id": "-USR:MOT_12",
                 "pv_descr": "Motor4:1 near IR mirror 2 rx",
                 "type": 1,
                 "sensor": 13,
@@ -380,7 +380,7 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "crystal": {
-                "id": ":ESB2",
+                "id": "-USR:MOT_2",
                 "pv_descr": "Motor3:2 crystal rotation",
                 "type": 2,
                 "sensor": 1,
@@ -388,7 +388,7 @@ class Organic_crystal_breadboard(Assembly):
                 "home_direction": "back",
             },
             "wp": {
-                "id": ":ESB7",
+                "id": "-USR:MOT_7",
                 "pv_descr": "Motor5:1 waveplate rotation",
                 "type": 2,
                 "sensor": 1,

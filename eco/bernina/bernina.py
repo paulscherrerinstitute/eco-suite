@@ -44,35 +44,38 @@ from eco.elements.adj_obj import AdjustableObject
 
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
 
-#namespace.append_obj(
-#    "Elog",
-#    "https://elog-gfa.psi.ch/Bernina",
-#    screenshot_directory="/tmp",
-#    name="elog_gfa",
-#    module_name="eco.utilities.elog",
-#)
-
-#namespace.append_obj(
-#    "Elog",
-#    pgroup_adj=config_bernina.pgroup,
-#    name="scilog",
-#    module_name="eco.utilities.elog_scilog",
-#)
-
-#namespace.append_obj(
-#    "ElogsMultiplexer",
-#    scilog,
-#    elog_gfa,
-#    name="elog",
-#    module_name="eco.utilities.elog",
-#)
 namespace.append_obj(
     "Elog",
     "https://elog-gfa.psi.ch/Bernina",
     screenshot_directory="/tmp",
+    name="elog_gfa",
+    module_name="eco.utilities.elog",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "Elog",
+    pgroup_adj=config_bernina.pgroup,
+    name="scilog",
+    module_name="eco.utilities.elog_scilog",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "ElogsMultiplexer",
+    scilog,
+    elog_gfa,
     name="elog",
     module_name="eco.utilities.elog",
+    lazy=True,
 )
+# namespace.append_obj(
+#     "Elog",
+#     "https://elog-gfa.psi.ch/Bernina",
+#     screenshot_directory="/tmp",
+#     name="elog",
+#     module_name="eco.utilities.elog",
+# )
 
 eco.ELOG = elog
 namespace.append_obj(
@@ -109,7 +112,7 @@ namespace.append_obj(
     "EventWorker",
     name="bs_worker",
     module_name="escape.stream",
-    lazy=False,
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -200,19 +203,19 @@ namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_kb",
     def_blade_up={
-        "args": [SmaractRecord, "SARES23:LIC2"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_2"],
         "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES23:LIC1"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_1"],
         "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES23:LIC9"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_9"],
         "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES23:LIC4"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_4"],
         "kwargs": {},
     },
     module_name="eco.xoptics.slits",
@@ -254,19 +257,19 @@ namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_cleanup",
     def_blade_up={
-        "args": [SmaractRecord, "SARES23:LIC6"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_6"],
         "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES23:LIC5"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_5"],
         "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES23:LIC8"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_8"],
         "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES23:LIC7"],
+        "args": [SmaractRecord, "SARES23-LIC:MOT_7"],
         "kwargs": {},
     },
     module_name="eco.xoptics.slits",
@@ -473,7 +476,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "SolidTargetDetectorBerninaUSD",
-    "SARES23:LIC12",
+    "SARES23-LIC:MOT_12",
     # diode_channels_raw={
     #     "up":   "",
     #     "down": "",
@@ -552,13 +555,13 @@ namespace.append_obj(
     "ProfKbBernina",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_kb",
-    pvname_mirror="SARES23:LIC11",
+    pvname_mirror="SARES23-LIC:MOT_11",
     lazy=True,
 )
 namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
-    pvname_mirror="SARES23:LIC11",
+    pvname_mirror="SARES23-LIC:MOT_11",
     name="tt_kb",
     lazy=True,
 )
@@ -797,7 +800,6 @@ namespace.append_obj(
     configuration=config_bernina.xrd_config(),
     detectors=[
         {"name": "det_diff", "jf_id": "JF01T03V01"},
-        {"name": "det_fluo", "jf_id": "JF04T01V01"},
     ],
     pgroup_adj=config_bernina.pgroup,
     configsjf_adj=config_JFs,
@@ -879,15 +881,16 @@ namespace.append_obj(
     lazy=True,
 )
 
-namespace.append_obj(
-    "DetectorRobot",
-    JF_detector_id="JF01T03V01",
-    JF_detector_name="det_diff",
-    pgroup_adj=config_bernina.pgroup,
-    config_adj=config_JFs,
-    module_name="eco.endstations.bernina_robot",
-    name="robot",
-)
+#namespace.append_obj(
+#    "DetectorRobot",
+#    JF_detector_id="JF01T03V01",
+#    JF_detector_name="det_diff",
+#    pgroup_adj=config_bernina.pgroup,
+#    config_adj=config_JFs,
+#    module_name="eco.endstations.bernina_robot",
+#    lazy=True,
+#    name="robot",
+#)
 
 namespace.append_obj(
     "MpodModule",
@@ -896,6 +899,7 @@ namespace.append_obj(
     ["ch1", "ch2", "ch3", "ch4"],
     module_string="LV_OMPV_1",
     name="power_LV_patch1",
+    lazy=True,
     module_name="eco.devices_general.powersockets",
 )
 
@@ -906,6 +910,7 @@ namespace.append_obj(
     ["ch1", "ch2", "ch3", "ch4"],
     module_string="LV_OMPV_1",
     name="power_LV_patch2",
+    lazy=True,
     module_name="eco.devices_general.powersockets",
 )
 
@@ -1036,12 +1041,15 @@ def _append_namesace_status_to_scan(
 
 
 def _write_namespace_status_to_scan(
-    scan, daq=daq, namespace=namespace, append_status_info=True, **kwargs
+    scan, daq=daq, namespace=namespace, append_status_info=True, end_scan=True, **kwargs
 ):
     if not append_status_info:
         return
-    namespace_status = namespace.get_status(base=None)
-    scan.status["status_run_end"] = namespace_status
+    if end_scan:
+        namespace_status = namespace.get_status(base=None)
+        scan.status["status_run_end"] = namespace_status
+    if (not end_scan) and not (len(scan.values_done) == 1):
+        return
     runno = daq.get_last_run_number()
     pgroup = daq.pgroup
     tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/stat_run{runno:04d}")
@@ -1066,30 +1074,44 @@ def _write_namespace_status_to_scan(
     scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
 
 
-def _write_namespace_aliases_to_scan(scan, daq=daq, **kwargs):
-    namespace_aliases = namespace.alias.get_all()
-    runno = daq.get_last_run_number()
-    pgroup = daq.pgroup
-    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/aliases_run{runno:04d}")
-    tmpdir.mkdir(exist_ok=True, parents=True)
-    aliasfile = tmpdir / Path("aliases.json")
-    if not Path(aliasfile).exists():
-        with open(aliasfile, "w") as f:
-            json.dump(namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4)
-    else:
-        with open(aliasfile, "r+") as f:
-            f.seek(0)
-            json.dump(namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4)
-            f.truncate()
-    response = daq.append_aux(
-        aliasfile.resolve().as_posix(),
-        pgroup=pgroup,
-        run_number=runno,
-    )
-    print("####### transfer aliases #######")
-    print(response.json())
-    print("################################")
-    scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
+def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
+    if force or (len(scan.values_done) == 1):
+        namespace_aliases = namespace.alias.get_all()
+        runno = daq.get_last_run_number()
+        pgroup = daq.pgroup
+        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/aliases_run{runno:04d}")
+        tmpdir.mkdir(exist_ok=True, parents=True)
+        aliasfile = tmpdir / Path("aliases.json")
+        if not Path(aliasfile).exists():
+            with open(aliasfile, "w") as f:
+                json.dump(
+                    namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                )
+        else:
+            with open(aliasfile, "r+") as f:
+                f.seek(0)
+                json.dump(
+                    namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                )
+                f.truncate()
+
+        scan.remaining_tasks.append(
+            Thread(
+                target=daq.append_aux,
+                args=[aliasfile.resolve().as_posix()],
+                kwargs=dict(pgroup=pgroup, run_number=runno),
+            )
+        )
+        scan.remaining_tasks[-1].start()
+        # response = daq.append_aux(
+        #     aliasfile.resolve().as_posix(),
+        #     pgroup=pgroup,
+        #     run_number=runno,
+        # )
+        print("####### transfer aliases started #######")
+        # print(response.json())
+        # print("################################")
+        scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
 
 
 def _message_end_scan(scan, **kwargs):
@@ -1163,7 +1185,16 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
             f.truncate()
 
     # print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
-    response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
+
+    scan.remaining_tasks.append(
+        Thread(
+            target=daq.append_aux,
+            args=[scaninfofile.as_posix()],
+            kwargs=dict(pgroup=pgroup, run_number=runno),
+        )
+    )
+    scan.remaining_tasks[-1].start()
+    # response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
     # print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
     # print(
     #     f"--> creating and copying file took{time.time()-t_start} s, presently adding to deadtime."
@@ -1344,14 +1375,28 @@ callbacks_start_scan.append(_increment_daq_run_number)
 callbacks_start_scan.append(append_scan_monitors)
 callbacks_end_step = []
 callbacks_end_step.append(_copy_scan_info_to_raw)
+callbacks_end_step.append(_write_namespace_aliases_to_scan)
+callbacks_end_step.append(
+    lambda scan, daq=daq, namespace=namespace, append_status_info=True, end_scan=True, **kwargs: _write_namespace_status_to_scan(
+        scan,
+        daq=daq,
+        namespace=namespace,
+        append_status_info=append_status_info,
+        end_scan=False,
+        **kwargs,
+    )
+)
 callbacks_end_scan = []
 callbacks_end_scan.append(_write_namespace_status_to_scan)
-callbacks_end_scan.append(_write_namespace_aliases_to_scan)
 callbacks_end_scan.append(_copy_scan_info_to_raw)
+callbacks_end_scan.append(
+    lambda scan, daq=daq, force=True, **kwargs: _write_namespace_aliases_to_scan(
+        scan, daq=daq, force=force, **kwargs
+    )
+)
 callbacks_end_scan.append(_copy_selected_JF_pedestals_to_raw)
 callbacks_end_scan.append(end_scan_monitors)
 callbacks_end_scan.append(_message_end_scan)
-
 
 # >>>> Extract for run_table and elog
 
@@ -1421,7 +1466,8 @@ def _create_metadata_structure_start_scan(
             {"elog_post_link": scan._elog[1]._log._url + str(scan._elog_id)}
         )
     except:
-        print("elog posting failed")
+        print("Elog posting failed with:")
+        traceback.print_exc()
     if not append_status_info:
         return
     d = {}
@@ -1449,6 +1495,7 @@ namespace.append_obj(
     pvname="SLAAR21-LTIM01-EVR0:CALCI",
     thresholds=[0.2, 10],
     required_fraction=0.6,
+    lazy=True,
     name="checker_ioxos_old",
 )
 
@@ -1458,6 +1505,7 @@ namespace.append_obj(
     bs_channel="SAROP21-PBPS133:INTENSITY",
     thresholds=[0.2, 10],
     required_fraction=0.6,
+    lazy=True,
     name="checker",
 )
 
@@ -1653,16 +1701,16 @@ from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 
 #         self.motor_configuration = {
 #             "delaystage_both": {
-#                 "id": "SARES23:ESB15",
+#                 "id": "SARES23-USR:MOT_15",
 #             },
 #             "delaystage_pulse2": {
-#                 "id": "SARES23:ESB1",
+#                 "id": "SARES23-USR:MOT_1",
 #             },
 #             "wp_both": {
-#                 "id": "SARES23:ESB3",
+#                 "id": "SARES23-USR:MOT_3",
 #             },
 #             "wp_pulse2": {
-#                 "id": "SARES23:ESB2",
+#                 "id": "SARES23-USR:MOT_2",
 #             },
 #         }
 #         for name, config in self.motor_configuration.items():
@@ -1740,9 +1788,9 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:ESB12", name="ver", is_setting=True)
-        self._append(SmaractRecord, "SARES23:ESB11", name="hor", is_setting=True)
-        # self._append(SmaractRecord, "SARES23:ESB11", name="x", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_12", name="ver", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_11", name="hor", is_setting=True)
+        # self._append(SmaractRecord, "SARES23-USR:MOT_11", name="x", is_setting=True)
         # self._append(
         #     MotorRecord,
         #     "SLAAR21-LMOT-M521:MOTOR_1",
@@ -1821,20 +1869,20 @@ namespace.append_obj(
 # class LaserSteering(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
-#         self._append(SmaractRecord, "SARES23:ESB3", name="mirr1_pitch", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB4", name="mirr1_roll", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB14", name="mirr2_pitch", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB12", name="mirr2_roll", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_3", name="mirr1_pitch", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_4", name="mirr1_roll", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_14", name="mirr2_pitch", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_12", name="mirr2_roll", is_setting=True)
 
 # class THzGeneration(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
-#         self._append(SmaractRecord, "SARES23:LIC16", name="par_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB8", name="mirr_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB7", name="mirr_z", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC18", name="mirr_ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB9", name="mirr_rz", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC15", name="polarizer", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="par_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_8", name="mirr_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_7", name="mirr_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_18", name="mirr_ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_9", name="mirr_rz", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="polarizer", is_setting=True)
 
 
 # class THzVirtualStages(Assembly):
@@ -1914,12 +1962,12 @@ namespace.append_obj(
 # class THz(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
-#         self._append(SmaractRecord, "SARES23:ESB6", name="par_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_6", name="par_x", is_setting=True)
 #         self._append(MotorRecord, "SARES20-MF1:MOT_10", name="par_y", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC13", name="par_z", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC14", name="par_rx", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB15", name="par_ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB1", name="delaystage_thz", is_setting=True,)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="par_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_14", name="par_rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_15", name="par_ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_1", name="delaystage_thz", is_setting=True,)
 #         self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=False, is_display=True,)
 #         self._append(LaserSteering, name="ir_pointing", is_setting=False)
 #         self._append(THzGeneration, name="generation", is_setting=False)
@@ -1945,18 +1993,18 @@ namespace.append_obj(
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
 
-#         self._append(SmaractRecord, "SARES23:ESB5", name="crystal_ROT", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC15", name="ir_1_z", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC13", name="ir_1_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC14", name="ir_1_Rx", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB10", name="ir_2_Rx", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB7", name="ir_2_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB9", name="para_2_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB3", name="thz_mir_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB1", name="thz_mir_z", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB8", name="thz_mir_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB2", name="thz_mir_Rz", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB6", name="focus_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_5", name="crystal_ROT", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="ir_1_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="ir_1_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_14", name="ir_1_Rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_10", name="ir_2_Rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_7", name="ir_2_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_9", name="para_2_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_3", name="thz_mir_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_1", name="thz_mir_z", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_8", name="thz_mir_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_2", name="thz_mir_Rz", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_6", name="focus_z", is_setting=True)
 #         self._append(
 #             MotorRecord,
 #             "SARES20-MF1:MOT_4",
@@ -1964,13 +2012,13 @@ namespace.append_obj(
 #             is_setting=True,
 #             is_display=True,
 #         )
-#         self._append(SmaractRecord, "SARES23:ESB14", name="focus_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB13", name="focus_Rz", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB15", name="focus_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:ESB11", name="focus_Rx", is_setting=True)
-#         self._append(SmaractRecord, "SARES23:LIC18", name="thz_wp", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_14", name="focus_x", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_13", name="focus_Rz", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_15", name="focus_Ry", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-USR:MOT_11", name="focus_Rx", is_setting=True)
+#         self._append(SmaractRecord, "SARES23-LIC:MOT_18", name="thz_wp", is_setting=True)
 #         self._append(
-#             SmaractRecord, "SARES23:LIC16", name="delaystage_thz", is_setting=True
+#             SmaractRecord, "SARES23-LIC:MOT_16", name="delaystage_thz", is_setting=True
 #         )
 #         self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=True)
 #         self._append(
@@ -2041,7 +2089,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "SmaractController",
-    "SARES23:LIC",
+    "SARES23-LIC:MOT_",
     lazy=True,
     name="smaract_ust",
     module_name="eco.motion.smaract",
@@ -2049,7 +2097,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "SmaractController",
-    "SARES23:ESB",
+    "SARES23-USR:MOT_",
     lazy=True,
     name="smaract_user",
     module_name="eco.motion.smaract",
@@ -2095,7 +2143,7 @@ from ..microscopes import MicroscopeMotorRecord
 #         )
 #         self._append(
 #             SmaractRecord,
-#             "SARES23:ESB6",
+#             "SARES23-USR:MOT_6",
 #             name="horizontal",
 #             is_setting=True,
 #             is_display=True,
@@ -2397,7 +2445,7 @@ class Xspect_EH55(Assembly):
             MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal", is_setting=True
         )
         self._append(
-            SmaractRecord, "SARES23:ESB17", name="theta_crystal", is_setting=True
+            SmaractRecord, "SARES23-USR:MOT_17", name="theta_crystal", is_setting=True
         )
         self._append(
             CameraBasler,
@@ -2451,9 +2499,21 @@ class SampleHeaterJet(Assembly):
         self._append(
             WagoSensor, pvbase="SARES20-CWAG-GPS01:TEMP-T11", name="sensor_hexapod"
         )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
+            channel_number=5,
+            name="fan_hexapod_1",
+        )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
+            channel_number=6,
+            name="fan_hexapod_2",
+        )
 
 
-namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
+#namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 
 
 ## sample illumination
@@ -2477,19 +2537,8 @@ class IlluminatorsLasers(Assembly):
         )
 
 
+
 namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
-
-## Timetool feedback
-namespace.append_obj(
-    "Feedback_Timetool",
-    name="tt_kb_feedback",
-    pvname="SLAAR21-SPECTT:AT",
-    control_adj=dummy_adjustable,
-    lazy=True,
-    module_name="eco.utilities.feedback",
-)
-
-
 
 ## LIQUID jet setup
 
@@ -2559,8 +2608,8 @@ namespace.append_obj(
 #         self._append(
 #             AdjustablePv, "KERNVARIABLES:DELAYBETWEENXFELANDLASER", name="delay"
 #         )
-#         self._append(SmaractRecord, "SARES23:ESB18", name="freespace_pitch")
-#         self._append(SmaractRecord, "SARES23:ESB13", name="freespace_roll")
+#         self._append(SmaractRecord, "SARES23-USR:MOT_18", name="freespace_pitch")
+#         self._append(SmaractRecord, "SARES23-USR:MOT_13", name="freespace_roll")
 
 
 #         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")

@@ -21,9 +21,9 @@ ureg = UnitRegistry()
 class IncouplingCleanBernina(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23:LIC17", name="tilt")
-        self._append(SmaractRecord, "SARES23:LIC18", name="rotation")
-        self._append(SmaractRecord, "SARES23:LIC16", name="transl_vertical")
+        self._append(SmaractRecord, "SARES23-LIC:MOT_17", name="tilt")
+        self._append(SmaractRecord, "SARES23-LIC:MOT_18", name="rotation")
+        self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="transl_vertical")
         self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
 
 

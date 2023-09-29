@@ -76,7 +76,8 @@ class Gsheet_API:
     def _append_to_gspread_key_df(self, gspread_key_df):
         if os.path.exists(self._keydf_fname):
             self._key_df = pd.read_pickle(self._keydf_fname)
-            self._key_df = self._key_df.append(gspread_key_df)
+            #deprecated: self._key_df = self._key_df.append(gspread_key_df)
+            self._key_df = pd.concat([self._key_df, gspread_key_df])
             self._key_df.to_pickle(self._keydf_fname)
         else:
             self._key_df.to_pickle(self._keydf_fname)
@@ -100,6 +101,7 @@ class Gsheet_API:
                     {"keys": [spreadsheet.id]},
                     index=[f"{exp_id}"],
                 )
+                print(gspread_key_df)
                 spreadsheet_key = spreadsheet.id
             self._append_to_gspread_key_df(gspread_key_df)
         self._spreadsheet_key = spreadsheet_key
@@ -490,13 +492,15 @@ class Run_Table_DataFrame(DataFrame):
         multiindex = pd.MultiIndex.from_tuples(
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
-        values = np.array([val for adjs in dat.values() for val in adjs.values()])
+        values = np.array([val for adjs in dat.values() for val in adjs.values()], dtype=object)
         index = np.array(
             [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
         )
         # run_df = DataFrame([values], columns=multiindex, index=[runno])
         run_df = DataFrame([values], columns=index, index=[runno])
-        self.df = self.append(run_df)
+        #deprecated: self.df = self.append(run_df)
+        self.df = pd.concat([self.df, run_df])
+
         self._remove_duplicates()
         # self.order_df()
         self.save()
@@ -517,14 +521,15 @@ class Run_Table_DataFrame(DataFrame):
         multiindex = pd.MultiIndex.from_tuples(
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
-        values = np.array([val for adjs in dat.values() for val in adjs.values()])
+        values = np.array([val for adjs in dat.values() for val in adjs.values()], dtype=object)
         index = np.array(
             [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
         )
         # pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
         pos_df = DataFrame([values], columns=index, index=[f"p{posno}"])
 
-        self.df = self.append(pos_df)
+        #deprecated: self.df = self.append(pos_df)
+        self.df = pd.concat([self.df,pos_df])
         self._remove_duplicates()
         # self.order_df()
         self.save()

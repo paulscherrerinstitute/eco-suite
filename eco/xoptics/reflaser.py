@@ -10,7 +10,7 @@ from ..elements.assembly import Assembly
 class RefLaser_BerninaUSD(Assembly):
     def __init__(
         self,
-        pvname_mirrortranslation="SARES23:LIC12",
+        pvname_mirrortranslation="SARES23-LIC:MOT_12",
         pvname_onoff="SARES21-CPCL-PS7071:LV_OMPV_1_CH1_SWITCH_SP",
         elog=None,
         name=None,

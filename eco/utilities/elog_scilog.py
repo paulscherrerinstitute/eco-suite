@@ -27,7 +27,7 @@ def getDefaultElogInstance(
             with open(os.path.join(home, ".scilog_psi"), "r") as f:
                 _pw = f.read().strip()
         except:
-            print("Enter scilog password for user: %s" % kwargs["user"])
+            print(f"Enter scilog password for user: {user}")
             _pw = _getpass()
         kwargs.update(dict(password=_pw))
     log = SciLog(url, options := {"username": user, "password": kwargs["password"]})

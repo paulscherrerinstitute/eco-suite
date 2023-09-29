@@ -845,10 +845,12 @@ class XRDYou(Assembly):
         kappa_angle=60,
         degrees=True,
         bernina_kappa=True,
-        invert_elbow=False,
+        invert_elbow=None,
     ):
         """tool to convert from you definition angles to kappa angles, in
         particular the bernina kappa where the"""
+        if invert_elbow is None:
+            invert_elbow = self.invert_kappa_ellbow
         if bernina_kappa:
             eta = -eta
             phi = -phi
@@ -869,16 +871,16 @@ class XRDYou(Assembly):
         if bernina_kappa:
             eta_k = eta_k - np.pi / 2
             kappa = -kappa
-        if False:
+        if True:
 
             def flip_ang(ang):
-                if 1 < abs(ang // np.pi):
+                if 2 <= abs(ang // np.pi):
                     return ang - np.sign(ang) * np.pi * 2
                 else:
                     return ang
 
-            # phi_k = flip_ang(phi_k)
-            phi_k = phi_k + np.pi * 2
+            phi_k = flip_ang(phi_k)
+            # phi_k = phi_k + np.pi * 2
             eta_k = flip_ang(eta_k)
             kappa = flip_ang(kappa)
         if degrees:
@@ -893,8 +895,10 @@ class XRDYou(Assembly):
         kappa_angle=60,
         degrees=True,
         bernina_kappa=True,
-        invert_elbow=False,
+        invert_elbow=None,
     ):
+        if invert_elbow is None:
+            invert_elbow = self.invert_kappa_ellbow
         if degrees:
             eta_k, kappa, phi_k, kappa_angle = np.deg2rad(
                 [eta_k, kappa, phi_k, kappa_angle]

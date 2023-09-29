@@ -30,7 +30,7 @@ class TimetoolBerninaUSD(Assembly):
         spectrometer_pvname="SARES20-CAMS142-M5",
         microscope_pvname="SARES20-PROF141-M1",
         delaystage_PV="SLAAR21-LMOT-M524:MOTOR_1",
-        pvname_mirror="SARES23:LIC9",
+        pvname_mirror="SARES23-LIC:MOT_9",
         pvname_zoom="SARES20-MF1:MOT_8",
         mirror_in=15,
         mirror_out=-5,

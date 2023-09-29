@@ -108,3 +108,40 @@ class OptoSigmaZoom(Assembly):
 
     def set_target_value(self, value, **kwargs):
         return self.zoom.set_target_value(value, **kwargs)
+    
+
+@spec_convenience
+class FeturaPlusZoom(Assembly):
+    def __init__(
+        self,
+        pv_get_position="SARES20-FETURA:POS_RB",
+        pv_set_position="SARES20-FETURA:POS_SP",
+        
+        name=None,
+    ):
+        super().__init__(name=name)
+        self.settings_collection.append(self)
+        self._append(
+            AdjustablePv,
+            pv_set_position,
+            pv_get_position,
+            accuracy=1,
+            name="zoom_raw",
+            is_setting=False,
+        )
+        
+        self._append(
+            AdjustableVirtual,
+            [self.zoom_raw],
+            lambda x: abs(round(x / 1000 * 100) - 100),
+            lambda x: round(abs(x - 100) / 100 * 1000),
+            name="zoom",
+            is_setting=False,
+        )
+
+    def get_current_value(self):
+        return self.zoom.get_current_value()
+
+    def set_target_value(self, value, **kwargs):
+        return self.zoom.set_target_value(value, **kwargs)
+

@@ -21,8 +21,8 @@ class Att_usd(Assembly):
         self.E = None
         self.E_min = 1500
         self._sleeptime = 1
-        self._append(SmaractRecord, "SARES23:LIC10", name="transl_2", is_setting=True, is_display=True)
-        self._append(SmaractRecord, "SARES23:LIC3", name="transl_1", is_setting=True, is_display=True)
+        self._append(SmaractRecord, "SARES23-LIC:MOT_10", name="transl_2", is_setting=True, is_display=True)
+        self._append(SmaractRecord, "SARES23-LIC:MOT_3", name="transl_1", is_setting=True, is_display=True)
         self.motor_configuration = {
             "transl_2": {
                 "id": "SARES23-LIC10",
