@@ -139,6 +139,20 @@ class TimetoolBerninaUSD(Assembly):
         # SARES20-CAMS142-M5.psen_signal_x_profile
         #
         #
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LFEEDBACK1:TARGET1",
+            name="feedback_setpoint",
+            accuracy=10,
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LFEEDBACK1:ENABLE",
+            name="feedback_enabled",
+            accuracy=10,
+            is_setting=True,
+        )
 
         self._append(
             DetectorBsStream,

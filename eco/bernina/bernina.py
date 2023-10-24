@@ -1496,7 +1496,7 @@ namespace.append_obj(
     thresholds=[0.2, 10],
     required_fraction=0.6,
     lazy=True,
-    name="checker_ioxos_old",
+    name="checker",
 )
 
 namespace.append_obj(
@@ -1506,7 +1506,7 @@ namespace.append_obj(
     thresholds=[0.2, 10],
     required_fraction=0.6,
     lazy=True,
-    name="checker",
+    name="checker_mon_opt_new",
 )
 
 namespace.append_obj(

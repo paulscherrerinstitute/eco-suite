@@ -16,6 +16,10 @@ class SmaractController(Assembly):
                 is_display=True,
             )
             self.all_stages.append(self.__dict__[f"stage{n}"])
-
+        self.set_autozero_on()
     def home_all(self):
         pass
+
+    def set_autozero_on(self):
+        for stg in self.all_stages:
+            stg.motor_parameters.autozero_on_homing(1)

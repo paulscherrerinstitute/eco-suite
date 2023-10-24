@@ -79,6 +79,6 @@ term.set_title()
 from IPython import get_ipython
 
 _ipy = get_ipython()
-_ipy.Completer.use_jedi = False
+_ipy.Completer.use_jedi = True
 # print(arguments)
 # _ipy.magic("load_ext rich")

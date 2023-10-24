@@ -322,7 +322,7 @@ class Run_Table2:
         return DataFrame(self._data)
     ###### diagnostic and convencience functions ######
 
-    def run_table_from_other_pgroup(pgroup):
+    def run_table_from_other_pgroup(self, pgroup):
         """
         returns a run_table instance of the specified pgroup
         note: this does neither replace the current run_table nor switch the automatic appending of data to a new run_table or pgroup
