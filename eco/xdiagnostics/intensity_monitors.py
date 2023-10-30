@@ -1028,8 +1028,8 @@ class SolidTargetDetectorPBPS_assembly(Assembly):
     def get_calibration_values_position(
         self, calib_intensities, seconds=5, motion_range=0.2
     ):
-        self.x_diodes.set_limits(-motion_range / 2 - 0.1, +motion_range / 2 + 0.1)
-        self.y_diodes.set_limits(-motion_range / 2 - 0.1, +motion_range / 2 + 0.1)
+        self.x_diodes.set_limits(-motion_range / 2 - 0.3, +motion_range / 2 + 0.3)
+        self.y_diodes.set_limits(-motion_range / 2 - 0.3, +motion_range / 2 + 0.3)
         self.x_diodes.set_target_value(0).wait()
         self.y_diodes.set_target_value(0).wait()
         raw = []
@@ -1284,8 +1284,8 @@ class SolidTargetDetectorBerninaUSD(Assembly):
     def get_calibration_values_position(
         self, calib_intensities, seconds=5, motion_range=0.2
     ):
-        self.x_diodes.set_limits(-motion_range / 2 - 0.1, +motion_range / 2 + 0.1)
-        self.y_diodes.set_limits(-motion_range / 2 - 0.1, +motion_range / 2 + 0.1)
+        self.x_diodes.set_limits(-motion_range / 2 - 0.3, +motion_range / 2 + 0.3)
+        self.y_diodes.set_limits(-motion_range / 2 - 0.3, +motion_range / 2 + 0.3)
         self.x_diodes.set_target_value(0).wait()
         self.y_diodes.set_target_value(0).wait()
         raw = []

@@ -73,14 +73,19 @@ class Feedback(Assembly):
         output_limits=None,
         running_path=None,
         sample_time=None,
+        callback_start_feedback=None,
+        callback_stop_feedback=None,
         callback_start_control=None,
         callback_stop_control=None,
     ):
         super().__init__(name=name)
         self.foo_detector = foo_detector
         self.control_adj = control_adj
+        self.callback_start_feedback = callback_start_feedback
+        self.callback_stop_feedback = callback_stop_feedback
         self.callback_start_control = callback_start_control
         self.callback_stop_control = callback_stop_control
+        self.feedback_history = []
 
         if type(setpoint) is str or isinstance(setpoint, Path):
             self._append(
@@ -134,14 +139,14 @@ class Feedback(Assembly):
             )
 
         if running_path:
-            self._append(AdjustableFS, running_path, "running")
+            self._append(AdjustableFS, running_path, name="running")
         else:
-            self._append(AdjustableMemory, False, running_path, "running")
+            self._append(AdjustableMemory, False, name="running")
 
     def create_new_pid(self, start_control_output=None):
         if start_control_output is None:
             start_control_output = self.control_adj.get_current_value()
-        self.pid = PID(
+        self.pid_object = PID(
             *self.pid.get_current_value(),
             setpoint=self.setpoint.get_current_value(),
             output_limits=self.output_limits.get_current_value(),
@@ -151,20 +156,31 @@ class Feedback(Assembly):
 
     def stop(self):
         self.running.set_target_value(False)
+        try:
+            self.feedback.join()
+        except:
+            print("could not stop feedback thread, not running here?")
+        if self.callback_stop_feedback:
+            self.callback_stop_feedback()
 
     def run_continuously(self):
         while self.running.get_current_value():
             valcurr = self.foo_detector()
-            set_val = self.pid(valcurr)
+            set_val = self.pid_object(valcurr)
             if self.callback_start_control:
                 self.callback_start_control()
             self.control_adj.set_target_value(set_val).wait()
+            self.feedback_history.append([valcurr, set_val])
             if self.callback_stop_control:
                 self.callback_stop_control()
 
     def start_feedback(self):
+        if self.callback_start_feedback:
+            self.callback_start_feedback()
+        self.create_new_pid()
         self.running.set_target_value(True).wait()
         self.feedback = Thread(target=self.run_continuously)
+        self.feedback.start()
 
 
 class FeedbackContextManager(object):

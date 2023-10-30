@@ -421,6 +421,92 @@ class SmaractStreamdevice(Assembly):
             f'caqtdm -macro "P={nam},M={num}" /ioc/qt/ESB_MX_SmarAct_mot_exp.ui'
         )
 
+#@get_from_archive
+@spec_convenience
+@update_changes
+@value_property
+class PshellMotor(Assembly):
+    def __init__(
+        self,
+        pc=None,
+        name=None,
+        elog=None,
+        offset_file=None,
+    ):
+        super().__init__(name=name)
+
+    def set_target_value(self, value, hold=False, check=True):
+
+        changer = lambda value: self.move(value, check=check)
+
+        return Changer(
+            target=value,
+            parent=self,
+            changer=changer,
+            hold=hold,
+            stopper=self.stop,
+        )
+
+    def move(self, value, check=False):
+#        if check:
+#            lim_low, lim_high = self.get_limits()
+#            if not (lim_low < value) and (value < lim_high):
+#                raise AdjustableError("Soft limits violated!")
+        self.pc.start_evaluation(f"{self.name}.move({float(value)})")
+
+    def stop(self):
+        """Adjustable convention"""
+        try:
+            self._currentChange.stop()
+        except:
+            self._motor.stop()
+        pass
+
+    def get_current_value(self, posType="user", readback=True):
+        """Adjustable convention"""
+        return self.pc.start_eval(f"{self.name}.get_position()")
+
+#    def reset_current_value_to(self, value, posType="user"):
+#        """Adjustable convention"""
+#        _keywordChecker([("posType", posType, _posTypes)])
+#        if posType == "user":
+#            return self._motor.set_position(value)
+#        if posType == "dial":
+#            return self._motor.set_position(value, dial=True)
+#        if posType == "raw":
+#            return self._motor.set_position(value, raw=True)
+
+#    def get_moveDone(self):
+#        """Adjustable convention"""
+#        """ 0: moving 1: move done"""
+#        return PV(str(self.Id + ".DMOV")).value
+
+#    def set_limits(
+#        self, low_limit, high_limit, posType="user", relative_to_present=False
+#    ):
+#        """
+#        set limits. usage: set_limits(low_limit, high_limit)#
+
+#        """
+#        _keywordChecker([("posType", posType, _posTypes)])
+#        ll_name, hl_name = "LLM", "HLM"
+#        if posType == "dial":
+#            ll_name, hl_name = "DLLM", "DHLM"
+#        if relative_to_present:
+#            v = self.get_current_value(posType=posType)
+#            low_limit = v + low_limit
+#            high_limit = v + high_limit
+#        self._motor.put(ll_name, low_limit)
+#        self._motor.put(hl_name, high_limit)
+
+
+#    def get_limits(self, posType="user"):
+#        """Adjustable convention"""
+#        _keywordChecker([("posType", posType, _posTypes)])
+#        ll_name, hl_name = "LLM", "HLM"
+#        if posType == "dial":
+#            ll_name, hl_name = "DLLM", "DHLM"
+#        return self._motor.get(ll_name), self._motor.get(hl_name)
 
 @spec_convenience
 @update_changes

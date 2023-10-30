@@ -477,12 +477,15 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorBerninaUSD",
     "SARES23-LIC:MOT_12",
-    # diode_channels_raw={
-    #     "up":   "",
-    #     "down": "",
-    #     "left": "",
-    #     "right":"",
-    # },
+    channel_xpos=None,
+    channel_ypos=None,
+    channel_intensity=None,
+    diode_channels_raw={
+        "up":   "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD1",
+        "down": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD2",
+        "left": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD0",
+        "right":"SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD3",
+    },
     module_name="eco.xdiagnostics.intensity_monitors",
     name="mon_kb",
     lazy=True,
@@ -1496,7 +1499,7 @@ namespace.append_obj(
     thresholds=[0.2, 10],
     required_fraction=0.6,
     lazy=True,
-    name="checker",
+    name="checker_mon_opt_ioxos",
 )
 
 namespace.append_obj(
@@ -1506,7 +1509,7 @@ namespace.append_obj(
     thresholds=[0.2, 10],
     required_fraction=0.6,
     lazy=True,
-    name="checker_mon_opt_new",
+    name="checker",
 )
 
 namespace.append_obj(

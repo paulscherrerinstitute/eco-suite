@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 import time
 import matplotlib.pyplot as plt
-
+import numpy as np
 sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
 import bufferutils
 
@@ -463,7 +463,13 @@ class CameraBasler(Assembly):
         self._set_parameters(1)
         self.running(2)
 
-    def set_cross(self, x=None, y=None, x_um_per_px=None, y_um_per_px=None):
+    def get_camera_images(self, n):
+        imgs=[]
+        while(len(np.unique(imgs, axis=0))<n):
+            imgs.append(self.config_cs.get_camera_image())
+            return np.unique(imgs, axis=0)
+
+    def set_cross(self, x=None, y=None, x_um_per_px=None, y_um_per_px=None, n_images=10):
         """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given"""
         def prompt(x,y,x_um_per_px,y_um_per_px):
             x=int(x)
@@ -496,8 +502,7 @@ class CameraBasler(Assembly):
         if x is None or y is None:
             x = (rm[2] + rm[0])/2
             y = (rm[3] + rm[1])/2
-            img = self.config_cs.get_camera_image()
-            
+            img = np.mean(self.get_camera_images(n_images), axis=0)
             run = True
             def on_click(event):
                 if event.button is MouseButton.LEFT:
