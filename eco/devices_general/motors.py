@@ -12,6 +12,7 @@ from ..elements.adjustable import (
     ValueInRange,
     update_changes,
     value_property,
+    tweak_option
 )
 from ..devices_general.pv_adjustable import PvRecord
 from ..elements.detector import DetectorGet
@@ -425,20 +426,66 @@ class SmaractStreamdevice(Assembly):
 @spec_convenience
 @update_changes
 @value_property
+@tweak_option
 class PshellMotor(Assembly):
     def __init__(
         self,
-        pc=None,
+        robot=None,
         name=None,
+        name_pshell=None,
         elog=None,
-        offset_file=None,
     ):
         super().__init__(name=name)
+        if not name_pshell:
+            name_pshell = name
+        self.name_pshell = name_pshell
+        self.robot = robot
+        self.pc= self.robot.pc
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json', default_value=0, name="limit_high", is_setting=True)
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
+        self._cb = None
+
+    def move(self, value, check=False, wait=False, update_value_time=0.05, timeout=120):
+        if check:
+            lim_low, lim_high = self.get_limits()
+            if not (lim_low < value) and (value < lim_high):
+                raise AdjustableError("Soft limits violated!")
+        cid = self.pc.start_eval(f"{self.name_pshell}.moveAsync({float(value)})&")
+        if wait:
+            t_start = time.time()
+            time.sleep(update_value_time)
+            while not self.get_moveDone(cid, value):
+                if (time.time() - t_start) > timeout:
+                    raise AdjustableError(f"motion timeout reached in robot motor {self.name}")
+                time.sleep(update_value_time)
+
+    def get_moveDone(self, cid, value):
+        res = self.pc.get_result(cid)
+        if res["status"] == "failed":
+            raise AdjustableError(res["exception"])
+        current_value = self.get_current_value()
+        if self._cb:
+            self._cb()
+        if (res["status"] == "completed")&(abs(value-current_value) < 0.5):
+        #elif (res["status"] == "completed")&(abs(value-self.get_current_value()) < 0.5):
+            return True
+        else:
+            return False
+
+    def stop(self):
+        """Adjustable convention"""
+        self.pc.start_eval(f"{self.name_pshell}.stop()&")
+        pass
+
+    def get_limits(self):
+        return (self.limit_low(), self.limit_high())
+
+    def set_limits(self, limit_low, limit_high):
+        self.limit_low(limit_low)
+        self.limit_high(limit_high)
 
     def set_target_value(self, value, hold=False, check=True):
-
-        changer = lambda value: self.move(value, check=check)
-
+        changer = lambda value: self.move(value, check=check, wait=True)
         return Changer(
             target=value,
             parent=self,
@@ -447,66 +494,31 @@ class PshellMotor(Assembly):
             stopper=self.stop,
         )
 
-    def move(self, value, check=False):
-#        if check:
-#            lim_low, lim_high = self.get_limits()
-#            if not (lim_low < value) and (value < lim_high):
-#                raise AdjustableError("Soft limits violated!")
-        self.pc.start_evaluation(f"{self.name}.move({float(value)})")
+    def get_current_value(self):
+        return self.robot._cache["pos"][self.name_pshell]
 
-    def stop(self):
-        """Adjustable convention"""
-        try:
-            self._currentChange.stop()
-        except:
-            self._motor.stop()
-        pass
+    def add_value_callback(self, cb):
+        self._cb = cb
+        return 0
+    def clear_value_callback(self, id):
+        self._cb=None
 
-    def get_current_value(self, posType="user", readback=True):
-        """Adjustable convention"""
-        return self.pc.start_eval(f"{self.name}.get_position()")
+    # return string with motor value as variable representation
+    def __str__(self):
+        # """ return short info for the current motor"""
+        s = f"{self.name}"
+        #s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} stat: {self.status_flag().name}"
+        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
+        s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
+        s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
+        s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
+        return s
 
-#    def reset_current_value_to(self, value, posType="user"):
-#        """Adjustable convention"""
-#        _keywordChecker([("posType", posType, _posTypes)])
-#        if posType == "user":
-#            return self._motor.set_position(value)
-#        if posType == "dial":
-#            return self._motor.set_position(value, dial=True)
-#        if posType == "raw":
-#            return self._motor.set_position(value, raw=True)
-
-#    def get_moveDone(self):
-#        """Adjustable convention"""
-#        """ 0: moving 1: move done"""
-#        return PV(str(self.Id + ".DMOV")).value
-
-#    def set_limits(
-#        self, low_limit, high_limit, posType="user", relative_to_present=False
-#    ):
-#        """
-#        set limits. usage: set_limits(low_limit, high_limit)#
-
-#        """
-#        _keywordChecker([("posType", posType, _posTypes)])
-#        ll_name, hl_name = "LLM", "HLM"
-#        if posType == "dial":
-#            ll_name, hl_name = "DLLM", "DHLM"
-#        if relative_to_present:
-#            v = self.get_current_value(posType=posType)
-#            low_limit = v + low_limit
-#            high_limit = v + high_limit
-#        self._motor.put(ll_name, low_limit)
-#        self._motor.put(hl_name, high_limit)
-
-
-#    def get_limits(self, posType="user"):
-#        """Adjustable convention"""
-#        _keywordChecker([("posType", posType, _posTypes)])
-#        ll_name, hl_name = "LLM", "HLM"
-#        if posType == "dial":
-#            ll_name, hl_name = "DLLM", "DHLM"
-#        return self._motor.get(ll_name), self._motor.get(hl_name)
+    def __repr__(self):
+        print(str(self))
+        return object.__repr__(self)
 
 @spec_convenience
 @update_changes

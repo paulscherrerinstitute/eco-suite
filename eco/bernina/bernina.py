@@ -795,6 +795,13 @@ namespace.append_obj(
     lazy=True,
 )
 
+namespace.append_obj(
+    "StaeubliTx200",
+    module_name="eco.endstations.bernina_robots",
+    name="robot",
+    pshell_url="http://PC14742:8080/",
+    lazy=True,
+)
 
 namespace.append_obj(
     "XRDYou",

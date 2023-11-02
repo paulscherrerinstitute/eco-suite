@@ -10,7 +10,7 @@ except ImportError:
     from urllib.parse import quote  # Python 3
 
 try:
-    from sseclient import SSEClient
+    from eco.pshell.sseclient import SSEClient
 except:
     SSEClient = None 
     
