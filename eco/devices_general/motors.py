@@ -267,7 +267,7 @@ class SmaractStreamdevice(Assembly):
         if check:
             lim_low, lim_high = self.get_limits()
 
-            if not (lim_low < value) and (value < lim_high):
+            if not ((lim_low < value) and (value < lim_high)):
                 raise AdjustableError("Soft limits violated!")
         t_start = time.time()
         # waiter = WaitPvConditions(
@@ -433,6 +433,7 @@ class PshellMotor(Assembly):
         robot=None,
         name=None,
         name_pshell=None,
+        unit=None,
         elog=None,
     ):
         super().__init__(name=name)
@@ -443,12 +444,13 @@ class PshellMotor(Assembly):
         self.pc= self.robot.pc
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json', default_value=0, name="limit_high", is_setting=True)
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_unit.json', default_value=unit, name="unit", is_setting=True)
         self._cb = None
 
-    def move(self, value, check=False, wait=False, update_value_time=0.05, timeout=120):
+    def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=120):
         if check:
             lim_low, lim_high = self.get_limits()
-            if not (lim_low < value) and (value < lim_high):
+            if not ((lim_low < value) and (value < lim_high)):
                 raise AdjustableError("Soft limits violated!")
         cid = self.pc.start_eval(f"{self.name_pshell}.moveAsync({float(value)})&")
         if wait:
@@ -507,13 +509,17 @@ class PshellMotor(Assembly):
     def __str__(self):
         # """ return short info for the current motor"""
         s = f"{self.name}"
+        if self.get_current_value() != None:
         #s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} stat: {self.status_flag().name}"
-        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL}"
-        # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
-        s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
-        s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
-        s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
+            s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL}"
+            # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
+            s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
+            s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
+            s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
+        else:
+            s += f"\t@ {colorama.Style.BRIGHT}{'NOT CONECTED'}{colorama.Style.RESET_ALL}"
+
         return s
 
     def __repr__(self):

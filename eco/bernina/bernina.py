@@ -481,10 +481,10 @@ namespace.append_obj(
     channel_ypos=None,
     channel_intensity=None,
     diode_channels_raw={
-        "up":   "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD1",
+        "up": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD1",
         "down": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD2",
         "left": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD0",
-        "right":"SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD3",
+        "right": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD3",
     },
     module_name="eco.xdiagnostics.intensity_monitors",
     name="mon_kb",
@@ -798,7 +798,7 @@ namespace.append_obj(
 namespace.append_obj(
     "StaeubliTx200",
     module_name="eco.endstations.bernina_robots",
-    name="robot",
+    name="rob",
     pshell_url="http://PC14742:8080/",
     lazy=True,
 )
@@ -891,7 +891,7 @@ namespace.append_obj(
     lazy=True,
 )
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    "DetectorRobot",
 #    JF_detector_id="JF01T03V01",
 #    JF_detector_name="det_diff",
@@ -900,7 +900,7 @@ namespace.append_obj(
 #    module_name="eco.endstations.bernina_robot",
 #    lazy=True,
 #    name="robot",
-#)
+# )
 
 namespace.append_obj(
     "MpodModule",
@@ -1505,6 +1505,8 @@ namespace.append_obj(
     pvname="SLAAR21-LTIM01-EVR0:CALCI",
     thresholds=[0.2, 10],
     required_fraction=0.6,
+    filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds_default",
+    filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction_default",
     lazy=True,
     name="checker_mon_opt_ioxos",
 )
@@ -1515,6 +1517,8 @@ namespace.append_obj(
     bs_channel="SAROP21-PBPS133:INTENSITY",
     thresholds=[0.2, 10],
     required_fraction=0.6,
+    filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds_default",
+    filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction_default",
     lazy=True,
     name="checker",
 )
@@ -2247,6 +2251,17 @@ namespace.append_obj(
     lazy=True,
     module_name="eco.xoptics.dcm_new",
 )
+
+namespace.append_obj(
+    "AramisDcmFeedback",
+    mono=mono,
+    xbpm=mon_opt_new,
+    name="mono_feedback",
+    lazy=True,
+    module_name="eco.xoptics.xopt_feedback",
+)
+
+
 # namespace.append_obj(
 #     "MonoTimecompensation",
 #     las.delay_glob,
@@ -2523,7 +2538,7 @@ class SampleHeaterJet(Assembly):
         )
 
 
-#namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
+# namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 
 
 ## sample illumination
@@ -2545,7 +2560,6 @@ class IlluminatorsLasers(Assembly):
             channel_number=4,
             name="flattening_laser",
         )
-
 
 
 namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)

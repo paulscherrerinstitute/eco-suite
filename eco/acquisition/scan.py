@@ -371,6 +371,7 @@ class Scans:
         counters=[],
         start_immediately=True,
         step_info=None,
+        checker="default",
         return_at_end="question",
         **kwargs_callbacks,
     ):
@@ -379,6 +380,8 @@ class Scans:
         values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
         if not counters:
             counters = self._default_counters
+        if checker == "default":
+            checker = self.checker
         s = Scan(
             [adjustable0, adjustable1],
             values,
@@ -387,7 +390,7 @@ class Scans:
             Npulses=N_pulses,
             basepath=self.data_base_dir,
             scan_info_dir=self.scan_info_dir,
-            checker=self.checker,
+            checker=checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
             callbacks_start_step=self.callbacks_start_step,
@@ -412,6 +415,7 @@ class Scans:
         settling_time=0,
         step_info=None,
         return_at_end=True,
+        checker="default",
         **kwargs_callbacks,
     ):
         adjustable = DummyAdjustable()
@@ -420,6 +424,8 @@ class Scans:
         values = [[tp] for tp in positions]
         file_name = self.filename_generator.get_nextrun_filename(file_name)
         run_number = self.filename_generator.get_nextrun_number()
+        if checker == "default":
+            checker = self.checker
         if not counters:
             counters = self._default_counters
         s = Scan(
@@ -431,7 +437,7 @@ class Scans:
             basepath=self.data_base_dir,
             scan_info_dir=self.scan_info_dir,
             settling_time=settling_time,
-            checker=self.checker,
+            checker=checker,
             scan_directories=self._scan_directories,
             callbacks_start_scan=self.callbacks_start_scan,
             callbacks_start_step=self.callbacks_start_step,
@@ -456,6 +462,7 @@ class Scans:
         N_pulses,
         file_name="",
         counters=[],
+        checker="default",
         start_immediately=True,
         step_info=None,
         return_at_end="question",
@@ -468,6 +475,8 @@ class Scans:
         run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
+        if checker == "default":
+            checker = self.checker
         s = Scan(
             [adjustable],
             values,
@@ -502,6 +511,7 @@ class Scans:
         N_pulses,
         file_name="",
         counters=[],
+        checker="default",
         start_immediately=True,
         settling_time=0,
         step_info=None,
@@ -515,6 +525,8 @@ class Scans:
         run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
+        if checker == "default":
+            checker = self.checker
         s = Scan(
             [adjustable],
             values,
@@ -553,6 +565,7 @@ class Scans:
         N_pulses,
         file_name=None,
         counters=[],
+        checker="default",
         start_immediately=True,
         settling_time=0,
         step_info=None,
@@ -565,6 +578,8 @@ class Scans:
         run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
+        if checker == "default":
+            checker = self.checker
         s = Scan(
             [adjustable],
             values,
@@ -602,6 +617,7 @@ class Scans:
         N_pulses,
         file_name=None,
         counters=[],
+        checker="default",
         start_immediately=True,
         step_info=None,
         return_at_end="question",
@@ -617,6 +633,8 @@ class Scans:
         values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
         if not counters:
             counters = self._default_counters
+        if checker == "default":
+            checker = self.checker
         s = Scan(
             [adjustable0, adjustable1],
             values,

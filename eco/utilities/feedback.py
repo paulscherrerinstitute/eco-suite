@@ -91,12 +91,14 @@ class Feedback(Assembly):
             self._append(
                 AdjustableFS,
                 setpoint,
+                is_setting=True,
                 name="setpoint",
             )
         else:
             self._append(
                 AdjustableMemory,
                 setpoint,
+                is_setting=True,
                 name="setpoint",
             )
 
@@ -104,24 +106,28 @@ class Feedback(Assembly):
             self._append(
                 AdjustableFS,
                 pid,
+                is_setting=True,
                 name="pid",
             )
         else:
             self._append(
                 AdjustableMemory,
                 pid,
+                is_setting=True,
                 name="pid",
             )
         if type(sample_time) is str or isinstance(sample_time, Path):
             self._append(
                 AdjustableFS,
                 sample_time,
+                is_setting=True,
                 name="sample_time",
             )
         else:
             self._append(
                 AdjustableMemory,
                 sample_time,
+                is_setting=True,
                 name="sample_time",
             )
 
@@ -129,12 +135,14 @@ class Feedback(Assembly):
             self._append(
                 AdjustableFS,
                 output_limits,
+                is_setting=True,
                 name="output_limits",
             )
         else:
             self._append(
                 AdjustableMemory,
                 output_limits,
+                is_setting=True,
                 name="output_limits",
             )
 

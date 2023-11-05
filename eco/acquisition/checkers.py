@@ -9,18 +9,26 @@ from ..elements.assembly import Assembly
 
 
 class CheckerCA(Assembly):
-    def __init__(self, pvname=None, thresholds=None, required_fraction=None, name=None):
+    def __init__(
+        self,
+        pvname=None,
+        thresholds=None,
+        required_fraction=None,
+        filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
+        filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+        name=None,
+    ):
         super().__init__(name=name)
         self._append(DetectorPvDataStream, pvname, name="monitor")
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
+            filepath_thresholds,
             default_value=sorted(thresholds),
             name="thresholds",
         )
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+            filepath_fraction,
             default_value=required_fraction,
             name="required_fraction",
         )
@@ -53,19 +61,28 @@ class CheckerCA(Assembly):
             print(f"         given limit was {self.required_fraction()*100}%.")
         return fraction >= self.required_fraction()
 
+
 class CheckerBS(Assembly):
-    def __init__(self, bs_channel=None, thresholds=None, required_fraction=None, name=None):
+    def __init__(
+        self,
+        bs_channel=None,
+        thresholds=None,
+        required_fraction=None,
+        filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
+        filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+        name=None,
+    ):
         super().__init__(name=name)
         self._append(DetectorBsStream, bs_channel, name="monitor")
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
+            filepath_thresholds,
             default_value=sorted(thresholds),
             name="thresholds",
         )
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+            filepath_fraction,
             default_value=required_fraction,
             name="required_fraction",
         )
