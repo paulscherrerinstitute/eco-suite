@@ -32,8 +32,11 @@ class GPS(Assembly):
         pvname=None,
         configuration=["base"],
         alias_namespace=None,
+        pgroup_adj=None,
+        configsjf_adj=None,
         fina_hex_angle_offset=None,
         diffcalc=False,
+        detectors=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -283,6 +286,21 @@ class GPS(Assembly):
                 is_setting=False,
                 is_display=False,
             )
+        if detectors:
+            for tdet in detectors:
+                tname = tdet["name"]
+                tid = tdet["jf_id"]
+                self._append(
+                    Jungfrau,
+                    tid,
+                    name=tname,
+                    is_setting=False,
+                    is_display=False,
+                    pgroup_adj=pgroup_adj,
+                    config_adj=configsjf_adj,
+                    view_toplevel_only=True,
+                )
+
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""

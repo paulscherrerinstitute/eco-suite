@@ -170,6 +170,43 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+
+# namespace.append_obj(
+#     "Pprm",
+#     "SARFE10-PPRM064",
+#     "SARFE10-PPRM064",
+#     name= "prof_fe",
+#     # "z_und": 64,
+#     # "desc": "Profile monitor after Front End",
+#     module_name="eco.xdiagnostics.profile_monitors",
+#     )
+# namespace.append_obj(
+#     "Pprm",
+#     "SAROP11-PPRM066",
+#     "SAROP11-PPRM066",
+#     name= "prof_mirr_alv1",
+#     # "z_und": 66,
+#     # "desc": "Profile monitor after Alvra Mirror 1",
+#     module_name="eco.xdiagnostics.profile_monitors",
+#     )
+# namespace.append_obj(
+#     "Pprm",
+#     "SAROP21-PPRM094",
+#     "SAROP21-PPRM094",
+#     name= "prof_mirr1",
+#     # "z_und": 94,
+#     # "desc": "Profile monitor after Mirror 1",
+#     module_name="eco.xdiagnostics.profile_monitors",
+#     )
+
+
+
+namespace.append_obj(
+    "OffsetMirrorsBernina",
+    name="offset",
+    module_name="eco.xoptics.offsetMirrors_new",
+)
+
 namespace.append_obj(
     "SlitBlades",
     "SAROP21-OAPU102",
@@ -791,6 +828,12 @@ namespace.append_obj(
     name="gps",
     pvname="SARES22-GPS",
     configuration=config_bernina.gps_config(),
+    pgroup_adj=config_bernina.pgroup,
+    configsjf_adj=config_JFs,
+    detectors=[
+        {"name": "det_fluo", "jf_id": "JF04T01V01"},
+        {"name": "det_vHamos", "jf_id": "JF05T01V01"},
+    ],
     fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     lazy=True,
 )
@@ -800,7 +843,7 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_robots",
     name="rob",
     pshell_url="http://PC14742:8080/",
-    lazy=True,
+    lazy=False,
 )
 
 namespace.append_obj(

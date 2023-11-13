@@ -448,6 +448,8 @@ class PshellMotor(Assembly):
         self._cb = None
 
     def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=120):
+        if not self.robot.config.powered():
+            self.robot.config.powered(True)
         if check:
             lim_low, lim_high = self.get_limits()
             if not ((lim_low < value) and (value < lim_high)):

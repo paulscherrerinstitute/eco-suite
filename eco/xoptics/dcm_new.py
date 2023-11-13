@@ -124,7 +124,7 @@ class DoubleCrystalMono(Assembly):
             AdjustablePv,
             energy_sp,
             pvreadbackname=energy_rb,
-            accuracy=0.5,
+            accuracy=0.1,
             name="energy",
         )
         self._append(

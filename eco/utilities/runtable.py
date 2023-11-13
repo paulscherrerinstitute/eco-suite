@@ -418,10 +418,10 @@ class Run_Table_DataFrame(DataFrame):
         self.bad_adjustables = {}
 
         ###parsing options
-        self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(
+        self._parse_exclude_keys = "status_indicators rob settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(
             " "
         )
-        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv Collection".split(
+        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias StaeubliTx200 AdjustablePv Collection".split(
             " "
         )
         self._adj_exclude_class_types = (
@@ -597,6 +597,8 @@ class Run_Table_DataFrame(DataFrame):
     def _get_all_adjustables_fewerparents(
         self, device, adj_prefix=None, parent_name=None, verbose=False
     ):
+        if verbose:
+            print(f"parsing children of {parent_name}")
         if adj_prefix is not None:
             name = ".".join([adj_prefix, device.name])
         else:
@@ -821,9 +823,9 @@ class Run_Table_DataFrame(DataFrame):
 
 
     #### diagnostic and convenience functions ####
-    def check_timeouts(self, include_bad_adjustables=True, repeats=1, plot=True):
+    def check_timeouts(self, include_bad_adjustables=True, repeats=1, plot=True, verbose=True):
         if len(self.adjustables) == 0:
-            self._parse_parent_fewerparents()
+            self._parse_parent_fewerparents(verbose=verbose)
         ts = []
         devs=[]
         def get_dev_adjs(dev):

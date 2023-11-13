@@ -29,6 +29,11 @@ class OffsetMirror(Assembly):
             name="asymmetry",
             is_setting=True,
         )
+        self._append(
+            AdjustablePvEnum,
+            self.pvname+":COATING",
+            pvname_set=self.pvname+":COATING_SP",
+            name='coating')
 
 
 class OffsetMirrorsBernina(Assembly):

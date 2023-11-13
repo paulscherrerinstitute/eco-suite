@@ -25,7 +25,8 @@ def energy2tthe(energy, hkl=(1, 1, 1), material=materials.Si):
 
 def calcDcmExtension(energy, offset=20e-3, hkl=(1, 1, 1), material=materials.Si):
     tthe = energy2tthe(energy, hkl, material=material)
-    return offset / np.sin(tthe) * (1 - np.cos(tthe))
+    return offset *(1/ np.sin(tthe) - 1/ np.tan(tthe))
+    # return offset / np.sin(tthe) * (1 - np.cos(tthe))
 
 
 class MonoTimecompensation(Assembly):
@@ -85,7 +86,7 @@ class MonoTimecompensation(Assembly):
         delta_delay = x_delay / constants.c
         target_delay_adj = (
             target_delay
-            + (self.laser_delay_inverted.get_current_value() * -2 + 1) * delta_delay
+            + (self.laser_delay_inverted.get_current_value() * -2 + 1) * delta_delay # NB: boolean to ± 1 conversion
         )
         print("debug here")
         print(x_delay, delta_delay)
@@ -98,7 +99,7 @@ class MonoTimecompensation(Assembly):
         delta_delay = x_delay / constants.c
         real_delay = (
             delay_adjusted
-            - (self.laser_delay_inverted.get_current_value() * -2 + 1) * delta_delay
+            - (self.laser_delay_inverted.get_current_value() * -2 + 1) * delta_delay # NB: boolean to ± 1 conversion
         )
         print("debug here")
         print(x_delay, delta_delay)

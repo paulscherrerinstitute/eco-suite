@@ -171,23 +171,26 @@ class Feedback(Assembly):
         if self.callback_stop_feedback:
             self.callback_stop_feedback()
 
-    def run_continuously(self):
+    def run_continuously(self, set_control=True):
         while self.running.get_current_value():
             valcurr = self.foo_detector()
             set_val = self.pid_object(valcurr)
             if self.callback_start_control:
                 self.callback_start_control()
-            self.control_adj.set_target_value(set_val).wait()
+            if set_control:
+                self.control_adj.set_target_value(set_val).wait()
             self.feedback_history.append([valcurr, set_val])
             if self.callback_stop_control:
                 self.callback_stop_control()
 
-    def start_feedback(self):
+    def start_feedback(self, set_control=True):
         if self.callback_start_feedback:
             self.callback_start_feedback()
         self.create_new_pid()
         self.running.set_target_value(True).wait()
-        self.feedback = Thread(target=self.run_continuously)
+        self.feedback = Thread(
+            target=self.run_continuously, kwargs={"set_control": set_control}
+        )
         self.feedback.start()
 
 

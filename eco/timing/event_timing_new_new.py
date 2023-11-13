@@ -302,7 +302,7 @@ class EvrPulser(Assembly):
         )
         self.description = EpicsString(pv_base + "-Name-I")
 
-        if True: #self._eventcode is not None:
+        if self._eventcode is not None:
             self._append(
                 AdjustableVirtual,
                 [self._eventcode.frequency],
@@ -324,6 +324,8 @@ class EvrPulser(Assembly):
                 lambda x: x - self.delay_eventcode.get_current_value(),
                 name="delay",
             )
+        else:
+            print(f"Error initializing pulser {self.name} of EVR {self.pv_base}: Event code {self.eventcode.get_current_value()} is missing in Timing Master")
 
     @property
     def _eventcode(self):

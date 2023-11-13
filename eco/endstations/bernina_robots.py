@@ -1,12 +1,15 @@
 from eco.pshell.client import PShellClient
 from eco.elements.assembly import Assembly
-from eco.elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
+from eco.elements.adjustable import AdjustableFS, AdjustableGetSet, value_property
 from eco.devices_general.motors import PshellMotor
 from eco.elements.detector import DetectorGet
 from eco.elements.adj_obj import AdjustableObject, DetectorObject
 from eco.devices_general.utilities import Changer
+from threading import Thread
 import time 
 import numpy as np
+import os
+os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
 class RobotError(Exception):
     pass
@@ -60,6 +63,15 @@ class StaeubliTx200(Assembly):
             ]
         for [name, name_pshell, unit] in motors:
             self._append(PshellMotor, robot=self, name=name, name_pshell=name_pshell, unit=unit, is_setting=True, is_display=True)
+        self._urdf = None
+        try:
+            import bernina_urdf
+            self._urdf = bernina_urdf.models.Tx200_Ceiling()
+            self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json', default_value=True, name="auto_update_simulation", is_setting=False)
+            self._auto_update_simulation_thread = Thread(target=self._auto_updater_simulation)
+            self._auto_update_simulation_thread.start()
+        except:
+            print("Loading bernina URDF robot model failed")
 
     def _get_info(self):
         return {k: v for k, v in self._cache.items() if k in self._info_fields}
@@ -87,7 +99,7 @@ class StaeubliTx200(Assembly):
         return self._run_cmd(" ".join(cmd))
     ######## Motion simulation ##########
 
-    def simulate_sphercial_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint"):
+    def simulate_sphercial_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
         """        
         Simulated motion in the spherical coordinate system using a linear moteion movel command to         
         change the radius from point tcp_p_spherical[0] to tcp_p_spherical[1], followed        
@@ -107,9 +119,19 @@ class StaeubliTx200(Assembly):
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
         sim = self._get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')")
-        return np.array(sim)
+        if plot:
+            if self._urdf is not None:
+                self.auto_update_simulation(False)
+                self._urdf.sim.move_trajectory(sim)
+                res = ""
+                while not res in ["y", "n"]:
+                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
+                if res == "y":
+                    self.auto_update_simulation(True)
+        else:
+            return np.array(sim)
     
-    def simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint"):
+    def simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint", plot=True):
         """        
         Simulated motion in the cartesian coordinate system using a linear motion movel command to
         move from point tcp_p_spherical[0] to tcp_p_spherical[1].        
@@ -127,9 +149,38 @@ class StaeubliTx200(Assembly):
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
         sim = self._get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')")
-        return np.array(sim)
+        if plot:
+            if self._urdf is not None:
+                self.auto_update_simulation(False)
+                self._urdf.sim.move_trajectory(sim)
+                res = ""
+                while not res in ["y", "n"]:
+                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
+                if res == "y":
+                    self.auto_update_simulation(True)
+        else:
+            return np.array(sim)
+    
+    def simulate_current_pos(self):
+        js = np.array([self._cache["pos"][k] for k in ["j1", "j2", "j3", "j4", "j5", "j6"]])
+        self._urdf.sim.pos = js
+        self._urdf.sim._ensure_vis_running()
+        self._urdf.sim.vis.step(0)
+
+    def show(self):
+        self._urdf.sim.show()
 
     ######## Helper functions ##########
+    def _auto_updater_simulation(self):#
+        while(True):
+            js = np.array([self._cache["pos"][k] for k in ["j1", "j2", "j3", "j4", "j5", "j6"]])
+            if self.auto_update_simulation():
+                if not np.all(js == self._urdf.sim.pos):
+                    self._urdf.sim.pos = js
+                    if self._urdf.sim._vis_running():
+                        self._urdf.sim.vis.step(0)
+            time.sleep(.05)
+
     def _get_on_poll_info(self):
         cfg = self._get_eval_result("robot.on_poll_info()")
         self._info_fields = cfg["info"]

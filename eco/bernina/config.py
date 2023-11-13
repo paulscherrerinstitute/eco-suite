@@ -153,39 +153,8 @@ components = [
     #     "args": [],
     #     "kwargs": {},
     # },
-    {
-        "name": "prof_fe",
-        "args": ["SARFE10-PPRM064"] * 2,
-        "kwargs": {},
-        "z_und": 64,
-        "desc": "Profile monitor after Front End",
-        "type": "eco.xdiagnostics.profile_monitors:Pprm",
-    },
-    {
-        "name": "prof_mirr_alv1",
-        "args": ["SAROP11-PPRM066"] * 2,
-        "kwargs": {},
-        "z_und": 66,
-        "desc": "Profile monitor after Alvra Mirror 1",
-        "type": "eco.xdiagnostics.profile_monitors:Pprm",
-    },
-    {
-        "name": "prof_mirr1",
-        "args": ["SAROP21-PPRM094"] * 2,
-        "kwargs": {},
-        "z_und": 94,
-        "desc": "Profile monitor after Mirror 1",
-        "type": "eco.xdiagnostics.profile_monitors:Pprm",
-    },
-    {
-        "name": "offset",
-        "args": [],
-        "kwargs": {},
-        "z_und": 96,
-        "desc": "offset mirrors in pink mode",
-        "type": "eco.xoptics.offsetMirrors_new:OffsetMirrorsBernina",
-        "kwargs": {},
-    },
+
+
     # {
     #     "name": "mono_old",
     #     "args": ["SAROP21-ODCM098"],
