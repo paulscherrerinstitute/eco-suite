@@ -264,13 +264,19 @@ class AdjustablePvEnum:
         self.pvname = pvname
         self._pv = PV(pvname, connection_timeout=0.05)
         self.name = name
+        self._pv.wait_for_connection()
         self.enum_strs = self._pv.enum_strs
+        # while not self.enum_strs:  ### HACK to understand gateway slowness
+        #     print(f'could not find enum strs for {self.pvname}')
+        #     time.sleep(.1)
+        #     self.enum_strs = self._pv.enum_strs
 
         if pvname_set:
             self._pv_set = PV(pvname_set, connection_timeout=0.05)
             tstrs = self._pv_set.enum_strs
             if not all([tstr in self.enum_strs for tstr in tstrs]):
                 raise Exception("pv enum setter strings are not all a readback option!")
+            
 
         else:
             self._pv_set = None

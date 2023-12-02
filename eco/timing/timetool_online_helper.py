@@ -11,7 +11,8 @@ plt.ion()
 
 
 class TtProcessor:
-    def __init__(self, Nbg=10):
+    def __init__(self, Nbg=10, channel_proj = "SARES20-CAMS142-M5.roi_signal_x_profile"):
+        self.channel_proj = channel_proj
         self.bg = deque([], Nbg)
         self.sig = deque([], 1)
         self.pos = deque([], 1)
@@ -19,11 +20,12 @@ class TtProcessor:
         self.spec_ppd = deque([], 1)
         self.accumulator = Thread(target=self.run_continuously)
         self.accumulator.start()
+        
 
     def run_continuously(self):
         with source(
             channels=[
-                "SARES20-CAMS142-M5.roi_signal_x_profile",
+                self.channel_proj,
                 "SAR-CVME-TIFALL5:EvtSet",
             ]
         ) as s:
@@ -31,7 +33,7 @@ class TtProcessor:
                 m = s.receive()
                 ix = m.data.pulse_id
 
-                prof = m.data.data["SARES20-CAMS142-M5.roi_signal_x_profile"].value
+                prof = m.data.data[self.channel_proj].value
                 if prof is None:
                     continue
 
@@ -70,7 +72,9 @@ class TtProcessor:
         self.lh_sig_last.set_ydata(self.spec_ppd[-1])
         return self.lh_sig
 
-    def plot_animation(self, name="TT online ana", animate=True):
+    def plot_animation(self, name=None, animate=True):
+        if name is None:
+            name = "TT online ana" + self.channel_proj
         if len(self.sig) < 1:
             print("no signals yet")
             return

@@ -7,6 +7,7 @@ import sys, colorama
 from inspect import getargspec
 import eco
 from ansi2html import Ansi2HTMLConverter
+from simple_term_menu import TerminalMenu
 
 conv = Ansi2HTMLConverter()
 
@@ -58,11 +59,33 @@ class Memory:
             row.append(t.strftime("%Y-%m-%d: %a %-H:%M"))
             row.append(content["message"])
             a.append(row)
+        
         return tabulate(a, headers=["Index", "Time", "Message"])
 
-    def __call__(self, index):
+    def __call__(self, index=None, **kwargs):
         # print(self.get_memory_difference_str(index))
-        self.recall(memory_index=index)
+    
+        if index is None:
+            self.setup_path()
+            mem = self._memories()
+            a = []
+            for n, (key, content) in enumerate(mem.items()):
+                row = ''
+                t = datetime.fromisoformat(key)
+                row += t.strftime("%Y-%m-%d: %a %-H:%M")
+                row +='   '
+                row += content["message"]
+                a.append(row)
+            ind_cancel = len(a)
+            a.append('--> do nothing')
+            menu = TerminalMenu(a)
+            print('Select memory to recall')
+            index = menu.show()
+            if index==ind_cancel:
+                return 
+        self.recall(memory_index=index, **kwargs)
+        
+    
 
     def _get_elog(self):
         if hasattr(self, "_elog") and self._elog:

@@ -204,6 +204,7 @@ namespace.append_obj(
 namespace.append_obj(
     "OffsetMirrorsBernina",
     name="offset",
+    lazy=True,
     module_name="eco.xoptics.offsetMirrors_new",
 )
 
@@ -231,6 +232,29 @@ namespace.append_obj(
     },
     name="mon_mono",
     module_name="eco.xdiagnostics.intensity_monitors",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "SolidTargetDetectorPBPS",
+    "SAROP21-PBPS103",
+    # channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
+    # channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
+    # channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
+    # diode_channels_raw={
+    #     "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+    #     "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+    #     "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+    #     "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+    # },
+    # calibration_records={
+    #     "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
+    #     "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+    #     "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+    # },
+    name="mon_mono_new",
+    module_name="eco.xdiagnostics.intensity_monitors",
+    # pipeline_computation="SAROP21-PBPS103_proc",
     lazy=True,
 )
 
@@ -606,6 +630,13 @@ namespace.append_obj(
     lazy=True,
 )
 namespace.append_obj(
+    "TimetoolSpatial",
+    module_name="eco.timing.timing_diag",
+    name="tt_spatial_dev",
+    lazy=True,
+)
+
+namespace.append_obj(
     "HexapodSymmetrie",
     name="usd_table",
     module_name="eco.endstations.hexapod",
@@ -843,7 +874,7 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_robots",
     name="rob",
     pshell_url="http://PC14742:8080/",
-    lazy=False,
+    lazy=True,
 )
 
 namespace.append_obj(
@@ -1649,9 +1680,29 @@ namespace.append_obj(
 #    pvname_zoom="SARES20-MF1:MOT_5",
 # )
 
+
+# from eco.devices_general.cameras_swissfel import FeturaMicroscope
+# from eco.elements.assembly import Assembly
+# class SpatialTimetool(Assembly):
+#     def __init__(self, pvname_camera=None, pvname_base_zoom=None, pvname_target_stage = None, name=None):
+#         super().__init__(name=name)
+#         self._append(FeturaMicroscope, pvname_camera = pvname_camera, pvname_base_zoom=pvname_base_zoom, name = "camera", camserver_alias=name, is_display="recursive")
+#         if pvname_target_stage:
+#             self._append(MotorRecord, pvname = pvname_target_stage, name = "target_transl")
+#         self._append(MotorRecord,'SARES23-USR:MOT_2', name='delaystage', is_setting=True)        
+
+# namespace.append_obj(
+#     SpatialTimetool,
+#     pvname_camera = "SARES20-CAMS142-M4",
+#     pvname_base_zoom="SARES20-FETURA",
+#     pvname_target_stage = "SARES20-MF1:MOT_8",
+#     name="tt_spatial",
+#     lazy=True,
+# )
+
 namespace.append_obj(
     "MicroscopeMotorRecord",
-    "SARES20-CAMS142-C1",
+    "SARES20-CAMS142-C2",
     lazy=True,
     pvname_zoom="SARES20-MF1:MOT_7",
     name="samplecam_inline",
@@ -1660,7 +1711,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "CameraBasler",
-    "SLAAR21-LCAM-C532",
+    "SARES20-CAMS142-M1",
     lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
@@ -1709,6 +1760,13 @@ namespace.append_obj(
 # Id="SLAAR21-LMOT",
 # smar_config=config_berninamesp["las_smar_config"],
 # )
+namespace.append_obj(
+    "VHamos",
+    name='vhamos',
+    pgroup_adj=config_bernina.pgroup,
+    lazy=True,
+    module_name="eco.endstations.bernina_vhamos",
+)
 
 # new version
 namespace.append_obj(

@@ -1,6 +1,7 @@
 from cam_server import CamClient, PipelineClient
 from matplotlib.backend_bases import MouseButton
 from eco.devices_general.utilities import Changer
+
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
 from eco.elements.detector import DetectorGet
@@ -282,6 +283,8 @@ class CameraBasler(Assembly):
         self.pvname = pvname
         if not camserver_alias:
             camserver_alias = self.alias.get_full_name() + f" ({pvname})"
+        else:
+            camserver_alias = camserver_alias + f" ({pvname})"
         self._append(
             CamserverConfig2,
             self.pvname,
@@ -533,7 +536,7 @@ class CameraBasler(Assembly):
             f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
         )
 
-
+# NB: please note this should be moved to microscopes which are using cameras plus zooms,
 class QioptiqMicroscope(CameraBasler):
     def __init__(self, pvname_camera, pvname_zoom=None, pvname_focus=None, name=None):
         super().__init__(pvname_camera, name=name)
@@ -549,6 +552,8 @@ class CameraPCO(Assembly):
         self.pvname = pvname
         if not camserver_alias:
             camserver_alias = self.alias.get_full_name() + f"({pvname})"
+        else:
+            camserver_alias = camserver_alias + f"({pvname})"
         self._append(
             CamserverConfig,
             self.pvname,
@@ -630,3 +635,18 @@ class CameraPCO(Assembly):
         self._run_cmd(
             f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
         )
+
+
+# NB: please note this should be moved to microscopes which are using cameras plus zooms,
+class FeturaMicroscope(CameraPCO):
+    def __init__(self, pvname_camera, pvname_base_zoom=None, name=None, camserver_alias=None):
+        super().__init__(pvname_camera, name=name, camserver_alias=camserver_alias)
+        if pvname_base_zoom:
+            self._append(AdjustablePv, pvsetname=pvname_base_zoom+":POS_SP", pvreadbackname=pvname_base_zoom+":POS_RB", name="_zoom_motor", is_setting=True, is_display=False)
+            def getv(v):
+                return v/10.
+            def setv(v):
+                return v*10.
+            self._append(AdjustableVirtual, [self._zoom_motor], getv, setv, name="zoom", unit="%")
+        
+        

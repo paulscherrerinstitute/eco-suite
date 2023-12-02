@@ -1,5 +1,6 @@
 from eco.detector.detectors_psi import DetectorBsStream
 from eco.devices_general.pipelines_swissfel import Pipeline
+from eco.microscopes.microscopes import FeturaPlusZoom
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
@@ -305,3 +306,135 @@ class DelayCompensation(AdjustableVirtual):
         s += f"{(self.get_current_value()*ureg.second).to_compact():P~6.3f}"
         s += f"{colorama.Style.RESET_ALL}"
         return s
+
+
+class TimetoolSpatial(Assembly):
+    def __init__(
+        self,
+        name=None,
+        processing_pipeline="SARES20-CAMS142-M4_psen_db",
+        # edge_finding_pipeline="SAROP21-ATT01_proc",
+        processing_instance="SARES20-CAMS142-M4_psen_db",
+        microscope_pvname="SARES20-CAMS142-M4",
+        delaystage_PV="SARES23-USR:MOT_2",
+        pvname_target_stage = "SARES20-MF1:MOT_8",
+    ):
+        super().__init__(name=name)
+        
+        self._append(
+            MotorRecord, pvname_target_stage, name="transl_target", is_setting=True
+        )
+
+        self._append(
+            SmaractRecord, delaystage_PV, name="delaystage", is_setting=True
+        )
+        self._append(DelayTime, self.delaystage, name="delay", is_setting=True)
+
+        self.proc_client = PipelineClient()
+        self.proc_pipeline = processing_pipeline
+        self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
+        self.proc_instance = processing_instance
+        # self.proc_pipeline_edge = edge_finding_pipeline
+        # self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
+        
+        
+        
+        # self._append(
+        #     MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_display=True
+        # )
+
+        self._append(
+            CameraPCO,
+            pvname=microscope_pvname,
+            name="camera_microscope",
+            camserver_alias=f"{name} ({microscope_pvname})",
+            is_setting=True,
+            is_display=False,
+        )
+
+        self._append(FeturaPlusZoom,name='zoom')
+
+
+        # self._append(
+        #     AdjustablePv,
+        #     pvsetname="SLAAR21-LFEEDBACK1:TARGET1",
+        #     name="feedback_setpoint",
+        #     accuracy=10,
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     AdjustablePv,
+        #     pvsetname="SLAAR21-LFEEDBACK1:ENABLE",
+        #     name="feedback_enabled",
+        #     accuracy=10,
+        #     is_setting=True,
+        # )
+
+        self._append(
+            DetectorBsStream,
+            "SARES20-CAMS142-M4.roi_signal_x_profile",
+            cachannel=None,
+            name="proj_signal",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CAMS142-M4.roi_background_x_prof",
+            cachannel=None,
+            name="proj_background",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CAMS142-M5.bsen_signal_x_profile",
+            cachannel=None,
+            name="spectrum_bsen",
+            is_setting=False,
+            is_display=True,
+        )
+        # self._append(
+        #     DetectorBsStream,
+        #     "SAROP21-ATT01:arrival_time",
+        #     cachannel=None,
+        #     name="edge_position",
+        #     is_setting=False,
+        #     is_display=True,
+        # )
+
+    def get_online_data(self):
+        self.online_monitor = TtProcessor(channel_proj="SARES20-CAMS142-M4.roi_signal_x_profile")
+
+    def start_online_monitor(self):
+        print(f"Starting online data acquisition ...")
+        self.get_online_data()
+        print(f"... done, waiting for data coming in ...")
+        sleep(5)
+        print(f"... done, starting online plot.")
+        self.online_monitor.plot_animation()
+
+    # def get_proc_config(self):
+    #     return self.proc_client.get_pipeline_config(self.proc_pipeline)
+
+    # def update_proc_config(self, cfg_dict):
+    #     cfg = self.get_proc_config()
+    #     cfg.update(cfg_dict)
+    #     self.proc_client.set_instance_config(self.proc_instance, cfg)
+
+    # def acquire_and_plot_spectrometer_image(self, N_pulses=50):
+    #     with source(channels=[self.spectrometer_camera_channel]) as s:
+    #         im = []
+    #         while True:
+    #             m = s.receive()
+    #             tim = m.data.data[self.spectrometer_camera_channel]
+    #             if not tim:
+    #                 continue
+    #             if len(im) > N_pulses:
+    #                 break
+    #             im.append(tim.value)
+    #     im = np.asarray(im).mean(axis=0)
+    #     fig = plt.figure("bsen spectrometer pattern")
+    #     fig.clf()
+    #     ax = fig.add_subplot(111)
+    #     ax.imshow(im)

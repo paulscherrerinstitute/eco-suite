@@ -45,6 +45,7 @@ class StaeubliTx200(Assembly):
 
         # appending pshell motors
         motors = [
+            ["z_lin", "z_lin", "mm"],
             ["x", "x", "mm"], 
             ["y", "y", "mm"], 
             ["z", "z", "mm"], 
@@ -162,7 +163,9 @@ class StaeubliTx200(Assembly):
             return np.array(sim)
     
     def simulate_current_pos(self):
-        js = np.array([self._cache["pos"][k] for k in ["j1", "j2", "j3", "j4", "j5", "j6"]])
+        js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])
+        if np.any([j is None for j in js]):
+            raise RobotError("Some of the joint positions are None, check if the connection between server and robot is lost")
         self._urdf.sim.pos = js
         self._urdf.sim._ensure_vis_running()
         self._urdf.sim.vis.step(0)
@@ -173,7 +176,10 @@ class StaeubliTx200(Assembly):
     ######## Helper functions ##########
     def _auto_updater_simulation(self):#
         while(True):
-            js = np.array([self._cache["pos"][k] for k in ["j1", "j2", "j3", "j4", "j5", "j6"]])
+            js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])
+            if np.any([j is None for j in js]):
+                time.sleep(1)
+                continue
             if self.auto_update_simulation():
                 if not np.all(js == self._urdf.sim.pos):
                     self._urdf.sim.pos = js

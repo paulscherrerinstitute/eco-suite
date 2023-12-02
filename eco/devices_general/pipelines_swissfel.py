@@ -63,12 +63,12 @@ class Pipeline(Assembly):
         return get_pipelineclient()
 
     def _get_config(self):
-        return self.pc.get_pipeline_config(self.pipeline_name)
+        return self.pc.get_instance_config(self.pipeline_name)
 
     def _set_config(self, value, hold=False):
         return Changer(
             target=value,
-            changer=lambda v: self.pc.set_pipeline_config(self.pipeline_name, v),
+            changer=lambda v: self.pc.set_instance_config(self.pipeline_name, v),
             hold=hold,
         )
 
