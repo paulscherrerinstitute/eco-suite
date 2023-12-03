@@ -361,46 +361,49 @@ class SmaractStreamdevice(Assembly):
         p.print(value=self.get_current_value())
         ind_callback = self.add_value_callback(p.print)
         pv.put(step_value)
-        while k.isq() is False:
-            if oldstep != step_value:
-                p.stepsize = step_value
-                p.print(value=self.get_current_value())
-                oldstep = step_value
-            k.waitkey()
-            if k.isu():
-                step_value = step_value * 2.0
-                pv.put(step_value)
-            elif k.isd():
-                step_value = step_value / 2.0
-                pv.put(step_value)
-            elif k.isr():
-                pvf.put(1)
-            elif k.isl():
-                pvr.put(1)
-            elif k.iskey("g"):
-                print("enter absolute position (char to abort go to)")
-                sys.stdout.flush()
-                v = sys.stdin.readline()
-                try:
-                    v = float(v.strip())
-                    self.set_target_value(v)
-                except:
-                    print("value cannot be converted to float, exit go to mode ...")
+        try:
+            while k.isq() is False:
+                if oldstep != step_value:
+                    p.stepsize = step_value
+                    p.print(value=self.get_current_value())
+                    oldstep = step_value
+                k.waitkey()
+                if k.isu():
+                    step_value = step_value * 2.0
+                    pv.put(step_value)
+                elif k.isd():
+                    step_value = step_value / 2.0
+                    pv.put(step_value)
+                elif k.isr():
+                    pvf.put(1)
+                elif k.isl():
+                    pvr.put(1)
+                elif k.iskey("g"):
+                    print("enter absolute position (char to abort go to)")
                     sys.stdout.flush()
-            elif k.iskey("s"):
-                print("enter new set value (char to abort setting)")
-                sys.stdout.flush()
-                v = sys.stdin.readline()
-                try:
-                    v = float(v[0:-1])
-                    self.reset_current_value_to(v)
-                except:
-                    print("value cannot be converted to float, exit go to mode ...")
+                    v = sys.stdin.readline()
+                    try:
+                        v = float(v.strip())
+                        self.set_target_value(v)
+                    except:
+                        print("value cannot be converted to float, exit go to mode ...")
+                        sys.stdout.flush()
+                elif k.iskey("s"):
+                    print("enter new set value (char to abort setting)")
                     sys.stdout.flush()
-            elif k.isq():
-                break
-            else:
-                print(help)
+                    v = sys.stdin.readline()
+                    try:
+                        v = float(v[0:-1])
+                        self.reset_current_value_to(v)
+                    except:
+                        print("value cannot be converted to float, exit go to mode ...")
+                        sys.stdout.flush()
+                elif k.isq():
+                    break
+                else:
+                    print(help)
+        except KeyboardInterrupt:
+            print("NB: aborted tweak !")
         self.clear_value_callback(index=ind_callback)
         print(f"final position: {self.get_current_value()}")
         print(f"final tweak step: {pv.get()}")

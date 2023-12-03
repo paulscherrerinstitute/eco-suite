@@ -72,13 +72,13 @@ class Memory:
             for n, (key, content) in enumerate(mem.items()):
                 row = ''
                 t = datetime.fromisoformat(key)
-                row += t.strftime("%Y-%m-%d: %a %-H:%M")
+                row += t.strftime("%Y-%m-%d: %a %H:%M")
                 row +='   '
                 row += content["message"]
                 a.append(row)
             ind_cancel = len(a)
             a.append('--> do nothing')
-            menu = TerminalMenu(a)
+            menu = TerminalMenu(a, cursor_index=ind_cancel)
             print('Select memory to recall')
             index = menu.show()
             if index==ind_cancel:

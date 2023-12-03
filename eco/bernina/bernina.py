@@ -1764,6 +1764,7 @@ namespace.append_obj(
     "VHamos",
     name='vhamos',
     pgroup_adj=config_bernina.pgroup,
+    config_adjustable=daq.config_JFs,
     lazy=True,
     module_name="eco.endstations.bernina_vhamos",
 )
