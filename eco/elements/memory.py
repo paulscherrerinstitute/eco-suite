@@ -59,33 +59,31 @@ class Memory:
             row.append(t.strftime("%Y-%m-%d: %a %-H:%M"))
             row.append(content["message"])
             a.append(row)
-        
+
         return tabulate(a, headers=["Index", "Time", "Message"])
 
     def __call__(self, index=None, **kwargs):
         # print(self.get_memory_difference_str(index))
-    
+
         if index is None:
             self.setup_path()
             mem = self._memories()
             a = []
             for n, (key, content) in enumerate(mem.items()):
-                row = ''
+                row = ""
                 t = datetime.fromisoformat(key)
                 row += t.strftime("%Y-%m-%d: %a %H:%M")
-                row +='   '
+                row += "   "
                 row += content["message"]
                 a.append(row)
             ind_cancel = len(a)
-            a.append('--> do nothing')
+            a.append("--> do nothing")
             menu = TerminalMenu(a, cursor_index=ind_cancel)
-            print('Select memory to recall')
+            print("Select memory to recall")
             index = menu.show()
-            if index==ind_cancel:
-                return 
+            if index == ind_cancel:
+                return
         self.recall(memory_index=index, **kwargs)
-        
-    
 
     def _get_elog(self):
         if hasattr(self, "_elog") and self._elog:
@@ -466,6 +464,9 @@ class Preset:
         self._memory = memory
         self._key = key
         self._name = name
+
+    def get_memory(self):
+        return self._memory.get_memory(key=self._key)
 
     def __call__(self, force=True):
         self._memory.recall(key=self._key, force=force)

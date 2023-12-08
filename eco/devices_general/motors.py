@@ -455,7 +455,7 @@ class PshellMotor(Assembly):
             self.robot.config.powered(True)
         if check:
             lim_low, lim_high = self.get_limits()
-            if not ((lim_low < value) and (value < lim_high)):
+            if not ((lim_low <= value) and (value <= lim_high)):
                 raise AdjustableError("Soft limits violated!")
         cid = self.pc.start_eval(f"{self.name_pshell}.moveAsync({float(value)})&")
         if wait:
@@ -782,7 +782,7 @@ class MotorRecord(Assembly):
     def get_moveDone(self):
         """Adjustable convention"""
         """ 0: moving 1: move done"""
-        return PV(str(self.Id + ".DMOV")).value
+        return PV(str(self.pvname + ".DMOV")).value
 
     def set_limits(
         self, low_limit, high_limit, posType="user", relative_to_present=False
@@ -1315,7 +1315,7 @@ class SmaractRecord(Assembly):
     def get_moveDone(self):
         """Adjustable convention"""
         """ 0: moving 1: move done"""
-        return PV(str(self.Id + ".DMOV")).value
+        return PV(str(self.pvname + ".DMOV")).value
 
     def set_limits(
         self, low_limit, high_limit, posType="user", relative_to_present=False
@@ -1690,7 +1690,7 @@ class SmaractRecord_old(Assembly):
     def get_moveDone(self):
         """Adjustable convention"""
         """ 0: moving 1: move done"""
-        return PV(str(self.Id + ".DMOV")).value
+        return PV(str(self.pvname + ".DMOV")).value
 
     def set_limits(
         self, low_limit, high_limit, posType="user", relative_to_present=False

@@ -3,7 +3,7 @@ import importlib
 from pathlib import Path
 from eco.elements.protocols import InitialisationWaitable
 import sys
-from time import time
+from time import sleep, time
 from colorama import Fore as _color
 from functools import partial
 
@@ -16,7 +16,7 @@ import socket
 from importlib import import_module
 from lazy_object_proxy import Proxy as Proxy_orig
 from tabulate import tabulate
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Thread
 from tqdm import tqdm
 from rich import progress
@@ -261,6 +261,16 @@ class Terminal:
         print(colorama.ansi.set_title("♻️ " + self.get_string() + extension))
 
 
+class IsInitialisingError(Exception):
+    """Raised exception when an object is already initializing.
+
+    Args:
+        Exception (_type_): _description_
+    """
+
+    pass
+
+
 class Namespace(Assembly):
     def __init__(self, name=None, root_module=None, alias_namespace=None):
         super().__init__(name)
@@ -270,6 +280,7 @@ class Namespace(Assembly):
         self.failed_items = {}
         self.initialisation_times = {}
         self.names_without_alias = []
+        self._initializing = []
         self.root_module = root_module
         self.alias_namespace = alias_namespace
 
@@ -317,6 +328,8 @@ class Namespace(Assembly):
                 sys.stdout.flush()
 
         except Exception as expt:
+            if isinstance(expt, IsInitialisingError):
+                raise IsInitialisingError(f"{name} is being initialized already")
             # tb = traceback.format_exc()
             if verbose:
                 print(
@@ -332,6 +345,7 @@ class Namespace(Assembly):
         verbose=False,
         raise_errors=False,
         print_summary=True,
+        print_times=True,
         max_workers=5,
         N_cycles=4,
         silent=True,
@@ -441,6 +455,16 @@ class Namespace(Assembly):
                 )
                 print(f"Initialisation took {time()-starttime} seconds")
 
+            if (not silent) and print_times:
+                from ascii_graph import Pyasciigraph
+
+                gr = Pyasciigraph()
+                for line in gr.graph(
+                    "Initialisation times",
+                    [(tk, tv) for tk, tv in self.initialisation_times_sorted.items()],
+                ):
+                    print(line)
+
             # if verbose:
             #     print(("Configuring %s " % (name)).ljust(25), end="")
             #     sys.stdout.flush()
@@ -461,6 +485,136 @@ class Namespace(Assembly):
             #         # print(sys.exc_info())
             #     if raise_errors:
             #         raise expt
+
+    def init_all_new(
+        self,
+        verbose=False,
+        raise_errors=False,
+        print_summary=True,
+        print_times=True,
+        max_workers=5,
+        N_cycles=4,
+        silent=True,
+        giveup_failed=True,
+        exclude_names=[],
+    ):
+        starttime = time()
+
+        if self.failed_names:
+            print(
+                f"WARNING - previously hard failed items are NOT initialized:\n{self.failed_names} "
+            )
+        if silent:
+            self.silently_initializing = True
+            print(
+                f"Initializing all items in namespace {self.name} silently in background.\n Be aware of unrelated output!"
+            )
+
+            def init():
+                self.exc_init = ThreadPoolExecutor(max_workers=max_workers)
+                jobs = [
+                    self.exc_init.submit(
+                        self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                    )
+                    for name in (self.all_names - set(exclude_names))
+                ]
+                self.exc_init.shutdown(wait=True)
+                self.exc_init = ThreadPoolExecutor(max_workers=1)
+                jobs = [
+                    self.exc_init.submit(
+                        self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                    )
+                    for name in (
+                        self.all_names - self.initialized_names - set(exclude_names)
+                    )
+                ]
+                self.exc_init.shutdown(wait=True)
+                self.silently_initializing = False
+                if giveup_failed:
+                    failed_names = self.lazy_names
+                    for k in failed_names:
+                        self.failed_items[k] = self.lazy_items.pop(k)
+                if print_summary:
+                    print(
+                        f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+                    )
+                    print(
+                        "Failed objects: "
+                        + ", ".join(self.lazy_names.union(self.failed_names))
+                    )
+                    print(f"Initialisation took {time()-starttime} seconds")
+
+            Thread(target=init).start()
+        else:
+            if hasattr(self, "exc_init"):
+                self.exc_init.shutdown(wait=False)
+            with ThreadPoolExecutor(max_workers=max_workers) as exc:
+                names = self.all_names - self.initialized_names - set(exclude_names)
+
+                def tinit(name):
+                    try:
+                        self.init_name(name, verbose=verbose, raise_errors=raise_errors)
+                    except IsInitialisingError:
+                        return ["postpone", name]
+
+                futs = []
+                for tname in names:
+                    futs.append(exc.submit(tinit, tname))
+
+                while futs:
+                    print(f">>>>>>>>>>>  {len(futs)} initialisations to wait for")
+                    for fut in as_completed(futs):
+                        futs.pop(futs.index(fut))
+                        try:
+                            if fut.result()[0] == "postpone":
+                                tname = fut.result()[1]
+                                futs.append(exc.submit(tinit, tname))
+                        except:
+                            pass
+
+            print("Initializing in single thread...")
+            with ThreadPoolExecutor(max_workers=1) as exc:
+                list(
+                    progress.track(
+                        exc.map(
+                            lambda name: self.init_name(
+                                name, verbose=verbose, raise_errors=raise_errors
+                            ),
+                            self.all_names
+                            - self.initialized_names
+                            - set(exclude_names),
+                        ),
+                        description="Initializing ...",
+                        total=len(
+                            self.all_names - self.initialized_names - set(exclude_names)
+                        ),
+                        transient=True,
+                    )
+                )
+
+            if giveup_failed:
+                failed_names = self.lazy_names
+                for k in failed_names:
+                    self.failed_items[k] = self.lazy_items.pop(k)
+            if print_summary:
+                print(
+                    f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+                )
+                print(
+                    "Failed objects: "
+                    + ", ".join(self.lazy_names.union(self.failed_names))
+                )
+                print(f"Initialisation took {time()-starttime} seconds")
+
+            if (not silent) and print_times:
+                from ascii_graph import Pyasciigraph
+
+                gr = Pyasciigraph()
+                for line in gr.graph(
+                    "Initialisation times",
+                    [(tk, tv) for tk, tv in self.initialisation_times_sorted.items()],
+                ):
+                    print(line)
 
     def get_initialized_aliases(self, channeltypes=[]):
         aliases = []
@@ -486,6 +640,13 @@ class Namespace(Assembly):
 
             def init_local():
                 starttime = time()
+                if name in self._initializing:
+                    # while name in self._initializing:
+                    #     sleep(5)
+                    pass
+                    # raise IsInitialisingError(f"NB: {name} is already initializing!!!")
+                else:
+                    self._initializing.append(name)
                 if module_name:
                     obj_maker = getattr(import_module(module_name), obj_factory)
                 else:
@@ -500,7 +661,11 @@ class Namespace(Assembly):
                     self.initialized_items[name] = self.lazy_items.pop(name)
                 except KeyError:
                     self.initialized_items[name] = self.failed_items.pop(name)
-                self.initialisation_times[name] = time() - starttime
+                self._initializing.pop(self._initializing.index(name))
+                if name in self.initialisation_times.keys():
+                    self.initialisation_times[name] += time() - starttime
+                else:
+                    self.initialisation_times[name] = time() - starttime
                 if hasattr(obj_initialized, "alias"):
                     self._append(
                         obj_initialized,

@@ -43,14 +43,14 @@ class Pprm(Assembly):
         self._append(
             AdjustablePvEnum, self.pvname + ":LED", name="led", is_setting=True
         )
-        for bscn,bscc in bs_channels.items():
+        for bscn, bscc in bs_channels.items():
             self._append(
                 DetectorBsStream,
                 bscc,
                 name=bscn,
+                cachannel=None,
                 is_setting=False,
             )
-
 
     def movein(self, target=None):
         if target == None:

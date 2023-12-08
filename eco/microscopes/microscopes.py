@@ -48,6 +48,45 @@ class MicroscopeMotorRecord(Assembly):
             )
 
 
+class MicroscopeFeturaPlus(Assembly):
+    def __init__(
+        self,
+        pvname_camera=None,
+        pv_get_position="SARES20-FETURA:POS_RB",
+        pv_set_position="SARES20-FETURA:POS_SP",
+        pvname_focus = None, 
+        name=None,
+    ):
+        super().__init__(name=name)
+        if pvname_camera:
+            self._append(
+                CameraBasler,
+                pvname_camera,
+                camserver_alias=name,
+                name="camera",
+                is_setting=True,
+                is_display="recursive",
+            )
+        if pv_get_position and pv_set_position:
+            self._append(
+                FeturaPlusZoom,
+                pv_get_position=pv_get_position,
+                pv_set_position=pv_set_position,
+                name='zoom',
+            )
+
+        if pvname_focus:
+            self._append(
+                MotorRecord,
+                pvname_focus,
+                name="focus",
+                is_setting=True,
+                is_display=True,
+                schneider_config=(pvname_zoom, pv_base + f":{port}"),
+            )
+
+
+
 class BerninaInlineMicroscope(Assembly):
     def __init__(
         self,
@@ -133,8 +172,8 @@ class FeturaPlusZoom(Assembly):
         self._append(
             AdjustableVirtual,
             [self.zoom_raw],
-            lambda x: abs(round(x / 1000 * 100) - 100),
-            lambda x: round(abs(x - 100) / 100 * 1000),
+            lambda x: abs(round(x / 1000 * 100)),
+            lambda x: round(abs(x / 100 * 1000)),
             name="zoom",
             is_setting=False,
         )

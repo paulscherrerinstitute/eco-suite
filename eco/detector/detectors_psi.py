@@ -17,6 +17,8 @@ class DetectorBsStream:
         self.bs_channel = bs_channel
         if cachannel == "same":
             self.pvname = bs_channel
+        elif (not cachannel) or cachannel == "none":
+            self.pvname = None
         else:
             self.pvname = cachannel
         if self.pvname:
@@ -31,7 +33,6 @@ class DetectorBsStream:
         ]
 
     def get_current_value(self, force_bsstream=False):
-
         if not force_bsstream:
             if not hasattr(self, "_pv"):
                 return None

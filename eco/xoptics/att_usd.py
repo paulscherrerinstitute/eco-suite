@@ -8,10 +8,20 @@ from ..aliases import Alias, append_object_to_object
 from time import sleep
 from xrayutilities import materials
 import numpy as np
-
 from time import sleep
+import time
+from ..elements.adjustable import (
+    AdjustableError,
+    spec_convenience,
+    update_changes,
+    value_property,
+    AdjustableFS,
+)
+from eco.devices_general.utilities import Changer
+import pylab as plt
 
-
+@spec_convenience
+@value_property
 class Att_usd(Assembly):
     """This is an adjusted smaract record compatible version of the original att_usd by roman."""
 
@@ -21,6 +31,9 @@ class Att_usd(Assembly):
         self.E = None
         self.E_min = 1500
         self._sleeptime = 1
+        self._cb = None
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
         self._append(SmaractRecord, "SARES23-LIC:MOT_10", name="transl_2", is_setting=True, is_display=True)
         self._append(SmaractRecord, "SARES23-LIC:MOT_3", name="transl_1", is_setting=True, is_display=True)
         self.motor_configuration = {
@@ -194,6 +207,8 @@ class Att_usd(Assembly):
             sleep(0.1)
         print("transmission changed")
         self._xp.open()
+    
+
 
     def get_current_value(self):
         self._updateE()
@@ -266,11 +281,89 @@ class Att_usd(Assembly):
         ostr += "  " + "Transmission".ljust(17) + " : % 14.02E\n" % pos
         return ostr
 
-    def __call__(self, *args, **kwargs):
-        self.set_transmission(*args, **kwargs)
-
     def __repr__(self):
-        return self.get_adjustable_positions_str()
+        s = self.get_adjustable_positions_str()
+        return s
+    ######### Motion commands ########
+
+    def get_limits(self):
+        return (self.limit_low(), self.limit_high())
+
+    def set_limits(self, limit_low, limit_high):
+        self.limit_low(limit_low)
+        self.limit_high(limit_high)
+
+    def stop(self):
+        """Adjustable convention"""
+        self.transl_1.stop()
+        self.transl_2.stop()
+        print("STOPPING AT: \n" + get_adjustable_positions_str())
+        pass
+
+    def get_moveDone(self, p1, p2):
+        if self._cb:
+            self._cb()
+        if ((abs(p1 - self.transl_1.get_current_value()) < 0.05)&(abs(p2 - self.transl_2.get_current_value()) < 0.05)):
+            return True
+        else:
+            return False
+
+    def move(self, value, check=True, wait=True, update_value_time=0.1, timeout=120):
+        if check:
+            lim_low, lim_high = self.get_limits()
+            if not ((lim_low <= value) and (value <= lim_high)):
+                raise AdjustableError("Soft limits violated!")
+        self._updateE()
+        self._calc_transmission()
+        idx, t = self._find_nearest(self.transmissions["t"], value)
+        p1, p2 = self.transmissions["pos"][idx]
+        self._xp.close()
+        print(f"Set transmission to {t:0.2E} | Moving to pos {[p1, p2]}")
+        self.transl_1.set_target_value(p1)
+        self.transl_2.set_target_value(p2)
+        if wait:
+            t_start = time.time()
+            time.sleep(update_value_time)
+            while not self.get_moveDone(p1, p2):
+                if (time.time() - t_start) > timeout:
+                    raise AdjustableError(f"motion timeout reached in att_usd motion")
+                time.sleep(update_value_time)
+            self._xp.open()
+
+    def set_target_value(self, value, hold=False, check=True):
+        changer = lambda value: self.move(value, check=check, wait=True)
+        return Changer(
+            target=value,
+            parent=self,
+            changer=changer,
+            hold=hold,
+            stopper=self.stop,
+        )
+
+    ### helper functions ###
+    def sim_target_values(self, values, energy=None, plot=True):
+        try:
+            l = len(values)
+        except TypeError:
+            values = [values]
+        self._updateE(energy=energy)
+        self._calc_transmission()
+        act_values = np.array([self._find_nearest(self.transmissions["t"], value) for value in values])
+        if plot:
+            plt.close("att_usd target_positions")
+            plt.figure("att_usd target_positions")
+            plt.plot(values, act_values.T[1], "o-")
+            plt.grid()
+            plt.xlabel("set transmission")
+            plt.ylabel("reachable transmission")
+            plt.tight_layout()
+        return act_values.T[1]
+
+#    def __call__(self, *args, **kwargs):
+#        self.set_transmission(*args, **kwargs)
+
+#    def __repr__(self):
+#        return self.get_adjustable_positions_str()
 
 
 class att_usd(Assembly):

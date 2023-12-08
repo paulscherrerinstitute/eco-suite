@@ -144,13 +144,17 @@ class Assembly:
         if view_toplevel_only:
             self.view_toplevel_only.append(self.__dict__[name])
 
-    def get_status(self, base="self", verbose=True, channeltypes=None):
+    def get_status(
+        self, base="self", verbose=True, print_times=False, channeltypes=None
+    ):
         if base == "self":
             base = self
         settings = {}
         settings_channels = {}
+        settings_times = {}
         status = {}
         status_channels = {}
+        status_times = {}
         nodet = []
         geterror = []
         for ts in track(
@@ -164,6 +168,7 @@ class Assembly:
             #     status_indicators.update(tstat["status_indicators"])
             # else:
             if hasattr(ts, "get_current_value"):
+                tstart = time.time()
                 try:
                     if (not channeltypes) or (ts.alias.channeltype in channeltypes):
                         settings[
@@ -177,6 +182,7 @@ class Assembly:
                             pass
                 except:
                     geterror.append(ts.alias.get_full_name(base=base))
+                settings_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
 
@@ -241,6 +247,7 @@ class Assembly:
             #     status_indicators.update(tstat["status_indicators"])
             # else:
             if hasattr(ts, "get_current_value"):
+                tstart = time.time()
                 try:
                     if (not channeltypes) or (ts.alias.channeltype in channeltypes):
                         status[
@@ -254,6 +261,7 @@ class Assembly:
                             pass
                 except:
                     geterror.append(ts.alias.get_full_name(base=base))
+                status_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
         if verbose:
@@ -264,11 +272,24 @@ class Assembly:
                     "Retrieved error while running get_current_value from: "
                     + ", ".join(geterror)
                 )
+
+        if print_times:
+            from ascii_graph import Pyasciigraph
+
+            gr = Pyasciigraph()
+            for line in gr.graph(
+                "Times required to get status",
+                sorted(settings_times.items(), key=lambda w: w[1]),
+            ):
+                print(line)
+
         return {
             "settings": settings,
             "status": status,
             "settings_channels": settings_channels,
             "status_channels": status_channels,
+            "settings_times": settings_times,
+            "status_times": status_times,
         }
 
     def status(self, get_string=False):

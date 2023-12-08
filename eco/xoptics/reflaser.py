@@ -1,10 +1,11 @@
 from enum import Enum
-from eco.elements.adjustable import AdjustableGetSet
+from eco.elements.adjustable import AdjustableGetSet, AdjustableFS
 from eco.epics.adjustable import AdjustablePvEnum
 from ..devices_general.motors import MotorRecord, SmaractRecord
 from epics import PV
 from ..aliases import Alias, append_object_to_object
 from ..elements.assembly import Assembly
+import numpy as np
 
 
 class RefLaser_BerninaUSD(Assembly):
@@ -12,11 +13,14 @@ class RefLaser_BerninaUSD(Assembly):
         self,
         pvname_mirrortranslation="SARES23-LIC:MOT_12",
         pvname_onoff="SARES21-CPCL-PS7071:LV_OMPV_1_CH1_SWITCH_SP",
+        outpos_adjfs_path=None,
+        indiff=0.3,
         elog=None,
         name=None,
     ):
         super().__init__(name=name)
         self.elog = elog
+        self.indiff = indiff
         # append_object_to_object(self,
 
         self._append(
@@ -25,19 +29,46 @@ class RefLaser_BerninaUSD(Assembly):
         self._append(
             AdjustablePvEnum, pvname_onoff, name="laser_power", is_setting=True
         )
+        if outpos_adjfs_path:
+            self._append(AdjustableFS, outpos_adjfs_path, name="last_out_position")
+        else:
+            self.last_out_position = None
 
     def movein(self, wait=False):
-
+        if (not self.isin()) and self.last_out_position:
+            self.last_out_position.set_target_value(
+                self.x_mirror.get_current_value()
+            ).wait()
         try:
             self.presets.movein()
         except:
             print("No movein preset found.")
+        if not self.isin():
+            print("WARNING: Reference laser was not moving in properly!")
+
+    def isin(self):
+        inpos = self.presets.movein.get_memory()["settings"]["x_mirror"]
+        diff = self.x_mirror.get_current_value() - inpos
+        if np.abs(diff) < self.indiff:
+            return True
+        else:
+            return False
 
     def moveout(self, wait=False):
-        try:
-            self.presets.moveout()
-        except:
-            print("No moveout preset found.")
+        if self.last_out_position:
+            if self.isin():
+                print("moving to last out position")
+                self.x_mirror.set_target_value(
+                    self.last_out_position.get_current_value()
+                ).wait()
+                self.laser_power(0)
+            else:
+                pass
+        else:
+            try:
+                self.presets.moveout()
+            except:
+                print("No moveout preset found.")
 
         # self._append(
         #     AdjustableGetSet,

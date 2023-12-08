@@ -200,7 +200,6 @@ namespace.append_obj(
 #     )
 
 
-
 namespace.append_obj(
     "OffsetMirrorsBernina",
     name="offset",
@@ -230,7 +229,7 @@ namespace.append_obj(
         "up": "SAROP21-CVME-PBPS1:Lnk9Ch3",
         "down": "SAROP21-CVME-PBPS1:Lnk9Ch4",
     },
-    name="mon_mono",
+    name="mon_mono_old",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
 )
@@ -238,6 +237,7 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SAROP21-PBPS103",
+    use_calibration=False,
     # channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
     # channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
     # channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
@@ -252,7 +252,7 @@ namespace.append_obj(
     #     "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
     #     "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
     # },
-    name="mon_mono_new",
+    name="mon_mono",
     module_name="eco.xdiagnostics.intensity_monitors",
     # pipeline_computation="SAROP21-PBPS103_proc",
     lazy=True,
@@ -383,6 +383,7 @@ namespace.append_obj(
         "right": "SARFE10-CVME-PHO6212:Lnk9Ch15-DATA-SUM",
     },
     name="mon_und",
+    use_calibration=False,
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
 )
@@ -399,6 +400,7 @@ namespace.append_obj(
     "RefLaser_BerninaUSD",
     module_name="eco.xoptics.reflaser",
     name="reflaser",
+    outpos_adjfs_path="/sf/bernina/config/eco/configuration/reflaser_usd_lastposition.json",
     lazy=True,
 )
 
@@ -434,7 +436,7 @@ namespace.append_obj(
         "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
         "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
     },
-    name="mon_opt",
+    name="mon_opt_old",
     module_name="eco.xdiagnostics.intensity_monitors",
     lazy=True,
 )
@@ -442,6 +444,7 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SAROP21-PBPS133",
+    use_calibration=False,
     # channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
     # channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
     # channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
@@ -456,7 +459,7 @@ namespace.append_obj(
     #     "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
     #     "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
     # },
-    name="mon_opt_new",
+    name="mon_opt",
     module_name="eco.xdiagnostics.intensity_monitors",
     pipeline_computation="SAROP21-PBPS133_proc",
     lazy=True,
@@ -534,6 +537,15 @@ namespace.append_obj(
     in_target=3,
     lazy=True,
 )
+namespace.append_obj(
+    "AttenuatorAramis",
+    "SAROP21-OATT135",
+    shutter=xp,
+    set_limits=[],
+    module_name="eco.xoptics.attenuator_aramis",
+    name="att",
+)
+
 
 namespace.append_obj(
     "SolidTargetDetectorBerninaUSD",
@@ -629,12 +641,12 @@ namespace.append_obj(
     name="tt_kb",
     lazy=True,
 )
-namespace.append_obj(
-    "TimetoolSpatial",
-    module_name="eco.timing.timing_diag",
-    name="tt_spatial_dev",
-    lazy=True,
-)
+# namespace.append_obj(
+#     "TimetoolSpatial",
+#     module_name="eco.timing.timing_diag",
+#     name="tt_spatial_dev",
+#     lazy=True,
+# )
 
 namespace.append_obj(
     "HexapodSymmetrie",
@@ -965,16 +977,16 @@ namespace.append_obj(
     lazy=True,
 )
 
-# namespace.append_obj(
-#    "DetectorRobot",
-#    JF_detector_id="JF01T03V01",
-#    JF_detector_name="det_diff",
-#    pgroup_adj=config_bernina.pgroup,
-#    config_adj=config_JFs,
-#    module_name="eco.endstations.bernina_robot",
-#    lazy=True,
-#    name="robot",
-# )
+namespace.append_obj(
+   "DetectorRobot",
+   JF_detector_id="JF01T03V01",
+   JF_detector_name="det_diff",
+   pgroup_adj=config_bernina.pgroup,
+   config_adj=config_JFs,
+   module_name="eco.endstations.bernina_robot",
+   lazy=True,
+   name="robot",
+)
 
 namespace.append_obj(
     "MpodModule",
@@ -1689,7 +1701,7 @@ namespace.append_obj(
 #         self._append(FeturaMicroscope, pvname_camera = pvname_camera, pvname_base_zoom=pvname_base_zoom, name = "camera", camserver_alias=name, is_display="recursive")
 #         if pvname_target_stage:
 #             self._append(MotorRecord, pvname = pvname_target_stage, name = "target_transl")
-#         self._append(MotorRecord,'SARES23-USR:MOT_2', name='delaystage', is_setting=True)        
+#         self._append(MotorRecord,'SARES23-USR:MOT_2', name='delaystage', is_setting=True)
 
 # namespace.append_obj(
 #     SpatialTimetool,
@@ -1701,11 +1713,19 @@ namespace.append_obj(
 # )
 
 namespace.append_obj(
+    "MicroscopeFeturaPlus",
+    "SARES20-PROF142-M1",
+    lazy=True,
+    name="samplecam_highres",
+    module_name="eco.microscopes",
+)
+
+namespace.append_obj(
     "MicroscopeMotorRecord",
     "SARES20-CAMS142-C2",
     lazy=True,
     pvname_zoom="SARES20-MF1:MOT_7",
-    name="samplecam_inline",
+    name="samplecam_topview",
     module_name="eco.microscopes",
 )
 
@@ -1714,6 +1734,13 @@ namespace.append_obj(
     "SARES20-CAMS142-M1",
     lazy=True,
     name="samplecam_sideview",
+    module_name="eco.devices_general.cameras_swissfel",
+)
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C2",
+    lazy=True,
+    name="samplecam_inline",
     module_name="eco.devices_general.cameras_swissfel",
 )
 
@@ -1762,7 +1789,7 @@ namespace.append_obj(
 # )
 namespace.append_obj(
     "VHamos",
-    name='vhamos',
+    name="vhamos",
     pgroup_adj=config_bernina.pgroup,
     config_adjustable=daq.config_JFs,
     lazy=True,
@@ -2357,7 +2384,7 @@ namespace.append_obj(
 namespace.append_obj(
     "AramisDcmFeedback",
     mono=mono,
-    xbpm=mon_opt_new,
+    xbpm=mon_opt,
     name="mono_feedback",
     lazy=True,
     module_name="eco.xoptics.xopt_feedback",
@@ -2676,56 +2703,49 @@ namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
 # import numpy as np
 
 
-# class LiquidJetSpectroscopy(Assembly):
-#     def __init__(self, name=None):
-#         super().__init__(name=name)
-#         self._append(
-#             MotorRecord,
-#             "SARES20-MF1:MOT_2",
-#             name="x_jet",
-#             backlash_definition=True,
-#             is_setting=True,
-#         )
-#         self._append(
-#             MotorRecord,
-#             "SARES20-MF1:MOT_4",
-#             name="y_jet",
-#             backlash_definition=True,
-#             is_setting=True,
-#         )
-#         self._append(
-#             MotorRecord,
-#             "SARES20-MF1:MOT_6",
-#             name="z_jet",
-#             backlash_definition=True,
-#             is_setting=True,
-#         )
-#         self._append(
-#             MotorRecord,
-#             "SARES20-MF1:MOT_3",
-#             name="x_analyzer",
-#             backlash_definition=True,
-#             is_setting=True,
-#         )
-#         self._append(
-#             MotorRecord,
-#             "SARES21-XRD:MOT_P_T",
-#             name="y_vhdet",
-#             is_setting=True,
-#         )
-#         self._append(
-#             Jungfrau, "JF03T01V02", name="det_i0", pgroup_adj=config_bernina.pgroup
-#         )
-#         self._append(
-#             Jungfrau, "JF04T01V01", name="det_em", pgroup_adj=config_bernina.pgroup
-#         )
-#         self._append(
-#             Jungfrau, "JF14T01V01", name="det_vhamos", pgroup_adj=config_bernina.pgroup
-#         )
-#         self._append(CameraBasler, "SARES20-CAMS142-M2", name="prof_pump")
+class LiquidJetSpectroscopy(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_12",
+            name="x",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_10",
+            name="y",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_11",
+            name="z",
+            backlash_definition=True,
+            is_setting=True,
+        )
+        # self._append(
+        #     MotorRecord,
+        #     "SARES20-MF1:MOT_3",
+        #     name="x_analyzer",
+        #     backlash_definition=True,
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     MotorRecord,
+        #     "SARES21-XRD:MOT_P_T",
+        #     name="y_vhdet",
+        #     is_setting=True,
+        #
+        self._append(
+            Jungfrau, "JF04T01V01", name="det_em", pgroup_adj=config_bernina.pgroup
+        )
 
 
-# namespace.append_obj(LiquidJetSpectroscopy, name="jet", lazy=True)
+namespace.append_obj(LiquidJetSpectroscopy, name="liquidjet", lazy=True)
 
 
 # class Tapedrive(Assembly):

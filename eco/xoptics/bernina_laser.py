@@ -299,7 +299,7 @@ class LaserBernina(Assembly):
         )
         # Waveplate and Delay stage
         self._append(
-            MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
+            MotorRecord, self.pvname + "-M533:MOT", name="-LIC:MOT", is_setting=True
         )
 
         self._append(
