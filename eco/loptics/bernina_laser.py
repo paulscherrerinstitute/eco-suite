@@ -306,9 +306,41 @@ class LaserBernina(Assembly):
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
 
+
+        ######## Implementation segmented ND filter wheel in rotation stage #########
         self._append(
-            MotorRecord, "SARES20-MF1:MOT_16", name="nd_filt", is_setting=True
+            MotorRecord, "SARES20-MF1:MOT_16", name="nd_filt_stg", is_setting=True
         )
+
+        filters = np.array([
+            [0.912010839, 330],
+            [0.794328235, 15],
+            [0.630957345, 60],
+            [0.501187234, 105],
+            [0.398107171, 150],
+            [0.316227766, 195],
+            [0.251188643, 240],
+            [0.1, 285],
+        ])
+
+        def set_transmission(t):
+            idx = np.argmin(abs(filters.T[0]-t))
+            stg = filters[idx][1]
+            t = filters[idx][0]
+            print(f"Setting ND filter transmission to {t:.3} at position {stg}")
+            return stg
+        
+        def get_transmission(stg):
+            idx = np.argmin(abs(filters.T[1]-stg))
+            t = filters[idx][0]
+            return t
+        
+        self._append(
+            AdjustableVirtual, [self.nd_filt_stg], get_transmission, set_transmission, name="nd_filt"
+        )
+
+        ######## END Implementation segmented ND filter wheel in rotation stage #########
+
 
         self._append(
             AdjustableFS,

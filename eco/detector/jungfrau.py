@@ -12,6 +12,16 @@ from datetime import datetime
 import requests
 
 
+class JungfrauChannel(Assembly):
+    def __init__(
+        self,
+        jf_id,
+        name=None,
+    ):
+        super().__init__(name=name)
+        self.alias = Alias(name, channel=jf_id, channeltype="JF")
+
+
 class Jungfrau(Assembly):
     def __init__(
         self,
@@ -25,10 +35,15 @@ class Jungfrau(Assembly):
         name=None,
     ):
         super().__init__(name=name)
-        self.alias = Alias(name, channel=jf_id, channeltype="JF")
+        # self.alias = Alias(name, channel=jf_id, channeltype="JF")
         self.pgroup = pgroup_adj
         self.jf_id = jf_id
         self.broker_address = broker_address
+        self._append(JungfrauChannel,jf_id,name='data')
+        self._append(JungfrauChannel,jf_id+'_rawdata',name='raw_data')
+        self._append(JungfrauChannel,jf_id+'_raw',name='data_raw')
+        self._append(JungfrauChannel,jf_id+'_dap_col4',name='data_online_processing')
+        self._append(JungfrauChannel,jf_id+'_dap_col3',name='ppref_online_processing')
         self._append(
             AdjustablePv,
             pv_trigger,
@@ -161,7 +176,7 @@ class Jungfrau(Assembly):
     def get_isrunning(self):
         is_running = (
             self.jf_id
-            in requests.get(f"{self.broker_address}/get_running_detectors_list").json()[
+            in requests.get(f"{self.broker_adc_to_energyaddress}/get_running_detectors_list").json()[
                 "detectors"
             ]
         )
@@ -181,7 +196,7 @@ class Jungfrau(Assembly):
     #         JF_list = self.get_JFs_running()
     #     parameters = {
     #         "pgroup": pgroup,
-    #         "rate_multiplicator": 1,
+    #         "rate_multiplicator": 1,adc_to_energy
     #         "detectors": {tJF: {} for tJF in JF_list},
     #     }
     #     return requests.post(
@@ -256,6 +271,14 @@ class JungfrauDaqConfig(Assembly):
             is_display=True,
             is_setting=True,
         )
+        self._append(
+            AdjustableGetSet,
+            self._get_save_online_processing,
+            self._set_save_online_processing,
+            name="save_online_processing",
+            is_display=True,
+            is_setting=True,
+        )
 
     def _get_adc_to_energy(self, *args):
         try:
@@ -286,7 +309,7 @@ class JungfrauDaqConfig(Assembly):
             self._jf_daq_cfg.set_target_value(cfg).wait()
         else:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["adc_to_energy"] = False
+            cfg[self._jf_id]["geometry"] = False
             self._jf_daq_cfg.set_target_value(cfg).wait()
 
     def _get_compressed_bitshuffle(self, *args):
@@ -305,6 +328,25 @@ class JungfrauDaqConfig(Assembly):
             cfg[self._jf_id]["compression"] = False
             self._jf_daq_cfg.set_target_value(cfg).wait()
 
+    def _get_save_online_processing(self, *args):
+        try:
+            return not self._jf_daq_cfg.get_current_value()[self._jf_id][
+                "save_dap_results"
+            ]
+        except KeyError:
+            # raise Exception("unclear what the default for keeping raw files is!")
+            return None
+
+    def _set_save_online_processing(self, value):
+        if value:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["save_dap_results"] = False
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+        else:
+            cfg = self._jf_daq_cfg.get_current_value()
+            cfg[self._jf_id]["save_dap_results"] = True
+            self._jf_daq_cfg.set_target_value(cfg).wait()
+
     def _get_keep_raw_data(self, *args):
         try:
             return not self._jf_daq_cfg.get_current_value()[self._jf_id][
@@ -321,7 +363,7 @@ class JungfrauDaqConfig(Assembly):
             self._jf_daq_cfg.set_target_value(cfg).wait()
         else:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["remove_raw_files"] = True
+            cfg[self._jf_id]["remove_raw_files"] = Trueadc_to_energy
             self._jf_daq_cfg.set_target_value(cfg).wait()
 
     def _get_large_pixel_processing(self, *args):

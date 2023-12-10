@@ -30,7 +30,7 @@ class AnalogInput(Assembly):
             self.pvname + ".EGU",
             name="unit",
             is_setting=False,
-            is_display=True,
+            is_display=False,
         )
         self.value.unit = self.unit
         self._append(
@@ -59,14 +59,14 @@ class AnalogInput(Assembly):
             self.pvname + ".EOFF",
             name="linear_calibration_offset",
             is_setting=True,
-            is_display=True,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
             self.pvname + ".ESLO",
             name="linear_calibration_slope",
             is_setting=True,
-            is_display=True,
+            is_display=False,
         )
 
     def get_current_value(self):

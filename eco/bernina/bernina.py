@@ -826,13 +826,13 @@ namespace.append_obj(
     module_name="eco.devices_general.wago",
 )
 
-namespace.append_obj(
-    "AnalogInput",
-    "SARES20-CWAG-GPS01:ADC08",
-    lazy=True,
-    name="oxygen_sensor",
-    module_name="eco.devices_general.wago",
-)
+# namespace.append_obj(
+#     "AnalogInput",
+#     "SARES20-CWAG-GPS01:ADC08",
+#     lazy=True,
+#     name="oxygen_sensor",
+#     module_name="eco.devices_general.wago",
+# )
 
 namespace.append_obj(
     "GudeStrip",
@@ -1722,7 +1722,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "MicroscopeMotorRecord",
-    "SARES20-CAMS142-C2",
+    "SARES20-CAMS142-C1",
     lazy=True,
     pvname_zoom="SARES20-MF1:MOT_7",
     name="samplecam_topview",
@@ -1742,6 +1742,15 @@ namespace.append_obj(
     lazy=True,
     name="samplecam_inline",
     module_name="eco.devices_general.cameras_swissfel",
+)
+
+
+namespace.append_obj(
+    "OxygenSensor",
+    "SARES20-CWAG-GPS01:ADC08",
+    lazy=True,
+    name="oxygen_sensor",
+    module_name="eco.devices_general.sensors_ai",
 )
 
 # namespace.append_obj(
@@ -2680,8 +2689,14 @@ class IlluminatorsLasers(Assembly):
         self._append(
             MpodChannel,
             pvbase="SARES21-CPCL-PS7071",
+            channel_number=5,
+            name="illumination_inline",
+        )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
             channel_number=2,
-            name="illumination_1",
+            name="illumination_side",
         )
         self._append(
             MpodChannel,
