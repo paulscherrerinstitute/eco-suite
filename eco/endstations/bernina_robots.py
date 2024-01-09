@@ -119,7 +119,9 @@ class StaeubliTx200(Assembly):
         If simulate = True, an array of interpolated positions in either joint or cartesian        
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
-        sim = self._get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')")
+        sim = np.array(self._get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"))
+        lin = np.array([self.z_lin()]*len(sim))
+        sim = np.vstack([lin,sim.T]).T
         if plot:
             if self._urdf is not None:
                 self.auto_update_simulation(False)
@@ -130,7 +132,7 @@ class StaeubliTx200(Assembly):
                 if res == "y":
                     self.auto_update_simulation(True)
         else:
-            return np.array(sim)
+            return sim
     
     def simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint", plot=True):
         """        
@@ -149,7 +151,9 @@ class StaeubliTx200(Assembly):
         If simulate = True, an array of interpolated positions in either joint or cartesian        
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
-        sim = self._get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')")
+        sim = np.array(self._get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
+        lin = np.array([self.z_lin()]*11)
+        sim = np.vstack([lin,sim.T]).T
         if plot:
             if self._urdf is not None:
                 self.auto_update_simulation(False)
@@ -160,7 +164,7 @@ class StaeubliTx200(Assembly):
                 if res == "y":
                     self.auto_update_simulation(True)
         else:
-            return np.array(sim)
+            return sim
     
     def simulate_current_pos(self):
         js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])

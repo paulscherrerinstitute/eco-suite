@@ -282,6 +282,29 @@ class Daq(Assembly):
         )
 
 
+#     def get_dap_settings(detector_name):
+#     dap_parameters = {}
+#     try:
+#         r = requests.post(f'{broker_slow_address}/get_dap_settings', json={'detector_name': detector_name}, timeout=TIMEOUT_DAQ)
+#         answer = r.json()
+#         if "status" in answer and answer["status"] == "ok":
+#             dap_parameters = answer.get("message", {})
+#         else:
+#             print(f"Got bad result from daq for dap parameters : {answer}")
+#         return dap_parameters
+#     except Exception as e:
+#         print(f"Error to get dap configuration {e}")
+#         return dap_parameters
+
+# def set_dap_settings(detector_name, parameters):
+#     try:
+#         r = requests.post(f'{broker_slow_address}/set_dap_settings', json={'detector_name': detector_name, 'parameters': parameters}, timeout=TIMEOUT_DAQ)
+#         answer = r.json()
+#         print(f"answer from daq for changing dap parameters for detector {detector_name} : {answer}")
+#     except Exception as e:
+#         print(f"Error to set dap configuration {e}")
+
+
 def validate_response(resp):
     if resp.get("status") == "ok":
         return resp

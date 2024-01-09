@@ -359,13 +359,6 @@ class Att_usd(Assembly):
             plt.tight_layout()
         return act_values.T[1]
 
-#    def __call__(self, *args, **kwargs):
-#        self.set_transmission(*args, **kwargs)
-
-#    def __repr__(self):
-#        return self.get_adjustable_positions_str()
-
-
 class att_usd(Assembly):
     def __init__(self, name=None, alias_namespace=None, xp=None):
         super().__init__(name=name)

@@ -278,7 +278,9 @@ class Namespace(Assembly):
         self.lazy_items = {}
         self.initialized_items = {}
         self.failed_items = {}
+        self.initialisation_times_lazy = {}
         self.initialisation_times = {}
+
         self.names_without_alias = []
         self._initializing = []
         self.root_module = root_module
@@ -287,6 +289,10 @@ class Namespace(Assembly):
     @property
     def initialisation_times_sorted(self):
         return dict(sorted(self.initialisation_times.items(), key=lambda w: w[1]))
+
+    @property
+    def initialisation_times_lazy_sorted(self):
+        return dict(sorted(self.initialisation_times_lazy.items(), key=lambda w: w[1]))
 
     @property
     def initialized_names(self):
@@ -319,7 +325,7 @@ class Namespace(Assembly):
                 titem._wait_for_initialisation()
             else:
                 dir(titem)
-
+            self.initialisation_times[name] = time() - starttime
             if verbose:
                 print(
                     f"{time()-starttime} s "
@@ -331,6 +337,7 @@ class Namespace(Assembly):
             if isinstance(expt, IsInitialisingError):
                 raise IsInitialisingError(f"{name} is being initialized already")
             # tb = traceback.format_exc()
+            self.initialisation_times[name] = time() - starttime
             if verbose:
                 print(
                     f"{time()-starttime} s "
@@ -662,10 +669,10 @@ class Namespace(Assembly):
                 except KeyError:
                     self.initialized_items[name] = self.failed_items.pop(name)
                 self._initializing.pop(self._initializing.index(name))
-                if name in self.initialisation_times.keys():
-                    self.initialisation_times[name] += time() - starttime
+                if name in self.initialisation_times_lazy.keys():
+                    self.initialisation_times_lazy[name] += time() - starttime
                 else:
-                    self.initialisation_times[name] = time() - starttime
+                    self.initialisation_times_lazy[name] = time() - starttime
                 if hasattr(obj_initialized, "alias"):
                     self._append(
                         obj_initialized,
@@ -705,7 +712,7 @@ class Namespace(Assembly):
             except TypeError:
                 obj = obj_maker(*args, **kwargs)
             self.initialized_items[name] = obj
-            self.initialisation_times[name] = time() - starttime
+            self.initialisation_times_lazy[name] = time() - starttime
             if self.root_module:
                 sys.modules[self.root_module].__dict__[name] = obj
             if hasattr(obj, "alias"):

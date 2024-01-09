@@ -153,8 +153,6 @@ components = [
     #     "args": [],
     #     "kwargs": {},
     # },
-
-
     # {
     #     "name": "mono_old",
     #     "args": ["SAROP21-ODCM098"],
@@ -210,14 +208,14 @@ components = [
         "desc": "Spectral encoding timing diagnostics before Attenuator.",
         "type": "eco.xdiagnostics.timetools:SpectralEncoder",
     },
-    {
-        "name": "att",
-        "args": ["SAROP21-OATT135"],
-        "kwargs": {"shutter": Component("xp"), "set_limits": []},
-        "z_und": 135,
-        "desc": "Attenuator Bernina",
-        "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
-    },
+    # {
+    #     "name": "att",
+    #     "args": ["SAROP21-OATT135"],
+    #     "kwargs": {"shutter": Component("xp"), "set_limits": []},
+    #     "z_und": 135,
+    #     "desc": "Attenuator Bernina",
+    #     "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
+    # },
     # {
     #     "name": "slit_att",
     #     "args": ["SAROP21-OAPU136"],

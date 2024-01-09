@@ -39,11 +39,14 @@ class Jungfrau(Assembly):
         self.pgroup = pgroup_adj
         self.jf_id = jf_id
         self.broker_address = broker_address
-        self._append(JungfrauChannel,jf_id,name='data')
-        self._append(JungfrauChannel,jf_id+'_rawdata',name='raw_data')
-        self._append(JungfrauChannel,jf_id+'_raw',name='data_raw')
-        self._append(JungfrauChannel,jf_id+'_dap_col4',name='data_online_processing')
-        self._append(JungfrauChannel,jf_id+'_dap_col3',name='ppref_online_processing')
+        self._append(JungfrauChannel, jf_id, name="data")
+        self._append(JungfrauChannel, jf_id + "_rawdata", name="data_raw")
+        self._append(
+            JungfrauChannel, jf_id + "_dap_col4", name="data_online_processing"
+        )
+        self._append(
+            JungfrauChannel, jf_id + "_dap_col3", name="ppref_online_processing"
+        )
         self._append(
             AdjustablePv,
             pv_trigger,
@@ -176,9 +179,9 @@ class Jungfrau(Assembly):
     def get_isrunning(self):
         is_running = (
             self.jf_id
-            in requests.get(f"{self.broker_adc_to_energyaddress}/get_running_detectors_list").json()[
-                "detectors"
-            ]
+            in requests.get(
+                f"{self.broker_adc_to_energyaddress}/get_running_detectors_list"
+            ).json()["detectors"]
         )
         return is_running
 
@@ -239,14 +242,16 @@ class JungfrauDaqConfig(Assembly):
             is_display=True,
             is_setting=True,
         )
+
         self._append(
             AdjustableGetSet,
-            self._get_keep_raw_data,
-            self._set_keep_raw_data,
-            name="keep_raw_data",
+            self._get_rounding_factor,
+            self._set_rounding_factor,
+            name="rounding_factor_keV",
             is_display=True,
             is_setting=True,
-        )
+        )        
+        
         self._append(
             AdjustableGetSet,
             self._get_large_pixel_processing,
@@ -255,19 +260,28 @@ class JungfrauDaqConfig(Assembly):
             is_display=True,
             is_setting=True,
         )
-        self._append(
-            AdjustableGetSet,
-            self._get_rounding_factor,
-            self._set_rounding_factor,
-            name="rounding_factor_keV",
-            is_display=True,
-            is_setting=True,
-        )
+
         self._append(
             AdjustableGetSet,
             self._get_disabled_modules,
             self._set_disabled_modules,
             name="disabled_tiles",
+            is_display=True,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableGetSet,
+            self._get_binning,
+            self._set_binning,
+            name="downsample",
+            is_display=True,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableGetSet,
+            self._get_keep_raw_data,
+            self._set_keep_raw_data,
+            name="keep_raw_data",
             is_display=True,
             is_setting=True,
         )
@@ -330,9 +344,7 @@ class JungfrauDaqConfig(Assembly):
 
     def _get_save_online_processing(self, *args):
         try:
-            return not self._jf_daq_cfg.get_current_value()[self._jf_id][
-                "save_dap_results"
-            ]
+            return self._jf_daq_cfg.get_current_value()[self._jf_id]["save_dap_results"]
         except KeyError:
             # raise Exception("unclear what the default for keeping raw files is!")
             return None
@@ -340,11 +352,11 @@ class JungfrauDaqConfig(Assembly):
     def _set_save_online_processing(self, value):
         if value:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["save_dap_results"] = False
+            cfg[self._jf_id]["save_dap_results"] = True
             self._jf_daq_cfg.set_target_value(cfg).wait()
         else:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["save_dap_results"] = True
+            cfg[self._jf_id]["save_dap_results"] = False
             self._jf_daq_cfg.set_target_value(cfg).wait()
 
     def _get_keep_raw_data(self, *args):

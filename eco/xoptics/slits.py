@@ -330,15 +330,18 @@ class SlitBlades(Assembly):
 
 @addSlitRepr
 class SlitPosWidth(Assembly):
-    def __init__(self, pvname, name=None, elog=None):
+    def __init__(self, pvname, motornames = None, name=None, elog=None):
         super().__init__(name=name)
 
         self.pvname = pvname
-
-        self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos")
-        self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos")
-        self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap")
-        self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap")
+        if motornames is not None:
+            for name, ext in motornames.items():
+                self._append(MotorRecord, pvname + ext, name=name)
+        else:
+            self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos")
+            self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos")
+            self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap")
+            self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap")
 
         def getblade(pos, gap, direction=1):
             return pos + direction * gap / 2

@@ -15,6 +15,8 @@ from ..elements.adjustable import (
 from numpy import isnan, all
 import time
 
+@spec_convenience
+@value_property
 class AttenuatorAramis(Assembly):
     def __init__(
         self, Id, E_min=1500, sleeptime=10, name=None, set_limits=[-52, 2], shutter=None
@@ -83,7 +85,6 @@ class AttenuatorAramis(Assembly):
     def get_moveDone(self):
         return all([m.get_moveDone() for m in self.motors])
 
-
     def get_transmission(self, verbose=True):
         tFun = PV(self.pvname + ":TRANS_RB").value
         tTHG = PV(self.pvname + ":TRANS3EDHARM_RB").value
@@ -147,9 +148,6 @@ class AttenuatorAramis(Assembly):
         s += "Targets in beam:\n"
         s += "%s" % self.get_status()[0]
         return s
-
-    def __call__(self, *args, **kwargs):
-        self.set_transmission(*args, **kwargs)
 
 
 class AttenuatorAramisStandalone(Assembly):

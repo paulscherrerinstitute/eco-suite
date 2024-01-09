@@ -763,6 +763,13 @@ namespace.append_obj(
     # lazy=False,
 )
 namespace.append_obj(
+    "DigitizerKeysight",
+    "SARES21-GES1",
+    name="digitizer_keysight_user",
+    module_name="eco.devices_general.digitizers",
+    lazy=True,
+)
+namespace.append_obj(
     "DigitizerIoxos",
     "SARES20-LSCP9-FNS",
     name="digitizer_ioxos_user",
@@ -874,8 +881,8 @@ namespace.append_obj(
     pgroup_adj=config_bernina.pgroup,
     configsjf_adj=config_JFs,
     detectors=[
-        {"name": "det_fluo", "jf_id": "JF04T01V01"},
-        {"name": "det_vHamos", "jf_id": "JF05T01V01"},
+        # {"name": "det_fluo", "jf_id": "JF04T01V01"},
+        # {"name": "det_vHamos", "jf_id": "JF05T01V01"},
     ],
     fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     lazy=True,
@@ -895,7 +902,7 @@ namespace.append_obj(
     Id="SARES21-XRD",
     configuration=config_bernina.xrd_config(),
     detectors=[
-        {"name": "det_diff", "jf_id": "JF01T03V01"},
+        # {"name": "det_diff", "jf_id": "JF01T03V01"},
     ],
     pgroup_adj=config_bernina.pgroup,
     configsjf_adj=config_JFs,
@@ -978,14 +985,14 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
-   "DetectorRobot",
-   JF_detector_id="JF01T03V01",
-   JF_detector_name="det_diff",
-   pgroup_adj=config_bernina.pgroup,
-   config_adj=config_JFs,
-   module_name="eco.endstations.bernina_robot",
-   lazy=True,
-   name="robot",
+    "DetectorRobot",
+    JF_detector_id="JF07T32V02",
+    JF_detector_name="det_diff",
+    pgroup_adj=config_bernina.pgroup,
+    config_adj=config_JFs,
+    module_name="eco.endstations.bernina_robot",
+    lazy=True,
+    name="robot",
 )
 
 namespace.append_obj(
@@ -1800,7 +1807,7 @@ namespace.append_obj(
     "VHamos",
     name="vhamos",
     pgroup_adj=config_bernina.pgroup,
-    config_adjustable=daq.config_JFs,
+    config_adjustable=config_JFs,
     lazy=True,
     module_name="eco.endstations.bernina_vhamos",
 )
@@ -1834,13 +1841,13 @@ from ..devices_general.motors import SmaractStreamdevice
 from ..loptics.bernina_laser import DelayTime
 
 
-namespace.append_obj(
-    "Organic_crystal_breadboard",
-    lazy=True,
-    name="ocb",
-    module_name="eco.endstations.bernina_sample_environments",
-    Id="SARES23",
-)
+# namespace.append_obj(
+#     "Organic_crystal_breadboard",
+#     lazy=True,
+#     name="ocb",
+#     module_name="eco.endstations.bernina_sample_environments",
+#     Id="SARES23",
+# )
 
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 
@@ -2286,7 +2293,7 @@ from ..microscopes import MicroscopeMotorRecord
 # class GratingHolder(Assembly):
 #     def __init__(self, name=""):
 #         super().__init__(name=name)
-#         self._append(
+#         self._append(y=True,
 #             MotorRecord,
 #             "SARES20-MF1:MOT_7",
 #             name="vertical",
@@ -2307,7 +2314,7 @@ from ..microscopes import MicroscopeMotorRecord
 
 # ad hoc 2 pulse setup
 # class Laser2pulse(Assembly):
-#    def __init__(self, name=None):
+#    def __init__(self, name=None):y=True,
 #        super().__init__(name=name)
 #        self._append(
 #            SmaractStreamdevice,
@@ -2465,30 +2472,36 @@ namespace.append_obj(
 
 
 ############## experiment specific #############
+
+class Pumpdelay(Assembly):
+    def __init__(
+            self,
+            delaystage_PV="SARES23-USR:MOT_2",
+            name=None,
+            ):
+        super().__init__(name=name)
+        
+
+        self._append(
+            SmaractRecord, delaystage_PV, name="delaystage", is_setting=True
+        )
+        self._append(DelayTime, self.delaystage, name="pdelay", is_setting=True)
+
+
+namespace.append_obj(
+    Pumpdelay,
+    name="pumpdelay",
+    lazy=True,
+)
+
+
+
 from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 
-class Laser_Xray_Timing(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(
-            Stage_LXT_Delay,
-            las.delay_glob,
-            las.xlt,
-            direction=-1,
-            name="delay",
-        )
-
-
-namespace.append_obj(
-    Laser_Xray_Timing,
-    lazy=True,
-    name="lxt_01",
-)
-
 namespace.append_obj(
     "StageLxtDelay",
-    las.delay_pump,
+    pumpdelay.pdelay,
     las.xlt,
     lazy=True,
     name="lxt",
@@ -2498,68 +2511,6 @@ namespace.append_obj(
 
 ##combined delaystage with phase shifter motion##
 
-
-# class Stage_LXT_Delay(Assembly):
-#     def __init__(self, delay_adj, delay_adj_offset_fina, name=None):
-#         super().__init__(name=name)
-#         self.delay_adj = delay_adj
-#         self.delay_adj_offset_fina = delay_adj_offset_fina
-#         self._append(
-#             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_phase_shifter_threshold",
-#             name="thr",
-#             default_value=-50e-12,
-#             is_setting=True,
-#         )
-#         self._append(
-#             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_phase_shifter_offset",
-#             name="ps0",
-#             default_value=9.490000000000003e-09,
-#             is_setting=True,
-#         )
-#         self._append(
-#             AdjustableFS,
-#             self.delay_adj_offset_fina,
-#             name="dp0",
-#             default_value=0,
-#             is_setting=True,
-#         )
-
-#         def get_comb_delay(pd, ps):
-#             ps_rel = ps - self.ps0()
-#             pd_rel = pd - self.dp0()
-#             return ps_rel + pd_rel
-
-#         def set_comb_delay(delay):
-#             if delay > self.thr():
-#                 if np.abs(las.xlt() - self.ps0()) > 50e-15:
-#                     ps_pos = self.ps0()
-#                 else:
-#                     ps_pos = None
-#                 pd_pos = self.dp0() + delay
-#             else:
-#                 ps_pos = self.ps0() + delay
-#                 pd_pos = self.dp0()
-#             return pd_pos, ps_pos
-
-#         self._append(
-#             AdjustableVirtual,
-#             [self.delay_adj, las.xlt],
-#             get_comb_delay,
-#             set_comb_delay,
-#             name="delay_combined",
-#         )
-# thz._append(Stage_LXT_Delay, thz.delay_thz, "/photonics/home/gac-bernina/eco/configuration/p21145_delay_stage_offset", name="delay_thz_phase_shifter", is_setting=False, is_display=True,)
-
-# thz._append(Stage_LXT_Delay, eos.delay_eos, "/photonics/home/gac-bernina/eco/configuration/p21145_delayeos_stage_offset", name="delay_eos_phase_shifter", is_setting=False, is_display=True,)
-
-#         # self.combined_delay = AdjustableVirtual(
-#         #     [self.delay_thz, self.delay_800_pump],
-#         #     self.delay_get,
-#         #     self.delay_set,
-#         #     name="combined_delay",
-#         # )
 
 #     def thz_pol_set(self, val):
 #         return 1.0 * val, 1.0 / 2 * val
@@ -2622,28 +2573,46 @@ class Xspect_EH55(Assembly):
 namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 
 
+############## BIG JJ SLIT #####################
+#namespace.append_obj(
+#    "SlitBladesGeneral",
+#    name="slit_cleanup_air",
+#    def_blade_up={
+#        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
+#        "kwargs": {"is_psi_mforce": True},
+#    },
+#    def_blade_down={
+#        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
+#        "kwargs": {"is_psi_mforce": True},
+#    },
+#    def_blade_left={
+#        "args": [MotorRecord, "SARES20-MF1:MOT_3"],
+#        "kwargs": {"is_psi_mforce": True},
+#    },
+#    def_blade_right={
+#        "args": [MotorRecord, "SARES20-MF1:MOT_2"],
+#        "kwargs": {"is_psi_mforce": True},
+#    },
+#    module_name="eco.xoptics.slits",
+#    lazy=True,
+#)
+
+############## SMALL JJ SLIT #####################
+
 namespace.append_obj(
-    "SlitBladesGeneral",
+    "SlitPosWidth",
+    pvname = "SARES20-MF1:",
+    motornames = {
+        "hpos": "MOT_2",
+        "vpos": "MOT_5",
+        "hgap": "MOT_3",
+        "vgap": "MOT_4",
+    },
     name="slit_cleanup_air",
-    def_blade_up={
-        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
-        "kwargs": {"is_psi_mforce": True},
-    },
-    def_blade_down={
-        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
-        "kwargs": {"is_psi_mforce": True},
-    },
-    def_blade_left={
-        "args": [MotorRecord, "SARES20-MF1:MOT_3"],
-        "kwargs": {"is_psi_mforce": True},
-    },
-    def_blade_right={
-        "args": [MotorRecord, "SARES20-MF1:MOT_2"],
-        "kwargs": {"is_psi_mforce": True},
-    },
-    module_name="eco.xoptics.slits",
     lazy=True,
+    module_name="eco.xoptics.slits",
 )
+
 
 ## N2 sample heater setup
 
@@ -2701,6 +2670,12 @@ class IlluminatorsLasers(Assembly):
         self._append(
             MpodChannel,
             pvbase="SARES21-CPCL-PS7071",
+            channel_number=6,
+            name="illumination_top",
+        )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
             channel_number=4,
             name="flattening_laser",
         )
@@ -2719,7 +2694,7 @@ namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
 
 
 class LiquidJetSpectroscopy(Assembly):
-    def __init__(self, name=None):
+    def __init__(self, pgroup_adj=None, config_JF_adj=None, name=None):
         super().__init__(name=name)
         self._append(
             MotorRecord,
@@ -2743,7 +2718,7 @@ class LiquidJetSpectroscopy(Assembly):
             is_setting=True,
         )
         # self._append(
-        #     MotorRecord,
+        #     MotorRecord,y=True,
         #     "SARES20-MF1:MOT_3",
         #     name="x_analyzer",
         #     backlash_definition=True,
@@ -2756,11 +2731,22 @@ class LiquidJetSpectroscopy(Assembly):
         #     is_setting=True,
         #
         self._append(
-            Jungfrau, "JF04T01V01", name="det_em", pgroup_adj=config_bernina.pgroup
+            Jungfrau,
+            "JF04T01V01",
+            name="det_em",
+            pgroup_adj=pgroup_adj,
+            config_adj=config_JF_adj,
         )
 
 
-namespace.append_obj(LiquidJetSpectroscopy, name="liquidjet", lazy=True)
+namespace.append_obj(
+    LiquidJetSpectroscopy,
+    pgroup_adj=config_bernina.pgroup,
+    config_JF_adj=config_JFs,
+    name="liquidjet",
+    lazy=True,
+)
+
 
 
 # class Tapedrive(Assembly):

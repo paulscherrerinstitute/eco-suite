@@ -450,9 +450,10 @@ class PshellMotor(Assembly):
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_unit.json', default_value=unit, name="unit", is_setting=True)
         self._cb = None
 
-    def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=120):
+    def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=240):
         if not self.robot.config.powered():
-            self.robot.config.powered(True)
+            if self.robot.info.mode() == "remote":
+                self.robot.config.powered(True)
         if check:
             lim_low, lim_high = self.get_limits()
             if not ((lim_low <= value) and (value <= lim_high)):

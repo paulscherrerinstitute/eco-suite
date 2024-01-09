@@ -201,7 +201,7 @@ class StageLxtDelay(Assembly):
         return (ps_rel + pd_rel) * self._direction.get_current_value()
 
     def _set_comb_delay(self, delay):
-        if delay < abs(self.switch_threshold.get_current_value()):
+        if abs(delay) < abs(self.switch_threshold.get_current_value()):
             ### check to prevent slow phaseshifter corrections <50fs
             if (
                 np.abs(
@@ -210,22 +210,13 @@ class StageLxtDelay(Assembly):
                 )
                 > 50e-15
             ):
-                ps_pos = self.offset_coarse_adj.get_current_value()
+                outcoarse = self.offset_coarse_adj.get_current_value()
             else:
-                ps_pos = None
-            pd_pos = self.offset_fine_adj.get_current_value() + delay
+                outcoarse = None
+            outfine = self.offset_fine_adj.get_current_value() + self._direction.get_current_value() * delay
         else:
-            ps_pos = self.offset_coarse_adj.get_current_value() + delay
-            pd_pos = self.offset_fine_adj.get_current_value()
-
-        if pd_pos is None:
-            outfine = None
-        else:
-            outfine = (self._direction.get_current_value() * pd_pos,)
-        if ps_pos is None:
-            outcoarse = None
-        else:
-            outcoarse = (self._direction.get_current_value() * ps_pos,)
+            outcoarse = self.offset_coarse_adj.get_current_value() + self._direction.get_current_value() * delay
+            outfine = self.offset_fine_adj.get_current_value()
         return (outfine, outcoarse)
 
 
@@ -265,7 +256,8 @@ class Stage_LXT_Delay(AdjustableVirtual):
         return (ps_rel + pd_rel) * self._direction
 
     def _set_comb_delay(self, delay):
-        if delay < abs(self.switch_threshold()):
+        if abs(delay) < abs(self.switch_threshold()):
+            print("setting delay stage")
             ### check to prevent slow phaseshifter corrections <50fs
             if np.abs(self._coarse_delay_adj() - self.offset_coarse_adj()) > 50e-15:
                 ps_pos = self.offset_coarse_adj()
@@ -312,17 +304,17 @@ class LaserBernina(Assembly):
             MotorRecord, "SARES20-MF1:MOT_16", name="nd_filt_stg", is_setting=True
         )
 
-        filters = np.array([
-            [0.912010839, 330],
-            [0.794328235, 15],
-            [0.630957345, 60],
-            [0.501187234, 105],
-            [0.398107171, 150],
-            [0.316227766, 195],
-            [0.251188643, 240],
-            [0.1, 285],
-        ])
 
+        filters = np.array([
+            [1, 330],
+            [0.872863247863248, 15],
+            [0.692521367521367, 60],
+            [0.549038461538462, 105],
+            [0.432051282051282, 150],
+            [0.333653846153846, 195],
+            [0.251188643, 240],
+            [0.111538461538462, 285],
+        ])
         def set_transmission(t):
             idx = np.argmin(abs(filters.T[0]-t))
             stg = filters[idx][1]
@@ -538,7 +530,8 @@ class PositionMonitors(Assembly):
         self._append(
             CameraPositionMonitor,
             "SLAAR21-LCAM-CS841",
-            name="table2_position",
+            # name="table2_position",
+            name="nopa_angle",
             is_display="recursive",
             is_status=True,
         )
