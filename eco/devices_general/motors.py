@@ -445,6 +445,7 @@ class PshellMotor(Assembly):
         self.name_pshell = name_pshell
         self.robot = robot
         self.pc= self.robot.pc
+        self.settings_collection.append(self, force=True)
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json', default_value=0, name="limit_high", is_setting=True)
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_unit.json', default_value=unit, name="unit", is_setting=True)

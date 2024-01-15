@@ -45,25 +45,25 @@ class StaeubliTx200(Assembly):
 
         # appending pshell motors
         motors = [
-            ["z_lin", "z_lin", "mm"],
-            ["x", "x", "mm"], 
-            ["y", "y", "mm"], 
-            ["z", "z", "mm"], 
-            ["rx", "rx", "deg"],
-            ["ry", "ry", "deg"], 
-            ["rz", "rz", "deg"], 
-            ["gamma", "gamma", "deg"], 
-            ["delta", "delta", "deg"],
-            ["t_det", "r", "mm"], 
-            ["j1", "j1", "deg"], 
-            ["j2", "j2", "deg"], 
-            ["j3", "j3", "deg"], 
-            ["j4", "j4", "deg"], 
-            ["j5", "j5", "deg"], 
-            ["j6", "j6", "deg"],
+            ["z_lin", "z_lin", "mm", 1],
+            ["x", "x", "mm", 0], 
+            ["y", "y", "mm", 0], 
+            ["z", "z", "mm", 0], 
+            ["rx", "rx", "deg", 0],
+            ["ry", "ry", "deg", 0], 
+            ["rz", "rz", "deg", 0], 
+            ["gamma", "gamma", "deg", 0], 
+            ["delta", "delta", "deg", 0],
+            ["t_det", "r", "mm", 0], 
+            ["j1", "j1", "deg", 1], 
+            ["j2", "j2", "deg", 1], 
+            ["j3", "j3", "deg", 1], 
+            ["j4", "j4", "deg", 1], 
+            ["j5", "j5", "deg", 1], 
+            ["j6", "j6", "deg", 1],
             ]
-        for [name, name_pshell, unit] in motors:
-            self._append(PshellMotor, robot=self, name=name, name_pshell=name_pshell, unit=unit, is_setting=True, is_display=True)
+        for [name, name_pshell, unit, setting] in motors:
+            self._append(PshellMotor, robot=self, name=name, name_pshell=name_pshell, unit=unit, is_setting=setting, is_display=True)
         self._urdf = None
         try:
             import bernina_urdf
@@ -98,20 +98,79 @@ class StaeubliTx200(Assembly):
     def gui(self):
         cmd = ["caqtdm","/sf/bernina/config/src/caqtdm/robot/robot.ui"]
         return self._run_cmd(" ".join(cmd))
-    ######## Motion simulation ##########
 
-    def simulate_sphercial_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
+    def reset_motion(self):
+        self._get_eval_result("robot.reset_motion()")
+
+    def stop(self):
+        try:
+            self.z_lin.stop()
+        except:
+            print("Failed to stop linear axis")
+        self._get_eval_result("robot.stop()")
+        self.reset_motion()
+        self._get_eval_result("robot.resume()")
+
+
+    ######## Motion simulation ##########
+    def simulate(self, **kwargs):
+        """
+        This method involves communication with the robot controller to interpolate
+        the cartesian, spherical or joint motion depending on the passed keywords.
+        By default with no specific keyword arguments, the stored commands on the robot 
+        controller are simulated.
+
+        If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments: 
+            simulate cratesian motion using the helper function _simulate_cartesian_motion --> see docstring for details
+
+        Else if any of "r", "gamma", "delta" are in the keyword arguments:
+            simulate spherical motion using the helper function _simulate_spherical_motion --> see docstring for details
+
+       Else if any of "j1" to "j6" are in the keyword arguments:
+           simulate joint motion using the helper function _simulate_joint_motion --> see docstring for details
+
+        coordinates = "joint":
+            the coordinates in which the interpolated values are returned. 
+            Options are "joint" (default) or "spherical" / "cartesian"
+
+        plot = True:
+            if plot = True, the interpolated motion will be shown in a browser window
+            if plot = False, an array of the interpolated positions will be returned
+        """
+        if np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]):
+            return self._simulate_cartesian_motion(**kwargs)
+        elif np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]]):
+            return self._simulate_spherical_motion(**kwargs)
+        elif np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]]):
+            return self._simulate_joint_motion(**kwargs)
+        else:
+            return self._simulate_stored_commands()
+
+    def _simulate_stored_commands(self, plot=True):
+        """        
+        Simulated stored commands on the controller.
+        """
+        sim = np.array(self._get_eval_result(f"robot.simulate_stored_commands()"))
+        lin = np.array([self.z_lin()]*len(sim))
+        sim = np.vstack([lin,sim.T]).T
+        if plot:
+            if self._urdf is not None:
+                self.auto_update_simulation(False)
+                self._urdf.sim.move_trajectory(sim)
+                res = ""
+                while not res in ["y", "n"]:
+                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
+                if res == "y":
+                    self.auto_update_simulation(True)
+        else:
+            return sim
+
+    def _simulate_sphercial_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
         """        
         Simulated motion in the spherical coordinate system using a linear moteion movel command to         
         change the radius from point tcp_p_spherical[0] to tcp_p_spherical[1], followed        
         by a circular motion along the circle given by the start point tcp_p_spherical[1],         
         the intermediate point tcp_p_spherical[2] and the target tcp_p_spherical[3].        
-        
-        frame: string, defaults to self.config.frame
-        The frame defines the cartesian coordinate system and origin. Must exist on the controller. 
-        
-        sync: True or False, defaults to False  
-        If true, no further commands are accepted until the motion is finished.                
         
         simulate: True or False        
         coordinates: "joint" or "cartesian"        
@@ -133,22 +192,37 @@ class StaeubliTx200(Assembly):
                     self.auto_update_simulation(True)
         else:
             return sim
-    
-    def simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint", plot=True):
+
+
+    def _simulate_joint_motion(self, j1=None, j2=None, j3=None, j4=None, j5=None, j6=None, plot=True):
+        """
+        Simulated motion in the joint coordinate system.
+        """
+        sim = np.array(self._get_eval_result(f"robot.move_joint(j1={j1}, j2={j2}, j3={j3}, j4={j4}, j5={j5}, j6={j6}, simulate=True"))
+        lin = np.array([self.z_lin()]*11)
+        sim = np.vstack([lin,sim.T]).T
+        if plot:
+            if self._urdf is not None:
+                self.auto_update_simulation(False)
+                self._urdf.sim.move_trajectory(sim)
+                res = ""
+                while not res in ["y", "n"]:
+                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
+                if res == "y":
+                    self.auto_update_simulation(True)
+        else:
+            return sim
+
+
+
+    def _simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint", plot=True):
         """        
         Simulated motion in the cartesian coordinate system using a linear motion movel command to
         move from point tcp_p_spherical[0] to tcp_p_spherical[1].        
         
-        frame: string        
-        The frame defines the cartesian coordinate system and origin. Must exist on the controller.                
-        
-        sync: True or False        
-        If true, no further commands are accepted until the motion is finished.                
-        
-        simulate: True or False        
         coordinates: "joint" or "cartesian"        
         
-        If simulate = True, an array of interpolated positions in either joint or cartesian        
+        An array of interpolated positions in either joint or cartesian        
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
         sim = np.array(self._get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
@@ -185,7 +259,7 @@ class StaeubliTx200(Assembly):
                 time.sleep(1)
                 continue
             if self.auto_update_simulation():
-                if not np.all(js == self._urdf.sim.pos):
+                if not np.all(js.round(3) == self._urdf.sim.pos.round(3)):
                     self._urdf.sim.pos = js
                     if self._urdf.sim._vis_running():
                         self._urdf.sim.vis.step(0)
@@ -202,6 +276,12 @@ class StaeubliTx200(Assembly):
     def _on_event(self, name, value):
         if name == "polling":
             self._cache = value
+        elif name == "reset_motion":
+            print(value)
+        elif name == "stop":
+            print(value)
+        elif name == "motion":
+            print(value)
         else:
             self._check_disconnect_event(name, value)
 
