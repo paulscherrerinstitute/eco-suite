@@ -629,16 +629,20 @@ class AdjustableGetSet:
         self,
         foo_get,
         foo_set,
+        set_returns_changer = False,
         precision=0,
         check_interval=None,
         cache_get_seconds=None,
         name=None,
     ):
-        """assumes a waiting setterin function, in case no check_interval parameter is supplied"""
+        """assumes a waiting setterin function, in case no check_interval parameter is supplied.
+           if returns_changer, does not create an additional thread"""
+
         self.alias = Alias(name)
         self.name = name
         self._set = foo_set
         self._get = foo_get
+        self._set_returns_changer = set_returns_changer
         self._check_interval = check_interval
         self.precision = precision
         self._cache_get_seconds = cache_get_seconds
@@ -652,13 +656,16 @@ class AdjustableGetSet:
             self._set(value)
 
     def set_target_value(self, value, hold=False):
-        return Changer(
-            target=value,
-            parent=self,
-            changer=self.set_and_wait,
-            hold=False,
-            stopper=None,
-        )
+        if self._set_returns_changer:
+            return self._set(value)
+        else:
+            return Changer(
+                target=value,
+                parent=self,
+                changer=self.set_and_wait,
+                hold=False,
+                stopper=None,
+            )
 
     def get_current_value(self):
         ts = time.time()

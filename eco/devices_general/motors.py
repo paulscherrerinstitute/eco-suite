@@ -12,7 +12,7 @@ from ..elements.adjustable import (
     ValueInRange,
     update_changes,
     value_property,
-    tweak_option
+    tweak_option,
 )
 from ..devices_general.pv_adjustable import PvRecord
 from ..elements.detector import DetectorGet
@@ -29,6 +29,7 @@ from .motor_controller import MforceChannel
 from .detectors import DetectorVirtual
 from ..epics.detector import DetectorPvData
 import json
+from .powerbrick import PowerBrickChannelPars
 
 if hasattr(global_config, "elog"):
     elog = global_config.elog
@@ -228,7 +229,6 @@ class SmaractStreamdevice(Assembly):
         self.caqtdm_name(self.alias.get_full_name())
 
     def set_target_value(self, value, hold=False, check=True):
-
         changer = lambda value: self.move(value, check=check)
 
         return Changer(
@@ -425,7 +425,8 @@ class SmaractStreamdevice(Assembly):
             f'caqtdm -macro "P={nam},M={num}" /ioc/qt/ESB_MX_SmarAct_mot_exp.ui'
         )
 
-#@get_from_archive
+
+# @get_from_archive
 @spec_convenience
 @update_changes
 @value_property
@@ -444,17 +445,41 @@ class PshellMotor(Assembly):
             name_pshell = name
         self.name_pshell = name_pshell
         self.robot = robot
-        self.pc= self.robot.pc
+        self.pc = self.robot.pc
         self.settings_collection.append(self, force=True)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json', default_value=0, name="limit_high", is_setting=True)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_{name}_unit.json', default_value=unit, name="unit", is_setting=True)
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json",
+            default_value=0,
+            name="limit_high",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/robot_{name}_limit_low.json",
+            default_value=0,
+            name="limit_low",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/robot_{name}_unit.json",
+            default_value=unit,
+            name="unit",
+            is_setting=True,
+        )
         self._cb = None
 
     def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=240):
+        if self.robot.info.server_status == "Busy":
+            raise AdjustableError(
+                "The server is busy with a recording motion. To abort it, type: rob.abort_record()"
+            )
         if not self.robot.config.powered():
             if self.robot.info.mode() == "remote":
-                self.robot.config.powered(True)
+                print(
+                    "Robot is not powered (rob.config.powered), motion will be queued."
+                )
         if check:
             lim_low, lim_high = self.get_limits()
             if not ((lim_low <= value) and (value <= lim_high)):
@@ -465,7 +490,9 @@ class PshellMotor(Assembly):
             time.sleep(update_value_time)
             while not self.get_moveDone(cid, value):
                 if (time.time() - t_start) > timeout:
-                    raise AdjustableError(f"motion timeout reached in robot motor {self.name}")
+                    raise AdjustableError(
+                        f"motion timeout reached in robot motor {self.name}"
+                    )
                 time.sleep(update_value_time)
 
     def get_moveDone(self, cid, value):
@@ -475,8 +502,8 @@ class PshellMotor(Assembly):
         current_value = self.get_current_value()
         if self._cb:
             self._cb()
-        if (res["status"] == "completed")&(abs(value-current_value) < 0.5):
-        #elif (res["status"] == "completed")&(abs(value-self.get_current_value()) < 0.5):
+        if (res["status"] == "completed") & (abs(value - current_value) < 0.5):
+            # elif (res["status"] == "completed")&(abs(value-self.get_current_value()) < 0.5):
             return True
         else:
             return False
@@ -509,15 +536,16 @@ class PshellMotor(Assembly):
     def add_value_callback(self, cb):
         self._cb = cb
         return 0
+
     def clear_value_callback(self, id):
-        self._cb=None
+        self._cb = None
 
     # return string with motor value as variable representation
     def __str__(self):
         # """ return short info for the current motor"""
         s = f"{self.name}"
         if self.get_current_value() != None:
-        #s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} stat: {self.status_flag().name}"
+            # s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} stat: {self.status_flag().name}"
             s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL}"
             # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
             s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
@@ -525,13 +553,16 @@ class PshellMotor(Assembly):
             s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
         else:
-            s += f"\t@ {colorama.Style.BRIGHT}{'NOT CONECTED'}{colorama.Style.RESET_ALL}"
+            s += (
+                f"\t@ {colorama.Style.BRIGHT}{'NOT CONECTED'}{colorama.Style.RESET_ALL}"
+            )
 
         return s
 
     def __repr__(self):
         print(str(self))
         return object.__repr__(self)
+
 
 @spec_convenience
 @update_changes
@@ -550,6 +581,8 @@ class MotorRecord(Assembly):
         schneider_config=None,
         expect_bad_limits=True,
         has_park_pv=False,
+        pb_conf=None,
+        **kwargs,
     ):
         super().__init__(name=name)
         # self.settings.append(self)
@@ -713,6 +746,21 @@ class MotorRecord(Assembly):
             )
         if expect_bad_limits:
             self.check_bad_limits()
+
+        self._append(
+            DetectorGet, lambda: self._motor._pvs["VAL"].host.split(":")[0], name="host"
+        )
+        self._append(
+            DetectorGet, lambda: self._motor._pvs["VAL"].host.split(":")[1], name="port"
+        )
+
+        if pb_conf:
+            self._append(
+                PowerBrickChannelPars,
+                self.host(),
+                **pb_conf,
+                name="cnf_pb",
+            )
 
     def check_bad_limits(self, abs_set_value=2**53):
         ll, hl = self.get_limits()
@@ -1022,17 +1070,19 @@ class MForceSettings(Assembly):
         self.set_controller_command(f"IS=1,{switch1},{polarity}")
         self.set_controller_command(f"IS=2,{switch2},{polarity}")
 
+
 class SmaractSettings(Assembly):
-    def __init__(self,
-                 pvname,
-                 name=None,
-                 ):
+    def __init__(
+        self,
+        pvname,
+        name=None,
+    ):
         super().__init__(name=name)
         self.pvname = pvname
 
         self._append(
             PvRecord,
-            pvsetname = self.pvname + "_PTYP",
+            pvsetname=self.pvname + "_PTYP",
             pvreadbackname=self.pvname + "_PTYP_RB",
             name="sensor_type_num",
             is_setting=True,
@@ -1060,7 +1110,10 @@ class SmaractSettings(Assembly):
 
     def recall(self, stage_alias_or_model=None):
         setting_table = self._setting_table()
-        stages = np.array([(alias, settings["models"]) for alias, settings in setting_table.items()], dtype=object)
+        stages = np.array(
+            [(alias, settings["models"]) for alias, settings in setting_table.items()],
+            dtype=object,
+        )
         if stage_alias_or_model is not None:
             if stage_alias_or_model in stages.T[0]:
                 alias = stage_alias_or_model
@@ -1069,29 +1122,35 @@ class SmaractSettings(Assembly):
                 if np.sum(idx) == 1:
                     alias = stages.T[0][idx][0]
                 if np.sum(idx) > 1:
-                    print("Multiple entries found for model {stage_alias_or_model}. Please check _settings_table")
+                    print(
+                        "Multiple entries found for model {stage_alias_or_model}. Please check _settings_table"
+                    )
                     return
-                if np.sum(idx ==0 ):
-                    print("No entries found for model {stage_alias_or_model}. Please check _settings_table or model number / alias.")
+                if np.sum(idx == 0):
+                    print(
+                        "No entries found for model {stage_alias_or_model}. Please check _settings_table or model number / alias."
+                    )
                     return
         else:
-            stages = [(alias, settings["models"]) for alias, settings in setting_table.items()]
+            stages = [
+                (alias, settings["models"]) for alias, settings in setting_table.items()
+            ]
             input_message = "\nSelect the stage to load setting:\n  q) quit\n"
             input_message += f'{"Idx":>3}    {"Alias":<30}   {"Models"}\n'
             for index, (alias, model) in enumerate(stages):
-                input_message += f'{index:>3})   {alias:<30}   {model}\n'
-            input_message += 'Input: '
-            idx = ''
+                input_message += f"{index:>3})   {alias:<30}   {model}\n"
+            input_message += "Input: "
+            idx = ""
             while idx not in range(len(stages)):
                 idx = input(input_message)
-                if idx == 'q':
+                if idx == "q":
                     return
                 else:
                     try:
                         idx = int(idx)
                     except:
                         continue
-            print(f'Selected stage: {stages[idx]}')
+            print(f"Selected stage: {stages[idx]}")
             alias = stages[idx][0]
         stage_settings = setting_table[alias]
         if np.any([mcs in self.pvname for mcs in ["SARES23-USR", "SARES23-LIC"]]):
@@ -1356,7 +1415,9 @@ class SmaractRecord(Assembly):
 
     def gui(self):
         pv, m = tuple(self.pvname.split(":"))
-        self._run_cmd(f'caqtdm -macro "P={pv},M=:{m}, T=MCS" /sf/controls/config/qt/motorx_all.ui')
+        self._run_cmd(
+            f'caqtdm -macro "P={pv},M=:{m}, T=MCS" /sf/controls/config/qt/motorx_all.ui'
+        )
 
     def gui_extra(self):
         pv, m = tuple(self.pvname.split(":"))
@@ -1465,7 +1526,7 @@ class SmaractRecord(Assembly):
 @get_from_archive
 @value_property
 class SmaractRecord_old(Assembly):
-    #Note: this is the one that works with the old SmarAct IOCs before Thierry made changes in 09/2023
+    # Note: this is the one that works with the old SmarAct IOCs before Thierry made changes in 09/2023
     def __init__(
         self,
         pvname,

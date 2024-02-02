@@ -163,6 +163,7 @@ class SolidTargetDetectorPBPS(Assembly):
         # calc=None,
         # calc_calib={},
         pipeline_computation=None,
+        bias_pvextensions = {'all':":Lnk9-BP0-V-HV-ALL-SP"},
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -231,6 +232,16 @@ class SolidTargetDetectorPBPS(Assembly):
                 name="signal_right_raw",
                 is_setting=False,
             )
+
+        if bias_pvextensions:
+            if 'all' in bias_pvextensions.keys():
+                self._append(
+                    AdjustablePv,
+                    self.pvname+bias_pvextensions['all'],
+                    name="bias_all",
+                    is_setting=True,
+                )
+
         if fe_digi_channels:
             self._append(
                 FeDigitiza,

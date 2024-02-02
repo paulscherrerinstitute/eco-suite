@@ -25,6 +25,338 @@ def addMotorRecordToSelf(self, name=None, Id=None):
         print(f"Warning! Could not find motor {name} (Id:{Id})")
 
 
+def append_diffractometer_modules(obj, configuration):
+    if "base" in configuration:
+        ### motors base platform ###
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TX",
+            name="xbase",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 3},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TY",
+            name="_ybase_deltatau",
+            is_setting=False,
+            is_display=False,
+            pb_conf={"type": "virtual", "axis": 9},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_RX",
+            name="_rxbase_deltatau",
+            is_setting=False,
+            is_display=False,
+            pb_conf={"type": "virtual", "axis": 10},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_YU",
+            name="_ybase_upstream",
+            is_setting=True,
+            is_display=False,
+            backlash_definition=True,
+            pb_conf={"type": "motor", "axis": 1},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_YD",
+            name="_ybase_downstream",
+            is_setting=True,
+            is_display=False,
+            backlash_definition=True,
+            pb_conf={"type": "motor", "axis": 2},
+        )
+        obj._append(
+            AdjustableVirtual,
+            [obj._ybase_upstream, obj._ybase_downstream],
+            lambda u, d: np.mean([u, d]),
+            lambda v: [
+                i.get_current_value() + (v - obj.ybase.get_current_value())
+                for i in [obj._ybase_upstream, obj._ybase_downstream]
+            ],
+            name="ybase",
+            is_setting=False,
+            is_display=True,
+            unit="mm",
+        )
+        obj._append(
+            AdjustableVirtual,
+            [obj._ybase_upstream, obj._ybase_downstream],
+            lambda u, d: np.arctan(np.diff([d, u])[0] / 1146) * 180 / np.pi,
+            lambda v: [
+                obj.ybase.get_current_value() + i * np.tan(v * np.pi / 180) * 1146 / 2
+                for i in [1, -1]
+            ],
+            name="rxbase",
+            is_setting=False,
+            is_display=True,
+            unit="deg",
+        )
+
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_NY_RY2TH",
+            name="nu",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 4},
+        )
+
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_MY_RYTH",
+            name="mu",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 5},
+        )
+        obj.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
+
+    if "arm" in configuration:
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_DT_RX2TH",
+            name="delta",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 1},
+        )
+        ### motors XRD area detector branch ###
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_D_T",
+            name="tdet",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 3},
+        )
+
+        ### motors XRD polarisation analyzer branch ###
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_P_T",
+            name="tpol",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 2},
+        )
+        # missing: slits of flight tube
+        obj.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
+
+    if "polana" in configuration:
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_P_ETA",
+            name="pol",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 4},
+        )
+
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_P_TH",
+            name="pthe",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 5},
+        )
+
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_P_T2TH",
+            name="ptth",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 6},
+        )
+
+    if "phi_table" in configuration:
+        ### motors phi table ###
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_HEX_RX",
+            name="eta",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 6},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_HEX_TX",
+            name="transl_eta",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 7},
+        )
+
+    if "phi_hex" in configuration:
+        ### motors PI hexapod ###
+        if fina_hex_angle_offset:
+            fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
+
+        obj._append(
+            HexapodPI,
+            "SARES20-HEX_PI",
+            name="hex",
+            fina_angle_offset=fina_hex_angle_offset,
+            is_setting=True,
+            is_display="recursive",
+        )
+
+    if "hlxz" in configuration:
+        ### motors heavy load goniometer ###
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TBL_TX",
+            name="xhl",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 1},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TBL_TZ",
+            name="zhl",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 2},
+        )
+
+    if "hly" in configuration:
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TBL_TY",
+            name="yhl",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 3},
+        )
+
+    if "hlrxrz" in configuration:
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TBL_RX",
+            name="rxhl",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 4},
+        )
+        obj._append(
+            MotorRecord,
+            obj.pvname + ":MOT_TBL_RZ",
+            name="rzhl",
+            is_setting=True,
+            pb_conf={"type": "motor", "axis": 5},
+        )
+    obj.set_samplestg_off = DeltaTauCurrOff("SARES22-GPS:asyn1.AOUT")
+    if "kappa" in configuration:
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_KRX",
+            name="eta_kap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 1},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_KAP",
+            name="kappa",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 2},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_KPH",
+            name="phi_kap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 3},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_DTY",
+            name="zkap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 6},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_DTX",
+            name="xkap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 4},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_DTZ",
+            name="ykap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 5},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_DRX",
+            name="rxkap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 7},
+        )
+        obj._append(
+            MotorRecord_new,
+            obj.pvname + ":MOT_KAP_DRZ",
+            name="rykap",
+            is_setting=True,
+            is_display=True,
+            pb_conf={"type": "motor", "axis": 8},
+        )
+        obj.set_kappa_off = DeltaTauCurrOff(obj.pvname + ":asyn1.AOUT")
+
+        def get_current_kappa2you():
+            return obj.calc_kappa2you(
+                obj.eta_kap.get_current_value(),
+                obj.kappa.get_current_value(),
+                obj.phi_kap.get_current_value(),
+            )
+
+        def set_youvar_value_to_current_kappa(value, varind):
+            vars = list(get_current_kappa2you())
+            vars[varind] = value
+            return obj.calc_you2kappa(*vars)
+
+        obj._append(
+            AdjustableVirtual,
+            [obj.eta_kap, obj.kappa, obj.phi_kap],
+            lambda eta_kap, kappa, phi_kap: obj.calc_kappa2you(eta_kap, kappa, phi_kap)[
+                0
+            ],
+            lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
+            name="eta",
+            unit="deg",
+        )
+        obj._append(
+            AdjustableVirtual,
+            [obj.eta_kap, obj.kappa, obj.phi_kap],
+            lambda eta_kap, kappa, phi_kap: obj.calc_kappa2you(eta_kap, kappa, phi_kap)[
+                1
+            ],
+            lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
+            name="chi",
+            unit="deg",
+        )
+        obj._append(
+            AdjustableVirtual,
+            [obj.eta_kap, obj.kappa, obj.phi_kap],
+            lambda eta_kap, kappa, phi_kap: obj.calc_kappa2you(eta_kap, kappa, phi_kap)[
+                2
+            ],
+            lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
+            name="phi",
+            unit="deg",
+        )
+
+
 class GPS(Assembly):
     def __init__(
         self,
@@ -42,241 +374,7 @@ class GPS(Assembly):
         self.pvname = pvname
         self.configuration = configuration
 
-        if "base" in self.configuration:
-            ### motors base platform ###
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_TX",
-                name="xbase",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_TY",
-                name="_ybase_deltatau",
-                is_setting=False,
-                is_display=False,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_RX",
-                name="_rxbase_deltatau",
-                is_setting=False,
-                is_display=False,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_YU",
-                name="_ybase_upstream",
-                is_setting=True,
-                is_display=False,
-                backlash_definition=True,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_YD",
-                name="_ybase_downstream",
-                is_setting=True,
-                is_display=False,
-                backlash_definition=True,
-            )
-            self._append(
-                AdjustableVirtual,
-                [self._ybase_upstream, self._ybase_downstream],
-                lambda u, d: np.mean([u, d]),
-                lambda v: [
-                    i.get_current_value() + (v - self.ybase.get_current_value())
-                    for i in [self._ybase_upstream, self._ybase_downstream]
-                ],
-                name="ybase",
-                is_setting=False,
-                is_display=True,
-                unit="mm",
-            )
-            self._append(
-                AdjustableVirtual,
-                [self._ybase_upstream, self._ybase_downstream],
-                lambda u, d: np.arctan(np.diff([d, u])[0] / 1146) * 180 / np.pi,
-                lambda v: [
-                    self.ybase.get_current_value()
-                    + i * np.tan(v * np.pi / 180) * 1146 / 2
-                    for i in [1, -1]
-                ],
-                name="rxbase",
-                is_setting=False,
-                is_display=True,
-                unit="deg",
-            )
-
-            self._append(
-                MotorRecord, pvname + ":MOT_NY_RY2TH", name="nu", is_setting=True
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_NY_RY2TH",
-                name="gamma",
-                is_setting=False,
-                is_display=False,
-            )
-            self._append(
-                MotorRecord, pvname + ":MOT_MY_RYTH", name="mu", is_setting=True
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_MY_RYTH",
-                name="alpha",
-                is_setting=False,
-                is_display=False,
-            )
-            self.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
-
-        if "phi_table" in self.configuration:
-            ### motors phi table ###
-            self._append(
-                MotorRecord, pvname + ":MOT_HEX_RX", name="eta", is_setting=True
-            )
-            self._append(
-                MotorRecord, pvname + ":MOT_HEX_TX", name="transl_eta", is_setting=True
-            )
-
-        if "phi_hex" in self.configuration:
-            ### motors PI hexapod ###
-            if fina_hex_angle_offset:
-                fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
-
-            self._append(
-                HexapodPI,
-                "SARES20-HEX_PI",
-                name="hex",
-                fina_angle_offset=fina_hex_angle_offset,
-                is_setting=True,
-                is_display="recursive",
-            )
-
-        if "hlxz" in self.configuration:
-            ### motors heavy load goniometer ###
-            self._append(
-                MotorRecord, pvname + ":MOT_TBL_TX", name="xhl", is_setting=True
-            )
-            self._append(
-                MotorRecord, pvname + ":MOT_TBL_TZ", name="zhl", is_setting=True
-            )
-
-        if "hly" in self.configuration:
-            self._append(
-                MotorRecord, pvname + ":MOT_TBL_TY", name="yhl", is_setting=True
-            )
-
-        if "hlrxrz" in self.configuration:
-            self._append(
-                MotorRecord, pvname + ":MOT_TBL_RX", name="rxhl", is_setting=True
-            )
-            self._append(
-                MotorRecord, pvname + ":MOT_TBL_RZ", name="rzhl", is_setting=True
-            )
-        self.set_samplestg_off = DeltaTauCurrOff("SARES22-GPS:asyn1.AOUT")
-        if "kappa" in self.configuration:
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_KRX",
-                name="eta_kap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_KAP",
-                name="kappa",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_KPH",
-                name="phi_kap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DTY",
-                name="zkap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DTX",
-                name="xkap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DTZ",
-                name="ykap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DRX",
-                name="rxkap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DRZ",
-                name="rykap",
-                is_setting=True,
-                is_display=True,
-            )
-            self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
-
-            def get_current_kappa2you():
-                return self.calc_kappa2you(
-                    self.eta_kap.get_current_value(),
-                    self.kappa.get_current_value(),
-                    self.phi_kap.get_current_value(),
-                )
-
-            def set_youvar_value_to_current_kappa(value, varind):
-                vars = list(get_current_kappa2you())
-                vars[varind] = value
-                return self.calc_you2kappa(*vars)
-
-            self._append(
-                AdjustableVirtual,
-                [self.eta_kap, self.kappa, self.phi_kap],
-                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap, kappa, phi_kap
-                )[0],
-                lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
-                name="eta",
-                unit="deg",
-            )
-            self._append(
-                AdjustableVirtual,
-                [self.eta_kap, self.kappa, self.phi_kap],
-                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap, kappa, phi_kap
-                )[1],
-                lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
-                name="chi",
-                unit="deg",
-            )
-            self._append(
-                AdjustableVirtual,
-                [self.eta_kap, self.kappa, self.phi_kap],
-                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap, kappa, phi_kap
-                )[2],
-                lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
-                name="phi",
-                unit="deg",
-            )
+        append_diffractometer_modules(self, configuration)
 
         if diffcalc:
             self._append(
@@ -300,7 +398,6 @@ class GPS(Assembly):
                     config_adj=configsjf_adj,
                     view_toplevel_only=True,
                 )
-
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
@@ -445,362 +542,7 @@ class XRDYou(Assembly):
         self.configuration = configuration
         self.invert_kappa_ellbow = invert_kappa_ellbow
 
-        if "base" in self.configuration:
-            ### motors base platform ###
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_TX",
-                name="xbase",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_TY",
-                name="_ybase_deltatau",
-                is_setting=False,
-                is_display=False,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_RX",
-                name="_rxbase_deltatau",
-                is_setting=False,
-                is_display=False,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_YU",
-                name="_ybase_upstream",
-                is_setting=True,
-                is_display=False,
-                backlash_definition=True,
-            )
-            self._append(
-                MotorRecord,
-                pvname + ":MOT_YD",
-                name="_ybase_downstream",
-                is_setting=True,
-                is_display=False,
-                backlash_definition=True,
-            )
-            self._append(
-                AdjustableVirtual,
-                [self._ybase_upstream, self._ybase_downstream],
-                lambda u, d: np.mean([u, d]),
-                lambda v: [
-                    i.get_current_value() + (v - self.ybase.get_current_value())
-                    for i in [self._ybase_upstream, self._ybase_downstream]
-                ],
-                name="ybase",
-                is_setting=False,
-                is_display=True,
-                unit="mm",
-            )
-            self._append(
-                AdjustableVirtual,
-                [self._ybase_upstream, self._ybase_downstream],
-                lambda u, d: np.arctan(np.diff([d, u])[0] / 1146) * 180 / np.pi,
-                lambda v: [
-                    self.ybase.get_current_value()
-                    + i * np.tan(v * np.pi / 180) * 1146 / 2
-                    for i in [1, -1]
-                ],
-                name="rxbase",
-                is_setting=False,
-                is_display=True,
-                unit="deg",
-            )
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_MY_RYTH",
-                name="mu",
-                is_setting=True,
-                is_display=True,
-            )
-            self.set_base_off = DeltaTauCurrOff("SARES21-XRD:asyn4.AOUT")
-
-        if "arm" in self.configuration:
-            ### motors XRD detector arm ###
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_NY_RY2TH",
-                name="nu",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_DT_RX2TH",
-                name="delta",
-                is_setting=True,
-                is_display=True,
-            )
-            ### motors XRD area detector branch ###
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_D_T",
-                name="tdet",
-                is_setting=True,
-                is_display=True,
-            )
-
-            ### motors XRD polarisation analyzer branch ###
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_P_T",
-                name="tpol",
-                is_setting=True,
-                is_display=True,
-            )
-            # missing: slits of flight tube
-            self.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
-
-        if "hlxz" in self.configuration:
-            ### motors heavy load goniometer ###
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_TBL_TX",
-                name="xhl",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_TBL_TZ",
-                name="zhl",
-                is_setting=True,
-                is_display=True,
-            )
-            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
-        if "hly" in self.configuration:
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_TBL_TY",
-                name="yhl",
-                is_setting=True,
-                is_display=True,
-            )
-            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
-
-        if "hlrxrz" in self.configuration:
-            try:
-                self._append(
-                    MotorRecord_new,
-                    Id + ":MOT_TBL_RX",
-                    name="rxhl",
-                    is_setting=True,
-                    is_display=True,
-                )
-            except:
-                print("XRD.rxhl not found")
-                pass
-            try:
-                self._append(
-                    MotorRecord_new,
-                    Id + ":MOT_TBL_RZ",
-                    name="rzhl",
-                    is_setting=True,
-                    is_display=True,
-                )
-            except:
-                print("XRD.rzhl not found")
-            self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
-
-        if "phi_table" in self.configuration:
-            ### motors nu table ###
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_HEX_TX",
-                name="transl_eta",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                Id + ":MOT_HEX_RX",
-                name="eta",
-                is_setting=True,
-                is_display=True,
-            )
-
-        if "phi_hex" in self.configuration:
-            ### motors PI hexapod ###
-            if fina_hex_angle_offset:
-                fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
-
-            self._append(
-                HexapodPI,
-                "SARES20-HEX_PI",
-                name="hex",
-                fina_angle_offset=fina_hex_angle_offset,
-                is_setting=True,
-                is_display="recursive",
-            )
-        #        if "phi_hex" in self.configuration:
-        #            ### motors PI hexapod ###
-        #            append_object_to_object(
-        #                self,
-        #                AdjustablePv,
-        #                "SARES20-HEX_PI:SET-POSI-X",
-        #                pvreadbackname="SARES20-HEX_PI:POSI-X",
-        #                name="xhex",
-        #            )
-        #            append_object_to_object(
-        #                self,
-        #                AdjustablePv,
-        #                "SARES20-HEX_PI:SET-POSI-Y",
-        #                pvreadbackname="SARES20-HEX_PI:POSI-Y",
-        #                name="yhex",
-        #            )
-        #            append_object_to_object(
-        #                self,
-        #                AdjustablePv,
-        #                "SARES20-HEX_PI:SET-POSI-Z",
-        #                pvreadbackname="SARES20-HEX_PI:POSI-Z",
-        #                name="zhex",
-        #            )
-        #            append_object_to_object(
-        #                self,
-        #                AdjustablePv,
-        #                "SARES20-HEX_PI:SET-POSI-U",
-        #                pvreadbackname="SARES20-HEX_PI:POSI-U",
-        #                name="uhex",
-        #            )
-        #            append_object_to_object(
-        #                self,
-        #                AdjustablePv,
-        #                "SARES20-HEX_PI:SET-POSI-V",
-        #                pvreadbackname="SARES20-HEX_PI:POSI-V",
-        #                name="vhex",
-        #            )
-        #            append_object_to_object(
-        #                self,
-        #                AdjustablePv,
-        #                "SARES20-HEX_PI:SET-POSI-W",
-        #                pvreadbackname="SARES20-HEX_PI:POSI-W",
-        #                name="whex",
-        #            )
-
-        if "kappa" in self.configuration:
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_KRX",
-                name="eta_kap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_KAP",
-                name="kappa",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_KPH",
-                name="phi_kap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DTY",
-                name="zkap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DTX",
-                name="xkap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DTZ",
-                name="ykap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DRX",
-                name="rxkap",
-                is_setting=True,
-                is_display=True,
-            )
-            self._append(
-                MotorRecord_new,
-                self.pvname + ":MOT_KAP_DRZ",
-                name="rykap",
-                is_setting=True,
-                is_display=True,
-            )
-            self.set_kappa_off = DeltaTauCurrOff(self.pvname + ":asyn1.AOUT")
-
-            def get_current_kappa2you():
-                return self.calc_kappa2you(
-                    self.eta_kap.get_current_value(),
-                    self.kappa.get_current_value(),
-                    self.phi_kap.get_current_value(),
-                    bernina_kappa=True,
-                    invert_elbow=self.invert_kappa_ellbow,
-                )
-
-            def set_youvar_value_to_current_kappa(value, varind):
-                vars = list(get_current_kappa2you())
-                vars[varind] = value
-                return self.calc_you2kappa(
-                    *vars,
-                    bernina_kappa=True,
-                    invert_elbow=self.invert_kappa_ellbow,
-                )
-
-            self._append(
-                AdjustableVirtual,
-                [self.eta_kap, self.kappa, self.phi_kap],
-                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap,
-                    kappa,
-                    phi_kap,
-                    invert_elbow=self.invert_kappa_ellbow,
-                    bernina_kappa=True,
-                )[0],
-                lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
-                name="eta",
-                unit="deg",
-            )
-            self._append(
-                AdjustableVirtual,
-                [self.eta_kap, self.kappa, self.phi_kap],
-                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap,
-                    kappa,
-                    phi_kap,
-                    invert_elbow=self.invert_kappa_ellbow,
-                    bernina_kappa=True,
-                )[1],
-                lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
-                name="chi",
-                unit="deg",
-            )
-            self._append(
-                AdjustableVirtual,
-                [self.eta_kap, self.kappa, self.phi_kap],
-                lambda eta_kap, kappa, phi_kap: self.calc_kappa2you(
-                    eta_kap,
-                    kappa,
-                    phi_kap,
-                    invert_elbow=self.invert_kappa_ellbow,
-                    bernina_kappa=True,
-                )[2],
-                lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
-                name="phi",
-                unit="deg",
-            )
+        append_diffractometer_modules(self, configuration)
 
         if detectors:
             for tdet in detectors:

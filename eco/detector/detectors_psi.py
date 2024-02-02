@@ -74,7 +74,10 @@ class DetectorBsStream:
                 if not stopcond():
                     self.data_collected.append(kw["value"])
                 else:
-                    self._pv.callbacks.pop(self._collection["ix_cb"])
+                    try:
+                        self._pv.callbacks.pop(self._collection["ix_cb"])
+                    except:
+                        pass
                     self._collection["done"] = True
 
         elif samples:
@@ -84,7 +87,10 @@ class DetectorBsStream:
             def addData(**kw):
                 self.data_collected.append(kw["value"])
                 if stopcond():
-                    self._pv.callbacks.pop(self._collection["ix_cb"])
+                    try:
+                        self._pv.callbacks.pop(self._collection["ix_cb"])
+                    except:
+                        pass
                     self._collection["done"] = True
 
         self._collection["ix_cb"] = self._pv.add_callback(addData)

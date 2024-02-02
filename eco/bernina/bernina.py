@@ -17,7 +17,7 @@ from eco.motion.smaract import SmaractController
 from .config import components
 
 # from .config import config as config_berninamesp
-from ..utilities.config import Namespace
+from ..utilities.config import Namespace, NamespaceComponent
 from ..aliases import NamespaceCollection
 import pyttsx3
 
@@ -153,6 +153,73 @@ for tk in components:
 #     name="cam_north",
 #     module_name="eco.devices_general.cameras_ptz",
 # )
+
+
+## Old stuff that was still in config and might be needed
+namespace.append_obj(
+    "Pulsepick",
+    Id="SAROP21-OPPI113",
+    evronoff="SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP",
+    evrsrc="SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP",
+    name="xp",
+    module_name="eco.xoptics.pp",
+    lazy=True,
+)
+namespace.append_obj(
+    "laser_shutter",
+    "SLAAR21-LTIM01-EVR0",
+    name="laser_shutter",
+    module_name="eco.loptics.laser_shutter",
+    lazy=True,
+)
+namespace.append_obj(
+    "PhotonShutter",
+    "SARFE10-OPSH044:REQUEST",
+    name="pshut_und",
+    module_name="eco.xoptics.shutters",
+    lazy=True,
+)
+namespace.append_obj(
+    "PhotonShutter",
+    "SARFE10-OPSH059:REQUEST",
+    name="pshut_fe",
+    module_name="eco.xoptics.shutters",
+    lazy=True,
+)
+namespace.append_obj(
+    "SafetyShutter",
+    "SGE01-EPKT822:BST1_oeffnen",
+    name="sshut_opt",
+    module_name="eco.xoptics.shutters",
+    lazy=True,
+)
+namespace.append_obj(
+    "SafetyShutter",
+    "SGE01-EPKT820:BST1_oeffnen",
+    name="sshut_fe",
+    module_name="eco.xoptics.shutters",
+    lazy=True,
+)
+namespace.append_obj(
+    "AttenuatorAramis",
+    "SARFE10-OATT053",
+    shutter=pshut_und,
+    set_limits=[],
+    module_name="eco.xoptics.attenuator_aramis",
+    name="att_fe",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "Bernina_XEYE",
+    zoomstage_pv=config_bernina.xeye.zoomstage_pv._value,
+    camera_pv=config_bernina.xeye.camera_pv._value,
+    bshost=config_bernina.xeye.bshost._value,
+    bsport=config_bernina.xeye.bsport._value,
+    name="xeye",
+    lazy=True,
+    module_name="eco.xdiagnostics.profile_monitors",
+)
 
 
 ## beamline components ##
@@ -544,6 +611,7 @@ namespace.append_obj(
     set_limits=[],
     module_name="eco.xoptics.attenuator_aramis",
     name="att",
+    lazy=True,
 )
 
 
@@ -1795,32 +1863,13 @@ namespace.append_obj(
 
 
 # will be split in permanent and temporary
-# namespace.append_obj(
-# "Laser_Exp",
-# lazy=True,
-# name="las",
-# module_name="eco.loptics.bernina_experiment",
-# Id="SLAAR21-LMOT",
-# smar_config=config_berninamesp["las_smar_config"],
-# )
-namespace.append_obj(
-    "VHamos",
-    name="vhamos",
-    pgroup_adj=config_bernina.pgroup,
-    config_adjustable=config_JFs,
-    lazy=True,
-    module_name="eco.endstations.bernina_vhamos",
-)
-
-# new version
 namespace.append_obj(
     "LaserBernina",
-    "SLAAR21-LMOT",
     lazy=True,
     name="las",
     module_name="eco.loptics.bernina_laser",
+    pvname="SLAAR21-LMOT",
 )
-
 namespace.append_obj(
     "PositionMonitors",
     lazy=True,
@@ -2473,18 +2522,16 @@ namespace.append_obj(
 
 ############## experiment specific #############
 
+
 class Pumpdelay(Assembly):
     def __init__(
-            self,
-            delaystage_PV="SARES23-USR:MOT_2",
-            name=None,
-            ):
+        self,
+        delaystage_PV="SARES23-USR:MOT_2",
+        name=None,
+    ):
         super().__init__(name=name)
-        
 
-        self._append(
-            SmaractRecord, delaystage_PV, name="delaystage", is_setting=True
-        )
+        self._append(SmaractRecord, delaystage_PV, name="delaystage", is_setting=True)
         self._append(DelayTime, self.delaystage, name="pdelay", is_setting=True)
 
 
@@ -2495,14 +2542,13 @@ namespace.append_obj(
 )
 
 
-
 from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 
 namespace.append_obj(
     "StageLxtDelay",
     pumpdelay.pdelay,
-    las.xlt,
+    las,
     lazy=True,
     name="lxt",
     direction=-1,
@@ -2518,17 +2564,6 @@ namespace.append_obj(
 #     def thz_pol_get(self, val, val2):
 #         return 1.0 * val2
 
-
-# namespace.append_obj(
-#    "Bernina_XEYE",
-#    zoomstage_pv=config_bernina.xeye.zoomstage_pv._value,
-#    camera_pv=config_bernina.xeye.camera_pv._value,
-#    bshost=config_bernina.xeye.bshost._value,
-#    bsport=config_bernina.xeye.bsport._value,
-#    name="xeye",
-#    lazy=True,
-#    module_name="eco.xdiagnostics.profile_monitors",
-# )
 
 # try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
 try:
@@ -2574,7 +2609,7 @@ namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 
 
 ############## BIG JJ SLIT #####################
-#namespace.append_obj(
+# namespace.append_obj(
 #    "SlitBladesGeneral",
 #    name="slit_cleanup_air",
 #    def_blade_up={
@@ -2595,14 +2630,14 @@ namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 #    },
 #    module_name="eco.xoptics.slits",
 #    lazy=True,
-#)
+# )
 
 ############## SMALL JJ SLIT #####################
 
 namespace.append_obj(
     "SlitPosWidth",
-    pvname = "SARES20-MF1:",
-    motornames = {
+    pvname="SARES20-MF1:",
+    motornames={
         "hpos": "MOT_2",
         "vpos": "MOT_5",
         "hgap": "MOT_3",
@@ -2739,14 +2774,13 @@ class LiquidJetSpectroscopy(Assembly):
         )
 
 
-namespace.append_obj(
-    LiquidJetSpectroscopy,
-    pgroup_adj=config_bernina.pgroup,
-    config_JF_adj=config_JFs,
-    name="liquidjet",
-    lazy=True,
-)
-
+# namespace.append_obj(
+#     LiquidJetSpectroscopy,
+#     pgroup_adj=config_bernina.pgroup,
+#     config_JF_adj=config_JFs,
+#     name="liquidjet",
+#     lazy=True,
+# )
 
 
 # class Tapedrive(Assembly):

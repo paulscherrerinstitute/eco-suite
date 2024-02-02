@@ -11,6 +11,7 @@ import numpy as np
 import os
 os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
+from requests import HTTPError
 class RobotError(Exception):
     pass
 
@@ -25,8 +26,10 @@ class StaeubliTx200(Assembly):
         super().__init__(name=name)
         self.pc = PShellClient(pshell_url)
         self.pc.start_sse_event_loop_task(None, self._on_event)
+        self._cb = False
         self._cache = {}
         self._info_fields={}
+        self._info_fields_server = {"server_status": "None"}
         self._config_fields={}
         self._do_update()
         self._get_on_poll_info()
@@ -35,9 +38,10 @@ class StaeubliTx200(Assembly):
         self._append(AdjustableGetSet, 
                      self._get_config, 
                      self._set_config, 
+                     set_returns_changer = True,
                      cache_get_seconds =None, 
                      precision=0, 
-                     check_interval=None, 
+                     check_interval=False, 
                      name='_config', 
                      is_setting=False, 
                      is_display=False)
@@ -75,13 +79,16 @@ class StaeubliTx200(Assembly):
             print("Loading bernina URDF robot model failed")
 
     def _get_info(self):
-        return {k: v for k, v in self._cache.items() if k in self._info_fields}
+        d= {k: v for k, v in self._cache.items() if k in self._info_fields}
+        d.update(self._info_fields_server)
+        return d
     
     def _set_config(self, fields):
         changed_item = [[k, v] for k, v in fields.items() if v != self._cache[k]]
-        print(changed_item)
         if len(changed_item) > 1:
             raise RobotError("Changing multiple fields at once")
+        elif len(changed_item) ==0:
+            return
         k, v = changed_item[0]
         method = self._config_fields[k]
         if type(v) != str:
@@ -89,8 +96,7 @@ class StaeubliTx200(Assembly):
         else:
             v = "'" + v + "'"
         cmd = method["cmd"]+"(" + v + "," + method["def_kwargs"] + ")"
-        print(cmd)
-        return self._set_eval_cmd(cmd)
+        return self._set_eval_cmd(cmd, stopper = self.stop)
 
     def _get_config(self):
         return {k: v for k, v in self._cache.items() if k in self._config_fields.keys()}
@@ -100,17 +106,64 @@ class StaeubliTx200(Assembly):
         return self._run_cmd(" ".join(cmd))
 
     def reset_motion(self):
-        self._get_eval_result("robot.reset_motion()")
+        self.get_eval_result("robot.reset_motion()")
 
     def stop(self):
         try:
             self.z_lin.stop()
         except:
             print("Failed to stop linear axis")
-        self._get_eval_result("robot.stop()")
+        self.get_eval_result("robot.stop()")
         self.reset_motion()
-        self._get_eval_result("robot.resume()")
+        self.get_eval_result("robot.resume()")
 
+
+    def move(self, check=True, wait=True, update_value_time=0.05, timeout=240, **kwargs):
+        """
+        This method invokes a spherical, cartesian or joint motion command depending 
+        on the passed keywords.
+        
+        If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments: cartesian motion
+        If any of "r", "gamma", "delta" are in the keyword arguments: spherical motion
+        If any of "j1" to "j6" are in the keyword arguments: joint motion 
+        """
+        if self.info.server_status == "Busy":
+            raise RobotError(
+                "The server is busy with a recording or general motion. To abort it, type: rob.abort_record()"
+            )
+        if not self.config.powered():
+            if self.info.mode() == "remote":
+                print(
+                    "Robot is not powered (rob.config.powered), motion will not start."
+                )
+        if check:
+            for k, value in kwargs.items():
+                lim_low, lim_high = self.__dict__[k].get_limits()
+                if not ((lim_low <= value) and (value <= lim_high)):
+                    raise RobotError(f"{k}: Soft limits violated!")
+        if "t_det" in kwargs.keys():
+            t = kwargs.pop("t_det")
+            kwargs["r"] = t
+        cart_kwargs = np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]])
+        sph_kwargs = np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]])
+        joint_kwargs = np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]])
+        if sum([cart_kwargs, sph_kwargs, joint_kwargs])>1:
+            print("Please only pass cartesian, spherical or joint keywords")
+        self._set_eval_cmd(f"robot.general_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Motion aborted by user, resetting all motions.")
+
+
+    ######## Motion recording ##########
+    def record_motion(self, **kwargs):
+        """
+        """
+        if "t_det" in kwargs.keys():
+            t = kwargs.pop("t_det")
+            kwargs["r"] = t
+        self._set_eval_cmd(f"robot.record_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Recording aborted by user, resetting all motions.")
+
+    def abort_record(self):
+        self.pc.eval(":abort")
+        self.reset_motion()
 
     ######## Motion simulation ##########
     def simulate(self, **kwargs):
@@ -137,6 +190,9 @@ class StaeubliTx200(Assembly):
             if plot = True, the interpolated motion will be shown in a browser window
             if plot = False, an array of the interpolated positions will be returned
         """
+        if "t_det" in kwargs.keys():
+            t = kwargs.pop("t_det")
+            kwargs["r"] = t.value()
         if np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]):
             return self._simulate_cartesian_motion(**kwargs)
         elif np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]]):
@@ -150,7 +206,7 @@ class StaeubliTx200(Assembly):
         """        
         Simulated stored commands on the controller.
         """
-        sim = np.array(self._get_eval_result(f"robot.simulate_stored_commands()"))
+        sim = np.array(self.get_eval_result(f"robot.simulate_stored_commands()"))
         lin = np.array([self.z_lin()]*len(sim))
         sim = np.vstack([lin,sim.T]).T
         if plot:
@@ -178,7 +234,7 @@ class StaeubliTx200(Assembly):
         If simulate = True, an array of interpolated positions in either joint or cartesian        
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
-        sim = np.array(self._get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"))
+        sim = np.array(self.get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"))
         lin = np.array([self.z_lin()]*len(sim))
         sim = np.vstack([lin,sim.T]).T
         if plot:
@@ -198,7 +254,7 @@ class StaeubliTx200(Assembly):
         """
         Simulated motion in the joint coordinate system.
         """
-        sim = np.array(self._get_eval_result(f"robot.move_joint(j1={j1}, j2={j2}, j3={j3}, j4={j4}, j5={j5}, j6={j6}, simulate=True"))
+        sim = np.array(self.get_eval_result(f"robot.move_joint(j1={j1}, j2={j2}, j3={j3}, j4={j4}, j5={j5}, j6={j6}, simulate=True"))
         lin = np.array([self.z_lin()]*11)
         sim = np.vstack([lin,sim.T]).T
         if plot:
@@ -225,7 +281,7 @@ class StaeubliTx200(Assembly):
         An array of interpolated positions in either joint or cartesian        
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
-        sim = np.array(self._get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
+        sim = np.array(self.get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
         lin = np.array([self.z_lin()]*11)
         sim = np.vstack([lin,sim.T]).T
         if plot:
@@ -240,7 +296,7 @@ class StaeubliTx200(Assembly):
         else:
             return sim
     
-    def simulate_current_pos(self):
+    def _simulate_current_pos(self):
         js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])
         if np.any([j is None for j in js]):
             raise RobotError("Some of the joint positions are None, check if the connection between server and robot is lost")
@@ -266,16 +322,18 @@ class StaeubliTx200(Assembly):
             time.sleep(.05)
 
     def _get_on_poll_info(self):
-        cfg = self._get_eval_result("robot.on_poll_info()")
+        cfg = self.get_eval_result("robot.on_poll_info()")
         self._info_fields = cfg["info"]
         self._config_fields = cfg["config"]
 
     def _do_update(self):
-        self._get_eval_result("robot.doUpdate()")
+        self.get_eval_result("robot.doUpdate()")
 
     def _on_event(self, name, value):
         if name == "polling":
             self._cache = value
+        elif name == "state":
+            self._info_fields_server["server_status"] = value
         elif name == "reset_motion":
             print(value)
         elif name == "stop":
@@ -288,15 +346,19 @@ class StaeubliTx200(Assembly):
     def _as_bool(self, s):
         return True if s=='true' else False if s=='false' else None
     
-    def _get_eval_result(self, cmd, update_value_time=0.05, timeout=120):
-        cid = self.pc.start_eval(f"{cmd}&")
+    def get_eval_result(self, cmd, update_value_time=0.05, timeout=120, background=True):
+        if "info" in self.__dict__.keys():
+            if self.info.server_status == "Busy":
+                raise RobotError("The server is busy with a recording motion. To abort it, type: rob.abort_record()")
+        if background:
+            cmd = cmd + "&"
+        cid = self.pc.start_eval(f"{cmd}")
         t_start = time.time()
         while(True):
             time.sleep(update_value_time)
             res = self.pc.get_result(cid)
             if res["status"] == "failed":
                 raise RobotError(res["exception"])
-                break
             elif res["status"] == "completed":
                 val = res["return"]
                 break
@@ -306,17 +368,26 @@ class StaeubliTx200(Assembly):
                 )     
         return val
 
-    def _set_eval_cmd(self, cmd, hold=False, update_value_time=0.05, timeout=120):
-        return Changer(
+    def _set_eval_cmd(self, cmd, stopper = None, hold=False, update_value_time=0.05, timeout=120, background=True, stopper_msg = ""):
+        ch = Changer(
             target=cmd,
-            changer=lambda cmd: self._get_eval_result(cmd, update_value_time, timeout),
+            changer=lambda cmd: self.get_eval_result(cmd, update_value_time, timeout, background=background),
             hold=hold,
+            stopper=stopper,
         )
+        if stopper is not None:
+            try:
+                ch.wait()
+            except KeyboardInterrupt:
+                ch.stop()
+                print(f"\nAborted change:\n{stopper_msg}")
+        else:
+            return ch
 
     def _check_disconnect_event(self, name, value):
         if name == "shell":
             if type(value) != str:
-                pass
+                return
             if "Update error" in value:
                 for k, v in self._cache.items():
                     if type(v) == dict:
@@ -326,3 +397,5 @@ class StaeubliTx200(Assembly):
                         self._cache[k]=None
                     self._cache["connected"]=False
                 raise RobotError(value)
+        else:
+            print(name, value)

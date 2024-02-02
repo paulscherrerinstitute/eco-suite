@@ -25,13 +25,13 @@ config = Configuration(
 )
 
 components = [
-    {
-        "type": "eco.utilities.config:append_to_path",
-        "args": config["path_exp"],
-        "name": "path_exp",
-        "kwargs": {},
-        "lazy": True,
-    },
+    # {
+    #     "type": "eco.utilities.config:append_to_path",
+    #     "args": config["path_exp"],
+    #     "name": "path_exp",
+    #     "kwargs": {},
+    #     "lazy": True,
+    # },
     # {
     #     "name": "screenshot",
     #     "type": "eco.utilities.elog:Screenshot",
@@ -97,46 +97,46 @@ components = [
     #         },
     #     },
     # },
-    {
-        "name": "pshut_und",
-        "type": "eco.xoptics.shutters:PhotonShutter",
-        "args": ["SARFE10-OPSH044:REQUEST"],
-        "kwargs": {},
-        "z_und": 44,
-        "desc": "First shutter after Undulators",
-    },
-    {
-        "name": "pshut_fe",
-        "type": "eco.xoptics.shutters:PhotonShutter",
-        "args": ["SARFE10-OPSH059:REQUEST"],
-        "kwargs": {},
-        "z_und": 59,
-        "desc": "Photon shutter end of front end",
-    },
-    {
-        "name": "sshut_opt",
-        "type": "eco.xoptics.shutters:SafetyShutter",
-        "args": ["SGE01-EPKT822:BST1_oeffnen"],
-        "kwargs": {},
-        "z_und": 115,
-        "desc": "Bernina safety shutter",
-    },
-    {
-        "name": "sshut_fe",
-        "type": "eco.xoptics.shutters:SafetyShutter",
-        "args": ["SGE01-EPKT820:BST1_oeffnen"],
-        "kwargs": {},
-        "z_und": 115,
-        "desc": "Bernina safety shutter",
-    },
-    {
-        "name": "att_fe",
-        "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
-        "args": ["SARFE10-OATT053"],
-        "kwargs": {"shutter": Component("pshut_und")},
-        "z_und": 53,
-        "desc": "Attenuator in Front End",
-    },
+    # {
+    #     "name": "pshut_und",
+    #     "type": "eco.xoptics.shutters:PhotonShutter",
+    #     "args": ["SARFE10-OPSH044:REQUEST"],
+    #     "kwargs": {},
+    #     "z_und": 44,
+    #     "desc": "First shutter after Undulators",
+    # },
+    # {
+    #     "name": "pshut_fe",
+    #     "type": "eco.xoptics.shutters:PhotonShutter",
+    #     "args": ["SARFE10-OPSH059:REQUEST"],
+    #     "kwargs": {},
+    #     "z_und": 59,
+    #     "desc": "Photon shutter end of front end",
+    # },
+    # {
+    #     "name": "sshut_opt",
+    #     "type": "eco.xoptics.shutters:SafetyShutter",
+    #     "args": ["SGE01-EPKT822:BST1_oeffnen"],
+    #     "kwargs": {},
+    #     "z_und": 115,
+    #     "desc": "Bernina safety shutter",
+    # },
+    # {
+    #     "name": "sshut_fe",
+    #     "type": "eco.xoptics.shutters:SafetyShutter",
+    #     "args": ["SGE01-EPKT820:BST1_oeffnen"],
+    #     "kwargs": {},
+    #     "z_und": 115,
+    #     "desc": "Bernina safety shutter",
+    # },
+    # {
+    #     "name": "att_fe",
+    #     "type": "eco.xoptics.attenuator_aramis:AttenuatorAramis",
+    #     "args": ["SARFE10-OATT053"],
+    #     "kwargs": {"shutter": Component("pshut_und")},
+    #     "z_und": 53,
+    #     "desc": "Attenuator in Front End",
+    # },
     # {
     #    "name": "mon_und",
     #    "z_und": 53,
@@ -164,26 +164,18 @@ components = [
     #     "desc": "DCM Monochromator",
     #     "type": "eco.xoptics.dcm:Double_Crystal_Mono",
     # },
-    {
-        "name": "prof_mono",
-        "args": ["SAROP21-PPRM113"] * 2,
-        "kwargs": {},
-        "z_und": 102,
-        "desc": "Profile monitor after Monochromator",
-        "type": "eco.xdiagnostics.profile_monitors:Pprm",
-    },
-    {
-        "name": "xp",
-        "args": [],
-        "kwargs": {
-            "Id": "SAROP21-OPPI113",
-            "evronoff": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP",
-            "evrsrc": "SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP",
-        },
-        "z_und": 103,
-        "desc": "X-ray pulse picker",
-        "type": "eco.xoptics.pp:Pulsepick",
-    },
+    # {
+    #     "name": "xp",
+    #     "args": [],
+    #     "kwargs": {
+    #         "Id": "SAROP21-OPPI113",
+    #         "evronoff": "SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP",
+    #         "evrsrc": "SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP",
+    #     },
+    #     "z_und": 103,
+    #     "desc": "X-ray pulse picker",
+    #     "type": "eco.xoptics.pp:Pulsepick",
+    # },
     # {
     #    "name": "mon_opt_old",
     #    "z_und": 133,
@@ -192,22 +184,6 @@ components = [
     #    "args": ["SAROP21-PBPS133"],
     #    "kwargs": {"VME_crate": "SAROP21-CVME-PBPS1", "link": 9},
     # },
-    {
-        "name": "prof_opt",
-        "args": ["SAROP21-PPRM133"] * 2,
-        "kwargs": {},
-        "z_und": 133,
-        "desc": "Profile monitor after Optics hutch",
-        "type": "eco.xdiagnostics.profile_monitors:Pprm",
-    },
-    {
-        "name": "spect_tt",
-        "args": ["SAROP21-PSEN135"],
-        "kwargs": {"reduction_client_address": "http://sf-daqsync-01:8889/"},
-        "z_und": 135,
-        "desc": "Spectral encoding timing diagnostics before Attenuator.",
-        "type": "eco.xdiagnostics.timetools:SpectralEncoder",
-    },
     # {
     #     "name": "att",
     #     "args": ["SAROP21-OATT135"],
@@ -232,14 +208,6 @@ components = [
     #     "type": "eco.devices_general.detectors:DiodeDigitizer",
     #     "kwargs": {"VME_crate": "SAROP21-CVME-PBPS2", "link": 9},
     # },
-    {
-        "name": "prof_att",
-        "args": ["SAROP21-PPRM138"] * 2,
-        "kwargs": {},
-        "z_und": 138,
-        "desc": "Profile monitor after Attenuator",
-        "type": "eco.xdiagnostics.profile_monitors:Pprm",
-    },
     # {
     # "name": "spatial_tt",
     # "args": [],
@@ -299,19 +267,19 @@ components = [
     #     "type": "tof:jet",
     #     "kwargs": {},
     # },
-    {
-        "args": [],
-        "name": "xeye",
-        "z_und": 142,
-        "desc": "Mobile X-ray eye in Bernina hutch",
-        "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
-        "kwargs": {
-            "zoomstage_pv": config["xeye"]["zoomstage_pv"],
-            "camera_pv": config["xeye"]["camera_pv"],
-            "bshost": "sf-daqsync-01.psi.ch",
-            "bsport": 11151,
-        },
-    },
+    # {
+    #     "args": [],
+    #     "name": "xeye",
+    #     "z_und": 142,
+    #     "desc": "Mobile X-ray eye in Bernina hutch",
+    #     "type": "eco.xdiagnostics.profile_monitors:Bernina_XEYE",
+    #     "kwargs": {
+    #         "zoomstage_pv": config["xeye"]["zoomstage_pv"],
+    #         "camera_pv": config["xeye"]["camera_pv"],
+    #         "bshost": "sf-daqsync-01.psi.ch",
+    #         "bsport": 11151,
+    #     },
+    # },
     # {
     #    "args": ["SARES20-CAMS142-C3"],
     #    "name": "cam_sample_xrd",
@@ -341,14 +309,14 @@ components = [
     #     "type": "eco.devices_general.timing:PhaseShifterAramis",
     #     "kwargs": {},
     # },
-    {
-        "args": ["SLAAR21-LTIM01-EVR0"],
-        "name": "laser_shutter",
-        "z_und": 142,
-        "desc": "Laser Shutter",
-        "type": "eco.loptics.laser_shutter:laser_shutter",
-        "kwargs": {},
-    },
+    # {
+    #     "args": ["SLAAR21-LTIM01-EVR0"],
+    #     "name": "laser_shutter",
+    #     "z_und": 142,
+    #     "desc": "Laser Shutter",
+    #     "type": "eco.loptics.laser_shutter:laser_shutter",
+    #     "kwargs": {},
+    # },
     # {
     #     "args": [],
     #     "name": "daq_dia_old",
@@ -401,45 +369,45 @@ components = [
     #     "type": "eco.timing.event_timing:EventReceiver",
     #     "kwargs": {},
     # },
-    {
-        "args": [],
-        "name": "default_channel_list",
-        "desc": "Bernina default channels, used in daq",
-        "type": "eco.utilities.config:ChannelList",
-        "kwargs": {
-            "file_name": "/sf/bernina/config/channel_lists/default_channel_list"
-        },
-    },
-    {
-        "args": [],
-        "name": "default_channel_list_bs",
-        "desc": "Bernina default bs channels, used by bs_daq",
-        "type": "eco.utilities.config:ChannelList",
-        "kwargs": {
-            "file_name": "/sf/bernina/config/channel_lists/default_channel_list_bs"
-        },
-    },
-    {
-        "args": [],
-        "name": "channels_spectrometer_projection",
-        "desc": "",
-        "type": "eco.utilities.config:ChannelList",
-        "kwargs": {
-            "file_name": "/sf/bernina/config/channel_lists/channel_list_PSSS_projection"
-        },
-    },
-    {
-        "args": [],
-        "name": "bs_daq",
-        "desc": "bs daq writer (locally!)",
-        "type": "eco.acquisition.bs_data:BStools",
-        "kwargs": {
-            "default_channel_list": {
-                "bernina_default_channels_bs": Component("default_channel_list_bs")
-            },
-            "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
-        },
-    },
+    # {
+    #     "args": [],
+    #     "name": "default_channel_list",
+    #     "desc": "Bernina default channels, used in daq",
+    #     "type": "eco.utilities.config:ChannelList",
+    #     "kwargs": {
+    #         "file_name": "/sf/bernina/config/channel_lists/default_channel_list"
+    #     },
+    # },
+    # {
+    #     "args": [],
+    #     "name": "default_channel_list_bs",
+    #     "desc": "Bernina default bs channels, used by bs_daq",
+    #     "type": "eco.utilities.config:ChannelList",
+    #     "kwargs": {
+    #         "file_name": "/sf/bernina/config/channel_lists/default_channel_list_bs"
+    #     },
+    # },
+    # {
+    #     "args": [],
+    #     "name": "channels_spectrometer_projection",
+    #     "desc": "",
+    #     "type": "eco.utilities.config:ChannelList",
+    #     "kwargs": {
+    #         "file_name": "/sf/bernina/config/channel_lists/channel_list_PSSS_projection"
+    #     },
+    # },
+    # {
+    #     "args": [],
+    #     "name": "bs_daq",
+    #     "desc": "bs daq writer (locally!)",
+    #     "type": "eco.acquisition.bs_data:BStools",
+    #     "kwargs": {
+    #         "default_channel_list": {
+    #             "bernina_default_channels_bs": Component("default_channel_list_bs")
+    #         },
+    #         "default_file_path": f"/sf/bernina/data/{config['pgroup']}/res/%s",
+    #     },
+    # },
     # {
     #     "args": ["SARES23-"],
     #     "name": "slit_kb",

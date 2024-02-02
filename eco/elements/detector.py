@@ -1,4 +1,4 @@
-from eco.elements.adjustable import AdjustableMemory
+from eco.elements.adjustable import AdjustableMemory, default_representation
 from eco.elements.assembly import Assembly
 from eco.aliases import Alias
 import time
@@ -33,6 +33,7 @@ def call_convenience(Det):
 
 @call_convenience
 @value_property
+@default_representation
 class DetectorVirtual(Assembly):
     def __init__(
         self,
@@ -66,6 +67,7 @@ class DetectorVirtual(Assembly):
 
 @call_convenience
 @value_property
+@default_representation
 class DetectorGet:
     def __init__(self, foo_get, cache_get_seconds=None, name=None):
         """ """
@@ -74,10 +76,9 @@ class DetectorGet:
         self._get = foo_get
         self._cache_get_seconds = cache_get_seconds
 
-    
     def get_current_value(self):
         ts = time.time()
-        if self._cache_get_seconds and hasattr(self,'_get_cache'):
+        if self._cache_get_seconds and hasattr(self, "_get_cache"):
             if ts - self._get_cache[0] < self._cache_get_seconds:
                 value = self._get_cache[1]
             else:
@@ -85,5 +86,5 @@ class DetectorGet:
         else:
             value = self._get()
         if self._cache_get_seconds:
-            self._get_cache= (ts,value)
+            self._get_cache = (ts, value)
         return value

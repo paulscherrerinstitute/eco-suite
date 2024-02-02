@@ -2,6 +2,7 @@ from eco.utilities.feedback import Feedback
 from eco import Assembly
 from eco.elements.adjustable import AdjustableFS
 import numpy as np
+import time
 
 
 class AramisDcmFeedback(Assembly):
@@ -42,7 +43,7 @@ class AramisDcmFeedback(Assembly):
         self._append(
             Feedback,
             name="hor",
-            foo_detector=self.get_ypos,
+            foo_detector=self.get_xpos,
             setpoint=setpoint_hor_path,
             pid=pid_hor_path,
             control_adj=self.mono.roll1_piezo,
@@ -54,7 +55,7 @@ class AramisDcmFeedback(Assembly):
             ).wait(),
             callback_stop_feedback=None,
             callback_start_control=None,
-            callback_stop_control=None,
+            callback_stop_control=lambda: time.sleep(1),
             is_display="recursive",
             is_setting=True,
         )
@@ -74,7 +75,7 @@ class AramisDcmFeedback(Assembly):
             ).wait(),
             callback_stop_feedback=None,
             callback_start_control=None,
-            callback_stop_control=None,
+            callback_stop_control=lambda: time.sleep(1),
             is_display="recursive",
             is_setting=True,
         )

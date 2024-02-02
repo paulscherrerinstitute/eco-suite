@@ -30,6 +30,48 @@ class Component:
         self.name = namestring
 
 
+class NamespaceComponent:
+    def __init__(self, namespace, namestring):
+        self.namespace = namespace
+        comps = namestring.split(".")
+        for n, comp in enumerate(comps):
+            tn = ".".join(comps[: n + 1])
+            if tn in self.namespace.all_names:
+                self.obj_name = tn
+                self.sub_name = ".".join(comps[n + 1 :])
+                break
+            if n == len(comps) - 1:
+                print(f"could not find {namestring} in namespace!")
+
+    def get(self):
+        # if not self.obj_name in self.namespace.initialized_names:
+        #     self.namespace.init_name(self.obj_name)
+        obj = self.namespace.get_obj(self.obj_name)
+        if self.sub_name:
+            return eval(f"obj.{self.sub_name}")
+        else:
+            return obj
+
+
+def replace_NamespaceComponents(*args, **kwargs):
+    args_out = []
+    kwargs_out = {}
+
+    for arg in args:
+        if isinstance(arg, NamespaceComponent):
+            args_out.append(Proxy(arg.get))
+        else:
+            args_out.append(arg)
+            pass
+    for name, value in kwargs.items():
+        if isinstance(value, NamespaceComponent):
+            kwargs_out[name] = Proxy(value.get)
+        else:
+            kwargs_out[name] = value
+
+    return args_out, kwargs_out
+
+
 def init_name_obj(obj, args, kwargs, name=None):
     try:
         return obj(*args, **kwargs, name=name)
@@ -654,15 +696,25 @@ class Namespace(Assembly):
                     # raise IsInitialisingError(f"NB: {name} is already initializing!!!")
                 else:
                     self._initializing.append(name)
+
+                # args, kwargs = replace_NamespaceComponents(*args, **kwargs)
+
                 if module_name:
                     obj_maker = getattr(import_module(module_name), obj_factory)
                 else:
                     obj_maker = obj_factory
 
                 if "name" in signature(obj_maker).parameters:
-                    obj_initialized = obj_maker(*args, name=name, **kwargs)
+                    obj_initialized = obj_maker(
+                        *replace_NamespaceComponents(*args)[0],
+                        name=name,
+                        **replace_NamespaceComponents(**kwargs)[1],
+                    )
                 else:
-                    obj_initialized = obj_maker(*args, **kwargs)
+                    obj_initialized = obj_maker(
+                        *replace_NamespaceComponents(*args)[0],
+                        **replace_NamespaceComponents(**kwargs)[1],
+                    )
 
                 try:
                     self.initialized_items[name] = self.lazy_items.pop(name)
@@ -703,6 +755,7 @@ class Namespace(Assembly):
 
         else:
             starttime = time()
+            args, kwargs = replace_NamespaceComponents(*args, **kwargs)
             if module_name:
                 obj_maker = getattr(import_module(module_name), obj_factory)
             else:

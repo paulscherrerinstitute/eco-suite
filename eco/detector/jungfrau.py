@@ -2,6 +2,7 @@ import shutil
 from tkinter import W
 
 from eco.base.adjustable import Adjustable
+from eco.elements.detector import DetectorGet
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
 from ..epics.adjustable import AdjustablePv
 from ..elements.assembly import Assembly
@@ -39,6 +40,9 @@ class Jungfrau(Assembly):
         self.pgroup = pgroup_adj
         self.jf_id = jf_id
         self.broker_address = broker_address
+        self._append(
+            DetectorGet, lambda: f"http://{self.get_vis_url()}", name="visulization_url"
+        )
         self._append(JungfrauChannel, jf_id, name="data")
         self._append(JungfrauChannel, jf_id + "_rawdata", name="data_raw")
         self._append(
@@ -179,9 +183,9 @@ class Jungfrau(Assembly):
     def get_isrunning(self):
         is_running = (
             self.jf_id
-            in requests.get(
-                f"{self.broker_adc_to_energyaddress}/get_running_detectors_list"
-            ).json()["detectors"]
+            in requests.get(f"{self.broker_address}/get_running_detectors_list").json()[
+                "detectors"
+            ]
         )
         return is_running
 
@@ -250,8 +254,8 @@ class JungfrauDaqConfig(Assembly):
             name="rounding_factor_keV",
             is_display=True,
             is_setting=True,
-        )        
-        
+        )
+
         self._append(
             AdjustableGetSet,
             self._get_large_pixel_processing,
@@ -375,7 +379,7 @@ class JungfrauDaqConfig(Assembly):
             self._jf_daq_cfg.set_target_value(cfg).wait()
         else:
             cfg = self._jf_daq_cfg.get_current_value()
-            cfg[self._jf_id]["remove_raw_files"] = Trueadc_to_energy
+            cfg[self._jf_id]["remove_raw_files"] = True
             self._jf_daq_cfg.set_target_value(cfg).wait()
 
     def _get_large_pixel_processing(self, *args):

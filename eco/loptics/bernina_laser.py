@@ -159,10 +159,10 @@ class FilterWheelAttenuator(Assembly):
 
 
 class StageLxtDelay(Assembly):
-    def __init__(self, fine_delay_adj, coarse_delay_adj, direction=1, name=None):
+    def __init__(self, fine_delay_adj, las, direction=1, name=None):
         super().__init__(name=name)
         self._append(fine_delay_adj, name="_fine_delay_adj", is_setting=True)
-        self._append(coarse_delay_adj, name="_coarse_delay_adj", is_setting=True)
+        self._append(las.xlt, name="_coarse_delay_adj", is_setting=True)
         self._append(AdjustableMemory, direction, name="_direction", is_setting=True)
         self._append(
             AdjustableFS,
