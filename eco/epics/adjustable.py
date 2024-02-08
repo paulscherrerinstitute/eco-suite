@@ -277,6 +277,10 @@ class AdjustablePvEnum:
             if not all([tstr in self.enum_strs for tstr in tstrs]):
                 raise Exception("pv enum setter strings are not all a readback option!")
             
+            self.get2set={}
+            for nset,tstr in enumerate(tstrs):
+                self.get2set[self.enum_strs.index(tstr)] = nset
+            
 
         else:
             self._pv_set = None
@@ -309,6 +313,8 @@ class AdjustablePvEnum:
         value = self.validate(value)
         if self._pv_set:
             tpv = self._pv_set
+            if hasattr(self,'get2set'):
+                value = self.get2set[value]
         else:
             tpv = self._pv
         changer = lambda value: tpv.put(value, wait=True)
