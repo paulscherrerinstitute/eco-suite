@@ -1,6 +1,7 @@
 from cam_server import CamClient, PipelineClient
 from matplotlib.backend_bases import MouseButton
 from eco.devices_general.utilities import Changer
+from eco.epics.detector import DetectorPvData
 
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
@@ -402,11 +403,34 @@ class CameraBasler(Assembly):
             is_setting=True,
             is_display=False,
         )
+        
+        self._append(
+            DetectorPvData,
+            self.pvname + ":DEVICEFREQUENCY",
+            has_unit=True,
+            name="frequency",
+            is_setting=False,
+            is_display=True,
+        )
         self._append(
             AdjustablePvEnum,
-            self.pvname + ":TRIGGER",
-            name="trigger_on",
+            self.pvname + ":SW_PULSID_SRC",
+            name="bscheck",
             is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            DetectorPvData,
+            self.pvname + ":ERRORCOUNTER",
+            name="pulse_id_error_sum",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorPvData,
+            self.pvname + ":FEEDBACKTIME0",
+            name="response_time_bs",
+            is_setting=False,
             is_display=True,
         )
         self._append(
@@ -429,6 +453,7 @@ class CameraBasler(Assembly):
             self._exposure_time.get_current_value,
             lambda value: self._set_params((self._exposure_time, value)),
             name="exposure_time",
+            unit = 'ms',
             is_setting=True,
             is_display=True,
         )

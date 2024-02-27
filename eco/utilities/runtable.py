@@ -5,7 +5,7 @@ import warnings
 from ..elements.adjustable import AdjustableFS
 from ..elements.memory import Memory
 from subprocess import call
-
+from eco.utilities.config import Proxy
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
 import timeit
@@ -189,9 +189,17 @@ class Container:
             )
         return next_level_names
 
-    def _create_first_level_container(self, names):
+    def _create_lazy_container(self, n):
+        def cr():
+            return Container(df = self._df, name=self._top_level_name + n + ".")
+        return cr
+
+    def _create_first_level_container(self, names, lazy=True):
         for n in names:
-            self.__dict__[n] = Container(self._df, name=self._top_level_name + n + ".")
+            if lazy:
+                self.__dict__[n] = Proxy(self._create_lazy_container(n))
+            else:
+                self.__dict__[n] = Container(self._df, name=self._top_level_name + n + ".")
 
     def to_dataframe(self, full_name=True, next_level=False):
         df = self._slice_df()
@@ -236,6 +244,7 @@ class Container:
                 src = src.append(sr)
         return src
 
+
     def __dir__(self):
         next_level_names = self._get_next_level_names()
         to_create = np.array(
@@ -278,7 +287,6 @@ class Run_Table2:
         name=None,
         gsheet_key_path=None,
     ):
-
         self._data = Run_Table_DataFrame(
             data=data,
             exp_id=exp_id,
@@ -286,6 +294,7 @@ class Run_Table2:
             devices=devices,
             name=name,
         )
+
         if np.all([k is not None for k in [keydf_fname, cred_fname, gsheet_key_path]]):
             self._google_sheet_api = Gsheet_API(
                 keydf_fname,
@@ -294,6 +303,7 @@ class Run_Table2:
                 exp_path,
                 gsheet_key_path,
             )
+            self.channels_gsheet = self._google_sheet_api.gsheet_keys
         else:
             self._google_sheet_api = None
         self.__dir__()
@@ -355,21 +365,26 @@ class Run_Table2:
         dfc = self._concatenate_dfs(dfs)
         return dfc
 
-    def _create_container(self):
-        for n in np.unique(np.array([n.split(".")[0] for n in self._data.columns])):
-            self.__dict__[n] = Container(df=self._data, name=n + ".")
-
     def _concatenate_dfs(self, dfs):
         dfc = dfs[0]
         for df in dfs[1:]:
             dfc = dfc.join(df)
         return dfc
 
+    def _create_lazy_container(self, dev):
+        def cr():
+            return Container(df=self._data, name=dev + ".")
+        return cr
+
     def __dir__(self):
+        lazy=True
         devs = np.unique(np.array([n.split(".")[0] for n in self._data.columns]))
         for dev in devs:
             if dev not in self.__dict__.keys():
-                self.__dict__[dev] = Container(df=self._data, name=dev + ".")
+                if lazy:
+                    self.__dict__[dev] = Proxy(self._create_lazy_container(dev))
+                else:
+                    self.__dict__[dev] = Container(df=self._data, name=dev + ".")
         directory = self.__dict__.keys()
         return directory
 
@@ -472,6 +487,18 @@ class Run_Table_DataFrame(DataFrame):
     def append_run(
         self,
         runno,
+        wait=False,
+        **kwargs
+    ):
+        if wait:
+            self._append_run(runno, **kwargs)
+        else:
+            ar = threading.Thread(target=self.append_run, args=[runno,], kwargs=kwargs)
+            ar.start()
+
+    def _append_run(
+        self,
+        runno,
         metadata={
             "type": "ascan",
             "name": "phi scan (001)",
@@ -505,7 +532,7 @@ class Run_Table_DataFrame(DataFrame):
         # self.order_df()
         self.save()
 
-    def append_pos(self, name=""):
+    def append_pos(self, name="", d={}):
         self.load()
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents()
@@ -515,7 +542,7 @@ class Run_Table_DataFrame(DataFrame):
             )
         except:
             posno = 0
-        dat = self._get_adjustable_values()
+        dat = self._get_adjustable_values(d=d)
         dat["metadata"] = {"time": datetime.now(), "name": name, "type": "pos"}
         names = ["device", "adjustable"]
         multiindex = pd.MultiIndex.from_tuples(
@@ -546,6 +573,7 @@ class Run_Table_DataFrame(DataFrame):
                 for adjname, adj in dev.items():
                     if f'{devname}.{adjname}' in d.keys():
                         dat[devname][adjname] = d[f'{devname}.{adjname}']
+                        print(f'{devname}.{adjname}')
                         continue
                     try:
                         dat[devname][adjname] = adj.get_current_value()

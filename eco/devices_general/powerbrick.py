@@ -67,7 +67,7 @@ class PowerBrickChannelPars(Assembly):
             if "r" in mode and "w" not in mode:
                 self.append_par_detector(par)
             elif "r" in mode and "w" in mode:
-                print(par)
+                # print(par)
                 self.append_par_adjustable(par)
 
     def get_from_par(self, formstr, **kwargs):

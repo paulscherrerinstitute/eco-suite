@@ -59,7 +59,7 @@ if scope:
     # mdl = importlib.import_module('eco.bernina')
     if arguments.lazy:
         ecocnf.startup_lazy = True
-    exec(f"import eco.{scope} as {scope}")
+    exec(f'import eco.{scope} as {scope}')
     exec(f"from eco.{scope} import *")
     # exec(f"op = {scope}.init()")
     # for tk, tv in op.items():

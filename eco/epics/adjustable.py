@@ -262,7 +262,7 @@ class AdjustablePvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05)
+        self._pv = PV(pvname, connection_timeout=0.05*2)
         self.name = name
         self._pv.wait_for_connection()
         self.enum_strs = self._pv.enum_strs
@@ -272,7 +272,7 @@ class AdjustablePvEnum:
         #     self.enum_strs = self._pv.enum_strs
 
         if pvname_set:
-            self._pv_set = PV(pvname_set, connection_timeout=0.05)
+            self._pv_set = PV(pvname_set, connection_timeout=0.05*2)
             tstrs = self._pv_set.enum_strs
             if not all([tstr in self.enum_strs for tstr in tstrs]):
                 raise Exception("pv enum setter strings are not all a readback option!")

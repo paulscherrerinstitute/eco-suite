@@ -320,14 +320,17 @@ class Namespace(Assembly):
         self.lazy_items = {}
         self.initialized_items = {}
         self.failed_items = {}
+        self.failed_items_excpetion = {}
         self.initialisation_times_lazy = {}
         self.initialisation_times = {}
+        self._initialisation_start_time = {}
+        self._init_priority = {}
 
         self.names_without_alias = []
         self._initializing = []
         self.root_module = root_module
         self.alias_namespace = alias_namespace
-
+    
     @property
     def initialisation_times_sorted(self):
         return dict(sorted(self.initialisation_times.items(), key=lambda w: w[1]))
@@ -351,12 +354,31 @@ class Namespace(Assembly):
     @property
     def all_names(self):
         return self.initialized_names | self.lazy_names | self.failed_names
+    
+    def move_failed_to_lazy(self,*names):
+        if not names:
+            names = self.failed_names
+        for name in names:
+            self.lazy_items[name] = self.failed_items.pop(name)
+            try:
+                self.failed_items_excpetion.pop(name)
+            except KeyError:
+                pass
+            try:
+                self._initializing.pop(self._initializing.index(name))
+            except KeyError:
+                pass
+            except ValueError:
+                pass
+
+
+
 
     def init_name(self, name, verbose=True, raise_errors=False):
         # for name in self.all_names:
-        if verbose:
-            print(("Configuring %s " % (name)).ljust(25), end="")
-            sys.stdout.flush()
+        # if verbose:
+        #     print(("Configuring %s " % (name)).ljust(25), end="")
+        #     sys.stdout.flush()
         # if verbose:
         #     print(("(%s)" % (name)).ljust(25), end="")
         #     sys.stdout.flush()
@@ -370,19 +392,19 @@ class Namespace(Assembly):
             self.initialisation_times[name] = time() - starttime
             if verbose:
                 print(
-                    f"{time()-starttime} s "
+                    ("Init %s " % (name)).ljust(40) + f"{round(1000*(time()-starttime)): 6d} ms "
                     + (_color.GREEN + "OK" + _color.RESET).rjust(5)
                 )
                 sys.stdout.flush()
 
         except Exception as expt:
-            if isinstance(expt, IsInitialisingError):
-                raise IsInitialisingError(f"{name} is being initialized already")
+            # if isinstance(expt, IsInitialisingError):
+            #     raise IsInitialisingError(f"{name} is being initialized already")
             # tb = traceback.format_exc()
             self.initialisation_times[name] = time() - starttime
             if verbose:
                 print(
-                    f"{time()-starttime} s "
+                    ("Init %s " % (name)).ljust(40) + f"{round(1000*(time()-starttime)): 6d} ms "
                     + (_color.RED + "FAILED" + _color.RESET).rjust(5)
                 )
                 # print(sys.exc_info())
@@ -470,6 +492,7 @@ class Namespace(Assembly):
                     )
                 )
             print("Initializing in single thread...")
+            self.move_failed_to_lazy()
             with ThreadPoolExecutor(max_workers=1) as exc:
                 list(
                     progress.track(
@@ -683,19 +706,34 @@ class Namespace(Assembly):
         return aliases, has_no_aliases
 
     def append_obj(
-        self, obj_factory, *args, lazy=False, name=None, module_name=None, **kwargs
+        self, obj_factory, *args, lazy=False, name=None, module_name=None, init_timeout=30, **kwargs
     ):
         if lazy:
 
             def init_local():
-                starttime = time()
+
+                if name in self.failed_names:
+                    raise IsInitialisingError(f'{name} failed previously to initialize.')
+                
                 if name in self._initializing:
-                    # while name in self._initializing:
+                    self._init_priority[name] += 1
+                    while name in self._initializing:
+                        if (time()-self._initialisation_start_time[name]) <= init_timeout:
+                            sleep(5)
+                        else:
+                    #     print(f'{name} waiting init since {time()-self._initialisation_start_time[name]} s')
                     #     sleep(5)
-                    pass
-                    # raise IsInitialisingError(f"NB: {name} is already initializing!!!")
+                    # # pass
+                            self._initializing.pop(self._initializing.index(name))
+                            raise IsInitialisingError(f"NB: {name} initialization timed out!")
+                    
+
+
                 else:
                     self._initializing.append(name)
+                    self._init_priority[name] = 0
+                    self._initialisation_start_time[name] = time()
+                
 
                 # args, kwargs = replace_NamespaceComponents(*args, **kwargs)
 
@@ -704,27 +742,34 @@ class Namespace(Assembly):
                 else:
                     obj_maker = obj_factory
 
-                if "name" in signature(obj_maker).parameters:
-                    obj_initialized = obj_maker(
-                        *replace_NamespaceComponents(*args)[0],
-                        name=name,
-                        **replace_NamespaceComponents(**kwargs)[1],
-                    )
-                else:
-                    obj_initialized = obj_maker(
-                        *replace_NamespaceComponents(*args)[0],
-                        **replace_NamespaceComponents(**kwargs)[1],
-                    )
+                try:
+                    if "name" in signature(obj_maker).parameters:
+                        obj_initialized = obj_maker(
+                            *replace_NamespaceComponents(*args)[0],
+                            name=name,
+                            **replace_NamespaceComponents(**kwargs)[1],
+                        )
+                    else:
+                        obj_initialized = obj_maker(
+                            *replace_NamespaceComponents(*args)[0],
+                            **replace_NamespaceComponents(**kwargs)[1],
+                        )
+                except Exception as e:
+                    self.failed_items[name] = self.lazy_items.pop(name)
+                    self.failed_items_excpetion[name] = e
+                    self._initializing.pop(self._initializing.index(name))
+                    raise Exception
+
 
                 try:
                     self.initialized_items[name] = self.lazy_items.pop(name)
                 except KeyError:
                     self.initialized_items[name] = self.failed_items.pop(name)
                 self._initializing.pop(self._initializing.index(name))
-                if name in self.initialisation_times_lazy.keys():
-                    self.initialisation_times_lazy[name] += time() - starttime
-                else:
-                    self.initialisation_times_lazy[name] = time() - starttime
+                # if name in self.initialisation_times_lazy.keys():
+                #     self.initialisation_times_lazy[name] += time() - starttime
+                # else:
+                self.initialisation_times_lazy[name] = time() - self._initialisation_start_time[name] 
                 if hasattr(obj_initialized, "alias"):
                     self._append(
                         obj_initialized,

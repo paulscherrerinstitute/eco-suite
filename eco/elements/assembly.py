@@ -325,7 +325,7 @@ class Assembly:
         s = tabulate([[name, value] for name, value in stat_filt[stat_field].items()])
         return s
 
-    def get_display_str(self, tablefmt="simple"):
+    def get_display_str(self, tablefmt="simple", maxcolwidths=[None, 50, None, None, None]):
         main_name = self.name
         stats = self.display_collection()
         # stats_dict = {}
@@ -354,15 +354,18 @@ class Assembly:
             try:
                 unit = to.unit.get_current_value()
             except:
-                unit = None
+                unit = ''
             try:
                 description = to.description.get_current_value()
             except:
-                description = None
+                description = ''
+
+            if value is None:
+                value=''
             tab.append(
                 [".".join([main_name, name]), value, unit, typechar, description]
             )
-        s = tabulate(tab, tablefmt=tablefmt)
+        s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
         return s
 
     def status_to_elog(

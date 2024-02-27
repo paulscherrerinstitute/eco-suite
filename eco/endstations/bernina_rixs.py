@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append("..")
-from ..devices_general.motors import MotorRecord, MotorRecord_new
+from ..devices_general.motors import MotorRecord, MotorRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv
 

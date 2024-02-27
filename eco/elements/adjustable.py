@@ -633,6 +633,7 @@ class AdjustableGetSet:
         precision=0,
         check_interval=None,
         cache_get_seconds=None,
+        unit = None,
         name=None,
     ):
         """assumes a waiting setterin function, in case no check_interval parameter is supplied.
@@ -646,6 +647,8 @@ class AdjustableGetSet:
         self._check_interval = check_interval
         self.precision = precision
         self._cache_get_seconds = cache_get_seconds
+        if unit:
+            self.unit = AdjustableMemory(unit, name="unit")
 
     def set_and_wait(self, value):
         if self._check_interval:

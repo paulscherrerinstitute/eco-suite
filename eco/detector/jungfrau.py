@@ -2,6 +2,7 @@ import shutil
 from tkinter import W
 
 from eco.base.adjustable import Adjustable
+from eco.devices_general.therm import ChillerThermotek
 from eco.elements.detector import DetectorGet
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
 from ..epics.adjustable import AdjustablePv
@@ -33,6 +34,7 @@ class Jungfrau(Assembly):
         broker_address="http://sf-daq:10002",
         pgroup_adj=None,
         config_adj=None,
+        chiller_thermotek="SARES20-CHIL",
         name=None,
     ):
         super().__init__(name=name)
@@ -115,6 +117,8 @@ class Jungfrau(Assembly):
                 is_status=True,
                 is_display="recursive",
             )
+        if chiller_thermotek:
+            self._append(ChillerThermotek,pvbase=chiller_thermotek,name="chiller",is_display="recursive")
 
     def _set_trigger_enable(self, value):
         if value:

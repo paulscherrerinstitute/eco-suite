@@ -1,3 +1,4 @@
+import time
 import requests
 from pathlib import Path
 from time import sleep
@@ -62,9 +63,15 @@ class Daq(Assembly):
         self._detectors_event_code = detectors_event_code
         self.name = name
         self._default_file_path = None
-
-        self.rate_multiplicator = rate_multiplicator
-
+        if not rate_multiplicator=='auto':
+            print('warning: rate multiplicator automatically determined from event_master!')
+            
+        
+    @property
+    def rate_multiplicator(self):
+        freq = self._event_master.__dict__[f'code{self._detectors_event_code:03d}'].frequency.get_current_value()
+        return int(100/freq)
+    
     @property
     def pgroup(self):
         if isinstance(self._pgroup, Adjustable):
@@ -113,7 +120,10 @@ class Daq(Assembly):
         )
 
     def start(self, label=None, **kwargs):
-        start_id = self.pulse_id.get_current_value()
+        starttime_local = time.time()
+        while self.pulse_id._pv.get_timevars()['timestamp'] < starttime_local:
+            time.sleep(.02)
+        start_id = self.pulse_id.get_current_value(use_monitor=False)
         acq_pars = {
             "label": label,
             "start_id": start_id,

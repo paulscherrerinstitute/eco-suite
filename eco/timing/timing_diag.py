@@ -1,5 +1,6 @@
 from eco.detector.detectors_psi import DetectorBsStream
 from eco.devices_general.pipelines_swissfel import Pipeline
+from eco.devices_general.spectrometers import SpectrometerAndor
 from eco.microscopes.microscopes import FeturaPlusZoom
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
@@ -35,6 +36,7 @@ class TimetoolBerninaUSD(Assembly):
         pvname_zoom="SARES20-MF1:MOT_8",
         mirror_in=15,
         mirror_out=-5,
+        andor_spectrometer=None,
     ):
         super().__init__(name=name)
         self.mirror_in_position = mirror_in
@@ -187,6 +189,9 @@ class TimetoolBerninaUSD(Assembly):
             is_setting=False,
             is_display=True,
         )
+        if andor_spectrometer:
+            self._append(SpectrometerAndor,andor_spectrometer, name='spectrometer', is_setting=True, is_display='recursive')
+            
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()

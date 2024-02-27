@@ -47,8 +47,12 @@ class DetectorPvData(Assembly):
         else:
             return self.readback.get_current_value()
 
+    # def get_current_value_callback(self):
+    #     pass
+
     def __call__(self):
         return self.get_current_value()
+    
 
 
 # @call_convenience
@@ -93,6 +97,9 @@ class DetectorPvEnum(Assembly):
 
     def __call__(self):
         return self.get_current_value()
+    
+    def _wait_for_initialisation(self):
+        self._pv.wait_for_connection()
 
 
 # @call_convenience
@@ -246,5 +253,5 @@ class DetectorPvDataStream(Assembly):
 
     data = property(get_data)
 
-    def get_current_value(self):
-        return self._pv.get()
+    def get_current_value(self,**kwargs):
+        return self._pv.get(**kwargs)

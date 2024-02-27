@@ -1173,19 +1173,23 @@ class SolidTargetDetectorBerninaUSD(Assembly):
                 name="intensity",
                 is_setting=False,
             )
+        else:
+            self._append(
+                DetectorBsStream, pvname + ":XPOS", name="xpos", is_setting=False
+            )
 
         if channel_xpos:
             self._append(DetectorBsStream, channel_xpos, name="xpos", is_setting=False)
-        # else:
-        #     self._append(
-        #         DetectorBsStream, pvname + ":XPOS", name="xpos", is_setting=False
-        #     )
+        else:
+            self._append(
+                DetectorBsStream, pvname + ":XPOS", name="xpos", is_setting=False
+            )
         if channel_ypos:
             self._append(DetectorBsStream, channel_ypos, name="ypos", is_setting=False)
-        # else:
-        #     self._append(
-        #         DetectorBsStream, pvname + ":YPOS", name="ypos", is_setting=False
-        #     )
+        else:
+            self._append(
+                DetectorBsStream, pvname + ":YPOS", name="ypos", is_setting=False
+            )
 
         if diode_channels_raw:
             self._append(

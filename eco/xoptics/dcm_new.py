@@ -1,4 +1,4 @@
-from ..devices_general.motors import MotorRecord, MotorRecord_new
+from ..devices_general.motors import MotorRecord, MotorRecord
 from eco.elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
@@ -60,29 +60,32 @@ class DoubleCrystalMono(Assembly):
 
         self._append(DcmConfig, self.pvname, name="mono_config")
 
+        self._append(AdjustablePvEnum, pvname + ":BRAGG_ACCURACY_SP", name="theta_accuracy")
+        self._append(AdjustablePvEnum, pvname + ":HOLDING_BRAGG_SP", name="theta_hold")
+
         self._append(
-            MotorRecord_new,
+            MotorRecord,
             pvname + ":RX12",
             name="theta",
             is_setting=True,
             view_toplevel_only=True,
         )
         self._append(
-            MotorRecord_new,
+            MotorRecord,
             pvname + ":TX12",
             name="x",
             is_setting=True,
             view_toplevel_only=True,
         )
         self._append(
-            MotorRecord_new,
+            MotorRecord,
             pvname + ":T2",
             name="gap",
             is_setting=True,
             view_toplevel_only=True,
         )
         self._append(
-            MotorRecord_new,
+            MotorRecord,
             pvname + ":RZ1",
             name="roll1",
             is_setting=True,
@@ -98,14 +101,14 @@ class DoubleCrystalMono(Assembly):
             view_toplevel_only=True,
         )
         self._append(
-            MotorRecord_new,
+            MotorRecord,
             pvname + ":RZ2",
             name="roll2",
             is_setting=True,
             view_toplevel_only=True,
         )
         self._append(
-            MotorRecord_new,
+            MotorRecord,
             pvname + ":RX2",
             name="pitch2",
             is_setting=True,

@@ -971,7 +971,7 @@ class MotorRecord(Assembly):
         return self._tweak_ioc(*args, **kwargs)
 
 
-MotorRecord_new = MotorRecord
+MotorRecord = MotorRecord
 
 flag_names_motor_record = [
     "direction",

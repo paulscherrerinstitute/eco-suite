@@ -142,7 +142,7 @@ class SSHComm:
             elif (time.time() - t0) > timeout:
                 raise TimeoutError(repr(buf))
             else:
-                time.sleep(0.01)
+                time.sleep(0.001)
 
     def read_until_endswith(self, txt, timeout=1.0):
         "SSH wait, up until received data ends with text up to `timeout` seconds"
@@ -160,7 +160,7 @@ class SSHComm:
             elif (time.time() - t0) > timeout:
                 raise TimeoutError(repr(buf))
             else:
-                time.sleep(0.01)
+                time.sleep(0.001)
 
     def iawrite(self, msg):
         """interactive write. if 1 is returned, nothing is done"""

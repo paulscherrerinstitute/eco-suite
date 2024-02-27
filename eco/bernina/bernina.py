@@ -3,7 +3,9 @@ from pathlib import Path
 from threading import Thread
 import eco
 from eco.acquisition.scan import NumpyEncoder
+from eco.devices_general.digitizers import DigitizerIoxosBoxcarChannel
 from eco.devices_general.powersockets import MpodModule
+from eco.devices_general.wago import AnalogOutput
 from eco.elements.adjustable import AdjustableFS
 from eco.elements.adjustable import AdjustableVirtual
 from eco.loptics.bernina_experiment import DelayCompensation
@@ -14,6 +16,7 @@ import pickle
 
 # from eco.endstations.bernina_sample_environments import Organic_crystal_breadboard_old
 from eco.motion.smaract import SmaractController
+from eco.timing.event_timing_new_new import EvrOutput
 from .config import components
 
 # from .config import config as config_berninamesp
@@ -43,6 +46,13 @@ _config_bernina_dict = AdjustableFS(
 from eco.elements.adj_obj import AdjustableObject
 
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
+
+namespace.append_obj(
+    "RunData",
+    config_bernina.pgroup,
+    name='runs',
+    module_name='eco.acquisition.scan_data',
+)
 
 namespace.append_obj(
     "Elog",
@@ -154,6 +164,13 @@ for tk in components:
 #     module_name="eco.devices_general.cameras_ptz",
 # )
 
+namespace.append_obj(
+    "BerninaVacuum",
+    name="vacuum",
+    module_name="eco.endstations.bernina_vacuum",
+    lazy=True,
+)
+
 
 ## Old stuff that was still in config and might be needed
 namespace.append_obj(
@@ -209,6 +226,7 @@ namespace.append_obj(
     name="att_fe",
     lazy=True,
 )
+
 
 namespace.append_obj(
     "Bernina_XEYE",
@@ -281,25 +299,25 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
-namespace.append_obj(
-    "SolidTargetDetectorPBPS",
-    "SAROP21-PBPS103",
-    diode_channels_raw={
-        "up": "SAROP21-CVME-PBPS1:Lnk9Ch3-DATA-SUM",
-        "down": "SAROP21-CVME-PBPS1:Lnk9Ch4-DATA-SUM",
-        "left": "SAROP21-CVME-PBPS1:Lnk9Ch2-DATA-SUM",
-        "right": "SAROP21-CVME-PBPS1:Lnk9Ch1-DATA-SUM",
-    },
-    fe_digi_channels={
-        "left": "SAROP21-CVME-PBPS1:Lnk9Ch2",
-        "right": "SAROP21-CVME-PBPS1:Lnk9Ch1",
-        "up": "SAROP21-CVME-PBPS1:Lnk9Ch3",
-        "down": "SAROP21-CVME-PBPS1:Lnk9Ch4",
-    },
-    name="mon_mono_old",
-    module_name="eco.xdiagnostics.intensity_monitors",
-    lazy=True,
-)
+# namespace.append_obj(
+#     "SolidTargetDetectorPBPS",
+#     "SAROP21-PBPS103",
+#     diode_channels_raw={
+#         "up": "SAROP21-CVME-PBPS1:Lnk9Ch3-DATA-SUM",
+#         "down": "SAROP21-CVME-PBPS1:Lnk9Ch4-DATA-SUM",
+#         "left": "SAROP21-CVME-PBPS1:Lnk9Ch2-DATA-SUM",
+#         "right": "SAROP21-CVME-PBPS1:Lnk9Ch1-DATA-SUM",
+#     },
+#     fe_digi_channels={
+#         "left": "SAROP21-CVME-PBPS1:Lnk9Ch2",
+#         "right": "SAROP21-CVME-PBPS1:Lnk9Ch1",
+#         "up": "SAROP21-CVME-PBPS1:Lnk9Ch3",
+#         "down": "SAROP21-CVME-PBPS1:Lnk9Ch4",
+#     },
+#     name="mon_mono_old",
+#     module_name="eco.xdiagnostics.intensity_monitors",
+#     lazy=True,
+# )
 
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
@@ -486,27 +504,27 @@ namespace.append_obj(
 )
 
 
-namespace.append_obj(
-    "SolidTargetDetectorPBPS",
-    "SAROP21-PBPS133",
-    channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
-    channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
-    channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
-    diode_channels_raw={
-        "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
-        "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
-        "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
-        "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
-    },
-    calibration_records={
-        "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
-        "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
-        "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
-    },
-    name="mon_opt_old",
-    module_name="eco.xdiagnostics.intensity_monitors",
-    lazy=True,
-)
+# namespace.append_obj(
+#     "SolidTargetDetectorPBPS",
+#     "SAROP21-PBPS133",
+#     channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
+#     channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
+#     channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
+#     diode_channels_raw={
+#         "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
+#         "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
+#         "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
+#         "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
+#     },
+#     calibration_records={
+#         "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
+#         "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
+#         "ypos": "SLAAR21-LTIM01-EVR0:CALCY",
+#     },
+#     name="mon_opt_old",
+#     module_name="eco.xdiagnostics.intensity_monitors",
+#     lazy=True,
+# )
 
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
@@ -618,9 +636,9 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorBerninaUSD",
     "SARES23-LIC:MOT_12",
-    channel_xpos=None,
-    channel_ypos=None,
-    channel_intensity=None,
+    channel_xpos="SARES21-PBPS141:XPOS",
+    channel_ypos="SARES21-PBPS141:YPOS",
+    channel_intensity="SARES21-PBPS141:INTENSITY",
     diode_channels_raw={
         "up": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD1",
         "down": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD2",
@@ -631,7 +649,6 @@ namespace.append_obj(
     name="mon_kb",
     lazy=True,
 )
-
 
 namespace.append_obj(
     "DownstreamDiagnostic",
@@ -706,6 +723,7 @@ namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
     pvname_mirror="SARES23-LIC:MOT_11",
+    andor_spectrometer='SLAAR11-LSPC-ALCOR1',
     name="tt_kb",
     lazy=True,
 )
@@ -1042,10 +1060,30 @@ namespace.append_obj(
 )
 
 
+# namespace.append_obj(
+#     "Jungfrau",
+#     "JF03T01V02",
+#     name="det_i0",
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.detector.jungfrau",
+#     config_adj=config_JFs,
+#     lazy=True,
+# )
+
 namespace.append_obj(
     "Jungfrau",
     "JF03T01V02",
-    name="det_i0",
+    name="det_totem",
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector.jungfrau",
+    config_adj=config_JFs,
+    lazy=True,
+)
+
+namespace.append_obj(
+    "Jungfrau",
+    "JF04T01V01",
+    name="det_rowland",
     pgroup_adj=config_bernina.pgroup,
     module_name="eco.detector.jungfrau",
     config_adj=config_JFs,
@@ -1157,7 +1195,7 @@ namespace.append_obj(
     pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
     event_master=event_master,
     detectors_event_code=50,
-    rate_multiplicator=1,
+    rate_multiplicator='auto',
     name="daq",
     module_name="eco.acquisition.daq_client",
     lazy=True,
@@ -1997,7 +2035,7 @@ class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(SmaractRecord, "SARES23-USR:MOT_12", name="ver", is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_11", name="hor", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_13", name="hor", is_setting=True)
         # self._append(SmaractRecord, "SARES23-USR:MOT_11", name="x", is_setting=True)
         # self._append(
         #     MotorRecord,
@@ -2609,44 +2647,44 @@ namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 
 
 ############## BIG JJ SLIT #####################
-# namespace.append_obj(
-#    "SlitBladesGeneral",
-#    name="slit_cleanup_air",
-#    def_blade_up={
-#        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
-#        "kwargs": {"is_psi_mforce": True},
-#    },
-#    def_blade_down={
-#        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
-#        "kwargs": {"is_psi_mforce": True},
-#    },
-#    def_blade_left={
-#        "args": [MotorRecord, "SARES20-MF1:MOT_3"],
-#        "kwargs": {"is_psi_mforce": True},
-#    },
-#    def_blade_right={
-#        "args": [MotorRecord, "SARES20-MF1:MOT_2"],
-#        "kwargs": {"is_psi_mforce": True},
-#    },
-#    module_name="eco.xoptics.slits",
-#    lazy=True,
-# )
+namespace.append_obj(
+   "SlitBladesGeneral",
+   name="slit_cleanup_air",
+   def_blade_up={
+       "args": [MotorRecord, "SARES20-MF1:MOT_10"],
+       "kwargs": {"is_psi_mforce": True},
+   },
+   def_blade_down={
+       "args": [MotorRecord, "SARES20-MF1:MOT_9"],
+       "kwargs": {"is_psi_mforce": True},
+   },
+   def_blade_left={
+       "args": [MotorRecord, "SARES20-MF1:MOT_12"],
+       "kwargs": {"is_psi_mforce": True},
+   },
+   def_blade_right={
+       "args": [MotorRecord, "SARES20-MF1:MOT_11"],
+       "kwargs": {"is_psi_mforce": True},
+   },
+   module_name="eco.xoptics.slits",
+   lazy=True,
+)
 
 ############## SMALL JJ SLIT #####################
 
-namespace.append_obj(
-    "SlitPosWidth",
-    pvname="SARES20-MF1:",
-    motornames={
-        "hpos": "MOT_2",
-        "vpos": "MOT_5",
-        "hgap": "MOT_3",
-        "vgap": "MOT_4",
-    },
-    name="slit_cleanup_air",
-    lazy=True,
-    module_name="eco.xoptics.slits",
-)
+# namespace.append_obj(
+#     "SlitPosWidth",
+#     pvname="SARES20-MF1:",
+#     motornames={
+#         "hpos": "MOT_2",
+#         "vpos": "MOT_5",
+#         "hgap": "MOT_3",
+#         "vgap": "MOT_4",
+#     },
+#     name="slit_cleanup_air",
+#     lazy=True,
+#     module_name="eco.xoptics.slits",
+# )
 
 
 ## N2 sample heater setup
@@ -2783,104 +2821,104 @@ class LiquidJetSpectroscopy(Assembly):
 # )
 
 
-# class Tapedrive(Assembly):
-#     def __init__(self, name=None):
-#         super().__init__(name=name)
-#         self._append(
-#             AdjustablePv, "KERNVARIABLES:DELAYBETWEENXFELANDLASER", name="delay"
-#         )
-#         self._append(SmaractRecord, "SARES23-USR:MOT_18", name="freespace_pitch")
-#         self._append(SmaractRecord, "SARES23-USR:MOT_13", name="freespace_roll")
+class Tapedrive(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            AdjustablePv, "KERNVARIABLES:DELAYBETWEENXFELANDLASER", name="delay"
+        )
+        self._append(SmaractRecord, "SARES23-USR:MOT_12", name="freespace_ver")
+        self._append(SmaractRecord, "SARES23-USR:MOT_13", name="freespace_hor")
 
 
-#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
-#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")
-#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC03", name="shutter3")
-#         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC04", name="shutter4")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC03", name="shutter3")
+        self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC04", name="shutter4")
 
-#         self._append(
-#             EvrOutput,
-#             f"SARES20-CVME-01-EVR0:RearUniv0",
-#             pulsers=evr.pulsers,
-#             name=f"trigger_patch1_bnc6",
-#             is_setting=True,
-#             # is_display="recursive",
-#         )
-#         self._append(
-#             EvrOutput,
-#             f"SARES20-CVME-01-EVR0:RearUniv1",
-#             pulsers=evr.pulsers,
-#             name=f"trigger_patch2_bnc6",
-#             is_setting=True,
-#             # is_display="recursive",
-#         )
+        self._append(
+            EvrOutput,
+            f"SARES20-CVME-01-EVR0:RearUniv0",
+            pulsers=evr.pulsers,
+            name=f"trigger_patch1_bnc16",
+            is_setting=True,
+            # is_display="recursive",
+        )
+        self._append(
+            EvrOutput,
+            f"SARES20-CVME-01-EVR0:RearUniv1",
+            pulsers=evr.pulsers,
+            name=f"trigger_patch2_bnc16",
+            is_setting=True,
+            # is_display="recursive",
+        )
 
-#         self._append(
-#             Jungfrau,
-#             "JF07T32V01",
-#             config_adj=daq.config_JFs,
-#             pgroup_adj=config_bernina.pgroup,
-#             name="det_diff",
-#             is_setting=True,
-#             is_status=True,
-#             # is_display="recursive",
-#         )
-#         self._append(
-#             Jungfrau,
-#             "JF05T01V01",
-#             config_adj=daq.config_JFs,
-#             pgroup_adj=config_bernina.pgroup,
-#             name="det_spect",
-#             is_setting=True,
-#             is_status=True,
-#             # is_display="recursive",
-#         )
-#         self._append(
-#             Jungfrau,
-#             "JF03T01V01",
-#             config_adj=daq.config_JFs,
-#             pgroup_adj=config_bernina.pgroup,
-#             name="det_imon",
-#             is_setting=True,
-#             is_status=True,
-#             # is_display="recursive",
-#         )
+        self._append(
+            Jungfrau,
+            "JF07T32V01",
+            config_adj=daq.config_JFs,
+            pgroup_adj=config_bernina.pgroup,
+            name="det_diff",
+            is_setting=True,
+            is_status=True,
+            # is_display="recursive",
+        )
+        self._append(
+            Jungfrau,
+            "JF05T01V01",
+            config_adj=daq.config_JFs,
+            pgroup_adj=config_bernina.pgroup,
+            name="det_spect",
+            is_setting=True,
+            is_status=True,
+            # is_display="recursive",
+        )
+        self._append(
+            Jungfrau,
+            "JF03T01V01",
+            config_adj=daq.config_JFs,
+            pgroup_adj=config_bernina.pgroup,
+            name="det_imon",
+            is_setting=True,
+            is_status=True,
+            # is_display="recursive",
+        )
 
-#         self._append(
-#             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH1", name="diode_1"
-#         )
-#         self._append(
-#             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
-#         )
+        self._append(
+            DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH1", name="diode_1"
+        )
+        self._append(
+            DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
+        )
 
 
-#         self._append(
-#             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
-#             name="mono_und_calib",
-#             default_value=[[6500,0],[7100,0]],
-#             is_setting=True,
-#         )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
+            name="mono_und_calib",
+            default_value=[[6500,0],[7100,0]],
+            is_setting=True,
+        )
 
-#         def en_set(en):
-#             ofs = np.array(self.mono_und_calib()).T
-#             fel_ofs = ofs[1][np.argmin(abs(ofs[0]-en))]
-#             return en , en/1000 - fel_ofs
-#         def en_get(monoen, felen):
-#             return monoen
-#         self._append(
-#             AdjustableVirtual,
-#             [mono, fel.aramis_photon_energy_undulators],
-#             en_get,
-#             en_set,
-#             name="mono_und_energy",
-#         )
-#     def add_mono_und_calibration(self):
-#         mono_energy = mono.get_current_value()
-#         fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
-#         self.mono_und_calib.mvr([[mono_energy,fel_offset]])
+        def en_set(en):
+            ofs = np.array(self.mono_und_calib()).T
+            fel_ofs = ofs[1][np.argmin(abs(ofs[0]-en))]
+            return en , en/1000 - fel_ofs
+        def en_get(monoen, felen):
+            return monoen
+        self._append(
+            AdjustableVirtual,
+            [mono, fel.aramis_photon_energy_undulators],
+            en_get,
+            en_set,
+            name="mono_und_energy",
+        )
+    def add_mono_und_calibration(self):
+        mono_energy = mono.get_current_value()
+        fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
+        self.mono_und_calib.mvr([[mono_energy,fel_offset]])
 
-# namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
+namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
 
 
 #### pgroup specific appending, might be temporary at this location ####

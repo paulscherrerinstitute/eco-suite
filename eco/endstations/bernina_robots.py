@@ -190,9 +190,6 @@ class StaeubliTx200(Assembly):
             if plot = True, the interpolated motion will be shown in a browser window
             if plot = False, an array of the interpolated positions will be returned
         """
-        if "t_det" in kwargs.keys():
-            t = kwargs.pop("t_det")
-            kwargs["r"] = t.value()
         if np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]):
             return self._simulate_cartesian_motion(**kwargs)
         elif np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]]):
@@ -221,7 +218,7 @@ class StaeubliTx200(Assembly):
         else:
             return sim
 
-    def _simulate_sphercial_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
+    def _simulate_spherical_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
         """        
         Simulated motion in the spherical coordinate system using a linear moteion movel command to         
         change the radius from point tcp_p_spherical[0] to tcp_p_spherical[1], followed        

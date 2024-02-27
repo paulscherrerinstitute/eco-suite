@@ -1,4 +1,4 @@
-from ..devices_general.motors import MotorRecord, MotorRecord_new
+from ..devices_general.motors import MotorRecord
 from ..devices_general.pv_adjustable import PvRecord
 from epics import PV
 from ..devices_general.utilities import Changer
@@ -48,12 +48,14 @@ class DoubleCrystalMono(Assembly):
     def __init__(self, pvname, name=None, energy_sp=None, energy_rb=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(MotorRecord_new, pvname + ":RX12", name="theta")
-        self._append(MotorRecord_new, pvname + ":TX12", name="x")
-        self._append(MotorRecord_new, pvname + ":T2", name="gap")
-        self._append(MotorRecord_new, pvname + ":RZ1", name="roll1")
-        self._append(MotorRecord_new, pvname + ":RZ2", name="roll2")
-        self._append(MotorRecord_new, pvname + ":RX2", name="pitch2")
+        self._append(AdjustablePvEnum, pvname + ":BRAGG_ACCURACY_SP", name="theta_accuracy")
+        self._append(AdjustablePvEnum, pvname + ":HOLDING_BRAGG_SP", name="theta_hold")
+        self._append(MotorRecord, pvname + ":RX12", name="theta")
+        self._append(MotorRecord, pvname + ":TX12", name="x")
+        self._append(MotorRecord, pvname + ":T2", name="gap")
+        self._append(MotorRecord, pvname + ":RZ1", name="roll1")
+        self._append(MotorRecord, pvname + ":RZ2", name="roll2")
+        self._append(MotorRecord, pvname + ":RX2", name="pitch2")
         self._append(
             PvRecord,
             pvsetname=energy_sp,
