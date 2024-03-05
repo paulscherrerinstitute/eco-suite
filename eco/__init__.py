@@ -5,4 +5,5 @@ except:
 
 from eco.elements.assembly import Assembly
 
-ELOG = None
+from eco import defaults
+

@@ -1,4 +1,5 @@
 from eco.bs.detector import DetectorPvString
+from eco.epics import get_from_archive
 from ..devices_general.motors import MotorRecord, MotorRecord
 from eco.elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
@@ -18,7 +19,7 @@ from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 from eco.xoptics.dcm_pathlength_compensation import MonoTimecompensation
 
-
+@get_from_archive
 @spec_convenience
 @update_changes
 @tweak_option

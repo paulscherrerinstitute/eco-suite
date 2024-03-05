@@ -90,8 +90,8 @@ class Memory:
             return self._elog
         elif hasattr(self, "__elog") and self.__elog:
             return self.__elog
-        elif eco.ELOG:
-            return eco.ELOG
+        elif eco.defaults.ELOG:
+            return eco.defaults.ELOG
         else:
             return None
 

@@ -10,6 +10,8 @@ import numpy as np
 
 
 from eco.elements.protocols import Detector, InitialisationWaitable
+from eco.epics import get_from_archive
+
 from ..aliases import Alias
 from tabulate import tabulate
 import colorama
@@ -82,6 +84,8 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
+
+@get_from_archive
 class Assembly:
     def __init__(self, name=None, parent=None, is_alias=True, elog=None):
         self.name = name
@@ -454,8 +458,8 @@ class Assembly:
             return self._elog
         elif hasattr(self, "__elog") and self.__elog:
             return self.__elog
-        elif eco.ELOG:
-            return eco.ELOG
+        elif eco.defaults.ELOG:
+            return eco.defaults.ELOG
         else:
             return None
 

@@ -88,7 +88,7 @@ namespace.append_obj(
 #     module_name="eco.utilities.elog",
 # )
 
-eco.ELOG = elog
+eco.defaults.ELOG = elog
 namespace.append_obj(
     "DummyAdjustable",
     module_name="eco.elements.adjustable",
@@ -111,6 +111,7 @@ namespace.append_obj(
     add_to_cnf=True,
     lazy=True,
 )
+eco.defaults.ARCHIVER=archiver
 
 namespace.append_obj(
     "get_strip_chart_function",

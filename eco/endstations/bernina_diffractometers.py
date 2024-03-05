@@ -1,5 +1,7 @@
 import sys
 
+from eco.epics import get_from_archive
+
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, MotorRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
@@ -356,7 +358,7 @@ def append_diffractometer_modules(obj, configuration):
             unit="deg",
         )
 
-
+@get_from_archive
 class GPS(Assembly):
     def __init__(
         self,

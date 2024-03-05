@@ -1,7 +1,7 @@
 from data_api import get_data, search
 from ..epics.detector import DetectorPvDataStream
 from fnmatch import translate
-import datetime
+import datetime, dateutil
 from numbers import Number
 from matplotlib import pyplot as plt
 import numpy as np
@@ -25,6 +25,7 @@ class DataApi(Assembly):
         plot=False,
         force_type=None,
         labels=None,
+        convert_timezone=True,
         **kwargs,
     ):
         if not end:
@@ -52,17 +53,29 @@ class DataApi(Assembly):
                 raise Exception(f"force_type must be one of {archive_types}")
         else:
             channels_req = channels
+
+        if type(start) is str:
+            start = dateutil.parser.parse(start)
+        if type(end) is str:
+            end = dateutil.parser.parse(end)
+
+        start = datetime2str(local2utc(start))
+        end = datetime2str(local2utc(end))
+    
         data = get_data(channels_req, start=start, end=end, range_type="time")
+        if convert_timezone:
+            data.index = data.index.tz_convert("Europe/Zurich")
 
         if plot:
             ah = plt.gca()
             if not labels:
                 labels = channels
             for chan, label in zip(channels, labels):
-                sel = ~np.isnan(data[chan])
-                x = data.index[sel]
-                y = data[chan][sel]
-                ah.step(x, y, ".-", label=label, where="post")
+                sel = ~data[chan].isnull()
+                if any(sel):
+                    x = data.index[sel]
+                    y = data[chan][sel]
+                    ah.step(x, y, ".-", label=label, where="post")
             plt.xticks(rotation=30)
             plt.legend()
             plt.tight_layout()
@@ -76,7 +89,8 @@ class DataApi(Assembly):
         start=None,
         end=None,
         plot=False,
-        force_type=None,
+        force_type=None,        
+        convert_timezone = True,
         labels=None,
     ):
         if not end:
@@ -96,7 +110,10 @@ class DataApi(Assembly):
                 raise Exception(f"force_type must be one of {archive_types}")
         else:
             channels_req = channels
+
         data = get_data(channels_req, start=start, end=end, range_type="pulseId")
+        if convert_timezone:
+            data.index = data.index.tz_convert("Europe/Zurich")
         if plot:
             ah = plt.gca()
             if not labels:
@@ -117,3 +134,16 @@ class DataApi(Assembly):
     def search(self, searchstring):
         """A search in database using simpler unix glob expressions (e.g. '*ARES*')"""
         return search(translate(searchstring))
+    
+
+def datetime2str(datetime_date):
+    return datetime_date.isoformat()
+
+def local2utc(datetime_date):
+    
+    return datetime_date.replace(
+        tzinfo=None,
+        ).astimezone(
+            tz=datetime.timezone.utc,
+            )
+
