@@ -433,10 +433,10 @@ class Run_Table_DataFrame(DataFrame):
         self.bad_adjustables = {}
 
         ###parsing options
-        self._parse_exclude_keys = "status_indicators rob settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias".split(
+        self._parse_exclude_keys = "status_indicators settings_collection status_indicators_collection presets memory _elog _currentChange _flags __ alias namespace daq scan MasterEventSystem _motor Alias robot".split(
             " "
         )
-        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias StaeubliTx200 AdjustablePv Collection".split(
+        self._parse_exclude_class_types = "__ alias namespace daq scan MasterEventSystem _motor Alias AdjustablePv Collection".split(
             " "
         )
         self._adj_exclude_class_types = (
@@ -484,19 +484,20 @@ class Run_Table_DataFrame(DataFrame):
         if os.path.exists(self.fname):
             self.df = pd.read_pickle(self.fname)
 
-    def append_run(
+    def _append_run(
         self,
         runno,
-        wait=False,
+        wait=True,
+        *args,
         **kwargs
     ):
         if wait:
-            self._append_run(runno, **kwargs)
+            self._append_run(runno, *args, **kwargs)
         else:
             ar = threading.Thread(target=self.append_run, args=[runno,], kwargs=kwargs)
             ar.start()
 
-    def _append_run(
+    def append_run(
         self,
         runno,
         metadata={

@@ -1,3 +1,4 @@
+import time
 from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
 from ..elements.adjustable import Changer, spec_convenience, default_representation
@@ -342,12 +343,21 @@ class UndulatorK(Assembly):
             raise Exception("Likely too large undulator energy change requested!!!")
 
         vals = self.calc_new_Ksets(energy)
+        start_time = time.time()
         for kset, val in zip(self.ksets, vals):
             kset.set_target_value(val)
+            
+                
+        
         sleep(0.2)
         for gap in self.gaps:
             while gap.get_change_done() == 0:
                 sleep(0.02)
+                if (time.time()-start_time) > 10:
+                    print('NB: did not see all Undulators start move and stop for 10s, calling move done anyways.')
+                    break
+        sleep(1)
+        
 
     def set_target_value(self, value, hold=False):
         return Changer(

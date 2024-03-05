@@ -28,6 +28,7 @@ class AttenuatorAramis(Assembly):
     ):
         super().__init__(name=name)
         self.pvname = Id
+        self.shutter=shutter
         self._append(AdjustablePvEnum,self.pvname+":UsrRec.MODE",name='execution_mode')
         self._append(DetectorPvData,self.pvname+":HOMING",name='homing_status')
         self._append(AdjustablePvEnum,self.pvname+":ENY_SEL",name='energy_monitor_source')
@@ -98,17 +99,13 @@ class AttenuatorAramis(Assembly):
         return
 
     def set_transmission(self, value, harm=1, check_mode=True, energy=None):
-        self._xp.close()
         self.updateE(energy)
         if harm == 1:
             self._set_energy_harm.set_target_value(0).wait()
-            self._xp.open()
         elif harm == 2:
             self._set_energy_harm.set_target_value(1).wait()
-            self._xp.open()
         else:
             raise Exception("Only first and 3rd harmonics implamented!")
-        
         self._set_transmission(value)
         
 
@@ -119,8 +116,8 @@ class AttenuatorAramis(Assembly):
     def get_current_value(self, *args, **kwargs):
         return self.transmission_fund.get_current_value(*args, **kwargs
                                                         )
-    def set_target_value(self, *args, **kwargs):
-        return self.transmission_fund.set_target_value(*args, **kwargs)
+    # def set_target_value(self, *args, **kwargs):
+    #     return self.transmission_fund.set_target_value(*args, **kwargs)
 
     # def get_limits(self):
     #     return (self.limit_low(), self.limit_high())
@@ -134,34 +131,28 @@ class AttenuatorAramis(Assembly):
         for m in self.motors:
             m.stop()
     
-        
+    def move(self, value, check=False, wait=True, update_value_time=0.1, timeout=120):
+        self.shutter.close()
+        self.updateE()
+        self.transmission_fund(value)
+        if wait:
+            t_start = time.time()
+            time.sleep(.2)
+            while not self.get_moveDone():
+                if (time.time() - t_start) > timeout:
+                    raise AdjustableError(f"motion timeout reached in att motion")
+                time.sleep(update_value_time)
+            self.shutter.open()
 
-    # def move(self, value, check=True, wait=True, update_value_time=0.1, timeout=120):
-    #     if check:
-    #         lim_low, lim_high = self.get_limits()
-    #         if not ((lim_low <= value) and (value <= lim_high)):
-    #             raise AdjustableError("Soft limits violated!")
-    #     self.updateE()
-    #     self._xp.close()
-    #     self.set_transmission(value)
-    #     if wait:
-    #         t_start = time.time()
-    #         time.sleep(.2)
-    #         while not self.get_moveDone():
-    #             if (time.time() - t_start) > timeout:
-    #                 raise AdjustableError(f"motion timeout reached in att motion")
-    #             time.sleep(update_value_time)
-    #         self._xp.open()
-
-    # def set_target_value(self, value, hold=False, check=True):
-    #     changer = lambda value: self.move(value, check=check, wait=True)
-    #     return Changer(
-    #         target=value,
-    #         parent=self,
-    #         changer=changer,
-    #         hold=hold,
-    #         stopper=self.stop,
-    #     )
+    def set_target_value(self, value, hold=False, check=True):
+        changer = lambda value: self.move(value, check=check, wait=True)
+        return Changer(
+            target=value,
+            parent=self,
+            changer=changer,
+            hold=hold,
+            stopper=self.stop,
+        )
 
 
 

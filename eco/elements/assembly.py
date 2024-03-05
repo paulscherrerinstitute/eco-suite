@@ -6,8 +6,8 @@ from tkinter import W
 from markdown import markdown
 
 from numpy import isin
+import numpy as np
 
-# from eco.acquisition.scan import NumpyEncoder
 
 from eco.elements.protocols import Detector, InitialisationWaitable
 from ..aliases import Alias
@@ -70,6 +70,17 @@ class Collection:
     # def __repr__(self):
     #     return f'{{id(self)}'
 
+class NumpyEncoder(json.JSONEncoder):
+    """Special json encoder for numpy types"""
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
 
 class Assembly:
     def __init__(self, name=None, parent=None, is_alias=True, elog=None):
@@ -396,7 +407,7 @@ class Assembly:
             )
             with open(filepath, "w") as f:
                 # json.dump(stat, f, cls=NumpyEncoder, indent=4)
-                json.dump(stat, f, indent=4)
+                json.dump(stat, f, indent=4,cls=NumpyEncoder)
             files.append(filepath)
 
         elog.post(

@@ -417,7 +417,7 @@ class Namespace(Assembly):
         raise_errors=False,
         print_summary=True,
         print_times=True,
-        max_workers=5,
+        max_workers=1,
         N_cycles=4,
         silent=True,
         giveup_failed=True,

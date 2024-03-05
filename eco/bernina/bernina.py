@@ -51,6 +51,7 @@ namespace.append_obj(
     "RunData",
     config_bernina.pgroup,
     name='runs',
+    load_kwargs = {'checknstore_parsing_result': '/sf/bernina/data/{pgroup}/res', 'load_dap_data':True, 'lazyEscArrays':True},
     module_name='eco.acquisition.scan_data',
 )
 
@@ -1091,15 +1092,25 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
-    "DetectorRobot",
-    JF_detector_id="JF07T32V02",
-    JF_detector_name="det_diff",
+    "Jungfrau",
+    "JF14T01V01",
+    name="det_diff",
     pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector.jungfrau",
     config_adj=config_JFs,
-    module_name="eco.endstations.bernina_robot",
     lazy=True,
-    name="robot",
 )
+
+# namespace.append_obj(
+#     "DetectorRobot",
+#     JF_detector_id="JF07T32V02",
+#     JF_detector_name="det_diff",
+#     pgroup_adj=config_bernina.pgroup,
+#     config_adj=config_JFs,
+#     module_name="eco.endstations.bernina_robot",
+#     lazy=True,
+#     name="robot",
+# )
 
 namespace.append_obj(
     "MpodModule",
@@ -2829,6 +2840,9 @@ class Tapedrive(Assembly):
         )
         self._append(SmaractRecord, "SARES23-USR:MOT_12", name="freespace_ver")
         self._append(SmaractRecord, "SARES23-USR:MOT_13", name="freespace_hor")
+
+        self._append(MotorRecord, "SARES20-MF1:MOT_13",name='x_target_totem')
+        self._append(MotorRecord, "SARES20-MF1:MOT_14",name='y_target_totem')
 
 
         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")

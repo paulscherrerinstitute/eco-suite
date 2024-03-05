@@ -1,3 +1,4 @@
+from eco.bs.detector import DetectorPvString
 from ..devices_general.motors import MotorRecord, MotorRecord
 from eco.elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
@@ -31,6 +32,8 @@ class DoubleCrystalMono(Assembly):
         fel=None,
         las=None,
         undulator_deadband_eV=None,
+        feedback_enable="SFBEB01-OMON-PBPS133:FB_ON_GLOBAL",
+        feedback_message="SFBEB01-OMON-PBPS133:MSG",
     ):
         super().__init__(name=name)
         self._fel = fel
@@ -195,6 +198,11 @@ class DoubleCrystalMono(Assembly):
                 is_display=True,
             )
 
+        if feedback_enable:
+            self._append(AdjustablePvEnum,feedback_enable,name="feedback_enabled")
+        if feedback_message:
+            self._append(DetectorPvString,feedback_message,name="feedback_message")
+
     def add_mono_und_calibration_point(self):
         mono_energy = self.energy.get_current_value()
         fel_offset = (
@@ -223,6 +231,15 @@ class DoubleCrystalMono(Assembly):
             self.energy._pvreadback.remove_callback(index)
         else:
             self.energy._pvreadback.clear_callbacks()
+    
+    def feedback_start(self):
+        self.pitch2.parked(1)
+        self.roll1.parked(1)
+        self.feedback_enabled(1)
+    
+    def feedback_stop(self):
+        self.feedback_enabled(0)
+    
 
 
 class DcmConfig(Assembly):

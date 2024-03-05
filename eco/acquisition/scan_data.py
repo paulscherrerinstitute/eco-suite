@@ -4,10 +4,11 @@ from escape.swissfel import load_dataset_from_scan
 from eco.elements.assembly import Assembly
 
 class RunData(Assembly):
-    def __init__(self,pgroup_adj,path_search='/sf/bernina/data/{pgroup:s}/raw',name=''):
+    def __init__(self,pgroup_adj,path_search='/sf/bernina/data/{pgroup:s}/raw',load_kwargs={},name=''):
         super().__init__(name=name)
         self._append(pgroup_adj,name='pgroup')
         self.path_search = path_search
+        self.load_kwargs = load_kwargs
         self.loaded_runs={}
 
     def get_available_run_numbers(self):
@@ -28,7 +29,16 @@ class RunData(Assembly):
         if run_number<0:
             run_number = self.get_available_run_numbers()[run_number]
             print(f'Loading run number {run_number}')
-        trun = load_dataset_from_scan(pgroup=self.pgroup.get_current_value(), run_numbers=[run_number],**kwargs)
+        tkwargs = self.load_kwargs
+        tkwargs.update(kwargs)
+
+        tks = {}
+        for tk,tv in tkwargs.items():
+            if type(tv) is str:
+                tv = tv.format(pgroup=self.pgroup.get_current_value()) 
+            tks[tk] = tv
+        
+        trun = load_dataset_from_scan(pgroup=self.pgroup.get_current_value(), run_numbers=[run_number],**tks)
         self.loaded_runs[run_number] = {'dataset':trun}
         return trun
     

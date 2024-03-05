@@ -151,6 +151,14 @@ class StaeubliTx200(Assembly):
             print("Please only pass cartesian, spherical or joint keywords")
         self._set_eval_cmd(f"robot.general_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Motion aborted by user, resetting all motions.")
 
+    ######## Utility functions ##########
+    def cart2sph(self, x=None, y=None, z=None, return_dict=True):
+        vals = {k: v for k, v in zip(["x", "y", "z"], [x,y,z]) if not v is None}
+        return self.get_eval_result(cmd=f"robot.cart2sph(**{vals})")
+
+    def sph2cart(self, gamma=None, delta=None, t_det=None, return_dict=True):
+        vals = {k: v for k, v in zip(["gamma", "delta", "r"], [gamma,delta,t_det]) if not v is None}
+        return self.get_eval_result(cmd=f"robot.sph2cart(**{vals})")
 
     ######## Motion recording ##########
     def record_motion(self, **kwargs):
@@ -343,7 +351,7 @@ class StaeubliTx200(Assembly):
     def _as_bool(self, s):
         return True if s=='true' else False if s=='false' else None
     
-    def get_eval_result(self, cmd, update_value_time=0.05, timeout=120, background=True):
+    def get_eval_result(self, cmd, update_value_time=0.05, timeout=10, background=True):
         if "info" in self.__dict__.keys():
             if self.info.server_status == "Busy":
                 raise RobotError("The server is busy with a recording motion. To abort it, type: rob.abort_record()")
