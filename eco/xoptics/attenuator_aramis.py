@@ -1,3 +1,4 @@
+from eco.bs.detector import DetectorPvEnum
 from eco.epics.detector import DetectorPvData
 from ..devices_general.motors import MotorRecord
 from epics import PV
@@ -30,7 +31,7 @@ class AttenuatorAramis(Assembly):
         self.pvname = Id
         self.shutter=shutter
         self._append(AdjustablePvEnum,self.pvname+":UsrRec.MODE",name='execution_mode')
-        self._append(DetectorPvData,self.pvname+":HOMING",name='homing_status')
+        self._append(DetectorPvEnum,self.pvname+":HOMING",name='homing_status')
         self._append(AdjustablePvEnum,self.pvname+":ENY_SEL",name='energy_monitor_source')
         self._append(DetectorPvData,self.pvname+":ENY_CALC",name='energy_monitor')
         # self._append(AdjustablePv,self.pvname+"SAROP21-OATT135:UsrRec.TC1",name='_transmission_fund')
