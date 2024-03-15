@@ -1081,7 +1081,7 @@ class SmaractSettings(Assembly):
         self.pvname = pvname
 
         self._append(
-            PvRecord,
+            AdjustablePv,
             pvsetname=self.pvname + "_PTYP",
             pvreadbackname=self.pvname + "_PTYP_RB",
             name="sensor_type_num",

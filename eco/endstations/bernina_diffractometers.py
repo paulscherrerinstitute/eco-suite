@@ -194,8 +194,11 @@ def append_diffractometer_modules(obj, configuration):
 
     if "phi_hex" in configuration:
         ### motors PI hexapod ###
-        if fina_hex_angle_offset:
-            fina_hex_angle_offset = Path(fina_hex_angle_offset).expanduser()
+        if hasattr(obj,"fina_hex_angle_offset"):
+            fina_hex_angle_offset = Path(obj.fina_hex_angle_offset).expanduser()
+
+        else:
+            fina_hex_angle_offset = None
 
         obj._append(
             HexapodPI,
@@ -375,6 +378,7 @@ class GPS(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
         self.configuration = configuration
+        self.fina_hex_angle_offset = fina_hex_angle_offset
 
         append_diffractometer_modules(self, configuration)
 
@@ -543,6 +547,7 @@ class XRDYou(Assembly):
         super().__init__(name=name)
         self.configuration = configuration
         self.invert_kappa_ellbow = invert_kappa_ellbow
+        self.fina_hex_angle_offset  = fina_hex_angle_offset
 
         append_diffractometer_modules(self, configuration)
 

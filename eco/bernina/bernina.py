@@ -981,6 +981,9 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_robots",
     name="rob",
     pshell_url="http://PC14742:8080/",
+    robot_config = config_bernina.robot_config,
+    pgroup_adj=config_bernina.pgroup,
+    jf_config=config_JFs,
     lazy=True,
 )
 
@@ -1075,32 +1078,32 @@ namespace.append_obj(
 namespace.append_obj(
     "Jungfrau",
     "JF03T01V02",
-    name="det_totem",
+    name="det_i0",
     pgroup_adj=config_bernina.pgroup,
     module_name="eco.detector.jungfrau",
     config_adj=config_JFs,
     lazy=True,
 )
 
-namespace.append_obj(
-    "Jungfrau",
-    "JF04T01V01",
-    name="det_rowland",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector.jungfrau",
-    config_adj=config_JFs,
-    lazy=True,
-)
+# namespace.append_obj(
+#     "Jungfrau",
+#     "JF04T01V01",
+#     name="det_rowland",
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.detector.jungfrau",
+#     config_adj=config_JFs,
+#     lazy=True,
+# )
 
-namespace.append_obj(
-    "Jungfrau",
-    "JF14T01V01",
-    name="det_diff",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector.jungfrau",
-    config_adj=config_JFs,
-    lazy=True,
-)
+# namespace.append_obj(
+#     "Jungfrau",
+#     "JF14T01V01",
+#     name="det_diff",
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.detector.jungfrau",
+#     config_adj=config_JFs,
+#     lazy=True,
+# )
 
 # namespace.append_obj(
 #     "DetectorRobot",
@@ -1792,13 +1795,13 @@ namespace.append_obj(
 )
 
 # this is the large inline camera
-# namespace.append_obj(
-#    "BerninaInlineMicroscope",
-#    pvname_camera="SARES20-CAMS142-M3",
-#    lazy=True,
-#    name="samplecam_inline",
-#    module_name="eco.microscopes",
-# )
+namespace.append_obj(
+   "BerninaInlineMicroscope",
+   pvname_camera="SARES20-CAMS142-M3",
+   lazy=True,
+   name="samplecam_inline",
+   module_name="eco.microscopes",
+)
 
 # namespace.append_obj(
 #     "CameraBasler",
@@ -1837,37 +1840,37 @@ namespace.append_obj(
 #     lazy=True,
 # )
 
-namespace.append_obj(
-    "MicroscopeFeturaPlus",
-    "SARES20-PROF142-M1",
-    lazy=True,
-    name="samplecam_highres",
-    module_name="eco.microscopes",
-)
+#namespace.append_obj(
+#    "MicroscopeFeturaPlus",
+#    "SARES20-PROF142-M1",
+#    lazy=True,
+#    name="samplecam_highres",
+#    module_name="eco.microscopes",
+#)
 
-namespace.append_obj(
-    "MicroscopeMotorRecord",
-    "SARES20-CAMS142-C1",
-    lazy=True,
-    pvname_zoom="SARES20-MF1:MOT_7",
-    name="samplecam_topview",
-    module_name="eco.microscopes",
-)
+#namespace.append_obj(
+#    "MicroscopeMotorRecord",
+#    "SARES20-CAMS142-C1",
+#    lazy=True,
+#    pvname_zoom="SARES20-MF1:MOT_7",
+#    name="samplecam_topview",
+#    module_name="eco.microscopes",
+#)
 
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-M1",
+    "SARES20-CAMS142-M2",
     lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
 )
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C2",
-    lazy=True,
-    name="samplecam_inline",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+#namespace.append_obj(
+#    "CameraBasler",
+#    "SARES20-CAMS142-C2",
+#    lazy=True,
+#    name="samplecam_inline",
+#    module_name="eco.devices_general.cameras_swissfel",
+#)
 
 
 namespace.append_obj(
@@ -2089,28 +2092,28 @@ namespace.append_obj(
 )
 
 
-# namespace.append_obj(
-#     "High_field_thz_chamber",
-#     name="thc",
-#     lazy=True,
-#     module_name="eco.endstations.bernina_sample_environments",
-#     illumination_mpod=[
-#         {
-#             "pvbase": "SARES21-CPCL-PS7071",
-#             "channel_number": 5,
-#             "module_string": "LV_OMPV_1",
-#             "name": "illumination",
-#         }
-#     ],
-#     helium_control_valve={
-#         "pvbase": "SARES21-CPCL-PS7071",
-#         "channel_number": 4,
-#         "module_string": "LV_OMPV_1",
-#         "name": "helium_control_valve",
-#     },
-#     # configuration=["ottifant"],
-#     configuration=[],
-# )
+namespace.append_obj(
+    "High_field_thz_chamber",
+    name="thc",
+    lazy=True,
+    module_name="eco.endstations.bernina_sample_environments",
+    illumination_mpod=[
+        {
+            "pvbase": "SARES21-CPCL-PS7071",
+            "channel_number": 5,
+            "module_string": "LV_OMPV_1",
+            "name": "illumination",
+        }
+    ],
+    helium_control_valve={
+        "pvbase": "SARES21-CPCL-PS7071",
+        "channel_number": 4,
+        "module_string": "LV_OMPV_1",
+        "name": "helium_control_valve",
+    },
+    # configuration=["ottifant"],
+    configuration=[],
+)
 
 # class Sample_stages(Assembly):
 #     def __init__(self, name=None):
@@ -2933,7 +2936,7 @@ class Tapedrive(Assembly):
         fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
         self.mono_und_calib.mvr([[mono_energy,fel_offset]])
 
-namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
+# namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
 
 
 #### pgroup specific appending, might be temporary at this location ####
@@ -3049,17 +3052,17 @@ def name2pgroups(name, beamline="bernina"):
     return eq + ni
 
 
-# namespace.append_obj(
-#    "Jungfrau",
-#    "JF03T01V02",
-#    name="det_i0",
-#    pgroup_adj=config_bernina.pgroup,
-#    module_name="eco.detector",
-# )
+namespace.append_obj(
+   "Jungfrau",
+   "JF03T01V02",
+   name="det_i0",
+   pgroup_adj=config_bernina.pgroup,
+   module_name="eco.detector",
+)
 # namespace.append_obj(
 #    "Jungfrau",
 #    "JF01T03V01",
-#    name="data",
+#    name="det_diff",
 #    pgroup_adj=config_bernina.pgroup,
 #    module_name="eco.detector",
 # )

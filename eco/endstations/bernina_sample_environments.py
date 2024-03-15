@@ -40,51 +40,51 @@ class High_field_thz_chamber(Assembly):
         super().__init__(name=name)
         self.name = name
         self.alias = Alias(name)
-        self.par_out_pos = [35, -9.5]
+        self.par_out_pos = [-20, -9.5]
         self.motor_configuration = {
             "rx": {
                 # "id": "SARES23-USR:MOT_13",
-                "id": "SARES23-USR:MOT_6",
-                "pv_descr": "Motor7:1 THz Chamber Rx",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-USR:MOT_16",
+                "pv_descr": "Module6:1 THz Chamber Rx",
+                "direction": 1,
+                "sensor": 47,
                 "speed": 250,
                 "home_direction": "back",
                 "kwargs": {"accuracy": 0.01},
             },
             "x": {
                 # "id": "SARES23-USR:MOT_14",
-                "id": "SARES23-USR:MOT_15",
-                "pv_descr": "Motor7:2 THz Chamber x ",
-                "type": 1,
-                "sensor": 0,
+                "id": "SARES23-USR:MOT_17",
+                "pv_descr": "Module6:2 THz Chamber x ",
+                "direction": 1,
+                "sensor": 1,
                 "speed": 250,
                 "home_direction": "back",
             },
             "z": {
                 # "id": "SARES23-USR:MOT_10",
-                "id": "SARES23-LIC:MOT_16",
-                "pv_descr": "Motor6:1 THz Chamber z ",
-                "type": 1,
-                "sensor": 0,
+                "id": "SARES23-USR:MOT_13",
+                "pv_descr": "Module5:1 THz Chamber z ",
+                "direction": 0,
+                "sensor": 1,
                 "speed": 250,
-                "home_direction": "back",
+                "home_direction": "forward",
             },
             "ry": {
                 # "id": "SARES23-USR:MOT_11",
-                "id": "SARES23-LIC:MOT_15",
-                "pv_descr": "Motor6:2 THz Chamber Ry",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-USR:MOT_14",
+                "pv_descr": "Module5:2 THz Chamber Ry",
+                "direction": 0,
+                "sensor": 2,
                 "speed": 250,
                 "home_direction": "back",
             },
             "rz": {
                 # "id": "SARES23-USR:MOT_12",
-                "id": "SARES23-USR:MOT_4",
-                "pv_descr": "Motor6:3 THz Chamber Rz",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-USR:MOT_15",
+                "pv_descr": "Module5:3 THz Chamber Rz",
+                "direction": 0,
+                "sensor": 48,
                 "speed": 250,
                 "home_direction": "back",
             },
@@ -107,7 +107,14 @@ class High_field_thz_chamber(Assembly):
             name="temp_coldfinger",
             is_setting=False,
         )
-
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-LS336:LOOP3_SP",
+            pvreadbackname="SARES20-LS336:C_RBV",
+            accuracy=0.1,
+            name="temp_gishield",
+            is_setting=False,
+        )
         ### in vacuum smaract motors ###
         #for name, config in self.motor_configuration.items():
         #    if "kwargs" in config.keys():
@@ -222,8 +229,9 @@ class High_field_thz_chamber(Assembly):
             mot = self.__dict__[name]
             mot.description(config["pv_descr"])
             #mot.stage_type(config["type"])
-            mot.sensor_type(config["sensor"])
-            mot.max_frequency(config["speed"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
             sleep(0.5)
             mot.calibrate_sensor()
 

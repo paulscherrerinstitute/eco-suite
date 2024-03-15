@@ -276,10 +276,26 @@ class DiffGeometryYou(Assembly):
         cfg = []
         if hasattr(self.diffractometer, "configuration"):
             cfg = self.diffractometer.configuration
+
+        ### merge config if it is a robot
+        if "robot" in cfg:
+            basename = cfg[1]
+            import eco.bernina as b
+            base = b.__dict__[basename]
+            adjustables_dict = {}
+            adjustables_dict.update(base.__dict__)
+            adjustables_dict.update({
+                "nu": self.diffractometer.spherical.gamma,
+                "delta": self.diffractometer.spherical.delta,
+            })
+            self.diffractometer.configuration += base.configuration
+            cfg = self.diffractometer.configuration
+        else:
+            adjustables_dict = self.diffractometer.__dict__
         if "kappa" in cfg:
             adjs = ["nu", "mu", "delta", "eta_kap", "kappa", "phi_kap"]
         self._diff_adjs = {
-            adj: self.diffractometer.__dict__[adj] if adj in self.diffractometer.__dict__.keys() else DummyAdjustable(name = adj+"dummy")
+            adj: adjustables_dict[adj] if adj in adjustables_dict.keys() else DummyAdjustable(name = adj+"dummy")
             for adj in adjs
         }
 

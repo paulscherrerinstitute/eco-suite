@@ -9,17 +9,32 @@ from threading import Thread
 import time 
 import numpy as np
 import os
+from eco.detector.jungfrau import Jungfrau
 os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
 from requests import HTTPError
 class RobotError(Exception):
     pass
 
+class RobotMotors(Assembly):
+    def __init__(
+        self, 
+        name = None,
+        robot = None,
+        motors = []
+    ):
+        super().__init__(name=name)
+        for [name, name_pshell, unit] in motors:
+            self._append(PshellMotor, robot=robot, name=name, name_pshell=name_pshell, unit=unit, is_setting=True, is_display=True)
+
 class StaeubliTx200(Assembly):
     def __init__(
         self,
         name=None,
         pshell_url=None,
+        robot_config=None,
+        pgroup_adj=None,
+        jf_config=None,
     ):
         """Robot arm at SwissFEL Bernina.\
         """
@@ -48,35 +63,66 @@ class StaeubliTx200(Assembly):
         self._append(AdjustableObject, self._config, name='config',is_setting=True, is_display='recursive')
 
         # appending pshell motors
-        motors = [
-            ["z_lin", "z_lin", "mm", 1],
-            ["x", "x", "mm", 0], 
-            ["y", "y", "mm", 0], 
-            ["z", "z", "mm", 0], 
-            ["rx", "rx", "deg", 0],
-            ["ry", "ry", "deg", 0], 
-            ["rz", "rz", "deg", 0], 
-            ["gamma", "gamma", "deg", 0], 
-            ["delta", "delta", "deg", 0],
-            ["t_det", "r", "mm", 0], 
-            ["j1", "j1", "deg", 1], 
-            ["j2", "j2", "deg", 1], 
-            ["j3", "j3", "deg", 1], 
-            ["j4", "j4", "deg", 1], 
-            ["j5", "j5", "deg", 1], 
-            ["j6", "j6", "deg", 1],
-            ]
-        for [name, name_pshell, unit, setting] in motors:
-            self._append(PshellMotor, robot=self, name=name, name_pshell=name_pshell, unit=unit, is_setting=setting, is_display=True)
+        motors_cart = [
+            ["z_lin", "z_lin", "mm"],
+            ["x", "x", "mm"], 
+            ["y", "y", "mm"], 
+            ["z", "z", "mm"], 
+            ["rx", "rx", "deg"],
+            ["ry", "ry", "deg"], 
+            ["rz", "rz", "deg"],
+        ]
+        motors_sph = [
+            ["gamma", "gamma", "deg"], 
+            ["delta", "delta", "deg"],
+            ["t_det", "r", "mm"],
+        ]
+        motors_joint = [
+            ["j1", "j1", "deg"], 
+            ["j2", "j2", "deg"], 
+            ["j3", "j3", "deg"], 
+            ["j4", "j4", "deg"], 
+            ["j5", "j5", "deg"], 
+            ["j6", "j6", "deg"],
+        ]
+        self._append(RobotMotors, name= "joint", robot = self, motors = motors_joint, is_display='recursive', is_setting = True)
+        self._append(RobotMotors, name= "cartesian", robot = self, motors = motors_cart, is_display='recursive', is_setting = True)
+        self._append(RobotMotors, name= "spherical", robot = self, motors = motors_sph, is_display='recursive', is_setting = True)
         self._urdf = None
         try:
             import bernina_urdf
             self._urdf = bernina_urdf.models.Tx200_Ceiling()
-            self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json', default_value=True, name="auto_update_simulation", is_setting=False)
+            self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json', default_value=True, name="auto_update_simulation", is_setting=False, is_display=False)
             self._auto_update_simulation_thread = Thread(target=self._auto_updater_simulation)
             self._auto_update_simulation_thread.start()
         except:
             print("Loading bernina URDF robot model failed")
+        ### adding JF ###
+        if robot_config is not None:
+            if robot_config.jf_id() is not None:
+                self._append(
+                    Jungfrau,
+                    robot_config.jf_id(),
+                    pgroup_adj=pgroup_adj,
+                    config_adj=jf_config,
+                    name=robot_config.jf_name(),
+                )
+                if "JF01" in robot_config.jf_id():
+                    self.config.tool("t_JF01T03")
+                elif "JF07" in robot_config.jf_id():
+                    self.config.tool("t_JF07T32")
+
+        if robot_config is not None:
+            if robot_config.diffcalc():
+                from ..utilities.recspace import Crystals
+                self.configuration=["robot", robot_config.goniometer()] 
+                self._append(
+                    Crystals,
+                    diffractometer_you=self,
+                    name="diffcalc",
+                    is_setting=False,
+                    is_display=False,
+                )
 
     def _get_info(self):
         d= {k: v for k, v in self._cache.items() if k in self._info_fields}
@@ -131,6 +177,17 @@ class StaeubliTx200(Assembly):
             raise RobotError(
                 "The server is busy with a recording or general motion. To abort it, type: rob.abort_record()"
             )
+        cart_kwargs = np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]])
+        sph_kwargs = np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]])
+        joint_kwargs = np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]])
+        if sum([cart_kwargs, sph_kwargs, joint_kwargs])>1:
+            raise RobotError(
+                "Please only pass cartesian, spherical or joint keywords"
+            )
+        coordinates = None
+        for c, b in zip(["cartesian", "spherical", "joint"], [cart_kwargs, sph_kwargs, joint_kwargs]):
+            if b: coordinates = c
+
         if not self.config.powered():
             if self.info.mode() == "remote":
                 print(
@@ -138,17 +195,13 @@ class StaeubliTx200(Assembly):
                 )
         if check:
             for k, value in kwargs.items():
-                lim_low, lim_high = self.__dict__[k].get_limits()
+                lim_low, lim_high = self.__dict__[coordinates].__dict__[k].get_limits()
                 if not ((lim_low <= value) and (value <= lim_high)):
                     raise RobotError(f"{k}: Soft limits violated!")
         if "t_det" in kwargs.keys():
             t = kwargs.pop("t_det")
             kwargs["r"] = t
-        cart_kwargs = np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]])
-        sph_kwargs = np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]])
-        joint_kwargs = np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]])
-        if sum([cart_kwargs, sph_kwargs, joint_kwargs])>1:
-            print("Please only pass cartesian, spherical or joint keywords")
+
         self._set_eval_cmd(f"robot.general_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Motion aborted by user, resetting all motions.")
 
     ######## Utility functions ##########
@@ -172,6 +225,16 @@ class StaeubliTx200(Assembly):
     def abort_record(self):
         self.pc.eval(":abort")
         self.reset_motion()
+
+    def reset_recorded_motions(self, index=None, motion=None):
+        """
+        Resets all motions if no kwargs are given.
+        If motion = "cartesian", "spherical" or "joint" and index of recorded motion is given, only this one is removed.
+        """
+        if not index is None:
+            return self.get_eval_result(cmd=f"robot.reset_recorded_motions(index={index}, motion={motion})")
+        else:
+            return self.get_eval_result(cmd=f"robot.reset_recorded_motions()")
 
     ######## Motion simulation ##########
     def simulate(self, **kwargs):
@@ -200,7 +263,7 @@ class StaeubliTx200(Assembly):
         """
         if np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]):
             return self._simulate_cartesian_motion(**kwargs)
-        elif np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]]):
+        elif np.any([s in kwargs.keys() for s in ["t_det", "gamma", "delta"]]):
             return self._simulate_spherical_motion(**kwargs)
         elif np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]]):
             return self._simulate_joint_motion(**kwargs)
