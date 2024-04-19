@@ -48,11 +48,17 @@ class TimetoolBerninaUSD(Assembly):
         self._append(DelayTime, self.delaystage_tt_usd, name="delay", is_setting=True)
 
         self.proc_client = PipelineClient()
-        self.proc_pipeline = processing_pipeline
-        self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
-        self.proc_instance = processing_instance
-        self.proc_pipeline_edge = edge_finding_pipeline
-        self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
+        try:
+            self.proc_pipeline = processing_pipeline
+            self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
+            self.proc_instance = processing_instance
+        except Exception as e:
+            print(f"Timetool projection pipeline initialization failed with: \n{e}")
+        try:
+            self.proc_pipeline_edge = edge_finding_pipeline
+            self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
+        except Exception as e:
+            print(f"Timetool edge finding pipeline initialization failed with: \n{e}")
         self.spectrometer_camera_channel = spectrometer_camera_channel
         self._append(
             Target_xyz,
@@ -190,7 +196,10 @@ class TimetoolBerninaUSD(Assembly):
             is_display=True,
         )
         if andor_spectrometer:
-            self._append(SpectrometerAndor,andor_spectrometer, name='spectrometer', is_setting=True, is_display='recursive')
+            try:
+                self._append(SpectrometerAndor,andor_spectrometer, name='spectrometer', is_setting=True, is_display='recursive')
+            except Exception as e:
+                print(f"Andor spectrometer initialization failed with: \n{e}")
             
 
     def get_online_data(self):

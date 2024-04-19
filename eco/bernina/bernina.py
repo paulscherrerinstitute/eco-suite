@@ -341,7 +341,7 @@ namespace.append_obj(
     # },
     name="mon_mono",
     module_name="eco.xdiagnostics.intensity_monitors",
-    # pipeline_computation="SAROP21-PBPS103_proc",
+    pipeline_computation="SAROP21-PBPS103_proc",
     lazy=True,
 )
 
@@ -648,6 +648,7 @@ namespace.append_obj(
         "right": "SARES21-PBPS141:Lnk9Ch0-PP_VAL_PD3",
     },
     module_name="eco.xdiagnostics.intensity_monitors",
+    pipeline_computation="SARES21-PBPS141_proc",
     name="mon_kb",
     lazy=True,
 )
@@ -1160,14 +1161,13 @@ namespace.append_obj(
 # )
 
 ### draft new epics daq ###
-# namespace.append_obj(
-#    "EpicsDaq",
-#    default_file_path=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/epics_daq/",
-#    channels_list=channels_CA_epicsdaq,
-#    name="daq_epics_local",
-#    module_name="eco.acquisition.epics_data",
-#    lazy=True,
-# )
+namespace.append_obj(
+   "EpicsDaq",
+   channel_list=channels_CA_epicsdaq,
+   name="daq_epics_local",
+   module_name="eco.acquisition.epics_data",
+   lazy=True,
+)
 ### old epics daq ###
 # namespace.append_obj(
 #    "ChannelList",
@@ -1184,17 +1184,18 @@ namespace.append_obj(
 #    module_name="eco.acquisition.epics_data",
 # )
 
-# namespace.append_obj(
-#    "Scans",
-#    name="scans_epics",
-#    module_name="eco.acquisition.scan",
-#    data_base_dir="scan_data",
-#    scan_info_dir=f"/sf/bernina/data/{config_berninamesp['pgroup']}/res/scan_info",
-#    default_counters=[epics_daq],
-#    checker=checker_epics,
-#    scan_directories=True,
-#    run_table=run_table,
-# )
+namespace.append_obj(
+   "Scans",
+   name="scans_epics",
+   module_name="eco.acquisition.scan",
+   data_base_dir=f"{config_bernina.pgroup()}/scan_data",
+   scan_info_dir=f"{daq_epics_local.default_file_path()}/{config_bernina.pgroup()}/scan_info",
+   default_counters=[daq_epics_local],
+   checker=None,
+   scan_directories=True,
+   run_table=None,
+   lazy=True,
+)
 #
 #
 ##### standard DAQ #######
@@ -1861,17 +1862,17 @@ namespace.append_obj(
     "CameraBasler",
     "SARES20-CAMS142-M2",
     lazy=True,
+    name="samplecam_sideview_45",
+    module_name="eco.devices_general.cameras_swissfel",
+)
+
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C1",
+    lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
 )
-#namespace.append_obj(
-#    "CameraBasler",
-#    "SARES20-CAMS142-C2",
-#    lazy=True,
-#    name="samplecam_inline",
-#    module_name="eco.devices_general.cameras_swissfel",
-#)
-
 
 namespace.append_obj(
     "OxygenSensor",
@@ -2112,7 +2113,21 @@ namespace.append_obj(
         "name": "helium_control_valve",
     },
     # configuration=["ottifant"],
-    configuration=[],
+    configuration=["cube"],
+)
+
+namespace.append_obj(
+    "Organic_crystal_breadboard",
+    lazy=True,
+    name="ocb",
+    module_name="eco.endstations.bernina_sample_environments",
+)
+
+namespace.append_obj(
+    "Electro_optic_sampling",
+    lazy=True,
+    name="eos",
+    module_name="eco.endstations.bernina_sample_environments",
 )
 
 # class Sample_stages(Assembly):
@@ -2499,14 +2514,14 @@ namespace.append_obj(
     module_name="eco.xoptics.dcm_new",
 )
 
-namespace.append_obj(
-    "AramisDcmFeedback",
-    mono=mono,
-    xbpm=mon_opt,
-    name="mono_feedback",
-    lazy=True,
-    module_name="eco.xoptics.xopt_feedback",
-)
+# namespace.append_obj(
+#     "AramisDcmFeedback",
+#     mono=mono,
+#     xbpm=mon_opt,
+#     name="mono_feedback",
+#     lazy=True,
+#     module_name="eco.xoptics.xopt_feedback",
+# )
 
 
 # namespace.append_obj(
@@ -2600,7 +2615,7 @@ from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 namespace.append_obj(
     "StageLxtDelay",
-    pumpdelay.pdelay,
+    las.delay_pump,
     las,
     lazy=True,
     name="lxt",
@@ -2627,7 +2642,8 @@ try:
         pgroup_eco_path = TimeoutPath(
             f"/sf/bernina/data/{config_bernina.pgroup()}/res/eco"
         )
-        pgroup_eco_path.mkdir(mode=775, exist_ok=True)
+        pgroup_eco_path.mkdir(mode=0o775, exist_ok=True)
+        pgroup_eco_path.chmod(mode=0o775)
         sys.path.append(pgroup_eco_path.as_posix())
     else:
         print(
@@ -2744,10 +2760,10 @@ class IlluminatorsLasers(Assembly):
     def __init__(self, name="sample_illumination"):
         super().__init__(name=name)
         self._append(
-            MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
-            channel_number=5,
-            name="illumination_inline",
+           MpodChannel,
+           pvbase="SARES21-CPCL-PS7071",
+           channel_number=5,
+           name="illumination_inline",
         )
         self._append(
             MpodChannel,
@@ -2755,18 +2771,18 @@ class IlluminatorsLasers(Assembly):
             channel_number=2,
             name="illumination_side",
         )
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
-            channel_number=6,
-            name="illumination_top",
-        )
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
-            channel_number=4,
-            name="flattening_laser",
-        )
+        #self._append(
+        #    MpodChannel,
+        #    pvbase="SARES21-CPCL-PS7071",
+        #    channel_number=6,
+        #    name="illumination_top",
+        #)
+        #self._append(
+        #    MpodChannel,
+        #    pvbase="SARES21-CPCL-PS7071",
+        #    channel_number=4,
+        #    name="flattening_laser",
+        #)
 
 
 namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
@@ -3052,17 +3068,25 @@ def name2pgroups(name, beamline="bernina"):
     return eq + ni
 
 
-namespace.append_obj(
-   "Jungfrau",
-   "JF03T01V02",
-   name="det_i0",
-   pgroup_adj=config_bernina.pgroup,
-   module_name="eco.detector",
-)
-# namespace.append_obj(
-#    "Jungfrau",
-#    "JF01T03V01",
-#    name="det_diff",
-#    pgroup_adj=config_bernina.pgroup,
-#    module_name="eco.detector",
-# )
+
+
+def timetool_data_monitor(warning_threshold=1000, loopsleep=5):
+    dir(bs_worker)
+    tt_kb.spectrum_signal.stream.accumulate(do_accumulate=True)
+    print('Monitoring timetool data ...')
+
+    while True:
+
+        eid_diff= int(event_system.pulse_id.get_current_value() - tt_kb.spectrum_signal.stream.eventIds[-1][-1])
+        if eid_diff> warning_threshold:
+            message = f"Last timetool data {eid_diff} pulses ago!"
+            print(message)
+            try:
+                e = pyttsx3.init()
+                e.say(message)
+                e.runAndWait()
+                e.stop()
+            except:
+                pass
+        time.sleep(loopsleep)
+

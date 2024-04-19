@@ -8,7 +8,7 @@ from ..aliases import append_object_to_object, Alias
 from scipy.spatial.transform import Rotation
 import datetime
 from ..elements.assembly import Assembly
-
+from eco.devices_general.motors import AdjustablePiHex
 
 class Hexapod_PI:
     def __init__(self, Id):
@@ -25,37 +25,6 @@ class Hexapod_PI:
             ValueRdback(self.id + f":SET-PIVOT-{i}", self.id + f":PIVOT-R-{i}")
             for i in "RST"
         ]
-
-class AdjustablePiHex(AdjustablePv):
-    def __init__(self, pvname=None, pvreadbackname=None, accuracy=None, unit=None, name=None):
-        super().__init__(pvname, pvreadbackname=pvreadbackname, accuracy=accuracy, unit=unit, name=name)
-        self.limit_high = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_high.json', default_value=0)
-        self.limit_low = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_low.json', default_value=0)
-
-
-    def change(self, value):
-        if self.limit_low:
-            if value < self.limit_low():
-                raise Exception(
-                    f"Target value of {self.name} is smaller than limit value!"
-                )
-        if self.limit_high:
-            if self.limit_high() < value:
-                raise Exception(
-                    f"Target value of {self.name} is higher than limit value!"
-                )
-        self._pv.put(value)
-        time.sleep(0.1)
-        while self.get_change_done() == 0:
-            time.sleep(0.1)
-
-    def get_limits(self):
-        return (self.limit_low(), self.limit_high())
-
-    def set_limits(self, limit_low, limit_high):
-        self.limit_low(limit_low)
-        self.limit_high(limit_high)
-
 
 class HexapodPI(Assembly):
     def __init__(self, pvname, name=None, fina_angle_offset=None):

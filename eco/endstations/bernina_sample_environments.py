@@ -2,7 +2,7 @@ from eco.devices_general.powersockets import MpodChannel
 import sys
 
 sys.path.append("..")
-from ..devices_general.motors import MotorRecord, SmaractRecord
+from ..devices_general.motors import MotorRecord, SmaractRecord, ThorlabsPiezoRecord
 from ..epics.adjustable import AdjustablePv
 import numpy as np
 from epics import PV
@@ -90,6 +90,53 @@ class High_field_thz_chamber(Assembly):
             },
         }
 
+
+        self.motor_configuration_cube = {
+            "inc_rz": {
+                "id": "SARES23-USR:MOT_5",
+                "pv_descr": "Module2:2 THz Inc Cube Rz",
+                "direction": 1,
+                "sensor": 53,
+                "speed": 250,
+                "home_direction": "back",
+                "kwargs": {"accuracy": 0.01},
+            },
+            "inc_z": {
+                "id": "SARES23-USR:MOT_4",
+                "pv_descr": "Module2:1 THz Inc Cube z ",
+                "direction": 1,
+                "sensor": 42,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "inc_x": {
+                "id": "SARES23-USR:MOT_6",
+                "pv_descr": "Module2:3 THz Inc Cube x ",
+                "direction": 1,
+                "sensor": 42,
+                "speed": 250,
+                "home_direction": "forward",
+            },
+            "inc_ry": {
+                "id": "SARES23-USR:MOT_18",
+                "pv_descr": "Module6:3 THz Inc Cube Ry ",
+                "direction": 0,
+                "sensor": 2,
+                "speed": 250,
+                "home_direction": "forward",
+            },
+        }
+
+        self.motor_configuration_ocb = {
+            "inc_x": {
+                "id": "SARES23-USR:MOT_6",
+                "pv_descr": "Module2:3 THz Inc Cube x ",
+                "direction": 1,
+                "sensor": 42,
+                "speed": 250,
+                "home_direction": "forward",
+            },
+        }
         ### lakeshore temperatures ####
         self._append(
             AdjustablePv,
@@ -136,6 +183,25 @@ class High_field_thz_chamber(Assembly):
                 name=name,
                 is_setting=True,
             )
+
+        if "cube" in configuration:
+            for name, config in self.motor_configuration_cube.items():
+                self._append(
+                    SmaractRecord,
+                    pvname=config["id"],
+                    name=name,
+                    is_setting=True,
+                )
+            def home_smaract_stages_cube():
+                return self.home_smaract_stages(motor_configuration=self.motor_configuration_cube)
+            def set_stage_config_cube():
+                return self.set_stage_config(cfg=self.motor_configuration_cube)
+            self.home_smaract_stages_cube = home_smaract_stages_cube
+            self.set_stage_config_cube = set_stage_config_cube
+
+        if "ocb" in configuration:
+            pass
+
         self._append(
             AdjustableFS,
             "/sf/bernina/config/eco/reference_values/thc_par_in_pos",
@@ -180,6 +246,7 @@ class High_field_thz_chamber(Assembly):
         if illumination_mpod:
             for illu in illumination_mpod:
                 self._append(MpodChannel,illu['pvbase'], illu['channel_number'], module_string=illu['module_string'], name=illu['name'])
+
         if helium_control_valve:
             self._append(MpodChannel,helium_control_valve['pvbase'], helium_control_valve['channel_number'], module_string=helium_control_valve['module_string'], name="_helium_valve_mpod_ch", is_display=True, is_setting=True)
 
@@ -198,7 +265,6 @@ class High_field_thz_chamber(Assembly):
                 else:
                     voltage = val*(5.5-2.9)/100+2.9
                 return voltage
-            
             self._append(AdjustableVirtual, [self._helium_valve_mpod_ch.voltage], get_valve, set_valve, name=helium_control_valve["name"], is_display=True, is_setting=False)
 
     def moveout(self):
@@ -224,8 +290,10 @@ class High_field_thz_chamber(Assembly):
         self.x.set_target_value(self.par_in_pos()[0]).wait()
         self.z.set_target_value(self.par_in_pos()[1])
 
-    def set_stage_config(self):
-        for name, config in self.motor_configuration.items():
+    def set_stage_config(self, cfg=None):
+        if cfg is None:
+            cfg = self.motor_configuration
+        for name, config in cfg.items():
             mot = self.__dict__[name]
             mot.description(config["pv_descr"])
             #mot.stage_type(config["type"])
@@ -235,13 +303,14 @@ class High_field_thz_chamber(Assembly):
             sleep(0.5)
             mot.calibrate_sensor()
 
-    def home_smaract_stages(self, stages=None):
-        if stages == None:
-            stages = self.motor_configuration.keys()
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration= self.motor_configuration
+        stages = motor_configuration.keys()
         print("#### Positions before homing ####")
         print(self.__repr__())
         for name in stages:
-            config = self.motor_configuration[name]
+            config = motor_configuration[name]
             mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
@@ -272,6 +341,7 @@ class High_field_thz_chamber(Assembly):
                     )
                     mot.home_reverse(1)
 
+
     def calc_otti(
         self, otti_nu=None, otti_del=None, otti_det=None, plotit=True, **kwargs
     ):
@@ -291,136 +361,173 @@ class High_field_thz_chamber(Assembly):
 
 
 class Organic_crystal_breadboard(Assembly):
-    def __init__(self, name=None, Id=None, alias_namespace=None):
+    def __init__(self, name=None, alias_namespace=None):
         super().__init__(name=name)
-        self.Id = Id
-        self.name = name
-        self.alias = Alias(name)
-
         self.motor_configuration = {
-            "mir_x": {
-                # "id": "-LIC17",
-                "id": "-USR:MOT_8",
-                "pv_descr": "Motor8:2 THz mirror x ",
-                "type": 1,
-                "sensor": 13,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "mir_rz": {
-                # "id": "-LIC18",
-                "id": "-USR:MOT_9",
-                "pv_descr": "Motor8:3 THz mirror rz ",
-                "type": 1,
-                "sensor": 13,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "mir_ry": {
-                # "id": "-ESB1",
-                "id": "-LIC:MOT_18",
-                "pv_descr": "Motor3:1 THz mirror ry ",
-                "type": 2,
-                "sensor": 1,
-                "speed": 250,
-                "home_direction": "forward",
-            },
-            "mir_z": {
-                # "id": "-LIC16",
-                "id": "-USR:MOT_7",
-                "pv_descr": "Motor8:1 THz mirror z",
-                "type": 1,
-                "sensor": 13,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "par_x": {
-                # "id": "-ESB3",
-                "id": "-LIC:MOT_17",
-                "pv_descr": "Motor3:3 THz parabola2 x",
-                "type": 1,
-                "sensor": 0,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "delaystage_thz": {
-                # "id": "-ESB18",
-                "id": "-USR:MOT_1",
-                "pv_descr": "Motor8:3 NIR delay stage",
-                "type": 1,
-                "sensor": 0,
-                "speed": 100,
-                "home_direction": "back",
-            },
+            #"mir_x": {
+            #    # "id": "-LIC17",
+            #    "id": "-USR:MOT_8",
+            #    "pv_descr": "Motor8:2 THz mirror x ",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #},
+            #"mir_rz": {
+            #    # "id": "-LIC18",
+            #    "id": "-USR:MOT_9",
+            #    "pv_descr": "Motor8:3 THz mirror rz ",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #},
+            #"mir_ry": {
+            #    # "id": "-ESB1",
+            #    "id": "-LIC:MOT_18",
+            #    "pv_descr": "Motor3:1 THz mirror ry ",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "forward",
+            #},
+            #"mir_z": {
+            #    # "id": "-LIC16",
+            #    "id": "-USR:MOT_7",
+            #    "pv_descr": "Motor8:1 THz mirror z",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #},
+            #"par_x": {
+            #    # "id": "-ESB3",
+            #    "id": "-LIC:MOT_17",
+            #    "pv_descr": "Motor3:3 THz parabola2 x",
+            #    "type": 1,
+            #    "sensor": 0,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #},
+            #"delaystage_thz": {
+            #    "id": "-USR:MOT_1",
+            #    "pv_descr": "Motor8:3 NIR delay stage",
+            #    "type": 1,
+            #    "sensor": 0,
+            #    "speed": 100,
+            #    "home_direction": "back",
+            #},
             "nir_m1_ry": {
-                # "id": "-ESB17",
-                "id": "-USR:MOT_3",
-                "pv_descr": "Motor8:2 near IR mirror 1 ry",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-LIC:MOT_18",
+                "pv_descr": "Module6:3 NIR Mirr1 Ry",
+                "sensor": 2,
+                "direction": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
             "nir_m1_rx": {
-                "id": "-USR:MOT_16",
-                "pv_descr": "Motor8:1 near IR mirror 1 rx",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-USR:MOT_10",
+                "pv_descr": "Module4:1 NIR Mirr1 Rx",
+                "sensor": 53,
                 "speed": 250,
+                "direction": 1,
                 "home_direction": "back",
             },
             "nir_m2_ry": {
-                # "id": "-ESB9",
-                "id": "-USR:MOT_14",
-                "pv_descr": "Motor5:3 near IR mirror 2 ry",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-USR:MOT_1",
+                "pv_descr": "Module1:1 NIR Mirr2 Ry",
+                "sensor":2,
                 "speed": 250,
+                "direction": 1,
                 "home_direction": "back",
             },
             "nir_m2_rx": {
                 # "id": "-USR:MOT_4",
-                "id": "-USR:MOT_12",
-                "pv_descr": "Motor4:1 near IR mirror 2 rx",
-                "type": 1,
-                "sensor": 13,
+                "id": "SARES23-USR:MOT_7",
+                "pv_descr": "Module3:1 NIR Mirr2 rx",
+                "sensor": 53,
+                "direction": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "crystal": {
-                "id": "-USR:MOT_2",
-                "pv_descr": "Motor3:2 crystal rotation",
-                "type": 2,
-                "sensor": 1,
+            "delay_400nm": {
+                # "id": "-USR:MOT_4",
+                "id": "SARES23-LIC:MOT_17",
+                "pv_descr": "Module6:2 400nm_stage",
+                "sensor": 2,
+                "direction": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
-            "wp": {
-                "id": "-USR:MOT_7",
-                "pv_descr": "Motor5:1 waveplate rotation",
-                "type": 2,
-                "sensor": 1,
-                "speed": 250,
-                "home_direction": "back",
-                "direction": 1,
-            },
+            #"crystal": {
+            #    "id": "-USR:MOT_2",
+            #    "pv_descr": "Motor3:2 crystal rotation",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #},
+            #"wp": {
+            #    "id": "-USR:MOT_7",
+            #    "pv_descr": "Motor5:1 waveplate rotation",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #    "direction": 1,
+            #},
         }
 
-
+        self.motor_configuration_thorlabs = {
+            "polarizer": {
+                "pvname": "SLAAR21-LMOT-ELL1",
+            },
+            "waveplate_ir": {
+                "pvname": "SLAAR21-LMOT-ELL2",
+            },
+            "crystal": {
+                "pvname": "SLAAR21-LMOT-ELL3",
+            },
+            "waveplate_thz": {
+                "pvname": "SLAAR21-LMOT-ELL4",
+            },
+        }
 
         ### smaract motors ###
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractRecord,
-                pvname=Id + config["id"],
+                pvname=config["id"],
                 name=name,
                 is_setting=True,
             )
-
-        self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
-
+            
+        ### thorlabs piezo motors ###
+        for name, config in self.motor_configuration_thorlabs.items():
+            self._append(
+                ThorlabsPiezoRecord,
+                pvname=config["pvname"],
+                name=name,
+                is_setting=True,
+            )
+        self._append(
+            MotorRecord,
+            pvname = "SLAAR21-LMOT-M522:MOTOR_1",
+            name="delaystage_thz",
+            is_setting=True,
+            is_display=False,
+            is_status=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_thz,
+            name="delay_thz",
+            is_setting=False,
+            is_display=True,
+            is_status=True,
+        )
         self.thz_polarization = AdjustableVirtual(
-            [self.crystal, self.wp],
+            [self.crystal, self.waveplate_ir],
             self.thz_pol_get,
             self.thz_pol_set,
             name="thz_polarization",
@@ -432,25 +539,27 @@ class Organic_crystal_breadboard(Assembly):
     def thz_pol_get(self, val, val2):
         return 1.0 * val
 
-    def set_stage_config(self):
-        for name, config in self.motor_configuration.items():
+    def set_stage_config(self, cfg=None):
+        if cfg is None:
+            cfg = self.motor_configuration
+        for name, config in cfg.items():
             mot = self.__dict__[name]
-            mot.caqtdm_name(config["pv_descr"])
-            mot.stage_type(config["type"])
-            mot.sensor_type(config["sensor"])
-            mot.speed(config["speed"])
-            if "direction" in config.keys():
-                mot.direction(config["direction"])
+            mot.description(config["pv_descr"])
+            #mot.stage_type(config["type"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
             sleep(0.5)
-            mot.calibrate_sensor(1)
+            mot.calibrate_sensor()
 
-    def home_smaract_stages(self, stages=None):
-        if stages == None:
-            stages = self.motor_configuration.keys()
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration= self.motor_configuration
+        stages = motor_configuration.keys()
         print("#### Positions before homing ####")
         print(self.__repr__())
         for name in stages:
-            config = self.motor_configuration[name]
+            config = motor_configuration[name]
             mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
@@ -459,25 +568,27 @@ class Organic_crystal_breadboard(Assembly):
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.home_backward(1)
-                while mot.status_channel().value == 7:
+                mot.home_reverse(1)
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.is_homed() == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
                     mot.home_forward(1)
             elif config["home_direction"] == "forward":
                 mot.home_forward(1)
-                while mot.status_channel().value == 7:
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.is_homed() == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.home_backward(1)
+                    mot.home_reverse(1)
 
     def get_adjustable_positions_str(self):
         ostr = "*****Organic Crystal Breadboard positions******\n"
@@ -595,64 +706,85 @@ class LiNbO3_crystal_breadboard:
         return self.get_adjustable_positions_str()
 
 
-class Electro_optic_sampling:
+class Electro_optic_sampling(Assembly):
     def __init__(
-        self, name=None, Id=None, alias_namespace=None, pgroup=None, diode_channels=None
+        self, name=None, diode_channels=None
     ):
-        self.Id = Id
+        super().__init__(name=name)
         self.name = name
         self.alias = Alias(name)
         self.diode_channels = diode_channels
         self.basepath = f"/sf/bernina/data/p18915/res/scan_info/"
         self.motor_configuration = {
             "ry": {
-                "id": "-ESB16",
-                "pv_descr": "Motor8:1 EOS prism ry ",
-                "type": 2,
-                "sensor": 1,
+                "id": "SARES23-USR:MOT_3",
+                "pv_descr": "Module1:3 EOS Ry",
+                "sensor": 2,
+                "direction": 0,
                 "speed": 250,
                 "home_direction": "back",
             },
             "rx": {
-                "id": "-ESB5",
-                "pv_descr": "Motor4:1 EOS prism rx ",
-                "type": 1,
-                "sensor": 0,
+                "id": "SARES23-USR:MOT_11",
+                "pv_descr": "Motor4:2 EOS Rx",
+                "sensor": 53,
                 "speed": 250,
+                "direction": 0,
                 "home_direction": "back",
             },
             "x": {
-                "id": "-ESB4",
-                "pv_descr": "Motor4:2 EOS prism x ",
-                "type": 1,
-                "sensor": 0,
+                "id": "SARES23-USR:MOT_12",
+                "pv_descr": "Module4:3 EOS x",
+                "sensor":42,
                 "speed": 250,
+                "direction": 0,
                 "home_direction": "back",
             },
         }
 
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage_pump",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_pump,
+            name="delay_pump",
+            is_setting=True,
+        )
         ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
-            addSmarActRecordToSelf(self, Id=Id + config["id"], name=name)
+            self._append(
+                SmaractRecord,
+                pvname=config["id"],
+                name=name,
+                is_setting=True,
+            )
 
-    def set_stage_config(self):
-        for name, config in self.motor_configuration.items():
-            mot = self.__dict__[name]._device
-            mot.put("NAME", config["pv_descr"])
-            mot.put("STAGE_TYPE", config["type"])
-            mot.put("SET_SENSOR_TYPE", config["sensor"])
-            mot.put("CL_MAX_FREQ", config["speed"])
+    def set_stage_config(self, cfg=None):
+        if cfg is None:
+            cfg = self.motor_configuration
+        for name, config in cfg.items():
+            mot = self.__dict__[name]
+            mot.description(config["pv_descr"])
+            #mot.stage_type(config["type"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
             sleep(0.5)
-            mot.put("CALIBRATE.PROC", 1)
+            mot.calibrate_sensor()
 
-    def home_smaract_stages(self, stages=None):
-        if stages == None:
-            stages = self.motor_configuration.keys()
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration= self.motor_configuration
+        stages = motor_configuration.keys()
         print("#### Positions before homing ####")
         print(self.__repr__())
         for name in stages:
-            config = self.motor_configuration[name]
-            mot = self.__dict__[name]._device
+            config = motor_configuration[name]
+            mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
                     name, config["home_direction"]
@@ -660,25 +792,27 @@ class Electro_optic_sampling:
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.put("FRM_BACK.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_reverse(1)
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
-                    mot.put("FRM_FORW.PROC", 1)
+                    mot.home_forward(1)
             elif config["home_direction"] == "forward":
-                mot.put("FRM_FORW.PROC", 1)
-                while mot.get("STATUS") == 7:
+                mot.home_forward(1)
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.get("GET_HOMED") == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.put("FRM_BACK.PROC", 1)
+                    mot.home_reverse(1)
 
     def fit_funvction(self, t, t0, w, tau):
         from scipy.special import erf

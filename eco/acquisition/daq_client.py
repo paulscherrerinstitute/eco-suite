@@ -226,24 +226,24 @@ class Daq(Assembly):
     def get_next_run_number(self, pgroup=None):
         if pgroup is None:
             pgroup = self.pgroup
-        res = requests.get(
-            f"{self.broker_address}/get_next_run_number",
+        res = requests.post(
+            f"{self.broker_address}/advance_run_number",
             json={"pgroup": pgroup},
             timeout=self.timeout,
         )
         assert res.ok, f"Getting last run number failed {res.raise_for_status()}"
-        return int(res.json()["message"])
+        return int(res.json()["run_number"])
 
     def get_last_run_number(self, pgroup=None):
         if pgroup is None:
             pgroup = self.pgroup
         res = requests.get(
-            f"{self.broker_address}/get_last_run_number",
+            f"{self.broker_address}/get_current_run_number",
             json={"pgroup": pgroup},
             timeout=self.timeout,
         )
         assert res.ok, f"Getting last run number failed {res.raise_for_status()}"
-        return int(res.json()["message"])
+        return int(res.json()["run_number"])
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[
@@ -251,12 +251,12 @@ class Daq(Assembly):
         ].frequency.get_current_value()
 
     def get_JFs_available(self):
-        return requests.get(f"{self.broker_address}/get_allowed_detectors_list").json()[
+        return requests.get(f"{self.broker_address}/get_allowed_detectors").json()[
             "detectors"
         ]
 
     def get_JFs_running(self):
-        return requests.get(f"{self.broker_address}/get_running_detectors_list").json()[
+        return requests.get(f"{self.broker_address}/get_running_detectors").json()[
             "detectors"
         ]
 

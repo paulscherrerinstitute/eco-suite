@@ -156,7 +156,7 @@ class StaeubliTx200(Assembly):
 
     def stop(self):
         try:
-            self.z_lin.stop()
+            self.cartesian.z_lin.stop()
         except:
             print("Failed to stop linear axis")
         self.get_eval_result("robot.stop()")
@@ -212,6 +212,10 @@ class StaeubliTx200(Assembly):
     def sph2cart(self, gamma=None, delta=None, t_det=None, return_dict=True):
         vals = {k: v for k, v in zip(["gamma", "delta", "r"], [gamma,delta,t_det]) if not v is None}
         return self.get_eval_result(cmd=f"robot.sph2cart(**{vals})")
+
+    def remote_connection_to_server(self, resolution="2048x1280"):
+        cmd = f"xfreerdp /v:PC14742 /size:{resolution} /u:gac-bernina@psich"
+        return self._run_cmd(cmd)
 
     ######## Motion recording ##########
     def record_motion(self, **kwargs):
@@ -275,7 +279,7 @@ class StaeubliTx200(Assembly):
         Simulated stored commands on the controller.
         """
         sim = np.array(self.get_eval_result(f"robot.simulate_stored_commands()"))
-        lin = np.array([self.z_lin()]*len(sim))
+        lin = np.array([self.cartesian.z_lin()]*len(sim))
         sim = np.vstack([lin,sim.T]).T
         if plot:
             if self._urdf is not None:
@@ -303,7 +307,7 @@ class StaeubliTx200(Assembly):
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
         sim = np.array(self.get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"))
-        lin = np.array([self.z_lin()]*len(sim))
+        lin = np.array([self.cartesian.z_lin()]*len(sim))
         sim = np.vstack([lin,sim.T]).T
         if plot:
             if self._urdf is not None:
@@ -323,7 +327,7 @@ class StaeubliTx200(Assembly):
         Simulated motion in the joint coordinate system.
         """
         sim = np.array(self.get_eval_result(f"robot.move_joint(j1={j1}, j2={j2}, j3={j3}, j4={j4}, j5={j5}, j6={j6}, simulate=True"))
-        lin = np.array([self.z_lin()]*11)
+        lin = np.array([self.cartesian.z_lin()]*11)
         sim = np.vstack([lin,sim.T]).T
         if plot:
             if self._urdf is not None:
@@ -350,7 +354,7 @@ class StaeubliTx200(Assembly):
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
         """
         sim = np.array(self.get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
-        lin = np.array([self.z_lin()]*11)
+        lin = np.array([self.cartesian.z_lin()]*11)
         sim = np.vstack([lin,sim.T]).T
         if plot:
             if self._urdf is not None:

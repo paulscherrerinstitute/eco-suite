@@ -3,6 +3,7 @@ from tkinter import W
 
 from eco.base.adjustable import Adjustable
 from eco.devices_general.therm import ChillerThermotek
+from eco.elements.adj_obj import AdjustableObject
 from eco.elements.detector import DetectorGet
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
 from ..epics.adjustable import AdjustablePv
@@ -32,6 +33,7 @@ class Jungfrau(Assembly):
         trigger_on=254,
         trigger_off=255,
         broker_address="http://sf-daq:10002",
+        broker_address_aux="http://sf-daq:10003",
         pgroup_adj=None,
         config_adj=None,
         chiller_thermotek="SARES20-CHIL",
@@ -42,6 +44,7 @@ class Jungfrau(Assembly):
         self.pgroup = pgroup_adj
         self.jf_id = jf_id
         self.broker_address = broker_address
+        self.broker_address_aux = broker_address_aux
         self._append(
             DetectorGet, lambda: f"http://{self.get_vis_url()}", name="visulization_url"
         )
@@ -107,6 +110,21 @@ class Jungfrau(Assembly):
             name="gain_file_in_run",
             is_display=True,
         )
+        self._append(
+            AdjustableGetSet,
+            self.get_dap_settings,
+            self.set_dap_settings,
+            name="_dap_settings",
+            is_display=False,
+            is_setting=False,
+        )
+        self._append(
+            AdjustableObject,
+            self._dap_settings,
+            is_setting_children=True,
+            name="settings_dap",
+        )
+
         if config_adj:
             self._append(
                 JungfrauDaqConfig,
@@ -118,7 +136,12 @@ class Jungfrau(Assembly):
                 is_display="recursive",
             )
         if chiller_thermotek:
-            self._append(ChillerThermotek,pvbase=chiller_thermotek,name="chiller",is_display="recursive")
+            self._append(
+                ChillerThermotek,
+                pvbase=chiller_thermotek,
+                name="chiller",
+                is_display="recursive",
+            )
 
     def _set_trigger_enable(self, value):
         if value:
@@ -139,8 +162,14 @@ class Jungfrau(Assembly):
         dest = Path(
             f"/sf/bernina/data/{self.pgroup()}/res/tmp/gainmaps_{self.jf_id}.h5"
         )
-        if not dest.exists():
-            shutil.copyfile(f, dest)
+        
+        try:
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True, mode=0o775)
+                shutil.copyfile(f, dest)
+        except PermissionError:
+            return "No permissions to res directory!"
+        
         if intempdir:
             return dest.as_posix()
         else:
@@ -157,13 +186,37 @@ class Jungfrau(Assembly):
         dest = Path(
             f"/sf/bernina/data/{self.pgroup()}/res/tmp/pedestal_{self.jf_id}_{f.stem}.h5"
         )
-        if not dest.exists():
-            shutil.copyfile(f, dest)
+        try:
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True, mode=0o775)
+                dest.parent.chmod(0o775)
+                shutil.copyfile(f, dest)
+        except PermissionError:
+            return "No poermissions to res directory!"
+
 
         if intempdir:
             return dest.as_posix()
         else:
             return f"aux/{dest.name}"
+
+    def get_dap_settings(self):
+        m = requests.get(
+            f"{self.broker_address_aux}/get_dap_settings",
+            json={"detector_name": self.jf_id},
+        ).json()
+        if m["status"] == "ok":
+            return m["parameters"]
+
+    def set_dap_settings(self, dap_setting_dict):
+        # print("Setting not implmented yet!")
+        # return
+        m = requests.post(
+            f"{self.broker_address_aux}/set_dap_settings",
+            json={"detector_name": self.jf_id, "parameters": dap_setting_dict},
+        ).json()
+        if m["status"] == "ok":
+            return m
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[
@@ -173,21 +226,21 @@ class Jungfrau(Assembly):
     def get_availability(self):
         is_available = (
             self.jf_id
-            in requests.get(f"{self.broker_address}/get_allowed_detectors_list").json()[
+            in requests.get(f"{self.broker_address}/get_allowed_detectors").json()[
                 "detectors"
             ]
         )
         return is_available
 
     def get_vis_url(self):
-        tmp = requests.get(f"{self.broker_address}/get_allowed_detectors_list").json()
+        tmp = requests.get(f"{self.broker_address}/get_allowed_detectors").json()
         ix = tmp["detectors"].index(self.jf_id)
         return tmp["visualisation_address"][ix]
 
     def get_isrunning(self):
         is_running = (
             self.jf_id
-            in requests.get(f"{self.broker_address}/get_running_detectors_list").json()[
+            in requests.get(f"{self.broker_address}/get_running_detectors").json()[
                 "detectors"
             ]
         )

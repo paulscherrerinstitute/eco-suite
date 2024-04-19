@@ -380,7 +380,11 @@ class Assembly:
             tab.append(
                 [".".join([main_name, name]), value, unit, typechar, description]
             )
-        s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
+        if tab:
+            s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
+        else:
+            s=''
+
         return s
 
     def status_to_elog(
