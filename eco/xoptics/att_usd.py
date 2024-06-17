@@ -235,13 +235,14 @@ class Att_usd(Assembly):
             sleep(0.5)
             mot.calibrate_sensor(1)
 
-    def home_smaract_stages(self, stages=None):
-        if stages == None:
-            stages = self.motor_configuration.keys()
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration= self.motor_configuration
+        stages = motor_configuration.keys()
         print("#### Positions before homing ####")
         print(self.__repr__())
         for name in stages:
-            config = self.motor_configuration[name]
+            config = motor_configuration[name]
             mot = self.__dict__[name]
             print(
                 "#### Homing {} in {} direction ####".format(
@@ -250,25 +251,27 @@ class Att_usd(Assembly):
             )
             sleep(1)
             if config["home_direction"] == "back":
-                mot.home_backward(1)
-                while mot.status_channel().value == 7:
+                mot.home_reverse(1)
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.is_homed() == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in forward direction".format(name)
                     )
                     mot.home_forward(1)
             elif config["home_direction"] == "forward":
                 mot.home_forward(1)
-                while mot.status_channel().value == 7:
+                sleep(.5)
+                while not mot.flags.motion_complete():
                     sleep(1)
-                if mot.is_homed() == 0:
+                if not mot.flags.is_homed():
                     print(
                         "Homing failed, try homing {} in backward direction".format(
                             name
                         )
                     )
-                    mot.home_backward(1)
+                    mot.home_reverse(1)
 
     def get_adjustable_positions_str(self):
         ostr = "*****att_usd target position******\n"

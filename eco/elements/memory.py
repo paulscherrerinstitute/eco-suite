@@ -42,6 +42,10 @@ class Memory:
         self.dir = Path(self.base_dir) / Path("/".join(reversed(name)))
         try:
             self.dir.mkdir(exist_ok=True)
+            try:
+                self.dir.chmod(0o775)
+            except:
+                pass
         except:
             print("Could not create memory directory")
         self._memories = AdjustableFS(
@@ -245,8 +249,7 @@ class Memory:
         else:
             return changes
 
-    def recall_from_runtable(self):
-        ...
+    def recall_from_runtable(self): ...
 
     def get_memory_difference_str(
         self,

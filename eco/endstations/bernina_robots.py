@@ -99,30 +99,38 @@ class StaeubliTx200(Assembly):
             print("Loading bernina URDF robot model failed")
         ### adding JF ###
         if robot_config is not None:
-            if robot_config.jf_id() is not None:
-                self._append(
-                    Jungfrau,
-                    robot_config.jf_id(),
-                    pgroup_adj=pgroup_adj,
-                    config_adj=jf_config,
-                    name=robot_config.jf_name(),
-                )
-                if "JF01" in robot_config.jf_id():
-                    self.config.tool("t_JF01T03")
-                elif "JF07" in robot_config.jf_id():
-                    self.config.tool("t_JF07T32")
+            try:
+                if robot_config.jf_id() is not None:
+                    self._append(
+                        Jungfrau,
+                        robot_config.jf_id(),
+                        pgroup_adj=pgroup_adj,
+                        config_adj=jf_config,
+                        name=robot_config.jf_name(),
+                    )
+                    if "JF01" in robot_config.jf_id():
+                        self.config.tool("t_JF01T03")
+                    elif "JF07" in robot_config.jf_id():
+                        self.config.tool("t_JF07T32")
+            except Exception as e:
+                print("Adding of JF detector failed with:")
+                print(e)
 
         if robot_config is not None:
-            if robot_config.diffcalc():
-                from ..utilities.recspace import Crystals
-                self.configuration=["robot", robot_config.goniometer()] 
-                self._append(
-                    Crystals,
-                    diffractometer_you=self,
-                    name="diffcalc",
-                    is_setting=False,
-                    is_display=False,
-                )
+            try:
+                if robot_config.diffcalc():
+                    from ..utilities.recspace import Crystals
+                    self.configuration=["robot", robot_config.goniometer()] 
+                    self._append(
+                        Crystals,
+                        diffractometer_you=self,
+                        name="diffcalc",
+                        is_setting=False,
+                        is_display=False,
+                    )
+            except Exception as e:
+                print("Adding diffractometer for diffcalc calculation failed with:")
+                print(e)
 
     def _get_info(self):
         d= {k: v for k, v in self._cache.items() if k in self._info_fields}
@@ -205,6 +213,9 @@ class StaeubliTx200(Assembly):
         self._set_eval_cmd(f"robot.general_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Motion aborted by user, resetting all motions.")
 
     ######## Utility functions ##########
+    def restart_server(self):
+        self.pc.eval(":restart")
+
     def cart2sph(self, x=None, y=None, z=None, return_dict=True):
         vals = {k: v for k, v in zip(["x", "y", "z"], [x,y,z]) if not v is None}
         return self.get_eval_result(cmd=f"robot.cart2sph(**{vals})")

@@ -34,8 +34,14 @@ def getDefaultElogInstance(
     if pgroup:
         lbs = log.get_logbooks(ownerGroup=pgroup)
         if len(lbs) > 1:
-            raise Exception(f"Found more than one elog for user group {pgroup}")
-        log.select_logbook(lbs[0])
+            print(f"Found more than one elog for user group {pgroup}")
+            for lb in lbs:
+                creater = lb.createdBy
+                if creater == 'scilog-admin@psi.ch':
+                    log.select_logbook(lb)
+                    print(f"Choosing default logbook created by 'scilog-admin@psi.ch'")
+        else:
+            log.select_logbook(lbs[0])
     return log, user
 
 

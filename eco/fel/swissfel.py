@@ -237,6 +237,13 @@ class MessageBoard(Assembly):
         self._append(Message, "SF-OP:ESB-MSG", name="bernina_message", is_setting=True)
         self._append(
             AdjustablePvEnum,
+            "SF-OP:ESC-MSG:STATUS",
+            name="cristallina_status",
+            is_setting=True,
+        )
+        self._append(Message, "SF-OP:ESC-MSG", name="cristallina_message", is_setting=True)
+        self._append(
+            AdjustablePvEnum,
             "SF-OP:ESE-MSG:STATUS",
             name="maloja_status",
             is_setting=True,

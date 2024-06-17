@@ -6,6 +6,7 @@ from ..elements.adjustable import AdjustableFS
 from ..elements.memory import Memory
 from subprocess import call
 from eco.utilities.config import Proxy
+
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
 import timeit
@@ -76,7 +77,7 @@ class Gsheet_API:
     def _append_to_gspread_key_df(self, gspread_key_df):
         if os.path.exists(self._keydf_fname):
             self._key_df = pd.read_pickle(self._keydf_fname)
-            #deprecated: self._key_df = self._key_df.append(gspread_key_df)
+            # deprecated: self._key_df = self._key_df.append(gspread_key_df)
             self._key_df = pd.concat([self._key_df, gspread_key_df])
             self._key_df.to_pickle(self._keydf_fname)
         else:
@@ -191,7 +192,8 @@ class Container:
 
     def _create_lazy_container(self, n):
         def cr():
-            return Container(df = self._df, name=self._top_level_name + n + ".")
+            return Container(df=self._df, name=self._top_level_name + n + ".")
+
         return cr
 
     def _create_first_level_container(self, names, lazy=True):
@@ -199,7 +201,9 @@ class Container:
             if lazy:
                 self.__dict__[n] = Proxy(self._create_lazy_container(n))
             else:
-                self.__dict__[n] = Container(self._df, name=self._top_level_name + n + ".")
+                self.__dict__[n] = Container(
+                    self._df, name=self._top_level_name + n + "."
+                )
 
     def to_dataframe(self, full_name=True, next_level=False):
         df = self._slice_df()
@@ -243,7 +247,6 @@ class Container:
             if type(sr) == pd.core.series.Series:
                 src = src.append(sr)
         return src
-
 
     def __dir__(self):
         next_level_names = self._get_next_level_names()
@@ -330,6 +333,7 @@ class Run_Table2:
 
     def to_dataframe(self):
         return DataFrame(self._data)
+
     ###### diagnostic and convencience functions ######
 
     def run_table_from_other_pgroup(self, pgroup):
@@ -339,10 +343,14 @@ class Run_Table2:
 
         usage: run_table_pxxx = run_table.run_table_from_other_pgroup('pxxx')
         """
-        return Run_Table2(data=f'/sf/bernina/data/{pgroup}/res/run_table/{pgroup}_runtable.pkl')
+        return Run_Table2(
+            data=f"/sf/bernina/data/{pgroup}/res/run_table/{pgroup}_runtable.pkl"
+        )
 
     def check_timeouts(self, include_bad_adjustables=True, plot=True, repeats=1):
-        return self._data.check_timeouts(include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats)
+        return self._data.check_timeouts(
+            include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats
+        )
 
     def _reduce_df(
         self,
@@ -374,10 +382,11 @@ class Run_Table2:
     def _create_lazy_container(self, dev):
         def cr():
             return Container(df=self._data, name=dev + ".")
+
         return cr
 
     def __dir__(self):
-        lazy=True
+        lazy = True
         devs = np.unique(np.array([n.split(".")[0] for n in self._data.columns]))
         for dev in devs:
             if dev not in self.__dict__.keys():
@@ -404,7 +413,9 @@ class Run_Table2:
         return self.__str__()
 
     def check_timeouts(self, include_bad_adjustables=True, plot=True, repeats=1):
-        return self._data.check_timeouts(include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats)
+        return self._data.check_timeouts(
+            include_bad_adjustables=include_bad_adjustables, plot=plot, repeats=repeats
+        )
 
 
 class Run_Table_DataFrame(DataFrame):
@@ -484,17 +495,17 @@ class Run_Table_DataFrame(DataFrame):
         if os.path.exists(self.fname):
             self.df = pd.read_pickle(self.fname)
 
-    def _append_run(
-        self,
-        runno,
-        wait=True,
-        *args,
-        **kwargs
-    ):
+    def _append_run(self, runno, wait=True, *args, **kwargs):
         if wait:
             self._append_run(runno, *args, **kwargs)
         else:
-            ar = threading.Thread(target=self.append_run, args=[runno,], kwargs=kwargs)
+            ar = threading.Thread(
+                target=self.append_run,
+                args=[
+                    runno,
+                ],
+                kwargs=kwargs,
+            )
             ar.start()
 
     def append_run(
@@ -520,13 +531,15 @@ class Run_Table_DataFrame(DataFrame):
         multiindex = pd.MultiIndex.from_tuples(
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
-        values = np.array([val for adjs in dat.values() for val in adjs.values()], dtype=object)
+        values = np.array(
+            [val for adjs in dat.values() for val in adjs.values()], dtype=object
+        )
         index = np.array(
             [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
         )
         # run_df = DataFrame([values], columns=multiindex, index=[runno])
         run_df = DataFrame([values], columns=index, index=[runno])
-        #deprecated: self.df = self.append(run_df)
+        # deprecated: self.df = self.append(run_df)
         self.df = pd.concat([self.df, run_df])
 
         self._remove_duplicates()
@@ -549,15 +562,17 @@ class Run_Table_DataFrame(DataFrame):
         multiindex = pd.MultiIndex.from_tuples(
             [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
         )
-        values = np.array([val for adjs in dat.values() for val in adjs.values()], dtype=object)
+        values = np.array(
+            [val for adjs in dat.values() for val in adjs.values()], dtype=object
+        )
         index = np.array(
             [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
         )
         # pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
         pos_df = DataFrame([values], columns=index, index=[f"p{posno}"])
 
-        #deprecated: self.df = self.append(pos_df)
-        self.df = pd.concat([self.df,pos_df])
+        # deprecated: self.df = self.append(pos_df)
+        self.df = pd.concat([self.df, pos_df])
         self._remove_duplicates()
         # self.order_df()
         self.save()
@@ -572,9 +587,9 @@ class Run_Table_DataFrame(DataFrame):
                 dat[devname] = {}
                 bad_adjs = []
                 for adjname, adj in dev.items():
-                    if f'{devname}.{adjname}' in d.keys():
-                        dat[devname][adjname] = d[f'{devname}.{adjname}']
-                        print(f'{devname}.{adjname}')
+                    if f"{devname}.{adjname}" in d.keys():
+                        dat[devname][adjname] = d[f"{devname}.{adjname}"]
+                        print(f"{devname}.{adjname}")
                         continue
                     try:
                         dat[devname][adjname] = adj.get_current_value()
@@ -592,7 +607,12 @@ class Run_Table_DataFrame(DataFrame):
         else:
             dat = {
                 devname: {
-                    adjname: d[f'{devname}.{adjname}'] if f'{devname}.{adjname}' in d.keys() else adj.get_current_value() for adjname, adj in dev.items()
+                    adjname: (
+                        d[f"{devname}.{adjname}"]
+                        if f"{devname}.{adjname}" in d.keys()
+                        else adj.get_current_value()
+                    )
+                    for adjname, adj in dev.items()
                 }
                 for devname, dev in self.good_adjustables.items()
             }
@@ -649,8 +669,8 @@ class Run_Table_DataFrame(DataFrame):
                     if parent_name == device.name:
                         self.adjustables[parent_name][key] = value
                     else:
-                        #print("GET ADJ", parent_name, name, key)
-                        
+                        # print("GET ADJ", parent_name, name, key)
+
                         self.adjustables[parent_name][".".join([name, key])] = value
 
         if parent_name == device.name:
@@ -662,13 +682,14 @@ class Run_Table_DataFrame(DataFrame):
     ):
         if parent_name is None:
             parent_name = own_name
-        self._get_all_adjustables_fewerparents(parent_class, adj_prefix, parent_name, verbose=verbose)
+        self._get_all_adjustables_fewerparents(
+            parent_class, adj_prefix, parent_name, verbose=verbose
+        )
         if parent_name is not parent_class.name:
             if adj_prefix is not None:
                 adj_prefix = ".".join([adj_prefix, parent_class.name])
             else:
                 adj_prefix = parent_class.name
-
 
         sub_classes = []
         sub_classnames = []
@@ -688,10 +709,14 @@ class Run_Table_DataFrame(DataFrame):
                                 for s in self._parse_exclude_class_types
                             ]
                         ),
-
                     ]
                 ):
-                    if adj_prefix is None or ~np.any([key == s for s in ".".join([parent_name,adj_prefix]).split(".")]):
+                    if adj_prefix is None or ~np.any(
+                        [
+                            key == s
+                            for s in ".".join([parent_name, adj_prefix]).split(".")
+                        ]
+                    ):
                         if s_class.name == None:
                             s_class.name = key
                         sub_classes.append(s_class)
@@ -850,47 +875,66 @@ class Run_Table_DataFrame(DataFrame):
         devs = [item[0] for item in list(self.columns)]
         self.df = self[self._orderlist(list(self.columns), key_order, orderlist=devs)]
 
-
     #### diagnostic and convenience functions ####
-    def check_timeouts(self, include_bad_adjustables=True, repeats=1, plot=True, verbose=True):
+    def check_timeouts(
+        self, include_bad_adjustables=True, repeats=1, plot=True, verbose=True
+    ):
         if len(self.adjustables) == 0:
             self._parse_parent_fewerparents(verbose=verbose)
         ts = []
-        devs=[]
+        devs = []
+
         def get_dev_adjs(dev):
             for k, adj in dev.items():
                 val = adj.get_current_value()
+
         for k, dev in self.good_adjustables.items():
+
             def func(dev=dev):
                 return get_dev_adjs(dev)
+
             t = timeit.timeit(func, number=repeats)
             ts.append(float(t))
             devs.append(k)
             print(k, t)
         idx = np.argsort(ts)
         self.times = [np.array(devs)[idx], np.array(ts)[idx]]
-        print('recorded adjustable results stored in run_table._data.times')
+        print("recorded adjustable results stored in run_table._data.times")
         if include_bad_adjustables:
             for k, dev in self.bad_adjustables.items():
+
                 def func(dev=dev):
                     return get_dev_adjs(dev)
+
                 t = timeit.timeit(func, number=repeats)
                 ts.append(float(t))
                 devs.append(k)
                 print(k, t)
             idx = np.argsort(ts)
-            print('rejected timed out adjustable results stored in run_table._data.times_rejected')
+            print(
+                "rejected timed out adjustable results stored in run_table._data.times_rejected"
+            )
             self.times_rejected = [np.array(devs)[idx], np.array(ts)[idx]]
 
         if plot:
             import pylab as plt
+
             fig, ax = plt.subplots(1)
             if include_bad_adjustables:
-                plt.barh(self.times_rejected[0], self.times_rejected[1], color='red', label='rejected adjustables')
-            plt.barh(self.times[0], self.times[1], label='recorded adjustables', color='seagreen')
-            plt.xlabel('time (s)')
+                plt.barh(
+                    self.times_rejected[0],
+                    self.times_rejected[1],
+                    color="red",
+                    label="rejected adjustables",
+                )
+            plt.barh(
+                self.times[0],
+                self.times[1],
+                label="recorded adjustables",
+                color="seagreen",
+            )
+            plt.xlabel("time (s)")
             plt.legend()
-
 
 
 def name2obj(obj_parent, name, delimiter="."):

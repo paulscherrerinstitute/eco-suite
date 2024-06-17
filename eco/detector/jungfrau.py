@@ -1,4 +1,5 @@
 import shutil
+import time
 from tkinter import W
 
 from eco.base.adjustable import Adjustable
@@ -110,6 +111,7 @@ class Jungfrau(Assembly):
             name="gain_file_in_run",
             is_display=True,
         )
+        self._last_dap_req_time = 0
         self._append(
             AdjustableGetSet,
             self.get_dap_settings,
@@ -162,14 +164,19 @@ class Jungfrau(Assembly):
         dest = Path(
             f"/sf/bernina/data/{self.pgroup()}/res/tmp/gainmaps_{self.jf_id}.h5"
         )
-        
+
         try:
             if not dest.exists():
                 dest.parent.mkdir(parents=True, exist_ok=True, mode=0o775)
+                try:
+                    dest.parent.chmod(0o775)
+                except:
+                    pass
                 shutil.copyfile(f, dest)
+
         except PermissionError:
             return "No permissions to res directory!"
-        
+
         if intempdir:
             return dest.as_posix()
         else:
@@ -189,11 +196,13 @@ class Jungfrau(Assembly):
         try:
             if not dest.exists():
                 dest.parent.mkdir(parents=True, exist_ok=True, mode=0o775)
-                dest.parent.chmod(0o775)
+                try:
+                    dest.parent.chmod(0o775)
+                except:
+                    pass
                 shutil.copyfile(f, dest)
         except PermissionError:
             return "No poermissions to res directory!"
-
 
         if intempdir:
             return dest.as_posix()
@@ -201,12 +210,15 @@ class Jungfrau(Assembly):
             return f"aux/{dest.name}"
 
     def get_dap_settings(self):
-        m = requests.get(
-            f"{self.broker_address_aux}/get_dap_settings",
-            json={"detector_name": self.jf_id},
-        ).json()
-        if m["status"] == "ok":
-            return m["parameters"]
+        if 5 < (time.time()-self._last_dap_req_time):
+            self._last_dap_message = requests.get(
+                f"{self.broker_address_aux}/get_dap_settings",
+                json={"detector_name": self.jf_id},
+            ).json()
+            self._last_dap_req_time = time.time()
+
+        if self._last_dap_message["status"] == "ok":
+            return self._last_dap_message["parameters"]
 
     def set_dap_settings(self, dap_setting_dict):
         # print("Setting not implmented yet!")

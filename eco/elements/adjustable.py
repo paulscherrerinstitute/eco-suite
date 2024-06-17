@@ -466,6 +466,10 @@ class AdjustableFS:
         if not self.file_path.exists():
             if not self.file_path.parent.exists():
                 self.file_path.parent.mkdir(parents=True)
+                try:
+                    self.file_path.parent.chmod(0o775)
+                except:
+                    pass
             self._write_value(default_value)
         self.alias = Alias(name)
         self.name = name
@@ -630,15 +634,15 @@ class AdjustableGetSet:
         self,
         foo_get,
         foo_set,
-        set_returns_changer = False,
+        set_returns_changer=False,
         precision=0,
         check_interval=None,
         cache_get_seconds=None,
-        unit = None,
+        unit=None,
         name=None,
     ):
         """assumes a waiting setterin function, in case no check_interval parameter is supplied.
-           if returns_changer, does not create an additional thread"""
+        if returns_changer, does not create an additional thread"""
 
         self.alias = Alias(name)
         self.name = name

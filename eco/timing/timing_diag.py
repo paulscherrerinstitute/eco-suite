@@ -1,4 +1,5 @@
 from eco.detector.detectors_psi import DetectorBsStream
+from eco.epics.detector import DetectorPvDataStream
 from eco.devices_general.pipelines_swissfel import Pipeline
 from eco.devices_general.spectrometers import SpectrometerAndor
 from eco.microscopes.microscopes import FeturaPlusZoom
@@ -13,9 +14,10 @@ import datetime
 from pint import UnitRegistry
 from time import sleep
 from ..xdiagnostics.profile_monitors import Target_xyz
-
+from eco.xdiagnostics.intensity_monitors import CalibrationRecord
 from .timetool_online_helper import TtProcessor
-
+import numpy as np
+import pylab as plt
 # from time import sleep
 
 ureg = UnitRegistry()
@@ -162,7 +164,27 @@ class TimetoolBerninaUSD(Assembly):
             accuracy=10,
             is_setting=True,
         )
-
+        self._append(
+            DetectorPvDataStream,
+            "SLAAR21-GEN:SPECTT",
+            name="edge_position_px",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorPvDataStream,
+            "SLAAR21-LTIM01-EVR0:CALCI",
+            name="edge_position_fs",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            CalibrationRecord,
+            pvbase="SLAAR21-LTIM01-EVR0:CALCI",
+            name="calibration",
+            is_setting=True,
+            is_display=False,
+        )
         self._append(
             DetectorBsStream,
             "SARES20-CAMS142-M5.roi_signal_x_profile",
@@ -201,6 +223,57 @@ class TimetoolBerninaUSD(Assembly):
             except Exception as e:
                 print(f"Andor spectrometer initialization failed with: \n{e}")
             
+
+    def get_calibration_values(self, seconds=5, scan_range=1.5e-12, plot=False):
+        t0 = self.delay()
+        x = np.linspace(t0-scan_range / 2, t0+scan_range / 2, 25)
+        y = []
+        if plot:
+            plt.ion()
+            plt.close("tt_calib")
+            fig = plt.figure("tt_calib")
+            line = plt.plot(0,0)[0]
+            plt.show()
+        try:
+            for pos in x:
+                print(f"Moving to {pos*1e15} fs")
+                self.delay.set_target_value(pos).wait()
+                y.append(np.mean(self.edge_position_px.acquire(seconds=seconds).wait()))
+                if plot:
+                    line.set_data(x[:len(y)],y)
+                    fig.canvas.draw()
+        except Exception as e:
+            print(e)
+            print(f"Moving back to inital value of {t0}")
+            self.delay.set_target_value(t0)
+
+        p = np.polynomial.Polynomial.fit(y,x,2).coef
+        if plot:
+            fit = plt.plot(np.polyval(p,y),y, label=p)
+            plt.legend()
+        print(f"Fit results c0 + c1*px + c2*px^2:\n{p}")
+        print(f"Moving back to inital value of {t0}")
+        self.delay.set_target_value(t0)
+        return p
+
+    def set_calibration_values(self, c):
+        self.calibration.const_E.set_target_value(c[0])
+        self.calibration.const_F.set_target_value(c[1])
+        self.calibration.const_G.set_target_value(c[2])
+
+    def calibrate(self, seconds=5, scan_range=1.5e-12, plot=True):
+        t0 = self.delay()
+        if abs(t0) > 50e-15:
+            ans = ""
+            while not any([a in ans for a in ["y", "n"]]):
+                try:
+                    ans = input(f"Timetool delay stage is at {t0*1e15} fs. Continue the calibration (y/n)?")
+                except:
+                    continue
+            if ans == "n":
+                return
+        p = self.get_calibration_values(seconds=seconds, scan_range=scan_range, plot=plot)
+        self.set_calibration_values(p*1e15)
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()

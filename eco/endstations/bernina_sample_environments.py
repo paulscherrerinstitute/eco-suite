@@ -35,6 +35,50 @@ def addSmarActRecordToSelf(self, Id=None, name=None, **kwargs):
     self.__dict__[name] = SmaractRecord(Id, name=name, **kwargs)
     self.alias.append(self.__dict__[name].alias)
 
+class THzVirtualStages(Assembly):
+    def __init__(self, name=None, mz=None, pz=None):
+        super().__init__(name=name)
+        self._mz = mz
+        self._pz = pz
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_z0",
+            name="offset_mirr_z",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21145_par_z0",
+            name="offset_par_z",
+            default_value=0,
+            is_setting=True,
+        )
+
+
+        def get_focus_z(mz, pz):
+            return pz - self.offset_par_z()
+
+        def set_focus_z(z):
+            mz = self.offset_mirr_z() + z
+            pz = self.offset_par_z() + z
+            return mz, pz
+
+        self._append(
+            AdjustableVirtual,
+            [mz, pz],
+            get_focus_z,
+            set_focus_z,
+            name="focus_virtual",
+        )
+
+    def set_offsets_to_current_value(self):
+        self.offset_mirr_z.mv(self._mz())
+        self.offset_par_z.mv(self._pz())
+
+
+
+
 class High_field_thz_chamber(Assembly):
     def __init__(self, name=None, alias_namespace=None, configuration=[], illumination_mpod = None, helium_control_valve=None):
         super().__init__(name=name)
@@ -199,6 +243,13 @@ class High_field_thz_chamber(Assembly):
             self.home_smaract_stages_cube = home_smaract_stages_cube
             self.set_stage_config_cube = set_stage_config_cube
 
+            ### Virtual stages ###
+            self._append(
+                THzVirtualStages,
+                name="virtual_stages",
+                mz=self.inc_z,
+                pz = self.z,
+                is_setting=False)
         if "ocb" in configuration:
             pass
 
@@ -483,12 +534,15 @@ class Organic_crystal_breadboard(Assembly):
                 "pvname": "SLAAR21-LMOT-ELL1",
             },
             "waveplate_ir": {
+                "pvname": "SLAAR21-LMOT-ELL5",
+            },
+            "eos_block": {
                 "pvname": "SLAAR21-LMOT-ELL2",
             },
             "crystal": {
                 "pvname": "SLAAR21-LMOT-ELL3",
             },
-            "waveplate_thz": {
+            "thz_filter": {
                 "pvname": "SLAAR21-LMOT-ELL4",
             },
         }

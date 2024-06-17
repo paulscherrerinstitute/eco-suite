@@ -160,8 +160,7 @@ class Assembly:
             self.view_toplevel_only.append(self.__dict__[name])
 
     def get_status(
-        self, base="self", verbose=True, print_times=False, channeltypes=None
-    ):
+        self, base="self", verbose=True, print_times=False, channeltypes=None,print_name=False):
         if base == "self":
             base = self
         settings = {}
@@ -177,6 +176,9 @@ class Assembly:
             transient=True,
             description="Reading settings ...",
         ):
+            
+            if print_name:
+                print(ts.name)
             # if (not (ts is self)) and hasattr(ts, "get_status"):
             #     tstat = ts.get_status(base=base)
             #     settings.update(tstat["settings"])

@@ -11,6 +11,7 @@ from .utilities import Acquisition
 import time
 from ..elements.adjustable import AdjustableFS
 
+
 class EpicsDaq:
     def __init__(
         self,
@@ -19,19 +20,25 @@ class EpicsDaq:
         channel_list=None,
     ):
         self.name = name
-        self.default_file_path = AdjustableFS(f'/sf/bernina/config/eco/reference_values/{name}_default_file_path.json', default_value="~/data/", name="default_file_path")
+        self.default_file_path = AdjustableFS(
+            f"/sf/bernina/config/eco/reference_values/{name}_default_file_path.json",
+            default_value="~/data/",
+            name="default_file_path",
+        )
         self._elog = elog
         self.channels = {}
         self.pulse_id = PV("SLAAR11-LTIM01-EVR0:RX-PULSEID")
         self.channel_list = channel_list
         self.update_channels()
+
     @property
     def _default_file_path(self):
         return self.default_file_path()
+
     @_default_file_path.setter
     def _default_file_path(self, val):
         self.default_file_path(val)
-            
+
     def update_channels(self):
         channels = self.channel_list.get_current_value()
         for channel in channels:
@@ -63,8 +70,8 @@ class EpicsDaq:
             else:
                 shape = (N_pulses,)
                 dtype = type(channelval)
-            data[k]=np.ndarray(shape, dtype=dtype)
-            counters[k]=0
+            data[k] = np.ndarray(shape, dtype=dtype)
+            counters[k] = 0
 
         def cb_getdata(ch=None, k="", *args, **kwargs):
             data[k][counters[k]] = kwargs["value"]
@@ -175,7 +182,7 @@ class Epicstools:
             if counters[m] == N_pulses:
                 ch.clear_callbacks()
 
-        for (m, channel) in enumerate(channels):
+        for m, channel in enumerate(channels):
             channel.add_callback(callback=cb_getdata, ch=channel, m=m)
         while True:
             sleep(0.005)
@@ -183,7 +190,7 @@ class Epicstools:
                 break
 
         f = h5py.File(name=fina, mode="w")
-        for (n, channel) in enumerate(channel_list):
+        for n, channel in enumerate(channel_list):
             dat = f.create_group(name=channel)
             dat.create_dataset(name="data", data=data[n])
             dat.create_dataset(

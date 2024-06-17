@@ -219,6 +219,10 @@ class Run_Table:
                 f"Path {data_dir.absolute().as_posix()} does not exist, will try to create it..."
             )
             data_dir.mkdir(parents=True)
+            try:
+                data_dir.chmod(0o775)
+            except:
+                pass
             print(f"Tried to create {data_dir.absolute().as_posix()}")
             data_dir.chmod(0o775)
             print(f"Tried to change permissions to 775")

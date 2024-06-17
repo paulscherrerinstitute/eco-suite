@@ -1,7 +1,7 @@
 from eco.loptics.position_monitors import CameraPositionMonitor
 from ..elements.assembly import Assembly
 from functools import partial
-from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
+from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord, ThorlabsPiezoRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
@@ -297,6 +297,28 @@ class LaserBernina(Assembly):
         self._append(
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
+        try:
+            self.motor_configuration_thorlabs = {
+
+                "waveplate_lambda_half": {
+                    "pvname": "SLAAR21-LMOT-ELL3",
+                },
+                "waveplate_lambda_fourth": {
+                    "pvname": "SLAAR21-LMOT-ELL4",
+                },
+            }
+
+                
+            ### thorlabs piezo motors ###
+            for name, config in self.motor_configuration_thorlabs.items():
+                self._append(
+                    ThorlabsPiezoRecord,
+                    pvname=config["pvname"],
+                    name=name,
+                    is_setting=True,
+                )
+        except Exception as e:
+            print(e)
 
 
         ######## Implementation segmented ND filter wheel in rotation stage #########

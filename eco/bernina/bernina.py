@@ -25,7 +25,7 @@ from ..aliases import NamespaceCollection
 import pyttsx3
 
 from ..utilities.path_alias import PathAlias
-import sys, os
+import sys, os, shutil
 import numpy as np
 from IPython import get_ipython
 
@@ -50,9 +50,13 @@ namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernin
 namespace.append_obj(
     "RunData",
     config_bernina.pgroup,
-    name='runs',
-    load_kwargs = {'checknstore_parsing_result': '/sf/bernina/data/{pgroup}/res', 'load_dap_data':True, 'lazyEscArrays':True},
-    module_name='eco.acquisition.scan_data',
+    name="runs",
+    load_kwargs={
+        "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/res",
+        "load_dap_data": True,
+        "lazyEscArrays": True,
+    },
+    module_name="eco.acquisition.scan_data",
 )
 
 namespace.append_obj(
@@ -111,7 +115,7 @@ namespace.append_obj(
     add_to_cnf=True,
     lazy=True,
 )
-eco.defaults.ARCHIVER=archiver
+eco.defaults.ARCHIVER = archiver
 
 namespace.append_obj(
     "get_strip_chart_function",
@@ -726,7 +730,7 @@ namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
     pvname_mirror="SARES23-LIC:MOT_11",
-    andor_spectrometer='SLAAR11-LSPC-ALCOR1',
+    andor_spectrometer="SLAAR11-LSPC-ALCOR1",
     name="tt_kb",
     lazy=True,
 )
@@ -982,7 +986,7 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_robots",
     name="rob",
     pshell_url="http://PC14742:8080/",
-    robot_config = config_bernina.robot_config,
+    robot_config=config_bernina.robot_config,
     pgroup_adj=config_bernina.pgroup,
     jf_config=config_JFs,
     lazy=True,
@@ -1066,15 +1070,15 @@ namespace.append_obj(
 )
 
 
-# namespace.append_obj(
-#     "Jungfrau",
-#     "JF03T01V02",
-#     name="det_i0",
-#     pgroup_adj=config_bernina.pgroup,
-#     module_name="eco.detector.jungfrau",
-#     config_adj=config_JFs,
-#     lazy=True,
-# )
+namespace.append_obj(
+    "Jungfrau",
+    "JF01T03V01",
+    name="_det_diff",
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector.jungfrau",
+    config_adj=config_JFs,
+    lazy=True,
+)
 
 namespace.append_obj(
     "Jungfrau",
@@ -1162,11 +1166,11 @@ namespace.append_obj(
 
 ### draft new epics daq ###
 namespace.append_obj(
-   "EpicsDaq",
-   channel_list=channels_CA_epicsdaq,
-   name="daq_epics_local",
-   module_name="eco.acquisition.epics_data",
-   lazy=True,
+    "EpicsDaq",
+    channel_list=channels_CA_epicsdaq,
+    name="daq_epics_local",
+    module_name="eco.acquisition.epics_data",
+    lazy=True,
 )
 ### old epics daq ###
 # namespace.append_obj(
@@ -1185,16 +1189,16 @@ namespace.append_obj(
 # )
 
 namespace.append_obj(
-   "Scans",
-   name="scans_epics",
-   module_name="eco.acquisition.scan",
-   data_base_dir=f"{config_bernina.pgroup()}/scan_data",
-   scan_info_dir=f"{daq_epics_local.default_file_path()}/{config_bernina.pgroup()}/scan_info",
-   default_counters=[daq_epics_local],
-   checker=None,
-   scan_directories=True,
-   run_table=None,
-   lazy=True,
+    "Scans",
+    name="scans_epics",
+    module_name="eco.acquisition.scan",
+    data_base_dir=f"{config_bernina.pgroup()}/scan_data",
+    scan_info_dir=f"{daq_epics_local.default_file_path()}/{config_bernina.pgroup()}/scan_info",
+    default_counters=[daq_epics_local],
+    checker=None,
+    scan_directories=True,
+    run_table=None,
+    lazy=True,
 )
 #
 #
@@ -1211,7 +1215,7 @@ namespace.append_obj(
     pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
     event_master=event_master,
     detectors_event_code=50,
-    rate_multiplicator='auto',
+    rate_multiplicator="auto",
     name="daq",
     module_name="eco.acquisition.daq_client",
     lazy=True,
@@ -1275,12 +1279,20 @@ def _write_namespace_status_to_scan(
         scan.status["status_run_end"] = namespace_status
     if (not end_scan) and not (len(scan.values_done) == 1):
         return
-    runno = daq.get_last_run_number()
+    if hasattr(scan,'daq_run_number'):
+        runno = scan.daq_run_number
+    else:
+        runno = daq.get_last_run_number()
     pgroup = daq.pgroup
     tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/stat_run{runno:04d}")
     tmpdir.mkdir(exist_ok=True, parents=True)
+    try:
+        tmpdir.chmod(0o775)
+    except:
+        pass
+
     statusfile = tmpdir / Path("status.json")
-    if not Path(statusfile).exists():
+    if not statusfile.exists():
         with open(statusfile, "w") as f:
             json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
     else:
@@ -1288,6 +1300,8 @@ def _write_namespace_status_to_scan(
             f.seek(0)
             json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
             f.truncate()
+    if not statusfile.group() == statusfile.parent.group():
+        shutil.chown(statusfile, group=statusfile.parent.group())
     response = daq.append_aux(
         statusfile.resolve().as_posix(),
         pgroup=pgroup,
@@ -1302,10 +1316,17 @@ def _write_namespace_status_to_scan(
 def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
     if force or (len(scan.values_done) == 1):
         namespace_aliases = namespace.alias.get_all()
-        runno = daq.get_last_run_number()
+        if hasattr(scan,'daq_run_number'):
+            runno = scan.daq_run_number
+        else:
+            runno = daq.get_last_run_number()
         pgroup = daq.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/aliases_run{runno:04d}")
         tmpdir.mkdir(exist_ok=True, parents=True)
+        try:
+            tmpdir.chmod(0o775)
+        except:
+            pass
         aliasfile = tmpdir / Path("aliases.json")
         if not Path(aliasfile).exists():
             with open(aliasfile, "w") as f:
@@ -1319,6 +1340,8 @@ def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
                     namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
                 )
                 f.truncate()
+        if not aliasfile.group() == aliasfile.parent.group():
+            shutil.chown(aliasfile, group=aliasfile.parent.group())
 
         scan.remaining_tasks.append(
             Thread(
@@ -1395,10 +1418,17 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
     si["scan_files"] = newfiles
 
     # save temprary file and send then to raw
-    runno = daq.get_last_run_number()
+    if hasattr(scan,'daq_run_number'):
+        runno = scan.daq_run_number
+    else:
+        runno = daq.get_last_run_number()
     pgroup = daq.pgroup
     tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/info_run{runno:04d}")
     tmpdir.mkdir(exist_ok=True, parents=True)
+    try:
+        tmpdir.chmod(0o775)
+    except:
+        pass
     scaninfofile = tmpdir / Path("scan_info_rel.json")
     if not Path(scaninfofile).exists():
         with open(scaninfofile, "w") as f:
@@ -1408,7 +1438,8 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
             f.seek(0)
             json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
             f.truncate()
-
+    if not scaninfofile.group() == scaninfofile.parent.group():
+        shutil.chown(scaninfofile, group=scaninfofile.parent.group())
     # print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
 
     scan.remaining_tasks.append(
@@ -1432,8 +1463,12 @@ from eco.detector import Jungfrau
 def _copy_selected_JF_pedestals_to_raw(
     scan, daq=daq, copy_selected_JF_pedestals_to_raw=True, **kwargs
 ):
-    def copy_to_aux(daq):
-        runno = daq.get_last_run_number()
+    def copy_to_aux(daq,scan):
+        if hasattr(scan,'daq_run_number'):
+            runno = scan.daq_run_number
+        else:
+            runno = daq.get_last_run_number()
+        
         pgroup = daq.pgroup
 
         for jf_id in daq.channels["channels_JF"]():
@@ -1463,7 +1498,7 @@ def _copy_selected_JF_pedestals_to_raw(
             )
 
     if copy_selected_JF_pedestals_to_raw:
-        scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq]))
+        scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq,scan]))
         scan.remaining_tasks[-1].start()
 
 
@@ -1485,6 +1520,8 @@ def _increment_daq_run_number(scan, daq=daq, **kwargs):
                 for i in range(n):
                     rn = daq.get_next_run_number()
                     print(rn)
+        scan.daq_run_number = daq_run_number
+        
     except Exception as e:
         print(e)
 
@@ -1568,10 +1605,17 @@ def end_scan_monitors(scan, daq=daq, **kwargs):
     from os.path import relpath
 
     # save temprary file and send then to raw
-    runno = daq.get_last_run_number()
+    if hasattr(scan,'daq_run_number'):
+        runno = scan.daq_run_number
+    else:
+        runno = daq.get_last_run_number()
     pgroup = daq.pgroup
     tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/info_run{runno:04d}")
     tmpdir.mkdir(exist_ok=True, parents=True)
+    try:
+        tmpdir.chmod(0o775)
+    except:
+        pass
     scanmonitorfile = tmpdir / Path("scan_monitor.pkl")
     if not Path(scanmonitorfile).exists():
         with open(scanmonitorfile, "wb") as f:
@@ -1797,11 +1841,11 @@ namespace.append_obj(
 
 # this is the large inline camera
 namespace.append_obj(
-   "BerninaInlineMicroscope",
-   pvname_camera="SARES20-CAMS142-M3",
-   lazy=True,
-   name="samplecam_inline",
-   module_name="eco.microscopes",
+    "BerninaInlineMicroscope",
+    pvname_camera="SARES20-CAMS142-M3",
+    lazy=True,
+    name="samplecam_inline",
+    module_name="eco.microscopes",
 )
 
 # namespace.append_obj(
@@ -1841,22 +1885,22 @@ namespace.append_obj(
 #     lazy=True,
 # )
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    "MicroscopeFeturaPlus",
 #    "SARES20-PROF142-M1",
 #    lazy=True,
 #    name="samplecam_highres",
 #    module_name="eco.microscopes",
-#)
+# )
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    "MicroscopeMotorRecord",
 #    "SARES20-CAMS142-C1",
 #    lazy=True,
 #    pvname_zoom="SARES20-MF1:MOT_7",
 #    name="samplecam_topview",
 #    module_name="eco.microscopes",
-#)
+# )
 
 namespace.append_obj(
     "CameraBasler",
@@ -2643,7 +2687,11 @@ try:
             f"/sf/bernina/data/{config_bernina.pgroup()}/res/eco"
         )
         pgroup_eco_path.mkdir(mode=0o775, exist_ok=True)
-        pgroup_eco_path.chmod(mode=0o775)
+        try:
+            pgroup_eco_path.chmod(mode=0o775)
+        except:
+            pass
+
         sys.path.append(pgroup_eco_path.as_posix())
     else:
         print(
@@ -2679,26 +2727,26 @@ namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 
 ############## BIG JJ SLIT #####################
 namespace.append_obj(
-   "SlitBladesGeneral",
-   name="slit_cleanup_air",
-   def_blade_up={
-       "args": [MotorRecord, "SARES20-MF1:MOT_10"],
-       "kwargs": {"is_psi_mforce": True},
-   },
-   def_blade_down={
-       "args": [MotorRecord, "SARES20-MF1:MOT_9"],
-       "kwargs": {"is_psi_mforce": True},
-   },
-   def_blade_left={
-       "args": [MotorRecord, "SARES20-MF1:MOT_12"],
-       "kwargs": {"is_psi_mforce": True},
-   },
-   def_blade_right={
-       "args": [MotorRecord, "SARES20-MF1:MOT_11"],
-       "kwargs": {"is_psi_mforce": True},
-   },
-   module_name="eco.xoptics.slits",
-   lazy=True,
+    "SlitBladesGeneral",
+    name="slit_cleanup_air",
+    def_blade_up={
+        "args": [MotorRecord, "SARES20-MF1:MOT_10"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    def_blade_down={
+        "args": [MotorRecord, "SARES20-MF1:MOT_9"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    def_blade_left={
+        "args": [MotorRecord, "SARES20-MF1:MOT_12"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    def_blade_right={
+        "args": [MotorRecord, "SARES20-MF1:MOT_11"],
+        "kwargs": {"is_psi_mforce": True},
+    },
+    module_name="eco.xoptics.slits",
+    lazy=True,
 )
 
 ############## SMALL JJ SLIT #####################
@@ -2760,10 +2808,10 @@ class IlluminatorsLasers(Assembly):
     def __init__(self, name="sample_illumination"):
         super().__init__(name=name)
         self._append(
-           MpodChannel,
-           pvbase="SARES21-CPCL-PS7071",
-           channel_number=5,
-           name="illumination_inline",
+            MpodChannel,
+            pvbase="SARES21-CPCL-PS7071",
+            channel_number=5,
+            name="illumination_inline",
         )
         self._append(
             MpodChannel,
@@ -2771,18 +2819,18 @@ class IlluminatorsLasers(Assembly):
             channel_number=2,
             name="illumination_side",
         )
-        #self._append(
+        # self._append(
         #    MpodChannel,
         #    pvbase="SARES21-CPCL-PS7071",
         #    channel_number=6,
         #    name="illumination_top",
-        #)
-        #self._append(
+        # )
+        # self._append(
         #    MpodChannel,
         #    pvbase="SARES21-CPCL-PS7071",
         #    channel_number=4,
         #    name="flattening_laser",
-        #)
+        # )
 
 
 namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
@@ -2861,9 +2909,8 @@ class Tapedrive(Assembly):
         self._append(SmaractRecord, "SARES23-USR:MOT_12", name="freespace_ver")
         self._append(SmaractRecord, "SARES23-USR:MOT_13", name="freespace_hor")
 
-        self._append(MotorRecord, "SARES20-MF1:MOT_13",name='x_target_totem')
-        self._append(MotorRecord, "SARES20-MF1:MOT_14",name='y_target_totem')
-
+        self._append(MotorRecord, "SARES20-MF1:MOT_13", name="x_target_totem")
+        self._append(MotorRecord, "SARES20-MF1:MOT_14", name="y_target_totem")
 
         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC01", name="shutter1")
         self._append(AnalogOutput, "SARES20-CWAG-GPS01:DAC02", name="shutter2")
@@ -2925,21 +2972,22 @@ class Tapedrive(Assembly):
             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH2", name="diode_2"
         )
 
-
         self._append(
             AdjustableFS,
             "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
             name="mono_und_calib",
-            default_value=[[6500,0],[7100,0]],
+            default_value=[[6500, 0], [7100, 0]],
             is_setting=True,
         )
 
         def en_set(en):
             ofs = np.array(self.mono_und_calib()).T
-            fel_ofs = ofs[1][np.argmin(abs(ofs[0]-en))]
-            return en , en/1000 - fel_ofs
+            fel_ofs = ofs[1][np.argmin(abs(ofs[0] - en))]
+            return en, en / 1000 - fel_ofs
+
         def en_get(monoen, felen):
             return monoen
+
         self._append(
             AdjustableVirtual,
             [mono, fel.aramis_photon_energy_undulators],
@@ -2947,10 +2995,15 @@ class Tapedrive(Assembly):
             en_set,
             name="mono_und_energy",
         )
+
     def add_mono_und_calibration(self):
         mono_energy = mono.get_current_value()
-        fel_offset = mono.get_current_value() /1000 - fel.aramis_photon_energy_undulators.get_current_value()
-        self.mono_und_calib.mvr([[mono_energy,fel_offset]])
+        fel_offset = (
+            mono.get_current_value() / 1000
+            - fel.aramis_photon_energy_undulators.get_current_value()
+        )
+        self.mono_und_calib.mvr([[mono_energy, fel_offset]])
+
 
 # namespace.append_obj(Tapedrive, name="tapedrive", lazy=True)
 
@@ -3068,17 +3121,18 @@ def name2pgroups(name, beamline="bernina"):
     return eq + ni
 
 
-
-
 def timetool_data_monitor(warning_threshold=1000, loopsleep=5):
     dir(bs_worker)
     tt_kb.spectrum_signal.stream.accumulate(do_accumulate=True)
-    print('Monitoring timetool data ...')
+    print("Monitoring timetool data ...")
 
     while True:
 
-        eid_diff= int(event_system.pulse_id.get_current_value() - tt_kb.spectrum_signal.stream.eventIds[-1][-1])
-        if eid_diff> warning_threshold:
+        eid_diff = int(
+            event_system.pulse_id.get_current_value()
+            - tt_kb.spectrum_signal.stream.eventIds[-1][-1]
+        )
+        if eid_diff > warning_threshold:
             message = f"Last timetool data {eid_diff} pulses ago!"
             print(message)
             try:
@@ -3089,4 +3143,3 @@ def timetool_data_monitor(warning_threshold=1000, loopsleep=5):
             except:
                 pass
         time.sleep(loopsleep)
-

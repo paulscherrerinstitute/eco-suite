@@ -49,6 +49,7 @@ class BerninaEnvironment(Assembly):
         for pvbase,channelnumbers,tnames in zip(pvbases,channels,channelnames):
             for n,tname in zip(channelnumbers,tnames):
                 self._append(I2cChannel,pvbase,channelnumber=n,name=tname)
+        self._append(DetectorPvData,"IKA-GAMA:Luft_SF", unit='%', name='he_recovery_air_content')
 
 
 class WagoSensor(Assembly):

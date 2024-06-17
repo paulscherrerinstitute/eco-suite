@@ -1,3 +1,4 @@
+import shutil
 import time
 import requests
 from pathlib import Path
@@ -63,15 +64,18 @@ class Daq(Assembly):
         self._detectors_event_code = detectors_event_code
         self.name = name
         self._default_file_path = None
-        if not rate_multiplicator=='auto':
-            print('warning: rate multiplicator automatically determined from event_master!')
-            
-        
+        if not rate_multiplicator == "auto":
+            print(
+                "warning: rate multiplicator automatically determined from event_master!"
+            )
+
     @property
     def rate_multiplicator(self):
-        freq = self._event_master.__dict__[f'code{self._detectors_event_code:03d}'].frequency.get_current_value()
-        return int(100/freq)
-    
+        freq = self._event_master.__dict__[
+            f"code{self._detectors_event_code:03d}"
+        ].frequency.get_current_value()
+        return int(100 / freq)
+
     @property
     def pgroup(self):
         if isinstance(self._pgroup, Adjustable):
@@ -121,8 +125,8 @@ class Daq(Assembly):
 
     def start(self, label=None, **kwargs):
         starttime_local = time.time()
-        while self.pulse_id._pv.get_timevars()['timestamp'] < starttime_local:
-            time.sleep(.02)
+        while self.pulse_id._pv.get_timevars()["timestamp"] < starttime_local:
+            time.sleep(0.02)
         start_id = self.pulse_id.get_current_value(use_monitor=False)
         acq_pars = {
             "label": label,
@@ -266,7 +270,9 @@ class Daq(Assembly):
             f"{self.broker_address}/power_on_detector", json=par
         ).json()
 
-    def take_pedestal(self, JF_list=None, pgroup=None):
+    def take_pedestal(
+        self, JF_list=None, pedestalmode=False, pgroup=None, verbose=False
+    ):
         if pgroup is None:
             pgroup = self.pgroup
         if not JF_list:
@@ -275,16 +281,25 @@ class Daq(Assembly):
             "pgroup": pgroup,
             "rate_multiplicator": 1,
             "detectors": {tJF: {} for tJF in JF_list},
+            "pedestalmode": pedestalmode,
         }
+        if verbose:
+            print(self.broker_address)
+            print(parameters)
+
         return requests.post(
             f"{self.broker_address}/take_pedestal", json=parameters
         ).json()
 
-    def append_aux(self, *file_names, run_number=None, pgroup=None):
+    def append_aux(self, *file_names, run_number=None, pgroup=None, check_group=True):
         if pgroup is None:
             pgroup = self.pgroup
         if run_number is None:
             run_number = self.get_last_run_number()
+        if check_group:
+            for file_name in file_names:
+                if not Path(file_name).group() == pgroup:
+                    shutil.chown(file_name, group=pgroup)
 
         return requests.post(
             self.broker_address_aux + "/copy_user_files",
