@@ -56,7 +56,9 @@ class Jungfrau(Assembly):
         )
         for n in range(10):
             self._append(
-                JungfrauChannel, jf_id + f"_dap_col{n}", name=f"data_online_processing_roi{n}",
+                JungfrauChannel,
+                jf_id + f"_dap_col{n+4}",
+                name=f"data_online_processing_roi{n}",
                 is_display=False,
             )
         self._append(
@@ -215,7 +217,7 @@ class Jungfrau(Assembly):
             return f"aux/{dest.name}"
 
     def get_dap_settings(self):
-        if 5 < (time.time()-self._last_dap_req_time):
+        if 5 < (time.time() - self._last_dap_req_time):
             self._last_dap_message = requests.get(
                 f"{self.broker_address_aux}/get_dap_settings",
                 json={"detector_name": self.jf_id},
