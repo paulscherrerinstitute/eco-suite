@@ -11,6 +11,7 @@ from .motors import MotorRecord
 import sys
 from pathlib import Path
 import time
+import cachebox
 
 sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
 import bufferutils
@@ -39,20 +40,40 @@ class Pipeline(Assembly):
         super().__init__(name=name)
         self.pipeline_name = pipeline_name
         self.camserver_group = camserver_group
-        self._append(AdjustableGetSet, 
-                     self._get_config, 
-                     self._set_config, 
-                     cache_get_seconds =.05, 
-                     precision=0, 
-                     check_interval=None, 
-                     name='_config', 
-                     is_setting=False, 
-                     is_display=False)
-        
-        self._append(AdjustableObject, self._config, name='config',is_setting=True, is_display='recursive')
-        self._append(DetectorGet, self._get_info, cache_get_seconds =.05, name='_info', is_setting=False, is_display=False)
-        self._append(DetectorObject, self._info, name='info', is_display='recursive', is_setting=False)
-        
+        self._append(
+            AdjustableGetSet,
+            self._get_config,
+            self._set_config,
+            cache_get_seconds=0.05,
+            precision=0,
+            check_interval=None,
+            name="_config",
+            is_setting=False,
+            is_display=False,
+        )
+
+        self._append(
+            AdjustableObject,
+            self._config,
+            name="config",
+            is_setting=True,
+            is_display="recursive",
+        )
+        self._append(
+            DetectorGet,
+            self._get_info,
+            cache_get_seconds=0.05,
+            name="_info",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            DetectorObject,
+            self._info,
+            name="info",
+            is_display="recursive",
+            is_setting=False,
+        )
 
     # @property
     # def cc(self):
@@ -62,6 +83,7 @@ class Pipeline(Assembly):
     def pc(self):
         return get_pipelineclient()
 
+    @cachebox.cached(cachebox.TTLCache(maxsize=0, ttl=1))
     def _get_config(self):
         return self.pc.get_instance_config(self.pipeline_name)
 
@@ -72,16 +94,14 @@ class Pipeline(Assembly):
             hold=hold,
         )
 
-    def _get_info(self, reject_kws = ['config']):
+    def _get_info(self, reject_kws=["config"]):
         info = self.pc.get_instance_info(self.pipeline_name)
         for rkw in reject_kws:
             info.pop(rkw)
         return info
-    
+
     def _get_stream(self):
         return self.pc.get_instance_stream(self.pipeline_name)
-
-    
 
     # ### convenience functions ###
     # def set_alias(self, alias=None):
@@ -176,4 +196,3 @@ class Pipeline(Assembly):
     #     for key, item in self.get_current_value().items():
     #         s += f"{key:20} : {item}\n"
     #     return s
-

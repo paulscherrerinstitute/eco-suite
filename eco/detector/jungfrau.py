@@ -54,6 +54,11 @@ class Jungfrau(Assembly):
         self._append(
             JungfrauChannel, jf_id + "_dap_col4", name="data_online_processing"
         )
+        for n in range(10):
+            self._append(
+                JungfrauChannel, jf_id + f"_dap_col{n}", name=f"data_online_processing_roi{n}",
+                is_display=False,
+            )
         self._append(
             JungfrauChannel, jf_id + "_dap_col3", name="ppref_online_processing"
         )

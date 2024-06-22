@@ -468,6 +468,11 @@ class PshellMotor(Assembly):
             name="unit",
             is_setting=True,
         )
+        self._append(
+            DetectorGet,
+            self.get_current_value,
+            name='readback',
+        )
         self._cb = None
 
     def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=240):
@@ -599,20 +604,22 @@ class AdjustablePiHex(AdjustablePv):
 
 @spec_convenience
 @update_changes
-@get_from_archive
+# @get_from_archive
 @value_property
+@tweak_option
 class ThorlabsPiezoRecord(Assembly):
-    def __init__(self, pvname=None, accuracy=0.1, unit=None, name=None):
+    def __init__(self, pvname=None, accuracy=0.2, unit=None, name=None):
         super().__init__(name=name)
         self.pvname=pvname
         self._cb = None
+        
         self._append(
             AdjustablePv,
             self.pvname + ":DRIVE",
             pvreadbackname=self.pvname+":MOTRBV",
             accuracy = accuracy,
             unit=unit,
-            name="pos",
+            name="position",
             is_setting=True,
             is_display=True,
         )
@@ -621,16 +628,14 @@ class ThorlabsPiezoRecord(Assembly):
             self.pvname+":HLM",
             name="limit_high",
             is_setting=True,
-            is_status=False,
-            is_display=False,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
             self.pvname+":LLM",
             name="limit_low",
             is_setting=True,
-            is_status=False,
-            is_display=False,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
@@ -656,6 +661,18 @@ class ThorlabsPiezoRecord(Assembly):
             is_status=False,
             is_display=False,
         )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":OFFS",
+            name="offset",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":DIRN",
+            name="direction",
+            is_setting=True,
+        )
     def stop(self):
         self._stop_pv(1)
 
@@ -671,31 +688,22 @@ class ThorlabsPiezoRecord(Assembly):
                     raise Exception(
                         f"Target value of {self.name} is higher than limit value!"
                     )
-        self.pos(value)
-        if wait:
-            time.sleep(0.02)
-            while self.pos.get_change_done() == 0:
-                time.sleep(0.02)
+        return self.position.set_target_value(value)
+        
 
     def get_limits(self):
         return (self.limit_low(), self.limit_high())
 
     def set_limits(self, limit_low, limit_high):
-        self.limit_low(limit_low)
-        self.limit_high(limit_high)
+        self.limit_low.set_target_value(limit_low).wait()
+        self.limit_high.set_target_value(limit_high).wait()
 
     def get_current_value(self):
-        return self.pos()
+        return self.position.get_current_value(readback=True)
 
-    def set_target_value(self, value, hold=False, check=True):
-        changer = lambda value: self.move(value, check=check, wait=True)
-        return Changer(
-            target=value,
-            parent=self,
-            changer=changer,
-            hold=hold,
-            stopper=self.stop,
-        )
+    def set_target_value(self, value, hold=False, check=True, **kwargs):
+        return self.move(value, check=check, **kwargs)
+        
     # return string with motor value as variable representation
     def __str__(self):
         # """ return short info for the current motor"""

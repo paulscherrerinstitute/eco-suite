@@ -9,6 +9,7 @@ from numpy import isin
 import numpy as np
 
 
+from eco.acquisition.scan_data import run_status_convenience
 from eco.elements.protocols import Detector, InitialisationWaitable
 from eco.epics import get_from_archive
 
@@ -72,6 +73,7 @@ class Collection:
     # def __repr__(self):
     #     return f'{{id(self)}'
 
+
 class NumpyEncoder(json.JSONEncoder):
     """Special json encoder for numpy types"""
 
@@ -86,6 +88,7 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 @get_from_archive
+@run_status_convenience
 class Assembly:
     def __init__(self, name=None, parent=None, is_alias=True, elog=None):
         self.name = name
@@ -160,7 +163,13 @@ class Assembly:
             self.view_toplevel_only.append(self.__dict__[name])
 
     def get_status(
-        self, base="self", verbose=True, print_times=False, channeltypes=None,print_name=False):
+        self,
+        base="self",
+        verbose=True,
+        print_times=False,
+        channeltypes=None,
+        print_name=False,
+    ):
         if base == "self":
             base = self
         settings = {}
@@ -171,37 +180,6 @@ class Assembly:
         status_times = {}
         nodet = []
         geterror = []
-        for ts in track(
-            self.settings_collection.get_list(),
-            transient=True,
-            description="Reading settings ...",
-        ):
-            
-            if print_name:
-                print(ts.name)
-            # if (not (ts is self)) and hasattr(ts, "get_status"):
-            #     tstat = ts.get_status(base=base)
-            #     settings.update(tstat["settings"])
-            #     status_indicators.update(tstat["status_indicators"])
-            # else:
-            if hasattr(ts, "get_current_value"):
-                tstart = time.time()
-                try:
-                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                        settings[
-                            ts.alias.get_full_name(base=base)
-                        ] = ts.get_current_value()
-                        try:
-                            settings_channels[
-                                ts.alias.get_full_name(base=base)
-                            ] = ts.alias.channel
-                        except:
-                            pass
-                except:
-                    geterror.append(ts.alias.get_full_name(base=base))
-                settings_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
-            else:
-                nodet.append(ts.alias.get_full_name(base=base))
 
         #  with ThreadPoolExecutor(max_workers=max_workers) as exc:
         #         list(
@@ -226,13 +204,13 @@ class Assembly:
             if hasattr(ts, "get_current_value"):
                 try:
                     if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                        status[
-                            ts.alias.get_full_name(base=base)
-                        ] = ts.get_current_value()
+                        status[ts.alias.get_full_name(base=base)] = (
+                            ts.get_current_value()
+                        )
                         try:
-                            status_channels[
-                                ts.alias.get_full_name(base=base)
-                            ] = ts.alias.channel
+                            status_channels[ts.alias.get_full_name(base=base)] = (
+                                ts.alias.channel
+                            )
                         except:
                             pass
                 except:
@@ -267,13 +245,13 @@ class Assembly:
                 tstart = time.time()
                 try:
                     if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                        status[
-                            ts.alias.get_full_name(base=base)
-                        ] = ts.get_current_value()
+                        status[ts.alias.get_full_name(base=base)] = (
+                            ts.get_current_value()
+                        )
                         try:
-                            status_channels[
-                                ts.alias.get_full_name(base=base)
-                            ] = ts.alias.channel
+                            status_channels[ts.alias.get_full_name(base=base)] = (
+                                ts.alias.channel
+                            )
                         except:
                             pass
                 except:
@@ -281,6 +259,39 @@ class Assembly:
                 status_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
+
+        for ts in track(
+            self.settings_collection.get_list(),
+            transient=True,
+            description="Reading settings ...",
+        ):
+
+            if print_name:
+                print(ts.name)
+            # if (not (ts is self)) and hasattr(ts, "get_status"):
+            #     tstat = ts.get_status(base=base)
+            #     settings.update(tstat["settings"])
+            #     status_indicators.update(tstat["status_indicators"])
+            # else:
+            if hasattr(ts, "get_current_value"):
+                tstart = time.time()
+                try:
+                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
+                        settings[ts.alias.get_full_name(base=base)] = (
+                            ts.get_current_value()
+                        )
+                        try:
+                            settings_channels[ts.alias.get_full_name(base=base)] = (
+                                ts.alias.channel
+                            )
+                        except:
+                            pass
+                except:
+                    geterror.append(ts.alias.get_full_name(base=base))
+                settings_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
+            else:
+                nodet.append(ts.alias.get_full_name(base=base))
+
         if verbose:
             if nodet:
                 print("Could not retrieve status from: " + ", ".join(nodet))
@@ -342,7 +353,9 @@ class Assembly:
         s = tabulate([[name, value] for name, value in stat_filt[stat_field].items()])
         return s
 
-    def get_display_str(self, tablefmt="simple", maxcolwidths=[None, 50, None, None, None]):
+    def get_display_str(
+        self, tablefmt="simple", maxcolwidths=[None, 50, None, None, None]
+    ):
         main_name = self.name
         stats = self.display_collection()
         # stats_dict = {}
@@ -371,21 +384,21 @@ class Assembly:
             try:
                 unit = to.unit.get_current_value()
             except:
-                unit = ''
+                unit = ""
             try:
                 description = to.description.get_current_value()
             except:
-                description = ''
+                description = ""
 
             if value is None:
-                value=''
+                value = ""
             tab.append(
                 [".".join([main_name, name]), value, unit, typechar, description]
             )
         if tab:
             s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
         else:
-            s=''
+            s = ""
 
         return s
 
@@ -417,7 +430,7 @@ class Assembly:
             )
             with open(filepath, "w") as f:
                 # json.dump(stat, f, cls=NumpyEncoder, indent=4)
-                json.dump(stat, f, indent=4,cls=NumpyEncoder)
+                json.dump(stat, f, indent=4, cls=NumpyEncoder)
             files.append(filepath)
 
         elog.post(
@@ -562,9 +575,9 @@ class Assembly_old:
                 status_indicators.update(tstat["settings"])
                 status_indicators.update(tstat["status_indicators"])
             else:
-                status_indicators[
-                    ts.alias.get_full_name(base=base)
-                ] = ts.get_current_value()
+                status_indicators[ts.alias.get_full_name(base=base)] = (
+                    ts.get_current_value()
+                )
         return {"settings": settings, "status_indicators": status_indicators}
 
     def status(self, get_string=False):

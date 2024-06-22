@@ -22,6 +22,7 @@ from enum import IntEnum
 from eco.aliases import Alias
 
 from functools import partial
+import cachebox
 
 # for python 3.8
 # from typing import Protocol
@@ -127,14 +128,20 @@ def spec_convenience(Adj):
         tname = self.alias.get_full_name()
         start = self.get_current_value()
         end = value
-        rel_change = end - start
+        rel_str = ""
+        try:
+            rel_change = end - start
+            rel_str = f"by {rel_change} "
+        except:
+            pass
+
         if premessage:
             messages = [
                 premessage,
-                f"Changing {tname} from {start} by {rel_change} to {end}.",
+                f"Changing {tname} from {start} {rel_str} to {end}.",
             ]
         else:
-            messages = [f"Changing {tname} from {start} by {rel_change} to {end}."]
+            messages = [f"Changing {tname} from {start} {rel_str} to {end}."]
         self.mv(value)
         elog.post(*messages, tags=tags)
 
@@ -457,11 +464,14 @@ def default_representation(Obj):
     return Obj
 
 
+ADJUSTABLEFS_MAX_READ_PERIOD = 0.2
+
+
 @default_representation
 @spec_convenience
 @value_property
 class AdjustableFS:
-    def __init__(self, file_path, name=None, default_value=None):
+    def __init__(self, file_path, name=None, default_value=None, max_read_period=0.2):
         self.file_path = Path(file_path)
         if not self.file_path.exists():
             if not self.file_path.parent.exists():
@@ -472,12 +482,25 @@ class AdjustableFS:
                     pass
             self._write_value(default_value)
         self.alias = Alias(name)
+        self.max_read_period = max_read_period
         self.name = name
 
     def get_current_value(self):
+        return self._read_value()
+
+    # @cache_file_access
+    @cachebox.cached(cachebox.TTLCache(maxsize=0, ttl=ADJUSTABLEFS_MAX_READ_PERIOD))
+    def _read_value(self):
         with open(self.file_path, "r") as f:
             res = load(f)
         return res["value"]
+
+    def _cache_file_access(self, foo):
+        @cachebox.cached(cachebox.TTLCache(maxsize=0, ttl=self.max_read_period))
+        def wrapper(*args, **kwargs):
+            return foo(*args, **kwargs)
+
+        return wrapper
 
     def _write_value(self, value):
         with open(self.file_path, "w") as f:

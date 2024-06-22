@@ -10,6 +10,7 @@ from epics import PV
 from ..acquisition.utilities import Acquisition
 from ..elements.assembly import Assembly
 from ..utilities.path_alias import PathAlias
+import inputimeout
 
 
 class Daq(Assembly):
@@ -68,6 +69,7 @@ class Daq(Assembly):
             print(
                 "warning: rate multiplicator automatically determined from event_master!"
             )
+        self.callbacks_start_scan = [self.check_counters]
 
     @property
     def rate_multiplicator(self):
@@ -85,10 +87,7 @@ class Daq(Assembly):
 
     @pgroup.setter
     def pgroup(self, value):
-        if isinstance(self._pgroup, Adjustable):
-            self._pgroup.set_target_value(value).wait()
-        else:
-            self._pgroup = value
+        self._pgroup = value
 
     def acquire(self, file_name=None, Npulses=100, acq_pars={}):
         print(acq_pars)
@@ -306,6 +305,22 @@ class Daq(Assembly):
             json={"pgroup": pgroup, "run_number": run_number, "files": file_names},
         )
 
+    def check_counters(self, channels_to_check = ['channels_BSCAM', 'channels_JF'], timeout=3):
+        if not set(self.channels.keys()).intersection(set(channels_to_check)):
+            return
+        print("FYI, selected channels are")
+        for nam,chs in self.channels.items():
+            if nam in channels_to_check:
+                print(f'{nam}  :  {chs.get_current_value()}')
+        try: 
+            o = inputimeout.inputimeout(prompt=f'Press Ctrl-c to abort, Return to continue, or wait {timeout} seconds',timeout=timeout)
+        except inputimeout.TimeoutOccurred:
+            print('... timed out, continuing with selection.')
+        except KeyboardInterrupt:
+            raise Exception('User-requested cancelling!')
+        else: 
+            if o=='c':
+                raise Exception('User-requested cancelling!')
 
 #     def get_dap_settings(detector_name):
 #     dap_parameters = {}

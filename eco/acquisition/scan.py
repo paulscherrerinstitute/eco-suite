@@ -125,6 +125,10 @@ class Scan:
         if callbacks_start_scan:
             for caller in callbacks_start_scan:
                 caller(self, **self.callbacks_kwargs)
+        for ctr in self.counterCallers:
+            if hasattr(ctr,'callbacks_start_scan') and ctr.callbacks_start_scan:
+                for tcb in ctr.callbacks_start_scan:
+                    tcb()
 
     def get_filename(self, stepNo, Ndigits=4):
         fina = os.path.join(self.basepath, Path(self.fina).stem)

@@ -52,11 +52,22 @@ namespace.append_obj(
     config_bernina.pgroup,
     name="runs",
     load_kwargs={
-        "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/res",
+        # "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/res",
+        "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/scratch",
         "load_dap_data": True,
         "lazyEscArrays": True,
+        "exclude_from_files": ["PVDATA"],
     },
     module_name="eco.acquisition.scan_data",
+)
+
+namespace.append_obj(
+    "StatusData",
+    config_bernina.pgroup,
+    name="run_status",
+    load_kwargs={},
+    module_name="eco.acquisition.scan_data",
+    lazy=False,
 )
 
 namespace.append_obj(
@@ -467,17 +478,19 @@ namespace.append_obj(
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
     "SARFE10-PBPS053",
-    diode_channels_raw={
-        "up": "SARFE10-CVME-PHO6212:Lnk9Ch13-DATA-SUM",
-        "down": "SARFE10-CVME-PHO6212:Lnk9Ch12-DATA-SUM",
-        "left": "SARFE10-CVME-PHO6212:Lnk9Ch14-DATA-SUM",
-        "right": "SARFE10-CVME-PHO6212:Lnk9Ch15-DATA-SUM",
-    },
+    # diode_channels_raw={
+    #     "up": "SARFE10-CVME-PHO6212:Lnk9Ch13-DATA-SUM",
+    #     "down": "SARFE10-CVME-PHO6212:Lnk9Ch12-DATA-SUM",
+    #     "left": "SARFE10-CVME-PHO6212:Lnk9Ch14-DATA-SUM",
+    #     "right": "SARFE10-CVME-PHO6212:Lnk9Ch15-DATA-SUM",
+    # },
     name="mon_und",
     use_calibration=False,
     module_name="eco.xdiagnostics.intensity_monitors",
+    pipeline_computation="SAROP21-PBPS103_proc",
     lazy=True,
 )
+
 
 namespace.append_obj(
     "RefLaser_Aramis",
@@ -1072,16 +1085,6 @@ namespace.append_obj(
 
 namespace.append_obj(
     "Jungfrau",
-    "JF01T03V01",
-    name="_det_diff",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector.jungfrau",
-    config_adj=config_JFs,
-    lazy=True,
-)
-
-namespace.append_obj(
-    "Jungfrau",
     "JF03T01V02",
     name="det_i0",
     pgroup_adj=config_bernina.pgroup,
@@ -1279,7 +1282,7 @@ def _write_namespace_status_to_scan(
         scan.status["status_run_end"] = namespace_status
     if (not end_scan) and not (len(scan.values_done) == 1):
         return
-    if hasattr(scan,'daq_run_number'):
+    if hasattr(scan, "daq_run_number"):
         runno = scan.daq_run_number
     else:
         runno = daq.get_last_run_number()
@@ -1316,7 +1319,7 @@ def _write_namespace_status_to_scan(
 def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
     if force or (len(scan.values_done) == 1):
         namespace_aliases = namespace.alias.get_all()
-        if hasattr(scan,'daq_run_number'):
+        if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
         else:
             runno = daq.get_last_run_number()
@@ -1418,7 +1421,7 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
     si["scan_files"] = newfiles
 
     # save temprary file and send then to raw
-    if hasattr(scan,'daq_run_number'):
+    if hasattr(scan, "daq_run_number"):
         runno = scan.daq_run_number
     else:
         runno = daq.get_last_run_number()
@@ -1463,12 +1466,12 @@ from eco.detector import Jungfrau
 def _copy_selected_JF_pedestals_to_raw(
     scan, daq=daq, copy_selected_JF_pedestals_to_raw=True, **kwargs
 ):
-    def copy_to_aux(daq,scan):
-        if hasattr(scan,'daq_run_number'):
+    def copy_to_aux(daq, scan):
+        if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
         else:
             runno = daq.get_last_run_number()
-        
+
         pgroup = daq.pgroup
 
         for jf_id in daq.channels["channels_JF"]():
@@ -1498,7 +1501,7 @@ def _copy_selected_JF_pedestals_to_raw(
             )
 
     if copy_selected_JF_pedestals_to_raw:
-        scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq,scan]))
+        scan.remaining_tasks.append(Thread(target=copy_to_aux, args=[daq, scan]))
         scan.remaining_tasks[-1].start()
 
 
@@ -1521,7 +1524,7 @@ def _increment_daq_run_number(scan, daq=daq, **kwargs):
                     rn = daq.get_next_run_number()
                     print(rn)
         scan.daq_run_number = daq_run_number
-        
+
     except Exception as e:
         print(e)
 
@@ -1605,7 +1608,7 @@ def end_scan_monitors(scan, daq=daq, **kwargs):
     from os.path import relpath
 
     # save temprary file and send then to raw
-    if hasattr(scan,'daq_run_number'):
+    if hasattr(scan, "daq_run_number"):
         runno = scan.daq_run_number
     else:
         runno = daq.get_last_run_number()
@@ -2657,9 +2660,19 @@ namespace.append_obj(
 from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 
+# namespace.append_obj(
+#     "StageLxtDelay",
+#     las.delay_pump,
+#     las,
+#     lazy=True,
+#     name="lxt",
+#     direction=-1,
+#     module_name="eco.loptics.bernina_laser",
+# )
+
 namespace.append_obj(
     "StageLxtDelay",
-    las.delay_pump,
+    ocb.delay_thz,
     las,
     lazy=True,
     name="lxt",

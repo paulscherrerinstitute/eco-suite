@@ -29,12 +29,11 @@ class PShellClient:
         self.plot_defaults={"format":"png", "width":600, "height":400}
         self.debug = False
     
-    def _get(self, url, stream=False):
+    def _get(self, url, stream=False, timeout=1):
         url=self.url+url
         if self.debug:
             print ("GET " + url)
         return requests.get(url=url, stream=stream)
-        
         
     def _put(self, url, json_data=None):
         url=self.url+url

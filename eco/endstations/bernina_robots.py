@@ -429,7 +429,7 @@ class StaeubliTx200(Assembly):
     def _as_bool(self, s):
         return True if s=='true' else False if s=='false' else None
     
-    def get_eval_result(self, cmd, update_value_time=0.05, timeout=10, background=True):
+    def get_eval_result(self, cmd, update_value_time=0.05, timeout=1, background=True):
         if "info" in self.__dict__.keys():
             if self.info.server_status == "Busy":
                 raise RobotError("The server is busy with a recording motion. To abort it, type: rob.abort_record()")

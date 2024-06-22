@@ -61,6 +61,10 @@ class TimetoolBerninaUSD(Assembly):
             self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
         except Exception as e:
             print(f"Timetool edge finding pipeline initialization failed with: \n{e}")
+        try:
+            self._append(Pipeline,"Bernina_tt_test", name='pipeline_edgefinding_test', is_setting=True)
+        except Exception as e:
+            print(f"Timetool bernina test edge finding pipeline initialization failed with: \n{e}")
         self.spectrometer_camera_channel = spectrometer_camera_channel
         self._append(
             Target_xyz,
@@ -224,33 +228,31 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Andor spectrometer initialization failed with: \n{e}")
             
 
-    def get_calibration_values(self, seconds=5, scan_range=1.5e-12, plot=False):
+    def get_calibration_values(self, seconds=5, scan_range=1e-12, plot=False):
         t0 = self.delay()
-        x = np.linspace(t0-scan_range / 2, t0+scan_range / 2, 25)
+        x = np.linspace(t0-scan_range / 2, t0+scan_range / 2, 20)
         y = []
-        if plot:
-            plt.ion()
-            plt.close("tt_calib")
-            fig = plt.figure("tt_calib")
-            line = plt.plot(0,0)[0]
-            plt.show()
+        yerr= []
         try:
             for pos in x:
                 print(f"Moving to {pos*1e15} fs")
                 self.delay.set_target_value(pos).wait()
-                y.append(np.mean(self.edge_position_px.acquire(seconds=seconds).wait()))
-                if plot:
-                    line.set_data(x[:len(y)],y)
-                    fig.canvas.draw()
+                ys = self.edge_position_px.acquire(seconds=seconds).wait()
+                y.append(np.mean(ys))
+                yerr.append(np.std(ys))
         except Exception as e:
             print(e)
             print(f"Moving back to inital value of {t0}")
             self.delay.set_target_value(t0)
 
-        p = np.polynomial.Polynomial.fit(y,x,2).coef
+        p = np.polyfit(y,x,2)
         if plot:
+            plt.close("tt_calib")
+            fig = plt.figure("tt_calib")
+            line = plt.errorbar(x,y,yerr)
             fit = plt.plot(np.polyval(p,y),y, label=p)
             plt.legend()
+            plt.show()
         print(f"Fit results c0 + c1*px + c2*px^2:\n{p}")
         print(f"Moving back to inital value of {t0}")
         self.delay.set_target_value(t0)
@@ -261,7 +263,7 @@ class TimetoolBerninaUSD(Assembly):
         self.calibration.const_F.set_target_value(c[1])
         self.calibration.const_G.set_target_value(c[2])
 
-    def calibrate(self, seconds=5, scan_range=1.5e-12, plot=True):
+    def calibrate(self, seconds=5, scan_range=1e-12, plot=True):
         t0 = self.delay()
         if abs(t0) > 50e-15:
             ans = ""
