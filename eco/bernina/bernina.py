@@ -1305,6 +1305,7 @@ def _write_namespace_status_to_scan(
             f.truncate()
     if not statusfile.group() == statusfile.parent.group():
         shutil.chown(statusfile, group=statusfile.parent.group())
+        
     response = daq.append_aux(
         statusfile.resolve().as_posix(),
         pgroup=pgroup,
@@ -1353,6 +1354,8 @@ def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
                 kwargs=dict(pgroup=pgroup, run_number=runno),
             )
         )
+        #DEBUG
+        print(f'Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}.')
         scan.remaining_tasks[-1].start()
         # response = daq.append_aux(
         #     aliasfile.resolve().as_posix(),
@@ -1367,6 +1370,17 @@ def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
 
 def _message_end_scan(scan, **kwargs):
     print(f"Finished run {scan.run_number}.")
+    if hasattr(scan, "daq_run_number"):
+        runno_daq_saved = scan.daq_run_number
+        print(f"daq_run_number is run {runno_daq_saved}.")
+    
+    try:
+        runno = daq.get_last_run_number()
+        print(f"daq last run number is run {runno}.")
+    except:
+        pass
+    
+    
     try:
         e = pyttsx3.init()
         e.say(f"Finished run {scan.run_number}.")
@@ -1452,6 +1466,8 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
             kwargs=dict(pgroup=pgroup, run_number=runno),
         )
     )
+    #DEBUG
+    print(f'Sending scan_info_rel.json in {Path(scaninfofile).parent.stem} to run number {runno}.')
     scan.remaining_tasks[-1].start()
     # response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
     # print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
@@ -1523,7 +1539,9 @@ def _increment_daq_run_number(scan, daq=daq, **kwargs):
                 for i in range(n):
                     rn = daq.get_next_run_number()
                     print(rn)
-        scan.daq_run_number = daq_run_number
+                    scan.daq_run_number = rn
+        else:
+            scan.daq_run_number = daq_run_number
 
     except Exception as e:
         print(e)
