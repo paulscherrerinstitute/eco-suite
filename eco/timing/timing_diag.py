@@ -183,6 +183,20 @@ class TimetoolBerninaUSD(Assembly):
             is_display=True,
         )
         self._append(
+            DetectorPvDataStream,
+            "SLAAR21-LTIM01-EVR0:CALCW.INPE",
+            name="edge_position_px_pipeline",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorPvDataStream,
+            "SLAAR21-LTIM01-EVR0:CALCW.INPF",
+            name="edge_position_fs_pipeline",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
             CalibrationRecord,
             pvbase="SLAAR21-LTIM01-EVR0:CALCI",
             name="calibration",
@@ -228,7 +242,7 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Andor spectrometer initialization failed with: \n{e}")
             
 
-    def get_calibration_values(self, seconds=5, scan_range=1e-12, plot=False):
+    def get_calibration_values(self, seconds=5, scan_range=1e-12, plot=False, pipeline=True):
         t0 = self.delay()
         x = np.linspace(t0-scan_range / 2, t0+scan_range / 2, 20)
         y = []
@@ -237,7 +251,10 @@ class TimetoolBerninaUSD(Assembly):
             for pos in x:
                 print(f"Moving to {pos*1e15} fs")
                 self.delay.set_target_value(pos).wait()
-                ys = self.edge_position_px.acquire(seconds=seconds).wait()
+                if pipeline:
+                    ys = self.edge_position_px_pipeline.acquire(seconds=seconds).wait()
+                else:
+                    ys = self.edge_position_px.acquire(seconds=seconds).wait()
                 y.append(np.mean(ys))
                 yerr.append(np.std(ys))
         except Exception as e:
@@ -258,12 +275,15 @@ class TimetoolBerninaUSD(Assembly):
         self.delay.set_target_value(t0)
         return p
 
-    def set_calibration_values(self, c):
-        self.calibration.const_E.set_target_value(c[0])
-        self.calibration.const_F.set_target_value(c[1])
-        self.calibration.const_G.set_target_value(c[2])
+    def set_calibration_values(self, c, pipeline=True):
+        if pipeline:
+            self.pipeline_edgefinding_test.config.calibration.mv(p)
+        else:
+            self.calibration.const_E.set_target_value(c[0])
+            self.calibration.const_F.set_target_value(c[1])
+            self.calibration.const_G.set_target_value(c[2])
 
-    def calibrate(self, seconds=5, scan_range=1e-12, plot=True):
+    def calibrate(self, seconds=5, scan_range=1e-12, plot=True, pipeline=True):
         t0 = self.delay()
         if abs(t0) > 50e-15:
             ans = ""
@@ -274,8 +294,8 @@ class TimetoolBerninaUSD(Assembly):
                     continue
             if ans == "n":
                 return
-        p = self.get_calibration_values(seconds=seconds, scan_range=scan_range, plot=plot)
-        self.set_calibration_values(p*1e15)
+        p = self.get_calibration_values(seconds=seconds, scan_range=scan_range, plot=plot, pipeline=pipeline)
+        self.set_calibration_values(p*1e15, pipeline=pipeline)
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()

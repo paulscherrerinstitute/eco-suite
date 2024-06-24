@@ -41,6 +41,7 @@ class StaeubliTx200(Assembly):
         super().__init__(name=name)
         self.pc = PShellClient(pshell_url)
         self.pc.start_sse_event_loop_task(None, self._on_event)
+        self.rc = robot_config
         self._cb = False
         self._cache = {}
         self._info_fields={}
@@ -110,8 +111,10 @@ class StaeubliTx200(Assembly):
                     )
                     if "JF01" in robot_config.jf_id():
                         self.config.tool("t_JF01T03")
+                        self.det_diff.shape = np.array([1614, 1030])
                     elif "JF07" in robot_config.jf_id():
                         self.config.tool("t_JF07T32")
+                        self.det_diff.shape = np.array([4432, 4215])
             except Exception as e:
                 print("Adding of JF detector failed with:")
                 print(e)
@@ -228,9 +231,42 @@ class StaeubliTx200(Assembly):
         cmd = f"xfreerdp /v:PC14742 /size:{resolution} /u:gac-bernina@psich"
         return self._run_cmd(cmd)
 
+    def set_central_pixel(self, px=(None,None)):
+        """
+            px: tuple (x,y)
+            This function sets the central pixel of the detector as shown in the visualization. 
+            If no argument is given, the pixel is set to the center of the detector.
+        """
+        if px[0] is None:
+            x, y = [0,0]
+        else:
+            x,y = (np.asarray(px) - self.__dict__[self.rc.jf_name()].shape/2) *75e-3
+        tool = "t_"+self.rc.jf_id().split("V")[0]
+
+        try:
+            self.config.tool.mv_elog(tool)
+            time.sleep(1)
+            return self.config.tool_coordinates.mv_elog([x, y, 0, 0, 0, 0])
+        except:
+            self.config.tool.mv(tool)
+            time.sleep(1)
+            return self.config.tool_coordinates.mv([x, y, 0, 0, 0, 0])
+
+    def get_central_pixel(self):
+        tool = "t_"+self.rc.jf_id().split("V")[0]
+        if self.config.tool() == tool:
+            return np.round(np.array(self.config.tool_coordinates())[0:2] / 75e-3 + self.__dict__[self.rc.jf_name()].shape/2,1)
+        else:
+            raise RobotError(f"The current tool {self.config.tool()} is different from the expected detector tool {tool}")
+
+
     ######## Motion recording ##########
     def record_motion(self, **kwargs):
         """
+            This function is used to record trajectories, which are considered safe for remote commands.
+            The move has to be exectuted in manual mode and no other motion is allowed until the 
+            move is either finished or aborted by ctrl + c. To abort the command from a different 
+            eco session, use the function abort_record().
         """
         if "t_det" in kwargs.keys():
             t = kwargs.pop("t_det")
@@ -238,13 +274,17 @@ class StaeubliTx200(Assembly):
         self._set_eval_cmd(f"robot.record_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Recording aborted by user, resetting all motions.")
 
     def abort_record(self):
+        """
+            This functions aborts any motion, which is blocking other commands 
+            such as a record_motion command executed in a different session.
+        """
         self.pc.eval(":abort")
         self.reset_motion()
 
     def reset_recorded_motions(self, index=None, motion=None):
         """
-        Resets all motions if no kwargs are given.
-        If motion = "cartesian", "spherical" or "joint" and index of recorded motion is given, only this one is removed.
+            Resets all motions if no kwargs are given.
+            If motion = "cartesian", "spherical" or "joint" and index of recorded motion is given, only this one is removed.
         """
         if not index is None:
             return self.get_eval_result(cmd=f"robot.reset_recorded_motions(index={index}, motion={motion})")
