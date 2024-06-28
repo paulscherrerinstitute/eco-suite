@@ -1,7 +1,12 @@
 from eco.loptics.position_monitors import CameraPositionMonitor
 from ..elements.assembly import Assembly
 from functools import partial
-from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord, ThorlabsPiezoRecord
+from ..devices_general.motors import (
+    SmaractStreamdevice,
+    MotorRecord,
+    SmaractRecord,
+    ThorlabsPiezoRecord,
+)
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
@@ -213,9 +218,15 @@ class StageLxtDelay(Assembly):
                 outcoarse = self.offset_coarse_adj.get_current_value()
             else:
                 outcoarse = None
-            outfine = self.offset_fine_adj.get_current_value() + self._direction.get_current_value() * delay
+            outfine = (
+                self.offset_fine_adj.get_current_value()
+                + self._direction.get_current_value() * delay
+            )
         else:
-            outcoarse = self.offset_coarse_adj.get_current_value() + self._direction.get_current_value() * delay
+            outcoarse = (
+                self.offset_coarse_adj.get_current_value()
+                + self._direction.get_current_value() * delay
+            )
             outfine = self.offset_fine_adj.get_current_value()
         return (outfine, outcoarse)
 
@@ -299,7 +310,6 @@ class LaserBernina(Assembly):
         )
         try:
             self.motor_configuration_thorlabs = {
-
                 "waveplate_lambda_half": {
                     "pvname": "SLAAR21-LMOT-ELL3",
                 },
@@ -308,7 +318,6 @@ class LaserBernina(Assembly):
                 },
             }
 
-                
             ### thorlabs piezo motors ###
             for name, config in self.motor_configuration_thorlabs.items():
                 self._append(
@@ -320,41 +329,45 @@ class LaserBernina(Assembly):
         except Exception as e:
             print(e)
 
-
         ######## Implementation segmented ND filter wheel in rotation stage #########
         self._append(
             MotorRecord, "SARES20-MF1:MOT_16", name="nd_filt_stg", is_setting=True
         )
 
+        filters = np.array(
+            [
+                [1, 330],
+                [0.872863247863248, 15],
+                [0.692521367521367, 60],
+                [0.549038461538462, 105],
+                [0.432051282051282, 150],
+                [0.333653846153846, 195],
+                [0.251188643, 240],
+                [0.111538461538462, 285],
+            ]
+        )
 
-        filters = np.array([
-            [1, 330],
-            [0.872863247863248, 15],
-            [0.692521367521367, 60],
-            [0.549038461538462, 105],
-            [0.432051282051282, 150],
-            [0.333653846153846, 195],
-            [0.251188643, 240],
-            [0.111538461538462, 285],
-        ])
         def set_transmission(t):
-            idx = np.argmin(abs(filters.T[0]-t))
+            idx = np.argmin(abs(filters.T[0] - t))
             stg = filters[idx][1]
             t = filters[idx][0]
             print(f"Setting ND filter transmission to {t:.3} at position {stg}")
             return stg
-        
+
         def get_transmission(stg):
-            idx = np.argmin(abs(filters.T[1]-stg))
+            idx = np.argmin(abs(filters.T[1] - stg))
             t = filters[idx][0]
             return t
-        
+
         self._append(
-            AdjustableVirtual, [self.nd_filt_stg], get_transmission, set_transmission, name="nd_filt"
+            AdjustableVirtual,
+            [self.nd_filt_stg],
+            get_transmission,
+            set_transmission,
+            name="nd_filt",
         )
 
         ######## END Implementation segmented ND filter wheel in rotation stage #########
-
 
         self._append(
             AdjustableFS,
@@ -444,22 +457,46 @@ class LaserBernina(Assembly):
 
 class DelayTime(AdjustableVirtual):
     def __init__(
-        self, stage, direction=1, passes=2, reset_current_value_to=True, name=None
+        self,
+        stage,
+        direction=1,
+        passes=2,
+        group_velo=299792458,
+        offset_detector=None,
+        reset_current_value_to=True,
+        name=None,
     ):
         self._direction = direction
-        self._group_velo = 299798458  # m/s
+        self._group_velo = group_velo  # m/s
         self._passes = passes
+
         # self.Id = stage.Id + "_delay"
         self._stage = stage
-        AdjustableVirtual.__init__(
-            self,
-            [stage],
-            self._mm_to_s,
-            self._s_to_mm,
-            reset_current_value_to=reset_current_value_to,
-            name=name,
-            unit="s",
-        )
+
+        if offset_detector is not None:
+            self._offset_detector = offset_detector
+            AdjustableVirtual.__init__(
+                self,
+                [stage],
+                lambda posmm: self._mm_to_s(posmm)
+                + self._offset_detector.get_current_value(),
+                lambda vals: self._s_to_mm(
+                    vals - self._offset_detector.get_current_value()
+                ),
+                reset_current_value_to=reset_current_value_to,
+                name=name,
+                unit="s",
+            )
+        else:
+            AdjustableVirtual.__init__(
+                self,
+                [stage],
+                self._mm_to_s,
+                self._s_to_mm,
+                reset_current_value_to=reset_current_value_to,
+                name=name,
+                unit="s",
+            )
 
     def _mm_to_s(self, mm):
         return mm * 1e-3 * self._passes / self._group_velo * self._direction

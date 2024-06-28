@@ -713,6 +713,11 @@ class Namespace(Assembly):
             def init_local():
 
                 if name in self.failed_names:
+                    # try:
+                    #     raise self.failed_items_exception[name]
+                    # except:
+                    #     tb = traceback.format_exc()
+                    
                     raise IsInitialisingError(f'{name} failed previously to initialize.')
                 
                 if name in self._initializing:
@@ -723,7 +728,7 @@ class Namespace(Assembly):
                         else:
                     #     print(f'{name} waiting init since {time()-self._initialisation_start_time[name]} s')
                     #     sleep(5)
-                    # # pass
+                    # # passfailed_items_excpetion
                             self._initializing.pop(self._initializing.index(name))
                             raise IsInitialisingError(f"NB: {name} initialization timed out!")
                     

@@ -1,5 +1,8 @@
+from scipy import constants
 from eco.devices_general.powersockets import MpodChannel
 import sys
+
+from eco.elements.detector import DetectorVirtual
 
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, SmaractRecord, ThorlabsPiezoRecord
@@ -82,14 +85,11 @@ class High_field_thz_chamber(Assembly):
     def __init__(
         self,
         name=None,
-        alias_namespace=None,
         configuration=[],
         illumination_mpod=None,
         helium_control_valve=None,
     ):
         super().__init__(name=name)
-        self.name = name
-        self.alias = Alias(name)
         self.par_out_pos = [-20, -9.5]
         self.motor_configuration = {
             "rx": {
@@ -232,6 +232,20 @@ class High_field_thz_chamber(Assembly):
                 name=name,
                 is_setting=True,
             )
+
+        self._append(
+            AdjustableFS,
+            "/sf/bernina/config/eco/reference_values/thc_parabola_center.json",
+            name="x_center",
+            is_setting=True,
+        )
+
+        self._append(
+            DetectorVirtual,
+            [self.x, self.x_center],
+            lambda x, xc: -1 * (x - xc) / 1000 / constants.c,
+            name="delay_x_center",
+        )
 
         if "cube" in configuration:
             for name, config in self.motor_configuration_cube.items():
@@ -445,8 +459,10 @@ class High_field_thz_chamber(Assembly):
 
 
 class Organic_crystal_breadboard(Assembly):
-    def __init__(self, name=None, alias_namespace=None):
+    def __init__(self, delay_offset_detector=None, thc_x_adjustable=None, name=None):
         super().__init__(name=name)
+        self.delay_offset_detector = delay_offset_detector
+        self._thc_x_adjustable = thc_x_adjustable
         self.motor_configuration = {
             # "mir_x": {
             #    # "id": "-LIC17",
@@ -609,10 +625,27 @@ class Organic_crystal_breadboard(Assembly):
             DelayTime,
             self.delaystage_thz,
             name="delay_thz",
+            offset_detector=self.delay_offset_detector,
             is_setting=False,
             is_display=True,
             is_status=True,
         )
+        if self._thc_x_adjustable is not None:
+
+            def movexcomp(x):
+                delay = self.delay_thz.get_current_value()
+                dx = x - self._thc_x_adjustable.get_current_value()
+                new_delay = delay + dx / 1000 / constants.c
+                return x, new_delay
+
+            self._append(
+                AdjustableVirtual,
+                [self._thc_x_adjustable, self.delay_thz],
+                lambda x, delay_thz: x,
+                movexcomp,
+                name="thcx_delaycomp",
+                is_setting=False,
+            )
         # self.thz_polarization = AdjustableVirtual(
         #     [self.crystal, self.waveplate_ir],
         #     self.thz_pol_get,

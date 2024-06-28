@@ -61,10 +61,6 @@ class TimetoolBerninaUSD(Assembly):
             self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
         except Exception as e:
             print(f"Timetool edge finding pipeline initialization failed with: \n{e}")
-        try:
-            self._append(Pipeline,"Bernina_tt_test", name='pipeline_edgefinding_test', is_setting=True)
-        except Exception as e:
-            print(f"Timetool bernina test edge finding pipeline initialization failed with: \n{e}")
         self.spectrometer_camera_channel = spectrometer_camera_channel
         self._append(
             Target_xyz,
@@ -171,35 +167,37 @@ class TimetoolBerninaUSD(Assembly):
         self._append(
             DetectorPvDataStream,
             "SLAAR21-GEN:SPECTT",
-            name="edge_position_px",
+            name="edge_position_px_CA",
             is_setting=False,
             is_display=True,
         )
         self._append(
             DetectorPvDataStream,
             "SLAAR21-LTIM01-EVR0:CALCI",
+            name="edge_position_fs_CA",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SAROP21-ATT01:edge_pos",
+            cachannel=None,
+            name="edge_position_px",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SAROP21-ATT01:arrival_time",
+            cachannel=None,
             name="edge_position_fs",
-            is_setting=False,
-            is_display=True,
-        )
-        self._append(
-            DetectorPvDataStream,
-            "SLAAR21-LTIM01-EVR0:CALCW.INPE",
-            name="edge_position_px_pipeline",
-            is_setting=False,
-            is_display=True,
-        )
-        self._append(
-            DetectorPvDataStream,
-            "SLAAR21-LTIM01-EVR0:CALCW.INPF",
-            name="edge_position_fs_pipeline",
             is_setting=False,
             is_display=True,
         )
         self._append(
             CalibrationRecord,
             pvbase="SLAAR21-LTIM01-EVR0:CALCI",
-            name="calibration",
+            name="calibration_CA",
             is_setting=True,
             is_display=False,
         )
@@ -227,14 +225,7 @@ class TimetoolBerninaUSD(Assembly):
             is_setting=False,
             is_display=True,
         )
-        self._append(
-            DetectorBsStream,
-            "SAROP21-ATT01:arrival_time",
-            cachannel=None,
-            name="edge_position",
-            is_setting=False,
-            is_display=True,
-        )
+        
         if andor_spectrometer:
             try:
                 self._append(SpectrometerAndor,andor_spectrometer, name='spectrometer', is_setting=True, is_display='recursive')
@@ -252,9 +243,9 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Moving to {pos*1e15} fs")
                 self.delay.set_target_value(pos).wait()
                 if pipeline:
-                    ys = self.edge_position_px_pipeline.acquire(seconds=seconds).wait()
-                else:
                     ys = self.edge_position_px.acquire(seconds=seconds).wait()
+                else:
+                    ys = self.edge_position_px_CA.acquire(seconds=seconds).wait()
                 y.append(np.mean(ys))
                 yerr.append(np.std(ys))
         except Exception as e:
@@ -277,11 +268,11 @@ class TimetoolBerninaUSD(Assembly):
 
     def set_calibration_values(self, c, pipeline=True):
         if pipeline:
-            self.pipeline_edgefinding_test.config.calibration.mv(p)
+            self.pipeline_edgefinding.config.calibration.set_target_value(p).wait()
         else:
-            self.calibration.const_E.set_target_value(c[0])
-            self.calibration.const_F.set_target_value(c[1])
-            self.calibration.const_G.set_target_value(c[2])
+            self.calibration.const_E.set_target_value(c[0]).wait()
+            self.calibration.const_F.set_target_value(c[1]).wait()
+            self.calibration.const_G.set_target_value(c[2]).wait()
 
     def calibrate(self, seconds=5, scan_range=1e-12, plot=True, pipeline=True):
         t0 = self.delay()

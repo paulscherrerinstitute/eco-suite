@@ -70,8 +70,8 @@ class Crystals(Assembly):
             name = input(
                 "Please choose a name for your crystal (no spaces or other special characters):"
             )
-        specials = np.array([".", " ", "/", "(", ")", "[", "]"]+list(self.crystal_list().keys()))
-        in_name = np.array([s in name for s in specials])
+        specials = np.array([".", " ", "/", "(", ")", "[", "]"])
+        in_name = np.array([s in name for s in specials]+[s==name for s in list(self.crystal_list().keys())])
         if np.any(in_name):
             raise Exception(
                 f"Special character(s) {specials[in_name]} in name not allowed or name already exists"

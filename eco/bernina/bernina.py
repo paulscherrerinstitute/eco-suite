@@ -1305,7 +1305,7 @@ def _write_namespace_status_to_scan(
             f.truncate()
     if not statusfile.group() == statusfile.parent.group():
         shutil.chown(statusfile, group=statusfile.parent.group())
-        
+
     response = daq.append_aux(
         statusfile.resolve().as_posix(),
         pgroup=pgroup,
@@ -1354,8 +1354,10 @@ def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
                 kwargs=dict(pgroup=pgroup, run_number=runno),
             )
         )
-        #DEBUG
-        print(f'Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}.')
+        # DEBUG
+        print(
+            f"Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}."
+        )
         scan.remaining_tasks[-1].start()
         # response = daq.append_aux(
         #     aliasfile.resolve().as_posix(),
@@ -1373,14 +1375,13 @@ def _message_end_scan(scan, **kwargs):
     if hasattr(scan, "daq_run_number"):
         runno_daq_saved = scan.daq_run_number
         print(f"daq_run_number is run {runno_daq_saved}.")
-    
+
     try:
         runno = daq.get_last_run_number()
         print(f"daq last run number is run {runno}.")
     except:
         pass
-    
-    
+
     try:
         e = pyttsx3.init()
         e.say(f"Finished run {scan.run_number}.")
@@ -1466,8 +1467,10 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
             kwargs=dict(pgroup=pgroup, run_number=runno),
         )
     )
-    #DEBUG
-    print(f'Sending scan_info_rel.json in {Path(scaninfofile).parent.stem} to run number {runno}.')
+    # DEBUG
+    print(
+        f"Sending scan_info_rel.json in {Path(scaninfofile).parent.stem} to run number {runno}."
+    )
     scan.remaining_tasks[-1].start()
     # response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
     # print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
@@ -2185,6 +2188,8 @@ namespace.append_obj(
     "Organic_crystal_breadboard",
     lazy=True,
     name="ocb",
+    delay_offset_detector=NamespaceComponent(namespace, "thc.delay_x_center"),
+    thc_x_adjustable=NamespaceComponent(namespace, "thc.x"),
     module_name="eco.endstations.bernina_sample_environments",
 )
 
