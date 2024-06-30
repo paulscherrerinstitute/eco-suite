@@ -1,3 +1,4 @@
+from importlib import import_module
 from eco.pshell.client import PShellClient
 from eco.elements.assembly import Assembly
 from eco.elements.adjustable import AdjustableFS, AdjustableGetSet, value_property
@@ -35,6 +36,7 @@ class StaeubliTx200(Assembly):
         robot_config=None,
         pgroup_adj=None,
         jf_config=None,
+        recspace_conv='escape.swissfel.recspace_conv:THC_robot',
     ):
         """Robot arm at SwissFEL Bernina.\
         """
@@ -134,6 +136,12 @@ class StaeubliTx200(Assembly):
             except Exception as e:
                 print("Adding diffractometer for diffcalc calculation failed with:")
                 print(e)
+        if recspace_conv is not None:
+            module_name,Conv_name = recspace_conv.split(':')
+            Conv = getattr(import_module(module_name), Conv_name)
+            self.recspace_conv = Conv()
+        else:
+            self.recspace_conv = None
 
     def _get_info(self):
         d= {k: v for k, v in self._cache.items() if k in self._info_fields}

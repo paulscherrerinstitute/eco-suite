@@ -1,3 +1,5 @@
+from importlib import import_module
+import pkgutil
 from diffcalc.hkl.calc import HklCalculation
 from diffcalc.hkl.constraints import Constraints
 from diffcalc.hkl.geometry import Position
@@ -64,6 +66,7 @@ class Crystals(Assembly):
                 self._append(
                     DiffGeometryYou, diffractometer_you=self.diffractometer, name=key
                 )
+
 
     def create_crystal(self, name=None):
         if name == None:
@@ -692,7 +695,7 @@ class DiffGeometryYou(Assembly):
         if refine_lattice:
             self._lat_from_dc()
 
-    def calc_angles(self, h=None, k=None, l=None, energy=None):
+    def calc_angles(self, h=None, k=None, l=None, energy=None, constraints_update={}):
         """calculate diffractometer angles for a given h,k,l and energy in eV.
         If any of the h, k, l are not given, their current value is used instead.
         energy: float energy of the x-ray beam, if not given, the mono or machine energy are used depending on the beamline mode
@@ -704,7 +707,10 @@ class DiffGeometryYou(Assembly):
             for setval, curval in zip(setvals, curvals)
         ]
         self.recalculate()
-        cons = Constraints(self._constraints())
+        constraints_dict = self._constraints()
+        constraints_dict.update(constraints_update)
+        cons = Constraints(constraints_dict)
+        
         hklcalc = HklCalculation(self.ubcalc, cons)
         if energy is None:
             energy = self.get_energy()
@@ -720,6 +726,21 @@ class DiffGeometryYou(Assembly):
             axis=1,
         )
         return result.T
+    
+    def calc_angles_plot(self, h=None, k=None, l=None, det_distance=500, energy=None, constraints_update={}, solution_index=0):
+        sols = self.calc_angles(h=h, k=k, l=l, energy=energy, constraints_update=constraints_update)
+        solution = sols.iloc[solution_index]
+        
+        self.diffractometer.recspace_conv.plot_geom(
+            mu = solution['mu'],
+            eta = solution['eta'],
+            phi = solution['phi'],
+            gamma = solution['nu'],
+            delta = solution['delta'],
+            energy=energy, 
+            detector_distance=det_distance, 
+            ub_matrix=self.ub_matrix.get_current_value(),
+            )
 
     def calc_angles_unique(self, h=None, k=None, l=None, energy=None):
         """calculate unique solution of diffractometer angles for a given h,k,l and energy in eV.
