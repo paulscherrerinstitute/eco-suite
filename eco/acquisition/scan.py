@@ -11,7 +11,7 @@ from IPython import get_ipython
 from .daq_client import Daq
 from eco.elements.assembly import Assembly
 from rich.progress import Progress
-
+import inputimeout
 
 inval_chars = [" ", "/"]
 ScanNameError = Exception(
@@ -37,8 +37,7 @@ class RunList(Assembly):
         super().__init__(name=name)
         self.scan_info_dir = scan_info_dir
 
-    def get_run_list(self):
-        ...
+    def get_run_list(self): ...
 
 
 class Scan:
@@ -126,7 +125,7 @@ class Scan:
             for caller in callbacks_start_scan:
                 caller(self, **self.callbacks_kwargs)
         for ctr in self.counterCallers:
-            if hasattr(ctr,'callbacks_start_scan') and ctr.callbacks_start_scan:
+            if hasattr(ctr, "callbacks_start_scan") and ctr.callbacks_start_scan:
                 for tcb in ctr.callbacks_start_scan:
                     tcb()
 
@@ -296,11 +295,34 @@ class Scan:
                         print("Changing back to value(s) before scan.")
                         for ch in chs:
                             ch.wait()
+                elif self.return_at_end == "timeout":
+                    timeout = 10
+                    try:
+                        o = inputimeout.inputimeout(
+                            prompt=f"Change back to initial values? (y/n) Changing back in {timeout} seconds.",
+                            timeout=timeout,
+                        )
+                    except inputimeout.TimeoutOccurred:
+                        chs = self.changeToInitialValues()
+                        print("Changing back to value(s) before scan.")
+                        for ch in chs:
+                            ch.wait()
+                    except KeyboardInterrupt:
+                        raise Exception("User-requested cancelling!")
+                    else:
+                        if o == "y":
+                            chs = self.changeToInitialValues()
+                            print("Changing back to value(s) before scan.")
+                            for ch in chs:
+                                ch.wait()
+                        if o == "n":
+                            print("Staying at final scan value(s)!")
                 elif self.return_at_end:
                     chs = self.changeToInitialValues()
                     print("Changing back to value(s) before scan.")
                     for ch in chs:
                         ch.wait()
+
                 else:
                     print("Staying at final scan value(s)!")
 
