@@ -9,13 +9,20 @@ import numpy as np
 from datetime import datetime
 import os
 from PIL import Image
+from scipy.spatial.transform import Rotation
 
 # from diffcalc.ub import calc calc import UBCalculation, Crystal
 from eco.elements.assembly import Assembly
-from eco.elements.adjustable import AdjustableMemory, AdjustableFS, AdjustableVirtual, DummyAdjustable
+from eco.elements.adjustable import (
+    AdjustableMemory,
+    AdjustableFS,
+    AdjustableVirtual,
+    DummyAdjustable,
+)
 from typing import Tuple, Optional
 from eco.elements.adj_obj import AdjustableObject
 from epics import PV
+
 
 class Diffractometer_Dummy(Assembly):
     def __init__(self, *args, name=None, **kwargs):
@@ -23,9 +30,17 @@ class Diffractometer_Dummy(Assembly):
         self.configuration = ["base", "arm"]
         adjs = ["nu", "mu", "delta", "eta", "chi", "phi"]
         for adj in adjs:
-            self._append(DummyAdjustable, name=adj, is_setting=True, is_display=True, limits=[-180,180])
+            self._append(
+                DummyAdjustable,
+                name=adj,
+                is_setting=True,
+                is_display=True,
+                limits=[-180, 180],
+            )
 
-diffractometer_dummy = Diffractometer_Dummy(name = "dummy")
+
+diffractometer_dummy = Diffractometer_Dummy(name="dummy")
+
 
 class CrystalNew(Assembly):
     def __init__(self, *args, name=None, **kwargs):
@@ -67,14 +82,16 @@ class Crystals(Assembly):
                     DiffGeometryYou, diffractometer_you=self.diffractometer, name=key
                 )
 
-
     def create_crystal(self, name=None):
         if name == None:
             name = input(
                 "Please choose a name for your crystal (no spaces or other special characters):"
             )
         specials = np.array([".", " ", "/", "(", ")", "[", "]"])
-        in_name = np.array([s in name for s in specials]+[s==name for s in list(self.crystal_list().keys())])
+        in_name = np.array(
+            [s in name for s in specials]
+            + [s == name for s in list(self.crystal_list().keys())]
+        )
         if np.any(in_name):
             raise Exception(
                 f"Special character(s) {specials[in_name]} in name not allowed or name already exists"
@@ -95,18 +112,18 @@ class Crystals(Assembly):
         """
         Delete crystal with a given name, deletes also the files.
         """
-        if name==None:
+        if name == None:
             crystal_names = list(self.crystal_list().keys())
             input_message = "Select the crystal to delete:\nq) quit\n"
             for index, crystal in enumerate(crystal_names):
-                input_message += f'{index:2}) {crystal:15}\n'
-            input_message += 'Your choice: '
-            idx = ''
+                input_message += f"{index:2}) {crystal:15}\n"
+            input_message += "Your choice: "
+            idx = ""
             while idx not in range(len(crystal_names)):
-                if idx == 'q':
+                if idx == "q":
                     break
                 idx = int(input(input_message))
-                print(f'Selected crystal: {crystal_names[idx]}')
+                print(f"Selected crystal: {crystal_names[idx]}")
             name = crystal_names[idx]
         sure = "n"
         sure = input(
@@ -138,18 +155,22 @@ class Crystals(Assembly):
 
     def activate_crystal(self, name=None):
         crystals = self.crystal_list()
-        if name==None:
-            inactive_crystals = [k for k in crystals.keys() if not self.diffractometer.name in crystals[k]]
-            idx = ''
+        if name == None:
+            inactive_crystals = [
+                k
+                for k in crystals.keys()
+                if not self.diffractometer.name in crystals[k]
+            ]
+            idx = ""
             input_message = "Select the crystal to activate:\nq) quit\n"
             for index, crystal in enumerate(inactive_crystals):
-                input_message += f'{index:2}) {crystal:15}\n'
-            input_message += 'Your choice: '
+                input_message += f"{index:2}) {crystal:15}\n"
+            input_message += "Your choice: "
             while idx not in range(len(inactive_crystals)):
-                if idx == 'q':
+                if idx == "q":
                     break
                 idx = int(input(input_message))
-                print(f'Activated crystal: {inactive_crystals[idx]}')
+                print(f"Activated crystal: {inactive_crystals[idx]}")
             name = inactive_crystals[idx]
         self._append(
             DiffGeometryYou,
@@ -166,18 +187,20 @@ class Crystals(Assembly):
 
     def deactivate_crystal(self, name=None):
         crystals = self.crystal_list()
-        if name==None:
-            active_crystals = [k for k in crystals.keys() if self.diffractometer.name in crystals[k]]
-            idx = ''
+        if name == None:
+            active_crystals = [
+                k for k in crystals.keys() if self.diffractometer.name in crystals[k]
+            ]
+            idx = ""
             input_message = "Select the crystal to activate:\nq) quit\n"
             for index, crystal in enumerate(active_crystals):
-                input_message += f'{index:2}) {crystal:15}\n'
-            input_message += 'Your choice: '
+                input_message += f"{index:2}) {crystal:15}\n"
+            input_message += "Your choice: "
             while idx not in range(len(active_crystals)):
                 if idx == "q":
                     break
                 idx = int(input(input_message))
-                print(f'Selected crystal: {active_crystals[idx]}')
+                print(f"Selected crystal: {active_crystals[idx]}")
             name = active_crystals[idx]
         meta = crystals[name]
         if self.diffractometer.name in meta:
@@ -188,6 +211,7 @@ class Crystals(Assembly):
         removed = self.__dict__.pop(name)
         self.alias.pop_object(removed.alias)
         del removed
+
 
 class DiffGeometryYou(Assembly):
     def __init__(self, diffractometer_you=None, name=None):
@@ -274,7 +298,6 @@ class DiffGeometryYou(Assembly):
             is_display="recursive",
         )
 
-
         adjs = ["nu", "mu", "delta", "eta", "chi", "phi"]
         cfg = []
         if hasattr(self.diffractometer, "configuration"):
@@ -284,13 +307,16 @@ class DiffGeometryYou(Assembly):
         if "robot" in cfg:
             basename = cfg[1]
             import eco.bernina as b
+
             base = b.__dict__[basename]
             adjustables_dict = {}
             adjustables_dict.update(base.__dict__)
-            adjustables_dict.update({
-                "nu": self.diffractometer.spherical.gamma,
-                "delta": self.diffractometer.spherical.delta,
-            })
+            adjustables_dict.update(
+                {
+                    "nu": self.diffractometer.spherical.gamma,
+                    "delta": self.diffractometer.spherical.delta,
+                }
+            )
             self.diffractometer.configuration += base.configuration
             cfg = self.diffractometer.configuration
         else:
@@ -298,7 +324,11 @@ class DiffGeometryYou(Assembly):
         if "kappa" in cfg:
             adjs = ["nu", "mu", "delta", "eta_kap", "kappa", "phi_kap"]
         self._diff_adjs = {
-            adj: adjustables_dict[adj] if adj in adjustables_dict.keys() else DummyAdjustable(name = adj+"dummy")
+            adj: (
+                adjustables_dict[adj]
+                if adj in adjustables_dict.keys()
+                else DummyAdjustable(name=adj + "dummy")
+            )
             for adj in adjs
         }
 
@@ -351,7 +381,7 @@ class DiffGeometryYou(Assembly):
                 kwargs["eta"], kwargs["chi"], kwargs["phi"]
             )
             kwargs.update({"eta_kap": eta_kap, "kappa": kappa, "phi_kap": phi_kap})
-        return {key:kwargs[key] for key in self._diff_adjs.keys()}
+        return {key: kwargs[key] for key in self._diff_adjs.keys()}
 
     def convert_to_you(
         self,
@@ -388,8 +418,8 @@ class DiffGeometryYou(Assembly):
         target_dict = self.convert_from_you(**kwargs)
         for axname, target_value in target_dict.items():
             adj = self._diff_adjs[axname]
-            
-        # for val, adj in zip(target_dict, self._diff_adjs.values()):
+
+            # for val, adj in zip(target_dict, self._diff_adjs.values()):
             if hasattr(adj, "get_limits"):
                 lim_low, lim_high = adj.get_limits()
                 in_lims.append((lim_low < target_value) and (target_value < lim_high))
@@ -710,7 +740,7 @@ class DiffGeometryYou(Assembly):
         constraints_dict = self._constraints()
         constraints_dict.update(constraints_update)
         cons = Constraints(constraints_dict)
-        
+
         hklcalc = HklCalculation(self.ubcalc, cons)
         if energy is None:
             energy = self.get_energy()
@@ -726,21 +756,36 @@ class DiffGeometryYou(Assembly):
             axis=1,
         )
         return result.T
-    
-    def calc_angles_plot(self, h=None, k=None, l=None, det_distance=500, energy=None, constraints_update={}, solution_index=0):
-        sols = self.calc_angles(h=h, k=k, l=l, energy=energy, constraints_update=constraints_update)
+
+    def calc_angles_plot(
+        self,
+        h=None,
+        k=None,
+        l=None,
+        det_distance=500,
+        energy=None,
+        constraints_update={},
+        solution_index=0,
+    ):
+        sols = self.calc_angles(
+            h=h, k=k, l=l, energy=energy, constraints_update=constraints_update
+        )
         solution = sols.iloc[solution_index]
-        
+        b2y = (
+            Rotation.from_rotvec(-np.pi / 2 * np.array([0, 0, 1])).as_matrix()
+            @ Rotation.from_rotvec(-np.pi / 2 * np.array([0, 1, 0])).as_matrix()
+        )
+        y2b = np.linalg.inv(b2y)
         self.diffractometer.recspace_conv.plot_geom(
-            mu = solution['mu'],
-            eta = solution['eta'],
-            phi = solution['phi'],
-            gamma = solution['nu'],
-            delta = solution['delta'],
-            energy=energy, 
-            detector_distance=det_distance, 
-            ub_matrix=self.ub_matrix.get_current_value(),
-            )
+            mu=solution["mu"],
+            eta=solution["eta"],
+            phi=solution["phi"],
+            gamma=solution["nu"],
+            delta=solution["delta"],
+            energy=energy,
+            detector_distance=det_distance,
+            ub_matrix=y2b @ self.ub_matrix.get_current_value(),
+        )
 
     def calc_angles_unique(self, h=None, k=None, l=None, energy=None):
         """calculate unique solution of diffractometer angles for a given h,k,l and energy in eV.
