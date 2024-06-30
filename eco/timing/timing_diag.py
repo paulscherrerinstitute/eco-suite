@@ -18,6 +18,7 @@ from eco.xdiagnostics.intensity_monitors import CalibrationRecord
 from .timetool_online_helper import TtProcessor
 import numpy as np
 import pylab as plt
+
 # from time import sleep
 
 ureg = UnitRegistry()
@@ -52,13 +53,23 @@ class TimetoolBerninaUSD(Assembly):
         self.proc_client = PipelineClient()
         try:
             self.proc_pipeline = processing_pipeline
-            self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
+            self._append(
+                Pipeline,
+                self.proc_pipeline,
+                name="pipeline_projection",
+                is_setting=True,
+            )
             self.proc_instance = processing_instance
         except Exception as e:
             print(f"Timetool projection pipeline initialization failed with: \n{e}")
         try:
             self.proc_pipeline_edge = edge_finding_pipeline
-            self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
+            self._append(
+                Pipeline,
+                self.proc_pipeline_edge,
+                name="pipeline_edgefinding",
+                is_setting=True,
+            )
         except Exception as e:
             print(f"Timetool edge finding pipeline initialization failed with: \n{e}")
         self.spectrometer_camera_channel = spectrometer_camera_channel
@@ -219,25 +230,32 @@ class TimetoolBerninaUSD(Assembly):
         )
         self._append(
             DetectorBsStream,
-            "SARES20-CAMS142-M5.bsen_signal_x_profilef",
+            "SARES20-CAMS142-M5.bsen_signal_x_profile",
             cachannel=None,
             name="spectrum_bsen",
             is_setting=False,
             is_display=True,
         )
-        
+
         if andor_spectrometer:
             try:
-                self._append(SpectrometerAndor,andor_spectrometer, name='spectrometer', is_setting=True, is_display='recursive')
+                self._append(
+                    SpectrometerAndor,
+                    andor_spectrometer,
+                    name="spectrometer",
+                    is_setting=True,
+                    is_display="recursive",
+                )
             except Exception as e:
                 print(f"Andor spectrometer initialization failed with: \n{e}")
-            
 
-    def get_calibration_values(self, seconds=5, scan_range=1e-12, plot=False, pipeline=True):
+    def get_calibration_values(
+        self, seconds=5, scan_range=1e-12, plot=False, pipeline=True
+    ):
         t0 = self.delay()
-        x = np.linspace(t0-scan_range / 2, t0+scan_range / 2, 20)
+        x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, 20)
         y = []
-        yerr= []
+        yerr = []
         try:
             for pos in x:
                 print(f"Moving to {pos*1e15} fs")
@@ -253,12 +271,12 @@ class TimetoolBerninaUSD(Assembly):
             print(f"Moving back to inital value of {t0}")
             self.delay.set_target_value(t0)
 
-        p = np.polyfit(y,x,2)
+        p = np.polyfit(y, x, 2)
         if plot:
             plt.close("tt_calib")
             fig = plt.figure("tt_calib")
-            line = plt.errorbar(x,y,yerr)
-            fit = plt.plot(np.polyval(p,y),y, label=p)
+            line = plt.errorbar(x, y, yerr)
+            fit = plt.plot(np.polyval(p, y), y, label=p)
             plt.legend()
             plt.show()
         print(f"Fit results c0 + c1*px + c2*px^2:\n{p}")
@@ -280,13 +298,17 @@ class TimetoolBerninaUSD(Assembly):
             ans = ""
             while not any([a in ans for a in ["y", "n"]]):
                 try:
-                    ans = input(f"Timetool delay stage is at {t0*1e15} fs. Continue the calibration (y/n)?")
+                    ans = input(
+                        f"Timetool delay stage is at {t0*1e15} fs. Continue the calibration (y/n)?"
+                    )
                 except:
                     continue
             if ans == "n":
                 return
-        p = self.get_calibration_values(seconds=seconds, scan_range=scan_range, plot=plot, pipeline=pipeline)
-        self.set_calibration_values(p*1e15, pipeline=pipeline)
+        p = self.get_calibration_values(
+            seconds=seconds, scan_range=scan_range, plot=plot, pipeline=pipeline
+        )
+        self.set_calibration_values(p * 1e15, pipeline=pipeline)
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()
@@ -417,28 +439,26 @@ class TimetoolSpatial(Assembly):
         processing_instance="SARES20-CAMS142-M4_psen_db",
         microscope_pvname="SARES20-CAMS142-M4",
         delaystage_PV="SARES23-USR:MOT_2",
-        pvname_target_stage = "SARES20-MF1:MOT_8",
+        pvname_target_stage="SARES20-MF1:MOT_8",
     ):
         super().__init__(name=name)
-        
+
         self._append(
             MotorRecord, pvname_target_stage, name="transl_target", is_setting=True
         )
 
-        self._append(
-            SmaractRecord, delaystage_PV, name="delaystage", is_setting=True
-        )
+        self._append(SmaractRecord, delaystage_PV, name="delaystage", is_setting=True)
         self._append(DelayTime, self.delaystage, name="delay", is_setting=True)
 
         self.proc_client = PipelineClient()
         self.proc_pipeline = processing_pipeline
-        self._append(Pipeline,self.proc_pipeline, name='pipeline_projection', is_setting=True)
+        self._append(
+            Pipeline, self.proc_pipeline, name="pipeline_projection", is_setting=True
+        )
         self.proc_instance = processing_instance
         # self.proc_pipeline_edge = edge_finding_pipeline
         # self._append(Pipeline,self.proc_pipeline_edge, name='pipeline_edgefinding', is_setting=True)
-        
-        
-        
+
         # self._append(
         #     MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_display=True
         # )
@@ -452,8 +472,7 @@ class TimetoolSpatial(Assembly):
             is_display=False,
         )
 
-        self._append(FeturaPlusZoom,name='zoom')
-
+        self._append(FeturaPlusZoom, name="zoom")
 
         # self._append(
         #     AdjustablePv,
@@ -504,7 +523,9 @@ class TimetoolSpatial(Assembly):
         # )
 
     def get_online_data(self):
-        self.online_monitor = TtProcessor(channel_proj="SARES20-CAMS142-M4.roi_signal_x_profile")
+        self.online_monitor = TtProcessor(
+            channel_proj="SARES20-CAMS142-M4.roi_signal_x_profile"
+        )
 
     def start_online_monitor(self):
         print(f"Starting online data acquisition ...")

@@ -6,6 +6,7 @@ import time
 from eco.elements.detector import DetectorVirtual
 from ..devices_general.utilities import Changer
 from ..elements.adjustable import (
+    AdjustableGetSet,
     spec_convenience,
     AdjustableFS,
     AdjustableVirtual,
@@ -13,7 +14,7 @@ from ..elements.adjustable import (
     value_property,
 )
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData
+from ..epics.detector import DetectorPvData, DetectorPvEnum
 from ..aliases import append_object_to_object, Alias
 from ..elements.assembly import Assembly
 
@@ -207,7 +208,7 @@ class XltEpics(Assembly):
         self._append(
             DetectorVirtual,
             [self.delay_dial_rb, self.offset],
-            lambda dialrb,offset: dialrb * 1e-6 - offset,
+            lambda dialrb, offset: dialrb * 1e-6 - offset,
             unit="s",
             name="readback",
         )
@@ -244,8 +245,6 @@ class XltEpics(Assembly):
             is_setting=False,
             is_display=False,
         )
-
-
 
         # self._append(
         #     DetectorPvData,
@@ -297,9 +296,7 @@ class XltEpics(Assembly):
         if is_phasshift:
             self.waiting_for_change.add_callback(callback=set_is_stopped)
 
-        self._set_user_delay_value.set_target_value(
-            (value) / 1e-12
-        )
+        self._set_user_delay_value.set_target_value((value) / 1e-12)
         if not is_phasshift:
             time.sleep(evr_wait_time)
             self.is_stopped = True
@@ -318,7 +315,9 @@ class XltEpics(Assembly):
         )
 
     def reset_current_value_to(self, value):
-        self.offset.set_target_value(self.offset.get_current_value() + self.get_current_value() - value).wait()
+        self.offset.set_target_value(
+            self.offset.get_current_value() + self.get_current_value() - value
+        ).wait()
 
         # caqtdm -noMsg  -macro S=SLAAR02-LTIM-PDLY  /sf/laser/config/qt/SLAAR02-L-SET_DELAY.ui
 
@@ -326,6 +325,7 @@ class XltEpics(Assembly):
         self._run_cmd(
             f"caqtdm -noMsg  -macro S=SLAAR02-LTIM-PDLY  /sf/laser/config/qt/SLAAR02-L-SET_DELAY.ui"
         )
+
 
 @spec_convenience
 @tweak_option
@@ -338,10 +338,30 @@ class LaserRateControl(Assembly):
         # self.settings_collection.append(self, force=True)
         # self.status_collection.append(self, force=True)
         # self.display_collection.append(self, force=True)
+
+        self._append(
+            DetectorPvEnum,
+            self.pvname + ":MODE_SET1",
+            name="reference_mode_readback",
+            is_setting=False,
+            is_display=False,
+        )
+        self._pv_set_normal_mode = PV(self.pvname + ":NORMAL.PROC")
+        self._pv_set_delayed_mode = PV(self.pvname + ":DELAYEDSHOT.PROC")
+        self._pv_set_dark_mode = PV(self.pvname + ":DARKSHOT.PROC")
+
+        self._append(
+            AdjustableGetSet,
+            self.reference_mode_readback.get_current_value,
+            self._set_ref_mode,
+            name="reference_mode",
+            is_setting=True,
+        )
+
         self._append(
             AdjustablePvEnum,
             self.pvname + ":ONEINN_MODE",
-            name="reference_mode",
+            name="reference_subset",
             is_setting=True,
             is_display=True,
         )
@@ -389,7 +409,6 @@ class LaserRateControl(Assembly):
             is_display=True,
         )
 
-
         # self._append(
         #     DetectorPvData,
         #     "SLAAR-LGEN:DLY_OFFS2",
@@ -402,7 +421,16 @@ class LaserRateControl(Assembly):
         # self.alias.append(
         #     Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
         # )
-    
+
+    def _set_ref_mode(self, value):
+        if value == 0:
+            self._pv_set_normal_mode.put(1)
+        elif value == 1:
+            self._pv_set_delayed_mode.put(1)
+        elif value == 2:
+            self._pv_set_dark_mode.put(1)
+        else:
+            raise Exception("No valid mode")
 
     def gui(self):
         self._run_cmd(

@@ -4,6 +4,7 @@ from diffcalc.hkl.calc import HklCalculation
 from diffcalc.hkl.constraints import Constraints
 from diffcalc.hkl.geometry import Position
 from diffcalc.ub import calc as dccalc
+from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -766,6 +767,8 @@ class DiffGeometryYou(Assembly):
         energy=None,
         constraints_update={},
         solution_index=0,
+        clear_fig=True,
+        ax=None,
     ):
         sols = self.calc_angles(
             h=h, k=k, l=l, energy=energy, constraints_update=constraints_update
@@ -776,6 +779,10 @@ class DiffGeometryYou(Assembly):
             @ Rotation.from_rotvec(-np.pi / 2 * np.array([0, 1, 0])).as_matrix()
         )
         y2b = np.linalg.inv(b2y)
+        fig = plt.figure(f"Recspace {self.name} (h,k,l) = ({h},{k},{l})")
+        if clear_fig:
+            fig.clf()
+
         self.diffractometer.recspace_conv.plot_geom(
             mu=solution["mu"],
             eta=solution["eta"],
@@ -784,8 +791,11 @@ class DiffGeometryYou(Assembly):
             delta=solution["delta"],
             energy=energy,
             detector_distance=det_distance,
+            fig=fig,
+            ax=ax,
             ub_matrix=y2b @ self.ub_matrix.get_current_value(),
         )
+        return solution
 
     def calc_angles_unique(self, h=None, k=None, l=None, energy=None):
         """calculate unique solution of diffractometer angles for a given h,k,l and energy in eV.

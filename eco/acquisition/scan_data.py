@@ -54,7 +54,28 @@ class RunData:
             pgroup=self.pgroup.get_current_value(), run_numbers=[run_number], **tks
         )
         self.loaded_runs[run_number] = {"dataset": trun}
+        self.__setattr__(f"run{run_number:04d}", trun)
         return trun
+
+    # def __dir__(self):
+    #     l = [
+    #         "get_available_run_numbers",
+    #         "get_run",
+    #         "load_kwargs",
+    #         "load_run",
+    #         "loaded_runs",
+    #         "path_search",
+    #         "pgroup",
+    #     ]
+    #     #     l = dir(self)
+    #     l += [f"run{runno:04d}" for runno in self.get_available_run_numbers()]
+    #     return l
+
+    # def __getattribute__(self, name):
+    #     if name in [f"run{runno:04d}" for runno in self.get_available_run_numbers()]:
+    #         return self.get_run(int(name.split("run")[1]))
+    #     else:
+    #         return getattr(self, name)
 
     def get_run(self, run_number, **kwargs):
         if run_number < 0:
@@ -67,6 +88,17 @@ class RunData:
 
     def __getitem__(self, run_number):
         return self.get_run(run_number)
+
+    def __repr__(self):
+        s = "<%s.%s object at %s>" % (
+            self.__class__.__module__,
+            self.__class__.__name__,
+            hex(id(self)),
+        )
+        runnos = self.get_available_run_numbers()
+        s += "\n"
+        s += f"{len(runnos)} available from {min(runnos)} to {max(runnos)}."
+        return s
 
 
 STATUS_DATA = {}

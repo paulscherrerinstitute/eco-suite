@@ -1303,6 +1303,7 @@ def _write_namespace_status_to_scan(
             f.seek(0)
             json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
             f.truncate()
+            print("Wrote status with seek truncate!")
     if not statusfile.group() == statusfile.parent.group():
         shutil.chown(statusfile, group=statusfile.parent.group())
 
