@@ -18,6 +18,8 @@ from eco.xdiagnostics.intensity_monitors import CalibrationRecord
 from .timetool_online_helper import TtProcessor
 import numpy as np
 import pylab as plt
+from epics import PV
+from bsread import source
 
 # from time import sleep
 
@@ -176,31 +178,25 @@ class TimetoolBerninaUSD(Assembly):
             is_setting=True,
         )
         self._append(
-            DetectorPvDataStream,
-            "SLAAR21-GEN:SPECTT",
-            name="edge_position_px_CA",
-            is_setting=False,
-            is_display=True,
-        )
-        self._append(
-            DetectorPvDataStream,
-            "SLAAR21-LTIM01-EVR0:CALCI",
-            name="edge_position_fs_CA",
-            is_setting=False,
-            is_display=True,
-        )
-        self._append(
             DetectorBsStream,
             "SAROP21-ATT01:edge_pos",
-            cachannel=None,
+            cachannel="SLAAR21-SPECTT:AT",
             name="edge_position_px",
             is_setting=False,
             is_display=True,
         )
         self._append(
             DetectorBsStream,
+            "SAROP21-ATT01:xcorr_ampl",
+            cachannel="SLAAR21-SPATTT:AT",
+            name="edge_amplitude",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
             "SAROP21-ATT01:arrival_time",
-            cachannel=None,
+            cachannel="SLAAR21-LTIM01-EVR0:CALCZ.INPE",
             name="edge_position_fs",
             is_setting=False,
             is_display=True,
@@ -250,7 +246,7 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Andor spectrometer initialization failed with: \n{e}")
 
     def get_calibration_values(
-        self, seconds=5, scan_range=1e-12, plot=False, pipeline=True
+        self, seconds=5, scan_range=.8e-12, plot=False, pipeline=True
     ):
         t0 = self.delay()
         x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, 20)
@@ -261,9 +257,8 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Moving to {pos*1e15} fs")
                 self.delay.set_target_value(pos).wait()
                 if pipeline:
-                    ys = self.edge_position_px.acquire(seconds=seconds).wait()
-                else:
-                    ys = self.edge_position_px_CA.acquire(seconds=seconds).wait()
+                    sleep(2)
+                ys = self.edge_position_px.acquire(seconds=seconds).wait()
                 y.append(np.mean(ys))
                 yerr.append(np.std(ys))
         except Exception as e:
@@ -286,7 +281,7 @@ class TimetoolBerninaUSD(Assembly):
 
     def set_calibration_values(self, c, pipeline=True):
         if pipeline:
-            self.pipeline_edgefinding.config.calibration.set_target_value(p).wait()
+            self.pipeline_edgefinding.config.calibration.set_target_value(c).wait()
         else:
             self.calibration.const_E.set_target_value(c[0]).wait()
             self.calibration.const_F.set_target_value(c[1]).wait()
@@ -308,7 +303,7 @@ class TimetoolBerninaUSD(Assembly):
         p = self.get_calibration_values(
             seconds=seconds, scan_range=scan_range, plot=plot, pipeline=pipeline
         )
-        self.set_calibration_values(p * 1e15, pipeline=pipeline)
+        self.set_calibration_values(p, pipeline=pipeline)
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()
@@ -346,6 +341,19 @@ class TimetoolBerninaUSD(Assembly):
         ax = fig.add_subplot(111)
         ax.imshow(im)
 
+    def bs_read_to_pv(self):
+        fs_pv = PV(self.edge_position_fs.pvname)
+        px_pv = PV(self.edge_position_px.pvname)
+        mx_pv = PV(self.edge_amplitude.pvname)
+        with source(channels=[self.edge_position_fs.bs_channel, self.edge_position_px.bs_channel, self.edge_amplitude.bs_channel]) as s:
+            while True:
+                d = s.receive()
+                fs, px, mx = [[d.data.data[self.edge_position_fs.bs_channel].value], d.data.data[self.edge_position_px.bs_channel].value, d.data.data[self.edge_amplitude.bs_channel].value]
+                if not fs:
+                    continue
+                fs_pv.put(fs)
+                px_pv.put(px)
+                mx_pv.put(mx)
 
 class DelayTime(AdjustableVirtual):
     def __init__(

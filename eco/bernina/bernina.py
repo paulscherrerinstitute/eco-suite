@@ -1126,7 +1126,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "MpodModule",
-    "SARES21-CPCL-PS7071",
+    "SARES21-PS7071",
     [1, 2, 3, 4],
     ["ch1", "ch2", "ch3", "ch4"],
     module_string="LV_OMPV_1",
@@ -1137,7 +1137,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "MpodModule",
-    "SARES21-CPCL-PS7071",
+    "SARES21-PS7071",
     [5, 6, 7, 8],
     ["ch1", "ch2", "ch3", "ch4"],
     module_string="LV_OMPV_1",
@@ -2169,14 +2169,14 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_sample_environments",
     illumination_mpod=[
         {
-            "pvbase": "SARES21-CPCL-PS7071",
+            "pvbase": "SARES21-PS7071",
             "channel_number": 5,
             "module_string": "LV_OMPV_1",
             "name": "illumination",
         }
     ],
     helium_control_valve={
-        "pvbase": "SARES21-CPCL-PS7071",
+        "pvbase": "SARES21-PS7071",
         "channel_number": 4,
         "module_string": "LV_OMPV_1",
         "name": "helium_control_valve",
@@ -2822,13 +2822,13 @@ class SampleHeaterJet(Assembly):
         )
         self._append(
             MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
+            pvbase="SARES21-PS7071",
             channel_number=5,
             name="fan_hexapod_1",
         )
         self._append(
             MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
+            pvbase="SARES21-PS7071",
             channel_number=6,
             name="fan_hexapod_2",
         )
@@ -2846,13 +2846,13 @@ class IlluminatorsLasers(Assembly):
         super().__init__(name=name)
         self._append(
             MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
+            pvbase="SARES21-PS7071",
             channel_number=5,
             name="illumination_inline",
         )
         self._append(
             MpodChannel,
-            pvbase="SARES21-CPCL-PS7071",
+            pvbase="SARES21-PS7071",
             channel_number=2,
             name="illumination_side",
         )

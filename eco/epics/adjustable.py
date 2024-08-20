@@ -233,6 +233,12 @@ class AdjustablePv:
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
 
+    def get_limits(self):
+        return(self._pvlowlim.get(),self._pvhighlim.get())
+    
+    def set_limits(self, lowlim, highlim):
+        return(self._pvlowlim.put(lowlim),self._pvhighlim.put(highlim))
+
     # spec-inspired convenience methods
     # def mv(self, value):
     # self._currentChange = self.set_target_value(value)

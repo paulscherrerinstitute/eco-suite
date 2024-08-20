@@ -486,13 +486,13 @@ class DiffGeometryYou(Assembly):
         self.ubcalc = dccalc.UBCalculation("you")
         # self.ubcalc.n_phi = [0,0,1]
         uc = self.unit_cell()
-        self.ubcalc.set_lattice(uc.pop("name"), **uc)
+        self.ubcalc.set_lattice(**uc)
         for ori in self.orientations():
-            self.ubcalc.add_orientation(ori.pop("hkl"), ori.pop("xyz"), **ori)
+            self.ubcalc.add_orientation(ori["hkl"], ori["xyz"], **{k: v for k, v in ori.items() if k not in ["xyz", "hkl"]})
         for refl in self.reflections():
-            position = Position(*refl.pop("position"))
+            position = Position(*refl["position"])
             self.ubcalc.add_reflection(
-                refl.pop("hkl"), position, refl.pop("energy") * 1e-3, **refl
+                refl["hkl"], position, refl["energy"] * 1e-3, **{k: v for k, v in refl.items() if k not in ["position", "hkl", "energy"]}
             )
         self._u_ub_to_dc()
 
@@ -609,7 +609,7 @@ class DiffGeometryYou(Assembly):
             The index or the tag of the second reflection or orientation.
         """
         self.recalculate()
-        self.ubcalc.calc_ub(idx1, idx2)
+        self.ubcalc.calc_ub(idx1+1, idx2+1)
         self._u_ub_from_dc()
 
     def show_you_geometry(self):
