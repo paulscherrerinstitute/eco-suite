@@ -7,7 +7,7 @@ from eco.elements.detector import DetectorGet
 from eco.elements.adj_obj import AdjustableObject, DetectorObject
 from eco.devices_general.utilities import Changer
 from threading import Thread
-import time 
+import time
 import numpy as np
 import os
 from eco.detector.jungfrau import Jungfrau
@@ -19,7 +19,7 @@ class RobotError(Exception):
 
 class RobotMotors(Assembly):
     def __init__(
-        self, 
+        self,
         name = None,
         robot = None,
         motors = []
@@ -53,39 +53,39 @@ class StaeubliTx200(Assembly):
         self._get_on_poll_info()
         self._append(DetectorGet, self._get_info, cache_get_seconds =None, name='_info', is_setting=False, is_display=False)
         self._append(DetectorObject, self._info, name='info', is_display='recursive', is_setting=False)
-        self._append(AdjustableGetSet, 
-                     self._get_config, 
-                     self._set_config, 
+        self._append(AdjustableGetSet,
+                     self._get_config,
+                     self._set_config,
                      set_returns_changer = True,
-                     cache_get_seconds =None, 
-                     precision=0, 
-                     check_interval=False, 
-                     name='_config', 
-                     is_setting=False, 
+                     cache_get_seconds =None,
+                     precision=0,
+                     check_interval=False,
+                     name='_config',
+                     is_setting=False,
                      is_display=False)
         self._append(AdjustableObject, self._config, name='config',is_setting=True, is_display='recursive')
 
         # appending pshell motors
         motors_cart = [
             ["z_lin", "z_lin", "mm"],
-            ["x", "x", "mm"], 
-            ["y", "y", "mm"], 
-            ["z", "z", "mm"], 
+            ["x", "x", "mm"],
+            ["y", "y", "mm"],
+            ["z", "z", "mm"],
             ["rx", "rx", "deg"],
-            ["ry", "ry", "deg"], 
+            ["ry", "ry", "deg"],
             ["rz", "rz", "deg"],
         ]
         motors_sph = [
-            ["gamma", "gamma", "deg"], 
+            ["gamma", "gamma", "deg"],
             ["delta", "delta", "deg"],
             ["t_det", "r", "mm"],
         ]
         motors_joint = [
-            ["j1", "j1", "deg"], 
-            ["j2", "j2", "deg"], 
-            ["j3", "j3", "deg"], 
-            ["j4", "j4", "deg"], 
-            ["j5", "j5", "deg"], 
+            ["j1", "j1", "deg"],
+            ["j2", "j2", "deg"],
+            ["j3", "j3", "deg"],
+            ["j4", "j4", "deg"],
+            ["j5", "j5", "deg"],
             ["j6", "j6", "deg"],
         ]
         self._append(RobotMotors, name= "joint", robot = self, motors = motors_joint, is_display='recursive', is_setting = True)
@@ -94,12 +94,16 @@ class StaeubliTx200(Assembly):
         self._urdf = None
         try:
             import bernina_urdf
-            self._urdf = bernina_urdf.models.Tx200_Ceiling()
+            jf_id = None
+            if robot_config is not None:
+                jf_id = robot_config.jf_id()
+            self._urdf = bernina_urdf.models.Tx200_Ceiling(jf_id = robot_config.jf_id())
             self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json', default_value=True, name="auto_update_simulation", is_setting=False, is_display=False)
             self._auto_update_simulation_thread = Thread(target=self._auto_updater_simulation)
             self._auto_update_simulation_thread.start()
-        except:
-            print("Loading bernina URDF robot model failed")
+        except Exception as e:
+            print("Loading bernina URDF robot model failed with:")
+            print(e)
         ### adding JF ###
         if robot_config is not None:
             try:
@@ -125,7 +129,7 @@ class StaeubliTx200(Assembly):
             try:
                 if robot_config.diffcalc():
                     from ..utilities.recspace import Crystals
-                    self.configuration=["robot", robot_config.goniometer()] 
+                    self.configuration=["robot", robot_config.goniometer()]
                     self._append(
                         Crystals,
                         diffractometer_you=self,
@@ -147,7 +151,7 @@ class StaeubliTx200(Assembly):
         d= {k: v for k, v in self._cache.items() if k in self._info_fields}
         d.update(self._info_fields_server)
         return d
-    
+
     def _set_config(self, fields):
         changed_item = [[k, v] for k, v in fields.items() if v != self._cache[k]]
         if len(changed_item) > 1:
@@ -165,7 +169,7 @@ class StaeubliTx200(Assembly):
 
     def _get_config(self):
         return {k: v for k, v in self._cache.items() if k in self._config_fields.keys()}
-   
+
     def gui(self):
         cmd = ["caqtdm","/sf/bernina/config/src/caqtdm/robot/robot.ui"]
         return self._run_cmd(" ".join(cmd))
@@ -185,12 +189,12 @@ class StaeubliTx200(Assembly):
 
     def move(self, check=True, wait=True, update_value_time=0.05, timeout=240, **kwargs):
         """
-        This method invokes a spherical, cartesian or joint motion command depending 
+        This method invokes a spherical, cartesian or joint motion command depending
         on the passed keywords.
-        
+
         If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments: cartesian motion
         If any of "r", "gamma", "delta" are in the keyword arguments: spherical motion
-        If any of "j1" to "j6" are in the keyword arguments: joint motion 
+        If any of "j1" to "j6" are in the keyword arguments: joint motion
         """
         if self.info.server_status == "Busy":
             raise RobotError(
@@ -242,7 +246,7 @@ class StaeubliTx200(Assembly):
     def set_central_pixel(self, px=(None,None)):
         """
             px: tuple (x,y)
-            This function sets the central pixel of the detector as shown in the visualization. 
+            This function sets the central pixel of the detector as shown in the visualization.
             If no argument is given, the pixel is set to the center of the detector.
         """
         if px[0] is None:
@@ -272,8 +276,8 @@ class StaeubliTx200(Assembly):
     def record_motion(self, **kwargs):
         """
             This function is used to record trajectories, which are considered safe for remote commands.
-            The move has to be exectuted in manual mode and no other motion is allowed until the 
-            move is either finished or aborted by ctrl + c. To abort the command from a different 
+            The move has to be exectuted in manual mode and no other motion is allowed until the
+            move is either finished or aborted by ctrl + c. To abort the command from a different
             eco session, use the function abort_record().
         """
         if "t_det" in kwargs.keys():
@@ -283,7 +287,7 @@ class StaeubliTx200(Assembly):
 
     def abort_record(self):
         """
-            This functions aborts any motion, which is blocking other commands 
+            This functions aborts any motion, which is blocking other commands
             such as a record_motion command executed in a different session.
         """
         self.pc.eval(":abort")
@@ -304,10 +308,10 @@ class StaeubliTx200(Assembly):
         """
         This method involves communication with the robot controller to interpolate
         the cartesian, spherical or joint motion depending on the passed keywords.
-        By default with no specific keyword arguments, the stored commands on the robot 
+        By default with no specific keyword arguments, the stored commands on the robot
         controller are simulated.
 
-        If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments: 
+        If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments:
             simulate cratesian motion using the helper function _simulate_cartesian_motion --> see docstring for details
 
         Else if any of "r", "gamma", "delta" are in the keyword arguments:
@@ -317,7 +321,7 @@ class StaeubliTx200(Assembly):
            simulate joint motion using the helper function _simulate_joint_motion --> see docstring for details
 
         coordinates = "joint":
-            the coordinates in which the interpolated values are returned. 
+            the coordinates in which the interpolated values are returned.
             Options are "joint" (default) or "spherical" / "cartesian"
 
         plot = True:
@@ -334,7 +338,7 @@ class StaeubliTx200(Assembly):
             return self._simulate_stored_commands()
 
     def _simulate_stored_commands(self, plot=True):
-        """        
+        """
         Simulated stored commands on the controller.
         """
         sim = np.array(self.get_eval_result(f"robot.simulate_stored_commands()"))
@@ -353,17 +357,17 @@ class StaeubliTx200(Assembly):
             return sim
 
     def _simulate_spherical_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
-        """        
-        Simulated motion in the spherical coordinate system using a linear moteion movel command to         
-        change the radius from point tcp_p_spherical[0] to tcp_p_spherical[1], followed        
-        by a circular motion along the circle given by the start point tcp_p_spherical[1],         
-        the intermediate point tcp_p_spherical[2] and the target tcp_p_spherical[3].        
-        
-        simulate: True or False        
-        coordinates: "joint" or "cartesian"        
-        
-        If simulate = True, an array of interpolated positions in either joint or cartesian        
-        coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
+        """
+        Simulated motion in the spherical coordinate system using a linear moteion movel command to
+        change the radius from point tcp_p_spherical[0] to tcp_p_spherical[1], followed
+        by a circular motion along the circle given by the start point tcp_p_spherical[1],
+        the intermediate point tcp_p_spherical[2] and the target tcp_p_spherical[3].
+
+        simulate: True or False
+        coordinates: "joint" or "cartesian"
+
+        If simulate = True, an array of interpolated positions in either joint or cartesian
+        coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.
         """
         sim = np.array(self.get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"))
         lin = np.array([self.cartesian.z_lin()]*len(sim))
@@ -403,14 +407,14 @@ class StaeubliTx200(Assembly):
 
 
     def _simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint", plot=True):
-        """        
+        """
         Simulated motion in the cartesian coordinate system using a linear motion movel command to
-        move from point tcp_p_spherical[0] to tcp_p_spherical[1].        
-        
-        coordinates: "joint" or "cartesian"        
-        
-        An array of interpolated positions in either joint or cartesian        
-        coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.        
+        move from point tcp_p_spherical[0] to tcp_p_spherical[1].
+
+        coordinates: "joint" or "cartesian"
+
+        An array of interpolated positions in either joint or cartesian
+        coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.
         """
         sim = np.array(self.get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
         lin = np.array([self.cartesian.z_lin()]*11)
@@ -426,7 +430,7 @@ class StaeubliTx200(Assembly):
                     self.auto_update_simulation(True)
         else:
             return sim
-    
+
     def _simulate_current_pos(self):
         js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])
         if np.any([j is None for j in js]):
@@ -476,7 +480,7 @@ class StaeubliTx200(Assembly):
 
     def _as_bool(self, s):
         return True if s=='true' else False if s=='false' else None
-    
+
     def get_eval_result(self, cmd, update_value_time=0.05, timeout=1, background=True):
         if "info" in self.__dict__.keys():
             if self.info.server_status == "Busy":
@@ -496,7 +500,7 @@ class StaeubliTx200(Assembly):
             elif (time.time() - t_start) > timeout:
                 raise RobotError(
                     f"evaluation timeout reached"
-                )     
+                )
         return val
 
     def _set_eval_cmd(self, cmd, stopper = None, hold=False, update_value_time=0.05, timeout=120, background=True, stopper_msg = ""):
