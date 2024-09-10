@@ -812,16 +812,21 @@ class DiffGeometryYou(Assembly):
         idx_out = df.index[~in_lims]
 
         if len(idx_in) > 1:
-            print(
-                f"There is not a unique angular configuration to reach ({h},{k},{l}), please change the diffractometer motor soft limits to allow only one of the solutions shown below:"
-            )
+            s = f"There is not a unique angular configuration to reach ({h},{k},{l}), please change the diffractometer motor soft limits to allow only one of the solutions shown below. \nCurrent limits are:\n"
+            for axname, adj in self._diff_adjs.items():
+                if hasattr(adj,"get_limits"):
+                    s+=f"{axname}: {adj.get_limits()}\n"
+            print(s)
+            print("Solutions:")
             print(df.loc[idx_in])
             raise Exception("No unique solution")
         elif len(idx_in) == 0:
-            print(
-                "There is no angular configuration, which is allowed for the current diffractometer motor soft limits. please check the diffractometer limits."
-            )
-            print("Solutions")
+            s ="There is no angular configuration, which is allowed for the current diffractometer motor soft limits. please check the diffractometer limits to allow one of the solutions shown below. \nCurrent limits are:\n"
+            for axname, adj in self._diff_adjs.items():
+                if hasattr(adj,"get_limits"):
+                    s+=f"{axname}: {adj.get_limits()}\n"
+            print(s)
+            print("Solutions:")
             print(df)
             raise Exception("No unique solution")
         solution_unique = df.loc[idx_in[0]]
@@ -856,6 +861,8 @@ class DiffGeometryYou(Assembly):
 
     def get_energy(self):
         energy = PV("SAROP21-ARAMIS:ENERGY").value
+        if energy is None:
+            raise("Getting energy from monochromator / machine returned None")
         return energy
 
     def _u_ub_from_dc(self):

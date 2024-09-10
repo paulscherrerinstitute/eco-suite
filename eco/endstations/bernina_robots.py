@@ -99,7 +99,7 @@ class StaeubliTx200(Assembly):
                 jf_id = robot_config.jf_id()
             self._urdf = bernina_urdf.models.Tx200_Ceiling(jf_id = robot_config.jf_id())
             self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json', default_value=True, name="auto_update_simulation", is_setting=False, is_display=False)
-            self._auto_update_simulation_thread = Thread(target=self._auto_updater_simulation)
+            self._auto_update_simulation_thread = Thread(target=self._auto_updater_simulation, daemon=True)
             self._auto_update_simulation_thread.start()
         except Exception as e:
             print("Loading bernina URDF robot model failed with:")
