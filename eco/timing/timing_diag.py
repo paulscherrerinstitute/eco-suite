@@ -20,6 +20,7 @@ import numpy as np
 import pylab as plt
 from epics import PV
 from bsread import source
+from pathlib import Path
 
 # from time import sleep
 
@@ -32,6 +33,7 @@ class TimetoolBerninaUSD(Assembly):
         name=None,
         processing_pipeline="SARES20-CAMS142-M5_psen_db",
         edge_finding_pipeline="SAROP21-ATT01_proc",
+        pv_writing_pipeline="Bernina_tt_kb_populate_pvs",
         processing_instance="SARES20-CAMS142-M5_psen_db",
         spectrometer_camera_channel="SARES20-CAMS142-M5:FPICTURE",
         spectrometer_pvname="SARES20-CAMS142-M5",
@@ -74,6 +76,16 @@ class TimetoolBerninaUSD(Assembly):
             )
         except Exception as e:
             print(f"Timetool edge finding pipeline initialization failed with: \n{e}")
+        try:
+            self.proc_pipeline_pv_writing = pv_writing_pipeline
+            self._append(
+                Pipeline,
+                self.proc_pipeline_pv_writing,
+                name="pipeline_pv_writing",
+                is_setting=True,
+            )
+        except Exception as e:
+            print(f"Timetool pv writing pipeline initialization failed with: \n{e}")
         self.spectrometer_camera_channel = spectrometer_camera_channel
         self._append(
             Target_xyz,
@@ -180,7 +192,7 @@ class TimetoolBerninaUSD(Assembly):
         self._append(
             DetectorBsStream,
             "SAROP21-ATT01:edge_pos",
-            cachannel="SLAAR21-SPECTT:AT",
+            cachannel="SLAAR21-SPECTT:PX",
             name="edge_position_px",
             is_setting=False,
             is_display=True,
@@ -188,7 +200,7 @@ class TimetoolBerninaUSD(Assembly):
         self._append(
             DetectorBsStream,
             "SAROP21-ATT01:xcorr_ampl",
-            cachannel="SLAAR21-SPATTT:AT",
+            cachannel="SLAAR21-SPECTT:MX",
             name="edge_amplitude",
             is_setting=False,
             is_display=True,
@@ -196,7 +208,7 @@ class TimetoolBerninaUSD(Assembly):
         self._append(
             DetectorBsStream,
             "SAROP21-ATT01:arrival_time",
-            cachannel="SLAAR21-LTIM01-EVR0:CALCZ.INPE",
+            cachannel="SLAAR21-SPECTT:AT",
             name="edge_position_fs",
             is_setting=False,
             is_display=True,
@@ -246,48 +258,83 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Andor spectrometer initialization failed with: \n{e}")
 
     def get_calibration_values(
-        self, seconds=5, scan_range=.8e-12, plot=False, pipeline=True
+        self, seconds=5, scan_range=.8e-12, plot=False, pipeline=True, to_elog=False
     ):
         t0 = self.delay()
         x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, 20)
         y = []
+        ymean = []
         yerr = []
         try:
             for pos in x:
                 print(f"Moving to {pos*1e15} fs")
                 self.delay.set_target_value(pos).wait()
                 if pipeline:
+                    #needed due to delay of data arrival
                     sleep(2)
                 ys = self.edge_position_px.acquire(seconds=seconds).wait()
-                y.append(np.mean(ys))
-                yerr.append(np.std(ys))
+                y.append(ys)
+                ymean.append(np.mean(ys))
+                yerr.append(np.std(ys)/np.sqrt(len(ys)))
         except Exception as e:
             print(e)
             print(f"Moving back to inital value of {t0}")
             self.delay.set_target_value(t0)
 
-        p = np.polyfit(y, x, 2)
+        p = np.polyfit(ymean, x, 2, w=1/np.array(yerr))
+        fpath = ""
         if plot:
+            binmin = np.min([np.min(step) for step in y])
+            binmax = np.max([np.max(step) for step in y])
+            bins = np.arange(binmin, binmax, 1)
+            bins_center = bins[:-1]+0.5
+            hists = np.array([np.histogram(step, bins=bins)[0]for step in y]).T
             plt.close("tt_calib")
             fig = plt.figure("tt_calib")
-            line = plt.errorbar(x, y, yerr)
-            fit = plt.plot(np.polyval(p, y), y, label=p)
+            plt.pcolor(x, bins_center, hists)
+            line = plt.errorbar(x, ymean, yerr, color="red", marker=".", linestyle="")
+            fit = plt.plot(np.polyval(p, ymean), ymean, label=p, color="yellow")
+            plt.xlabel("tt_kb.delay (s)")
+            plt.ylabel("edge position (px)")
             plt.legend()
             plt.show()
-        print(f"Fit results c0 + c1*px + c2*px^2:\n{p}")
+            if to_elog:
+                fpath = "/photonics/home/gac-bernina/tt_calib.jpg"
+                fig.savefig(fpath, dpi=200)
+                fpath = Path(fpath)
+        if to_elog:
+            try:
+                msg = f"<h1>Timetool calibration results:</h1>\n"
+                msg+= "Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
+                msg+= self.target_stages.__repr__()
+                elog = self._get_elog()
+                elog.post(msg.replace("\n", "<br>"), fpath)
+            except Exception as e:
+                print(f"Elog posting failed with:\n {e}")
+        print(f"Fit results c0*px^2 + c1*px + c2:\n{p}")
         print(f"Moving back to inital value of {t0}")
         self.delay.set_target_value(t0)
-        return p
+        return p, y
 
-    def set_calibration_values(self, c, pipeline=True):
+    def set_calibration_values(self, p, pipeline=True, to_elog=True):
         if pipeline:
-            self.pipeline_edgefinding.config.calibration.set_target_value(c).wait()
+            old_calib = self.pipeline_edgefinding.config.calibration()
+            self.pipeline_edgefinding.config.calibration.set_target_value(p).wait()
+            msg = f"Updated timetool processing pipeline calibration:\n"
+            msg+= "old values: {old_calib} \nnew values: {p}"
         else:
-            self.calibration.const_E.set_target_value(c[0]).wait()
-            self.calibration.const_F.set_target_value(c[1]).wait()
-            self.calibration.const_G.set_target_value(c[2]).wait()
+            self.calibration.const_E.set_target_value(p[0]).wait()
+            self.calibration.const_F.set_target_value(p[1]).wait()
+            self.calibration.const_G.set_target_value(p[2]).wait()
+            msg = f"Updated timetool processing epics calibration:\nnew values: {p}"
+        if to_elog:
+            try:
+                elog = self._get_elog()
+                elog.post(msg)
+            except Exception as e:
+                print(f"Elog posting failed with:\n {e}")
 
-    def calibrate(self, seconds=5, scan_range=1e-12, plot=True, pipeline=True):
+    def calibrate(self, seconds=5, scan_range=1e-12, plot=True, pipeline=True, to_elog=True):
         t0 = self.delay()
         if abs(t0) > 50e-15:
             ans = ""
@@ -300,10 +347,10 @@ class TimetoolBerninaUSD(Assembly):
                     continue
             if ans == "n":
                 return
-        p = self.get_calibration_values(
-            seconds=seconds, scan_range=scan_range, plot=plot, pipeline=pipeline
+        p, ys = self.get_calibration_values(
+            seconds=seconds, scan_range=scan_range, plot=plot, to_elog=to_elog, pipeline=pipeline
         )
-        self.set_calibration_values(p, pipeline=pipeline)
+        self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()

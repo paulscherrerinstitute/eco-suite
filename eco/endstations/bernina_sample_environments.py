@@ -398,7 +398,7 @@ class High_field_thz_chamber(Assembly):
             # mot.stage_type(config["type"])
             mot.motor_parameters.sensor_type_num(config["sensor"])
             mot.direction(config["direction"])
-            mot.motor_parameters.max_frequency(config > ["speed"])
+            mot.motor_parameters.max_frequency(config["speed"])
             sleep(0.5)
             mot.calibrate_sensor()
 
@@ -678,6 +678,7 @@ class Organic_crystal_breadboard(Assembly):
             mot.motor_parameters.sensor_type_num(config["sensor"])
             mot.direction(config["direction"])
             mot.motor_parameters.max_frequency(config["speed"])
+            mot.speed(0)
             sleep(0.5)
             mot.calibrate_sensor()
 
@@ -852,16 +853,16 @@ class Electro_optic_sampling(Assembly):
                 "home_direction": "back",
             },
             "rx": {
-                "id": "SARES23-USR:MOT_11",
-                "pv_descr": "Motor4:2 EOS Rx",
+                "id": "SARES23-USR:MOT_8",
+                "pv_descr": "Motor3:2 EOS Rx",
                 "sensor": 53,
                 "speed": 250,
                 "direction": 0,
                 "home_direction": "back",
             },
             "x": {
-                "id": "SARES23-USR:MOT_12",
-                "pv_descr": "Module4:3 EOS x",
+                "id": "SARES23-USR:MOT_9",
+                "pv_descr": "Module3:3 EOS x",
                 "sensor": 42,
                 "speed": 250,
                 "direction": 0,
