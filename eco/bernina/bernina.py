@@ -1083,6 +1083,14 @@ namespace.append_obj(
     lazy=True,
 )
 
+namespace.append_obj(
+    "Jungfrau",
+    "JF13T01V01",
+    name="det_invac",
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector.jungfrau",
+    config_adj=config_JFs,
+    lazy=True,)
 
 namespace.append_obj(
     "Jungfrau",
@@ -2181,17 +2189,26 @@ namespace.append_obj(
         "channel_number": 4,
         "module_string": "LV_OMPV_1",
         "name": "helium_control_valve",
+        "pvname": "SARES20-CWAG-GPS01:DAC04",
     },
     # configuration=["ottifant"],
     configuration=["cube"],
 )
 
+#namespace.append_obj(
+#    "Organic_crystal_breadboard",
+#    lazy=True,
+#    name="ocb",
+#    delay_offset_detector=NamespaceComponent(namespace, "thc.delay_x_center"),
+#    thc_x_adjustable=NamespaceComponent(namespace, "thc.x"),
+#    module_name="eco.endstations.bernina_sample_environments",
+#)
 namespace.append_obj(
     "Organic_crystal_breadboard",
     lazy=True,
     name="ocb",
-    delay_offset_detector=NamespaceComponent(namespace, "thc.delay_x_center"),
-    thc_x_adjustable=NamespaceComponent(namespace, "thc.x"),
+    delay_offset_detector=None,
+    thc_x_adjustable=None,
     module_name="eco.endstations.bernina_sample_environments",
 )
 
@@ -2201,7 +2218,12 @@ namespace.append_obj(
     name="eos",
     module_name="eco.endstations.bernina_sample_environments",
 )
-
+namespace.append_obj(
+    "Electro_optic_sampling_new",
+    lazy=True,
+    name="eos_new",
+    module_name="eco.endstations.bernina_sample_environments",
+)
 # class Sample_stages(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)

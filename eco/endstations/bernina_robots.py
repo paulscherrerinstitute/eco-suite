@@ -117,7 +117,7 @@ class StaeubliTx200(Assembly):
                     )
                     if "JF01" in robot_config.jf_id():
                         self.config.tool("t_JF01T03")
-                        self.det_diff.shape = np.array([1614, 1030])
+                        self.det_diff.shape = np.array([1030, 1614])
                     elif "JF07" in robot_config.jf_id():
                         self.config.tool("t_JF07T32")
                         self.det_diff.shape = np.array([4432, 4215])
@@ -254,7 +254,11 @@ class StaeubliTx200(Assembly):
         else:
             x,y = (np.asarray(px) - self.__dict__[self.rc.jf_name()].shape/2) *75e-3
         tool = "t_"+self.rc.jf_id().split("V")[0]
-
+        try:
+            elog = self._get_elog()
+            elog.post(f"<h1>Changing central pixel of {self.rc.jf_name()} to {px}</h1>")
+        except:
+            print("Elog posting failed")
         try:
             self.config.tool.mv_elog(tool)
             time.sleep(1)
@@ -266,7 +270,7 @@ class StaeubliTx200(Assembly):
 
     def get_central_pixel(self):
         tool = "t_"+self.rc.jf_id().split("V")[0]
-        if self.config.tool() == tool:
+        if self.config.tool().split(".")[-1] == tool:
             return np.round(np.array(self.config.tool_coordinates())[0:2] / 75e-3 + self.__dict__[self.rc.jf_name()].shape/2,1)
         else:
             raise RobotError(f"The current tool {self.config.tool()} is different from the expected detector tool {tool}")

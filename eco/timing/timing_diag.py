@@ -271,7 +271,7 @@ class TimetoolBerninaUSD(Assembly):
                 self.delay.set_target_value(pos).wait()
                 if pipeline:
                     #needed due to delay of data arrival
-                    sleep(2)
+                    sleep(5)
                 ys = self.edge_position_px.acquire(seconds=seconds).wait()
                 y.append(ys)
                 ymean.append(np.mean(ys))
@@ -305,7 +305,7 @@ class TimetoolBerninaUSD(Assembly):
         if to_elog:
             try:
                 msg = f"<h1>Timetool calibration results:</h1>\n"
-                msg+= "Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
+                msg+= f"Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
                 msg+= self.target_stages.__repr__()
                 elog = self._get_elog()
                 elog.post(msg.replace("\n", "<br>"), fpath)
@@ -321,7 +321,7 @@ class TimetoolBerninaUSD(Assembly):
             old_calib = self.pipeline_edgefinding.config.calibration()
             self.pipeline_edgefinding.config.calibration.set_target_value(p).wait()
             msg = f"Updated timetool processing pipeline calibration:\n"
-            msg+= "old values: {old_calib} \nnew values: {p}"
+            msg+= f"old values: {old_calib} \nnew values: {p}"
         else:
             self.calibration.const_E.set_target_value(p[0]).wait()
             self.calibration.const_F.set_target_value(p[1]).wait()

@@ -7,7 +7,9 @@ from ..devices_general.motors import (
     SmaractRecord,
     ThorlabsPiezoRecord,
 )
-from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS
+from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS, spec_convenience, update_changes, value_property
+from eco.devices_general.utilities import Changer
+
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
 from ..devices_general.detectors import DetectorVirtual
@@ -280,11 +282,92 @@ class Stage_LXT_Delay(AdjustableVirtual):
             pd_pos = self.offset_fine_adj()
         return self._direction * pd_pos, self._direction * ps_pos
 
+@spec_convenience
+@value_property
+class Phaseshifter_MK2(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._cb = None
+        self._append(
+            AdjustablePv,
+            pvname+":PULSE_TIME_END",
+            pvreadbackname=pvname+":PULSE_TIME_NOW",
+            name="target",
+            unit="ps",
+            is_setting=True)
+        self._append(
+            AdjustablePv,
+            pvname+":PULSE_TIME_UPDATE",
+            name="enabled",
+            is_setting=True)
+        self._append(
+            AdjustablePv,
+            pvname+":PULSE_TIME_RATE",
+            name="speed",
+            unit="ps/s",
+            is_setting=True)
+        self._append(
+            AdjustablePv,
+            pvname+":ACTIVE_PROCESS",
+            name="_abort",
+            is_setting=False,
+            is_display=False)
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
+        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
+
+    ######### Motion commands ########
+    def get_limits(self):
+        return (self.limit_low(), self.limit_high())
+
+    def set_limits(self, limit_low, limit_high):
+        self.limit_low(limit_low)
+        self.limit_high(limit_high)
+
+    def stop(self):
+        """Adjustable convention"""
+        self._abort(1)
+        pass
+
+    def get_moveDone(self, value):
+        if self._cb:
+            self._cb()
+        if (abs(value - self.target.get_current_value()) < 0.05):
+            return True
+        else:
+            return False
+
+    def move(self, value, check=True, wait=True, update_value_time=0.1, timeout=120):
+        if check:
+            lim_low, lim_high = self.get_limits()
+            if not ((lim_low <= value) and (value <= lim_high)):
+                raise AdjustableError("Soft limits violated!")
+        self.enabled(1)
+        self.target.set_target_value(value*1e12)
+        if wait:
+            t_start = time.time()
+            time.sleep(update_value_time)
+            while not self.get_moveDone(value*1e12):
+                if (time.time() - t_start) > timeout:
+                    raise AdjustableError(f"motion timeout reached in phaseshifter motion")
+                time.sleep(update_value_time)
+    def set_target_value(self, value, hold=False, check=True):
+        changer = lambda value: self.move(value, check=check, wait=True)
+        return Changer(
+            target=value,
+            parent=self,
+            changer=changer,
+            hold=hold,
+            stopper=self.stop,
+        )
+    def get_current_value(self):
+        return self.target()*1e-12
 
 class LaserBernina(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
+
         # Table 1, Benrina hutch
         self._append(
             MotorRecord,
@@ -294,6 +377,10 @@ class LaserBernina(Assembly):
         )
         self._append(
             DelayTime, self.delaystage_glob, name="delay_glob", is_setting=True
+        )
+
+        self._append(
+            Phaseshifter_MK2, pvname="SLAAR-CSOC-DLL3-PYIOC", name="phaseshifter_mk2", is_setting=True
         )
 
         # Table 2, Bernina hutch

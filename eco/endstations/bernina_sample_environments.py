@@ -1,5 +1,7 @@
 from scipy import constants
 from eco.devices_general.powersockets import MpodChannel
+from eco.devices_general.wago  import AnalogOutput
+
 import sys
 
 from eco.elements.detector import DetectorVirtual
@@ -330,11 +332,18 @@ class High_field_thz_chamber(Assembly):
                 )
 
         if helium_control_valve:
+            # self._append(
+            #     MpodChannel,
+            #     helium_control_valve["pvbase"],
+            #     helium_control_valve["channel_number"],
+            #     module_string=helium_control_valve["module_string"],
+            #     name="_helium_valve_mpod_ch",
+            #     is_display=True,
+            #     is_setting=True,
+            # )
             self._append(
-                MpodChannel,
-                helium_control_valve["pvbase"],
-                helium_control_valve["channel_number"],
-                module_string=helium_control_valve["module_string"],
+                AnalogOutput,
+                helium_control_valve["pvname"],
                 name="_helium_valve_mpod_ch",
                 is_display=True,
                 is_setting=True,
@@ -358,7 +367,7 @@ class High_field_thz_chamber(Assembly):
 
             self._append(
                 AdjustableVirtual,
-                [self._helium_valve_mpod_ch.voltage],
+                [self._helium_valve_mpod_ch.value ],
                 get_valve,
                 set_valve,
                 name=helium_control_valve["name"],
@@ -594,6 +603,9 @@ class Organic_crystal_breadboard(Assembly):
             "thz_filter": {
                 "pvname": "SLAAR21-LMOT-ELL4",
             },
+            "waveplate_Thz": {
+                "pvname": "SLAAR21-LMOT-ELL6",
+            },            
         }
 
         ### smaract motors ###
@@ -1104,6 +1116,303 @@ class Electro_optic_sampling(Assembly):
 
     def __repr__(self):
         return self.get_adjustable_positions_str()
+
+class Electro_optic_sampling_new(Assembly):
+    def __init__(self, name=None, diode_channels=None):
+        super().__init__(name=name)
+        self.name = name
+        self.alias = Alias(name)
+        self.diode_channels = diode_channels
+        self.basepath = f"/sf/bernina/data/p18915/res/scan_info/"
+        self.motor_configuration = {
+            "ry": {
+                "id": "SARES23-USR:MOT_3",
+                "pv_descr": "Module1:3 EOS Ry",
+                "sensor": 2,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "rx": {
+                "id": "SARES23-USR:MOT_8",
+                "pv_descr": "Motor3:2 EOS Rx",
+                "sensor": 53,
+                "speed": 250,
+                "direction": 0,
+                "home_direction": "back",
+            },
+            "x": {
+                "id": "SARES23-USR:MOT_9",
+                "pv_descr": "Module3:3 EOS x",
+                "sensor": 42,
+                "speed": 250,
+                "direction": 0,
+                "home_direction": "back",
+            },
+        }
+
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage_eos",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_eos,
+            name="delay_eos",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M522:MOTOR_1",
+            name="delaystage_thz",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_thz,
+            name="delay_thz",
+            is_setting=True,
+        )
+        
+        def calc_new_eos_thz_delay(delay):
+            delay_eos_start = self.delay_eos.get_current_value()
+            delay_thz_start = self.delay_thz.get_current_value()
+            delay_rel = delay-delay_thz_start
+            return delay_eos_start + delay_rel , delay
+
+        self._append(
+            AdjustableVirtual,
+            [self.delay_eos, self.delay_thz],
+            lambda deos,dthz: deos,
+            calc_new_eos_thz_delay,
+            name='delay_thz_eos',
+        )
+        ### in vacuum smaract motors ###
+        for name, config in self.motor_configuration.items():
+            self._append(
+                SmaractRecord,
+                pvname=config["id"],
+                name=name,
+                is_setting=True,
+            )
+
+    def set_stage_config(self, cfg=None):
+        if cfg is None:
+            cfg = self.motor_configuration
+        for name, config in cfg.items():
+            mot = self.__dict__[name]
+            mot.description(config["pv_descr"])
+            # mot.stage_type(config["type"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
+            sleep(0.5)
+            mot.calibrate_sensor()
+
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration = self.motor_configuration
+        stages = motor_configuration.keys()
+        print("#### Positions before homing ####")
+        print(self.__repr__())
+        for name in stages:
+            config = motor_configuration[name]
+            mot = self.__dict__[name]
+            print(
+                "#### Homing {} in {} direction ####".format(
+                    name, config["home_direction"]
+                )
+            )
+            sleep(1)
+            if config["home_direction"] == "back":
+                mot.home_reverse(1)
+                sleep(0.5)
+                while not mot.flags.motion_complete():
+                    sleep(1)
+                if not mot.flags.is_homed():
+                    print(
+                        "Homing failed, try homing {} in forward direction".format(name)
+                    )
+                    mot.home_forward(1)
+            elif config["home_direction"] == "forward":
+                mot.home_forward(1)
+                sleep(0.5)
+                while not mot.flags.motion_complete():
+                    sleep(1)
+                if not mot.flags.is_homed():
+                    print(
+                        "Homing failed, try homing {} in backward direction".format(
+                            name
+                        )
+                    )
+                    mot.home_reverse(1)
+
+    def fit_funvction(self, t, t0, w, tau):
+        from scipy.special import erf
+
+        tt = t - t0
+        y = (
+            0.5
+            * exp(-(2 * tau * tt - w**2) / (2 * tau**2))
+            * (1 - erf((-tau * tt + w**2) / (sqrt(2) * tau * w)))
+        )
+        return y
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****EOS motor positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    def loaddata(self, runno, diode_channels=None):
+        json_dir = Path(self.basepath)
+        fname = list(json_dir.glob(f"run{runno:04}*"))[0]
+        data = sf.parseScanEco_v01(fname)
+        # print(data)
+        dat = {name: data[ch].data.compute() for name, ch in diode_channels.items()}
+        ch = list(diode_channels.values())[0]
+        xlab = list(data[ch].scan.parameter.keys())[0]
+        x = data[ch].scan.parameter[xlab]["values"]
+        shots = len(list(dat.values())[0]) // len(x)
+        numsteps = len(list(dat.values())[0]) // shots
+        daton = np.ndarray((numsteps,))
+        datoff = np.ndarray((numsteps,))
+        datmean = {
+            name: np.array(
+                [dat[name][n * shots : (n + 1) * shots].mean() for n in range(numsteps)]
+            )
+            for name in dat.keys()
+        }
+        return {xlab: x}, datmean, dat
+
+    def plotEOS_list(
+        self, runlist, what="diff", diode_channels=None, t0_corr=True, offset_sub=False
+    ):
+        """
+        what = 'diff' the read out from the channel 3 of the balanced diode
+               'diff/sum'  (diode1 - diode2)/(diode1+diode2)
+        t0_corr: True or False
+                it finds the position the maximum / minimum peak and correct time zero in the time axis
+        """
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5), num="Runlist")
+        ax[1].set_xlabel("Frequency [THz]")
+        ax[1].set_ylabel("normalized ampl")
+
+        for rr in runlist:
+            if diode_channels is None:
+                diode_channels = self.diode_channels
+            x, datmean, dat = self.loaddata(rr, diode_channels)
+            x_motor, x = list(x.items())[0]
+            if "delay" in x_motor:
+                x = np.array(x) * 1e12  # covert to ps
+                x_motor = x_motor + " [ps]"
+            dat1 = datmean["d1"]
+            dat2 = datmean["d2"]
+
+            if what == "diff":
+                diff = datmean["diff"]
+            elif what == "ratio":
+                diff = dat1 / dat2
+            elif what == "sum":
+                diff = dat1 + dat2
+            elif what == "diff":
+                diff = dat1 - dat2
+            elif what == "diff/sum":
+                diff = (dat1 - dat2) / (dat1 + dat2)
+            if "delay" in x_motor:
+                freq, ampl = self.calcFFT(x, diff.T)
+
+            else:
+                freq, ampl = 0, 0
+            if offset_sub:
+                diff = diff - np.mean(diff[:5])
+            max_pos = np.argmax(abs(diff))
+            t0_pos = x[int(max_pos)]
+            if t0_corr:
+                x = x - t0_pos
+            np.savetxt(f"eos_data/eos_Scan{rr}.txt", [x, diff])
+            ax[0].plot(x, diff, label=f"Run_{rr}: t0={t0_pos:0.2f}")
+            ax[0].legend()
+            ax[1].plot(freq, ampl)
+        ax[0].set_xlabel(x_motor)
+
+    def plotEOS(self, runno, diode_channels=None):
+        if diode_channels is None:
+            diode_channels = self.diode_channels
+        x, datmean, dat = self.loaddata(runno, diode_channels)
+        x_motor, x = list(x.items())[0]
+        if "delay" in x_motor:
+            x = np.array(x) * 1e12  # covert to ps
+            x_motor = x_motor + " [ps]"
+        fig, ax = plt.subplots(2, 2, figsize=(9, 7), num=f"Run_{runno}")
+        dat1 = datmean["d1"]
+        dat2 = datmean["d2"]
+        diff = datmean["diff"]
+        diffOverSum = (dat1 - dat2) / (dat1 + dat2)
+        if "delay_thz" in x_motor:
+            freq_0, ampl_0 = self.calcFFT(x, diff.T)
+            freq_1, ampl_1 = self.calcFFT(x, diffOverSum.T)
+        else:
+            freq_0 = 0
+            freq_1 = 0
+            ampl_0 = 0
+            ampl_1 = 0
+        ax[0, 0].set_title(f"Run_{runno}")
+        ax[0, 0].plot(x, diff, "k-", label="Channel3 (diff)")
+        ax[1, 0].plot(x, diffOverSum, "r-", label="Diff / Sum ")
+        ax[0, 1].plot(x, dat1, label="Diode1")
+        ax[0, 1].plot(x, dat2, label="Diode2")
+        ax[0, 1].set_xlabel(x_motor)
+        ax[1, 1].plot(freq_0, ampl_0, "k-", label="Channel3(diff)")
+        ax[1, 1].plot(freq_1, ampl_1, "r-", label="Diff/Sum")
+        ax[1, 1].set_xlabel("Frequency [THz]")
+        ax[1, 1].set_ylabel("normalized ampl")
+        for ii in range(2):
+            ax[ii, 0].legend()
+            ax[ii, 0].set_xlabel(x_motor)
+            ax[0, ii].legend()
+        return x, diffOverSum
+
+    def calcFFT(self, x, y, norm=True, lim=[0.1, 15]):
+        # lim: min and max in THz for normalization and plotting
+        x = abs(x)
+        N = x.size
+        T = x[N - 1] - x[0]
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
+        te = x[1] - x[0]
+        fe = 1.0 / te
+        fft_cal = np.fft.fft(y) / N
+        ampl = np.absolute(fft_cal)
+        freq = np.arange(N) / T
+        ind0 = int(np.argmin(abs(freq - lim[0])))
+        ind1 = int(np.argmin(abs(freq - lim[1])))
+        ampl = ampl[ind0:ind1]
+        freq = freq[ind0:ind1]
+        if norm:
+            ampl = ampl / np.max(ampl[2:])
+        return freq, ampl
+
+    def calcField(self, DiffoverSum, L=100e-6, wl=800e-9, r41=0.97e-12, n0=3.19):
+        # Parameters: L: GaP thickness, lambda: EOS wavelength, r41: EO coefficient, n0: refractive index of EOS sampling
+        # Field transmission assuming that n(THz) = n(opt)
+        # Angle between THz polarization and (001)
+        alpha = 90.0 / 180 * np.pi
+        # angle between probe polarization and (001)
+        th = 0.0 / 180 * np.pi
+        t = 2.0 / (n0 + 1)
+        geoSens = np.cos(alpha) * np.sin(2 * th) + 2 * np.sin(alpha) * np.cos(2 * th)
+        E = np.arcsin(DiffoverSum) * wl / (np.pi * L * r41 * n0**3 * t) / geoSens
+
+        return E
+
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
 
 
 def calc_otti(

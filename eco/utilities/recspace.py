@@ -479,12 +479,11 @@ class DiffGeometryYou(Assembly):
                 "beta": beta,
                 "gamma": gamma,
             }
-        )
+        ).wait()
         self.recalculate()
 
     def recalculate(self):
         self.ubcalc = dccalc.UBCalculation("you")
-        # self.ubcalc.n_phi = [0,0,1]
         uc = self.unit_cell()
         self.ubcalc.set_lattice(**uc)
         for ori in self.orientations():
@@ -537,7 +536,7 @@ class DiffGeometryYou(Assembly):
         self.reflections.set_target_value(
             self.reflections()
             + [{"hkl": hkl, "position": angs, "energy": energy, "tag": tag}]
-        )
+        ).wait()
 
     def del_reflection(self, idx):
         """Delete a reference reflection.
@@ -550,7 +549,7 @@ class DiffGeometryYou(Assembly):
         self.ubcalc.del_reflection(idx)
         refls = self.reflections()
         removed = refls.pop(idx)
-        self.reflections.set_target_value(refls)
+        self.reflections.set_target_value(refls).wait()
         print(f"Removed reflection {removed}")
         self.recalculate()
 
@@ -574,7 +573,7 @@ class DiffGeometryYou(Assembly):
         self.orientations.set_target_value(
             self.orientations()
             + [{"hkl": hkl, "xyz": xyz, "position": position, "tag": tag}]
-        )
+        ).wait()
         self.recalculate()
 
     def del_orientation(self, idx):
@@ -587,7 +586,7 @@ class DiffGeometryYou(Assembly):
         """
         refls = self.orientations()
         removed = refls.pop(idx)
-        self.orientations.set_target_value(refls)
+        self.orientations.set_target_value(refls).wait()
         print(f"Removed reflection {removed}")
         self.recalculate()
 
