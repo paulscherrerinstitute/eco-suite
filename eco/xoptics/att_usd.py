@@ -16,7 +16,9 @@ from ..elements.adjustable import (
     update_changes,
     value_property,
     AdjustableFS,
+    AdjustableGetSet,
 )
+from ..elements.detector import DetectorGet
 from eco.devices_general.utilities import Changer
 import pylab as plt
 
@@ -36,6 +38,7 @@ class Att_usd(Assembly):
         self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
         self._append(SmaractRecord, "SARES23-LIC:MOT_10", name="transl_2", is_setting=True, is_display=True)
         self._append(SmaractRecord, "SARES23-LIC:MOT_3", name="transl_1", is_setting=True, is_display=True)
+        self._append(DetectorGet,self.get_current_value,name='readback',is_display=True)
         self.motor_configuration = {
             "transl_2": {
                 "id": "SARES23-LIC10",
