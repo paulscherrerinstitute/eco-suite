@@ -46,7 +46,7 @@ from ..elements.assembly import Assembly
 #             name="oscialltor_pulse_offset",
 #         )
 #         append_object_to_object(
-#             self,
+#             self,cal
 #             AdjustablePvEnum,
 #             self.pvname + ":SHOTMOFFS_ENA",
 #             name="modulo_offset_mode",
@@ -261,7 +261,7 @@ class XltEpics(Assembly):
         self.waiting_for_change = PV(self.pvname + ":WAITING")
 
     # def get_current_dial_value(self):
-    #     return self.delay_dial_rb.get_current_value() * 1e-6
+    #     return self.delay_dial_rb.get_current_vaSLAAR02-LTIM-PDLY2:DELAYlue() * 1e-6
 
     def get_current_value(self):
         return self.readback.get_current_value()
@@ -275,11 +275,17 @@ class XltEpics(Assembly):
     #         - self.offset.get_current_value()
     #     )
 
-    def change_user_and_wait(self, value, check_interval=0.03, evr_wait_time=0.01):
+    def change_user_and_wait(
+        self, value, check_interval=0.03, evr_wait_time=0.01, accuracy=1e-16
+    ):
         if np.abs(value) > 0.1:
             raise Exception("Very large value! This value is counted in seconds!")
         if not self.waiting_for_change.get():
             raise Exception("lxt is still moving!")
+
+        is_no_change = np.abs(self.get_current_value() - value) < accuracy
+        if is_no_change:
+            return
         self.is_moving = False
         self.is_stopped = False
 

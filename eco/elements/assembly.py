@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 from inspect import isclass
 import json
@@ -121,7 +122,10 @@ class Assembly:
         **kwargs,
     ):
         if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
-            self.__dict__[name] = foo_obj_init
+            # adj_copy = copy.copy(foo_obj_init)
+            adj_copy = foo_obj_init
+            # adj_copy.alias = Alias(name,parent=self)
+            self.__dict__[name] = adj_copy
         elif isinstance(foo_obj_init, Detector) and not isclass(foo_obj_init):
             self.__dict__[name] = foo_obj_init
         elif isinstance(foo_obj_init, Assembly) and not isclass(foo_obj_init):
@@ -307,7 +311,7 @@ class Assembly:
             gr = Pyasciigraph()
             for line in gr.graph(
                 "Times required to get status",
-                sorted(settings_times.items(), key=lambda w: w[1]),
+                sorted(status_times.items(), key=lambda w: w[1]),
             ):
                 print(line)
 

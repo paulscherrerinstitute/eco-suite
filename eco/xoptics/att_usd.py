@@ -22,6 +22,7 @@ from ..elements.detector import DetectorGet
 from eco.devices_general.utilities import Changer
 import pylab as plt
 
+
 @spec_convenience
 @value_property
 class Att_usd(Assembly):
@@ -34,11 +35,37 @@ class Att_usd(Assembly):
         self.E_min = 1500
         self._sleeptime = 1
         self._cb = None
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
-        self._append(SmaractRecord, "SARES23-LIC:MOT_10", name="transl_2", is_setting=True, is_display=True)
-        self._append(SmaractRecord, "SARES23-LIC:MOT_3", name="transl_1", is_setting=True, is_display=True)
-        self._append(DetectorGet,self.get_current_value,name='readback',is_display=True)
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/{name}_limit_high.json",
+            default_value=1,
+            name="limit_high",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/{name}_limit_low.json",
+            default_value=0,
+            name="limit_low",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23-LIC:MOT_10",
+            name="transl_2",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23-LIC:MOT_3",
+            name="transl_1",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            DetectorGet, self.get_current_value, name="readback", is_display=True
+        )
         self.motor_configuration = {
             "transl_2": {
                 "id": "SARES23-LIC10",
@@ -156,7 +183,7 @@ class Att_usd(Assembly):
         while not energy:
             energy = PV("SAROP21-ARAMIS:ENERGY").value
             if np.isnan(energy):
-                energy = PV("SARUN:FELPHOTENE").value*1000
+                energy = PV("SARUN:FELPHOTENE").value * 1000
             if energy < self.E_min:
                 energy = None
                 print(
@@ -164,7 +191,7 @@ class Att_usd(Assembly):
                 )
                 sleep(self._sleeptime)
         self.E = energy
-        print("Calculating transmission for %s eV" % energy)
+        # print("Calculating transmission for %s eV" % energy)
         return
 
     def _calc_transmission(self):
@@ -210,8 +237,6 @@ class Att_usd(Assembly):
             sleep(0.1)
         print("transmission changed")
         self._xp.open()
-    
-
 
     def get_current_value(self):
         self._updateE()
@@ -240,7 +265,7 @@ class Att_usd(Assembly):
 
     def home_smaract_stages(self, motor_configuration=None):
         if motor_configuration == None:
-            motor_configuration= self.motor_configuration
+            motor_configuration = self.motor_configuration
         stages = motor_configuration.keys()
         print("#### Positions before homing ####")
         print(self.__repr__())
@@ -255,7 +280,7 @@ class Att_usd(Assembly):
             sleep(1)
             if config["home_direction"] == "back":
                 mot.home_reverse(1)
-                sleep(.5)
+                sleep(0.5)
                 while not mot.flags.motion_complete():
                     sleep(1)
                 if not mot.flags.is_homed():
@@ -265,7 +290,7 @@ class Att_usd(Assembly):
                     mot.home_forward(1)
             elif config["home_direction"] == "forward":
                 mot.home_forward(1)
-                sleep(.5)
+                sleep(0.5)
                 while not mot.flags.motion_complete():
                     sleep(1)
                 if not mot.flags.is_homed():
@@ -276,20 +301,6 @@ class Att_usd(Assembly):
                     )
                     mot.home_reverse(1)
 
-    def get_adjustable_positions_str(self):
-        ostr = "*****att_usd target position******\n"
-
-        for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
-        pos = self.get_current_value()
-        ostr += "  " + "Transmission".ljust(17) + " : % 14.02E\n" % pos
-        return ostr
-
-    def __repr__(self):
-        s = self.get_adjustable_positions_str()
-        return s
     ######### Motion commands ########
 
     def get_limits(self):
@@ -309,7 +320,9 @@ class Att_usd(Assembly):
     def get_moveDone(self, p1, p2):
         if self._cb:
             self._cb()
-        if ((abs(p1 - self.transl_1.get_current_value()) < 0.05)&(abs(p2 - self.transl_2.get_current_value()) < 0.05)):
+        if (abs(p1 - self.transl_1.get_current_value()) < 0.05) & (
+            abs(p2 - self.transl_2.get_current_value()) < 0.05
+        ):
             return True
         else:
             return False
@@ -354,7 +367,9 @@ class Att_usd(Assembly):
             values = [values]
         self._updateE(energy=energy)
         self._calc_transmission()
-        act_values = np.array([self._find_nearest(self.transmissions["t"], value) for value in values])
+        act_values = np.array(
+            [self._find_nearest(self.transmissions["t"], value) for value in values]
+        )
         if plot:
             plt.close("att_usd target_positions")
             plt.figure("att_usd target_positions")
@@ -364,6 +379,7 @@ class Att_usd(Assembly):
             plt.ylabel("reachable transmission")
             plt.tight_layout()
         return act_values.T[1]
+
 
 class att_usd(Assembly):
     def __init__(self, name=None, alias_namespace=None, xp=None):
@@ -506,7 +522,7 @@ class att_usd(Assembly):
                 )
                 sleep(self._sleeptime)
         self.E = energy
-        print("Set energy to %s eV" % energy)
+        # print("Set energy to %s eV" % energy)
         return
 
     def _calc_transmission(self):

@@ -632,6 +632,9 @@ class AdjustableVirtual:
     def check_target_value_within_limits(self, value):
         in_lims = []
         values = self._foo_set_target_value_current_value(value)
+        if not hasattr(values, "__iter__"):
+            values = (values,)
+
         for val, adj in zip(values, self._adjustables):
             lim_low, lim_high = adj.get_limits()
             in_lims.append((lim_low < val) and (val < lim_high))

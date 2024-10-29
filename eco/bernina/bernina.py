@@ -2717,13 +2717,22 @@ from eco.loptics.bernina_laser import Stage_LXT_Delay
 #     module_name="eco.loptics.bernina_laser",
 # )
 
+# namespace.append_obj(
+#     "StageLxtDelay",
+#     ocb.delay_thz,
+#     las,
+#     lazy=True,
+#     name="lxt",
+#     direction=-1,
+#     module_name="eco.loptics.bernina_laser",
+# )
+
 namespace.append_obj(
-    "StageLxtDelay",
-    ocb.delay_thz,
-    las,
+    "LxtCompStageDelay",
+    NamespaceComponent(namespace,"tt_kb.delay"),
+    NamespaceComponent(namespace,"las.xlt"),
     lazy=True,
     name="lxt",
-    direction=-1,
     module_name="eco.loptics.bernina_laser",
 )
 

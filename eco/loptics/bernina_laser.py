@@ -7,7 +7,14 @@ from ..devices_general.motors import (
     SmaractRecord,
     ThorlabsPiezoRecord,
 )
-from ..elements.adjustable import AdjustableMemory, AdjustableVirtual, AdjustableFS, spec_convenience, update_changes, value_property
+from ..elements.adjustable import (
+    AdjustableMemory,
+    AdjustableVirtual,
+    AdjustableFS,
+    spec_convenience,
+    update_changes,
+    value_property,
+)
 from eco.devices_general.utilities import Changer
 
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
@@ -164,7 +171,6 @@ class FilterWheelAttenuator(Assembly):
         self.wheel_1.home()
         self.wheel_2.home()
 
-
 class StageLxtDelay(Assembly):
     def __init__(self, fine_delay_adj, las, direction=1, name=None):
         super().__init__(name=name)
@@ -232,6 +238,32 @@ class StageLxtDelay(Assembly):
             outfine = self.offset_fine_adj.get_current_value()
         return (outfine, outcoarse)
 
+class LxtCompStageDelay(Assembly):
+    def __init__(self, comp_adj, delay_adj, direction=1, name=None):
+        super().__init__(name=name)
+        self._comp_delay_adj = comp_adj
+        self._delay_adj = delay_adj
+        # self._append(AdjustableMemory, direction, name="_direction", is_setting=True)
+
+        self._append(
+            AdjustableVirtual,
+            [self._delay_adj, self._comp_delay_adj],
+            self._get_comp_delay,
+            self._set_comp_delay,
+            name="delay",
+            unit="s",
+        )
+
+    def _get_comp_delay(self, delay, delaycomp):
+        return -delay
+
+    def _set_comp_delay(self, delay):
+        if self._comp_delay_adj.check_target_value_within_limits(delay):
+            outcomp = delay
+        else:
+            outcomp = self._comp_delay_adj.get_current_value()
+        return (-delay, outcomp)
+
 
 class Stage_LXT_Delay(AdjustableVirtual):
     def __init__(self, fine_delay_adj, coarse_delay_adj, direction=1, name=None):
@@ -282,6 +314,7 @@ class Stage_LXT_Delay(AdjustableVirtual):
             pd_pos = self.offset_fine_adj()
         return self._direction * pd_pos, self._direction * ps_pos
 
+
 @spec_convenience
 @value_property
 class Phaseshifter_MK2(Assembly):
@@ -291,30 +324,43 @@ class Phaseshifter_MK2(Assembly):
         self._cb = None
         self._append(
             AdjustablePv,
-            pvname+":PULSE_TIME_END",
-            pvreadbackname=pvname+":PULSE_TIME_NOW",
+            pvname + ":PULSE_TIME_END",
+            pvreadbackname=pvname + ":PULSE_TIME_NOW",
             name="target",
             unit="ps",
-            is_setting=True)
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv, pvname + ":PULSE_TIME_UPDATE", name="enabled", is_setting=True
+        )
         self._append(
             AdjustablePv,
-            pvname+":PULSE_TIME_UPDATE",
-            name="enabled",
-            is_setting=True)
-        self._append(
-            AdjustablePv,
-            pvname+":PULSE_TIME_RATE",
+            pvname + ":PULSE_TIME_RATE",
             name="speed",
             unit="ps/s",
-            is_setting=True)
+            is_setting=True,
+        )
         self._append(
             AdjustablePv,
-            pvname+":ACTIVE_PROCESS",
+            pvname + ":ACTIVE_PROCESS",
             name="_abort",
             is_setting=False,
-            is_display=False)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
+            is_display=False,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/{name}_limit_high.json",
+            default_value=1,
+            name="limit_high",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/{name}_limit_low.json",
+            default_value=0,
+            name="limit_low",
+            is_setting=True,
+        )
 
     ######### Motion commands ########
     def get_limits(self):
@@ -332,7 +378,7 @@ class Phaseshifter_MK2(Assembly):
     def get_moveDone(self, value):
         if self._cb:
             self._cb()
-        if (abs(value - self.target.get_current_value()) < 0.05):
+        if abs(value - self.target.get_current_value()) < 0.05:
             return True
         else:
             return False
@@ -343,14 +389,17 @@ class Phaseshifter_MK2(Assembly):
             if not ((lim_low <= value) and (value <= lim_high)):
                 raise AdjustableError("Soft limits violated!")
         self.enabled(1)
-        self.target.set_target_value(value*1e12)
+        self.target.set_target_value(value * 1e12)
         if wait:
             t_start = time.time()
             time.sleep(update_value_time)
-            while not self.get_moveDone(value*1e12):
+            while not self.get_moveDone(value * 1e12):
                 if (time.time() - t_start) > timeout:
-                    raise AdjustableError(f"motion timeout reached in phaseshifter motion")
+                    raise AdjustableError(
+                        f"motion timeout reached in phaseshifter motion"
+                    )
                 time.sleep(update_value_time)
+
     def set_target_value(self, value, hold=False, check=True):
         changer = lambda value: self.move(value, check=check, wait=True)
         return Changer(
@@ -360,8 +409,10 @@ class Phaseshifter_MK2(Assembly):
             hold=hold,
             stopper=self.stop,
         )
+
     def get_current_value(self):
-        return self.target()*1e-12
+        return self.target() * 1e-12
+
 
 class LaserBernina(Assembly):
     def __init__(self, pvname, name=None):
@@ -380,7 +431,10 @@ class LaserBernina(Assembly):
         )
 
         self._append(
-            Phaseshifter_MK2, pvname="SLAAR-CSOC-DLL3-PYIOC", name="phaseshifter_mk2", is_setting=True
+            Phaseshifter_MK2,
+            pvname="SLAAR-CSOC-DLL3-PYIOC",
+            name="phaseshifter_mk2",
+            is_setting=True,
         )
 
         # Table 2, Bernina hutch
@@ -507,7 +561,13 @@ class LaserBernina(Assembly):
         self._append(
             LaserRateControl, name="rate", is_setting=True, is_display="recursive"
         )
-        self._append(XltEpics, name="xlt", is_setting=True, is_display="recursive")
+        self._append(
+            XltEpics,
+            pvname="SLAAR02-LTIM-PDLY2",
+            name="xlt",
+            is_setting=True,
+            is_display="recursive",
+        )
         # Upstairs, Laser 1 LAM
         # self._append(
         #     MotorRecord,

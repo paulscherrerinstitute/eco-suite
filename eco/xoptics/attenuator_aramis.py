@@ -20,7 +20,6 @@ from numpy import isnan, all
 import time
 
 
-
 @spec_convenience
 @value_property
 class AttenuatorAramis(Assembly):
@@ -29,22 +28,31 @@ class AttenuatorAramis(Assembly):
     ):
         super().__init__(name=name)
         self.pvname = Id
-        self.shutter=shutter
-        self._append(AdjustablePvEnum,self.pvname+":UsrRec.MODE",name='execution_mode')
-        self._append(DetectorPvEnum,self.pvname+":HOMING",name='homing_status')
-        self._append(AdjustablePvEnum,self.pvname+":ENY_SEL",name='energy_monitor_source')
-        self._append(DetectorPvData,self.pvname+":ENY_CALC",name='energy_monitor')
+        self.shutter = shutter
+        self._append(
+            AdjustablePvEnum, self.pvname + ":UsrRec.MODE", name="execution_mode"
+        )
+        self._append(DetectorPvEnum, self.pvname + ":HOMING", name="homing_status")
+        self._append(
+            AdjustablePvEnum, self.pvname + ":ENY_SEL", name="energy_monitor_source"
+        )
+        self._append(DetectorPvData, self.pvname + ":ENY_CALC", name="energy_monitor")
         # self._append(AdjustablePv,self.pvname+"SAROP21-OATT135:UsrRec.TC1",name='_transmission_fund')
         # self._append(AdjustablePv,self.pvname+"SAROP21-OATT135:UsrRec.TC3",name='_transmission_3rdharm')
 
-        self._append(AdjustablePv,self.pvname+":UsrRec.ERY",name='energy_calc')
-        self._append(AdjustablePvEnum,self.pvname+":UsrRec.HRM3",name='_set_energy_harm')
-        self._append(AdjustablePv,self.pvname+":UsrRec.TD",name='_set_transmission')
-        
-        for tn in range(1,7,1):
-            self._append(AdjustablePvEnum,self.pvname+f":UsrRec.FIC{tn}",self.pvname+f":UsrRec.FI{tn}",name=f'target{tn}')
-        
-    
+        self._append(AdjustablePv, self.pvname + ":UsrRec.ERY", name="energy_calc")
+        self._append(
+            AdjustablePvEnum, self.pvname + ":UsrRec.HRM3", name="_set_energy_harm"
+        )
+        self._append(AdjustablePv, self.pvname + ":UsrRec.TD", name="_set_transmission")
+
+        for tn in range(1, 7, 1):
+            self._append(
+                AdjustablePvEnum,
+                self.pvname + f":UsrRec.FIC{tn}",
+                self.pvname + f":UsrRec.FI{tn}",
+                name=f"target{tn}",
+            )
 
         self.E_min = E_min
         # self._pv_status_str = PV(self.pvname + ":MOT2TRANS.VALD")
@@ -53,7 +61,13 @@ class AttenuatorAramis(Assembly):
         # self._xp = shutter
         self.motors = []
         for n in range(6):
-            self._append(MotorRecord, f"{self.pvname}:MOTOR_{n+1}", name=f"motor{n+1}", is_setting=True, is_display=False)
+            self._append(
+                MotorRecord,
+                f"{self.pvname}:MOTOR_{n+1}",
+                name=f"motor{n+1}",
+                is_setting=True,
+                is_display=False,
+            )
             self.motors.append(self.__dict__[f"motor{n+1}"])
         # self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
         # self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
@@ -62,7 +76,6 @@ class AttenuatorAramis(Assembly):
         # self._append(AdjustablePv, self.pvname + ":ENERGY", name="energy", is_setting=True, is_display=False)
         # self._append(AdjustablePv, self.pvname + ":TRANS_SP", name="set_transmission", is_setting=False, is_display=False)
 
-
         # alias_fields = {
         #     "transmission": "TRANS_RB",
         #     "transmission_3rd": "TRANS3EDHARM_RB",
@@ -70,21 +83,32 @@ class AttenuatorAramis(Assembly):
         # for an, af in alias_fields.items():
         #     ach = ":".join([self.pvname, af])
         #     self.alias.append(Alias(an, channel=ach, channeltype="CA"))
-        self._append(DetectorPvData,self.pvname+":UsrRec.TC1",name='_transmission_fund',is_display=False)
-        self._append(DetectorPvData,self.pvname+":UsrRec.TC3",name='_transmission_3rdharm',is_display=False)
+        self._append(
+            DetectorPvData,
+            self.pvname + ":UsrRec.TC1",
+            name="_transmission_fund",
+            is_display=False,
+        )
+        self._append(
+            DetectorPvData,
+            self.pvname + ":UsrRec.TC3",
+            name="_transmission_3rdharm",
+            is_display=False,
+        )
         self._append(
             AdjustableGetSet,
             self._transmission_fund.get_current_value,
-            lambda value: self.set_transmission(value,harm=1),
+            lambda value: self.set_transmission(value, harm=1),
             is_setting=True,
-            name='transmission_fund')
+            name="transmission_fund",
+        )
         self._append(
             AdjustableGetSet,
             self._transmission_3rdharm.get_current_value,
-            lambda value: set_transmission(value,harm=3),
+            lambda value: set_transmission(value, harm=3),
             is_setting=True,
-            name='transmission_3rdharm')
-        
+            name="transmission_3rdharm",
+        )
 
     def updateE(self, energy=None):
         while not energy:
@@ -96,7 +120,7 @@ class AttenuatorAramis(Assembly):
                 )
                 sleep(self._sleeptime)
         self.energy_calc(energy)
-        print("Calculating transmission for %s eV" % energy)
+        # print("Calculating transmission for %s eV" % energy)
         return
 
     def set_transmission(self, value, harm=1, check_mode=True, energy=None):
@@ -108,15 +132,13 @@ class AttenuatorAramis(Assembly):
         else:
             raise Exception("Only first and 3rd harmonics implamented!")
         self._set_transmission(value)
-        
-
 
     def get_moveDone(self):
         return all([m.get_moveDone() for m in self.motors])
 
     def get_current_value(self, *args, **kwargs):
-        return self.transmission_fund.get_current_value(*args, **kwargs
-                                                        )
+        return self.transmission_fund.get_current_value(*args, **kwargs)
+
     # def set_target_value(self, *args, **kwargs):
     #     return self.transmission_fund.set_target_value(*args, **kwargs)
 
@@ -131,14 +153,14 @@ class AttenuatorAramis(Assembly):
         """Adjustable convention"""
         for m in self.motors:
             m.stop()
-    
+
     def move(self, value, check=False, wait=True, update_value_time=0.1, timeout=120):
         self.shutter.close()
         self.updateE()
         self.transmission_fund(value)
         if wait:
             t_start = time.time()
-            time.sleep(.2)
+            time.sleep(0.2)
             while not self.get_moveDone():
                 if (time.time() - t_start) > timeout:
                     raise AdjustableError(f"motion timeout reached in att motion")
@@ -156,7 +178,6 @@ class AttenuatorAramis(Assembly):
         )
 
 
-
 @spec_convenience
 @value_property
 class AttenuatorAramisOld(Assembly):
@@ -172,15 +193,56 @@ class AttenuatorAramisOld(Assembly):
         self._xp = shutter
         self.motors = []
         for n in range(6):
-            self._append(MotorRecord, f"{self.pvname}:MOTOR_{n+1}", name=f"motor{n+1}", is_setting=True, is_display=True)
+            self._append(
+                MotorRecord,
+                f"{self.pvname}:MOTOR_{n+1}",
+                name=f"motor{n+1}",
+                is_setting=True,
+                is_display=True,
+            )
             self.motors.append(self.__dict__[f"motor{n+1}"])
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
-        self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
-        self._append(AdjustablePv, "SAROP21-ARAMIS:ENERGY", name="energy_rb", is_setting=False, is_display=False)
-        self._append(AdjustablePv, "SARUN:FELPHOTENE", name="energy_rb_backup", is_setting=False, is_display=False)
-        self._append(AdjustablePv, self.pvname + ":ENERGY", name="energy", is_setting=True, is_display=False)
-        self._append(AdjustablePv, self.pvname + ":TRANS_SP", name="set_transmission", is_setting=False, is_display=False)
-
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/{name}_limit_high.json",
+            default_value=1,
+            name="limit_high",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/{name}_limit_low.json",
+            default_value=0,
+            name="limit_low",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            "SAROP21-ARAMIS:ENERGY",
+            name="energy_rb",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            "SARUN:FELPHOTENE",
+            name="energy_rb_backup",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":ENERGY",
+            name="energy",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ":TRANS_SP",
+            name="set_transmission",
+            is_setting=False,
+            is_display=False,
+        )
 
         alias_fields = {
             "transmission": "TRANS_RB",
@@ -200,7 +262,7 @@ class AttenuatorAramisOld(Assembly):
         while not energy:
             energy = self.energy_rb()
             if isnan(energy):
-                energy = self.energy_rb_backup()*1000
+                energy = self.energy_rb_backup() * 1000
             if energy < self.E_min:
                 energy = None
                 print(
@@ -208,7 +270,7 @@ class AttenuatorAramisOld(Assembly):
                 )
                 sleep(self._sleeptime)
         self.energy(energy)
-        print("Calculating transmission for %s eV" % energy)
+        # print("Calculating transmission for %s eV" % energy)
         return
 
     def set_transmission(self, value, energy=None):
@@ -261,7 +323,7 @@ class AttenuatorAramisOld(Assembly):
         self.set_transmission(value)
         if wait:
             t_start = time.time()
-            time.sleep(.2)
+            time.sleep(0.2)
             while not self.get_moveDone():
                 if (time.time() - t_start) > timeout:
                     raise AdjustableError(f"motion timeout reached in att motion")
