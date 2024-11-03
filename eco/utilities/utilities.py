@@ -63,7 +63,7 @@ def isiter(a):
 def roundto(v,interval):
     return np.rint(v/interval)*interval
 
-def linlog_intervals(*args,verbose=True, plot=False):
+def linlog_intervals(*args, verbose=True, plot=False):
     """Get linearly and logarithmically spaced arrays from providing limits and intervals or number of intervals.
     Example usages:
     linlog_intervals(-1e-12,('lin',.1e-12),2e-12,('log',2e-12),1e-6,('lin',4),5e-6)
