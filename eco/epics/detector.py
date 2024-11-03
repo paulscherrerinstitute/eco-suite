@@ -12,6 +12,7 @@ from eco.elements.detector import call_convenience, value_property
 from eco.epics.adjustable import AdjustablePvString, AdjustablePv
 from eco.epics import get_from_archive
 
+
 # @call_convenience
 # @value_property
 @get_from_archive
@@ -52,7 +53,6 @@ class DetectorPvData(Assembly):
 
     def __call__(self):
         return self.get_current_value()
-    
 
 
 # @call_convenience
@@ -97,7 +97,7 @@ class DetectorPvEnum(Assembly):
 
     def __call__(self):
         return self.get_current_value()
-    
+
     def _wait_for_initialisation(self):
         self._pv.wait_for_connection()
 
@@ -114,12 +114,6 @@ class DetectorPvString:
 
     def get_current_value(self):
         return self._pv.get()
-
-    def set_target_value(self, value, hold=False):
-        changer = lambda value: self._pv.put(bytes(value, "utf8"), wait=True)
-        return Changer(
-            target=value, parent=self, changer=changer, hold=hold, stopper=None
-        )
 
     def __repr__(self):
         return self.get_current_value()
@@ -253,5 +247,5 @@ class DetectorPvDataStream(Assembly):
 
     data = property(get_data)
 
-    def get_current_value(self,**kwargs):
+    def get_current_value(self, **kwargs):
         return self._pv.get(**kwargs)

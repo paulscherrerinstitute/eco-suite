@@ -14,11 +14,12 @@ from ..elements.adjustable import (
     spec_convenience,
     update_changes,
     value_property,
+    tweak_option,
 )
 from eco.devices_general.utilities import Changer
 
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData
+from ..epics.detector import DetectorPvData, DetectorPvString
 from ..devices_general.detectors import DetectorVirtual
 from ..timing.lasertiming_edwin import XltEpics, LaserRateControl
 import colorama
@@ -26,6 +27,7 @@ import datetime
 from pint import UnitRegistry
 import numpy as np
 import time
+from epics import PV
 
 # from time import sleep
 
@@ -171,6 +173,7 @@ class FilterWheelAttenuator(Assembly):
         self.wheel_1.home()
         self.wheel_2.home()
 
+
 class StageLxtDelay(Assembly):
     def __init__(self, fine_delay_adj, las, direction=1, name=None):
         super().__init__(name=name)
@@ -237,6 +240,7 @@ class StageLxtDelay(Assembly):
             )
             outfine = self.offset_fine_adj.get_current_value()
         return (outfine, outcoarse)
+
 
 class LxtCompStageDelay(Assembly):
     def __init__(self, comp_adj, delay_adj, direction=1, name=None):
@@ -313,6 +317,86 @@ class Stage_LXT_Delay(AdjustableVirtual):
             ps_pos = self.offset_coarse_adj() + delay
             pd_pos = self.offset_fine_adj()
         return self._direction * pd_pos, self._direction * ps_pos
+
+
+@spec_convenience
+@value_property
+@tweak_option
+class PhaseshifterOrig(Assembly):
+    def __init__(self, pvname, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        # self._cb = None
+        self._append(
+            AdjustablePv,
+            pvname + ":NEW_DELTA_T",
+            name="_set_val",
+            unit="ps",
+            is_setting=False,
+            is_status=False,
+            is_display=False,
+        )
+        self._append(
+            DetectorPvData,
+            pvname + ":CURR_DELTA_T",
+            name="_readback",
+            unit="ps",
+            is_setting=False,
+            is_display=False,
+        )
+
+        self._append(
+            DetectorVirtual,
+            [self._readback],
+            lambda val: val / 1e12,
+            name="readback",
+            unit="s",
+        )
+
+        self._append(
+            DetectorPvString,
+            pvname + ":INFO_LINE2",
+            name="status_string",
+            is_setting=False,
+            is_display=True,
+        )
+
+        self._set_new_delay = PV(pvname + ":SET_NEW_PHASE.PROC")
+        self._append(AdjustableMemory, "s", name="unit", is_display=False)
+
+    # def _monitor_to_new_delay_set(*args,**kwargs,timeout=30):
+
+    def get_current_value(self):
+        return self._readback.get_current_value() * 1e-12
+
+    def _change_value_and_wait(self, value, check_interval=0.03, accuracy=100e-15):
+        if np.abs(value) > 0.1:
+            raise Exception("Very large value! This value is counted in seconds!")
+
+        is_no_change = np.abs(self.get_current_value() - value) < accuracy
+        if is_no_change:
+            return
+
+        def set_is_moving_state(**kwargs):
+            self.is_moving = not kwargs["value"] == "->New delay was set...OK"
+
+        if not is_no_change:
+            self._set_val.set_target_value(value * 1e12).wait()
+            cbno = self.status_string._pv.add_callback(callback=set_is_moving_state)
+            self.is_moving = True
+            self._set_new_delay.put(1)
+            while self.is_moving:
+                time.sleep(check_interval)
+            else:
+                self.status_string._pv.clear_callbacks()
+
+    def set_target_value(self, value, hold=False):
+        return Changer(
+            target=value,
+            parent=self,
+            changer=self._change_value_and_wait,
+            hold=hold,
+        )
 
 
 @spec_convenience
@@ -419,15 +503,11 @@ class LaserBernina(Assembly):
         super().__init__(name=name)
         self.pvname = pvname
 
-        # Table 1, Benrina hutch
         self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M523:MOTOR_1",
-            name="delaystage_glob",
+            PhaseshifterOrig,
+            pvname="SLAAR02-TSPL-EPL",
+            name="phaseshifter_orig",
             is_setting=True,
-        )
-        self._append(
-            DelayTime, self.delaystage_glob, name="delay_glob", is_setting=True
         )
 
         self._append(
@@ -437,18 +517,30 @@ class LaserBernina(Assembly):
             is_setting=True,
         )
 
+        # Table 1, Benrina hutch
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M523:MOTOR_1",
+            name="delaystage_glob",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime, self.delaystage_glob, name="delay_glob", is_setting=True
+        )
+
         # Table 2, Bernina hutch
         self._append(
             MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True
         )
         # Waveplate and Delay stage
-        self._append(
-            MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
-        )
+        # self._append(
+        #     MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
+        # )
 
-        self._append(
-            MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
-        )
+        # self._append(
+        #     MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
+        # )
         try:
             self.motor_configuration_thorlabs = {
                 "waveplate_lambda_half": {
@@ -515,6 +607,7 @@ class LaserBernina(Assembly):
             "/photonics/home/gac-bernina/eco/configuration/wp_att_calibration",
             name="wp_att_calibration",
             is_display=False,
+            is_setting=True,
         )
         tmptime = time.time()
         while (time.time() - tmptime) < 10:
@@ -545,19 +638,13 @@ class LaserBernina(Assembly):
             except:
                 return np.nan
 
-        self._append(
-            AdjustableVirtual, [self.wp_att], wp2uJ, uJ2wp, name="pulse_energy_pump"
-        )
-
         # self._append(
         #    MotorRecord,
         #    self.pvname + "-M522:MOTOR_1",
         #    name="delaystage_pump",
         #    is_setting=True,
         # )wp_att
-        # self._append(
-        #    DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
-        # )
+        # self._append(pump
         self._append(
             LaserRateControl, name="rate", is_setting=True, is_display="recursive"
         )
@@ -575,31 +662,53 @@ class LaserBernina(Assembly):
         #     name="delaystage_pump",
         #     is_setting=True,
         # )
+        # self._append(pump
+        #     MotorRecord,
+        #     "SLAAR21-LMOT-M521:MOTOR_1",
+        #     name="delaystage_pump",
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     DelayTime,
+        #     self.delaystage_pump,
+        #     name="delay_pump",
+        #     is_setting=True,
+        # )
         self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M521:MOTOR_1",
-            name="delaystage_pump",
+            SmaractRecord,
+            "SARES23-USR:MOT_10",
+            name="switch_ir_wl",
+            is_setting=True,
+        )
+        self._append(
+            ThorlabsPiezoRecord,
+            "SLAAR21-LMOT-ELL5",
+            name="wp_ir",
+            is_setting=True,
+        )
+        self._append(
+            ThorlabsPiezoRecord,
+            "SLAAR21-LMOT-ELL2",
+            name="rot_block_ir",
+            is_setting=False,
+        )
+
+        self._append(
+            SmaractRecord,
+            "SARES23-USR:MOT_11",
+            name="delaystage_ir",
             is_setting=True,
         )
         self._append(
             DelayTime,
-            self.delaystage_pump,
-            name="delay_pump",
+            self.delaystage_ir,
+            name="delay_ir",
             is_setting=True,
         )
-        # self._append(
-        #     Stage_LXT_Delay,
-        #     self.delay_glob,
-        #     self.xlt,
-        #     direction=1,
-        #     name="delay",
-        # )
-        # self._append(
-        #     SmaractStreamdevice,
-        #     pvname="SARES23-ESB18",
-        #     name="delaystage_thz",
-        #     is_setting=True,
-        # )
+
+        self._append(
+            AdjustableVirtual, [self.wp_ir], wp2uJ, uJ2wp, name="pulse_energy_ir"
+        )
 
 
 class DelayTime(AdjustableVirtual):

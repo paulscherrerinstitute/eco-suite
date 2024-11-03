@@ -998,7 +998,7 @@ namespace.append_obj(
     "StaeubliTx200",
     module_name="eco.endstations.bernina_robots",
     name="rob",
-#    pshell_url="http://PC14742:8080/",
+    #    pshell_url="http://PC14742:8080/",
     pshell_url="http://saresb-robot:8080/",
     robot_config=config_bernina.robot_config,
     pgroup_adj=config_bernina.pgroup,
@@ -1083,24 +1083,24 @@ namespace.append_obj(
     lazy=True,
 )
 
-namespace.append_obj(
-    "Jungfrau",
-    "JF13T01V01",
-    name="det_invac",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector.jungfrau",
-    config_adj=config_JFs,
-    lazy=True,)
+# namespace.append_obj(
+#     "Jungfrau",
+#     "JF13T01V01",
+#     name="det_invac",
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.detector.jungfrau",
+#     config_adj=config_JFs,
+#     lazy=True,)
 
-namespace.append_obj(
-    "Jungfrau",
-    "JF03T01V02",
-    name="det_i0",
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.detector.jungfrau",
-    config_adj=config_JFs,
-    lazy=True,
-)
+# namespace.append_obj(
+#     "Jungfrau",
+#     "JF03T01V02",
+#     name="det_i0",
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.detector.jungfrau",
+#     config_adj=config_JFs,
+#     lazy=True,
+# )
 
 # namespace.append_obj(
 #     "Jungfrau",
@@ -2128,9 +2128,16 @@ class N2jet(Assembly):
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23-USR:MOT_12", name="ver", is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_13", name="hor", is_setting=True)
-        # self._append(SmaractRecord, "SARES23-USR:MOT_11", name="x", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_8", name="ver", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_3", name="hor", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_9", name="x", is_setting=True)
+        self._append(
+            MotorRecord,
+            "SARES23-LIC:MOT_17",
+            name="focusdst",
+            is_setting=True,
+        )
+
         # self._append(
         #     MotorRecord,
         #     "SLAAR21-LMOT-M521:MOTOR_1",
@@ -2195,35 +2202,35 @@ namespace.append_obj(
     configuration=["cube"],
 )
 
-#namespace.append_obj(
+# namespace.append_obj(
 #    "Organic_crystal_breadboard",
 #    lazy=True,
 #    name="ocb",
 #    delay_offset_detector=NamespaceComponent(namespace, "thc.delay_x_center"),
 #    thc_x_adjustable=NamespaceComponent(namespace, "thc.x"),
 #    module_name="eco.endstations.bernina_sample_environments",
-#)
-namespace.append_obj(
-    "Organic_crystal_breadboard",
-    lazy=True,
-    name="ocb",
-    delay_offset_detector=None,
-    thc_x_adjustable=None,
-    module_name="eco.endstations.bernina_sample_environments",
-)
+# )
+# namespace.append_obj(
+#     "Organic_crystal_breadboard",
+#     lazy=True,
+#     name="ocb",
+#     delay_offset_detector=None,
+#     thc_x_adjustable=None,
+#     module_name="eco.endstations.bernina_sample_environments",
+# )
 
-namespace.append_obj(
-    "Electro_optic_sampling",
-    lazy=True,
-    name="eos",
-    module_name="eco.endstations.bernina_sample_environments",
-)
-namespace.append_obj(
-    "Electro_optic_sampling_new",
-    lazy=True,
-    name="eos_new",
-    module_name="eco.endstations.bernina_sample_environments",
-)
+# namespace.append_obj(
+#     "Electro_optic_sampling",
+#     lazy=True,
+#     name="eos",
+#     module_name="eco.endstations.bernina_sample_environments",
+# )
+# namespace.append_obj(
+#     "Electro_optic_sampling_new",
+#     lazy=True,
+#     name="eos_new",
+#     module_name="eco.endstations.bernina_sample_environments",
+# )
 # class Sample_stages(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
@@ -2729,8 +2736,8 @@ from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 namespace.append_obj(
     "LxtCompStageDelay",
-    NamespaceComponent(namespace,"tt_kb.delay"),
-    NamespaceComponent(namespace,"las.xlt"),
+    NamespaceComponent(namespace, "tt_kb.delay"),
+    NamespaceComponent(namespace, "las.xlt"),
     lazy=True,
     name="lxt",
     module_name="eco.loptics.bernina_laser",

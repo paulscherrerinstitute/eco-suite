@@ -5,7 +5,9 @@ from threading import Thread
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from typing import Any
-
+import numpy as np
+import matplotlib.pyplot as plt
+from numbers import Number
 
 class TimeoutPath:
     executor = ThreadPoolExecutor(max_workers=1)
@@ -50,6 +52,107 @@ class PropagatingThread(Thread):
         if self.exc:
             raise self.exc
         return self.ret
+
+def isiter(a):
+    try:
+        iter(a)
+        return True
+    except TypeError:
+        return False
+
+def roundto(v,interval):
+    return np.rint(v/interval)*interval
+
+def linlog_intervals(*args,verbose=True, plot=False):
+    """Get linearly and logarithmically spaced arrays from providing limits and intervals or number of intervals.
+    Example usages:
+    linlog_intervals(-1e-12,('lin',.1e-12),2e-12,('log',2e-12),1e-6,('lin',4),5e-6)
+
+    Args:
+        *args : limits and specifications of intervals, 
+            limits are numbers, 
+            specifications tuples of strings 'lin' or 'log' 
+            and the definition if interval.
+            A integer is interpretet as number of intervals within the limits,
+            a float is interpreted asinterval size, 
+            where in log definition, the size of the first (smallest) interval is matched.
+        verbose (bool, optional): _description_. Defaults to True.
+        plot (bool, optional): _description_. Defaults to False.
+
+    Raises:
+        Exception: _description_
+        Exception: _description_
+        Exception: _description_
+
+    Returns:
+        numpy ndarray: 1D array of intervals. 
+    """
+    limits = []
+    idefs = []
+    last_lim = False
+    for arg in args:
+        if not last_lim and isinstance(arg,Number):
+            limits.append(arg)
+            last_lim = True
+        elif last_lim and isiter(arg):
+            idefs.append(arg)
+            last_lim = False
+        else:
+            raise Exception('Limits need to follow interval description and vice versa')
+    if verbose:
+        print(limits,idefs)
+    if not len(limits)==len(idefs)+1:
+        raise Exception('need exactly one more limit than interval definitions!')
+            
+    a = []
+    for i,idef in enumerate(idefs):
+        tlims = limits[i:i+2]
+        if np.diff(tlims)<=0:
+            raise Exception('number limits should increasing!')
+        if isinstance(a,np.ndarray):
+            if np.isclose(a[-1],tlims[0]):
+                a = a[:-1]
+            a = [a]
+    
+            
+        if idef[0] == 'lin':
+            if type(idef[1]) is int:
+                a.append(np.linspace(*tlims,idef[1]+1))
+            if type(idef[1]) is float:
+                a.append(np.arange(tlims[0],tlims[1]+idef[1],idef[1]))
+            if verbose:
+                print(f'From {tlims[0]:5g} to {a[-1][-1]:5g}: {len(a[-1])-1} linear intervals of {np.mean(np.diff(a[-1])):5g} size')
+            if plot:
+                plt.plot(np.arange(len(np.hstack(a))-len(a[-1]), len(np.hstack(a))),a[-1],'db', mfc='none')
+        if idef[0] == 'log':
+            tlims = np.asarray(tlims)
+            if type(idef[1]) is int:
+                a.append(np.logspace(*np.log10(tlims),idef[1]+1))
+            if type(idef[1]) is float:
+                intlog = np.log10(tlims[0]+idef[1])-np.log10(tlims[0])
+                a.append(10**np.arange(np.log10(tlims[0]),np.log10(tlims[1]),intlog))
+            if verbose:
+                intervals = np.diff(np.log10(a[-1]))
+                
+                print(f'From {tlims[0]:5g} to {a[-1][-1]:5g}: {len(a[-1])-1} logarithmic intervals between {np.min(intervals):5g} and {np.max(intervals):5g} in sizes.')
+            if plot:
+                plt.plot(np.arange(len(np.hstack(a))-len(a[-1]), len(np.hstack(a))),a[-1],'or',mfc='none')
+        
+        if verbose:
+            if not np.isclose(a[-1][-1],tlims[1]):
+                print(f'    NB: given limit {tlims[1]:5g} computes off by {tlims[1]-a[-1][-1]:5g} from last element!')
+        
+        
+            
+        a = np.hstack(a)
+    if plot:
+        plt.plot(np.arange(len(a)),a,'.k')
+    if verbose:
+        print(f'{len(a)} elements in total.') 
+    return a
+        
+        
+    
 
 
 # TODO
