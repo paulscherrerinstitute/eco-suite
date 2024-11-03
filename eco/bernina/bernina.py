@@ -2804,21 +2804,21 @@ namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
 ############## BIG JJ SLIT #####################
 namespace.append_obj(
     "SlitBladesGeneral",
-    name="slit_cleanup_air",
+    name="slit_cleanup_sam",
     def_blade_up={
-        "args": [MotorRecord, "SARES20-MF1:MOT_10"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_2"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_down={
-        "args": [MotorRecord, "SARES20-MF1:MOT_9"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_3"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_left={
-        "args": [MotorRecord, "SARES20-MF1:MOT_12"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_5"],
         "kwargs": {"is_psi_mforce": True},
     },
     def_blade_right={
-        "args": [MotorRecord, "SARES20-MF1:MOT_11"],
+        "args": [MotorRecord, "SARES20-MF1:MOT_4"],
         "kwargs": {"is_psi_mforce": True},
     },
     module_name="eco.xoptics.slits",
