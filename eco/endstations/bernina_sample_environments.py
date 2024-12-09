@@ -1,13 +1,18 @@
 from scipy import constants
 from eco.devices_general.powersockets import MpodChannel
-from eco.devices_general.wago  import AnalogOutput
-
+from eco.devices_general.wago import AnalogOutput
+from eco.epics.detector import DetectorPvDataStream
 import sys
 
 from eco.elements.detector import DetectorVirtual
 
 sys.path.append("..")
-from ..devices_general.motors import MotorRecord, SmaractRecord, ThorlabsPiezoRecord
+from ..devices_general.motors import (
+    MotorRecord,
+    SmaractRecord,
+    ThorlabsPiezoRecord,
+    SmarActOpenLoopRecord,
+)
 from ..epics.adjustable import AdjustablePv
 import numpy as np
 from epics import PV
@@ -367,7 +372,7 @@ class High_field_thz_chamber(Assembly):
 
             self._append(
                 AdjustableVirtual,
-                [self._helium_valve_mpod_ch.value ],
+                [self._helium_valve_mpod_ch.value],
                 get_valve,
                 set_valve,
                 name=helium_control_valve["name"],
@@ -605,7 +610,7 @@ class Organic_crystal_breadboard(Assembly):
             },
             "waveplate_Thz": {
                 "pvname": "SLAAR21-LMOT-ELL6",
-            },            
+            },
         }
 
         ### smaract motors ###
@@ -1117,6 +1122,7 @@ class Electro_optic_sampling(Assembly):
     def __repr__(self):
         return self.get_adjustable_positions_str()
 
+
 class Electro_optic_sampling_new(Assembly):
     def __init__(self, name=None, diode_channels=None):
         super().__init__(name=name)
@@ -1175,19 +1181,19 @@ class Electro_optic_sampling_new(Assembly):
             name="delay_thz",
             is_setting=True,
         )
-        
+
         def calc_new_eos_thz_delay(delay):
             delay_eos_start = self.delay_eos.get_current_value()
             delay_thz_start = self.delay_thz.get_current_value()
-            delay_rel = delay-delay_thz_start
-            return delay_eos_start + delay_rel , delay
+            delay_rel = delay - delay_thz_start
+            return delay_eos_start + delay_rel, delay
 
         self._append(
             AdjustableVirtual,
             [self.delay_eos, self.delay_thz],
-            lambda deos,dthz: deos,
+            lambda deos, dthz: deos,
             calc_new_eos_thz_delay,
-            name='delay_thz_eos',
+            name="delay_thz_eos",
         )
         ### in vacuum smaract motors ###
         for name, config in self.motor_configuration.items():
@@ -1383,8 +1389,8 @@ class Electro_optic_sampling_new(Assembly):
         x = abs(x)
         N = x.size
         T = x[N - 1] - x[0]
-    # def __repr__(self):
-    #     return self.get_adjustable_positions_str()
+        # def __repr__(self):
+        #     return self.get_adjustable_positions_str()
         te = x[1] - x[0]
         fe = 1.0 / te
         fft_cal = np.fft.fft(y) / N
@@ -1539,3 +1545,170 @@ def calc_otti(
 
 def get_array_frame(a):
     return np.concatenate([a[:, 0], a[-1, 1:], a[-2::-1, -1], a[0, -2::-1]])
+
+
+class LowtemperatureSurfaceDiffraction(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self.name = name
+
+        ### SmarAct stages ###
+        self.motor_configuration = {
+            "beam_block": {
+                "id": "SARES23-USR:MOT_18",
+                "pv_descr": "6:3 LSD Chamber Beam Block",
+                "direction": 0,
+                "sensor": 1,
+                "speed": 200,
+                "home_direction": "back",
+                "kwargs": {"accuracy": 0.000001},
+            },
+            "interferrometer_paddle": {
+                "id": "SARES23-USR:MOT_16",
+                "pv_descr": "6:1 LSD Interferrometer Paddle",
+                "direction": 0,
+                "sensor": 1,
+                "speed": 200,
+                "home_direction": "front",
+                "kwargs": {"accuracy": 0.000001},
+            },
+        }
+        self.motor_configuration_openloop = {
+            "interferrometer_ver": {
+                "id": "SARES23-USR:asyn",
+                "pv_descr": "5:1 LSD interferrometer hor",
+                "channel": 13,
+            },
+            "interferrometer_hor": {
+                "id": "SARES23-USR:asyn",
+                "pv_descr": "5:2 LSD interferrometer ver",
+                "channel": 14,
+            },
+        }
+        for name, config in self.motor_configuration.items():
+            self._append(
+                SmaractRecord,
+                pvname=config["id"],
+                name=name,
+                is_setting=True,
+            )
+
+        for name, config in self.motor_configuration_openloop.items():
+            self._append(
+                SmarActOpenLoopRecord,
+                pvname=config["id"],
+                name=name,
+                channel=config["channel"],
+                is_setting=False,
+            )
+        ### lakeshore temperatures ####
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-LS336:LOOP1_SP",
+            pvreadbackname="SARES20-LS336:A_RBV",
+            accuracy=0.1,
+            name="temp_sample",
+            is_setting=False,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SARES20-LS336:LOOP2_SP",
+            pvreadbackname="SARES20-LS336:B_RBV",
+            accuracy=0.1,
+            name="temp_coldfinger",
+            is_setting=False,
+        )
+
+        ### Transl_eta Feedback PVs
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LTIM01-EVR0:CALCZ.C",
+            name="feedback_setpoint",
+            accuracy=10,
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LTIM01-EVR0:CALCZ.B",
+            name="feedback_enabled",
+            accuracy=10,
+            is_setting=True,
+        )
+        self._append(
+            DetectorPvDataStream,
+            "SLAAR21-LTIM01-EVR0:CALCZ",
+            name="interferrometer_value"
+        )
+
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-PS7071",
+            channel_number=3,
+            name="illumination",
+        )
+
+    def beam_block_in(self, target=10):
+        self.beam_block.set_target_value(target)
+
+    def beam_block_out(self, target=8):
+        self.beam_block.set_target_value(target)
+
+    def interferrometer_in(self, target=13.35):
+        self.interferrometer_paddle.set_target_value(target)
+
+    def interferrometer_out(self, target=-10):
+        self.interferrometer_paddle.set_target_value(target)
+
+    def set_stage_config(self):
+        cfg = self.motor_configuration
+        for name, config in cfg.items():
+            mot = self.__dict__[name]
+            mot.description(config["pv_descr"])
+            # mot.stage_type(config["type"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
+            sleep(0.5)
+            mot.calibrate_sensor()
+        cfg_openloop = self.motor_configuration_openloop
+        for name, config in cfg_openloop.items():
+            mot = self.__dict__[name]
+            mot.description(config["pv_descr"])
+
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration = self.motor_configuration
+        stages = motor_configuration.keys()
+        print("#### Positions before homing ####")
+        print(self.__repr__())
+        for name in stages:
+            config = motor_configuration[name]
+            mot = self.__dict__[name]
+            print(
+                "#### Homing {} in {} direction ####".format(
+                    name, config["home_direction"]
+                )
+            )
+            sleep(1)
+            if config["home_direction"] == "back":
+                mot.home_reverse(1)
+                sleep(0.5)
+                while not mot.flags.motion_complete():
+                    sleep(1)
+                if not mot.flags.is_homed():
+                    print(
+                        "Homing failed, try homing {} in forward direction".format(name)
+                    )
+                    mot.home_forward(1)
+            elif config["home_direction"] == "forward":
+                mot.home_forward(1)
+                sleep(0.5)
+                while not mot.flags.motion_complete():
+                    sleep(1)
+                if not mot.flags.is_homed():
+                    print(
+                        "Homing failed, try homing {} in backward direction".format(
+                            name
+                        )
+                    )
+                    mot.home_reverse(1)

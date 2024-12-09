@@ -375,7 +375,6 @@ def value_property(Adj, wait_for_change=True, value_name="_value"):
 
 
 @spec_convenience
-@update_changes
 @tweak_option
 @value_property
 class DummyAdjustable:
@@ -503,6 +502,7 @@ class AdjustableFS:
         return wrapper
 
     def _write_value(self, value):
+        self._read_value.cache_clear()
         with open(self.file_path, "w") as f:
             dump({"value": value}, f, indent=4)
 

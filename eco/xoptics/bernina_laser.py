@@ -307,10 +307,6 @@ class LaserBernina(Assembly):
         )
 
         self._append(
-            MotorRecord, "SARES20-MF1:MOT_16", name="nd_filt", is_setting=True
-        )
-
-        self._append(
             AdjustableFS,
             "/photonics/home/gac-bernina/eco/configuration/wp_att_calibration",
             name="wp_att_calibration",

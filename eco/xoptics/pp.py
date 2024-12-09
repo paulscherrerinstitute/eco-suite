@@ -1,4 +1,9 @@
 from epics import PV
+
+from eco.elements.assembly import Assembly
+from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum
+from eco.epics.detector import DetectorPvData
+from eco.timing.event_timing_new_new import EvrOutput, EvrPulser
 from ..devices_general.utilities import Changer
 from time import sleep
 import numpy as np
@@ -62,3 +67,29 @@ class Pulsepick:
 
     def __repr__(self):
         return f"FEL pulse picker state {self.get_status()}."
+
+
+class XrayPulsePicker(Assembly):
+    def __init__(self,pvbase="",
+                 evr_output_base=None, 
+                 evr_pulser_base=None, 
+                 evronoff=None, evrsrc=None, event_master = None, name=None):
+        super().__init__(name=name)
+        self.evrsrc = evrsrc
+        self.evronoff = evronoff
+        
+        self._append(AdjustablePv,self.evronoff,name="evr_output_enable",is_display=False, is_setting=True)
+        self._append(AdjustablePv,self.evrsrc,name="evr_output_source",is_display=False, is_setting=True)
+        
+        self.pvbase=pvbase
+        self._append(AdjustablePvEnum,self.pvbase+":PRESET_SP", name="position")
+        self._append(MotorRecord,self.pvbase+":MOTOR_X1", name="x", is_setting=True)
+        self._append(MotorRecord,self.pvbase+":MOTOR_Y1", name="y", is_setting=True)
+        self._append(AdjustablePv,self.pvbase+":MOTOR_X1_PRESET_SP.B",name="out_x_pos",is_display=False, is_setting=True)
+        self._append(AdjustablePv,self.pvbase+":MOTOR_X1_PRESET_SP.C",name="in_x_pos",is_display=False, is_setting=True)
+        self._append(AdjustablePv,self.pvbase+":MOTOR_Y1_PRESET_SP.B",name="out_y_pos",is_display=False, is_setting=True)
+        self._append(AdjustablePv,self.pvbase+":MOTOR_Y1_PRESET_SP.C",name="in_y_pos",is_display=False, is_setting=True)
+        self._append(DetectorPvData,self.pvbase+":TC1",name="teperature",is_display=True, unit="°C")
+        pulser = EvrPulser(evr_pulser_base, event_master, name="pulser_xp")
+        self._append(EvrOutput,evr_output_base, pulsers=[pulser], name='evr_output', is_display=False)
+        

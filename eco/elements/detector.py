@@ -15,7 +15,7 @@ def value_property(Det, value_name="_value"):
     return Det
 
 
-def call_convenience(Det):
+def call_convenience(Det, value=None):
     # spec-inspired convenience methods
 
     def wm(self, *args, **kwargs):
@@ -23,8 +23,11 @@ def call_convenience(Det):
 
     Det.wm = wm
 
-    def call(self):
-        return self.wm()
+    def call(self, value=value):
+        if value is None:
+            return self.wm()
+        else:
+            raise ValueError(f"{self.name} is just a readback, which cannot be set.")
 
     Det.__call__ = call
 

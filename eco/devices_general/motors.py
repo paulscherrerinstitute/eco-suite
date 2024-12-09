@@ -30,6 +30,7 @@ from .detectors import DetectorVirtual
 from ..epics.detector import DetectorPvData
 import json
 from .powerbrick import PowerBrickChannelPars
+from time import sleep
 
 if hasattr(global_config, "elog"):
     elog = global_config.elog
@@ -471,7 +472,7 @@ class PshellMotor(Assembly):
         self._append(
             DetectorGet,
             self.get_current_value,
-            name='readback',
+            name="readback",
         )
         self._cb = None
 
@@ -558,9 +559,7 @@ class PshellMotor(Assembly):
             s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
         else:
-            s += (
-                f"\t@ {colorama.Style.BRIGHT}{'NOT CONNECTED'}{colorama.Style.RESET_ALL}"
-            )
+            s += f"\t@ {colorama.Style.BRIGHT}{'NOT CONNECTED'}{colorama.Style.RESET_ALL}"
 
         return s
 
@@ -568,11 +567,26 @@ class PshellMotor(Assembly):
         print(str(self))
         return object.__repr__(self)
 
+
 class AdjustablePiHex(AdjustablePv):
-    def __init__(self, pvname=None, pvreadbackname=None, accuracy=None, unit=None, name=None):
-        super().__init__(pvname, pvreadbackname=pvreadbackname, accuracy=accuracy, unit=unit, name=name)
-        self.limit_high = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_high.json', default_value=0)
-        self.limit_low = AdjustableFS(f'/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_low.json', default_value=0)
+    def __init__(
+        self, pvname=None, pvreadbackname=None, accuracy=None, unit=None, name=None
+    ):
+        super().__init__(
+            pvname,
+            pvreadbackname=pvreadbackname,
+            accuracy=accuracy,
+            unit=unit,
+            name=name,
+        )
+        self.limit_high = AdjustableFS(
+            f"/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_high.json",
+            default_value=0,
+        )
+        self.limit_low = AdjustableFS(
+            f"/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_low.json",
+            default_value=0,
+        )
 
     def move(self, value, check=False):
         if check:
@@ -590,6 +604,7 @@ class AdjustablePiHex(AdjustablePv):
         time.sleep(0.1)
         while self.get_change_done() == 0:
             time.sleep(0.1)
+
     def change(self, value):
         return self.move(value)
 
@@ -601,6 +616,153 @@ class AdjustablePiHex(AdjustablePv):
         self.limit_high(limit_high)
 
 
+@spec_convenience
+# @get_from_archive
+@value_property
+@tweak_option
+class SmarActOpenLoopRecord(Assembly):
+    def __init__(self, pvname=None, channel=None, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self.channel = channel
+
+        self._append(
+            AdjustablePv,
+            self.pvname.split(":")[0] + f":MOT_{self.channel}.DESC",
+            name="description",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".AOUT",
+            name="_com_set",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".TINP",
+            name="_com_get",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_limit_high.json",
+            default_value=-1e6,
+            name="limit_high",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_limit_low.json",
+            default_value=1e6,
+            name="limit_low",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_voltage.json",
+            name="voltage",
+            default_value=25,
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_frequency.json",
+            name="frequency",
+            default_value=250,
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_position.json",
+            name="position",
+            default_value=0,
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_direction.json",
+            name="direction",
+            default_value=1,
+            is_setting=True,
+            is_display=True,
+        )
+
+    def eval_command(self, cmd):
+        self._com_set(cmd)
+        sleep(0.2)
+        return self._com_get()
+
+    def stop(self):
+        self._com_set(f":S{self.channel-1}")
+
+    def move(self, value, check=True, wait=False):
+        value = int(value) * self.direction()
+        pos = int(self.position() * self.direction())
+        target_rel = value - pos
+        if check:
+            if self.limit_low:
+                if value < self.limit_low():
+                    raise Exception(
+                        f"Target value of {self.name} is smaller than limit value!"
+                    )
+            if self.limit_high:
+                if self.limit_high() < value:
+                    raise Exception(
+                        f"Target value of {self.name} is higher than limit value!"
+                    )
+        res = self.eval_command(
+            f":MST{self.channel-1},{target_rel},{int(self.voltage()*40.95)},{int(self.frequency())}"
+        )
+        if res[-1] == "0":
+            self.position.mv(value)
+        else:
+            raise Exception(
+                f"Motion of SmarAct Motor {self.name} failed with error code {res}"
+            )
+
+    def get_limits(self):
+        return (self.limit_low(), self.limit_high())
+
+    def set_limits(self, limit_low, limit_high):
+        self.limit_low.set_target_value(limit_low)
+        self.limit_high.set_target_value(limit_high)
+
+    def get_current_value(self):
+        return self.position.get_current_value()
+
+    def set_target_value(self, value, hold=False, check=True, **kwargs):
+        return Changer(
+            target=value,
+            parent=self,
+            changer=self.move,
+            hold=hold,
+            stopper=self.stop,
+        )
+
+    # return string with motor value as variable representation
+    def __str__(self):
+        # """ return short info for the current motor"""
+        s = f"{self.name}"
+        # s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} stat: {self.status_flag().name}"
+        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
+        s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
+        s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
+        s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
+        return s
+
+    def __repr__(self):
+        print(str(self))
+        return object.__repr__(self)
+
 
 @spec_convenience
 @update_changes
@@ -610,14 +772,14 @@ class AdjustablePiHex(AdjustablePv):
 class ThorlabsPiezoRecord(Assembly):
     def __init__(self, pvname=None, accuracy=0.2, unit=None, name=None):
         super().__init__(name=name)
-        self.pvname=pvname
+        self.pvname = pvname
         self._cb = None
-        
+
         self._append(
             AdjustablePv,
             self.pvname + ":DRIVE",
-            pvreadbackname=self.pvname+":MOTRBV",
-            accuracy = accuracy,
+            pvreadbackname=self.pvname + ":MOTRBV",
+            accuracy=accuracy,
             unit=unit,
             name="position",
             is_setting=True,
@@ -625,14 +787,14 @@ class ThorlabsPiezoRecord(Assembly):
         )
         self._append(
             AdjustablePv,
-            self.pvname+":HLM",
+            self.pvname + ":HLM",
             name="limit_high",
             is_setting=True,
             is_display=True,
         )
         self._append(
             AdjustablePv,
-            self.pvname+":LLM",
+            self.pvname + ":LLM",
             name="limit_low",
             is_setting=True,
             is_display=True,
@@ -673,6 +835,7 @@ class ThorlabsPiezoRecord(Assembly):
             name="direction",
             is_setting=True,
         )
+
     def stop(self):
         self._stop_pv(1)
 
@@ -689,7 +852,6 @@ class ThorlabsPiezoRecord(Assembly):
                         f"Target value of {self.name} is higher than limit value!"
                     )
         return self.position.set_target_value(value)
-        
 
     def get_limits(self):
         return (self.limit_low(), self.limit_high())
@@ -703,7 +865,7 @@ class ThorlabsPiezoRecord(Assembly):
 
     def set_target_value(self, value, hold=False, check=True, **kwargs):
         return self.move(value, check=check, **kwargs)
-        
+
     # return string with motor value as variable representation
     def __str__(self):
         # """ return short info for the current motor"""
@@ -716,11 +878,12 @@ class ThorlabsPiezoRecord(Assembly):
         s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
         # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
         return s
-    
+
     def __repr__(self):
         print(str(self))
         return object.__repr__(self)
-    
+
+
 @spec_convenience
 @update_changes
 @get_from_archive
@@ -1347,7 +1510,7 @@ class SmaractRecord(Assembly):
         self._currentChange = None
 
         self._append(
-            SmaractSettings, self.pvname, name="motor_parameters", is_setting=False
+            SmaractSettings, self.pvname, name="motor_parameters", is_setting=True
         )
         self._append(
             AdjustablePv, self.pvname + ".LLM", name="limit_low", is_setting=True

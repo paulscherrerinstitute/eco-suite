@@ -188,6 +188,34 @@ namespace.append_obj(
     lazy=True,
 )
 
+## general components ##
+namespace.append_obj(
+    "CtaSequencer",
+    "SAR-CCTA-ESB",
+    0,
+    name="seq",
+    module_name="eco.timing.sequencer",
+    lazy=True,
+)
+namespace.append_obj(
+    "MasterEventSystem",
+    "SIN-TIMAST-TMA",
+    name="event_master",
+    module_name="eco.timing.event_timing_new_new",
+    # pv_eventset="SAR-CVME-TIFALL5:EvtSet",
+    # lazy=False,
+    lazy=True,
+)
+namespace.append_obj(
+    "TimingSystem",
+    pv_master="SIN-TIMAST-TMA",
+    pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
+    pv_eventset="SAR-CVME-TIFALL5:EvtSet",
+    name="event_system",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+
 
 ## Old stuff that was still in config and might be needed
 namespace.append_obj(
@@ -199,6 +227,19 @@ namespace.append_obj(
     module_name="eco.xoptics.pp",
     lazy=True,
 )
+namespace.append_obj(
+    "XrayPulsePicker",
+    pvbase="SAROP21-OPPI113",
+    evronoff="SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP",
+    evrsrc="SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP",
+    evr_output_base="SGE-CPCW-72-EVR0:FrontUnivOut15",
+    evr_pulser_base="SGE-CPCW-72-EVR0:Pul0",
+    event_master=NamespaceComponent(namespace, "event_master"),
+    name="xp_dev",
+    module_name="eco.xoptics.pp",
+    lazy=True,
+)
+
 namespace.append_obj(
     "laser_shutter",
     "SLAAR21-LTIM01-EVR0",
@@ -349,6 +390,12 @@ namespace.append_obj(
     #     "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
     #     "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
     # },
+    diode_channels_raw={
+        "up": "SAROP21-PBPS103:Lnk9Ch0-PP_VAL_PD1",
+        "down": "SAROP21-PBPS103:Lnk9Ch0-PP_VAL_PD2",
+        "left": "SAROP21-PBPS103:Lnk9Ch0-PP_VAL_PD0",
+        "right": "SAROP21-PBPS103:Lnk9Ch0-PP_VAL_PD3",
+    },
     # calibration_records={
     #     "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
     #     "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
@@ -552,12 +599,12 @@ namespace.append_obj(
     # channel_xpos="SLAAR21-LTIM01-EVR0:CALCX",
     # channel_ypos="SLAAR21-LTIM01-EVR0:CALCY",
     # channel_intensity="SLAAR21-LTIM01-EVR0:CALCI",
-    # diode_channels_raw={
-    #     "up": "SLAAR21-LSCP1-FNS:CH6:VAL_GET",
-    #     "down": "SLAAR21-LSCP1-FNS:CH7:VAL_GET",
-    #     "left": "SLAAR21-LSCP1-FNS:CH4:VAL_GET",
-    #     "right": "SLAAR21-LSCP1-FNS:CH5:VAL_GET",
-    # },
+    diode_channels_raw={
+        "up": "SAROP21-PBPS133:Lnk9Ch0-PP_VAL_PD1",
+        "down": "SAROP21-PBPS133:Lnk9Ch0-PP_VAL_PD2",
+        "left": "SAROP21-PBPS133:Lnk9Ch0-PP_VAL_PD0",
+        "right": "SAROP21-PBPS133:Lnk9Ch0-PP_VAL_PD3",
+    },
     # calibration_records={
     #     "intensity": "SLAAR21-LTIM01-EVR0:CALCI",
     #     "xpos": "SLAAR21-LTIM01-EVR0:CALCX",
@@ -699,33 +746,6 @@ namespace.append_obj(
 #    lazy=True,
 # )
 
-## general components ##
-namespace.append_obj(
-    "CtaSequencer",
-    "SAR-CCTA-ESB",
-    0,
-    name="seq",
-    module_name="eco.timing.sequencer",
-    lazy=True,
-)
-namespace.append_obj(
-    "MasterEventSystem",
-    "SIN-TIMAST-TMA",
-    name="event_master",
-    module_name="eco.timing.event_timing_new_new",
-    # pv_eventset="SAR-CVME-TIFALL5:EvtSet",
-    # lazy=False,
-    lazy=True,
-)
-namespace.append_obj(
-    "TimingSystem",
-    pv_master="SIN-TIMAST-TMA",
-    pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
-    pv_eventset="SAR-CVME-TIFALL5:EvtSet",
-    name="event_system",
-    module_name="eco.timing.event_timing_new_new",
-    lazy=True,
-)
 
 # namespace.append_obj('Daq', instrument= "bernina",pgroup= config_berninamesp["pgroup"], channels_JF=channels_JF, channels_BS=channels_BS,channels_BSCAM=channels_BSCAM,channels_CA=channels_CA,pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",event_master=event_system.event_master,detectors_event_code=50,name='daq',module_name='eco.acquisition.daq_client')
 
@@ -983,13 +1003,9 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_diffractometers",
     name="gps",
     pvname="SARES22-GPS",
-    configuration=config_bernina.gps_config(),
+    configuration=config_bernina.gps_config,
     pgroup_adj=config_bernina.pgroup,
-    configsjf_adj=config_JFs,
-    detectors=[
-        # {"name": "det_fluo", "jf_id": "JF04T01V01"},
-        # {"name": "det_vHamos", "jf_id": "JF05T01V01"},
-    ],
+    jf_config=config_JFs,
     fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     lazy=True,
 )
@@ -1007,15 +1023,29 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
+    "LowtemperatureSurfaceDiffraction",
+    module_name="eco.endstations.bernina_sample_environments",
+    name="lsd",
+    lazy=True,
+)
+
+
+namespace.append_obj(
+    "SmarActOpenLoopRecord",
+    module_name="eco.devices_general.motors",
+    pvname="SARES23-USR:asyn",
+    channel=14,
+    name="openloop_horizontal",
+    lazy=True,
+)
+
+namespace.append_obj(
     "XRDYou",
     module_name="eco.endstations.bernina_diffractometers",
     Id="SARES21-XRD",
-    configuration=config_bernina.xrd_config(),
-    detectors=[
-        # {"name": "det_diff", "jf_id": "JF01T03V01"},
-    ],
+    configuration=config_bernina.xrd_config,
     pgroup_adj=config_bernina.pgroup,
-    configsjf_adj=config_JFs,
+    jf_config=config_JFs,
     invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
     fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
     name="xrd",
@@ -1876,7 +1906,8 @@ namespace.append_obj(
 # this is the large inline camera
 namespace.append_obj(
     "BerninaInlineMicroscope",
-    pvname_camera="SARES20-CAMS142-M3",
+    # pvname_camera="SARES20-CAMS142-M3", #THC
+    pvname_camera="SARES20-CAMS142-M1",  # GIC
     lazy=True,
     name="samplecam_inline",
     module_name="eco.microscopes",
@@ -1936,17 +1967,18 @@ namespace.append_obj(
 #    module_name="eco.microscopes",
 # )
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-M2",
-    lazy=True,
-    name="samplecam_sideview_45",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-M2",
+#     lazy=True,
+#     name="samplecam_sideview_45",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-C1",
+    # "SARES20-CAMS142-C1", # THC
+    "SARES20-CAMS142-M3",  # GIC
     lazy=True,
     name="samplecam_sideview",
     module_name="eco.devices_general.cameras_swissfel",
@@ -1977,13 +2009,13 @@ namespace.append_obj(
 # )
 
 
-# namespace.append_obj(
-#    "CameraBasler",
-#    "SARES20-CAMS142-C3",
-#    lazy=True,
-#    name="samplecam_xrd",
-#    module_name="eco.devices_general.cameras_swissfel",
-# )
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C2",
+    lazy=True,
+    name="samplecam_xrd",
+    module_name="eco.devices_general.cameras_swissfel",
+)
 
 # namespace.append_obj(
 #     "PaseShifterAramis",
@@ -2009,12 +2041,12 @@ namespace.append_obj(
     module_name="eco.loptics.bernina_laser",
 )
 
-# namespace.append_obj(
-#    "IncouplingCleanBernina",
-#    lazy=True,
-#    name="las_inc",
-#    module_name="eco.loptics.bernina_laser",
-# )
+namespace.append_obj(
+    "IncouplingCleanBernina",
+    lazy=True,
+    name="clic",
+    module_name="eco.loptics.bernina_laser",
+)
 
 
 from ..elements.assembly import Assembly
@@ -2421,7 +2453,7 @@ namespace.append_obj(
 #             [self.crystal_ROT, self.thz_wp],
 #             self.thz_pol_get,
 #             self.thz_pol_set,
-#             name="thz_polarization",
+#             name="",
 #         )
 #         # self.thz_polarization = AdjustableVirtual(
 #         #     [self.crystal_ROT, self.thz_wp],
@@ -2716,16 +2748,6 @@ from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 # namespace.append_obj(
 #     "StageLxtDelay",
-#     las.delay_pump,
-#     las,
-#     lazy=True,
-#     name="lxt",
-#     direction=-1,
-#     module_name="eco.loptics.bernina_laser",
-# )
-
-# namespace.append_obj(
-#     "StageLxtDelay",
 #     ocb.delay_thz,
 #     las,
 #     lazy=True,
@@ -2738,6 +2760,7 @@ namespace.append_obj(
     "LxtCompStageDelay",
     NamespaceComponent(namespace, "tt_kb.delay"),
     NamespaceComponent(namespace, "las.xlt"),
+    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
     lazy=True,
     name="lxt",
     module_name="eco.loptics.bernina_laser",
@@ -2799,7 +2822,6 @@ class Xspect_EH55(Assembly):
 
 
 namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
-
 
 ############## BIG JJ SLIT #####################
 namespace.append_obj(
@@ -3195,6 +3217,9 @@ def name2pgroups(name, beamline="bernina"):
         if (not name == i_n) and (name in i_n)
     ]
     return eq + ni
+
+
+from eco.utilities import linlog_intervals, roundto
 
 
 def timetool_data_monitor(warning_threshold=1000, loopsleep=5):

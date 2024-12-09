@@ -11,22 +11,30 @@ import time
 import numpy as np
 import os
 from eco.detector.jungfrau import Jungfrau
+
 os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
 from requests import HTTPError
+
+
 class RobotError(Exception):
     pass
 
+
 class RobotMotors(Assembly):
-    def __init__(
-        self,
-        name = None,
-        robot = None,
-        motors = []
-    ):
+    def __init__(self, name=None, robot=None, motors=[]):
         super().__init__(name=name)
         for [name, name_pshell, unit] in motors:
-            self._append(PshellMotor, robot=robot, name=name, name_pshell=name_pshell, unit=unit, is_setting=True, is_display=True)
+            self._append(
+                PshellMotor,
+                robot=robot,
+                name=name,
+                name_pshell=name_pshell,
+                unit=unit,
+                is_setting=True,
+                is_display=True,
+            )
+
 
 class StaeubliTx200(Assembly):
     def __init__(
@@ -36,7 +44,7 @@ class StaeubliTx200(Assembly):
         robot_config=None,
         pgroup_adj=None,
         jf_config=None,
-        recspace_conv='escape.swissfel.recspace_conv:THC_robot',
+        recspace_conv="escape.swissfel.recspace_conv:THC_robot",
     ):
         """Robot arm at SwissFEL Bernina.\
         """
@@ -46,24 +54,45 @@ class StaeubliTx200(Assembly):
         self.rc = robot_config
         self._cb = False
         self._cache = {}
-        self._info_fields={}
+        self._info_fields = {}
         self._info_fields_server = {"server_status": "None"}
-        self._config_fields={}
+        self._config_fields = {}
         self._do_update()
         self._get_on_poll_info()
-        self._append(DetectorGet, self._get_info, cache_get_seconds =None, name='_info', is_setting=False, is_display=False)
-        self._append(DetectorObject, self._info, name='info', is_display='recursive', is_setting=False)
-        self._append(AdjustableGetSet,
-                     self._get_config,
-                     self._set_config,
-                     set_returns_changer = True,
-                     cache_get_seconds =None,
-                     precision=0,
-                     check_interval=False,
-                     name='_config',
-                     is_setting=False,
-                     is_display=False)
-        self._append(AdjustableObject, self._config, name='config',is_setting=True, is_display='recursive')
+        self._append(
+            DetectorGet,
+            self._get_info,
+            cache_get_seconds=None,
+            name="_info",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            DetectorObject,
+            self._info,
+            name="info",
+            is_display="recursive",
+            is_setting=False,
+        )
+        self._append(
+            AdjustableGetSet,
+            self._get_config,
+            self._set_config,
+            set_returns_changer=True,
+            cache_get_seconds=None,
+            precision=0,
+            check_interval=False,
+            name="_config",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustableObject,
+            self._config,
+            name="config",
+            is_setting=True,
+            is_display="recursive",
+        )
 
         # appending pshell motors
         motors_cart = [
@@ -88,18 +117,49 @@ class StaeubliTx200(Assembly):
             ["j5", "j5", "deg"],
             ["j6", "j6", "deg"],
         ]
-        self._append(RobotMotors, name= "joint", robot = self, motors = motors_joint, is_display='recursive', is_setting = True)
-        self._append(RobotMotors, name= "cartesian", robot = self, motors = motors_cart, is_display='recursive', is_setting = True)
-        self._append(RobotMotors, name= "spherical", robot = self, motors = motors_sph, is_display='recursive', is_setting = True)
+        self._append(
+            RobotMotors,
+            name="joint",
+            robot=self,
+            motors=motors_joint,
+            is_display="recursive",
+            is_setting=True,
+        )
+        self._append(
+            RobotMotors,
+            name="cartesian",
+            robot=self,
+            motors=motors_cart,
+            is_display="recursive",
+            is_setting=True,
+        )
+        self._append(
+            RobotMotors,
+            name="spherical",
+            robot=self,
+            motors=motors_sph,
+            is_display="recursive",
+            is_setting=True,
+        )
         self._urdf = None
         try:
             import bernina_urdf
+
             jf_id = None
             if robot_config is not None:
                 jf_id = robot_config.jf_id()
-            self._urdf = bernina_urdf.models.Tx200_Ceiling(jf_id = robot_config.jf_id())
-            self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json', default_value=True, name="auto_update_simulation", is_setting=False, is_display=False)
-            self._auto_update_simulation_thread = Thread(target=self._auto_updater_simulation, daemon=True)
+            self._urdf = bernina_urdf.models.Tx200_Ceiling(jf_id=robot_config.jf_id())
+            self._append(
+                AdjustableFS,
+                f"/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json",
+                default_value=True,
+                name="auto_update_simulation",
+                is_setting=False,
+                is_display=False,
+            )
+            self._auto_update_simulation_thread = Thread(
+                target=self._auto_updater_simulation, daemon=True
+            )
             self._auto_update_simulation_thread.start()
         except Exception as e:
             print("Loading bernina URDF robot model failed with:")
@@ -107,7 +167,7 @@ class StaeubliTx200(Assembly):
         ### adding JF ###
         if robot_config is not None:
             try:
-                if robot_config.jf_id() is not None:
+                if robot_config.jf_id():
                     self._append(
                         Jungfrau,
                         robot_config.jf_id(),
@@ -129,7 +189,8 @@ class StaeubliTx200(Assembly):
             try:
                 if robot_config.diffcalc():
                     from ..utilities.recspace import Crystals
-                    self.configuration=["robot", robot_config.goniometer()]
+
+                    self.configuration = ["robot", robot_config.goniometer()]
                     self._append(
                         Crystals,
                         diffractometer_you=self,
@@ -141,14 +202,14 @@ class StaeubliTx200(Assembly):
                 print("Adding diffractometer for diffcalc calculation failed with:")
                 print(e)
         if recspace_conv is not None:
-            module_name,Conv_name = recspace_conv.split(':')
+            module_name, Conv_name = recspace_conv.split(":")
             Conv = getattr(import_module(module_name), Conv_name)
             self.recspace_conv = Conv()
         else:
             self.recspace_conv = None
 
     def _get_info(self):
-        d= {k: v for k, v in self._cache.items() if k in self._info_fields}
+        d = {k: v for k, v in self._cache.items() if k in self._info_fields}
         d.update(self._info_fields_server)
         return d
 
@@ -156,7 +217,7 @@ class StaeubliTx200(Assembly):
         changed_item = [[k, v] for k, v in fields.items() if v != self._cache[k]]
         if len(changed_item) > 1:
             raise RobotError("Changing multiple fields at once")
-        elif len(changed_item) ==0:
+        elif len(changed_item) == 0:
             return
         k, v = changed_item[0]
         method = self._config_fields[k]
@@ -164,14 +225,14 @@ class StaeubliTx200(Assembly):
             v = str(v)
         else:
             v = "'" + v + "'"
-        cmd = method["cmd"]+"(" + v + "," + method["def_kwargs"] + ")"
-        return self._set_eval_cmd(cmd, stopper = self.stop)
+        cmd = method["cmd"] + "(" + v + "," + method["def_kwargs"] + ")"
+        return self._set_eval_cmd(cmd, stopper=self.stop)
 
     def _get_config(self):
         return {k: v for k, v in self._cache.items() if k in self._config_fields.keys()}
 
     def gui(self):
-        cmd = ["caqtdm","/sf/bernina/config/src/caqtdm/robot/robot.ui"]
+        cmd = ["caqtdm", "/sf/bernina/config/src/caqtdm/robot/robot.ui"]
         return self._run_cmd(" ".join(cmd))
 
     def reset_motion(self):
@@ -186,8 +247,9 @@ class StaeubliTx200(Assembly):
         self.reset_motion()
         self.get_eval_result("robot.resume()")
 
-
-    def move(self, check=True, wait=True, update_value_time=0.05, timeout=240, **kwargs):
+    def move(
+        self, check=True, wait=True, update_value_time=0.05, timeout=240, **kwargs
+    ):
         """
         This method invokes a spherical, cartesian or joint motion command depending
         on the passed keywords.
@@ -200,16 +262,21 @@ class StaeubliTx200(Assembly):
             raise RobotError(
                 "The server is busy with a recording or general motion. To abort it, type: rob.abort_record()"
             )
-        cart_kwargs = np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]])
+        cart_kwargs = np.any(
+            [s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]
+        )
         sph_kwargs = np.any([s in kwargs.keys() for s in ["r", "gamma", "delta"]])
-        joint_kwargs = np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]])
-        if sum([cart_kwargs, sph_kwargs, joint_kwargs])>1:
-            raise RobotError(
-                "Please only pass cartesian, spherical or joint keywords"
-            )
+        joint_kwargs = np.any(
+            [s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]]
+        )
+        if sum([cart_kwargs, sph_kwargs, joint_kwargs]) > 1:
+            raise RobotError("Please only pass cartesian, spherical or joint keywords")
         coordinates = None
-        for c, b in zip(["cartesian", "spherical", "joint"], [cart_kwargs, sph_kwargs, joint_kwargs]):
-            if b: coordinates = c
+        for c, b in zip(
+            ["cartesian", "spherical", "joint"], [cart_kwargs, sph_kwargs, joint_kwargs]
+        ):
+            if b:
+                coordinates = c
 
         if not self.config.powered():
             if self.info.mode() == "remote":
@@ -225,35 +292,45 @@ class StaeubliTx200(Assembly):
             t = kwargs.pop("t_det")
             kwargs["r"] = t
 
-        self._set_eval_cmd(f"robot.general_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Motion aborted by user, resetting all motions.")
+        self._set_eval_cmd(
+            f"robot.general_motion(**{kwargs})",
+            stopper=self.abort_record,
+            timeout=1200,
+            background=False,
+            stopper_msg="Motion aborted by user, resetting all motions.",
+        )
 
     ######## Utility functions ##########
     def restart_server(self):
         self.pc.eval(":restart")
 
     def cart2sph(self, x=None, y=None, z=None, return_dict=True):
-        vals = {k: v for k, v in zip(["x", "y", "z"], [x,y,z]) if not v is None}
+        vals = {k: v for k, v in zip(["x", "y", "z"], [x, y, z]) if not v is None}
         return self.get_eval_result(cmd=f"robot.cart2sph(**{vals})")
 
     def sph2cart(self, gamma=None, delta=None, t_det=None, return_dict=True):
-        vals = {k: v for k, v in zip(["gamma", "delta", "r"], [gamma,delta,t_det]) if not v is None}
+        vals = {
+            k: v
+            for k, v in zip(["gamma", "delta", "r"], [gamma, delta, t_det])
+            if not v is None
+        }
         return self.get_eval_result(cmd=f"robot.sph2cart(**{vals})")
 
     def remote_connection_to_server(self, resolution="2048x1280"):
         cmd = f"xfreerdp /v:PC14742 /size:{resolution} /u:gac-bernina@psich"
         return self._run_cmd(cmd)
 
-    def set_central_pixel(self, px=(None,None)):
+    def set_central_pixel(self, px=(None, None)):
         """
-            px: tuple (x,y)
-            This function sets the central pixel of the detector as shown in the visualization.
-            If no argument is given, the pixel is set to the center of the detector.
+        px: tuple (x,y)
+        This function sets the central pixel of the detector as shown in the visualization.
+        If no argument is given, the pixel is set to the center of the detector.
         """
         if px[0] is None:
-            x, y = [0,0]
+            x, y = [0, 0]
         else:
-            x,y = (np.asarray(px) - self.__dict__[self.rc.jf_name()].shape/2) *75e-3
-        tool = "t_"+self.rc.jf_id().split("V")[0]
+            x, y = (np.asarray(px) - self.__dict__[self.rc.jf_name()].shape / 2) * 75e-3
+        tool = "t_" + self.rc.jf_id().split("V")[0]
         try:
             elog = self._get_elog()
             elog.post(f"<h1>Changing central pixel of {self.rc.jf_name()} to {px}</h1>")
@@ -269,98 +346,130 @@ class StaeubliTx200(Assembly):
             return self.config.tool_coordinates.mv([x, y, 0, 0, 0, 0])
 
     def get_central_pixel(self):
-        tool = "t_"+self.rc.jf_id().split("V")[0]
+        tool = "t_" + self.rc.jf_id().split("V")[0]
         if self.config.tool().split(".")[-1] == tool:
-            return np.round(np.array(self.config.tool_coordinates())[0:2] / 75e-3 + self.__dict__[self.rc.jf_name()].shape/2,1)
+            return np.round(
+                np.array(self.config.tool_coordinates())[0:2] / 75e-3
+                + self.__dict__[self.rc.jf_name()].shape / 2,
+                1,
+            )
         else:
-            raise RobotError(f"The current tool {self.config.tool()} is different from the expected detector tool {tool}")
-
+            raise RobotError(
+                f"The current tool {self.config.tool()} is different from the expected detector tool {tool}"
+            )
 
     ######## Motion recording ##########
     def record_motion(self, **kwargs):
         """
-            This function is used to record trajectories, which are considered safe for remote commands.
-            The move has to be exectuted in manual mode and no other motion is allowed until the
-            move is either finished or aborted by ctrl + c. To abort the command from a different
-            eco session, use the function abort_record().
+        This function is used to record trajectories, which are considered safe for remote commands.
+        The move has to be exectuted in manual mode and no other motion is allowed until the
+        move is either finished or aborted by ctrl + c. To abort the command from a different
+        eco session, use the function abort_record().
         """
         if "t_det" in kwargs.keys():
             t = kwargs.pop("t_det")
             kwargs["r"] = t
-        self._set_eval_cmd(f"robot.record_motion(**{kwargs})", stopper=self.abort_record, timeout = 1200, background=False, stopper_msg="Recording aborted by user, resetting all motions.")
+        self._set_eval_cmd(
+            f"robot.record_motion(**{kwargs})",
+            stopper=self.abort_record,
+            timeout=1200,
+            background=False,
+            stopper_msg="Recording aborted by user, resetting all motions.",
+        )
 
     def abort_record(self):
         """
-            This functions aborts any motion, which is blocking other commands
-            such as a record_motion command executed in a different session.
+        This functions aborts any motion, which is blocking other commands
+        such as a record_motion command executed in a different session.
         """
         self.pc.eval(":abort")
         self.reset_motion()
 
     def reset_recorded_motions(self, index=None, motion=None):
         """
-            Resets all motions if no kwargs are given.
-            If motion = "cartesian", "spherical" or "joint" and index of recorded motion is given, only this one is removed.
+        Resets all motions if no kwargs are given.
+        If motion = "cartesian", "spherical" or "joint" and index of recorded motion is given, only this one is removed.
         """
         if not index is None:
-            return self.get_eval_result(cmd=f"robot.reset_recorded_motions(index={index}, motion={motion})")
+            return self.get_eval_result(
+                cmd=f"robot.reset_recorded_motions(index={index}, motion={motion})"
+            )
         else:
             return self.get_eval_result(cmd=f"robot.reset_recorded_motions()")
 
     ######## Motion simulation ##########
-    def simulate(self, **kwargs):
+    def simulate(self, resume_realtime="question", **kwargs):
         """
-        This method involves communication with the robot controller to interpolate
-        the cartesian, spherical or joint motion depending on the passed keywords.
-        By default with no specific keyword arguments, the stored commands on the robot
-        controller are simulated.
+         This method involves communication with the robot controller to interpolate
+         the cartesian, spherical or joint motion depending on the passed keywords.
+         By default with no specific keyword arguments, the stored commands on the robot
+         controller are simulated.
 
-        If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments:
-            simulate cratesian motion using the helper function _simulate_cartesian_motion --> see docstring for details
+         If any of "x", "y", "z", "rx", "ry", "rz" are in the keyword arguments:
+             simulate cratesian motion using the helper function _simulate_cartesian_motion --> see docstring for details
 
-        Else if any of "r", "gamma", "delta" are in the keyword arguments:
-            simulate spherical motion using the helper function _simulate_spherical_motion --> see docstring for details
+         Else if any of "r", "gamma", "delta" are in the keyword arguments:
+             simulate spherical motion using the helper function _simulate_spherical_motion --> see docstring for details
 
-       Else if any of "j1" to "j6" are in the keyword arguments:
-           simulate joint motion using the helper function _simulate_joint_motion --> see docstring for details
+        Else if any of "j1" to "j6" are in the keyword arguments:
+            simulate joint motion using the helper function _simulate_joint_motion --> see docstring for details
 
-        coordinates = "joint":
-            the coordinates in which the interpolated values are returned.
-            Options are "joint" (default) or "spherical" / "cartesian"
+         coordinates = "joint":
+             the coordinates in which the interpolated values are returned.
+             Options are "joint" (default) or "spherical" / "cartesian"
 
-        plot = True:
-            if plot = True, the interpolated motion will be shown in a browser window
-            if plot = False, an array of the interpolated positions will be returned
+         plot = True:
+             if plot = True, the interpolated motion will be shown in a browser window
+             if plot = False, an array of the interpolated positions will be returned
         """
         if np.any([s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]):
-            return self._simulate_cartesian_motion(**kwargs)
+            return self._simulate_cartesian_motion(
+                resume_realtime=resume_realtime, **kwargs
+            )
         elif np.any([s in kwargs.keys() for s in ["t_det", "gamma", "delta"]]):
-            return self._simulate_spherical_motion(**kwargs)
+            return self._simulate_spherical_motion(
+                resume_realtime=resume_realtime, **kwargs
+            )
         elif np.any([s in kwargs.keys() for s in ["j1", "j2", "j3", "j4", "j5", "j6"]]):
-            return self._simulate_joint_motion(**kwargs)
+            return self._simulate_joint_motion(
+                resume_realtime=resume_realtime, **kwargs
+            )
         else:
-            return self._simulate_stored_commands()
+            return self._simulate_stored_commands(resume_realtime=resume_realtime)
 
-    def _simulate_stored_commands(self, plot=True):
+    def _simulate_stored_commands(self, resume_realtime="question", plot=True):
         """
         Simulated stored commands on the controller.
         """
         sim = np.array(self.get_eval_result(f"robot.simulate_stored_commands()"))
-        lin = np.array([self.cartesian.z_lin()]*len(sim))
-        sim = np.vstack([lin,sim.T]).T
+        lin = np.array([self.cartesian.z_lin()] * len(sim))
+        sim = np.vstack([lin, sim.T]).T
         if plot:
             if self._urdf is not None:
                 self.auto_update_simulation(False)
                 self._urdf.sim.move_trajectory(sim)
-                res = ""
-                while not res in ["y", "n"]:
-                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
-                if res == "y":
-                    self.auto_update_simulation(True)
+                if resume_realtime == "question":
+                    res = ""
+                    while not res in ["y", "n"]:
+                        res = input(
+                            "Resume real time visualization of bernina robot in the hutch (y/n)?: "
+                        )
+                    if res == "y":
+                        self.auto_update_simulation(True)
+                else:
+                    self.auto_update_simulation(resume_realtime)
         else:
             return sim
 
-    def _simulate_spherical_motion(self, t_det=None, gamma=None, delta=None, coordinates="joint", plot=True):
+    def _simulate_spherical_motion(
+        self,
+        resume_realtime="question",
+        t_det=None,
+        gamma=None,
+        delta=None,
+        coordinates="joint",
+        plot=True,
+    ):
         """
         Simulated motion in the spherical coordinate system using a linear moteion movel command to
         change the radius from point tcp_p_spherical[0] to tcp_p_spherical[1], followed
@@ -373,44 +482,80 @@ class StaeubliTx200(Assembly):
         If simulate = True, an array of interpolated positions in either joint or cartesian
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.
         """
-        sim = np.array(self.get_eval_result(f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"))
-        lin = np.array([self.cartesian.z_lin()]*len(sim))
-        sim = np.vstack([lin,sim.T]).T
+        sim = np.array(
+            self.get_eval_result(
+                f"robot.move_spherical(r={t_det}, gamma={gamma}, delta={delta}, simulate=True, coordinates='{coordinates}')"
+            )
+        )
+        lin = np.array([self.cartesian.z_lin()] * len(sim))
+        sim = np.vstack([lin, sim.T]).T
         if plot:
             if self._urdf is not None:
                 self.auto_update_simulation(False)
                 self._urdf.sim.move_trajectory(sim)
-                res = ""
-                while not res in ["y", "n"]:
-                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
-                if res == "y":
-                    self.auto_update_simulation(True)
+                if resume_realtime == "question":
+                    res = ""
+                    while not res in ["y", "n"]:
+                        res = input(
+                            "Resume real time visualization of bernina robot in the hutch (y/n)?: "
+                        )
+                    if res == "y":
+                        self.auto_update_simulation(True)
+                else:
+                    self.auto_update_simulation(resume_realtime)
         else:
             return sim
 
-
-    def _simulate_joint_motion(self, j1=None, j2=None, j3=None, j4=None, j5=None, j6=None, plot=True):
+    def _simulate_joint_motion(
+        self,
+        resume_realtime="question",
+        j1=None,
+        j2=None,
+        j3=None,
+        j4=None,
+        j5=None,
+        j6=None,
+        plot=True,
+    ):
         """
         Simulated motion in the joint coordinate system.
         """
-        sim = np.array(self.get_eval_result(f"robot.move_joint(j1={j1}, j2={j2}, j3={j3}, j4={j4}, j5={j5}, j6={j6}, simulate=True"))
-        lin = np.array([self.cartesian.z_lin()]*11)
-        sim = np.vstack([lin,sim.T]).T
+        sim = np.array(
+            self.get_eval_result(
+                f"robot.move_joint(j1={j1}, j2={j2}, j3={j3}, j4={j4}, j5={j5}, j6={j6}, simulate=True)"
+            )
+        )
+        lin = np.array([self.cartesian.z_lin()] * 11)
+        sim = np.vstack([lin, sim.T]).T
         if plot:
             if self._urdf is not None:
                 self.auto_update_simulation(False)
                 self._urdf.sim.move_trajectory(sim)
-                res = ""
-                while not res in ["y", "n"]:
-                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
-                if res == "y":
-                    self.auto_update_simulation(True)
+                if resume_realtime == "question":
+                    res = ""
+                    while not res in ["y", "n"]:
+                        res = input(
+                            "Resume real time visualization of bernina robot in the hutch (y/n)?: "
+                        )
+                    if res == "y":
+                        self.auto_update_simulation(True)
+                else:
+                    self.auto_update_simulation(resume_realtime)
         else:
             return sim
 
-
-
-    def _simulate_cartesian_motion(self, x=None, y=None, z=None, rx=None, ry=None, rz=None, coordinates="joint", plot=True):
+    def _simulate_cartesian_motion(
+        self,
+        resume_realtime="question",
+        x=None,
+        y=None,
+        z=None,
+        rx=None,
+        ry=None,
+        rz=None,
+        coordinates="joint",
+        plot=True,
+    ):
         """
         Simulated motion in the cartesian coordinate system using a linear motion movel command to
         move from point tcp_p_spherical[0] to tcp_p_spherical[1].
@@ -420,25 +565,41 @@ class StaeubliTx200(Assembly):
         An array of interpolated positions in either joint or cartesian
         coordinates is returned. Setting coordinates only has an effect, when the motion is simulated.
         """
-        sim = np.array(self.get_eval_result(f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"))
-        lin = np.array([self.cartesian.z_lin()]*11)
-        sim = np.vstack([lin,sim.T]).T
+        sim = np.array(
+            self.get_eval_result(
+                f"robot.move_cartesian(x={x}, y={y}, z={z}, rx={rx}, ry={ry}, rz={rz}, simulate=True, coordinates='{coordinates}')"
+            )
+        )
+        lin = np.array([self.cartesian.z_lin()] * 11)
+        sim = np.vstack([lin, sim.T]).T
         if plot:
             if self._urdf is not None:
                 self.auto_update_simulation(False)
                 self._urdf.sim.move_trajectory(sim)
-                res = ""
-                while not res in ["y", "n"]:
-                    res = input("Resume real time visualization of bernina robot in the hutch (y/n)?: ")
-                if res == "y":
-                    self.auto_update_simulation(True)
+                if resume_realtime == "question":
+                    res = ""
+                    while not res in ["y", "n"]:
+                        res = input(
+                            "Resume real time visualization of bernina robot in the hutch (y/n)?: "
+                        )
+                    if res == "y":
+                        self.auto_update_simulation(True)
+                else:
+                    self.auto_update_simulation(resume_realtime)
         else:
             return sim
 
     def _simulate_current_pos(self):
-        js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])
+        js = np.array(
+            [
+                self._cache["pos"][k]
+                for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]
+            ]
+        )
         if np.any([j is None for j in js]):
-            raise RobotError("Some of the joint positions are None, check if the connection between server and robot is lost")
+            raise RobotError(
+                "Some of the joint positions are None, check if the connection between server and robot is lost"
+            )
         self._urdf.sim.pos = js
         self._urdf.sim._ensure_vis_running()
         self._urdf.sim.vis.step(0)
@@ -447,9 +608,14 @@ class StaeubliTx200(Assembly):
         self._urdf.sim.show()
 
     ######## Helper functions ##########
-    def _auto_updater_simulation(self):#
-        while(True):
-            js = np.array([self._cache["pos"][k] for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]])
+    def _auto_updater_simulation(self):  #
+        while True:
+            js = np.array(
+                [
+                    self._cache["pos"][k]
+                    for k in ["z_lin", "j1", "j2", "j3", "j4", "j5", "j6"]
+                ]
+            )
             if np.any([j is None for j in js]):
                 time.sleep(1)
                 continue
@@ -458,7 +624,7 @@ class StaeubliTx200(Assembly):
                     self._urdf.sim.pos = js
                     if self._urdf.sim._vis_running():
                         self._urdf.sim.vis.step(0)
-            time.sleep(.05)
+            time.sleep(0.05)
 
     def _get_on_poll_info(self):
         cfg = self.get_eval_result("robot.on_poll_info()")
@@ -483,17 +649,19 @@ class StaeubliTx200(Assembly):
             self._check_disconnect_event(name, value)
 
     def _as_bool(self, s):
-        return True if s=='true' else False if s=='false' else None
+        return True if s == "true" else False if s == "false" else None
 
     def get_eval_result(self, cmd, update_value_time=0.05, timeout=1, background=True):
         if "info" in self.__dict__.keys():
             if self.info.server_status == "Busy":
-                raise RobotError("The server is busy with a recording motion. To abort it, type: rob.abort_record()")
+                raise RobotError(
+                    "The server is busy with a recording motion. To abort it, type: rob.abort_record()"
+                )
         if background:
             cmd = cmd + "&"
         cid = self.pc.start_eval(f"{cmd}")
         t_start = time.time()
-        while(True):
+        while True:
             time.sleep(update_value_time)
             res = self.pc.get_result(cid)
             if res["status"] == "failed":
@@ -502,15 +670,24 @@ class StaeubliTx200(Assembly):
                 val = res["return"]
                 break
             elif (time.time() - t_start) > timeout:
-                raise RobotError(
-                    f"evaluation timeout reached"
-                )
+                raise RobotError(f"evaluation timeout reached")
         return val
 
-    def _set_eval_cmd(self, cmd, stopper = None, hold=False, update_value_time=0.05, timeout=120, background=True, stopper_msg = ""):
+    def _set_eval_cmd(
+        self,
+        cmd,
+        stopper=None,
+        hold=False,
+        update_value_time=0.05,
+        timeout=120,
+        background=True,
+        stopper_msg="",
+    ):
         ch = Changer(
             target=cmd,
-            changer=lambda cmd: self.get_eval_result(cmd, update_value_time, timeout, background=background),
+            changer=lambda cmd: self.get_eval_result(
+                cmd, update_value_time, timeout, background=background
+            ),
             hold=hold,
             stopper=stopper,
         )
@@ -531,10 +708,10 @@ class StaeubliTx200(Assembly):
                 for k, v in self._cache.items():
                     if type(v) == dict:
                         for k2 in self._cache[k].keys():
-                            self._cache[k][k2]=None
+                            self._cache[k][k2] = None
                     else:
-                        self._cache[k]=None
-                    self._cache["connected"]=False
+                        self._cache[k] = None
+                    self._cache["connected"] = False
                 raise RobotError(value)
         else:
             print(name, value)

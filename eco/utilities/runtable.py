@@ -581,7 +581,7 @@ class Run_Table_DataFrame(DataFrame):
         # self.order_df()
         self.save()
 
-    def _get_adjustable_values(self, silent=True, d={}, by_id=True):
+    def _get_adjustable_values(self, silent=False, d={}, by_id=True):
         """
         This function gets the values of all adjustables in good adjustables and raises an error, when an adjustable is not connected anymore
         """
@@ -665,16 +665,17 @@ class Run_Table_DataFrame(DataFrame):
             name = device.name
         if id(device) in self.ids_parsed.keys():
             if "ids" in self.ids_parsed[id(device)].keys():
-                for adj_id in self.ids_parsed[id(device)]["ids"]:
-                    adj_name = self.ids_parsed[adj_id]["name"]
-                    if parent_name == name:
-                        k = adj_name
-                    else:
+                if len(self.ids_parsed[id(device)]["ids"]) > 0:
+                    for adj_id in self.ids_parsed[id(device)]["ids"]:
+                        adj_name = self.ids_parsed[adj_id]["name"]
+                        # if parent_name == name:
+                        #    k = adj_name
+                        # else:
                         k = ".".join([name, adj_name])
-                    self.ids_parsed[adj_id]["names_parent"].append(name)
-                    # self.ids_parsed[adj_id]["names"].append(".".join([parent_name, k]))
-                    self.ids_parsed[adj_id]["names"].append(k)
-                return
+                        self.ids_parsed[adj_id]["names_parent"].append(name)
+                        # self.ids_parsed[adj_id]["names"].append(".".join([parent_name, k]))
+                        self.ids_parsed[adj_id]["names"].append(k)
+                    return
         for key in device.__dict__.keys():
             if ~np.any([s in key for s in self._parse_exclude_keys]):
                 value = device.__dict__[key]
@@ -695,10 +696,10 @@ class Run_Table_DataFrame(DataFrame):
                             self.ids_parsed[id(device)]["ids"] = []
                     else:
                         self.ids_parsed.update({id(device): {"ids": []}})
-                    if parent_name == name:
-                        k = key
-                    else:
-                        k = ".".join([name, key])
+                    # if parent_name == name:
+                    #    k = key
+                    # else:
+                    k = ".".join([name, key])
                     self.adjustables[parent_name][k] = value
                     if id(value) in self.ids_parsed.keys():
                         if "value" in self.ids_parsed[id(value)]:

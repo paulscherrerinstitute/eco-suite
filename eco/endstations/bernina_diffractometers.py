@@ -28,7 +28,7 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 
 def append_diffractometer_modules(obj, configuration):
-    if "base" in configuration:
+    if configuration.base():
         ### motors base platform ###
         obj._append(
             MotorRecord,
@@ -102,7 +102,7 @@ def append_diffractometer_modules(obj, configuration):
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_NY_RY2TH",
-            name="nu",
+            name="gamma",
             is_setting=True,
             pb_conf={"type": "motor", "axis": 4},
         )
@@ -116,7 +116,7 @@ def append_diffractometer_modules(obj, configuration):
         )
         obj.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
 
-    if "arm" in configuration:
+    if configuration.arm():
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_DT_RX2TH",
@@ -147,7 +147,7 @@ def append_diffractometer_modules(obj, configuration):
         # missing: slits of flight tube
         obj.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
 
-    if "polana" in configuration:
+    if configuration.polana():
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_P_ETA",
@@ -175,7 +175,7 @@ def append_diffractometer_modules(obj, configuration):
             pb_conf={"type": "motor", "axis": 6},
         )
 
-    if "phi_table" in configuration:
+    if configuration.phi_table():
         ### motors phi table ###
         obj._append(
             MotorRecord,
@@ -192,9 +192,9 @@ def append_diffractometer_modules(obj, configuration):
             pb_conf={"type": "motor", "axis": 7},
         )
 
-    if "phi_hex" in configuration:
+    if configuration.phi_hex():
         ### motors PI hexapod ###
-        if hasattr(obj,"fina_hex_angle_offset"):
+        if hasattr(obj, "fina_hex_angle_offset"):
             fina_hex_angle_offset = Path(obj.fina_hex_angle_offset).expanduser()
 
         else:
@@ -209,7 +209,7 @@ def append_diffractometer_modules(obj, configuration):
             is_display="recursive",
         )
 
-    if "hlxz" in configuration:
+    if configuration.hlxz():
         ### motors heavy load goniometer ###
         obj._append(
             MotorRecord,
@@ -226,7 +226,7 @@ def append_diffractometer_modules(obj, configuration):
             pb_conf={"type": "motor", "axis": 2},
         )
 
-    if "hly" in configuration:
+    if configuration.hly():
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_TBL_TY",
@@ -235,7 +235,7 @@ def append_diffractometer_modules(obj, configuration):
             pb_conf={"type": "motor", "axis": 3},
         )
 
-    if "hlrxrz" in configuration:
+    if configuration.hlrxrz():
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_TBL_RX",
@@ -251,7 +251,7 @@ def append_diffractometer_modules(obj, configuration):
             pb_conf={"type": "motor", "axis": 5},
         )
     obj.set_samplestg_off = DeltaTauCurrOff("SARES22-GPS:asyn1.AOUT")
-    if "kappa" in configuration:
+    if configuration.kappa():
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_KAP_KRX",
@@ -360,6 +360,14 @@ def append_diffractometer_modules(obj, configuration):
             name="phi",
             unit="deg",
         )
+    if configuration.robot():
+        ### spherical robot motors ###
+        import eco.bernina as b
+
+        rob = b.__dict__["rob"]
+        obj.gamma_robot = rob.spherical.gamma
+        obj.delta_robot = rob.spherical.delta
+
 
 @get_from_archive
 class GPS(Assembly):
@@ -367,13 +375,10 @@ class GPS(Assembly):
         self,
         name=None,
         pvname=None,
-        configuration=["base"],
-        alias_namespace=None,
+        configuration=None,
         pgroup_adj=None,
-        configsjf_adj=None,
+        jf_config=None,
         fina_hex_angle_offset=None,
-        diffcalc=False,
-        detectors=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -382,7 +387,7 @@ class GPS(Assembly):
 
         append_diffractometer_modules(self, configuration)
 
-        if diffcalc:
+        if configuration.diffcalc():
             self._append(
                 Crystals,
                 diffractometer_you=self,
@@ -390,20 +395,14 @@ class GPS(Assembly):
                 is_setting=False,
                 is_display=False,
             )
-        if detectors:
-            for tdet in detectors:
-                tname = tdet["name"]
-                tid = tdet["jf_id"]
-                self._append(
-                    Jungfrau,
-                    tid,
-                    name=tname,
-                    is_setting=False,
-                    is_display=False,
-                    pgroup_adj=pgroup_adj,
-                    config_adj=configsjf_adj,
-                    view_toplevel_only=True,
-                )
+        for jf_id, jf_name in configuration.jfs():
+            self._append(
+                Jungfrau,
+                jf_id,
+                pgroup_adj=pgroup_adj,
+                config_adj=jf_config,
+                name=jf_name,
+            )
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
@@ -530,15 +529,13 @@ class XRDYou(Assembly):
         self,
         name=None,
         Id=None,
-        configuration=["base"],
-        detectors=None,
+        configuration=None,
         invert_kappa_ellbow=True,
         pgroup_adj=None,
-        configsjf_adj=None,
+        jf_config=None,
         fina_hex_angle_offset=None,
-        diffcalc=True,
     ):
-        """X-ray diffractometer platform in AiwssFEL Bernina.\
+        """X-ray diffractometer platform in SiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
                 the plaform, options are kappa, nutable, hlgonio, polana"""
         # self.Id = Id
@@ -547,32 +544,25 @@ class XRDYou(Assembly):
         super().__init__(name=name)
         self.configuration = configuration
         self.invert_kappa_ellbow = invert_kappa_ellbow
-        self.fina_hex_angle_offset  = fina_hex_angle_offset
+        self.fina_hex_angle_offset = fina_hex_angle_offset
 
         append_diffractometer_modules(self, configuration)
 
-        if detectors:
-            for tdet in detectors:
-                tname = tdet["name"]
-                tid = tdet["jf_id"]
-                self._append(
-                    Jungfrau,
-                    tid,
-                    name=tname,
-                    is_setting=False,
-                    is_display=False,
-                    pgroup_adj=pgroup_adj,
-                    config_adj=configsjf_adj,
-                    view_toplevel_only=True,
-                )
-
-        if diffcalc:
+        if configuration.diffcalc():
             self._append(
                 Crystals,
                 diffractometer_you=self,
                 name="diffcalc",
                 is_setting=False,
                 is_display=False,
+            )
+        for jf_id, jf_name in configuration.jfs():
+            self._append(
+                Jungfrau,
+                jf_id,
+                pgroup_adj=pgroup_adj,
+                config_adj=jf_config,
+                name=jf_name,
             )
 
     def get_adjustable_positions_str(self):
@@ -749,7 +739,7 @@ class XRD(Assembly):
     ):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
-                the plaform, options are kappa, nutable, hlgonio, polana"""
+                the plaform, options are kappa, nutable, hlgonio, polana,"""
         # self.Id = Id
         super().__init__(name=name)
         self.configuration = configuration
@@ -845,17 +835,11 @@ class XRD(Assembly):
 
         if "hlxz" in self.configuration:
             ### motors heavy load goniometer ###
-            self._append(
-                MotorRecord, Id + ":MOT_TBL_TX", name="xhl", is_setting=True
-            )
-            self._append(
-                MotorRecord, Id + ":MOT_TBL_TZ", name="zhl", is_setting=True
-            )
+            self._append(MotorRecord, Id + ":MOT_TBL_TX", name="xhl", is_setting=True)
+            self._append(MotorRecord, Id + ":MOT_TBL_TZ", name="zhl", is_setting=True)
             self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
         if "hly" in self.configuration:
-            self._append(
-                MotorRecord, Id + ":MOT_TBL_TY", name="yhl", is_setting=True
-            )
+            self._append(MotorRecord, Id + ":MOT_TBL_TY", name="yhl", is_setting=True)
             self.set_phi_off = DeltaTauCurrOff("SARES21-XRD:asyn1.AOUT")
 
         if "hlrxrz" in self.configuration:
@@ -876,12 +860,8 @@ class XRD(Assembly):
 
         if "phi_table" in self.configuration:
             ### motors nu table ###
-            self._append(
-                MotorRecord, Id + ":MOT_HEX_TX", name="tphi", is_setting=True
-            )
-            self._append(
-                MotorRecord, Id + ":MOT_HEX_RX", name="phi", is_setting=True
-            )
+            self._append(MotorRecord, Id + ":MOT_HEX_TX", name="tphi", is_setting=True)
+            self._append(MotorRecord, Id + ":MOT_HEX_RX", name="phi", is_setting=True)
 
         if "phi_hex" in self.configuration:
             ### motors PI hexapod ###

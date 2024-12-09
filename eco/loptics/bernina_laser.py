@@ -10,6 +10,7 @@ from ..devices_general.motors import (
 from ..elements.adjustable import (
     AdjustableMemory,
     AdjustableVirtual,
+    AdjustableGetSet,
     AdjustableFS,
     spec_convenience,
     update_changes,
@@ -20,6 +21,7 @@ from eco.devices_general.utilities import Changer
 
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData, DetectorPvString
+from eco.detector.detectors_psi import DetectorBsStream
 from ..devices_general.detectors import DetectorVirtual
 from ..timing.lasertiming_edwin import XltEpics, LaserRateControl
 import colorama
@@ -37,9 +39,9 @@ ureg = UnitRegistry()
 class IncouplingCleanBernina(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23-LIC:MOT_17", name="tilt")
-        self._append(SmaractRecord, "SARES23-LIC:MOT_18", name="rotation")
-        self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="transl_vertical")
+        self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="tilt")
+        self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="rotation")
+        self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="transl_vertical")
         self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
 
 
@@ -103,6 +105,8 @@ class FilterWheelFlags(Assembly):
         return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
 
 
+@spec_convenience
+@value_property
 class FilterWheel(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
@@ -126,6 +130,12 @@ class FilterWheel(Assembly):
             is_setting=False,
             is_status=True,
         )
+
+    def set_target_value(self, value):
+        self._val(value)
+
+    def get_current_value(self):
+        return self._rb()
 
     def set_remote_operation(self):
         self._val(7)
@@ -243,30 +253,77 @@ class StageLxtDelay(Assembly):
 
 
 class LxtCompStageDelay(Assembly):
-    def __init__(self, comp_adj, delay_adj, direction=1, name=None):
+    def __init__(self, comp_adj, delay_adj, name=None, feedback_enabled_adj=None):
         super().__init__(name=name)
         self._comp_delay_adj = comp_adj
         self._delay_adj = delay_adj
+        self._feedback_enabled = feedback_enabled_adj
         # self._append(AdjustableMemory, direction, name="_direction", is_setting=True)
-
         self._append(
-            AdjustableVirtual,
-            [self._delay_adj, self._comp_delay_adj],
+            AdjustableGetSet,
             self._get_comp_delay,
             self._set_comp_delay,
             name="delay",
             unit="s",
+            set_returns_changer=False,
         )
 
-    def _get_comp_delay(self, delay, delaycomp):
-        return -delay
+    def _get_comp_delay(self):
+        return -self._delay_adj()
 
     def _set_comp_delay(self, delay):
+        if self._feedback_enabled is not None:
+            self._feedback_enabled(0)
         if self._comp_delay_adj.check_target_value_within_limits(delay):
+            ## tt delay stage is within limits and can compensate
             outcomp = delay
+            feedback_after_move = 1
+        elif abs(self._comp_delay_adj.get_current_value()) > 30e-15:
+            ## tt delay stage is not at 0 but outside limits
+            outcomp = 0.0
+            feedback_after_move = 0
         else:
+            ## tt delay stage is close to 0 and should not be moved
             outcomp = self._comp_delay_adj.get_current_value()
-        return (-delay, outcomp)
+            feedback_after_move = 0
+        ## move
+        changers = [
+            self._comp_delay_adj.set_target_value(outcomp, hold=False),
+            self._delay_adj.set_target_value(-delay, hold=False),
+        ]
+        for ch in changers:
+            ch.wait()
+        ##turn feedback on if tt delay stage is within limits
+        if self._feedback_enabled is not None:
+            self._feedback_enabled(feedback_after_move)
+
+
+#        self._append(
+#            AdjustableVirtual,
+#            [self._delay_adj, self._comp_delay_adj],
+#            self._get_comp_delay,
+#            self._set_comp_delay,
+#            name="delay",
+#            unit="s",
+#        )
+
+#    def _get_comp_delay(self, delay, delaycomp):
+#        return -delay
+
+#    def _set_comp_delay(self, delay):
+#        if self._comp_delay_adj.check_target_value_within_limits(delay):
+#            outcomp = delay
+#            if self._feedback_enabled is not None:
+#                self._feedback_enabled(1)
+#        elif abs(self._comp_delay_adj.get_current_value()) > 30e-15:
+#            outcomp = 0.0
+#            if self._feedback_enabled is not None:
+#                self._feedback_enabled(0)
+#        else:
+#            outcomp = 0.0
+#            if self._feedback_enabled is not None:
+#                self._feedback_enabled(0)
+#        return (-delay, outcomp)
 
 
 class Stage_LXT_Delay(AdjustableVirtual):
@@ -517,6 +574,26 @@ class LaserBernina(Assembly):
             is_setting=True,
         )
 
+        ############# Keysight arrival times ##########
+        self._append(
+            DetectorBsStream,
+            "SARES22-GES1:PR1_CALC1",
+            cachannel="SARES22-GES1:PR1_CALC1",
+            name="arrival_time_keysight_ns",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            "SARES22-GES1:PR1_CALC1.INPD",
+            name="arrival_time_keysight_offset",
+            is_setting=True,
+        )
+
+        ############# Laser filter wheels #############
+        self._append(FilterWheel, name="filter_wheel_B", pvname="SARES20-FLTW:IFW_B")
+        self._append(FilterWheel, name="filter_wheel_A", pvname="SARES20-FLTW:IFW_A")
+
         # Table 1, Benrina hutch
         self._append(
             MotorRecord,
@@ -533,23 +610,28 @@ class LaserBernina(Assembly):
         self._append(
             MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True
         )
-        # Waveplate and Delay stage
-        # self._append(
-        #     MotorRecord, self.pvname + "-M533:MOT", name="wp_pol", is_setting=True
-        # )
 
-        # self._append(
-        #     MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
-        # )
+        self._append(
+            MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
+        )
         try:
             self.motor_configuration_thorlabs = {
-                "waveplate_lambda_half": {
+                "wp_uv": {
+                    "pvname": "SLAAR21-LMOT-ELL5",
+                },
+                "block_uv": {
+                    "pvname": "SLAAR21-LMOT-ELL2",
+                },
+                "frog_wp": {
                     "pvname": "SLAAR21-LMOT-ELL3",
                 },
-                "waveplate_lambda_fourth": {
-                    "pvname": "SLAAR21-LMOT-ELL4",
-                },
             }
+            # "wp_ir": {
+            #         "pvname": "SLAAR21-LMOT-ELL5",
+            #     },
+            # "rot_block_ir": {
+            #         "pvname": "SLAAR21-LMOT-ELL2",
+            #     },
 
             ### thorlabs piezo motors ###
             for name, config in self.motor_configuration_thorlabs.items():
@@ -562,7 +644,7 @@ class LaserBernina(Assembly):
         except Exception as e:
             print(e)
 
-        ######## Implementation segmented ND filter wheel in rotation stage #########
+        ####### Implementation segmented ND filter wheel in rotation stage #########
         self._append(
             MotorRecord, "SARES20-MF1:MOT_16", name="nd_filt_stg", is_setting=True
         )
@@ -655,60 +737,74 @@ class LaserBernina(Assembly):
             is_setting=True,
             is_display="recursive",
         )
-        # Upstairs, Laser 1 LAM
-        # self._append(
-        #     MotorRecord,
-        #     "SLAAR21-LMOT-M521:MOTOR_1",
-        #     name="delaystage_pump",
-        #     is_setting=True,
-        # )
-        # self._append(pump
-        #     MotorRecord,
-        #     "SLAAR21-LMOT-M521:MOTOR_1",
-        #     name="delaystage_pump",
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     DelayTime,
-        #     self.delaystage_pump,
-        #     name="delay_pump",
-        #     is_setting=True,
-        # )
-        self._append(
-            SmaractRecord,
-            "SARES23-USR:MOT_10",
-            name="switch_ir_wl",
-            is_setting=True,
-        )
-        self._append(
-            ThorlabsPiezoRecord,
-            "SLAAR21-LMOT-ELL5",
-            name="wp_ir",
-            is_setting=True,
-        )
-        self._append(
-            ThorlabsPiezoRecord,
-            "SLAAR21-LMOT-ELL2",
-            name="rot_block_ir",
-            is_setting=False,
-        )
 
         self._append(
-            SmaractRecord,
-            "SARES23-USR:MOT_11",
-            name="delaystage_ir",
+            MotorRecord,
+            "SLAAR21-LMOT-M522:MOTOR_1",
+            name="delaystage_pump",
             is_setting=True,
         )
         self._append(
             DelayTime,
-            self.delaystage_ir,
-            name="delay_ir",
+            self.delaystage_pump,
+            name="delay_pump",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_3",
+            name="switch_uv_ir",
             is_setting=True,
         )
 
         self._append(
-            AdjustableVirtual, [self.wp_ir], wp2uJ, uJ2wp, name="pulse_energy_ir"
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_0",
+            name="delaystage_frog",
+            is_setting=True,
         )
+        self._append(
+            SmaractRecord,
+            "SARES23-USR:MOT_2",
+            name="pump_telescope",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23-USR:MOT_1",
+            name="mir1_ry",
+            is_setting=True,
+        )
+
+        self._append(
+            SmaractRecord,
+            "SARES23-USR:MOT_7",
+            name="mir1_rx",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_frog,
+            name="delay_frog",
+            is_setting=True,
+        )
+        # self._append(
+        #     SmaractRecord,
+        #     "SLAAR21-LMTS-SMAR1:MOT_3",
+        #     name="delaystage_ir",
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     DelayTime,
+        #     self.delaystage_frog,
+        #     name="delay_ir",
+        #     is_setting=True,
+        # )
+
+        # self._append(
+        #     AdjustableVirtual, [self.wp_ir], wp2uJ, uJ2wp, name="pulse_energy_ir"
+        # )
 
 
 class DelayTime(AdjustableVirtual):
@@ -872,20 +968,20 @@ class PositionMonitors(Assembly):
         #     is_display="recursive",
         #     is_status=True,
         # )
-        self._append(
-            CameraPositionMonitor,
-            "SLAAR21-LCAM-CS841",
-            # name="table2_position",
-            name="timing_drift",
-            is_display="recursive",
-            is_status=True,
-        )
         # self._append(
         #     CameraPositionMonitor,
-        #     "SLAAR21-LCAM-C511",
-        #     name="opaout_focus",
+        #     "SLAAR21-LCAM-CS841",
+        #     # name="table2_position",
+        #     name="timing_drift",
         #     is_display="recursive",
         #     is_status=True,
         # )
+        self._append(
+            CameraPositionMonitor,
+            "SLAAR21-LCAM-C561",
+            name="opaout_focus",
+            is_display="recursive",
+            is_status=True,
+        )
         # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C541', name='cam541')
         # self._append(CameraPositionMonitor, 'SLAAR21-LCAM-C542', name='cam542')
