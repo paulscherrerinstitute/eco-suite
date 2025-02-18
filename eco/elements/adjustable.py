@@ -10,6 +10,7 @@ import colorama
 import numpy as np
 
 import eco
+from eco.acquisition.scan_data import run_status_convenience
 from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
 
@@ -120,7 +121,6 @@ def spec_convenience(Adj):
             ]
         else:
             messages = [f"{tname} is at {value}."]
-        self.mvr(value)
         elog.post(*messages, tags=tags)
 
     def mv_elog(self, value, premessage=None, tags=[]):
@@ -554,6 +554,7 @@ class AdjustableFS:
 @spec_convenience
 @tweak_option
 @value_property
+@run_status_convenience
 class AdjustableVirtual:
     def __init__(
         self,

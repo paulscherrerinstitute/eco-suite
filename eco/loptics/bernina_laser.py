@@ -17,8 +17,10 @@ from ..elements.adjustable import (
     value_property,
     tweak_option,
 )
+from ..devices_general.cameras_swissfel import CameraBasler
+from cam_server import PipelineClient
 from eco.devices_general.utilities import Changer
-
+from eco.devices_general.pipelines_swissfel import Pipeline
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData, DetectorPvString
 from eco.detector.detectors_psi import DetectorBsStream
@@ -39,10 +41,279 @@ ureg = UnitRegistry()
 class IncouplingCleanBernina(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="tilt")
-        self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="rotation")
-        self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="transl_vertical")
-        self._append(MotorRecord, "SARES20-MF2:MOT_5", name="transl_horizontal")
+        self._append(
+            SmaractRecord,
+            "SARES23-LIC:MOT_16",
+            name="tilt",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23-LIC:MOT_13",
+            name="rotation",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23-LIC:MOT_15",
+            name="transl_vertical",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF2:MOT_5",
+            name="transl_horizontal",
+            is_setting=True,
+            is_display=True,
+        )
+
+
+class MidIR(Assembly):
+    def __init__(
+        self,
+        name=None,
+        pipeline_projection="Bernina_mid_IR_CEP_projection",
+        pipeline_analysis="Bernina_mid_IR_CEP_analysis",
+        pipeline_pv_writing="Bernina_mid_IR_CEP_populate_pvs",
+        spectrometer_pvname="SLAAR21-LCAM-CS841",
+    ):
+        super().__init__(name=name)
+        # self._append(
+        #     SmaractRecord,
+        #     "SARES23-USR:MOT_1",
+        #     name="par_ry",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     SmaractRecord,
+        #     "SARES23-USR:MOT_6",
+        #     name="par_rx",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     SmaractRecord,
+        #     "SARES23-USR:MOT_4",
+        #     name="par_z",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     SmaractRecord,
+        #     "SARES23-USR:MOT_5",
+        #     name="par_x",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     MotorRecord,
+        #     "SARES20-MF1:MOT_15",
+        #     name="par_y",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     MotorRecord,
+        #     "SARES23-USR:MOT_7",
+        #     name="mirr_z",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_2",
+            name="wedge_prism",
+            is_setting=True,
+            is_display=True,
+        )
+        # self._append(
+        #     MotorRecord,
+        #     "SARES23-USR:MOT_2",
+        #     name="power_check",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage_cep",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_cep,
+            name="delay_cep",
+            is_setting=True,
+        )
+        self._append(
+            CameraBasler,
+            "SLAAR21-LCAM-CS841",
+            name="camera_spectrometer",
+            camserver_alias="MIR_CEP",
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-SPATTT:AT",
+            name="feedback_setpoint",
+            accuracy=10,
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SFBEB01-LGEN-MIR_CEP:FB_ON_GLOBAL",
+            name="feedback_enabled",
+            accuracy=10,
+            is_setting=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fit_amplitude",
+            cachannel="SLAAR21-MIRCEP:AMPLITUDE",
+            name="fit_amplitude",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fit_phase",
+            cachannel="SLAAR21-MIRCEP:PHASE",
+            name="fit_phase",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fit_x0",
+            cachannel="SLAAR21-MIRCEP:X0",
+            name="fit_arrival_time",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fit_fwhm",
+            cachannel="SLAAR21-MIRCEP:FWHM",
+            name="fit_fwhm",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fit_frequency",
+            cachannel="SLAAR21-MIRCEP:FREQUENCY",
+            name="fit_frequency",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:spectrometer_background",
+            cachannel=None,
+            name="spectrometer_background",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:spectrometer_signal",
+            cachannel=None,
+            name="spectrometer_signal",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:spectrometer_ratio",
+            cachannel=None,
+            name="spectrometer_ratio",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:spectrometer_correlation",
+            cachannel=None,
+            name="spectrometer_correlation",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:spectrometer_time",
+            cachannel=None,
+            name="spectrometer_time",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fft_frequency",
+            cachannel=None,
+            name="fft_frequency",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fft_amplitude_abs",
+            cachannel=None,
+            name="fft_amplitude_abs",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fft_amplitude_real",
+            cachannel=None,
+            name="fft_amplitude_real",
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DetectorBsStream,
+            "SARES20-CEP01:fft_amplitude_imag",
+            cachannel=None,
+            name="fft_amplitude_imag",
+            is_setting=False,
+            is_display=True,
+        )
+        self.proc_client = PipelineClient()
+        try:
+            self.pipeline_projection = pipeline_projection
+            self._append(
+                Pipeline,
+                self.pipeline_projection,
+                name="pipeline_projection",
+                is_setting=False,
+            )
+        except Exception as e:
+            print(f"Mid-IR projection pipeline initialization failed with: \n{e}")
+        try:
+            self.pipeline_analysis = pipeline_analysis
+            self._append(
+                Pipeline,
+                self.pipeline_analysis,
+                name="pipeline_analysis",
+                is_setting=False,
+            )
+        except Exception as e:
+            print(f"Mid-IR analysis pipeline initialization failed with: \n{e}")
+        try:
+            self.pipeline_pv_writing = pipeline_pv_writing
+            self._append(
+                Pipeline,
+                self.pipeline_pv_writing,
+                name="pipeline_pv_writing",
+                is_setting=False,
+            )
+        except Exception as e:
+            print(f"Timetool pv writing pipeline initialization failed with: \n{e}")
 
 
 class Spectrometer(Assembly):
@@ -614,6 +885,12 @@ class LaserBernina(Assembly):
         self._append(
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
+        self._append(
+            MotorRecord,
+            self.pvname + "-M548:MOT",
+            name="switch_35to100fs",
+            is_setting=True,
+        )
         try:
             self.motor_configuration_thorlabs = {
                 "wp_uv": {
@@ -651,14 +928,14 @@ class LaserBernina(Assembly):
 
         filters = np.array(
             [
-                [1, 330],
-                [0.872863247863248, 15],
-                [0.692521367521367, 60],
-                [0.549038461538462, 105],
-                [0.432051282051282, 150],
-                [0.333653846153846, 195],
-                [0.251188643, 240],
-                [0.111538461538462, 285],
+                [1, 0],
+                [0.872863247863248, 45],
+                [0.692521367521367, 90],
+                [0.549038461538462, 135],
+                [0.432051282051282, 180],
+                [0.333653846153846, 225],
+                [0.251188643, 270],
+                [0.111538461538462, 315],
             ]
         )
 
@@ -789,22 +1066,42 @@ class LaserBernina(Assembly):
             name="delay_frog",
             is_setting=True,
         )
-        # self._append(
-        #     SmaractRecord,
-        #     "SLAAR21-LMTS-SMAR1:MOT_3",
-        #     name="delaystage_ir",
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     DelayTime,
-        #     self.delaystage_frog,
-        #     name="delay_ir",
-        #     is_setting=True,
-        # )
-
-        # self._append(
-        #     AdjustableVirtual, [self.wp_ir], wp2uJ, uJ2wp, name="pulse_energy_ir"
-        # )
+        #        self._append(
+        #            MotorRecord,
+        #           "SLAAR21-LMOT-M552:MOT",
+        #            name="delaystage_compensation",
+        #            is_setting=True,
+        #        )
+        self._append(
+            DelayTime,
+            self.delaystage_pump,
+            name="delay_compensation",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M555:MOT",
+            name="delaystage_m2",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_pump,
+            name="delay_m2",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M521:MOTOR_1",
+            name="delaystage_eos",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_eos,
+            name="delay_eos",
+            is_setting=True,
+        )
 
 
 class DelayTime(AdjustableVirtual):

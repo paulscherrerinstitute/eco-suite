@@ -1,7 +1,7 @@
 from cam_server import CamClient, PipelineClient
 from matplotlib.backend_bases import MouseButton
 from eco.devices_general.utilities import Changer
-from eco.epics.detector import DetectorPvData
+from eco.epics.detector import DetectorPvData, DetectorPvEnum
 
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
@@ -16,6 +16,7 @@ from pathlib import Path
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+
 sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
 import bufferutils
 
@@ -36,6 +37,7 @@ def get_pipelineclient():
         PIPELINE_CLIENT = PipelineClient()
     return PIPELINE_CLIENT
 
+
 @value_property
 class CamserverConfig2(Assembly):
     def __init__(self, cam_id, camserver_alias=None, name=None, camserver_group=None):
@@ -44,19 +46,40 @@ class CamserverConfig2(Assembly):
         self.camserver_alias = camserver_alias
         self.camserver_group = camserver_group
         self._cross = None
-        self._append(AdjustableGetSet, 
-                     self._get_config, 
-                     self._set_config, 
-                     cache_get_seconds =.05, 
-                     precision=0, 
-                     check_interval=None, 
-                     name='_config', 
-                     is_setting=False, 
-                     is_display=False)
-        
-        self._append(AdjustableObject, self._config, name='config',is_setting=True, is_display='recursive')
-        self._append(DetectorGet, self._get_info, cache_get_seconds =.05, name='_info', is_setting=False, is_display=False)
-        self._append(DetectorObject, self._info, name='info', is_display='recursive', is_setting=False)
+        self._append(
+            AdjustableGetSet,
+            self._get_config,
+            self._set_config,
+            cache_get_seconds=0.05,
+            precision=0,
+            check_interval=None,
+            name="_config",
+            is_setting=False,
+            is_display=False,
+        )
+
+        self._append(
+            AdjustableObject,
+            self._config,
+            name="config",
+            is_setting=True,
+            is_display="recursive",
+        )
+        self._append(
+            DetectorGet,
+            self._get_info,
+            cache_get_seconds=0.05,
+            name="_info",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            DetectorObject,
+            self._info,
+            name="info",
+            is_display="recursive",
+            is_setting=False,
+        )
 
     @property
     def pc(self):
@@ -67,7 +90,7 @@ class CamserverConfig2(Assembly):
         return get_camclient()
 
     def _get_config(self):
-        return  self.cc.get_camera_config(self.cam_id)
+        return self.cc.get_camera_config(self.cam_id)
 
     def _set_config(self, value, hold=False):
         return Changer(
@@ -81,7 +104,7 @@ class CamserverConfig2(Assembly):
             "camera_geometry": self.cc.get_camera_geometry(self.cam_id),
             "pipelines": self._get_pipelines(),
         }
-        return  fields
+        return fields
 
     ### convenience functions ###
     def get_camera_image(self):
@@ -149,7 +172,8 @@ class CamserverConfig2(Assembly):
             subprocess.Popen(line, shell=True)
 
     def gui(self):
-        self._run_cmd(f'csm')
+        self._run_cmd(f"csm")
+
 
 @value_property
 class CamserverConfig(Assembly):
@@ -237,7 +261,7 @@ class CamserverConfig(Assembly):
             x_um_per_px = 1
             y_um_per_px = 1
 
-        calib["reference_marker"] = [x - 1, y - 1, x + 1, y + 1]
+        # calib["reference_marker"] = [x - 1, y - 1, x + 1, y + 1]
         calib["reference_marker_width"] = 2 * x_um_per_px
         calib["reference_marker_height"] = 2 * y_um_per_px
         self.set_config_fields(fields={"camera_calibration": calib})
@@ -279,25 +303,33 @@ class CamserverConfig(Assembly):
 
 
 class CameraBasler(Assembly):
-    def __init__(self, pvname, camserver_alias=None, name=None, camserver_group=None):
+    def __init__(
+        self,
+        pvname,
+        camserver_alias=None,
+        name=None,
+        camserver_group=None,
+        connect_camserver=True,
+    ):
         super().__init__(name=name)
         self.pvname = pvname
         if not camserver_alias:
             camserver_alias = self.alias.get_full_name() + f" ({pvname})"
         else:
             camserver_alias = camserver_alias + f" ({pvname})"
-        self._append(
-            CamserverConfig2,
-            self.pvname,
-            camserver_alias=camserver_alias,
-            camserver_group=camserver_group,
-            name="config_cs",
-            is_display=False,
-        )
+        if connect_camserver:
+            self._append(
+                CamserverConfig2,
+                self.pvname,
+                camserver_alias=camserver_alias,
+                camserver_group=camserver_group,
+                name="config_cs",
+                is_display=False,
+            )
 
-        self.config_cs.set_alias()
-        if camserver_group is not None:
-            self.config_cs.set_group()
+            self.config_cs.set_alias()
+            if camserver_group is not None:
+                self.config_cs.set_group()
         self._append(
             AdjustablePvEnum,
             self.pvname + ":INIT",
@@ -306,11 +338,18 @@ class CameraBasler(Assembly):
             is_display=False,
         )
         self._append(
+            DetectorPvEnum,
+            self.pvname + ":BUSY_INIT",
+            name="is_initializing",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
             AdjustablePvEnum,
             self.pvname + ":CAMERASTATUS",
-            name="running",
+            name="cam_status",
             is_setting=True,
-            is_display=False,
+            is_display=True,
         )
         self._append(
             AdjustablePv,
@@ -403,7 +442,7 @@ class CameraBasler(Assembly):
             is_setting=True,
             is_display=False,
         )
-        
+
         self._append(
             DetectorPvData,
             self.pvname + ":DEVICEFREQUENCY",
@@ -453,7 +492,7 @@ class CameraBasler(Assembly):
             self._exposure_time.get_current_value,
             lambda value: self._set_params((self._exposure_time, value)),
             name="exposure_time",
-            unit = 'ms',
+            unit="ms",
             is_setting=True,
             is_display=True,
         )
@@ -485,24 +524,32 @@ class CameraBasler(Assembly):
         )
 
     def _set_params(self, *args):
-        self.running(1)
+        self.cam_status(1)
         for ob, val in args:
             ob(val)
         self._set_parameters(1)
-        self.running(2)
+        self.cam_status(2)
 
     def get_camera_images(self, n):
-        imgs=[]
-        while(len(np.unique(imgs, axis=0))<n):
+        imgs = []
+        while len(np.unique(imgs, axis=0)) < n:
             imgs.append(self.config_cs.get_camera_image())
             return np.unique(imgs, axis=0)
 
-    def set_cross(self, x=None, y=None, x_um_per_px=None, y_um_per_px=None, n_images=10):
+    def set_cross(
+        self, x=None, y=None, x_um_per_px=None, y_um_per_px=None, n_images=10
+    ):
         """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given"""
-        def prompt(x,y,x_um_per_px,y_um_per_px):
-            x=int(x)
-            y=int(y)
-            answer = input(f"Set the new cross position [{x}, {y}] with calibration [{x_um_per_px:.3}, {y_um_per_px:.3}] ([y]/n)?") or "y"
+
+        def prompt(x, y, x_um_per_px, y_um_per_px):
+            x = int(x)
+            y = int(y)
+            answer = (
+                input(
+                    f"Set the new cross position [{x}, {y}] with calibration [{x_um_per_px:.3}, {y_um_per_px:.3}] ([y]/n)?"
+                )
+                or "y"
+            )
             if answer == "y":
                 calib.reference_marker([x - 1, y - 1, x + 1, y + 1])
                 calib.reference_marker_width(2 * x_um_per_px)
@@ -516,50 +563,50 @@ class CameraBasler(Assembly):
         print("Current calibration:")
         print(calib)
         try:
-            w = calib.reference_marker_width() 
-            h = calib.reference_marker_height() 
+            w = calib.reference_marker_width()
+            h = calib.reference_marker_height()
             rm = calib.reference_marker()
             if not x_um_per_px:
                 x_um_per_px = w / abs(rm[2] - rm[0])
             if not y_um_per_px:
                 y_um_per_px = h / abs(rm[3] - rm[1])
         except:
-            rm=[0,0,0,0]
+            rm = [0, 0, 0, 0]
             x_um_per_px = 1
             y_um_per_px = 1
         if x is None or y is None:
-            x = (rm[2] + rm[0])/2
-            y = (rm[3] + rm[1])/2
+            x = (rm[2] + rm[0]) / 2
+            y = (rm[3] + rm[1]) / 2
             img = np.mean(self.get_camera_images(n_images), axis=0)
             run = True
+
             def on_click(event):
                 if event.button is MouseButton.LEFT:
                     x = event.xdata
                     y = event.ydata
-                    cross_plot.set_data(x,y)
+                    cross_plot.set_data(x, y)
                     plt.draw()
-                    print(f'cross at x: {x:.4} and y: {y:.4}')
-                    self.config_cs._cross = [x,y]
+                    print(f"cross at x: {x:.4} and y: {y:.4}")
+                    self.config_cs._cross = [x, y]
                 else:
                     plt.disconnect(bid)
                     plt.close(self.config_cs.cam_id)
-                    
+
             fig = plt.figure(num=self.config_cs.cam_id)
             plt.title(f"Set cross: left mouse click, Finish: right click")
             plt.imshow(img)
-            cross_plot = plt.plot(x,y, '+r', markersize=10)[0]
-            bid = fig.canvas.mpl_connect('button_press_event', on_click)
+            cross_plot = plt.plot(x, y, "+r", markersize=10)[0]
+            bid = fig.canvas.mpl_connect("button_press_event", on_click)
             plt.show(block=True)
             x, y = self.config_cs._cross
-            print(x,y)
-        prompt(x,y,x_um_per_px,y_um_per_px)
-        
-
+            print(x, y)
+        prompt(x, y, x_um_per_px, y_um_per_px)
 
     def gui(self):
         self._run_cmd(
             f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
         )
+
 
 # NB: please note this should be moved to microscopes which are using cameras plus zooms,
 class QioptiqMicroscope(CameraBasler):
@@ -664,14 +711,26 @@ class CameraPCO(Assembly):
 
 # NB: please note this should be moved to microscopes which are using cameras plus zooms,
 class FeturaMicroscope(CameraPCO):
-    def __init__(self, pvname_camera, pvname_base_zoom=None, name=None, camserver_alias=None):
+    def __init__(
+        self, pvname_camera, pvname_base_zoom=None, name=None, camserver_alias=None
+    ):
         super().__init__(pvname_camera, name=name, camserver_alias=camserver_alias)
         if pvname_base_zoom:
-            self._append(AdjustablePv, pvsetname=pvname_base_zoom+":POS_SP", pvreadbackname=pvname_base_zoom+":POS_RB", name="_zoom_motor", is_setting=True, is_display=False)
+            self._append(
+                AdjustablePv,
+                pvsetname=pvname_base_zoom + ":POS_SP",
+                pvreadbackname=pvname_base_zoom + ":POS_RB",
+                name="_zoom_motor",
+                is_setting=True,
+                is_display=False,
+            )
+
             def getv(v):
-                return v/10.
+                return v / 10.0
+
             def setv(v):
-                return v*10.
-            self._append(AdjustableVirtual, [self._zoom_motor], getv, setv, name="zoom", unit="%")
-        
-        
+                return v * 10.0
+
+            self._append(
+                AdjustableVirtual, [self._zoom_motor], getv, setv, name="zoom", unit="%"
+            )

@@ -1637,7 +1637,7 @@ class LowtemperatureSurfaceDiffraction(Assembly):
         self._append(
             DetectorPvDataStream,
             "SLAAR21-LTIM01-EVR0:CALCZ",
-            name="interferrometer_value"
+            name="interferrometer_value",
         )
 
         self._append(
@@ -1647,10 +1647,10 @@ class LowtemperatureSurfaceDiffraction(Assembly):
             name="illumination",
         )
 
-    def beam_block_in(self, target=10):
+    def beam_block_in(self, target=7):
         self.beam_block.set_target_value(target)
 
-    def beam_block_out(self, target=8):
+    def beam_block_out(self, target=0):
         self.beam_block.set_target_value(target)
 
     def interferrometer_in(self, target=13.35):

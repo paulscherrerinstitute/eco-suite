@@ -34,6 +34,7 @@ class TtProcessor:
                 ix = m.data.pulse_id
 
                 prof = m.data.data[self.channel_proj].value
+
                 if prof is None:
                     continue
 

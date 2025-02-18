@@ -1,5 +1,4 @@
 from eco.detector.detectors_psi import DetectorBsStream
-from eco.epics.detector import DetectorPvDataStream
 from eco.devices_general.pipelines_swissfel import Pipeline
 from eco.devices_general.spectrometers import SpectrometerAndor
 from eco.microscopes.microscopes import FeturaPlusZoom
@@ -258,7 +257,7 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Andor spectrometer initialization failed with: \n{e}")
 
     def get_calibration_values(
-        self, seconds=5, scan_range=.8e-12, plot=False, pipeline=True, to_elog=False
+        self, seconds=5, scan_range=0.8e-12, plot=False, pipeline=True, to_elog=False
     ):
         t0 = self.delay()
         x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, 20)
@@ -270,25 +269,25 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Moving to {pos*1e15} fs")
                 self.delay.set_target_value(pos).wait()
                 if pipeline:
-                    #needed due to delay of data arrival
+                    # needed due to delay of data arrival
                     sleep(5)
                 ys = self.edge_position_px.acquire(seconds=seconds).wait()
                 y.append(ys)
                 ymean.append(np.mean(ys))
-                yerr.append(np.std(ys)/np.sqrt(len(ys)))
+                yerr.append(np.std(ys) / np.sqrt(len(ys)))
         except Exception as e:
             print(e)
             print(f"Moving back to inital value of {t0}")
             self.delay.set_target_value(t0)
 
-        p = np.polyfit(ymean, x, 2, w=1/np.array(yerr))
+        p = np.polyfit(ymean, x, 2, w=1 / np.array(yerr))
         fpath = ""
         if plot:
             binmin = np.min([np.min(step) for step in y])
             binmax = np.max([np.max(step) for step in y])
             bins = np.arange(binmin, binmax, 1)
-            bins_center = bins[:-1]+0.5
-            hists = np.array([np.histogram(step, bins=bins)[0]for step in y]).T
+            bins_center = bins[:-1] + 0.5
+            hists = np.array([np.histogram(step, bins=bins)[0] for step in y]).T
             plt.close("tt_calib")
             fig = plt.figure("tt_calib")
             plt.pcolor(x, bins_center, hists)
@@ -305,8 +304,8 @@ class TimetoolBerninaUSD(Assembly):
         if to_elog:
             try:
                 msg = f"<h1>Timetool calibration results:</h1>\n"
-                msg+= f"Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
-                msg+= self.target_stages.__repr__()
+                msg += f"Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
+                msg += self.target_stages.__repr__()
                 elog = self._get_elog()
                 elog.post(msg.replace("\n", "<br>"), fpath)
             except Exception as e:
@@ -321,7 +320,7 @@ class TimetoolBerninaUSD(Assembly):
             old_calib = self.pipeline_edgefinding.config.calibration()
             self.pipeline_edgefinding.config.calibration.set_target_value(p).wait()
             msg = f"Updated timetool processing pipeline calibration:\n"
-            msg+= f"old values: {old_calib} \nnew values: {p}"
+            msg += f"old values: {old_calib} \nnew values: {p}"
         else:
             self.calibration.const_E.set_target_value(p[0]).wait()
             self.calibration.const_F.set_target_value(p[1]).wait()
@@ -334,7 +333,10 @@ class TimetoolBerninaUSD(Assembly):
             except Exception as e:
                 print(f"Elog posting failed with:\n {e}")
 
-    def calibrate(self, seconds=5, scan_range=1e-12, plot=True, pipeline=True, to_elog=True):
+    def calibrate(
+        self, seconds=5, scan_range=1e-12, plot=True, pipeline=True, to_elog=True
+    ):
+        feedback = self.feedback_enabled()
         t0 = self.delay()
         if abs(t0) > 50e-15:
             ans = ""
@@ -347,10 +349,20 @@ class TimetoolBerninaUSD(Assembly):
                     continue
             if ans == "n":
                 return
+        if feedback:
+            self.feedback_enabled(0)
+            print("Feedback turned off")
         p, ys = self.get_calibration_values(
-            seconds=seconds, scan_range=scan_range, plot=plot, to_elog=to_elog, pipeline=pipeline
+            seconds=seconds,
+            scan_range=scan_range,
+            plot=plot,
+            to_elog=to_elog,
+            pipeline=pipeline,
         )
         self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
+        if feedback:
+            self.feedback_enabled(1)
+            print("Feedback turned on")
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()
@@ -362,6 +374,31 @@ class TimetoolBerninaUSD(Assembly):
         sleep(5)
         print(f"... done, starting online plot.")
         self.online_monitor.plot_animation()
+
+    def start_camera_restarter(self):
+        print(f"Starting camera restarter ...")
+        from time import sleep
+
+        while True:
+            sleep(1)
+            try:
+                tx = float(self.pipeline_projection.info.statistics.tx().split("Hz")[0])
+            except Exception as e:
+                print(f"Could not read projection pipeline tx")
+                print(e)
+            if tx < 10:
+                try:
+                    self.camera_spectrometer.config_cs.stop()
+                except Exception as e:
+                    print(e)
+                try:
+                    self._get_elog().post(
+                        f"<h1>tx was {tx}: Automatically restarted timetool camera</h1>"
+                    )
+                    print(f"tx was {tx}Hz: Automatically restarted timetool camera")
+                except Exception as e:
+                    print(e)
+                sleep(120)
 
     def get_proc_config(self):
         return self.proc_client.get_pipeline_config(self.proc_pipeline)
@@ -392,15 +429,26 @@ class TimetoolBerninaUSD(Assembly):
         fs_pv = PV(self.edge_position_fs.pvname)
         px_pv = PV(self.edge_position_px.pvname)
         mx_pv = PV(self.edge_amplitude.pvname)
-        with source(channels=[self.edge_position_fs.bs_channel, self.edge_position_px.bs_channel, self.edge_amplitude.bs_channel]) as s:
+        with source(
+            channels=[
+                self.edge_position_fs.bs_channel,
+                self.edge_position_px.bs_channel,
+                self.edge_amplitude.bs_channel,
+            ]
+        ) as s:
             while True:
                 d = s.receive()
-                fs, px, mx = [[d.data.data[self.edge_position_fs.bs_channel].value], d.data.data[self.edge_position_px.bs_channel].value, d.data.data[self.edge_amplitude.bs_channel].value]
+                fs, px, mx = [
+                    [d.data.data[self.edge_position_fs.bs_channel].value],
+                    d.data.data[self.edge_position_px.bs_channel].value,
+                    d.data.data[self.edge_amplitude.bs_channel].value,
+                ]
                 if not fs:
                     continue
                 fs_pv.put(fs)
                 px_pv.put(px)
                 mx_pv.put(mx)
+
 
 class DelayTime(AdjustableVirtual):
     def __init__(

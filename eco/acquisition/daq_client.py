@@ -258,10 +258,12 @@ class Daq(Assembly):
             "detectors"
         ]
 
-    def get_JFs_running(self):
-        return requests.get(f"{self.broker_address}/get_running_detectors").json()[
-            "detectors"
-        ]
+    def get_JFs_running(self, return_full_response=False):
+        res = requests.get(f"{self.broker_address}/get_running_detectors").json()
+        if return_full_response:
+            return res
+        else:
+            return res["running_detectors"]
 
     def power_on_JF(self, JF_channel):
         par = {"detector_name": JF_channel}
@@ -305,22 +307,28 @@ class Daq(Assembly):
             json={"pgroup": pgroup, "run_number": run_number, "files": file_names},
         )
 
-    def check_counters(self, channels_to_check = ['channels_BSCAM', 'channels_JF'], timeout=3):
+    def check_counters(
+        self, channels_to_check=["channels_BSCAM", "channels_JF"], timeout=3
+    ):
         if not set(self.channels.keys()).intersection(set(channels_to_check)):
             return
         print("FYI, selected channels are")
-        for nam,chs in self.channels.items():
+        for nam, chs in self.channels.items():
             if nam in channels_to_check:
-                print(f'{nam}  :  {chs.get_current_value()}')
-        try: 
-            o = inputimeout.inputimeout(prompt=f'Press Ctrl-c to abort, Return to continue, or wait {timeout} seconds',timeout=timeout)
+                print(f"{nam}  :  {chs.get_current_value()}")
+        try:
+            o = inputimeout.inputimeout(
+                prompt=f"Press Ctrl-c to abort, Return to continue, or wait {timeout} seconds",
+                timeout=timeout,
+            )
         except inputimeout.TimeoutOccurred:
-            print('... timed out, continuing with selection.')
+            print("... timed out, continuing with selection.")
         except KeyboardInterrupt:
-            raise Exception('User-requested cancelling!')
-        else: 
-            if o=='c':
-                raise Exception('User-requested cancelling!')
+            raise Exception("User-requested cancelling!")
+        else:
+            if o == "c":
+                raise Exception("User-requested cancelling!")
+
 
 #     def get_dap_settings(detector_name):
 #     dap_parameters = {}

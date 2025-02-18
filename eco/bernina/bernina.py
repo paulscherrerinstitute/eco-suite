@@ -119,7 +119,7 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
-    "DataApi",
+    "DataHub",
     name="archiver",
     module_name="eco.dbase.archiver",
     pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
@@ -727,7 +727,7 @@ namespace.append_obj(
 namespace.append_obj(
     "Pprm_dsd",
     pvname="SARES20-DSDPPRM",
-    pvname_camera="SARES20-DSDPPRM",
+    pvname_camera="SARES20-PROF146-M1",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_dsd",
     lazy=True,
@@ -1124,16 +1124,6 @@ namespace.append_obj(
 
 # namespace.append_obj(
 #     "Jungfrau",
-#     "JF03T01V02",
-#     name="det_i0",
-#     pgroup_adj=config_bernina.pgroup,
-#     module_name="eco.detector.jungfrau",
-#     config_adj=config_JFs,
-#     lazy=True,
-# )
-
-# namespace.append_obj(
-#     "Jungfrau",
 #     "JF04T01V01",
 #     name="det_rowland",
 #     pgroup_adj=config_bernina.pgroup,
@@ -1141,6 +1131,16 @@ namespace.append_obj(
 #     config_adj=config_JFs,
 #     lazy=True,
 # )
+
+namespace.append_obj(
+    "Jungfrau",
+    "JF03T01V02",
+    name="det_i0",
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.detector.jungfrau",
+    config_adj=config_JFs,
+    lazy=True,
+)
 
 # namespace.append_obj(
 #     "Jungfrau",
@@ -1286,11 +1286,12 @@ namespace.append_obj(
     module_name="eco.utilities.runtable",
     exp_id=config_bernina.pgroup._value,
     exp_path=f"/sf/bernina/data/{config_bernina.pgroup._value}/res/run_table/",
-    devices="bernina",
+    devices="eco.bernina",
     keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
     cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
     gsheet_key_path="/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
     lazy=True,
+    parse=True,  # <-- set this to False to avoid parsing and only add the status information to the runtable
 )
 
 
@@ -1621,7 +1622,12 @@ class Monitor:
 import traceback
 
 
-def append_scan_monitors(scan, daq=daq, **kwargs):
+def append_scan_monitors(
+    scan,
+    daq=daq,
+    custom_monitors={},
+    **kwargs,
+):
     scan.monitors = {}
     for adj in scan.adjustables:
         try:
@@ -1645,6 +1651,15 @@ def append_scan_monitors(scan, daq=daq, **kwargs):
             print(f"Could not add CA readback monitor for {tname}")
             traceback.print_exc()
 
+    for tname, tobj in custom_monitors.items():
+        try:
+            if type(tobj) is str:
+                tmonpv = tobj
+            scan.monitors[tname] = Monitor(tmonpv)
+            print(f"Added custom monitor for {tname}")
+        except Exception:
+            print(f"Could not add custom monitor for {tname}")
+            traceback.print_exc()
     try:
         tname = daq.pulse_id.alias.get_full_name()
         scan.monitors[tname] = Monitor(daq.pulse_id.pvname)
@@ -1796,7 +1811,7 @@ def _create_metadata_structure_start_scan(
         scan._elog_id = elog_ids[1]
         metadata.update({"elog_message_id": scan._elog_id})
         metadata.update(
-            {"elog_post_link": scan._elog[1]._log._url + str(scan._elog_id)}
+            {"elog_post_link": scan._elog.elogs[1]._log._url + str(scan._elog_id)}
         )
     except:
         print("Elog posting failed with:")
@@ -2047,7 +2062,12 @@ namespace.append_obj(
     name="clic",
     module_name="eco.loptics.bernina_laser",
 )
-
+namespace.append_obj(
+    "MidIR",
+    lazy=True,
+    name="midir",
+    module_name="eco.loptics.bernina_laser",
+)
 
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice

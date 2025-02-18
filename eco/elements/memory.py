@@ -1,3 +1,4 @@
+import itertools
 from pathlib import Path
 from datetime import datetime
 from .adjustable import AdjustableFS
@@ -52,6 +53,48 @@ class Memory:
             self.dir / Path("memories.json"), default_value={}
         )
         self._presets = AdjustableFS(self.dir / Path("presets.json"), default_value={})
+
+    def memories(self, indices=None, search_key=None):
+        self.setup_path()
+        mem = self._memories()
+        memkeys = list(mem.keys())
+        if indices is None:
+            indices = range(len(mem))
+        mems = []
+        for index in indices:
+            tkey = memkeys[index]
+            tmem = mem[tkey]
+            cats = list(itertools.chain.from_iterable(tmem["categories"].values()))
+            tmem_all = self.get_memory(key=tkey)
+            if search_key is not None:
+                tmem_sel = {
+                    tk: {ttk: ttv for ttk, ttv in tv.items() if search_key in ttk}
+                    for tk, tv in tmem_all.items()
+                    if tk in cats
+                }
+            else:
+                tmem_sel = tmem_all
+            tmem.update(tmem_sel)
+            mems.append(tmem)
+        return mems
+
+    def plot_parameter(self, parameter_name, group_name="settings"):
+        mem = self.memories(search_key=parameter_name)
+        date = []
+        value = []
+        message = []
+        for tmem in mem:
+            try:
+                tdate = datetime.fromisoformat(tmem["date"])
+                tval = tmem[group_name][parameter_name]
+                tmess = tmem["message"]
+                date.append(tdate)
+                value.append(tval)
+                message.append(tmess)
+            except:
+                pass
+
+        return date, value, message
 
     def __str__(self):
         self.setup_path()
@@ -118,13 +161,13 @@ class Memory:
                 message = input(
                     "Please enter a message associated to this memory entry:\n>>> "
                 )
-                mem[key] = {
-                    "message": message,
-                    "categories": self.categories,
-                    "date": key,
-                }
-                if preset_varname:
-                    mem[key].update({"presetname": preset_varname})
+        mem[key] = {
+            "message": message,
+            "categories": self.categories,
+            "date": key,
+        }
+        if preset_varname:
+            mem[key].update({"presetname": preset_varname})
         tmp = AdjustableFS(self.dir / Path(key + ".json"))
         tmp(stat_now)
         self._memories(mem)

@@ -6,6 +6,7 @@ from ..elements.adjustable import AdjustableFS
 from ..elements.memory import Memory
 from subprocess import call
 from eco.utilities.config import Proxy
+from eco.bernina import namespace
 
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
@@ -283,12 +284,13 @@ class Run_Table2:
         self,
         data=None,
         exp_id="no_exp_id",
-        exp_path="runtable",
+        exp_path="runtable/",
         keydf_fname=None,
         cred_fname=None,
         devices=None,
         name=None,
         gsheet_key_path=None,
+        parse=True,
     ):
         self._data = Run_Table_DataFrame(
             data=data,
@@ -296,6 +298,7 @@ class Run_Table2:
             exp_path=exp_path,
             devices=devices,
             name=name,
+            parse=parse,
         )
 
         if np.all([k is not None for k in [keydf_fname, cred_fname, gsheet_key_path]]):
@@ -316,20 +319,42 @@ class Run_Table2:
         runno,
         metadata,
         d={},
+        wait=False,
+    ):
+        ar = threading.Thread(target=self._append_run, args=(runno, metadata,), kwargs={"d": d})
+        ar.start()
+        if wait:
+            ar.join()
+
+    def _append_run(
+        self,
+        runno,
+        metadata,
+        d={},
     ):
         self._data.append_run(runno, metadata, d=d)
         if self._google_sheet_api is not None:
             df = self._reduce_df()
-            self._google_sheet_api.upload_all(df=df)
+            self._google_sheet_api._upload_all(df=df)
 
     def append_pos(
+        self,
+        name,
+        wait=False,
+    ):
+        ar = threading.Thread(target=self._append_pos, args=(name,))
+        ar.start()
+        if wait:
+            ar.join()
+
+    def _append_pos(
         self,
         name,
     ):
         self._data.append_pos(name)
         if self._google_sheet_api is not None:
             df = self._reduce_df()
-            self._google_sheet_api.upload_all(df=df)
+            self._google_sheet_api._upload_all(df=df)
 
     def to_dataframe(self):
         return DataFrame(self._data)
@@ -426,18 +451,21 @@ class Run_Table_DataFrame(DataFrame):
         exp_path=None,
         devices=None,
         name=None,
+        parse=True,
     ):
         if type(data) is str:
             data = pd.read_pickle(data)
         super().__init__(data=data)
 
         ### Load devices to parse for adjustables ###
-        if devices is not None:
-            devices = eco.__dict__[devices]
+        if type(devices) == str:
+            import importlib
+            devices = importlib.import_module(devices)
         self.devices = devices
         self.name = name
         self.fname = exp_path + f"{exp_id}_runtable.pkl"
         self.load()
+        self.parse = parse
 
         ### dicts holding adjustables and bad (not connected) adjustables ###
         self.adjustables = {}
@@ -526,22 +554,17 @@ class Run_Table_DataFrame(DataFrame):
         d={},
     ):
         self.load()
-        if len(self.adjustables) == 0:
+        if np.all([len(self.ids_parsed) == 0, self.parse]):
             self._parse_parent()
         dat = self._get_adjustable_values(d=d)
-        dat["metadata"] = metadata
-        dat["metadata"]["time"] = datetime.now()
-        names = ["device", "adjustable"]
-        multiindex = pd.MultiIndex.from_tuples(
-            [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
-        )
+        dat["metadata.time"] = datetime.now()
+        dat.update({"metadata."+k:v for k, v in metadata.items()})
         values = np.array(
-            [val for adjs in dat.values() for val in adjs.values()], dtype=object
+            list(dat.values()), dtype=object
         )
         index = np.array(
-            [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
+            list(dat.keys())
         )
-        # run_df = DataFrame([values], columns=multiindex, index=[runno])
         run_df = DataFrame([values], columns=index, index=[runno])
         # deprecated: self.df = self.append(run_df)
         self.df = pd.concat([self.df, run_df])
@@ -552,7 +575,7 @@ class Run_Table_DataFrame(DataFrame):
 
     def append_pos(self, name="", d={}):
         self.load()
-        if len(self.adjustables) == 0:
+        if np.all([len(self.ids_parsed) == 0, self.parse]):
             self._parse_parent()
         try:
             posno = (
@@ -561,18 +584,13 @@ class Run_Table_DataFrame(DataFrame):
         except:
             posno = 0
         dat = self._get_adjustable_values(d=d)
-        dat["metadata"] = {"time": datetime.now(), "name": name, "type": "pos"}
-        names = ["device", "adjustable"]
-        multiindex = pd.MultiIndex.from_tuples(
-            [(dev, adj) for dev in dat.keys() for adj in dat[dev].keys()], names=names
-        )
+        dat.update({"metadata.time": datetime.now(), "metadata.name": name, "metadata.type": "pos"})
         values = np.array(
-            [val for adjs in dat.values() for val in adjs.values()], dtype=object
+            list(dat.values()), dtype=object
         )
         index = np.array(
-            [f"{dev}.{adj}" for dev, adjs in dat.items() for adj in adjs.keys()]
+            list(dat.keys())
         )
-        # pos_df = DataFrame([values], columns=multiindex, index=[f"p{posno}"])
         pos_df = DataFrame([values], columns=index, index=[f"p{posno}"])
 
         # deprecated: self.df = self.append(pos_df)
@@ -581,18 +599,18 @@ class Run_Table_DataFrame(DataFrame):
         # self.order_df()
         self.save()
 
-    def _get_adjustable_values(self, silent=False, d={}, by_id=True):
+    def _get_adjustable_values(self, silent=False, d={}, by_id=True, multiindex=False):
         """
         This function gets the values of all adjustables in good adjustables and raises an error, when an adjustable is not connected anymore
         """
         dat = {}
-        if by_id:
+        if self.parse:
             for aid, adict in self.ids_parsed.items():
                 if aid in self.ids_bad:
                     continue
                 if not "value" in adict.keys():
                     continue
-                ## try getting the value from the dict passes from the status
+                ## try getting the value from the dict passed from the status
                 v = None
                 for name in adict["names"]:
                     if "bernina." + name in d.keys():
@@ -607,6 +625,7 @@ class Run_Table_DataFrame(DataFrame):
                         )
                         self.ids_bad.append(aid)
                         continue
+                if multiindex:
                     for name in adict["names"]:
                         devname = name.split(".")[0]
                         adjname = name[len(devname) + 1 :]
@@ -614,45 +633,28 @@ class Run_Table_DataFrame(DataFrame):
                             dat[devname].update({adjname: v})
                         else:
                             dat.update({devname: {adjname: v}})
+                else:
+                    for name in adict["names"]:
+                        dat[name]=v
         else:
-            if silent:
-                for devname, dev in self.good_adjustables.items():
-                    dat[devname] = {}
-                    bad_adjs = []
-                    for adjname, adj in dev.items():
-                        if f"{devname}.{adjname}" in d.keys():
-                            dat[devname][adjname] = d[f"{devname}.{adjname}"]
-                            # print(f"{devname}.{adjname}")
-                            continue
-                        try:
-                            dat[devname][adjname] = adj.get_current_value()
-                        except:
-                            print(
-                                f"run_table: getting value of {devname}.{adjname} failed, removing it from list of good adjustables"
-                            )
-                            bad_adjs.append(adjname)
-                    for ba in bad_adjs:
-                        if not devname in self.bad_adjustables.keys():
-                            self.bad_adjustables[devname] = {}
-                        self.bad_adjustables[devname][ba] = self.good_adjustables[
-                            devname
-                        ].pop(ba)
+            if len(d)==0:
+                st = namespace.get_status(base=None)
+                d = st["status"]
+                d.update(st["settings"])
+            if multiindex:
+                for name in d.keys():
+                    devname = name.split(".")[0]
+                    adjname = name[len(devname) + 1 :]
+                    if devname in dat.keys():
+                        dat[devname].update({adjname: v})
+                    else:
+                        dat.update({devname: {adjname: v}})
             else:
-                dat = {
-                    devname: {
-                        adjname: (
-                            d[f"{devname}.{adjname}"]
-                            if f"{devname}.{adjname}" in d.keys()
-                            else adj.get_current_value()
-                        )
-                        for adjname, adj in dev.items()
-                    }
-                    for devname, dev in self.good_adjustables.items()
-                }
+                dat = {k[len(k.split(".")[0])+1:] : v for k,v in d.items()}
         return dat
 
     def _get_all_adjustables(
-        self, device, adj_prefix=None, parent_name=None, verbose=False
+        self, device, adj_prefix=None, parent_name=None, verbose=False, exclude_keys=[], adjustable_exclude_class_types=[], foo_get_current_value="get_current_value"
     ):
         if verbose:
             print(f"\nparsing children of {parent_name}")
@@ -677,17 +679,17 @@ class Run_Table_DataFrame(DataFrame):
                         self.ids_parsed[adj_id]["names"].append(k)
                     return
         for key in device.__dict__.keys():
-            if ~np.any([s in key for s in self._parse_exclude_keys]):
+            if ~np.any([s in key for s in exclude_keys]):
                 value = device.__dict__[key]
                 if np.all(
                     [
                         ~np.any(
                             [
                                 s in str(type(value))
-                                for s in self._adj_exclude_class_types
+                                for s in adjustable_exclude_class_types
                             ]
                         ),
-                        hasattr(value, "get_current_value"),
+                        hasattr(value, foo_get_current_value),
                     ]
                 ):
                     ## create device entry only if it has adjustables
@@ -696,59 +698,45 @@ class Run_Table_DataFrame(DataFrame):
                             self.ids_parsed[id(device)]["ids"] = []
                     else:
                         self.ids_parsed.update({id(device): {"ids": []}})
-                    # if parent_name == name:
-                    #    k = key
-                    # else:
                     k = ".".join([name, key])
-                    self.adjustables[parent_name][k] = value
                     if id(value) in self.ids_parsed.keys():
                         if "value" in self.ids_parsed[id(value)]:
                             self.ids_parsed[id(device)]["ids"].append(id(value))
                             self.ids_parsed[id(value)]["names_parent"].append(name)
-                            # self.ids_parsed[id(value)]["names"].append(".".join([parent_name, k]))
                             self.ids_parsed[id(value)]["names"].append(k)
                             continue
                     self.ids_parsed[id(device)]["ids"].append(id(value))
                     self.ids_parsed[id(value)] = {}
                     self.ids_parsed[id(value)]["names_parent"] = [name]
                     self.ids_parsed[id(value)]["name"] = key
-                    # self.ids_parsed[id(value)]["names"] = [".".join([parent_name, k])]
                     self.ids_parsed[id(value)]["names"] = [k]
                     self.ids_parsed[id(value)]["value"] = value
 
-        if parent_name == name:
-            ## only a fix to record get_current_values() of top level devices
-            if hasattr(device, "get_current_value"):
-                ## create device entry only if it has adjustables
-                if id(device) in self.ids_parsed.keys():
-                    if not "ids" in self.ids_parsed[id(device)].keys():
-                        self.ids_parsed[id(device)]["ids"] = []
-                else:
-                    self.ids_parsed.update({id(device): {"ids": []}})
-                self.adjustables[parent_name]["self"] = device
-                self.ids_parsed[id(device)]["ids"].append(id(device))
-                self.ids_parsed[id(device)]["names_parent"] = [name]
-                self.ids_parsed[id(device)]["name"] = "self"
-                self.ids_parsed[id(device)]["names"] = [".".join([name, "self"])]
-                self.ids_parsed[id(device)]["value"] = device
+        #if parent_name == name:
+        ## only a fix to record get_current_values() of top level devices
+        #if hasattr(device, foo_get_current_value):
+        #    ## create device entry only if it has adjustables
+        #    if id(device) in self.ids_parsed.keys():
+        #        if not "ids" in self.ids_parsed[id(device)].keys():
+        #            self.ids_parsed[id(device)]["ids"] = []
+        #    else:
+        #        self.ids_parsed.update({id(device): {"ids": []}})
+        #    self.ids_parsed[id(device)]["ids"].append(id(device))
+        #    self.ids_parsed[id(device)]["names_parent"] = [name]
+        #    self.ids_parsed[id(device)]["name"] = "value"
+        #    self.ids_parsed[id(device)]["names"] = [".".join([name, "value"])]
+        #    self.ids_parsed[id(device)]["value"] = device
 
     def _parse_child_instances(
-        self, parent_class, adj_prefix=None, parent_name=None, verbose=False
+        self, parent_class, adj_prefix=None, parent_name=None, verbose=False, exclude_keys=[], parse_exclude_class_types=[], adjustable_exclude_class_types=[], is_eco=True, foo_get_current_value="get_current_value"
     ):
         # check if the parent_class was already parsed in its parents
         if adj_prefix is not None:
             if parent_class.name in adj_prefix:
                 return []
         self._get_all_adjustables(
-            parent_class, adj_prefix, parent_name, verbose=verbose
+            parent_class, adj_prefix, parent_name, verbose=verbose, exclude_keys=exclude_keys, adjustable_exclude_class_types=adjustable_exclude_class_types, foo_get_current_value=foo_get_current_value
         )
-        ## The lines below cause recursion problems because the parent class name is never added to adj_prefix, resulting in names such as rob.joint.j1.spherical.x
-        # if parent_name is not parent_class.name:
-        #    if adj_prefix is not None:
-        ## Changed that because sometimes the name is not the class name, which breaks parsing
-        #        adj_prefix = ".".join([adj_prefix, parent_class.name])
-        #    else:
-        #        adj_prefix = parent_class.name
         if adj_prefix is not None:
             adj_prefix = ".".join([adj_prefix, parent_class.name])
         else:
@@ -756,18 +744,22 @@ class Run_Table_DataFrame(DataFrame):
 
         sub_classes = []
         for key in parent_class.__dict__.keys():
-            if ~np.any([s in key for s in self._parse_exclude_keys]):
+            if ~np.any([s in key for s in exclude_keys]):
                 s_class = parent_class.__dict__[key]
-                if np.all(
-                    [
-                        hasattr(s_class, "name"),
-                        hasattr(s_class, "__dict__"),
-                        s_class.__hash__ is not None,
+                reqs = []
+                if is_eco:
+                    reqs = [
                         "eco" in str(s_class.__class__),
+                    ]
+                if np.all(
+                    reqs + 
+                    [
+                    hasattr(s_class, "__dict__"),
+                    s_class.__hash__ is not None,
                         ~np.any(
                             [
                                 s in str(s_class.__class__)
-                                for s in self._parse_exclude_class_types
+                                for s in parse_exclude_class_types
                             ]
                         ),
                     ]
@@ -778,43 +770,60 @@ class Run_Table_DataFrame(DataFrame):
                             for s in ".".join([parent_name, adj_prefix]).split(".")
                         ]
                     ):
-                        if s_class.name == None:
+                        s_class_name = None
+                        if hasattr(s_class, "name"):
+                            s_class_name = s_class.name
+                        if s_class_name == None:
                             s_class.name = key
                         sub_classes.append(s_class)
         return set(sub_classes).union(
             [
                 s
                 for c in sub_classes
-                for s in self._parse_child_instances(c, adj_prefix, parent_name)
+                for s in self._parse_child_instances(c, adj_prefix, parent_name, exclude_keys=exclude_keys, parse_exclude_class_types=parse_exclude_class_types, adjustable_exclude_class_types=adjustable_exclude_class_types, is_eco=is_eco, foo_get_current_value=foo_get_current_value)
             ]
         )
 
-    def _parse_parent(self, parent=None, verbose=False):
+    def _parse_parent(self, parent=None, verbose=False, exclude_keys=[], parse_exclude_class_types=[], adjustable_exclude_class_types=[], is_eco=True, foo_get_current_value="get_current_value"):
+        if len(exclude_keys) == 0:
+            exclude_keys = self._parse_exclude_keys
+        if len(parse_exclude_class_types) == 0:
+            parse_exclude_class_types = self._parse_exclude_class_types
+        if len(adjustable_exclude_class_types) == 0:
+            adjustable_exclude_class_types = self._adj_exclude_class_types
         self.ids_parsed = {}
         if parent == None:
             parent = self.devices
         self.ids_parsed[id(parent)] = {"ids": []}
         for key in parent.__dict__.keys():
             try:
-                if ~np.any([s in key for s in self._parse_exclude_keys]):
+                if ~np.any([s in key for s in exclude_keys]):
                     s_class = parent.__dict__[key]
+                    reqs = []
+                    if is_eco:
+                        reqs = [
+                            "eco" in str(s_class.__class__),
+                        ]
                     if np.all(
+                        reqs + 
                         [
-                            hasattr(s_class, "name"),
                             hasattr(s_class, "__dict__"),
                             s_class.__hash__ is not None,
-                            "eco" in str(s_class.__class__),
                             ~np.any(
                                 [
                                     s in str(s_class.__class__)
-                                    for s in self._parse_exclude_class_types
+                                    for s in parse_exclude_class_types
                                 ]
                             ),
                         ]
                     ):
-                        self.adjustables[key] = {}
+                        s_class_name = None
+                        if hasattr(s_class, "name"):
+                            s_class_name = s_class.name
+                        if s_class_name == None:
+                            s_class.name = key
                         self._parse_child_instances(
-                            s_class, parent_name=key, verbose=verbose
+                            s_class, parent_name=key, verbose=verbose, exclude_keys=exclude_keys, parse_exclude_class_types=parse_exclude_class_types, adjustable_exclude_class_types=adjustable_exclude_class_types, is_eco=is_eco, foo_get_current_value=foo_get_current_value
                         )
             except Exception as e:
                 print(e)
@@ -822,44 +831,19 @@ class Run_Table_DataFrame(DataFrame):
         self._check_adjustables()
 
     def _check_adjustables(self, check_for_current_none_values=True, by_id=True):
-        if by_id:
-            self.ids_bad = []
-            for aid, adict in self.ids_parsed.items():
-                if "value" in adict.keys():
-                    try:
-                        v = adict["value"].get_current_value()
-                    except Exception as e:
-                        self.ids_bad.append(aid)
-                        print(
-                            f"get_current_value() method of {adict['names']} failed with {e}"
-                        )
-                        continue
-                    if check_for_current_none_values and v is None:
-                        self.ids_bad.append(aid)
-        else:
-            good_adj = {}
-            bad_adj = {}
-            for device, adjs in self.adjustables.items():
-                good_dev_adj = {}
-                bad_dev_adj = {}
-                for name, adj in adjs.items():
-                    try:
-                        adj.get_current_value()
-                    except Exception as e:
-                        print(f"get_current_value() method of {name} failed with {e}")
-                        continue
-                    if check_for_current_none_values and (
-                        adj.get_current_value() is None
-                    ):
-                        bad_dev_adj[name] = adj
-                    else:
-                        good_dev_adj[name] = adj
-                if len(good_dev_adj) > 0:
-                    good_adj[device] = good_dev_adj
-                if len(bad_dev_adj) > 0:
-                    bad_adj[device] = bad_dev_adj
-                self.good_adjustables = good_adj
-                self.bad_adjustables = bad_adj
+        self.ids_bad = []
+        for aid, adict in self.ids_parsed.items():
+            if "value" in adict.keys():
+                try:
+                    v = adict["value"].get_current_value()
+                except Exception as e:
+                    self.ids_bad.append(aid)
+                    print(
+                        f"get_current_value() method of {adict['names']} failed with {e}"
+                    )
+                    continue
+                if check_for_current_none_values and v is None:
+                    self.ids_bad.append(aid)
 
     def _orderlist(self, mylist, key_order, orderlist=None):
         key_order = key_order.split(" ")
@@ -893,7 +877,7 @@ class Run_Table_DataFrame(DataFrame):
     def check_timeouts(
         self, include_bad_adjustables=True, repeats=1, plot=True, verbose=True
     ):
-        if len(self.adjustables) == 0:
+        if np.all([len(self.ids_parsed) == 0, self.parse]):
             self._parse_parent(verbose=verbose)
         ts = []
         devs = []

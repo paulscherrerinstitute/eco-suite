@@ -377,6 +377,19 @@ class LaserBernina(Assembly):
             name="delay_pump",
             is_setting=True,
         )
+
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M552:MOT",
+            name="delaystage_compensation",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_pump,
+            name="delay_compensation",
+            is_setting=True,
+        )
         # self._append(
         #     Stage_LXT_Delay,
         #     self.delay_glob,

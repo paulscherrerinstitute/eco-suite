@@ -2,6 +2,8 @@
 from functools import partial
 from epics.motor import Motor as _Motor
 from epics import PV
+
+from eco.acquisition.scan_data import run_status_convenience
 from .utilities import Changer
 from ..aliases import Alias
 from ..elements.adjustable import (
@@ -888,6 +890,7 @@ class ThorlabsPiezoRecord(Assembly):
 @update_changes
 @get_from_archive
 @value_property
+# @run_status_convenience
 class MotorRecord(Assembly):
     def __init__(
         self,

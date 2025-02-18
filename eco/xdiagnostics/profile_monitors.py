@@ -1,7 +1,7 @@
 from eco.detector.detectors_psi import DetectorBsStream
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice, SmaractRecord
 from ..devices_general.detectors import CameraCA, CameraBS
-from ..devices_general.cameras_swissfel import CameraBasler
+from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 from ..aliases import Alias
 from ..elements.adjustable import AdjustableVirtual
 from ..epics.adjustable import AdjustablePvEnum
@@ -195,13 +195,13 @@ class Pprm_dsd(Assembly):
         self.pvname = pvname
         self._append(
             MotorRecord,
-            pvname_camera + ":MOTOR_PROBE",
+            self.pvname + ":MOTOR_PROBE",
             name="target_pos",
             is_setting=True,
         )
         self.camCA = CameraCA(pvname_camera)
         self._append(
-            CameraBasler,
+            CameraPCO,
             pvname_camera,
             camserver_alias=f"{name} ({pvname_camera})",
             name="camera",
