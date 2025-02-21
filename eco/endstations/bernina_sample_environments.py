@@ -1,3 +1,4 @@
+from eco.xoptics.attenuator_safety_bernina import AttenuatorSafetyBernina
 from scipy import constants
 from eco.devices_general.powersockets import MpodChannel
 from eco.devices_general.wago import AnalogOutput
@@ -337,19 +338,11 @@ class High_field_thz_chamber(Assembly):
                 )
 
         if helium_control_valve:
-            # self._append(
-            #     MpodChannel,
-            #     helium_control_valve["pvbase"],
-            #     helium_control_valve["channel_number"],
-            #     module_string=helium_control_valve["module_string"],
-            #     name="_helium_valve_mpod_ch",
-            #     is_display=True,
-            #     is_setting=True,
-            # )
+
             self._append(
                 AnalogOutput,
                 helium_control_valve["pvname"],
-                name="_helium_valve_mpod_ch",
+                name="_helium_valve_voltage",
                 is_display=True,
                 is_setting=True,
             )
@@ -372,7 +365,7 @@ class High_field_thz_chamber(Assembly):
 
             self._append(
                 AdjustableVirtual,
-                [self._helium_valve_mpod_ch.value],
+                [self._helium_valve_voltage.value],
                 get_valve,
                 set_valve,
                 name=helium_control_valve["name"],
@@ -1547,8 +1540,8 @@ def get_array_frame(a):
     return np.concatenate([a[:, 0], a[-1, 1:], a[-2::-1, -1], a[0, -2::-1]])
 
 
-class LowtemperatureSurfaceDiffraction(Assembly):
-    def __init__(self, name=None):
+class GrazingIncidenceLowTemperatureChamber(Assembly):
+    def __init__(self, xp = None, helium_control_valve = None, name=None):
         super().__init__(name=name)
         self.name = name
 
@@ -1623,21 +1616,21 @@ class LowtemperatureSurfaceDiffraction(Assembly):
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LTIM01-EVR0:CALCZ.C",
-            name="feedback_setpoint",
+            name="feedback_transl_eta_setpoint",
             accuracy=10,
             is_setting=True,
         )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LTIM01-EVR0:CALCZ.B",
-            name="feedback_enabled",
+            name="feedback_transl_eta_enabled",
             accuracy=10,
             is_setting=True,
         )
         self._append(
             DetectorPvDataStream,
             "SLAAR21-LTIM01-EVR0:CALCZ",
-            name="interferrometer_value",
+            name="interferometer_value",
         )
 
         self._append(
@@ -1646,6 +1639,48 @@ class LowtemperatureSurfaceDiffraction(Assembly):
             channel_number=3,
             name="illumination",
         )
+        self._append(
+            AttenuatorSafetyBernina,
+            xp=xp,
+            name="attenuator_safety",
+            is_display='recursive',
+        )
+
+        if helium_control_valve:
+
+            self._append(
+                AnalogOutput,
+                helium_control_valve["pvname"],
+                name="_helium_valve_voltage",
+                is_display=True,
+                is_setting=True,
+            )
+
+            def get_valve(voltage):
+                if voltage < 2.9:
+                    val = 0
+                elif voltage > 5.5:
+                    val = 100
+                else:
+                    val = (voltage - 2.9) / (5.5 - 2.9) * 100
+                return val
+
+            def set_valve(val):
+                if val < 1:
+                    voltage = 0.5
+                else:
+                    voltage = val * (5.5 - 2.9) / 100 + 2.9
+                return voltage
+
+            self._append(
+                AdjustableVirtual,
+                [self._helium_valve_voltage.value],
+                get_valve,
+                set_valve,
+                name=helium_control_valve["name"],
+                is_display=True,
+                is_setting=False,
+            )
 
     def beam_block_in(self, target=7):
         self.beam_block.set_target_value(target)

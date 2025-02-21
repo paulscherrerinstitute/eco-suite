@@ -948,8 +948,9 @@ class DiffGeometryYou(Assembly):
         self.diffractometer.recspace_conv.plot_geom(
             mu=solution["mu"],
             eta=solution["eta"],
+            chi=solution["chi"],
             phi=solution["phi"],
-            gamma=solution["nu"],
+            gamma=solution["gamma"],
             delta=solution["delta"],
             energy=energy,
             detector_distance=det_distance,

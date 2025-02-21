@@ -1,3 +1,6 @@
+from enum import IntEnum
+from eco.elements.adjustable import spec_convenience
+from eco.elements.detector import DetectorGet, DetectorVirtual
 from epics import PV
 
 from eco.elements.assembly import Assembly
@@ -68,7 +71,7 @@ class Pulsepick:
     def __repr__(self):
         return f"FEL pulse picker state {self.get_status()}."
 
-
+@spec_convenience
 class XrayPulsePicker(Assembly):
     def __init__(self,pvbase="",
                  evr_output_base=None, 
@@ -89,7 +92,42 @@ class XrayPulsePicker(Assembly):
         self._append(AdjustablePv,self.pvbase+":MOTOR_X1_PRESET_SP.C",name="in_x_pos",is_display=False, is_setting=True)
         self._append(AdjustablePv,self.pvbase+":MOTOR_Y1_PRESET_SP.B",name="out_y_pos",is_display=False, is_setting=True)
         self._append(AdjustablePv,self.pvbase+":MOTOR_Y1_PRESET_SP.C",name="in_y_pos",is_display=False, is_setting=True)
-        self._append(DetectorPvData,self.pvbase+":TC1",name="teperature",is_display=True, unit="°C")
+        self._append(DetectorPvData,self.pvbase+":TC1",name="temperature",is_display=True, unit="°C")
         pulser = EvrPulser(evr_pulser_base, event_master, name="pulser_xp")
         self._append(EvrOutput,evr_output_base, pulsers=[pulser], name='evr_output', is_display=False)
+        self._append(DetectorGet,self.get_picker_status,name='picker_status')
+        self._STATENUM = IntEnum('Pulsepicker_open', {'open': 1, 'closed':0, 'unknown':-1})
         
+    def get_picker_status(self):
+        stat = self.evr_output_source.get_current_value()
+        if stat == 62 and self.evr_output_enable.get_current_value() == 1:
+            return "open"
+        if self.evr_output_enable.get_current_value() == 0:
+            return "closed"
+        else:
+            return "unknown"
+        
+    def open(self):
+        self.evr_output_enable.set_target_value(1).wait()
+        #self._evrsrc.put(62)
+        print("Opened Pulse Picker")
+
+    def close(self):
+        self.evr_output_enable.set_target_value(0).wait()
+        #self._evrsrc.put(62)
+        print("Closed Pulse Picker")
+
+    def set_target_value(self,value,hold=False):
+        if value:
+            return Changer(changer=lambda v:self.open() ,hold=hold)
+        else:
+            return Changer(changer=lambda v:self.close(),hold=hold)
+    
+    def get_current_value(self):
+        stat = self.get_picker_status()
+        if stat=='open':
+            return self._STATENUM(1)
+        elif stat=='closed':
+            return self._STATENUM(0)
+        if stat=='unknown':
+            return self._STATENUM(-1)

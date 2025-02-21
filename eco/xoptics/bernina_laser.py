@@ -345,15 +345,6 @@ class LaserBernina(Assembly):
             AdjustableVirtual, [self.wp_att], wp2uJ, uJ2wp, name="pulse_energy_pump"
         )
 
-        # self._append(
-        #    MotorRecord,
-        #    self.pvname + "-M522:MOTOR_1",
-        #    name="delaystage_pump",
-        #    is_setting=True,
-        # )wp_att
-        # self._append(
-        #    DelayTime, self.delaystage_pump, name="delay_pump", is_setting=True
-        # )
         self._append(
             LaserRateControl, name="rate", is_setting=True, is_display="recursive"
         )

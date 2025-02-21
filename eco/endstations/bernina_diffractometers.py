@@ -1,5 +1,9 @@
+from importlib import import_module
 import sys
 
+from eco.endstations.bernina_sample_environments import (
+    GrazingIncidenceLowTemperatureChamber,
+)
 from eco.epics import get_from_archive
 
 sys.path.append("..")
@@ -182,14 +186,14 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_HEX_RX",
             name="eta",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 6},
+            pb_conf={"type": "motor", "axis": 1},  # 6
         )
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_HEX_TX",
             name="transl_eta",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 7},
+            pb_conf={"type": "motor", "axis": 4},  # 7
         )
 
     if configuration.phi_hex():
@@ -379,6 +383,10 @@ class GPS(Assembly):
         pgroup_adj=None,
         jf_config=None,
         fina_hex_angle_offset=None,
+        recspace_conv="escape.swissfel.recspace_conv:SixCircleBernina",
+        recspace_conv_JFID="JF01T03V01",
+        xp = None,
+        helium_control_valve = None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -403,6 +411,26 @@ class GPS(Assembly):
                 config_adj=jf_config,
                 name=jf_name,
             )
+
+        if configuration.thc():
+            pass
+
+        if configuration.gic():
+            self._append(
+                GrazingIncidenceLowTemperatureChamber,
+                name="gic",
+                xp = xp,
+                helium_control_valve = helium_control_valve,
+                is_setting=False,
+                is_display=True,
+            )
+
+        if recspace_conv is not None:
+            module_name, Conv_name = recspace_conv.split(":")
+            Conv = getattr(import_module(module_name), Conv_name)
+            self.recspace_conv = Conv(JF_ID=recspace_conv_JFID)
+        else:
+            self.recspace_conv = None
 
     def gui(self, guiType="xdm"):
         """Adjustable convention"""

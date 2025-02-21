@@ -101,7 +101,7 @@ namespace.append_obj(
 #     screenshot_directory="/tmp",
 #     name="elog",
 #     module_name="eco.utilities.elog",
-# )
+# 
 
 eco.defaults.ELOG = elog
 namespace.append_obj(
@@ -223,7 +223,7 @@ namespace.append_obj(
     Id="SAROP21-OPPI113",
     evronoff="SGE-CPCW-72-EVR0:FrontUnivOut15-Ena-SP",
     evrsrc="SGE-CPCW-72-EVR0:FrontUnivOut15-Src-SP",
-    name="xp",
+    name="xp_old",
     module_name="eco.xoptics.pp",
     lazy=True,
 )
@@ -235,7 +235,7 @@ namespace.append_obj(
     evr_output_base="SGE-CPCW-72-EVR0:FrontUnivOut15",
     evr_pulser_base="SGE-CPCW-72-EVR0:Pul0",
     event_master=NamespaceComponent(namespace, "event_master"),
-    name="xp_dev",
+    name="xp",
     module_name="eco.xoptics.pp",
     lazy=True,
 )
@@ -1007,6 +1007,13 @@ namespace.append_obj(
     pgroup_adj=config_bernina.pgroup,
     jf_config=config_JFs,
     fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
+    xp = NamespaceComponent(namespace,"xp"),
+    helium_control_valve={
+        "pvbase": "SARES21-PS7071",
+        "channel_number": 4,
+        "name": "helium_control_valve",
+        "pvname": "SARES20-CWAG-GPS01:DAC04",
+        },
     lazy=True,
 )
 
@@ -1019,13 +1026,6 @@ namespace.append_obj(
     robot_config=config_bernina.robot_config,
     pgroup_adj=config_bernina.pgroup,
     jf_config=config_JFs,
-    lazy=True,
-)
-
-namespace.append_obj(
-    "LowtemperatureSurfaceDiffraction",
-    module_name="eco.endstations.bernina_sample_environments",
-    name="lsd",
     lazy=True,
 )
 
@@ -2056,12 +2056,12 @@ namespace.append_obj(
     module_name="eco.loptics.bernina_laser",
 )
 
-namespace.append_obj(
-    "IncouplingCleanBernina",
-    lazy=True,
-    name="clic",
-    module_name="eco.loptics.bernina_laser",
-)
+# namespace.append_obj(
+#     "IncouplingCleanBernina",
+#     lazy=True,
+#     name="clic",
+#     module_name="eco.loptics.bernina_laser",
+# )
 namespace.append_obj(
     "MidIR",
     lazy=True,
@@ -2174,55 +2174,45 @@ class N2jet(Assembly):
             name="gas_remaining",
             is_setting=False,
         )
+from eco.devices_general.motors import ThorlabsPiezoRecord
 
 
 # # ad hoc incoupling device
 class Incoupling(Assembly):
     def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(SmaractRecord, "SARES23-USR:MOT_8", name="ver", is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_3", name="hor", is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_9", name="x", is_setting=True)
-        self._append(
-            MotorRecord,
-            "SARES23-LIC:MOT_17",
-            name="focusdst",
-            is_setting=True,
-        )
+        super().__init__(name=name)        
+        self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="ry", is_setting=True)
+        self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="y", is_setting=True)
+        self._append(MotorRecord, "SARES20-MF2:MOT_5",  name="x",is_setting=True)
+        
+        try:
+            self.motor_configuration_thorlabs = {
+                "polarizer": {
+                    "pvname": "SLAAR21-LMOT-ELL3",
+                },
+                "hwp": {
+                    "pvname": "SLAAR21-LMOT-ELL5",
+                },
+                "block": {
+                    "pvname": "SLAAR21-LMOT-ELL2",
+                },
+                "nd_filter": {
+                    "pvname": "SLAAR21-LMOT-ELL4",
+                },
+            }
 
-        # self._append(
-        #     MotorRecord,
-        #     "SLAAR21-LMOT-M521:MOTOR_1",
-        #     name="delaystage_eos",
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     DelayTime,
-        #     self.delaystage_eos,
-        #     name="delay_eos",
-        #     is_setting=False,
-        #     is_display=True,
-        # )
-        # self._append(
-        #     AdjustablePvEnum,
-        #     "SLAAR21-LDIO-LAS6991:SET_BO02",
-        #     name="eos_is_shut",
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     DigitizerIoxosBoxcarChannel,
-        #     "SARES20-LSCP9-FNS:CH1",
-        #     name=f"signal_pol0",
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     DigitizerIoxosBoxcarChannel,
-        #     "SARES20-LSCP9-FNS:CH3",
-        #     name=f"signal_pol1",
-        #     is_setting=True,
-        # )
-
-
+            ### thorlabs piezo motors ###
+            for name, config in self.motor_configuration_thorlabs.items():
+                self._append(
+                    ThorlabsPiezoRecord,
+                    pvname=config["pvname"],
+                    name=name,
+                    is_setting=True,
+                )
+        except Exception as e:
+            print(e)
+            
 namespace.append_obj(
     Incoupling,
     lazy=True,
@@ -2230,29 +2220,29 @@ namespace.append_obj(
 )
 
 
-namespace.append_obj(
-    "High_field_thz_chamber",
-    name="thc",
-    lazy=True,
-    module_name="eco.endstations.bernina_sample_environments",
-    illumination_mpod=[
-        {
-            "pvbase": "SARES21-PS7071",
-            "channel_number": 5,
-            "module_string": "LV_OMPV_1",
-            "name": "illumination",
-        }
-    ],
-    helium_control_valve={
-        "pvbase": "SARES21-PS7071",
-        "channel_number": 4,
-        "module_string": "LV_OMPV_1",
-        "name": "helium_control_valve",
-        "pvname": "SARES20-CWAG-GPS01:DAC04",
-    },
-    # configuration=["ottifant"],
-    configuration=["cube"],
-)
+# namespace.append_obj(
+#     "High_field_thz_chamber",
+#     name="thc",
+#     lazy=True,
+#     module_name="eco.endstations.bernina_sample_environments",
+#     illumination_mpod=[
+#         {
+#             "pvbase": "SARES21-PS7071",
+#             "channel_number": 5,
+#             "module_string": "LV_OMPV_1",
+#             "name": "illumination",
+#         }
+#     ],
+#     helium_control_valve={
+#         "pvbase": "SARES21-PS7071",
+#         "channel_number": 4,
+#         "module_string": "LV_OMPV_1",
+#         "name": "helium_control_valve",
+#         "pvname": "SARES20-CWAG-GPS01:DAC04",
+#     },
+#     # configuration=["ottifant"],
+#     configuration=["cube"],
+# )
 
 # namespace.append_obj(
 #    "Organic_crystal_breadboard",

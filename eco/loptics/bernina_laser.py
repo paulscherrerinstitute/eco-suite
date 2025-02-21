@@ -867,10 +867,7 @@ class LaserBernina(Assembly):
 
         # Table 1, Benrina hutch
         self._append(
-            MotorRecord,
-            "SLAAR21-LMOT-M523:MOTOR_1",
-            name="delaystage_glob",
-            is_setting=True,
+            MotorRecord,"SLAAR21-LMOT-M523:MOTOR_1",name="delaystage_glob", is_setting=True,
         )
 
         self._append(
@@ -886,40 +883,8 @@ class LaserBernina(Assembly):
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
         self._append(
-            MotorRecord,
-            self.pvname + "-M548:MOT",
-            name="switch_35to100fs",
-            is_setting=True,
+            MotorRecord,self.pvname + "-M548:MOT", name="switch_35to100fs", is_setting=True,
         )
-        try:
-            self.motor_configuration_thorlabs = {
-                "wp_uv": {
-                    "pvname": "SLAAR21-LMOT-ELL5",
-                },
-                "block_uv": {
-                    "pvname": "SLAAR21-LMOT-ELL2",
-                },
-                "frog_wp": {
-                    "pvname": "SLAAR21-LMOT-ELL3",
-                },
-            }
-            # "wp_ir": {
-            #         "pvname": "SLAAR21-LMOT-ELL5",
-            #     },
-            # "rot_block_ir": {
-            #         "pvname": "SLAAR21-LMOT-ELL2",
-            #     },
-
-            ### thorlabs piezo motors ###
-            for name, config in self.motor_configuration_thorlabs.items():
-                self._append(
-                    ThorlabsPiezoRecord,
-                    pvname=config["pvname"],
-                    name=name,
-                    is_setting=True,
-                )
-        except Exception as e:
-            print(e)
 
         ####### Implementation segmented ND filter wheel in rotation stage #########
         self._append(
@@ -997,13 +962,7 @@ class LaserBernina(Assembly):
             except:
                 return np.nan
 
-        # self._append(
-        #    MotorRecord,
-        #    self.pvname + "-M522:MOTOR_1",
-        #    name="delaystage_pump",
-        #    is_setting=True,
-        # )wp_att
-        # self._append(pump
+
         self._append(
             LaserRateControl, name="rate", is_setting=True, is_display="recursive"
         )
@@ -1027,36 +986,11 @@ class LaserBernina(Assembly):
             name="delay_pump",
             is_setting=True,
         )
-        self._append(
-            SmaractRecord,
-            "SLAAR21-LMTS-SMAR1:MOT_3",
-            name="switch_uv_ir",
-            is_setting=True,
-        )
 
         self._append(
             SmaractRecord,
             "SLAAR21-LMTS-SMAR1:MOT_0",
             name="delaystage_frog",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SARES23-USR:MOT_2",
-            name="pump_telescope",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SARES23-USR:MOT_1",
-            name="mir1_ry",
-            is_setting=True,
-        )
-
-        self._append(
-            SmaractRecord,
-            "SARES23-USR:MOT_7",
-            name="mir1_rx",
             is_setting=True,
         )
 
@@ -1066,12 +1000,7 @@ class LaserBernina(Assembly):
             name="delay_frog",
             is_setting=True,
         )
-        #        self._append(
-        #            MotorRecord,
-        #           "SLAAR21-LMOT-M552:MOT",
-        #            name="delaystage_compensation",
-        #            is_setting=True,
-        #        )
+
         self._append(
             DelayTime,
             self.delaystage_pump,
