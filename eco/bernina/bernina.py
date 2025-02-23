@@ -2185,6 +2185,7 @@ class Incoupling(Assembly):
         self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="rx", is_setting=True)
         self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="y", is_setting=True)
         self._append(MotorRecord, "SARES20-MF2:MOT_5",  name="x",is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_2",  name="focus_pos",is_setting=True)
         
         try:
             self.motor_configuration_thorlabs = {

@@ -124,6 +124,8 @@ class Daq(Assembly):
 
     def start(self, label=None, **kwargs):
         starttime_local = time.time()
+        while self.pulse_id._pv.get_timevars() is None:
+            time.sleep(0.02)
         while self.pulse_id._pv.get_timevars()["timestamp"] < starttime_local:
             time.sleep(0.02)
         start_id = self.pulse_id.get_current_value(use_monitor=False)
