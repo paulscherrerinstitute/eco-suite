@@ -2,7 +2,6 @@ import numpy as np
 import h5py
 from epics import PV
 import os
-import data_api as api
 import datetime
 from threading import Thread
 from time import sleep

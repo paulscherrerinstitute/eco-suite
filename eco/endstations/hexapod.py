@@ -125,7 +125,7 @@ class HexapodPI(Assembly):
                 reset_current_value_to=False,
                 append_aliases=False,
                 change_simultaneously=False,
-                check_limits=False,
+                check_limits=True,
                 unit="mm",
                 name="x",
                 is_setting=False,
@@ -140,7 +140,7 @@ class HexapodPI(Assembly):
                 reset_current_value_to=False,
                 change_simultaneously=False,
                 check_limits=False,
-                append_aliases=False,
+                append_aliases=True,
                 unit="mm",
                 name="y",
                 is_setting=False,
@@ -155,7 +155,7 @@ class HexapodPI(Assembly):
                 reset_current_value_to=False,
                 append_aliases=False,
                 change_simultaneously=False,
-                check_limits=False,
+                check_limits=True,
                 unit="mm",
                 name="z",
                 is_setting=False,
@@ -164,14 +164,13 @@ class HexapodPI(Assembly):
     @property
     def rotation(self):
         angs = self.ref_frame_angle.get_current_value()
-        angs = [angs["rx"], angs["ry"], angs["rz"]]
-        return Rotation.from_euler("xyz", angs, degrees=True)
+        angs = [angs["rz"],angs["rx"], angs["ry"]]
+        return Rotation.from_euler("zxy", angs, degrees=True)
 
     def _calc_xyz(self, xraw, yraw, zraw):
         return self.rotation.apply([xraw, yraw, zraw])
 
     def _calc_xyzraw(self, x, y, z):
-        print(self.rotation.inv().apply([x, y, z]))
         return self.rotation.inv().apply([x, y, z])
 
     # # def get_status(self):

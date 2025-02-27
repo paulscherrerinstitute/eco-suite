@@ -5,7 +5,11 @@ from .adjustable import AdjustableFS
 from ..utilities.keypress import KeyPress
 from tabulate import tabulate
 import sys, colorama
-from inspect import getargspec
+try:
+    from inspect import getargspec
+except:
+    from inspect import getfullargspec
+
 import eco
 from ansi2html import Ansi2HTMLConverter
 from simple_term_menu import TerminalMenu
