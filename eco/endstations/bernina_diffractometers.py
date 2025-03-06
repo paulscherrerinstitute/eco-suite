@@ -84,6 +84,7 @@ def append_diffractometer_modules(obj, configuration):
                 i.get_current_value() + (v - obj.ybase.get_current_value())
                 for i in [obj._ybase_upstream, obj._ybase_downstream]
             ],
+            check_limits=True,
             name="ybase",
             is_setting=False,
             is_display=True,
@@ -97,6 +98,7 @@ def append_diffractometer_modules(obj, configuration):
                 obj.ybase.get_current_value() + i * np.tan(v * np.pi / 180) * 1146 / 2
                 for i in [1, -1]
             ],
+            check_limits=True,
             name="rxbase",
             is_setting=False,
             is_display=True,
@@ -341,6 +343,7 @@ def append_diffractometer_modules(obj, configuration):
                 0
             ],
             lambda value_eta: set_youvar_value_to_current_kappa(value_eta, 0),
+            check_limits=True,
             name="eta",
             unit="deg",
         )
@@ -351,6 +354,7 @@ def append_diffractometer_modules(obj, configuration):
                 1
             ],
             lambda value_chi: set_youvar_value_to_current_kappa(value_chi, 1),
+            check_limits=True,
             name="chi",
             unit="deg",
         )
@@ -361,6 +365,7 @@ def append_diffractometer_modules(obj, configuration):
                 2
             ],
             lambda value_phi: set_youvar_value_to_current_kappa(value_phi, 2),
+            check_limits=True,
             name="phi",
             unit="deg",
         )

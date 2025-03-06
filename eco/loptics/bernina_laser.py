@@ -78,51 +78,37 @@ class MidIR(Assembly):
         pipeline_projection="Bernina_mid_IR_CEP_projection",
         pipeline_analysis="Bernina_mid_IR_CEP_analysis",
         pipeline_pv_writing="Bernina_mid_IR_CEP_populate_pvs",
-        spectrometer_pvname="SLAAR21-LCAM-CS841",
     ):
         super().__init__(name=name)
-        # self._append(
-        #     SmaractRecord,
-        #     "SARES23-USR:MOT_1",
-        #     name="par_ry",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
-        # self._append(
-        #     SmaractRecord,
-        #     "SARES23-USR:MOT_6",
-        #     name="par_rx",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
-        # self._append(
-        #     SmaractRecord,
-        #     "SARES23-USR:MOT_4",
-        #     name="par_z",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
-        # self._append(
-        #     SmaractRecord,
-        #     "SARES23-USR:MOT_5",
-        #     name="par_x",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
-        # self._append(
-        #     MotorRecord,
-        #     "SARES20-MF1:MOT_15",
-        #     name="par_y",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
-        # self._append(
-        #     MotorRecord,
-        #     "SARES23-USR:MOT_7",
-        #     name="mirr_z",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
+
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_14",
+            name="x",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_15",
+            name="y",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_13",
+            name="z",
+            is_setting=True,
+            is_display=True,
+        )
+        #self._append(
+        #    SmaractRecord,
+        #    "SARES23-USR:MOT_7",
+        #    name="mirr_z",
+        #    is_setting=True,
+        #    is_display=True,
+        #)
         self._append(
             MotorRecord,
             "SLAAR21-LMTS-SMAR1:MOT_2",
@@ -130,13 +116,13 @@ class MidIR(Assembly):
             is_setting=True,
             is_display=True,
         )
-        # self._append(
-        #     MotorRecord,
-        #     "SARES23-USR:MOT_2",
-        #     name="power_check",
-        #     is_setting=True,
-        #     is_display=True,
-        # )
+        self._append(
+            MotorRecord,
+            "SARES23-USR:MOT_2",
+            name="power_check",
+            is_setting=True,
+            is_display=True,
+        )
 
         self._append(
             MotorRecord,

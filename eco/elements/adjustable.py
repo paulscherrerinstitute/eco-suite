@@ -583,6 +583,7 @@ class AdjustableVirtual:
         self._reset_current_value_to = reset_current_value_to
         self._change_simultaneously = change_simultaneously
         self._check_limits = check_limits
+        self.last_change = None
         if reset_current_value_to:
             for adj in self._adjustables:
                 if not hasattr(adj, "reset_current_value_to"):
@@ -592,16 +593,25 @@ class AdjustableVirtual:
 
     def set_target_value(self, value, hold=False):
         vals = self._foo_set_target_value_current_value(value)
+        
         if not hasattr(vals, "__iter__"):
             vals = (vals,)
+            
+
+        vals_before = [adj.get_current_value() for adj in self._adjustables]
+        value_before = self._foo_get_current_value(*vals_before)
+        self.last_change = {'value_before':value_before,
+                            'value_requested':value,
+                            'values_children_before':vals_before,
+                            'values_children_requested:':vals}
 
         def changer(value):
             if self._check_limits:
                 if not self.check_target_value_within_limits(value):
                     raise Exception(
-                        f"Target value of virtual adjustable {self.name} is higher than limit values of {[adj.name for adj in self._adjustables]}!"
+                        f"Target value of virtual adjustable {self.name} is outside limit values some of {[adj.name for adj in self._adjustables]}!"
                     )
-
+            # TODO try except for stopping all on any exception + option to return to old values before the change. 
             if self._change_simultaneously:
                 self._active_changers = [
                     adj.set_target_value(val, hold=False)

@@ -144,10 +144,6 @@ class StaeubliTx200(Assembly):
         self._urdf = None
         try:
             import bernina_urdf
-
-            jf_id = None
-            if robot_config is not None:
-                jf_id = robot_config.jf_id()
             self._urdf = bernina_urdf.models.Tx200_Ceiling(jf_id=robot_config.jf_id())
             self._append(
                 AdjustableFS,
@@ -166,24 +162,25 @@ class StaeubliTx200(Assembly):
             print(e)
         ### adding JF ###
         if robot_config is not None:
-            try:
-                if robot_config.jf_id():
-                    self._append(
-                        Jungfrau,
-                        robot_config.jf_id(),
-                        pgroup_adj=pgroup_adj,
-                        config_adj=jf_config,
-                        name=robot_config.jf_name(),
-                    )
-                    if "JF01" in robot_config.jf_id():
-                        self.config.tool("t_JF01T03")
-                        self.det_diff.shape = np.array([1030, 1614])
-                    elif "JF07" in robot_config.jf_id():
-                        self.config.tool("t_JF07T32")
-                        self.det_diff.shape = np.array([4432, 4215])
-            except Exception as e:
-                print("Adding of JF detector failed with:")
-                print(e)
+            if robot_config.jf_id():
+                try:
+                    if robot_config.jf_id():
+                        self._append(
+                            Jungfrau,
+                            robot_config.jf_id(),
+                            pgroup_adj=pgroup_adj,
+                            config_adj=jf_config,
+                            name=robot_config.jf_name(),
+                        )
+                        if "JF01" in robot_config.jf_id():
+                            self.config.tool("t_JF01T03")
+                            self.det_diff.shape = np.array([1030, 1614])
+                        elif "JF07" in robot_config.jf_id():
+                            self.config.tool("t_JF07T32")
+                            self.det_diff.shape = np.array([4432, 4215])
+                except Exception as e:
+                    print("Adding of JF detector failed with:")
+                    print(e)
 
         if robot_config is not None:
             try:
