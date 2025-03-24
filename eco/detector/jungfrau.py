@@ -120,6 +120,13 @@ class Jungfrau(Assembly):
         )
         self._last_dap_req_time = 0
         self._append(
+            AdjustableFS,
+            '/sf/bernina/config/eco/reference_values/dap_settings',
+            name="_dap_settings_storage",
+            is_display=False,
+            is_setting=False,
+        )
+        self._append(
             AdjustableGetSet,
             self.get_dap_settings,
             self.set_dap_settings,
@@ -133,6 +140,7 @@ class Jungfrau(Assembly):
             is_setting_children=True,
             name="settings_dap",
         )
+        
 
         if config_adj:
             self._append(
@@ -151,6 +159,14 @@ class Jungfrau(Assembly):
                 name="chiller",
                 is_display="recursive",
             )
+
+    def set_dap_rois(self,*rois):
+            tmp = self.settings_dap._base_dict()
+            tmp['roi_x1']=[roi[0] for roi in rois if roi]
+            tmp['roi_x2']=[roi[1] for roi in rois if roi]
+            tmp['roi_y1']=[roi[2] for roi in rois if roi]
+            tmp['roi_y2']=[roi[3] for roi in rois if roi]
+            self.settings_dap._base_dict(tmp)
 
     def _set_trigger_enable(self, value):
         if value:
@@ -216,16 +232,24 @@ class Jungfrau(Assembly):
         else:
             return f"aux/{dest.name}"
 
-    def get_dap_settings(self):
-        if 5 < (time.time() - self._last_dap_req_time):
-            self._last_dap_message = requests.get(
-                f"{self.broker_address_aux}/get_dap_settings",
-                json={"detector_name": self.jf_id},
-            ).json()
-            self._last_dap_req_time = time.time()
+    def get_dap_settings(self, force=False):
 
-        if self._last_dap_message["status"] == "ok":
-            return self._last_dap_message["parameters"]
+        if force:
+            if 5 < (time.time() - self._last_dap_req_time):
+                self._last_dap_message = requests.get(
+                    f"{self.broker_address_aux}/get_dap_settings",
+                    json={"detector_name": self.jf_id},
+                ).json()
+                self._last_dap_req_time = time.time()
+
+            if self._last_dap_message["status"] == "ok":
+                self._dap_settings_storage.set_target_value(self._last_dap_message["parameters"]).wait()
+                return self._last_dap_message["parameters"]
+        else:
+            val = self._dap_settings_storage.get_current_value()
+            if not val:
+                val = self.get_dap_settings(force=True)
+            return val
 
     def set_dap_settings(self, dap_setting_dict):
         # print("Setting not implmented yet!")
@@ -235,6 +259,7 @@ class Jungfrau(Assembly):
             json={"detector_name": self.jf_id, "parameters": dap_setting_dict},
         ).json()
         if m["status"] == "ok":
+            self._dap_settings_storage.set_target_value(dap_setting_dict).wait()
             return m
 
     def get_detector_frequency(self):

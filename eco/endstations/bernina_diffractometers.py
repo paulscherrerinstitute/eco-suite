@@ -6,6 +6,8 @@ from eco.endstations.bernina_sample_environments import (
 )
 from eco.epics import get_from_archive
 
+from eco.xoptics.slits import SlitBladesGeneral
+
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, MotorRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
@@ -121,6 +123,32 @@ def append_diffractometer_modules(obj, configuration):
             pb_conf={"type": "motor", "axis": 5},
         )
         obj.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
+
+    if hasattr(configuration, "detector_flighttube"):
+        if configuration.detector_flighttube():
+            ### slit close to sample
+            # up down according to You-B geometry
+            obj._append(
+                SlitBladesGeneral,
+                def_blade_up={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_X2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                def_blade_down={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_X1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                def_blade_left={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_Y2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                def_blade_right={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_Y1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                name='slit_sam'
+                )
+            ### slit close to detector
+            # up down according to You-B geometry
+            obj._append(
+                SlitBladesGeneral,
+                def_blade_up={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_X2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                def_blade_down={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_X1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                def_blade_left={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_Y2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                def_blade_right={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_Y1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
+                name='slit_det'
+                )
+            
+            # missing: slits of flight tube
+            obj.set_det_slits_off = DeltaTauCurrOff("SARES21-XRD:asyn2.AOUT")
 
     if configuration.arm():
         obj._append(

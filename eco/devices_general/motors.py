@@ -900,6 +900,7 @@ class MotorRecord(Assembly):
         # alias_fields={"readback": "RBV"},
         alias_fields={},
         backlash_definition=False,
+        resolution_pars = False, 
         is_psi_mforce=False,
         schneider_config=None,
         expect_bad_limits=True,
@@ -991,6 +992,66 @@ class MotorRecord(Assembly):
             name="description",
             is_setting=True,
         )
+
+
+        if resolution_pars:
+            self._append(
+                AdjustablePv,
+                self.pvname + ".MRES",
+                name="motor_resolution",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePv,
+                self.pvname + ".ERES",
+                name="encoder_resolution",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePv,
+                self.pvname + ".RRES",
+                name="readback_resolution",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePvEnum,
+                self.pvname + ".UEIP",
+                name="use_encoder",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePvEnum,
+                self.pvname + ".URIP",
+                name="use_readback",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePv,
+                self.pvname + ".RDBD",
+                name="retry_deadband",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                AdjustablePv,
+                self.pvname + ".RTRY",
+                name="retry_max",
+                is_setting=True,
+                is_display=False,
+            )
+            self._append(
+                DetectorPvData,
+                self.pvname + ".RCNT",
+                name="retry_count",
+                is_setting=False,
+                is_display=False,
+            )
+
 
         if has_park_pv:
             self._append(

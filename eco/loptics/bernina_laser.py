@@ -1,4 +1,6 @@
 from eco.loptics.position_monitors import CameraPositionMonitor
+
+from eco.motion.coordinate_transformation import CartCooRotated
 from ..elements.assembly import Assembly
 from functools import partial
 from ..devices_general.motors import (
@@ -70,6 +72,83 @@ class IncouplingCleanBernina(Assembly):
             is_display=True,
         )
 
+class MIRVirtualStages(Assembly):
+    def __init__(self, name=None, nx=None, nz=None,mx=None, mz=None):
+        super().__init__(name=name)
+        self._nx = nx
+        self._nz = nz
+        self._mx = mx
+        self._mz = mz
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21954_lens_z0",
+            name="offset_lens_z",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21954_lens_x0",
+            name="offset_lens_x",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21954_par_z0",
+            name="offset_par_z",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/p21954_mir_z0",
+            name="offset_mir_z",
+            default_value=0,
+            is_setting=True,
+        )
+
+        def get_focus_lens_z(nx, nz):
+            return nz - self.offset_lens_z()
+
+        def set_focus_lens_z(z):
+            nx = self.offset_lens_x() - z*np.tan(np.deg2rad(14.1))
+            nz = self.offset_lens_z() + z
+            return nx, nz
+
+        self._append(
+            AdjustableVirtual,
+            [nx, nz],
+            get_focus_lens_z,
+            set_focus_lens_z,
+            reset_current_value_to=True,
+            name="focus_lens",
+        )
+        def get_focus_par_z(mx, mz):
+            return mz - self.offset_par_z()
+
+        def set_focus_par_z(z):
+            mx = self.offset_par_z() + z
+            mz = self.offset_mir_z() + z
+            return mx, mz
+
+        self._append(
+            AdjustableVirtual,
+            [mx, mz],
+            get_focus_par_z,
+            set_focus_par_z,
+            reset_current_value_to=True,
+            name="focus_par",
+        )
+
+    def set_offsets_to_current_value(self):
+        self.offset_lens_x.mv(self._nx())
+        self.offset_lens_z.mv(self._nz())
+        self.offset_par_z.mv(self._mx())
+        self.offset_mir_z.mv(self._mz())
+
+    
+
 
 class MidIR(Assembly):
     def __init__(
@@ -102,13 +181,20 @@ class MidIR(Assembly):
             is_setting=True,
             is_display=True,
         )
-        #self._append(
-        #    SmaractRecord,
-        #    "SARES23-USR:MOT_7",
-        #    name="mirr_z",
-        #    is_setting=True,
-        #    is_display=True,
-        #)
+        self._append(
+            MotorRecord,
+            "SARES20-MF1:MOT_16",
+            name="polariser",
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES23-USR:MOT_4",
+            name="mirr_z",
+            is_setting=True,
+            is_display=True,
+        )
         self._append(
             MotorRecord,
             "SLAAR21-LMTS-SMAR1:MOT_2",
@@ -118,7 +204,7 @@ class MidIR(Assembly):
         )
         self._append(
             MotorRecord,
-            "SARES23-USR:MOT_2",
+            "SARES23-USR:MOT_5",
             name="power_check",
             is_setting=True,
             is_display=True,
@@ -218,9 +304,30 @@ class MidIR(Assembly):
             "SARES20-CEP01:spectrometer_ratio",
             cachannel=None,
             name="spectrometer_ratio",
-            is_setting=False,
+            is_setting=False,            
             is_display=True,
         )
+            # Virtual stages ###
+        self._append(
+            CartCooRotated,
+            x_adj=self.x,
+            y_adj=self.y,
+            z_adj=self.z,
+            names_rotated_axes=['xlens','ylens','zlens'],
+            file_rotation='/photonics/home/gac-bernina/eco/configuration/p21954_lens_stage_rotation',
+            name='lens_beam_direction'
+            )
+        
+        self._append(
+                MIRVirtualStages,
+                name="virtual_stages",
+                nx=self.x,
+                nz=self.z,
+                mx=self.mirr_z,
+                mz=self.z,
+                is_setting=False,
+        )
+            
         self._append(
             DetectorBsStream,
             "SARES20-CEP01:spectrometer_correlation",
@@ -300,7 +407,6 @@ class MidIR(Assembly):
             )
         except Exception as e:
             print(f"Timetool pv writing pipeline initialization failed with: \n{e}")
-
 
 class Spectrometer(Assembly):
     def __init__(self, pvname, name=None):
