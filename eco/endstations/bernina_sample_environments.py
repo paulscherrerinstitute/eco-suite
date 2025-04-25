@@ -150,7 +150,7 @@ class High_field_thz_chamber(Assembly):
 
         self.motor_configuration_cube = {
             "inc_rz": {
-                "id": "SARES23-USR:MOT_5",
+                "id": "SARES23-USR:MOT_11",
                 "pv_descr": "Module2:2 THz Inc Cube Rz",
                 "direction": 1,
                 "sensor": 53,
@@ -159,7 +159,7 @@ class High_field_thz_chamber(Assembly):
                 "kwargs": {"accuracy": 0.01},
             },
             "inc_z": {
-                "id": "SARES23-USR:MOT_4",
+                "id": "SARES23-USR:MOT_10",
                 "pv_descr": "Module2:1 THz Inc Cube z ",
                 "direction": 1,
                 "sensor": 42,
@@ -167,7 +167,7 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "back",
             },
             "inc_x": {
-                "id": "SARES23-USR:MOT_6",
+                "id": "SARES23-USR:MOT_12",
                 "pv_descr": "Module2:3 THz Inc Cube x ",
                 "direction": 1,
                 "sensor": 42,

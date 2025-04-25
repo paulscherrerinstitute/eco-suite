@@ -256,6 +256,7 @@ class TimetoolBerninaUSD(Assembly):
             except Exception as e:
                 print(f"Andor spectrometer initialization failed with: \n{e}")
 
+
     def get_calibration_values(
         self, seconds=5, scan_range=0.8e-12, plot=False, pipeline=True, to_elog=False
     ):

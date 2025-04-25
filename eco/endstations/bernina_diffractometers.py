@@ -3,6 +3,7 @@ import sys
 
 from eco.endstations.bernina_sample_environments import (
     GrazingIncidenceLowTemperatureChamber,
+    High_field_thz_chamber,
 )
 from eco.epics import get_from_archive
 
@@ -420,6 +421,8 @@ class GPS(Assembly):
         recspace_conv_JFID="JF01T03V01",
         xp = None,
         helium_control_valve = None,
+        illumination_mpod = None, 
+        thc_config = [],
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -446,7 +449,15 @@ class GPS(Assembly):
             )
 
         if configuration.thc():
-            pass
+            self._append(
+                High_field_thz_chamber,
+                name="thc",
+                illumination_mpod=illumination_mpod,
+                configuration=thc_config,
+                helium_control_valve = helium_control_valve,
+                is_setting=False,
+                is_display=True,
+            )
 
         if configuration.gic():
             self._append(

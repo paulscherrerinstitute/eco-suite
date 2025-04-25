@@ -31,9 +31,10 @@ class Component:
 
 
 class NamespaceComponent:
-    def __init__(self, namespace, namestring):
+    def __init__(self, namespace, namestring, get_current_value=False):
         self.namespace = namespace
         comps = namestring.split(".")
+        self._get_current_value= get_current_value
         for n, comp in enumerate(comps):
             tn = ".".join(comps[: n + 1])
             if tn in self.namespace.all_names:
@@ -47,10 +48,17 @@ class NamespaceComponent:
         # if not self.obj_name in self.namespace.initialized_names:
         #     self.namespace.init_name(self.obj_name)
         obj = self.namespace.get_obj(self.obj_name)
-        if self.sub_name:
-            return eval(f"obj.{self.sub_name}")
+        if self._get_current_value:
+            if self.sub_name:
+                return eval(f"obj.{self.sub_name}").get_current_value()
+            else:
+                return obj.get_current_value()
+
         else:
-            return obj
+            if self.sub_name:
+                return eval(f"obj.{self.sub_name}")
+            else:
+                return obj
 
 
 def replace_NamespaceComponents(*args, **kwargs):
@@ -717,8 +725,10 @@ class Namespace(Assembly):
                     #     raise self.failed_items_exception[name]
                     # except:
                     #     tb = traceback.format_exc()
-                    
-                    raise IsInitialisingError(f'{name} failed previously to initialize.')
+                    if isinstance(self.failed_items_exception[name], BaseException):
+                        raise self.failed_items_exception[name]
+                    else:
+                        raise IsInitialisingError(f'{name} failed previously to initialize.')
                 
                 if name in self._initializing:
                     self._init_priority[name] += 1

@@ -1014,6 +1014,15 @@ namespace.append_obj(
         "name": "helium_control_valve",
         "pvname": "SARES20-CWAG-GPS01:DAC04",
         },
+    illumination_mpod=[
+                    {
+                        "pvbase": "SARES21-PS7071",
+                        "channel_number": 5,
+                        "module_string": "LV_OMPV_1",
+                        "name": "illumination",
+                    }
+                ],
+    thc_config = NamespaceComponent(namespace,'config_bernina.thc_config',get_current_value=True),
     lazy=True,
 )
 
@@ -1064,7 +1073,7 @@ namespace.append_obj(
     module_name="eco.xoptics.kb_bernina",
     usd_table=usd_table,
     name="kb",
-    diffractometer=gps,
+    diffractometer=xrd,
     lazy=True,
 )
 
@@ -2221,29 +2230,7 @@ namespace.append_obj(
 )
 
 
-# namespace.append_obj(
-#     "High_field_thz_chamber",
-#     name="thc",
-#     lazy=True,
-#     module_name="eco.endstations.bernina_sample_environments",
-#     illumination_mpod=[
-#         {
-#             "pvbase": "SARES21-PS7071",
-#             "channel_number": 5,
-#             "module_string": "LV_OMPV_1",
-#             "name": "illumination",
-#         }
-#     ],
-#     helium_control_valve={
-#         "pvbase": "SARES21-PS7071",
-#         "channel_number": 4,
-#         "module_string": "LV_OMPV_1",
-#         "name": "helium_control_valve",
-#         "pvname": "SARES20-CWAG-GPS01:DAC04",
-#     },
-#     # configuration=["ottifant"],
-#     configuration=["cube"],
-# )
+
 
 # namespace.append_obj(
 #    "Organic_crystal_breadboard",

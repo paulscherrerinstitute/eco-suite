@@ -207,13 +207,15 @@ class Daq(Assembly):
         parameters["pgroup"] = pgroup
         parameters["rate_multiplicator"] = self.rate_multiplicator
         # print("----- debug info ----->\n", parameters, "\n<----- debug info -----")
-        response = validate_response(
-            requests.post(
-                f"{self.broker_address}/retrieve_from_buffers",
-                json=parameters,
-                timeout=self.timeout,
-            ).json()
-        )
+        self._last_server_post = f"{self.broker_address}/retrieve_from_buffers"
+        self._last_server_post_parameters = parameters
+        self._last_server_resp = requests.post(
+                                f"{self.broker_address}/retrieve_from_buffers",
+                                json=parameters,
+                                timeout=self.timeout,
+                            )
+
+        response = validate_response(self._last_server_resp.json() )
 
         runno = response["run_number"]
 

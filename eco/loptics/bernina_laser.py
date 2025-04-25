@@ -148,6 +148,7 @@ class MIRVirtualStages(Assembly):
         self.offset_mir_z.mv(self._mz())
 
     
+        
 
 
 class MidIR(Assembly):
@@ -160,6 +161,20 @@ class MidIR(Assembly):
     ):
         super().__init__(name=name)
 
+        self.motor_configuration_thorlabs = {
+            "polarizer_small": {
+                "pvname": "SLAAR21-LMOT-ELL3",
+            },
+        }
+
+        ### thorlabs piezo motors ###
+        for name, config in self.motor_configuration_thorlabs.items():
+            self._append(
+                ThorlabsPiezoRecord,
+                pvname=config["pvname"],
+                name=name,
+                is_setting=True,
+            )
         self._append(
             MotorRecord,
             "SARES20-MF1:MOT_14",
