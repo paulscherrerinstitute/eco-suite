@@ -358,6 +358,10 @@ class Namespace(Assembly):
     @property
     def failed_names(self):
         return set(self.failed_items.keys())
+    
+    @property
+    def failed_items_exception_prop(self):
+        return self.failed_items_exception
 
     @property
     def all_names(self):
@@ -721,12 +725,9 @@ class Namespace(Assembly):
             def init_local():
 
                 if name in self.failed_names:
-                    # try:
-                    #     raise self.failed_items_exception[name]
-                    # except:
-                    #     tb = traceback.format_exc()
-                    if isinstance(self.failed_items_exception[name], BaseException):
-                        raise self.failed_items_exception[name]
+                    tmpexc = self.failed_items_excpetion
+                    if isinstance(tmpexc[name], BaseException):
+                        raise tmpexc[name]
                     else:
                         raise IsInitialisingError(f'{name} failed previously to initialize.')
                 
