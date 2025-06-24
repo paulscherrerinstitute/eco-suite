@@ -139,6 +139,34 @@ class AnalogOutput(Assembly):
             is_setting=False,
             is_display=False,
         )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".AOFF",
+            name="_adj_offset",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".ASLO",
+            name="_adj_slope",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".EOFF",
+            name="linear_calibration_offset",
+            is_setting=True,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".ESLO",
+            name="linear_calibration_slope",
+            is_setting=True,
+            is_display=False,
+        )
 
     def get_current_value(self):
         return self.value.get_current_value()

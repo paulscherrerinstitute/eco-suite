@@ -40,6 +40,7 @@ pars_StatusMotorListCtrl = {
     ("EncLoss", "r"),
     ("HomeInProgress", "r"),
     ("HomeComplete", "r"),
+    ("HomeOffset", "r"),
     ("TriggerMove", "r"),
     ("DacLimit", "r"),
     ("SoftLimit", "r"),

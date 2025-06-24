@@ -49,6 +49,8 @@ class PowerBrickComm:
             parstring.strip("\n")
         setstring = parstring + "=" + str(value)
         return self.pbsshcom.iawrite(setstring)
+    
+    # def set_hmz
 
 
 class PowerBrickChannelPars(Assembly):

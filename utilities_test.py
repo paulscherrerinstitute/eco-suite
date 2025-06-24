@@ -1,4 +1,4 @@
-from time import sleep, time
+from time import sleep
 import sys, select
 from threading import Thread
 
@@ -32,9 +32,9 @@ class TimeoutPath:
     def __str__(self) -> str:
         return str(self._path)
 
+
 class PropagatingThread(Thread):
     def run(self):
-        run_start = time()
         self.exc = None
         try:
             if hasattr(self, "_Thread__target"):
@@ -44,7 +44,6 @@ class PropagatingThread(Thread):
                 )
             else:
                 self.ret = self._target(*self._args, **self._kwargs)
-            
         except BaseException as e:
             self.exc = e
 

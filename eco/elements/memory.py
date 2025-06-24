@@ -7,8 +7,8 @@ from tabulate import tabulate
 import sys, colorama
 try:
     from inspect import getargspec
-except:
-    from inspect import getfullargspec
+except: # for python 3.12
+    from inspect import getfullargspec as getargspec
 
 import eco
 from ansi2html import Ansi2HTMLConverter

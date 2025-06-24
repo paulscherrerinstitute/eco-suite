@@ -2,6 +2,7 @@ from eco.xoptics.attenuator_safety_bernina import AttenuatorSafetyBernina
 from scipy import constants
 from eco.devices_general.powersockets import MpodChannel
 from eco.devices_general.wago import AnalogOutput
+from eco.devices_general.cameras_swissfel import CameraBasler
 from eco.epics.detector import DetectorPvDataStream
 import sys
 
@@ -88,18 +89,55 @@ class THzVirtualStages(Assembly):
         self.offset_mirr_z.mv(self._mz())
         self.offset_par_z.mv(self._pz())
 
+class THz_cameras(Assembly):
+    def __init__(self, name=None, camera_config={}):
+        super().__init__(name=name)
+        for name, cfg in camera_config.items():
+            self._append(
+                CameraBasler,
+                cfg["pvname"], 
+                camserver_alias = "THC_" + name,
+                name=name, 
+                is_setting=True, 
+                is_display="recursive",
+            )
+            self.__dict__[name].serial_no.mv(cfg["serial_number"])
 
 class High_field_thz_chamber(Assembly):
     def __init__(
         self,
+        delay_offset_detector = None,
+        thc_x_adjustable=None,
         name=None,
         configuration=[],
         illumination_mpod=None,
         helium_control_valve=None,
     ):
         super().__init__(name=name)
+        self.delay_offset_detector = delay_offset_detector
+        self._thc_x_adjustable = thc_x_adjustable
         self.par_out_pos = [-20, -9.5]
+        self.camera_configuration = {
+            "inline": {
+                "pvname": "SARES20-CAMS142-M2",
+                "serial_number": 23067644,
+            },
+            "sideview_45": {
+                "pvname": "SARES20-CAMS142-M3",
+                "serial_number": 23075971,
+            },
+        }
         self.motor_configuration = {
+            "inline_mirror": {
+                "id": "SARES23-USR:MOT_1",
+                "pv_descr": "THz Chamber Inline_Mirror",
+                "direction": 1,
+                "sensor": 1,
+                "speed": 250,
+                "offset": 2.150241,
+                "home_direction": "back",
+                "kwargs": {"accuracy": 0.01},
+            },
             "rx": {
                 # "id": "SARES23-USR:MOT_13",
                 "id": "SARES23-USR:MOT_16",
@@ -194,6 +232,14 @@ class High_field_thz_chamber(Assembly):
                 "home_direction": "forward",
             },
         }
+
+        ### Cameras ###
+        self._append(
+            THz_cameras, 
+            name="camera",
+            camera_config=self.camera_configuration,
+            )
+        
         ### lakeshore temperatures ####
         self._append(
             AdjustablePv,
@@ -219,20 +265,7 @@ class High_field_thz_chamber(Assembly):
             name="temp_gishield",
             is_setting=False,
         )
-        ### in vacuum smaract motors ###
-        # for name, config in self.motor_configuration.items():
-        #    if "kwargs" in config.keys():
-        #        tmp_kwargs = config["kwargs"]
-        #    else:
-        #        tmp_kwargs = {}
-        #    self._append(
-        #        SmaractStreamdevice,
-        #        pvname=Id + config["id"],
-        #        name=name,
-        #        is_setting=True,
-        #        **tmp_kwargs,
-        #    )
-        ### in vacuum smaract motors ###
+
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractRecord,
@@ -254,6 +287,40 @@ class High_field_thz_chamber(Assembly):
             lambda x, xc: -1 * (x - xc) / 1000 / constants.c,
             name="delay_x_center",
         )
+
+        self._append(
+            MotorRecord,
+            pvname="SLAAR21-LMOT-M522:MOTOR_1",
+            name="delaystage_thz",
+            is_setting=True,
+            is_display=False,
+            is_status=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_thz,
+            name="delay_thz",
+            offset_detector=self.delay_offset_detector,
+            is_setting=False,
+            is_display=True,
+            is_status=True,
+        )
+        if self._thc_x_adjustable is not None:
+
+            def movexcomp(x):
+                delay = self.delay_thz.get_current_value()
+                dx = x - self._thc_x_adjustable.get_current_value()
+                new_delay = delay + dx / 1000 / constants.c
+                return x, new_delay
+
+            self._append(
+                AdjustableVirtual,
+                [self._thc_x_adjustable, self.delay_thz],
+                lambda x, delay_thz: x,
+                movexcomp,
+                name="thcx_delaycomp",
+                is_setting=False,
+            )
 
         if "cube" in configuration:
             for name, config in self.motor_configuration_cube.items():

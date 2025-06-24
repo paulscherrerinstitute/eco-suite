@@ -178,14 +178,12 @@ class TimetoolBerninaUSD(Assembly):
             AdjustablePv,
             pvsetname="SLAAR21-LFEEDBACK1:TARGET1",
             name="feedback_setpoint",
-            accuracy=10,
             is_setting=True,
         )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LFEEDBACK1:ENABLE",
             name="feedback_enabled",
-            accuracy=10,
             is_setting=True,
         )
         self._append(

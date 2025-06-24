@@ -248,12 +248,33 @@ class MasterEventSystem(Assembly):
     def __repr__(self):
         return self.status(printit=False)
 
+class EvrSequencer(Assembly):
+    def __init__(self, pv_base, name=None):
+        super().__init__(name=name)
+        try:
+            self._append(AdjustablePvEnum, pv_base + ':SEQ_SOURCE', name='source', is_display=True, is_setting=True)
+            self._append(AdjustablePvEnum, pv_base + ':SEQ_SNUMPD', name='pulser_number', is_display=True, is_setting=True)
+            self._append(DetectorPvData, pv_base + ':SEQ_RUNNING', name='is_running', is_display=True)
+            self._append(AdjustablePvEnum, pv_base + ':Seq-Ena-Sel', name='enabled', is_display=True, is_setting=True)
+            self._append(DetectorPvData, pv_base + ':SEQ_SELECT_FREQ', name='frequency', is_display=True)
+        except:
+            print(f'The evr sequencer of {pv_base} is likely old type')
+            self._append(AdjustableMemory, None, name='frequency', is_display=True)
+        
+        self._append(AdjustablePvEnum, pv_base + ':Seq-RunMode-Sel', name='mode', is_display=True, is_setting=True)
+        
+        
+        self._append(AdjustablePv, pv_base + ':SEQ_DELAY', name='delay', is_display=True, is_setting=True)
+        self._append(AdjustablePv, pv_base + ':SEQ_REPS', name='repetitions', is_display=True, is_setting=True)
+        self._append(AdjustablePv, pv_base + ':SEQ_MULTIPLIER', name='freq_multiplier', is_display=True, is_setting=True)
+
 
 class EvrPulser(Assembly):
-    def __init__(self, pv_base, event_master, name=None):
+    def __init__(self, pv_base, event_master, parent_evr=None, name=None):
         super().__init__(name=name)
         self.pv_base = pv_base
         self._event_master = event_master
+        self._parent_evr = parent_evr
 
         self._append(
             AdjustablePvString, pv_base + "-Name-I", name="description", is_display=True
@@ -329,10 +350,13 @@ class EvrPulser(Assembly):
 
     @property
     def _eventcode(self):
-        try:
-            return self._event_master.event_codes[self.eventcode.get_current_value()]
-        except KeyError:
-            return None
+        if self.eventcode.get_current_value() == 27:
+            return self._parent_evr.sequencer
+        else:
+            try:
+                return self._event_master.event_codes[self.eventcode.get_current_value()]
+            except KeyError:
+                return None
 
 
 class DummyPulser(Assembly):
@@ -527,12 +551,17 @@ class EventReceiver(Assembly):
     ):
         super().__init__(name=name)
         self.pvname = pvname
+
+        self._append(EvrSequencer,self.pvname,name='sequencer', is_display=True, is_setting=True)
+        
+
         pulsers = []
         for n in range(n_pulsers):
             self._append(
                 EvrPulser,
                 f"{self.pvname}:Pul{n}",
                 event_master,
+                parent_evr=self,
                 name=f"pulser{n}",
                 is_setting=True,
                 is_display=False,
@@ -563,6 +592,8 @@ class EventReceiver(Assembly):
         # for to in outputs:
         #     to._pulsers = self.pulsers
         self.outputs = outputs
+
+        
 
         self._append(
             AdjustablePv,

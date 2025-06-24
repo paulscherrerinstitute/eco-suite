@@ -11,12 +11,13 @@ plt.ion()
 
 
 class TtProcessor:
-    def __init__(self, Nbg=10, channel_proj = "SARES20-CAMS142-M5.roi_signal_x_profile"):
+    def __init__(self, Nbg=10, ref_code=25, channel_proj = "SARES20-CAMS142-M5.roi_signal_x_profile"):
         self.channel_proj = channel_proj
         self.bg = deque([], Nbg)
         self.sig = deque([], 1)
         self.pos = deque([], 1)
         self.amp = deque([], 1)
+        self.ref_code=ref_code
         self.spec_ppd = deque([], 1)
         self.accumulator = Thread(target=self.run_continuously)
         self.accumulator.start()
@@ -41,7 +42,7 @@ class TtProcessor:
                 codes = m.data.data["SAR-CVME-TIFALL5:EvtSet"].value
                 if codes is None:
                     continue
-                is_reference = codes[25] == 1
+                is_reference = codes[self.ref_code] == 1
                 try:
                     if (lastgoodix - ix) > 1:
                         print(f"missed  {lastgoodix-ix-1} events!")

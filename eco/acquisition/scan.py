@@ -139,6 +139,7 @@ class Scan:
     def doNextStep(self, step_info=None, verbose=True):
         # for call in self.callbacks_start_step:
         # call()
+        t_step_start = time()
         if self.checker:
             first_check = time()
             checker_unhappy = False
@@ -159,9 +160,13 @@ class Scan:
                 )
             self.checker.clear_and_start_counting()
 
+
+
         if self.callbacks_start_step:
             for caller in self.callbacks_start_step:
                 caller(self, **self.callbacks_kwargs)
+
+        dt_callbacks_step_start = time()-t_step_start
 
         if not len(self.values_todo) > 0:
             return False
@@ -171,16 +176,20 @@ class Scan:
                 "Starting scan step %d of %d"
                 % (self.nextStep + 1, len(self.values_todo) + len(self.values_done))
             )
-        ms = []
+
         fina = self.get_filename(self.nextStep)
+        t_adj_start = time()
+        ms = []
         for adj, tv in zip(self.adjustables, values_step):
             ms.append(adj.set_target_value(tv))
         for tm in ms:
             tm.wait()
+        dt_adj = time()-t_adj_start
 
         # settling
         sleep(self.settling_time)
 
+        t_ctr_start = time()
         readbacks_step = []
         adjs_name = []
         adjs_offset = []
@@ -225,26 +234,42 @@ class Scan:
         for ta in acs:
             ta.wait()
             filenames.extend(ta.file_names)
+        dt_ctr = time() - t_ctr_start
+
         if verbose:
             print("Done with acquisition")
 
+        ### >>> Callback end
+        t_callbacks_step_end = time()
         if self.checker:
             if not self.checker.stop_and_analyze():
                 return True
         if callable(step_info):
             tstepinfo = step_info()
         else:
-            tstepinfo = step_info
+            tstepinfo = {}
         self.values_done.append(self.values_todo.pop(0))
         self.pulses_done.append(self.pulses_per_step.pop(0))
         self.readbacks.append(readbacks_step)
+
+        if self.callbacks_end_step:
+            for caller in self.callbacks_end_step:
+                caller(self, **self.callbacks_kwargs)
+        dt_callbacks_step_end = time() - t_callbacks_step_end
+        ### <<<< Callback end
+
+        tstepinfo['times'] = {
+            "callbacks_step_start":dt_callbacks_step_start,
+            "adjustables" : dt_adj,
+            "counters" : dt_ctr,
+            "callbacks_step_end": dt_callbacks_step_end,
+        }
+
         self.appendScanInfo(
             values_step, readbacks_step, step_files=filenames, step_info=tstepinfo
         )
         self.writeScanInfo()
-        if self.callbacks_end_step:
-            for caller in self.callbacks_end_step:
-                caller(self, **self.callbacks_kwargs)
+
         self.nextStep += 1
 
         return True

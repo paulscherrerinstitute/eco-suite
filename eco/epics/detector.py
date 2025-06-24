@@ -48,8 +48,12 @@ class DetectorPvData(Assembly):
         else:
             return self.readback.get_current_value()
 
-    # def get_current_value_callback(self):
-    #     pass
+    def get_current_value_callback(self, foo='accumulate',collector = [], run_once=True, print_output=False):
+        if hasattr(self, "_pv"):
+            return CallbackEpics(self,self._pv,foo=foo,collector=collector, run_once=run_once, print_output=print_output)
+        # else:
+        #     raise Exception('the object does not have a _pv')
+        
 
     def __call__(self):
         return self.get_current_value()
@@ -249,3 +253,40 @@ class DetectorPvDataStream(Assembly):
 
     def get_current_value(self, **kwargs):
         return self._pv.get(**kwargs)
+
+class CallbackEpics:
+    def __init__(self,pv,foo='accumulate',collector = [], run_once=True, print_output=False):
+        self.pv = pv
+        if collector is not None:
+            self.data = collector
+
+        if foo=='accumulate':
+            foo = self.accumulate_values
+        self.foo = foo
+        self.run_once = run_once
+        self.print = print_output
+
+    def start(self):
+        self.cb_index = self.pv.add_callback(self.foo,run_once=True,)
+    
+    def stop(self):
+        self.pv.remove_callback(self.cb_index)
+    
+    def __enter__(self):
+        self.start()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
+
+    def accumulate_values(self, pvname=None, value=None, timestamp=None, **kwargs):
+        # if not self.data:
+        #     self.data = []
+        ts_local = time()
+        self.data.append(
+            {"value": value, "timestamp_ioc": timestamp, "timestamp_local": ts_local}
+        )
+        if self.print:
+            print(
+                f"{pvname}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
+            )

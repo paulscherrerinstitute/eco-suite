@@ -198,6 +198,7 @@ class AdjustablePv:
         """ 0: moving 1: move done"""
         change_done = 1
         if self.accuracy is not None:
+            
             if (
                 np.abs(
                     self.get_current_value(readback=False)
@@ -221,9 +222,8 @@ class AdjustablePv:
                 )
 
         self._pv.put(value)
-        time.sleep(0.1)
         while self.get_change_done() == 0:
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     def set_target_value(self, value, hold=False):
         """Adjustable convention"""

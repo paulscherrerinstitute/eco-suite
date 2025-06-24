@@ -139,7 +139,7 @@ class HexapodPI(Assembly):
                 ),
                 reset_current_value_to=False,
                 change_simultaneously=False,
-                check_limits=False,
+                check_limits=True,
                 append_aliases=True,
                 unit="mm",
                 name="y",

@@ -82,7 +82,7 @@ def spec_convenience(Adj):
             try:
                 self._currentChange = self.set_target_value(value)
                 self._currentChange.wait()
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt,SystemExit):
                 self._currentChange.stop()
             return self._currentChange
 
@@ -101,9 +101,12 @@ def spec_convenience(Adj):
                 self._currentChange = self.set_target_value(
                     value + startvalue, *args, **kwargs
                 )
+                print("spec conven")
                 self._currentChange.wait()
-            except KeyboardInterrupt:
+                
+            except (KeyboardInterrupt,SystemExit):
                 self._currentChange.stop()
+                
             return self._currentChange
 
         Adj.mv = mv
@@ -292,7 +295,7 @@ def update_changes(Adj):
                 cb_id = self.add_value_callback(cbfoo)
             self._currentChange = self.set_target_value(value)
             self._currentChange.wait()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
             self._currentChange.stop()
             print(f"\nAborted change at (~) {self.get_current_value():1.5g}")
         finally:
@@ -641,14 +644,15 @@ class AdjustableVirtual:
         )
 
     def check_target_value_within_limits(self, value):
-        in_lims = []
+        in_lims = [True]
         values = self._foo_set_target_value_current_value(value)
         if not hasattr(values, "__iter__"):
             values = (values,)
 
         for val, adj in zip(values, self._adjustables):
             lim_low, lim_high = adj.get_limits()
-            in_lims.append((lim_low < val) and (val < lim_high))
+            if not val is None:
+                in_lims.append((lim_low < val) and (val < lim_high))
         return all(in_lims)
 
     def reset_current_value_to(self, value):
@@ -847,7 +851,7 @@ class Tweak:
                 self.thread = None
 
             def print(self):
-                if self.thread and self.thread.isAlive():
+                if self.thread and self.thread.is_alive():
                     return
                 else:
                     self.thread = Thread(target=self.print_foo)

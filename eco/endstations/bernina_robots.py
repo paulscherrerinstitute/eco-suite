@@ -145,6 +145,13 @@ class StaeubliTx200(Assembly):
         try:
             import bernina_urdf
             self._urdf = bernina_urdf.models.Tx200_Ceiling(jf_id=robot_config.jf_id())
+            if robot_config.vis_gps():
+                try:
+                    self._urdf.__dict__['gps'] = bernina_urdf.models.GPS()
+                    from epics import PV
+                    self._gps_motors = [PV(f'SARES22-GPS:MOT_{m}.RBV') for m in ['TX', 'TY', 'RX', 'NY_RY2TH', 'MY_RYTH', 'HEX_TX', 'HEX_RX']]
+                except Exception as e:
+                    print(f"Adding visual model of GPS failed with {e}")
             self._append(
                 AdjustableFS,
                 f"/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json",
@@ -603,10 +610,13 @@ class StaeubliTx200(Assembly):
 
     def show(self):
         self._urdf.sim.show()
+        if 'gps' in self._urdf.__dict__.keys():
+            self._urdf.sim.vis.add(self._urdf.__dict__['gps'])
 
     ######## Helper functions ##########
     def _auto_updater_simulation(self):  #
         while True:
+            gpss = None
             js = np.array(
                 [
                     self._cache["pos"][k]
@@ -616,11 +626,22 @@ class StaeubliTx200(Assembly):
             if np.any([j is None for j in js]):
                 time.sleep(1)
                 continue
+            if "_gps_motors" in self.__dict__.keys():
+                try:
+                    gpss = np.array([m.value if not 'MOT_RX.RBV' in m.pvname else np.arctan(m.value / 1146) * 180 / np.pi for m in self._gps_motors ])
+                except Exception as e:
+                    print(e)
             if self.auto_update_simulation():
+                change = False
                 if not np.all(js.round(3) == self._urdf.sim.pos.round(3)):
                     self._urdf.sim.pos = js
-                    if self._urdf.sim._vis_running():
-                        self._urdf.sim.vis.step(0)
+                    change = True
+                if (gpss is not None)&('gps' in self._urdf.__dict__.keys()):
+                    if not np.all(gpss.round(3) == self._urdf.gps.sim.pos.round(3)):
+                        self._urdf.gps.sim.pos = gpss
+                        change = True
+                if self._urdf.sim._vis_running() and change:
+                    self._urdf.sim.vis.step(0)
             time.sleep(0.05)
 
     def _get_on_poll_info(self):

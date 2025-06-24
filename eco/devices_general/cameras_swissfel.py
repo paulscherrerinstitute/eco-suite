@@ -324,7 +324,8 @@ class CameraBasler(Assembly):
                 camserver_alias=camserver_alias,
                 camserver_group=camserver_group,
                 name="config_cs",
-                is_display=False,
+                is_display="recursive",
+                is_setting=True
             )
 
             self.config_cs.set_alias()

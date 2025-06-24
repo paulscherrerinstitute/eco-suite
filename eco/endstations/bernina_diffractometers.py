@@ -431,14 +431,6 @@ class GPS(Assembly):
 
         append_diffractometer_modules(self, configuration)
 
-        if configuration.diffcalc():
-            self._append(
-                Crystals,
-                diffractometer_you=self,
-                name="diffcalc",
-                is_setting=False,
-                is_display=False,
-            )
         for jf_id, jf_name in configuration.jfs():
             self._append(
                 Jungfrau,
@@ -467,6 +459,14 @@ class GPS(Assembly):
                 helium_control_valve = helium_control_valve,
                 is_setting=False,
                 is_display=True,
+            )
+        if configuration.diffcalc():
+            self._append(
+                Crystals,
+                diffractometer_you=self,
+                name="diffcalc",
+                is_setting=False,
+                is_display=False,
             )
 
         if recspace_conv is not None:

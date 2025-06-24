@@ -1239,6 +1239,8 @@ namespace.append_obj(
 #    module_name="eco.acquisition.epics_data",
 # )
 
+
+## TODO pgroup non adjustable/dynamically changeable!
 namespace.append_obj(
     "Scans",
     name="scans_epics",
@@ -1289,6 +1291,8 @@ namespace.append_obj(
     lazy=True,
 )
 
+
+#TODO: need to check if the value property actually works here for the pgroup in the run table to make is dynamic!
 namespace.append_obj(
     "Run_Table2",
     name="run_table",
@@ -1870,6 +1874,7 @@ namespace.append_obj(
     name="checker",
 )
 
+# TODO resove scans pgroup sensitivity! Clearly non dynamic. 
 namespace.append_obj(
     "Scans",
     data_base_dir="scan_data",
@@ -2191,25 +2196,51 @@ class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)        
         self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23-LIC:MOT_16", name="rx", is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_4", name="rx", is_setting=True)
         self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="y", is_setting=True)
         self._append(MotorRecord, "SARES20-MF2:MOT_5",  name="x",is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_2",  name="focus_pos",is_setting=True)
+        self._append(SmaractRecord, "SARES23-USR:MOT_3",  name="eos_focus",is_setting=True)
+
         
+        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC06_VOLTS',name='eos_fb_rx', is_setting=True)
+        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC05_VOLTS',name='eos_fb_ry', is_setting=True)
+
+        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC09_VOLTS',name='nir_mirr1_ry', is_setting=True)
+        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC10_VOLTS',name='nir_mirr1_rx', is_setting=True)
+
+        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC11_VOLTS',name='nir_mirr2_ry', is_setting=True)
+        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC12_VOLTS',name='nir_mirr2_rx', is_setting=True)
+    
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LCAM-C561:FIT2_REQUIRED.PROC",
+            name="eos_fb_setpoint_rq",
+            accuracy=1,
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LCAM-C561:FIT2_DEFAULT.PROC",
+            name="eos_fb_setpoint_df",
+            accuracy=1,
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LTIM01-EVR0:CALCW.A",
+            name="eos_fd_enable",
+            accuracy=1,
+            is_setting=True,
+        )         
         try:
             self.motor_configuration_thorlabs = {
-                "polarizer": {
-                    "pvname": "SLAAR21-LMOT-ELL3",
-                },
-                "hwp": {
-                    "pvname": "SLAAR21-LMOT-ELL5",
-                },
-                "block": {
+                "nir_block": {
                     "pvname": "SLAAR21-LMOT-ELL2",
                 },
-                "nd_filter": {
+                "eos_block": {
                     "pvname": "SLAAR21-LMOT-ELL4",
-                },
+                }
+                
             }
 
             ### thorlabs piezo motors ###
@@ -2222,6 +2253,18 @@ class Incoupling(Assembly):
                 )
         except Exception as e:
             print(e)
+    #     self._append(AdjustableVirtual,
+    #                 [self.crystal, self.hwp],
+    #                 self.thz_pol_get,
+    #                 self.thz_pol_set,
+    #                 name="thz_polarization",
+    #             )
+
+    # def thz_pol_set(self, val):
+    #     return 1.0 * val, 1.0 / 2 * val
+
+    # def thz_pol_get(self, val, val2):
+    #     return 1.0 * val2
             
 namespace.append_obj(
     Incoupling,
@@ -2394,6 +2437,39 @@ namespace.append_obj(
 #    THz,
 #    lazy=True,
 #    name="thz",
+#         self._append(
+#             AdjustableVirtual,
+#             [self.crystal_ROT, self.thz_wp],
+#             self.thz_pol_get,
+#             self.thz_pol_set,
+#             name="",
+#         )
+#         # self.thz_polarization = AdjustableVirtual(
+#         #     [self.crystal_ROT, self.thz_wp],
+#         #     self.thz_pol_get,
+#         #     self.thz_pol_set,
+#         #     name="thz_polarization",
+#         # )
+#         self._append(
+#             AdjustableVirtual,
+#             [self.delay_thz, self.delay_800_pump],
+#             self.delay_get,
+#             self.delay_set,
+#             name="combined_delay",
+#         )
+
+#         # self.combined_delay = AdjustableVirtual(
+#         #     [self.delay_thz, self.delay_800_pump],
+#         #     self.delay_get,
+#         #     self.delay_set,
+#         #     name="combined_delay",
+#         # )
+
+#     def thz_pol_set(self, val):
+#         return 1.0 * val, 1.0 / 2 * val
+
+#     def thz_pol_get(self, val, val2):
+#         return 1.0 * val2
 # )
 
 # class THz_in_air(Assembly):
@@ -2775,6 +2851,7 @@ namespace.append_obj(
 
 
 # try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
+# TODO  pgroup non dynamic here!
 try:
     import sys
     from ..utilities import TimeoutPath
@@ -2906,7 +2983,7 @@ class IlluminatorsLasers(Assembly):
         self._append(
             MpodChannel,
             pvbase="SARES21-PS7071",
-            channel_number=5,
+            channel_number=3,
             name="illumination_inline",
         )
         self._append(

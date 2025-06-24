@@ -28,3 +28,17 @@ class ValueUpdateMonitorable(Protocol):
 class InitialisationWaitable(Protocol):
     def _wait_for_initialisation(self):
         ...
+
+@runtime_checkable
+class Counter:
+    def acquire(self):
+        ...
+    def start(self):
+        ...
+    def stop(self):
+        ...
+ 
+        
+        # file_name=fina, Npulses=self.pulses_per_step[0], acq_pars=acq_pars):
+                )
+        

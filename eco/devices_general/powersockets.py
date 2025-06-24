@@ -118,7 +118,10 @@ class MpodChannel(Assembly):
             self.pvbase+f':{self._module_string}_CH{self.channel_number}_RMP_DOWN_RATE_SP', 
             pvlowlimname = self.pvbase+f':{self._module_string}_CH{self.channel_number}_RMP_DOWN_RATE_SP.LOPR', 
             pvhighlimname = self.pvbase+f':{self._module_string}_CH{self.channel_number}_RMP_DOWN_RATE_SP.HOPR', 
-            name='ramp_down', is_setting=True)            
+            name='ramp_down', is_setting=True)     
+        self._append(AdjustablePv,
+            self.pvbase+f':{self._module_string}_CH{self.channel_number}_MEAS_OUT_A', 
+            name='current', is_setting=False, is_display=True)
         self._append(MpodStatus,self.pvbase, self.channel_number, self._module_string, name='flags')
     
     def get_current_value(self,*args,**kwargs):

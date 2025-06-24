@@ -87,6 +87,8 @@ class Daq(Assembly):
 
     @pgroup.setter
     def pgroup(self, value):
+        if isinstance(self._pgroup, Adjustable):
+            return self._pgroup.set_target_value().wait()
         self._pgroup = value
 
     def acquire(self, file_name=None, Npulses=100, acq_pars={}):
@@ -376,3 +378,12 @@ def validate_response(resp):
 # }
 
 # r = requests.post(f'{broker_address}/retrieve_from_buffers',json=parameters, timeout=TIMEOUT_DAQ).json()
+
+
+
+
+#### >>> TODO implment >>>
+
+
+
+#### <<< TODO  implment <<<

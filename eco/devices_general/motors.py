@@ -1283,12 +1283,15 @@ class MotorRecord(Assembly):
         if not step_value:
             step_value = pv.get()
         print(f"Tweaking {self.name} at step size {step_value}", end="\r")
+        start_value = self.get_current_value()
 
+        # help = "q = exit; up = step*2; down = step/2, left = neg dir, right = pos dir\n"
+        # help = help + "g = go abs, s = set"
         help = "q = exit; up = step*2; down = step/2, left = neg dir, right = pos dir\n"
-        help = help + "g = go abs, s = set"
+        help = help + "g = go abs, s = start value, r = reset current value to"
         print(f"tweaking {self.name}")
         print(help)
-        print(f"Starting at {self.get_current_value()}")
+        print(f"Starting at {start_value}")
         step_value = float(step_value)
         oldstep = 0
         k = KeyPress()
@@ -1323,6 +1326,9 @@ class MotorRecord(Assembly):
                 pvf.put(1)
             elif k.isl():
                 pvr.put(1)
+            elif k.iskey("s"):
+                self.set_target_value(start_value)
+                p.print(value=self.get_current_value())
             elif k.iskey("g"):
                 print("enter absolute position (char to abort go to)")
                 sys.stdout.flush()
@@ -1333,7 +1339,7 @@ class MotorRecord(Assembly):
                 except:
                     print("value cannot be converted to float, exit go to mode ...")
                     sys.stdout.flush()
-            elif k.iskey("s"):
+            elif k.iskey("r"):
                 print("enter new set value (char to abort setting)")
                 sys.stdout.flush()
                 v = sys.stdin.readline()
@@ -1341,15 +1347,17 @@ class MotorRecord(Assembly):
                     v = float(v[0:-1])
                     self.reset_current_value_to(v)
                 except:
-                    print("value cannot be converted to float, exit go to mode ...")
+                    print("value cannot be converted to float, exit reset mode ...")
                     sys.stdout.flush()
             elif k.isq():
                 break
             else:
                 print(help)
         self.clear_value_callback(index=ind_callback)
+        print("\r", end="")
         print(f"final position: {self.get_current_value()}")
         print(f"final tweak step: {pv.get()}")
+        # print('\033[K',"the info",sep='',flush=True)
 
     def tweak(self, *args, **kwargs):
         return self._tweak_ioc(*args, **kwargs)

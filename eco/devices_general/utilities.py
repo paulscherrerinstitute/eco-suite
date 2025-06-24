@@ -8,6 +8,7 @@ class Changer:
         self._changer = changer
         self._stopper = stopper
         self._thread = PropagatingThread(target=self._changer, args=(target,))
+        # self._thread = Thread(target=self._changer, args=(target,))
         if not hold:
             self._thread.start()
 

@@ -397,18 +397,35 @@ class DiffGeometryYou(Assembly):
 
         ### use robot motors if robot is in config
         if cfg.robot():
+            self._append(
+            AdjustableFS,
+            f"/photonics/home/gac-bernina/eco/configuration/crystals/move_robot",
+            name="move_robot",
+            default_value=True,
+            is_setting=False,
+        )
+            def rob_get(a): return a
+            def rob_set(a):
+                if self.move_robot(): 
+                    return [a]
+                else:
+                    return None
+            gam_rob = AdjustableVirtual([self.diffractometer.gamma_robot],rob_get, rob_set, name="gamma_robot", check_limits=True)
+            del_rob = AdjustableVirtual([self.diffractometer.delta_robot],rob_get, rob_set, name="delta_robot", check_limits=True)
+            get_lims = lambda a: a
+            gam_rob.get_limits = get_lims(self.diffractometer.gamma_robot.get_limits)
+            del_rob.get_limits = get_lims(self.diffractometer.delta_robot.get_limits)
             adjustables_dict.update(
                 {
-                    "gamma": self.diffractometer.gamma_robot,
-                    "delta": self.diffractometer.delta_robot,
+                    "gamma": gam_rob,
+                    "delta": del_rob,
                 }
             )
         ### add the phi constraint to thc as phi_wobble if thc is in config
         if cfg.thc():
-            import eco.bernina as b
-
-            thc = b.__dict__["thc"]
-            thc.phi_wobble = self.constraints.phi
+            def phi_wobble_get(a): return a
+            def phi_wobble_set(a): return [a]
+            self.diffractometer.thc._append(AdjustableVirtual, [self.constraints.phi], phi_wobble_get, phi_wobble_set, name='phi_wobble')
         if cfg.kappa():
             adjs = ["gamma", "mu", "delta", "eta_kap", "kappa", "phi_kap"]
 

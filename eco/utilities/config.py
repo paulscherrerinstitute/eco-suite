@@ -540,6 +540,11 @@ class Namespace(Assembly):
                 print(f"Initialisation took {time()-starttime} seconds")
 
             if (not silent) and print_times:
+                try:
+                    from collections import Iterable
+                except:
+                    import collections.abc
+                    collections.Iterable = collections.abc.Iterable
                 from ascii_graph import Pyasciigraph
 
                 gr = Pyasciigraph()
