@@ -30,7 +30,7 @@ class InitialisationWaitable(Protocol):
         ...
 
 @runtime_checkable
-class Counter:
+class Counter(Protocol):
     def acquire(self):
         ...
     def start(self):
@@ -40,5 +40,5 @@ class Counter:
  
         
         # file_name=fina, Npulses=self.pulses_per_step[0], acq_pars=acq_pars):
-                )
+                
         

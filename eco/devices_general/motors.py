@@ -405,7 +405,7 @@ class SmaractStreamdevice(Assembly):
                     break
                 else:
                     print(help)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt,SystemExit):
             print("NB: aborted tweak !")
         self.clear_value_callback(index=ind_callback)
         print(f"final position: {self.get_current_value()}")
@@ -1491,6 +1491,12 @@ class SmaractSettings(Assembly):
             name="max_frequency",
             is_setting=True,
         )
+        self._append(
+            AdjustablePv,
+            self.pvname + "_HOLD",
+            name="holding_time",
+            is_setting=True,
+        )        
 
         self._append(
             AdjustableFS,
@@ -1545,7 +1551,7 @@ class SmaractSettings(Assembly):
             print(f"Selected stage: {stages[idx]}")
             alias = stages[idx][0]
         stage_settings = setting_table[alias]
-        if np.any([mcs in self.pvname for mcs in ["SARES23-USR", "SARES23-LIC"]]):
+        if np.any([mcs in self.pvname for mcs in ["SARES20-MCS1", "SARES20-MCS2"]]):
             mcs_code = stage_settings["MCS"]
         else:
             mcs_code = stage_settings["MCS2"]

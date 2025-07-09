@@ -45,21 +45,21 @@ class IncouplingCleanBernina(Assembly):
         super().__init__(name=name)
         self._append(
             SmaractRecord,
-            "SARES23-LIC:MOT_16",
+            "SARES20-MCS1:MOT_16",
             name="tilt",
             is_setting=True,
             is_display=True,
         )
         self._append(
             SmaractRecord,
-            "SARES23-LIC:MOT_13",
+            "SARES20-MCS1:MOT_13",
             name="rotation",
             is_setting=True,
             is_display=True,
         )
         self._append(
             SmaractRecord,
-            "SARES23-LIC:MOT_15",
+            "SARES20-MCS1:MOT_15",
             name="transl_vertical",
             is_setting=True,
             is_display=True,

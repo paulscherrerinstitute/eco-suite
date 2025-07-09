@@ -413,108 +413,49 @@ namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_kb",
     def_blade_up={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_2"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_2"],
         "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_1"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_1"],
         "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_9"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_9"],
         "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_4"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
         "kwargs": {},
     },
     module_name="eco.xoptics.slits",
     lazy=True,
 )
-# namespace.append_obj(
-#     "SlitBladesGeneral",
-#     name="slit_kb",
-#     def_blade_up={
-#         "args": [SmaractStreamdevice, "SARES23-LIC2"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_up.json",
-#         },
-#     },
-#     def_blade_down={
-#         "args": [SmaractStreamdevice, "SARES23-LIC1"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_down.json",
-#         },
-#     },
-#     def_blade_left={
-#         "args": [SmaractStreamdevice, "SARES23-LIC3"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_left.json",
-#         },
-#     },
-#     def_blade_right={
-#         "args": [SmaractStreamdevice, "SARES23-LIC4"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_kb_right.json",
-#         },
-#     },
-#     module_name="eco.xoptics.slits",
-#     lazy=True,
-# )
 
 
 namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_cleanup",
     def_blade_up={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_6"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
         "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_5"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_5"],
         "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_8"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_8"],
         "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES23-LIC:MOT_7"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_7"],
         "kwargs": {},
     },
     module_name="eco.xoptics.slits",
     lazy=True,
 )
-# namespace.append_obj(
-#     "SlitBladesGeneral",
-#     name="slit_cleanup",
-#     def_blade_up={
-#         "args": [SmaractStreamdevice, "SARES23-LIC6"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_up.json",
-#         },
-#     },
-#     def_blade_down={
-#         "args": [SmaractStreamdevice, "SARES23-LIC5"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_down.json",
-#         },
-#     },
-#     def_blade_left={
-#         "args": [SmaractStreamdevice, "SARES23-LIC8"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_left.json",
-#         },
-#     },
-#     def_blade_right={
-#         "args": [SmaractStreamdevice, "SARES23-LIC7"],
-#         "kwargs": {
-#             "offset_file": "/sf/bernina/config/eco/reference_values/slit_cleanup_right.json",
-#         },
-#     },
-#     module_name="eco.xoptics.slits",
-#     lazy=True,
-# )
+
 
 namespace.append_obj(
     "GasDetector",
@@ -701,7 +642,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "SolidTargetDetectorBerninaUSD",
-    "SARES23-LIC:MOT_12",
+    "SARES20-MCS1:MOT_12",
     channel_xpos="SARES21-PBPS141:XPOS",
     channel_ypos="SARES21-PBPS141:YPOS",
     channel_intensity="SARES21-PBPS141:INTENSITY",
@@ -756,13 +697,13 @@ namespace.append_obj(
     "ProfKbBernina",
     module_name="eco.xdiagnostics.profile_monitors",
     name="prof_kb",
-    pvname_mirror="SARES23-LIC:MOT_11",
+    pvname_mirror="SARES20-MCS1:MOT_11",
     lazy=True,
 )
 namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
-    pvname_mirror="SARES23-LIC:MOT_11",
+    pvname_mirror="SARES20-MCS1:MOT_11",
     andor_spectrometer="SLAAR11-LSPC-ALCOR1",
     name="tt_kb",
     lazy=True,
@@ -2195,9 +2136,9 @@ from eco.devices_general.motors import ThorlabsPiezoRecord
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)        
-        self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="ry", is_setting=True)
+        self._append(SmaractRecord, "SARES20-MCS1:MOT_13", name="ry", is_setting=True)
         self._append(SmaractRecord, "SARES23-USR:MOT_4", name="rx", is_setting=True)
-        self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="y", is_setting=True)
+        self._append(SmaractRecord, "SARES20-MCS1:MOT_15", name="y", is_setting=True)
         self._append(MotorRecord, "SARES20-MF2:MOT_5",  name="x",is_setting=True)
         self._append(SmaractRecord, "SARES23-USR:MOT_3",  name="eos_focus",is_setting=True)
 
@@ -2572,20 +2513,25 @@ namespace.append_obj(
 
 namespace.append_obj(
     "SmaractController",
-    "SARES23-LIC:MOT_",
+    "SARES20-MCS1:MOT_",
     lazy=True,
-    name="smaract_ust",
+    name="smaract_usd",
     module_name="eco.motion.smaract",
 )
-
 namespace.append_obj(
     "SmaractController",
-    "SARES23-USR:MOT_",
+    "SARES20-MCS2:MOT_",
     lazy=True,
-    name="smaract_user",
+    name="smaract_user1",
     module_name="eco.motion.smaract",
 )
-
+namespace.append_obj(
+    "SmaractController",
+    "SARES20-MCS3:MOT_",
+    lazy=True,
+    name="smaract_user2",
+    module_name="eco.motion.smaract",
+)
 
 from ..devices_general.motors import MotorRecord
 from ..loptics.bernina_laser import DelayTime

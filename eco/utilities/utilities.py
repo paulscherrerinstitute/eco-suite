@@ -1,3 +1,4 @@
+import json
 from time import sleep, time
 import sys, select
 from threading import Thread
@@ -8,6 +9,51 @@ from typing import Any
 import numpy as np
 import matplotlib.pyplot as plt
 from numbers import Number
+
+import inspect
+
+def is_notebook() -> bool:
+    try:
+        shell = get_ipython().__class__.__name__
+        if shell == 'ZMQInteractiveShell':
+            return True   # Jupyter notebook or qtconsole
+        elif shell == 'TerminalInteractiveShell':
+            return False  # Terminal running IPython
+        else:
+            return False  # Other type (?)
+    except NameError:
+        return False      # Probably standard Python interpreter
+
+def foo_has_var_kw(foo):
+    s = inspect.signature(foo)
+    for param in s.parameters.values():
+        if param.kind == inspect._ParameterKind.VAR_KEYWORD:
+            return True
+    return False
+
+def foo_get_kwargs(foo):
+    s = inspect.signature(foo)
+    names = []
+    for param in s.parameters.values():
+        if param.kind == inspect._ParameterKind.POSITIONAL_OR_KEYWORD and not param.default==inspect._empty:
+            names.append(param.name)
+        elif param.kind == inspect._ParameterKind.KEYWORD_ONLY:
+            names.append(param.name)
+    return names
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """Special json encoder for numpy types"""
+
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
+
 
 class TimeoutPath:
     executor = ThreadPoolExecutor(max_workers=1)

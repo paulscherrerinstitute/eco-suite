@@ -1,4 +1,4 @@
-from .scan import Scan
+from .scan import StepScan
 import numpy as np
 from numpy.random import RandomState
 

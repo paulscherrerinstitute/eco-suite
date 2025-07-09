@@ -51,14 +51,14 @@ class Att_usd(Assembly):
         )
         self._append(
             SmaractRecord,
-            "SARES23-LIC:MOT_10",
+            "SARES20-MCS1:MOT_10",
             name="transl_2",
             is_setting=True,
             is_display=True,
         )
         self._append(
             SmaractRecord,
-            "SARES23-LIC:MOT_3",
+            "SARES20-MCS1:MOT_3",
             name="transl_1",
             is_setting=True,
             is_display=True,
@@ -68,7 +68,7 @@ class Att_usd(Assembly):
         )
         self.motor_configuration = {
             "transl_2": {
-                "id": "SARES23-LIC10",
+                "id": "SARES20-MCS110",
                 "pv_descr": "att_usd transl 2",
                 "type": 1,
                 "sensor": 0,
@@ -78,7 +78,7 @@ class Att_usd(Assembly):
                 "ll": -50,
             },
             "transl_1": {
-                "id": "SARES23-LIC12",
+                "id": "SARES20-MCS112",
                 "pv_descr": "att_usd transl 1",
                 "type": 1,
                 "sensor": 0,

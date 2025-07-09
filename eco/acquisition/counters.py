@@ -10,45 +10,73 @@
 #         task.join()
 #     print("... done.")
 
+import json
+from pathlib import Path
+import shutil
+from threading import Thread
+
+
+class CounterChecker:
+    def __init__(self):
+        # self.
+        if self.checker:
+            first_check = time()
+            checker_unhappy = False
+            while not self.checker.check_now():
+                print(
+                    colorama.Fore.RED
+                    + f"Condition checker is not happy, waiting for OK conditions since {time()-first_check:5.1f} seconds."
+                    + colorama.Fore.RESET,
+                    # end="\r",
+                )
+                sleep(self._checker_sleep_time)
+                checker_unhappy = True
+            if checker_unhappy:
+                print(
+                    colorama.Fore.RED
+                    + f"Condition checker was not happy and waiting for {time()-first_check:5.1f} seconds."
+                    + colorama.Fore.RESET
+                )
+            self.checker.clear_and_start_counting()
+
 class CounterStatusInitNamespaceToDAQ:
     def __init__(self, namespace=None, daq=None):
         self.namespace = namespace
         self.daq = daq
+        self.callbacks_start_scan = []
+        self.callbacks_end_scan = []
+        self.callbacks_start_step = []
+        self.callbacks_end_step = []
 
-    def callback_start_scan(self,scan=None, append_status_info=True):
+    def append_start_status_to_scan(self,scan=None, append_status_info=True):
         if not append_status_info:
             return
-        namespace_status = namespace.get_status(base=None)
+        namespace_status = self.namespace.get_status(base=None)
         stat = {"status_run_start": namespace_status}
-        scan.status = stat
+        scan.namespace_status = stat
 
     def callback_start_step(self, scan=None, append_status_info=True):
         pass
     def callback_end_step(self, scan=None, append_status_info=True):
         pass
-    def callback_end_scan(self, scan=None, append_status_info=True):
-        pass
-
-
-    
-
-
-    def _write_namespace_status_to_scan(
-        scan, daq=daq, namespace=namespace, append_status_info=True, end_scan=True, **kwargs
+    def append_status_to_scan_and(self,
+        scan, append_status_info=True, end_scan=True, **kwargs
     ):
         if not append_status_info:
             return
-        if end_scan:
-            namespace_status = namespace.get_status(base=None)
-            scan.status["status_run_end"] = namespace_status
-        if (not end_scan) and not (len(scan.values_done) == 1):
+        
+        if not len(scan.values_done)>0:
             return
+        
+        namespace_status = self.namespace.get_status(base=None)
+        scan.namespace_status["status_run_end"] = namespace_status
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
         else:
-            runno = daq.get_last_run_number()
-        pgroup = daq.pgroup
-        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/stat_run{runno:04d}")
+            runno = self.daq.get_last_run_number()
+        
+        pgroup = self.daq.pgroup
+        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
         try:
             tmpdir.chmod(0o775)
@@ -58,17 +86,17 @@ class CounterStatusInitNamespaceToDAQ:
         statusfile = tmpdir / Path("status.json")
         if not statusfile.exists():
             with open(statusfile, "w") as f:
-                json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+                json.dump(scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
         else:
             with open(statusfile, "r+") as f:
                 f.seek(0)
-                json.dump(scan.status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+                json.dump(scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
                 f.truncate()
                 print("Wrote status with seek truncate!")
         if not statusfile.group() == statusfile.parent.group():
             shutil.chown(statusfile, group=statusfile.parent.group())
 
-        response = daq.append_aux(
+        response = self.daq.append_aux(
             statusfile.resolve().as_posix(),
             pgroup=pgroup,
             run_number=runno,
@@ -79,57 +107,70 @@ class CounterStatusInitNamespaceToDAQ:
         scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
 
 
-def _write_namespace_aliases_to_scan(scan, daq=daq, force=False, **kwargs):
-    if force or (len(scan.values_done) == 1):
-        namespace_aliases = namespace.alias.get_all()
-        if hasattr(scan, "daq_run_number"):
-            runno = scan.daq_run_number
-        else:
-            runno = daq.get_last_run_number()
-        pgroup = daq.pgroup
-        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/aliases_run{runno:04d}")
-        tmpdir.mkdir(exist_ok=True, parents=True)
-        try:
-            tmpdir.chmod(0o775)
-        except:
-            pass
-        aliasfile = tmpdir / Path("aliases.json")
-        if not Path(aliasfile).exists():
-            with open(aliasfile, "w") as f:
-                json.dump(
-                    namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
-                )
-        else:
-            with open(aliasfile, "r+") as f:
-                f.seek(0)
-                json.dump(
-                    namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
-                )
-                f.truncate()
-        if not aliasfile.group() == aliasfile.parent.group():
-            shutil.chown(aliasfile, group=aliasfile.parent.group())
 
-        scan.remaining_tasks.append(
-            Thread(
-                target=daq.append_aux,
-                args=[aliasfile.resolve().as_posix()],
-                kwargs=dict(pgroup=pgroup, run_number=runno),
+class CounterAliasesToDAQ:
+    def __init__(self, namespace=None, daq=None):
+        self.namespace = namespace
+        self.daq = daq
+
+    def callback_start_scan(self, scan=None, append_status_info=True):
+        pass
+
+    def callback_end_step(self, scan=None, append_status_info=True):
+        pass
+
+
+    def callback_start_step(self, scan, force=False, **kwargs):
+        if force or (len(scan.values_done) == 1):
+            namespace_aliases = self.namespace.alias.get_all()
+            if hasattr(scan, "daq_run_number"):
+                runno = scan.daq_run_number
+            else:
+                runno = self.daq.get_last_run_number()
+            pgroup = self.daq.pgroup
+            tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/aliases_run{runno:04d}")
+            tmpdir.mkdir(exist_ok=True, parents=True)
+            try:
+                tmpdir.chmod(0o775)
+            except:
+                pass
+            aliasfile = tmpdir / Path("aliases.json")
+            if not Path(aliasfile).exists():
+                with open(aliasfile, "w") as f:
+                    json.dump(
+                        namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                    )
+            else:
+                with open(aliasfile, "r+") as f:
+                    f.seek(0)
+                    json.dump(
+                        namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                    )
+                    f.truncate()
+            if not aliasfile.group() == aliasfile.parent.group():
+                shutil.chown(aliasfile, group=aliasfile.parent.group())
+
+            scan.remaining_tasks.append(
+                Thread(
+                    target=daq.append_aux,
+                    args=[aliasfile.resolve().as_posix()],
+                    kwargs=dict(pgroup=pgroup, run_number=runno),
+                )
             )
-        )
-        # DEBUG
-        print(
-            f"Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}."
-        )
-        scan.remaining_tasks[-1].start()
-        # response = daq.append_aux(
-        #     aliasfile.resolve().as_posix(),
-        #     pgroup=pgroup,
-        #     run_number=runno,
-        # )
-        print("####### transfer aliases started #######")
-        # print(response.json())
-        # print("################################")
-        scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
+            # DEBUG
+            print(
+                f"Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}."
+            )
+            scan.remaining_tasks[-1].start()
+            # response = daq.append_aux(
+            #     aliasfile.resolve().as_posix(),
+            #     pgroup=pgroup,
+            #     run_number=runno,
+            # )
+            print("####### transfer aliases started #######")
+            # print(response.json())
+            # print("################################")
+            scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
 
 
 def _message_end_scan(scan, **kwargs):
@@ -185,8 +226,11 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
     run_directory = list(
         Path(f"/sf/bernina/data/{daq.pgroup}/raw").glob(f"run{scan.run_number:04d}*")
     )[0].as_posix()
-    with open(scan.scan_info_filename, "r") as f:
-        si = json.load(f)
+    # with open(scan.scan_info_filename, "r") as f:
+    #     si = json.load(f)
+    
+    # Get scan info from scan
+    si = scan.scan_info
 
     # correct some data in there (relative paths for now)
     from os.path import relpath
@@ -203,7 +247,7 @@ def _copy_scan_info_to_raw(scan, daq=daq, **kwargs):
     else:
         runno = daq.get_last_run_number()
     pgroup = daq.pgroup
-    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/tmp/info_run{runno:04d}")
+    tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
     tmpdir.mkdir(exist_ok=True, parents=True)
     try:
         tmpdir.chmod(0o775)
@@ -542,9 +586,7 @@ def _create_metadata_structure_start_scan(
     d = {}
     ## use values from status for run_table
     try:
-        status = scan.status["status_run_start"]
-        d = status["settings"]
-        d.update(status["status"])
+        d = scan.status["status_run_start"]["status"]
     except:
         print("Tranferring values from status to run_table did not work")
     t_start_rt = time.time()

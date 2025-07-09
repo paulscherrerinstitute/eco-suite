@@ -11,7 +11,7 @@ import numpy as np
 class RefLaser_BerninaUSD(Assembly):
     def __init__(
         self,
-        pvname_mirrortranslation="SARES23-LIC:MOT_12",
+        pvname_mirrortranslation="SARES20-MCS1:MOT_12",
         pvname_onoff="SARES21-PS7071:LV_OMPV_1_CH1_SWITCH_SP",
         outpos_adjfs_path=None,
         indiff=0.3,

@@ -1,6 +1,6 @@
 from epics import PV
 from copy import copy
-from time import sleep
+from time import sleep, time
 
 
 class EnumWrapper:
@@ -55,6 +55,35 @@ class MonitorAccumulator:
         self.values = []
         self.accumulate()
         return d
+    
+
+class Monitor:
+    def __init__(self, pvname, start_immediately=True):
+        self.data = {}
+        self.print = False
+        self.pv = PV(pvname)
+        self.cb_index = None
+        if start_immediately:
+            self.start_callback()
+
+    def start_callback(self):
+        self.cb_index = self.pv.add_callback(self.append)
+
+    def stop_callback(self):
+        self.pv.remove_callback(self.cb_index)
+
+    def append(self, pvname=None, value=None, timestamp=None, **kwargs):
+        if not (pvname in self.data):
+            self.data[pvname] = []
+        ts_local = time()
+        self.data[pvname].append(
+            {"value": value, "timestamp": timestamp, "timestamp_local": ts_local}
+        )
+        if self.print:
+            print(
+                f"{pvname}:  {value};  time: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
+            )
+
 
 
 class Positioner:

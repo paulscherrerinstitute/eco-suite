@@ -1,16 +1,23 @@
+import json
+import pickle
 import shutil
+from threading import Thread
 import time
+import traceback
 import requests
 from pathlib import Path
 from time import sleep
 
+from eco.utilities import NumpyEncoder
 from eco.elements.protocols import Adjustable
 from ..epics.detector import DetectorPvDataStream
+from ..epics.utilities_epics import Monitor
 from epics import PV
 from ..acquisition.utilities import Acquisition
 from ..elements.assembly import Assembly
 from ..utilities.path_alias import PathAlias
 import inputimeout
+from IPython import get_ipython
 
 
 class Daq(Assembly):
@@ -31,6 +38,8 @@ class Daq(Assembly):
         config_JFs=None,
         rate_multiplicator=None,
         name=None,
+        namespace=None,
+        elog = None,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -64,12 +73,17 @@ class Daq(Assembly):
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
         self.name = name
+        self.namespace = namespace
         self._default_file_path = None
         if not rate_multiplicator == "auto":
             print(
                 "warning: rate multiplicator automatically determined from event_master!"
             )
-        self.callbacks_start_scan = [self.check_counters]
+        self.callbacks_start_scan = [self.check_counters_for_scan, self.append_start_status_to_scan, self.count_run_number_up_and_attach_to_scan, self.scan_message_to_elog, self.append_scan_monitors]
+        self.callbacks_start_step = [self.copy_aliases_to_scan]
+        self.callbacks_end_step = [self.copy_scan_info_to_raw]
+        self.callbacks_end_scan = [self.append_status_to_scan_and_store, self.copy_scan_info_to_raw, self.end_scan_monitors]
+        self.elog = elog
 
     @property
     def rate_multiplicator(self):
@@ -91,18 +105,40 @@ class Daq(Assembly):
             return self._pgroup.set_target_value().wait()
         self._pgroup = value
 
-    def acquire(self, file_name=None, Npulses=100, acq_pars={}):
-        print(acq_pars)
-        print(file_name, Npulses)
+    
+
+    def acquire(self, scan=None, file_name=None, run_number=None, Npulses=100, acq_pars={}):
+        acq_pars = {}
+        if scan:
+            acq_pars = {
+                "scan_info": {
+                    "scan_name": scan.description,
+                    "scan_values": scan.values_current_step,
+                    "scan_readbacks": scan.readbacks_current_step,
+                    "scan_step_info": {
+                        "step_number": scan.next_step + 1,
+                    },
+                    "name": [adj.name for adj in scan.adjustables],
+                    "expected_total_number_of_steps": scan.number_of_steps,
+                },
+                "run_number": scan.daq_run_number,
+                "user_tag": "usertag",
+            }
+        if run_number is not None:
+            acq_pars["run_number"] = run_number
+
+        
+            
         acquisition = Acquisition(
             acquire=None,
             acquisition_kwargs={"Npulses": Npulses},
         )
 
         def acquire():
-            runno, file_names = self.acquire_pulses(
+            
+            response = self.acquire_pulses(
                 Npulses,
-                directory_relative=Path(file_name).parents[0],
+                # directory_relative=Path(file_name).parents[0],
                 wait=True,
                 channels_JF=self.channels["channels_JF"].get_current_value(),
                 channels_BS=self.channels["channels_BS"].get_current_value(),
@@ -110,7 +146,12 @@ class Daq(Assembly):
                 channels_CA=self.channels["channels_CA"].get_current_value(),
                 **acq_pars,
             )
-            acquisition.acquisition_kwargs.update({"file_names": file_names})
+            acquisition.acquisition_kwargs.update({"file_names": response["files"]})
+            if scan and not scan.daq_run_number==int(response["run_number"]):
+                raise Exception(
+                    f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
+                )            
+
             for key, val in acquisition.acquisition_kwargs.items():
                 acquisition.__dict__[key] = val
 
@@ -165,7 +206,7 @@ class Daq(Assembly):
         *,
         start_id,
         stop_id,
-        directory_relative=None,
+        # directory_relative=None,
         channels_CA=None,
         channels_JF=None,
         channels_BS=None,
@@ -176,18 +217,19 @@ class Daq(Assembly):
         **kwargs,
     ):
         # print("This is the additional input:", kwargs)
+        # Here the receiver code: https://github.com/paulscherrerinstitute/sf_daq_broker/blob/master/sf_daq_broker/broker_manager.py
         if not pgroup:
             pgroup = self.pgroup
         if not pgroup:
             raise Exception("a pgroup needs to be defined")
-        if not directory_relative:
-            directory_relative = ""
-        directory_relative = Path(directory_relative)
-        directory_base = Path(pgroup_base_path.format(pgroup)) / directory_relative
+        # if not directory_relative:
+        #     directory_relative = ""
+        # directory_relative = Path(directory_relative)
+        # directory_base = Path(pgroup_base_path.format(pgroup)) / directory_relative
         files_extensions = []
         parameters = {"start_pulseid": start_id, "stop_pulseid": stop_id}
         parameters.update(kwargs)
-        print(parameters)
+        # print(parameters)
         if channels_CA:
             parameters["pv_list"] = channels_CA
             files_extensions.append("PVCHANNELS")
@@ -203,8 +245,8 @@ class Daq(Assembly):
         if channels_BSCAM:
             parameters["camera_list"] = channels_BSCAM
             files_extensions.append("CAMERAS")
-        if directory_relative:
-            parameters["directory_name"] = directory_relative.as_posix()
+        # if directory_relative:
+        #     parameters["directory_name"] = directory_relative.as_posix()
 
         parameters["pgroup"] = pgroup
         parameters["rate_multiplicator"] = self.rate_multiplicator
@@ -220,9 +262,10 @@ class Daq(Assembly):
         response = validate_response(self._last_server_resp.json() )
 
         runno = response["run_number"]
-
+        message = response["message"]       
+        acquisition_number = response["acquisition_number"]
+        unique_acquisition_number = response["unique_acquisition_number"]
         filenames = response["files"]
-
         # filenames = [
         #     (directory_base / Path(filename_format.format(runno)))
         #     .with_suffix(f".{ext}.h5")
@@ -230,7 +273,7 @@ class Daq(Assembly):
         #     for ext in files_extensions
         # ]
 
-        return runno, filenames
+        return response
 
     def get_next_run_number(self, pgroup=None):
         if pgroup is None:
@@ -240,7 +283,7 @@ class Daq(Assembly):
             json={"pgroup": pgroup},
             timeout=self.timeout,
         )
-        assert res.ok, f"Getting last run number failed {res.raise_for_status()}"
+        assert res.ok, f"Advancing and getting next run number failed {res.raise_for_status()}"
         return int(res.json()["run_number"])
 
     def get_last_run_number(self, pgroup=None):
@@ -313,8 +356,8 @@ class Daq(Assembly):
             json={"pgroup": pgroup, "run_number": run_number, "files": file_names},
         )
 
-    def check_counters(
-        self, channels_to_check=["channels_BSCAM", "channels_JF"], timeout=3
+    def check_counters_for_scan(
+        self, scan, channels_to_check=["channels_BSCAM", "channels_JF"], timeout=3
     ):
         if not set(self.channels.keys()).intersection(set(channels_to_check)):
             return
@@ -334,6 +377,14 @@ class Daq(Assembly):
         else:
             if o == "c":
                 raise Exception("User-requested cancelling!")
+            
+    def count_run_number_up_and_attach_to_scan(self,scan,**kwargs):
+        """
+        Increments the run number by one.
+        """
+        runno = self.get_next_run_number(self.pgroup)
+        print(f"Run number incremented to {runno}")
+        scan.daq_run_number = runno
 
 
 #     def get_dap_settings(detector_name):
@@ -357,6 +408,373 @@ class Daq(Assembly):
 #         print(f"answer from daq for changing dap parameters for detector {detector_name} : {answer}")
 #     except Exception as e:
 #         print(f"Error to set dap configuration {e}")
+
+    def append_start_status_to_scan(self,scan=None, append_status_info=True):
+        if not append_status_info:
+            return
+        namespace_status = self.namespace.get_status(base=None)
+        stat = {"status_run_start": namespace_status}
+        scan.namespace_status = stat
+
+
+    def copy_scan_info_to_raw(self,scan, **kwargs):
+        t_start = time.time()
+
+        if hasattr(scan, "daq_run_number"):
+            runno = scan.daq_run_number
+        else:
+            runno = self.get_last_run_number()
+
+        # get data that should come later from api or similar.
+        run_directory = list(
+            Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(f"run{runno:04d}*")
+        )[0].as_posix()
+                
+        # Get scan info from scan
+        si = scan.scan_info
+
+        # correct some data in there (relative paths for now)
+        from os.path import relpath
+
+        newfiles = []
+        for files in si["scan_files"]:
+            newfiles.append([relpath(file, run_directory) for file in files])
+
+        si["scan_files"] = newfiles
+
+        # save temprary file and send then to raw
+        
+        pgroup = self.pgroup
+        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
+        tmpdir.mkdir(exist_ok=True, parents=True)
+        try:
+            tmpdir.chmod(0o775)
+        except:
+            pass
+        scaninfofile = tmpdir / Path("scan_info_rel.json")
+        if not Path(scaninfofile).exists():
+            with open(scaninfofile, "w") as f:
+                json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+        else:
+            with open(scaninfofile, "r+") as f:
+                f.seek(0)
+                json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+                f.truncate()
+        if not scaninfofile.group() == scaninfofile.parent.group():
+            shutil.chown(scaninfofile, group=scaninfofile.parent.group())
+        # print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
+
+        scan.remaining_tasks.append(
+            Thread(
+                target=self.append_aux,
+                args=[scaninfofile.as_posix()],
+                kwargs=dict(pgroup=pgroup, run_number=runno),
+            )
+        )
+        # DEBUG
+        # print(
+        #     f"Sending scan_info_rel.json in {Path(scaninfofile).parent.stem} to run number {runno}."
+        # )
+        scan.remaining_tasks[-1].start()
+        # response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
+        # print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+        # print(
+        #     f"--> creating and copying file took{time.time()-t_start} s, presently adding to deadtime."
+        # )
+
+
+
+    def append_status_to_scan_and_store(self,
+        scan, append_status_info=True, **kwargs
+    ):
+        if not append_status_info:
+            return
+        
+        if not len(scan.values_done)>0:
+            return
+        
+        namespace_status = self.namespace.get_status(base=None)
+        scan.namespace_status["status_run_end"] = namespace_status
+        if hasattr(scan, "daq_run_number"):
+            runno = scan.daq_run_number
+        else:
+            runno = self.get_last_run_number()
+        
+        pgroup = self.pgroup
+        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
+        tmpdir.mkdir(exist_ok=True, parents=True)
+        try:
+            tmpdir.chmod(0o775)
+        except:
+            pass
+
+        statusfile = tmpdir / Path("status.json")
+        if not statusfile.exists():
+            with open(statusfile, "w") as f:
+                json.dump(scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+        else:
+            with open(statusfile, "r+") as f:
+                f.seek(0)
+                json.dump(scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+                f.truncate()
+                print("Wrote status with seek truncate!")
+        if not statusfile.group() == statusfile.parent.group():
+            shutil.chown(statusfile, group=statusfile.parent.group())
+
+        response = self.append_aux(
+            statusfile.resolve().as_posix(),
+            pgroup=pgroup,
+            run_number=runno,
+        )
+        # print("####### transfer status #######")
+        # print(response.json())
+        # print("###############################")
+        scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
+    
+    def copy_aliases_to_scan(self, scan, force=False, **kwargs):
+        if force or (len(scan.values_done) == 1):
+            namespace_aliases = self.namespace.alias.get_all()
+            if hasattr(scan, "daq_run_number"):
+                runno = scan.daq_run_number
+            else:
+                runno = self.daq.get_last_run_number()
+            pgroup = self.pgroup
+            tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
+            tmpdir.mkdir(exist_ok=True, parents=True)
+            try:
+                tmpdir.chmod(0o775)
+            except:
+                pass
+            aliasfile = tmpdir / Path("aliases.json")
+            if not Path(aliasfile).exists():
+                with open(aliasfile, "w") as f:
+                    json.dump(
+                        namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                    )
+            else:
+                with open(aliasfile, "r+") as f:
+                    f.seek(0)
+                    json.dump(
+                        namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                    )
+                    f.truncate()
+            if not aliasfile.group() == aliasfile.parent.group():
+                shutil.chown(aliasfile, group=aliasfile.parent.group())
+
+            scan.remaining_tasks.append(
+                Thread(
+                    target=self.append_aux,
+                    args=[aliasfile.resolve().as_posix()],
+                    kwargs=dict(pgroup=pgroup, run_number=runno),
+                )
+            )
+            # DEBUG
+            # print(
+            #     f"Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}."
+            # )
+            scan.remaining_tasks[-1].start()
+            # response = daq.append_aux(
+            #     aliasfile.resolve().as_posix(),
+            #     pgroup=pgroup,
+            #     run_number=runno,
+            # )
+            # print("####### transfer aliases started #######")
+            # print(response.json())
+            # print("################################")
+            scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
+    
+    def scan_message_to_elog(self, scan=None):
+        # def _create_metadata_structure_start_scan(
+    # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
+        # ):
+        runno = scan.daq_run_number
+        message_string = f"#### DAQ run {runno}"
+        if scan.description:
+            message_string += f': {scan.description}\n'
+        else:
+            message_string += f'\n'
+        try:
+            scan_command = get_ipython().user_ns["In"][-1]
+            message_string += "`" + scan_command + "`\n"
+        except:
+            print("Count not retrieve ipython scan command!")
+        
+        # message_string += "`" + metadata["scan_info_file"] + "`\n"
+        try:
+            elog_ids = self.elog.post(
+                message_string,
+                Title=f'Run {runno}: {scan.description}',
+                text_encoding="markdown",
+            )
+            scan._elog_id = elog_ids[1]
+    #     metadata.update({"elog_message_id": scan._elog_id})
+    #     metadata.update(
+    #         {"elog_post_link": scan._elog.elogs[1]._log._url + str(scan._elog_id)}
+    #     )
+        except:
+            print("Elog posting failed with:")
+            traceback.print_exc()
+
+    def append_scan_monitors(
+            self,
+            scan,
+            custom_monitors={},
+            **kwargs,
+        ):
+        scan.daq_monitors = {}
+        for adj in scan.adjustables:
+            try:
+                tname = adj.alias.get_full_name()
+            except Exception:
+                tname = adj.name
+                traceback.print_exc()
+            try:
+                scan.daq_monitors[tname] = Monitor(adj.pvname)
+            except Exception:
+                print(f"Could not add CA monitor for {tname}")
+                traceback.print_exc()
+            try:
+                rname = adj.readback.alias.get_full_name()
+            except Exception:
+                print("no readback configured")
+                traceback.print_exc()
+            try:
+                scan.daq_monitors[rname] = Monitor(adj.readback.pvname)
+            except Exception:
+                print(f"Could not add CA readback monitor for {tname}")
+                traceback.print_exc()
+
+        for tname, tobj in custom_monitors.items():
+            try:
+                if type(tobj) is str:
+                    tmonpv = tobj
+                scan.daq_monitors[tname] = Monitor(tmonpv)
+                print(f"Added custom monitor for {tname}")
+            except Exception:
+                print(f"Could not add custom monitor for {tname}")
+                traceback.print_exc()
+        try:
+            tname = self.pulse_id.alias.get_full_name()
+            scan.daq_monitors[tname] = Monitor(self.pulse_id.pvname)
+        except Exception:
+            print(f"Could not add daq.pulse_id monitor")
+            traceback.print_exc()
+
+
+    def end_scan_monitors(self, scan, **kwargs):
+        for tmon in scan.daq_monitors:
+            scan.daq_monitors[tmon].stop_callback()
+
+        monitor_result = {tmon: scan.daq_monitors[tmon].data for tmon in scan.daq_monitors}
+
+        # save temprary file and send then to raw
+        if hasattr(scan, "daq_run_number"):
+            runno = scan.daq_run_number
+        else:
+            runno = self.get_last_run_number()
+        
+        tmpdir = Path(f"/sf/bernina/data/{self.pgroup}/res/run_data/daq/run{runno}/aux")
+        tmpdir.mkdir(exist_ok=True, parents=True)
+        try:
+            tmpdir.chmod(0o775)
+        except:
+            pass
+        scanmonitorfile = tmpdir / Path("scan_monitor.pkl")
+        if not Path(scanmonitorfile).exists():
+            with open(scanmonitorfile, "wb") as f:
+                pickle.dump(monitor_result, f)
+
+        print(f"Copying monitor file to run {runno} to the raw directory of {self.pgroup}.")
+        response = self.append_aux(
+            scanmonitorfile.as_posix(), pgroup=self.pgroup, run_number=runno
+        )
+        print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+
+    # scan.monitors = None
+
+    # def run_table_stuff(self):        
+    #     #for run table
+    #     metadata = {
+    #         "type": "scan",
+    #         "name": scan.description,
+    #         "scan_info_file": scan.scan_info_filename,
+    #     }
+
+    #     for n, adj in enumerate(scan.adjustables):
+    #         nname = None
+    #         nId = None
+    #         if hasattr(adj, "Id"):
+    #             nId = adj.Id
+    #         if hasattr(adj, "name"):
+    #             nname = adj.name
+
+    #         metadata.update(
+    #             {
+    #                 f"scan_motor_{n}": nname,
+    #                 f"from_motor_{n}": scan.values_todo[0][n],
+    #                 f"to_motor_{n}": scan.values_todo[-1][n],
+    #                 f"id_motor_{n}": nId,
+    #             }
+    #         )
+    #     if np.mean(np.diff(scan.pulses_per_step)) < 1:
+    #         pulses_per_step = scan.pulses_per_step[0]
+    #     else:
+    #         pulses_per_step = scan.pulses_per_step
+    #     metadata.update(
+    #         {
+    #             "steps": len(scan.values_todo),
+    #             "pulses_per_step": pulses_per_step,
+    #             "counters": [daq.name for daq in scan.counterCallers],
+    #         }
+    #     )
+
+    # try:
+    #     try:
+    #         metadata.update({"scan_command": get_ipython().user_ns["In"][-1]})
+    #     except:
+    #         print("Count not retrieve ipython scan command!")
+
+    #     message_string = f"#### Run {runno}"
+    #     if metadata["name"]:
+    #         message_string += f': {metadata["name"]}\n'
+    #     else:
+    #         message_string += "\n"
+
+    #     if "scan_command" in metadata.keys():
+    #         message_string += "`" + metadata["scan_command"] + "`\n"
+    #     message_string += "`" + metadata["scan_info_file"] + "`\n"
+    #     elog_ids = elog.post(
+    #         message_string,
+    #         Title=f'Run {runno}: {metadata["name"]}',
+    #         text_encoding="markdown",
+    #     )
+    #     scan._elog_id = elog_ids[1]
+    #     metadata.update({"elog_message_id": scan._elog_id})
+    #     metadata.update(
+    #         {"elog_post_link": scan._elog.elogs[1]._log._url + str(scan._elog_id)}
+    #     )
+    # except:
+    #     print("Elog posting failed with:")
+    #     traceback.print_exc()
+    # if not append_status_info:
+    #     return
+    # d = {}
+    # ## use values from status for run_table
+    # try:
+    #     d = scan.status["status_run_start"]["status"]
+    # except:
+    #     print("Tranferring values from status to run_table did not work")
+    # t_start_rt = time.time()
+    # try:
+    #     run_table.append_run(runno, metadata=metadata, d=d)
+    # except:
+    #     print("WARNING: issue adding data to run table")
+    # print(f"RT appending: {time.time()-t_start_rt:.3f} s")
+
+
+
+
+
 
 
 def validate_response(resp):
