@@ -4,12 +4,15 @@ import shutil
 from threading import Thread
 import time
 import traceback
+import colorama
+import numpy as np
 import requests
 from pathlib import Path
 from time import sleep
 
 from eco.utilities import NumpyEncoder
 from eco.elements.protocols import Adjustable
+from eco.utilities.utilities import foo_get_kwargs
 from ..epics.detector import DetectorPvDataStream
 from ..epics.utilities_epics import Monitor
 from epics import PV
@@ -18,7 +21,7 @@ from ..elements.assembly import Assembly
 from ..utilities.path_alias import PathAlias
 import inputimeout
 from IPython import get_ipython
-
+from os.path import relpath
 
 class Daq(Assembly):
     def __init__(
@@ -39,6 +42,9 @@ class Daq(Assembly):
         rate_multiplicator=None,
         name=None,
         namespace=None,
+        checker=None,
+        run_table=None,
+        pulse_picker=None,
         elog = None,
     ):
         super().__init__(name=name)
@@ -74,15 +80,38 @@ class Daq(Assembly):
         self._detectors_event_code = detectors_event_code
         self.name = name
         self.namespace = namespace
+        self.checker = checker
+        self.run_table=run_table
+        self.pulse_picker = pulse_picker
         self._default_file_path = None
         if not rate_multiplicator == "auto":
             print(
                 "warning: rate multiplicator automatically determined from event_master!"
             )
-        self.callbacks_start_scan = [self.check_counters_for_scan, self.append_start_status_to_scan, self.count_run_number_up_and_attach_to_scan, self.scan_message_to_elog, self.append_scan_monitors]
-        self.callbacks_start_step = [self.copy_aliases_to_scan]
-        self.callbacks_end_step = [self.copy_scan_info_to_raw]
-        self.callbacks_end_scan = [self.append_status_to_scan_and_store, self.copy_scan_info_to_raw, self.end_scan_monitors]
+        self.callbacks_start_scan = [
+            self.check_counters_for_scan, 
+            self.init_namespace,
+            self.append_start_status_to_scan, 
+            self.count_run_number_up_and_attach_to_scan, 
+            self.scan_message_to_elog,
+            self._create_runtable_metadata_append_status_to_runtable, 
+            self.append_scan_monitors]
+        self.callbacks_start_step = [
+            self.copy_aliases_to_scan,
+            self.check_checker_before_step,
+            self.pulse_picker_action_start_step,
+            ]
+        self.callbacks_step_counting = []
+        self.callbacks_end_step = [
+            self.pulse_picker_action_end_step,
+            self.copy_scan_info_to_raw, 
+            self.check_checker_after_step
+            ]
+        self.callbacks_end_scan = [
+            self.append_status_to_scan_and_store, 
+            self.copy_scan_info_to_raw, 
+            self.end_scan_monitors,
+            ]
         self.elog = elog
 
     @property
@@ -112,14 +141,14 @@ class Daq(Assembly):
         if scan:
             acq_pars = {
                 "scan_info": {
-                    "scan_name": scan.description,
+                    "scan_name": scan.description(),
                     "scan_values": scan.values_current_step,
                     "scan_readbacks": scan.readbacks_current_step,
                     "scan_step_info": {
                         "step_number": scan.next_step + 1,
                     },
                     "name": [adj.name for adj in scan.adjustables],
-                    "expected_total_number_of_steps": scan.number_of_steps,
+                    "expected_total_number_of_steps": scan.number_of_steps(),
                 },
                 "run_number": scan.daq_run_number,
                 "user_tag": "usertag",
@@ -165,7 +194,28 @@ class Daq(Assembly):
             stop_id=self.running[ix]["start_id"] + Npulses - 1, acq_ix=ix, wait=wait
         )
 
-    def start(self, label=None, **kwargs):
+    def start(self, label=None, scan=None, **kwargs):
+        if scan:
+            acq_pars = {
+                "scan_info": {
+                    "scan_name": scan.description(),
+                    "scan_values": scan.values_current_step,
+                    "scan_readbacks": scan.readbacks_current_step,
+                    "scan_step_info": {
+                        "step_number": scan.next_step + 1,
+                    },
+                    "name": [adj.name for adj in scan.adjustables],
+                    "expected_total_number_of_steps": scan.number_of_steps(),
+                },
+                "run_number": scan.daq_run_number,
+                "user_tag": "usertag",
+            }
+            kwargs.update(acq_pars)
+        kwargs['channels_JF'] = kwargs.get('channels_JF',self.channels["channels_JF"].get_current_value())
+        kwargs['channels_BS'] = kwargs.get('channels_BS',self.channels["channels_BS"].get_current_value())
+        kwargs['channels_BSCAM'] = kwargs.get('channels_BSCAM',self.channels["channels_BSCAM"].get_current_value())
+        kwargs['channels_CA'] = kwargs.get('channels_CA',self.channels["channels_CA"].get_current_value())
+        
         starttime_local = time.time()
         while self.pulse_id._pv.get_timevars() is None:
             time.sleep(0.02)
@@ -178,6 +228,8 @@ class Daq(Assembly):
         }
         acq_pars.update(kwargs)
         self.running.append(acq_pars)
+        if scan:
+            scan.daq_current_acquisition_index = self.running.index(acq_pars)
         return self.running.index(acq_pars)
 
     def stop(
@@ -187,19 +239,68 @@ class Daq(Assembly):
         label=None,
         wait=True,
         wait_cycle_sleep=0.01,
+        scan=None, 
     ):
         if not stop_id:
             stop_id = int(self.pulse_id.get_current_value())
+        
+        if scan:
+            acq_ix = scan.daq_current_acquisition_index
         if not acq_ix:
             acq_ix = -1
 
         acq_pars = self.running.pop(acq_ix)
         acq_pars["stop_id"] = stop_id
         label = acq_pars.pop("label")
+
+        # if scan:
+        #     tmp = scan.info()
+        #     tmp['daq_pars'] = acq_pars
+        #     scan.info()
         if wait:
             while int(self.pulse_id.get_current_value()) < stop_id:
                 sleep(wait_cycle_sleep)
-        return self.retrieve(**acq_pars)
+
+        response = self.retrieve(**acq_pars)
+        # print(response)
+
+        if scan and not scan.daq_run_number==int(response["run_number"]):
+                raise Exception(
+                    f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
+                )
+        
+        # correct file names to relative paths
+        if scan:
+            run_directory = list(
+                Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(f"run{scan.daq_run_number:04d}*")
+            )[0].as_posix()
+                
+            response['files'] = [relpath(file, run_directory) for file in response['files']]
+        
+        return response
+    
+        # if scan:
+        #     response = self.acquire_pulses(
+        #         Npulses,
+        #         # directory_relative=Path(file_name).parents[0],
+        #         wait=True,
+        #         channels_JF=self.channels["channels_JF"].get_current_value(),
+        #         channels_BS=self.channels["channels_BS"].get_current_value(),
+        #         channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
+        #         channels_CA=self.channels["channels_CA"].get_current_value(),
+        #         **acq_pars,
+        #     )
+        #     acquisition.acquisition_kwargs.update({"file_names": response["files"]})
+        #     if scan and not scan.daq_run_number==int(response["run_number"]):
+        #         raise Exception(
+        #             f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
+        #         )            
+
+        #     for key, val in acquisition.acquisition_kwargs.items():
+        #         acquisition.__dict__[key] = val
+
+
+
 
     def retrieve(
         self,
@@ -356,8 +457,37 @@ class Daq(Assembly):
             json={"pgroup": pgroup, "run_number": run_number, "files": file_names},
         )
 
+    
+    def pulse_picker_action_start_step(
+            self,
+            scan,
+            do_pulse_picker_action=True,
+            **kwargs,
+            ):
+                                       
+        if not self.pulse_picker:
+            return
+        if not do_pulse_picker_action:
+            return
+        
+        self.pulse_picker.open(verbose=False)
+    
+    def pulse_picker_action_end_step(
+            self,
+            scan,
+            do_pulse_picker_action=True,
+            **kwargs,
+            ):
+        if not self.pulse_picker:
+            return
+        if not do_pulse_picker_action:
+            return
+        
+        self.pulse_picker.close(verbose=False)
+    
+    
     def check_counters_for_scan(
-        self, scan, channels_to_check=["channels_BSCAM", "channels_JF"], timeout=3
+        self, scan, channels_to_check=["channels_BSCAM", "channels_JF"], channels_check_timeout=3, **kwargs
     ):
         if not set(self.channels.keys()).intersection(set(channels_to_check)):
             return
@@ -367,8 +497,8 @@ class Daq(Assembly):
                 print(f"{nam}  :  {chs.get_current_value()}")
         try:
             o = inputimeout.inputimeout(
-                prompt=f"Press Ctrl-c to abort, Return to continue, or wait {timeout} seconds",
-                timeout=timeout,
+                prompt=f"Press Ctrl-c to abort, Return to continue, or wait {channels_check_timeout} seconds",
+                timeout=channels_check_timeout,
             )
         except inputimeout.TimeoutOccurred:
             print("... timed out, continuing with selection.")
@@ -409,12 +539,63 @@ class Daq(Assembly):
 #     except Exception as e:
 #         print(f"Error to set dap configuration {e}")
 
+    def init_namespace(self,scan=None, init_required_namespace_components_only=True, append_status_info=True):
+        if append_status_info:
+            self.namespace.init_all(silent=False, required_only=init_required_namespace_components_only)
+
     def append_start_status_to_scan(self,scan=None, append_status_info=True):
         if not append_status_info:
             return
         namespace_status = self.namespace.get_status(base=None)
         stat = {"status_run_start": namespace_status}
         scan.namespace_status = stat
+
+    def _create_runtable_metadata_append_status_to_runtable(
+            self,
+            scan,
+            append_status_info=True):
+
+        print("run_table appending run")
+        runno = scan.daq_run_number
+        metadata = {
+            "type": "scan",
+            "name": scan.description.get_current_value(),
+            "scan_info_file": '',
+        }
+        for n, adj in enumerate(scan.adjustables):
+            nname = None
+            adj_pvname = None
+            if hasattr(adj, "Id"):
+                adj_pvname = adj.Id
+            if hasattr(adj, "name"):
+                nname = adj.name
+
+            metadata.update(
+                {
+                    f"scan_dim_{n}": nname,
+                    f"from_dim_{n}": scan.values_todo.get_current_value()[0][n],
+                    f"to_dim_{n}": scan.values_todo.get_current_value()[-1][n],
+                    f"pvname_dim_{n}": adj_pvname,
+                }
+            )
+        if np.mean(np.diff(scan.pulses_per_step)) < 1:
+            pulses_per_step = scan.pulses_per_step[0]
+        else:
+            pulses_per_step = scan.pulses_per_step
+        metadata.update(
+            {
+                "steps": len(scan.values_todo.get_current_value()),
+                "pulses_per_step": pulses_per_step,
+                "counters": scan.counters_names.get_current_value(),
+                "scan_command": scan.scan_command.get_current_value(),
+            }
+        )
+        t_start_rt = time.time()
+        try:
+            self.run_table.append_run(runno, metadata=metadata, d=scan.namespace_status["status_run_start"]["status"])
+        except:
+            print("WARNING: issue adding data to run table")
+        print(f"Runtable appending took: {time.time()-t_start_rt:.3f} s")
 
 
     def copy_scan_info_to_raw(self,scan, **kwargs):
@@ -426,22 +607,12 @@ class Daq(Assembly):
             runno = self.get_last_run_number()
 
         # get data that should come later from api or similar.
-        run_directory = list(
-            Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(f"run{runno:04d}*")
-        )[0].as_posix()
+        # run_directory = list(
+        #     Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(f"run{runno:04d}*")
+        # )[0].as_posix()
                 
         # Get scan info from scan
         si = scan.scan_info
-
-        # correct some data in there (relative paths for now)
-        from os.path import relpath
-
-        newfiles = []
-        for files in si["scan_files"]:
-            newfiles.append([relpath(file, run_directory) for file in files])
-
-        si["scan_files"] = newfiles
-
         # save temprary file and send then to raw
         
         pgroup = self.pgroup
@@ -483,14 +654,13 @@ class Daq(Assembly):
         # )
 
 
-
     def append_status_to_scan_and_store(self,
         scan, append_status_info=True, **kwargs
     ):
         if not append_status_info:
             return
         
-        if not len(scan.values_done)>0:
+        if not len(scan.values_done())>0:
             return
         
         namespace_status = self.namespace.get_status(base=None)
@@ -530,9 +700,40 @@ class Daq(Assembly):
         # print(response.json())
         # print("###############################")
         scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
+
+   
+    def check_checker_before_step(self,scan, **kwargs):
+        # self.
+        if self.checker:
+            first_check = time.time()
+            checker_unhappy = False
+            print('')
+            while not self.checker.check_now():
+                print(
+                    colorama.Fore.RED
+                    + f"Condition checker is not happy, waiting for OK conditions since {time.time()-first_check:5.1f} seconds."
+                    + colorama.Fore.RESET,
+                    # end="\r",
+                )
+                sleep(1)
+                
+                checker_unhappy = True
+            if checker_unhappy:
+                print(
+                    colorama.Fore.RED
+                    + f"Condition checker was not happy and waiting for {time.time()-first_check:5.1f} seconds."
+                    + colorama.Fore.RESET
+                )
+            self.checker.clear_and_start_counting()
+            
+    def check_checker_after_step(self,scan, **kwargs):
+        if self.checker:
+            if not self.checker.stop_and_analyze():
+                scan._current_step_ok = False
+
     
-    def copy_aliases_to_scan(self, scan, force=False, **kwargs):
-        if force or (len(scan.values_done) == 1):
+    def copy_aliases_to_scan(self, scan, send_aliases_now=False, **kwargs):
+        if send_aliases_now or (len(scan.values_done()) == 1):
             namespace_aliases = self.namespace.alias.get_all()
             if hasattr(scan, "daq_run_number"):
                 runno = scan.daq_run_number
@@ -583,30 +784,28 @@ class Daq(Assembly):
             # print("################################")
             scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
     
-    def scan_message_to_elog(self, scan=None):
+    def scan_message_to_elog(self, scan=None, **kwargs):
         # def _create_metadata_structure_start_scan(
     # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
         # ):
         runno = scan.daq_run_number
         message_string = f"#### DAQ run {runno}"
-        if scan.description:
-            message_string += f': {scan.description}\n'
+        if scan.description():
+            message_string += f': {scan.description()}\n'
         else:
             message_string += f'\n'
         try:
-            scan_command = get_ipython().user_ns["In"][-1]
-            message_string += "`" + scan_command + "`\n"
-        except:
-            print("Count not retrieve ipython scan command!")
+            elog_ids = scan.status_to_elog(message_string,auto_title=False)
+            scan._elog_id = elog_ids[1]
         
         # message_string += "`" + metadata["scan_info_file"] + "`\n"
-        try:
-            elog_ids = self.elog.post(
-                message_string,
-                Title=f'Run {runno}: {scan.description}',
-                text_encoding="markdown",
-            )
-            scan._elog_id = elog_ids[1]
+        # try:
+        #     elog_ids = self.elog.post(
+        #         message_string,
+        #         Title=f'Run {runno}: {scan.description()}',
+        #         text_encoding="markdown",
+        #     )
+            
     #     metadata.update({"elog_message_id": scan._elog_id})
     #     metadata.update(
     #         {"elog_post_link": scan._elog.elogs[1]._log._url + str(scan._elog_id)}
@@ -632,12 +831,12 @@ class Daq(Assembly):
                 scan.daq_monitors[tname] = Monitor(adj.pvname)
             except Exception:
                 print(f"Could not add CA monitor for {tname}")
-                traceback.print_exc()
+                # traceback.print_exc()
             try:
                 rname = adj.readback.alias.get_full_name()
             except Exception:
                 print("no readback configured")
-                traceback.print_exc()
+                # traceback.print_exc()
             try:
                 scan.daq_monitors[rname] = Monitor(adj.readback.pvname)
             except Exception:
@@ -689,6 +888,37 @@ class Daq(Assembly):
             scanmonitorfile.as_posix(), pgroup=self.pgroup, run_number=runno
         )
         print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
+
+
+    def get_callback_keywords(self):
+        kws_all = set([])
+        for cb in self.callbacks_start_scan:
+            kws = foo_get_kwargs(cb)
+            
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_start_step:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_step_counting:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_end_step:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_end_scan:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        return kws_all
 
     # scan.monitors = None
 

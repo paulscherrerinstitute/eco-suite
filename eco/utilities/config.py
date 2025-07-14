@@ -1,6 +1,7 @@
 import json
 import importlib
 from pathlib import Path
+from eco.elements.adjustable import AdjustableFS, AdjustableMemory
 from eco.elements.protocols import InitialisationWaitable
 import sys
 from time import sleep, time
@@ -21,6 +22,7 @@ from threading import Thread
 from tqdm import tqdm
 from rich import progress
 from inspect import signature
+from simple_term_menu import TerminalMenu
 
 import traceback
 
@@ -322,7 +324,7 @@ class IsInitialisingError(Exception):
 
 
 class Namespace(Assembly):
-    def __init__(self, name=None, root_module=None, alias_namespace=None):
+    def __init__(self, name=None, root_module=None, alias_namespace=None, required_names=[], required_names_directory=None):
         super().__init__(name)
         # self.name = name
         self.lazy_items = {}
@@ -338,6 +340,11 @@ class Namespace(Assembly):
         self._initializing = []
         self.root_module = root_module
         self.alias_namespace = alias_namespace
+        if required_names_directory:
+            self._append(AdjustableFS,required_names_directory,name='required_names', is_setting=True, is_display=True)
+        else:
+            self._append(AdjustableMemory,[], name='required_names', is_setting=True, is_display=True)
+        
     
     @property
     def initialisation_times_sorted(self):
@@ -383,6 +390,18 @@ class Namespace(Assembly):
             except ValueError:
                 pass
 
+    def select_required_names(self):
+        terminal_menu = TerminalMenu(
+            self.all_names,
+            multi_select=True,
+            show_multi_select_hint=True,
+            preselected_entries=list(self.required_names()),
+            title="Select required names for namespace %s" % self.name,
+        )
+        selected_indices = terminal_menu.show()
+        selected_names = terminal_menu.chosen_menu_entries
+        if selected_names:
+            self.required_names(list(selected_names))
 
 
 
@@ -425,6 +444,7 @@ class Namespace(Assembly):
 
     def init_all(
         self,
+        required_only=True,
         verbose=False,
         raise_errors=False,
         print_summary=True,
@@ -441,6 +461,20 @@ class Namespace(Assembly):
             print(
                 f"WARNING - previously hard failed items are NOT initialized:\n{self.failed_names} "
             )
+        if required_only:
+            if not self.required_names():
+                print(
+                    f"WARNING - No required names defined in namespace {self.name}, initializing all items!"
+                )
+            else:
+                names_to_init = (
+                    self.all_names - self.initialized_names - set(exclude_names)
+                ) & set(self.required_names())
+        else:
+            names_to_init = self.all_names - self.initialized_names - set(exclude_names)
+        
+        
+        
         if silent:
             self.silently_initializing = True
             print(
@@ -453,7 +487,7 @@ class Namespace(Assembly):
                     self.exc_init.submit(
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
-                    for name in (self.all_names - set(exclude_names))
+                    for name in names_to_init
                 ]
                 self.exc_init.shutdown(wait=True)
                 self.exc_init = ThreadPoolExecutor(max_workers=1)
@@ -462,22 +496,22 @@ class Namespace(Assembly):
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
                     for name in (
-                        self.all_names - self.initialized_names - set(exclude_names)
+                        names_to_init
                     )
                 ]
                 self.exc_init.shutdown(wait=True)
                 self.silently_initializing = False
                 if giveup_failed:
-                    failed_names = self.lazy_names
+                    failed_names = names_to_init.intersection(self.lazy_names)
                     for k in failed_names:
                         self.failed_items[k] = self.lazy_items.pop(k)
                 if print_summary:
                     print(
-                        f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
+                        f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
                     )
                     print(
                         "Failed objects: "
-                        + ", ".join(self.lazy_names.union(self.failed_names))
+                        + ", ".join(self.failed_names & names_to_init)
                     )
                     print(f"Initialisation took {time()-starttime} seconds")
 
@@ -492,13 +526,11 @@ class Namespace(Assembly):
                             lambda name: self.init_name(
                                 name, verbose=verbose, raise_errors=raise_errors
                             ),
-                            self.all_names
-                            - self.initialized_names
-                            - set(exclude_names),
+                            names_to_init,
                         ),
                         description="Initializing ...",
                         total=len(
-                            self.all_names - self.initialized_names - set(exclude_names)
+                            names_to_init
                         ),
                         transient=True,
                     )
@@ -512,13 +544,11 @@ class Namespace(Assembly):
                             lambda name: self.init_name(
                                 name, verbose=verbose, raise_errors=raise_errors
                             ),
-                            self.all_names
-                            - self.initialized_names
-                            - set(exclude_names),
+                            names_to_init,
                         ),
                         description="Initializing ...",
                         total=len(
-                            self.all_names - self.initialized_names - set(exclude_names)
+                            names_to_init
                         ),
                         transient=True,
                     )
@@ -526,18 +556,18 @@ class Namespace(Assembly):
                 # )
                 #     # )
             if giveup_failed:
-                failed_names = self.lazy_names
-                for k in failed_names:
-                    self.failed_items[k] = self.lazy_items.pop(k)
+                    failed_names = names_to_init.intersection(self.lazy_names)
+                    for k in failed_names:
+                        self.failed_items[k] = self.lazy_items.pop(k)
             if print_summary:
-                print(
-                    f"Initialized {len(self.initialized_names)} of {len(self.all_names)}."
-                )
-                print(
-                    "Failed objects: "
-                    + ", ".join(self.lazy_names.union(self.failed_names))
-                )
-                print(f"Initialisation took {time()-starttime} seconds")
+                    print(
+                        f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
+                    )
+                    print(
+                        "Failed objects: "
+                        + ", ".join(self.failed_names & names_to_init)
+                    )
+                    print(f"Initialisation took {time()-starttime} seconds")
 
             if (not silent) and print_times:
                 try:

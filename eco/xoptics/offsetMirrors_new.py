@@ -67,7 +67,7 @@ class OffsetMirrorsBernina(Assembly):
         self._append(
             AdjustableVirtual,
             [self.mirr1.rz, self.mirr2.rz],
-            lambda b1, b2: float(np.diff([b1, b2])),
+            lambda b1, b2: np.diff([b1, b2])[0],
             lambda mn: self._set_diff_2adj(mn, self.mirr1.rz, self.mirr2.rz),
             name="rz_diff",
             unit="mrad",

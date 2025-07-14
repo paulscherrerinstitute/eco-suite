@@ -107,15 +107,17 @@ class XrayPulsePicker(Assembly):
         else:
             return "unknown"
         
-    def open(self):
+    def open(self,verbose=True):
         self.evr_output_enable.set_target_value(1).wait()
         #self._evrsrc.put(62)
-        print("Opened Pulse Picker")
+        if verbose:
+            print("Opened Pulse Picker")
 
-    def close(self):
+    def close(self,verbose=True):
         self.evr_output_enable.set_target_value(0).wait()
         #self._evrsrc.put(62)
-        print("Closed Pulse Picker")
+        if verbose:
+            print("Closed Pulse Picker")
 
     def set_target_value(self,value,hold=False):
         if value:

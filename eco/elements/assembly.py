@@ -39,6 +39,17 @@ class Collection:
 
     def get_list(self):
         return self._list
+    
+    # esired new way, in order to old containers and allow them to be replaced "on top" of a structure. 
+    # causes other issues  from recoursion, bigger issue...
+    #  def get_list(self):
+    #     ls = []
+    #     for item in self._list:
+    #         if hasattr(item, f"{self.name}") and isinstance(item.__dict__[self.name],Collection):
+    #             ls.append(item.__dict__[self.name].get_list())
+    #         else:
+    #             ls.append(ls)
+    #     return ls
 
     def append(self, obj, recursive=True, force=False):
         if force:
@@ -67,6 +78,13 @@ class Collection:
 
     def pop_item(self, item):
         return self.pop(self.index(item))
+    
+    def pop_obj_children(self, obj):
+        o = []
+        for it in obj.__dict__[self.name].get_list():
+            if (it in self._list):
+                o.append(self.pop_item(it))
+        return o
 
     def __call__(self):
         return self.get_list()
@@ -118,9 +136,28 @@ class Assembly:
         is_alias=True,
         view_toplevel_only=True,
         call_obj=True,
-        append_property_with_name=False,
+        # append_property_with_name=False,
+        overwrite=False,
         **kwargs,
     ):
+        if overwrite:
+            
+            if name in self.__dict__:
+                old = self.__dict__[name]
+                for collection in [
+                    self.settings_collection,
+                    self.status_collection,
+                ]:
+                    if isinstance(old,Assembly):
+                        collection.pop_obj_children(old)
+                    else:
+                        if old in collection.get_list():
+                            collection.pop_item(old)
+                self.display_collection.pop_item(old)
+                self.alias.pop_object(old.alias)
+                # del self.__dict__[name]
+            
+        
         if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
             # adj_copy = copy.copy(foo_obj_init)
             adj_copy = foo_obj_init
@@ -138,23 +175,23 @@ class Assembly:
         # except:
         #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
         #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
-        if append_property_with_name:
-            if isinstance(self.__dict__[name], Adjustable):
-                self.__class__.__dict__[append_property_with_name] = property(
-                    self.__dict__[name].get_current_value,
-                    lambda val: self.__dict__[name].set_target_value(val).wait(),
-                )
-            elif isinstance(self.__dict__[name], Detector):
-                self.__class__.__dict__[append_property_with_name] = property(
-                    self.__dict__[name].get_current_value,
-                )
+        # if append_property_with_name:
+        #     if isinstance(self.__dict__[name], Adjustable):
+        #         self.__class__.__dict__[append_property_with_name] = property(
+        #             self.__dict__[name].get_current_value,
+        #             lambda val: self.__dict__[name].set_target_value(val).wait(),
+        #         )
+        #     elif isinstance(self.__dict__[name], Detector):
+        #         self.__class__.__dict__[append_property_with_name] = property(
+        #             self.__dict__[name].get_current_value,
+        #         )
 
-        if is_setting == "auto":
-            is_setting = isinstance(self.__dict__[name], Adjustable)
+        # if is_setting == "auto":
+        #     is_setting = isinstance(self.__dict__[name], Adjustable)
         if is_setting:
             self.settings_collection.append(self.__dict__[name], recursive=True)
-        if is_status == "auto":
-            is_status = isinstance(self.__dict__[name], Detector)
+        # if is_status == "auto":
+        #     is_status = isinstance(self.__dict__[name], Detector)
         if is_status:
             self.status_collection.append(self.__dict__[name], recursive=True)
         if is_display:
@@ -358,7 +395,7 @@ class Assembly:
         return s
 
     def get_display_str(
-        self, tablefmt="simple", maxcolwidths=[None, 50, None, None, None]
+        self, tablefmt="simple", with_base_name=False, maxcolwidths=[None, 50, None, None, None]
     ):
         main_name = self.name
         stats = self.display_collection()
@@ -366,7 +403,7 @@ class Assembly:
         tab = []
         for to in stats:
             name = to.alias.get_full_name(base=self)
-
+            
             is_adjustable = isinstance(to, Adjustable)
             is_detector = isinstance(to, Detector)
             typechar = ""
@@ -396,9 +433,14 @@ class Assembly:
 
             if value is None:
                 value = ""
-            tab.append(
-                [".".join([main_name, name]), value, unit, typechar, description]
-            )
+            if with_base_name:
+                tab.append(
+                    [".".join([main_name, name]), value, unit, typechar, description]
+                )
+            else:
+                tab.append(
+                    [ name, value, unit, typechar, description]
+                )
         if tab:
             s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
         else:
@@ -437,7 +479,7 @@ class Assembly:
                 json.dump(stat, f, indent=4, cls=NumpyEncoder)
             files.append(filepath)
 
-        elog.post(
+        return elog.post(
             message,
             *files,
             text_encoding="html",
@@ -445,7 +487,7 @@ class Assembly:
         # tags=[],
 
     def __repr__(self):
-        label = self.alias.get_full_name() + " status\n"
+        label = self.alias.get_full_name() + " display\n"
         return label + self.get_display_str()
 
     # def _wait_for_initialisation(self, timeout=2):

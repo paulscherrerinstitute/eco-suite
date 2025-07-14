@@ -21,7 +21,7 @@ class RuntableGsheet:
 
     def require_worksheets(self):
         tls = [tmp.title for tmp in self._spreadsheet.worksheets()]
-        for title in [self._wstitle_available_keys, self._wstitle_run_table]:
+        for title in [self._wstitle_run_table,self._wstitle_available_keys]:
             if not title in tls:
                 self._spreadsheet.add_worksheet(title,1,1)        
     
@@ -37,11 +37,15 @@ class RuntableGsheet:
         ncolstot = 0
         for i,k in enumerate(keys):
             ti = np.unravel_index(i, shape, order='C')
+            if self._remove_leading:
+                tk = k.split(self._remove_leading)[1]
+            else:
+                tk = k
             cells.append(
                 gspread.Cell(
                     ti[1]+rng['startRowIndex']+1,
                     ti[0]+rng['startColumnIndex']+1,
-                    k.split(self._remove_leading)[1]))
+                    tk))
             nrowstot = int(max(nrowstot,ti[1]+rng['startRowIndex']+1))
             ncolstot = int(max(ncolstot,ti[0]+rng['startColumnIndex']+1))
         
@@ -61,9 +65,13 @@ class RuntableGsheet:
         set_cells= []
         nrowstot = 0
         ncolstot = 0
-        test_keys = [tk.split(self._remove_leading)[1] for tk in table.keys()]
+        # test_keys = [tk.split(self._remove_leading)[1] for tk in table.keys()]
+        test_keys = [tk for tk in table.keys()]
+        
         for cell in cell_list:
             tstr = cell.value
+            if not tstr:
+                continue
             if not isinstance(tstr,str):
                 continue
             tstr = tstr.split(self._name_delimiter)[0].strip()
@@ -71,6 +79,8 @@ class RuntableGsheet:
             if tstr in test_keys:
                 set_vals = table[tstr]
                 for n,set_val in enumerate(set_vals):
+                    if np.isnan(set_val):
+                        set_val='nan'
                     set_cells.append(gspread.Cell(cell.row + n + 1, cell.col, set_val))
                     nrowstot = int(max(nrowstot,cell.row + n + 1))
                     ncolstot = int(max(ncolstot,cell.col))

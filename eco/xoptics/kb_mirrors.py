@@ -48,7 +48,7 @@ class KbVer(Assembly):
         self._append(
             AdjustableVirtual,
             [self.bend1, self.bend2],
-            lambda b1, b2: float(np.diff([b1, b2])),
+            lambda b1, b2: np.diff([b1, b2])[0],
             lambda mn: self._get_benders_set_diff(mn),
             name="bender_diff",
             unit="mm",

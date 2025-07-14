@@ -1573,6 +1573,8 @@ class SmaractRecord(Assembly):
         alias_fields={},
         backlash_definition=False,
         expect_bad_limits=True,
+        preferred_home_direction='forward',
+        **kwargs,
     ):
         super().__init__(name=name)
         # self.settings.append(self)
@@ -1580,6 +1582,7 @@ class SmaractRecord(Assembly):
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
+        self._append(AdjustableMemory,preferred_home_direction, name=preferred_home_direction) 
         self._elog = elog
         for an, af in alias_fields.items():
             self.alias.append(
@@ -1709,7 +1712,10 @@ class SmaractRecord(Assembly):
             self.set_limits(-abs_set_value, abs_set_value)
 
     def home(self):
-        self.home_forward(1)
+        if self.preferred_home_direction.get_current_value() == "forward" or self.preferred_home_direction.get_current_value() is None or self.preferred_home_direction.get_current_value():
+            self.home_forward(1)
+        elif self.preferred_home_direction.get_current_value() == "reverse" or self.preferred_home_direction.get_current_value() is False:
+            self.home_reverse(1)
         time.sleep(0.1)
         while not self.flags.is_homed.get_current_value():
             time.sleep(0.1)

@@ -1,4 +1,5 @@
-from eco.elements.adjustable import AdjustableMemory, default_representation
+from copy import deepcopy
+from eco.elements.adjustable import AdjustableMemory, default_representation, spec_convenience
 from eco.elements.assembly import Assembly
 from eco.aliases import Alias
 import time
@@ -91,3 +92,25 @@ class DetectorGet:
         if self._cache_get_seconds:
             self._get_cache = (ts, value)
         return value
+
+@call_convenience
+@value_property
+class DetectorMemory:
+    def __init__(self, value=0, name="detector_memory", return_deep_copy=True):
+        self.name = name
+        self.alias = Alias(name)
+        self.current_value = value
+        self._return_deep_copy = return_deep_copy
+
+    def get_current_value(self):
+        if self._return_deep_copy:
+            return deepcopy(self.current_value)
+        else:
+            return self.current_value
+
+    
+    def __repr__(self):
+        name = self.name
+        cv = self.get_current_value()
+        s = f"{name} at value: {cv}" + "\n"
+        return s

@@ -15,6 +15,7 @@ from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
 
 
+from eco.elements import memory
 from eco.utilities.keypress import KeyPress
 
 # from .assembly import Assembly
@@ -422,13 +423,19 @@ def _keywordChecker(kw_key_list_tups):
 @tweak_option
 @value_property
 class AdjustableMemory:
-    def __init__(self, value=0, name="adjustable_memory"):
+    def __init__(self, value=0, name="adjustable_memory", return_deep_copy=True):
         self.name = name
         self.alias = Alias(name)
         self.current_value = value
+        self._return_deep_copy = return_deep_copy
+        if memory.global_memory_dir:
+            self.memory = memory.Memory(self)
 
     def get_current_value(self):
-        return deepcopy(self.current_value)
+        if self._return_deep_copy:
+            return deepcopy(self.current_value)
+        else:
+            return self.current_value
 
     def set_target_value(self, value, hold=False):
         def changer(value):
@@ -485,6 +492,8 @@ class AdjustableFS:
             self._write_value(default_value)
         self.alias = Alias(name)
         self.max_read_period = max_read_period
+        # if memory.global_memory_dir:
+        #     self.memory = memory.Memory(self)
         self.name = name
 
     def get_current_value(self):

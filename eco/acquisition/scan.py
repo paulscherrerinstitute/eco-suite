@@ -1,3 +1,5 @@
+from datetime import datetime
+from itertools import product
 from numbers import Number
 import os
 import json
@@ -7,8 +9,10 @@ import traceback
 from pathlib import Path
 import colorama
 
+from eco.elements.detector import DetectorGet, DetectorMemory
+from eco.elements.protocols import Adjustable
 from eco.utilities.utilities import NumpyEncoder, foo_get_kwargs
-from ..elements.adjustable import DummyAdjustable
+from ..elements.adjustable import AdjustableMemory, DummyAdjustable
 from IPython import get_ipython
 from .daq_client import Daq
 from eco.elements.assembly import Assembly
@@ -32,7 +36,7 @@ class RunList(Assembly):
     def get_run_list(self): ...
 
 
-class StepScan:
+class StepScan(Assembly):
     def __init__(
         self,
         adjustables,
@@ -41,82 +45,111 @@ class StepScan:
         description='',
         Npulses=100,
         basepath="",
-        # scan_in1fo_dir="",
         settling_time=0,
-        # checker=None,
-        # scan_directories=False,
         callbacks_start_scan=[],
         callbacks_start_step=[],
+        callbacks_step_counting=[],
         callbacks_end_step=[],
         callbacks_end_scan=[],
-        # checker_sleep_time=2,
-        return_at_end="question",
-        # run_number=None,
+        return_at_end="timeout",
+        gridspecs = None,
         elog=None,
+        name='current_scan',
         **kwargs_callbacks,
     ):
         # if np.any([char in fina for char in inval_chars]):
         #     raise ScanNameError
-        self.number_of_steps = len(values)
+        super().__init__(name=name)
+        self._append(DetectorMemory, datetime.now().strftime('%Y-%M-%d %H:%M:%S'), name='start_time')
+        self._description = description
+        self._append(DetectorGet, lambda : self._description, name='description')
+        self.adjustables = adjustables
+        self._append(DetectorGet, lambda : self._get_names(self.adjustables), name='adjustables_names')
+        self.counters = counters
+        self._append(DetectorGet, lambda : self._get_names(self.counters), name='counters_names')
+
+        self._append(DetectorMemory, len(values), name='number_of_steps')
+        try:
+            scan_command = get_ipython().user_ns["In"][-1]
+        except:
+            scan_command = "unknown"
+        self._append(DetectorMemory, scan_command, name='scan_command')
+
         if not isinstance(Npulses, Number):
             if not len(Npulses) == len(values):
                 raise ValueError("steps for Number of pulses and values must match!")
             self.pulses_per_step = Npulses
         else:
             self.pulses_per_step = [Npulses] * len(values)
-        self.adjustables = adjustables
-        self.values_todo = values
-        self.values_done = []
+        
+        self._values_todo = values
+        self._append(DetectorGet, lambda : self._values_todo, name='values_todo', is_display=False)
+        self._values_done = []
+        self._append(DetectorGet, lambda : self._values_done, name='values_done', is_display=False)
+        self._append(DetectorMemory, gridspecs, name='grid_specs', is_display=False)
+        
         self.pulses_done = []
+        
         self.readbacks = []
-        self.counters = counters
-        self.settling_time = settling_time
+        
+        self._settling_time = settling_time
+        self._append(DetectorGet, lambda : self._settling_time, name='settling_time', is_display=False)
         self.next_step = 0
-        self.description = description
-        # self.scan_info_dir = scan_info_dir
-
-        anames = []
-        for ta in adjustables:
-            try:
-                anames.append(ta.alias.get_full_name())
-            except:
-                anames.append(ta.name)
-
+        
+        
+        
         self.scan_info = {
             "scan_parameters": {
-                "name": anames,
+                "name": self.adjustables_names.get_current_value(),
+                "grid_specs": self.grid_specs.get_current_value(),
                 
                 # "Id": [ta.Id if hasattr(ta, "Id") else "noId" for ta in adjustables],
             },
-            "scan_description": self.description,
+            "scan_description": self._description,
             "scan_values_all": values,
             "scan_values": [],
             "scan_readbacks": [],
             "scan_files": [],
             "scan_step_info": [],
         }
-        # self.scan_info_filename = os.path.join(self.scan_info_dir, fina)
-        # self._scan_directories = scan_directories
-        # self.checker = checker
-        self.initial_values = []
+
+        self._append(DetectorGet, lambda : self.scan_info, name='info', is_display=False)
+
+
+        
+        initial_values = []
+        for adj in self.adjustables:
+            tv = adj.get_current_value()
+            initial_values.append(adj.get_current_value())
+            print("Initial value of %s : %g" % (adj.name, tv))
+
+        self._append(DetectorMemory, initial_values, name='initial_values', is_display=False)
+
         self.return_at_end = return_at_end
-        # self._checker_sleep_time = checker_sleep_time
         self._elog = elog
-        # self.run_number = run_number
         self.remaining_tasks = []
         self.callbacks_start_scan = callbacks_start_scan
         self.callbacks_start_step = callbacks_start_step
+        self.callbacks_step_counting = callbacks_step_counting
         self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
         self.callbacks_kwargs = kwargs_callbacks
-        # print(f"Scan info in file {self.scan_info_filename}.")
-        for adj in self.adjustables:
-            tv = adj.get_current_value()
-            self.initial_values.append(adj.get_current_value())
-            print("Initial value of %s : %g" % (adj.name, tv))
+        
+        
 
-        self.run_callbacks_start_scan()
+        self._have_run_callbacks_start_scan = False
 
+    def _get_names(self, elements):
+        """Get the names of the elements."""
+        names = []
+        for el in elements:
+            if hasattr(el, "alias"):
+                names.append(el.alias.get_full_name())
+            elif hasattr(el, "name"):
+                names.append(el.name)
+            else:
+                names.append("unknown")
+        return names
     def run_callbacks_start_scan(self):
         if self.callbacks_start_scan:
             for caller in self.callbacks_start_scan:
@@ -133,6 +166,21 @@ class StepScan:
             if hasattr(ctr, "callbacks_start_step") and ctr.callbacks_start_step:
                 for tcb in ctr.callbacks_start_step:
                     tcb(self, **self.callbacks_kwargs)
+    def run_callbacks_step_counting(self):
+        if self.callbacks_step_counting:
+            for caller in self.callbacks_step_counting:
+                caller(self, **self.callbacks_kwargs)
+        for ctr in self.counters:
+            if hasattr(ctr, "callbacks_step_counting") and ctr.callbacks_step_counting:
+                for tcb in ctr.callbacks_step_counting:
+                    tcb(self, **self.callbacks_kwargs)
+    def has_callbacks_step_counting(self):
+        if self.callbacks_step_counting:
+            return True
+        for ctr in self.counters:
+            if hasattr(ctr, "callbacks_step_counting") and ctr.callbacks_step_counting:
+                return True
+        return False
     def run_callbacks_end_step(self):
         if self.callbacks_end_step:
             for caller in self.callbacks_end_step:
@@ -160,16 +208,16 @@ class StepScan:
     #     return fina
 
     def do_next_step(self, step_info=None, verbose=True):
-        
+        self._current_step_ok = True
         t_step_start = time()
         self.run_callbacks_start_step()
 
         dt_callbacks_step_start = time()-t_step_start
 
-        if not len(self.values_todo) > 0:
+        if not len(self._values_todo) > 0:
             return False
-        self.values_current_step = self.values_todo[0]
-        statstr = "Step %d of %d" % (self.next_step + 1, len(self.values_todo) + len(self.values_done))
+        self.values_current_step = self._values_todo[0]
+        statstr = "Step %d of %d" % (self.next_step + 1, len(self._values_todo) + len(self._values_done))
                 
 
         # fina = self.get_filename(self.nextStep)
@@ -182,7 +230,7 @@ class StepScan:
         dt_adj = time()-t_adj_start
 
         # settling
-        sleep(self.settling_time)
+        sleep(self._settling_time)
 
         # counters
         t_ctr_start = time()
@@ -206,44 +254,40 @@ class StepScan:
 
         
         statstr += ' ; Ctrs '
-        acs = []
-        for ctr in self.counters:
-            # if isinstance(ctr, Daq):
-            #     acq_pars = {
-            #         "scan_info": {
-            #             "scan_name": self.description,
-            #             "scan_values": values_step,
-            #             "scan_readbacks": readbacks_step,
-            #             "scan_step_info": {
-            #                 "step_number": self.nextStep + 1,
-            #             },
-            #             "name": [adj.name for adj in self.adjustables],
-            #             "expected_total_number_of_steps": len(self.values_todo)
-            #             + len(self.values_done),
-            #         },
-            #         "run_number": self.run_number,
-            #         "user_tag": self.fina,
-            #     }
-            #     acq = ctr.acquire(
-            #         file_name=fina, Npulses=self.pulses_per_step[0], acq_pars=acq_pars
-            #     )
-            # else:
-            acq = ctr.acquire(scan=self, Npulses=self.pulses_per_step[0])
-            acs.append(acq)
-            try:
-                if hasattr(ctr, "name"):
-                    statstr += f"{ctr.name}, "
-            except:
-                pass
-        filenames = []
-        for ta in acs:
-            ta.wait()
-            filenames.extend(ta.file_names)
+        if not self.has_callbacks_step_counting():
+            acs = []
+            for ctr in self.counters:
+                acq = ctr.acquire(scan=self, Npulses=self.pulses_per_step[0])
+                acs.append(acq)
+                try:
+                    if hasattr(ctr, "name"):
+                        statstr += f"{ctr.name}, "
+                except:
+                    pass
+            filenames = []
+            for ta in acs:
+                ta.wait()
+                filenames.extend(ta.file_names)
+        else:
+            acs = []
+            for ctr in self.counters:
+                ctr.start(scan=self)
+                try:
+                    if hasattr(ctr, "name"):
+                        statstr += f"{ctr.name}, "
+                except:
+                    pass
+            self.run_callbacks_step_counting()
+
+            filenames = []
+            for ctr in self.counters:
+                resp = ctr.stop(scan=self)
+                filenames.extend(resp["files"])
         statstr = statstr[:-2] + ' done.'
         print(statstr, end='\n')
         
         dt_ctr = time() - t_ctr_start
-        sleep(.003)
+        sleep(.003) # from display debugging, maybe unnecessary.
 
         
 
@@ -253,10 +297,10 @@ class StepScan:
         #     if not self.checker.stop_and_analyze():
         #         return True
         if callable(step_info):
-            tstepinfo = step_info()
+            tstepinfo = step_info.get_current_value()
         else:
             tstepinfo = {}
-        self.values_done.append(self.values_todo.pop(0))
+        self._values_done.append(self._values_todo.pop(0))
         self.pulses_done.append(self.pulses_per_step.pop(0))
         self.readbacks.append(self.readbacks_current_step)
 
@@ -271,14 +315,20 @@ class StepScan:
             "callbacks_step_end": dt_callbacks_step_end,
         }
 
+        gridspecs = self.grid_specs.get_current_value()
+        if gridspecs:
+            tstepinfo['grid_index'] = gridspecs['index_plan'][self.next_step]
+
         self.appendScanInfo(
             self.values_current_step, self.readbacks_current_step, step_files=filenames, step_info=tstepinfo
         )
         # self.writeScanInfo()
 
-        self.next_step += 1
-
-        return True
+        if self._current_step_ok:
+            self.next_step += 1
+            return True
+        else:
+            return False
 
     def appendScanInfo(
         self, values_step, readbacks_step, step_files=None, step_info=None
@@ -297,6 +347,11 @@ class StepScan:
                 kws_all.update(set(kws))
                 print(cb.__name__, "has keywords:", kws)
         for cb in self.callbacks_start_step:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_step_counting:
             kws = foo_get_kwargs(cb)
             if kws:
                 kws_all.update(set(kws))
@@ -320,6 +375,12 @@ class StepScan:
                         print(cb.__name__, "has keywords:", kws)
             if hasattr(ctr, "callbacks_start_step"):
                 for cb in ctr.callbacks_start_step:
+                    kws = foo_get_kwargs(cb)
+                    if kws:
+                        kws_all.update(set(kws))
+                        print(cb.__name__, "has keywords:", kws)
+            if hasattr(ctr, "callbacks_step_counting"):
+                for cb in ctr.callbacks_step_counting:
                     kws = foo_get_kwargs(cb)
                     if kws:
                         kws_all.update(set(kws))
@@ -365,8 +426,11 @@ class StepScan:
                 f.truncate()
 
     def scan_all(self, step_info=None):
+        if not self._have_run_callbacks_start_scan:
+            self.run_callbacks_start_scan()
+            self._have_run_callbacks_start_scan = True
         done = False
-        steps_remaining = len(self.values_todo)
+        steps_remaining = len(self._values_todo)
         with Progress() as self._progress:
             pr_task = self._progress.add_task(
                 "[green]Scanning...", total=steps_remaining
@@ -391,6 +455,7 @@ class StepScan:
                         print("Changing back to value(s) before scan.")
                         for ch in chs:
                             ch.wait()
+
                 elif self.return_at_end == "timeout":
                     timeout = 10
                     try:
@@ -424,12 +489,15 @@ class StepScan:
 
     def changeToInitialValues(self):
         c = []
-        for adj, iv in zip(self.adjustables, self.initial_values):
+        for adj, iv in zip(self.adjustables, self.initial_values()):
             c.append(adj.set_target_value(iv))
         return c
 
 
-class Scans:
+
+
+
+class Scans(Assembly):
     """Convenience class to initialte typical scans with some default parameters the base StepScan and others."""
     def __init__(
         self,
@@ -440,14 +508,19 @@ class Scans:
         # scan_directories=False,
         callbacks_start_scan=[],
         callbacks_start_step=[],
+        callbacks_step_counting=[],
         callbacks_end_step=[],
         callbacks_end_scan=[],
         # run_table=None,
         elog=None,
+        name='scans',
     ):
+        super().__init__(name=name)
         # self._run_table = run_table
         self.callbacks_start_scan = callbacks_start_scan
         self.callbacks_start_step = callbacks_start_step
+        self.callbacks_step_counting = callbacks_step_counting
+        
         self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
         # self.data_base_dir = data_base_dir
@@ -476,9 +549,79 @@ class Scans:
         # self.scan_info_dir = scan_info_dir
         # self.filename_generator = RunFilenameGenerator(self.scan_info_dir)
         self._default_counters = default_counters
+        self._append(DetectorGet, self._get_counter_names, name='default_counters_names')
+        self._append(DetectorMemory, 'none since session start', name='acquiring_scan')
         # self.checker = checker
         # self._scan_directories = scan_directories
         self._elog = elog
+
+
+    def _get_counter_names(self):
+        """Get the names of the default counters."""
+        return [tc.name for tc in self._default_counters]
+    
+    def get_callback_keywords(self):
+        kws_all = set([])
+        for cb in self.callbacks_start_scan:
+            kws = foo_get_kwargs(cb)
+            
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_start_step:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_step_counting:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_end_step:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for cb in self.callbacks_end_scan:
+            kws = foo_get_kwargs(cb)
+            if kws:
+                kws_all.update(set(kws))
+                print(cb.__name__, "has keywords:", kws)
+        for ctr in self._default_counters:
+            if hasattr(ctr, "callbacks_start_scan"):
+                for cb in ctr.callbacks_start_scan:
+                    kws = foo_get_kwargs(cb)
+                    if kws:
+                        kws_all.update(set(kws))
+                        print(cb.__name__, "has keywords:", kws)
+            if hasattr(ctr, "callbacks_start_step"):
+                for cb in ctr.callbacks_start_step:
+                    kws = foo_get_kwargs(cb)
+                    if kws:
+                        kws_all.update(set(kws))
+                        print(cb.__name__, "has keywords:", kws)
+            if hasattr(ctr, "callbacks_step_counting"):
+                for cb in ctr.callbacks_step_counting:
+                    kws = foo_get_kwargs(cb)
+                    if kws:
+                        kws_all.update(set(kws))
+                        print(cb.__name__, "has keywords:", kws)
+            if hasattr(ctr, "callbacks_end_step"):
+                for cb in ctr.callbacks_end_step:
+                    kws = foo_get_kwargs(cb)
+                    if kws:
+                        kws_all.update(set(kws))
+                        print(cb.__name__, "has keywords:", kws)
+            if hasattr(ctr, "callbacks_end_scan"):
+                for cb in ctr.callbacks_end_scan:
+                    kws = foo_get_kwargs(cb)
+                    if kws:
+                        kws_all.update(set(kws))
+                        print(cb.__name__, "has keywords:", kws)
+
+        return kws_all
+
     
     def acquire(
         self,
@@ -488,13 +631,11 @@ class Scans:
         counters=[],
         start_immediately=True,
         settling_time=0,
-        step_info=None,
         return_at_end=True,
-        # checker="default",
+        step_info=None,
         **kwargs_callbacks,
     ):
         adjustable = DummyAdjustable()
-
         positions = list(range(N_repetitions))
         values = [[tp] for tp in positions]
         # file_name = self.filename_generator.get_nextrun_filename(file_name)
@@ -516,11 +657,13 @@ class Scans:
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
             return_at_end=return_at_end,
+            name='acquiring_scan',
             **kwargs_callbacks,
         )
+        self._append(s,name='acquiring_scan', overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        return s
+        # return s
     
     def ascan(
         self,
@@ -529,70 +672,25 @@ class Scans:
         end_pos,
         N_intervals,
         N_pulses,
-        file_name="",
-        counters=[],
-        checker="default",
-        start_immediately=True,
-        step_info=None,
-        return_at_end="question",
-        settling_time=0,
-        **kwargs_callbacks,
-    ):
-        positions = np.linspace(start_pos, end_pos, N_intervals + 1)
-        values = [[tp] for tp in positions]
-        file_name = self.filename_generator.get_nextrun_filename(file_name)
-        run_number = self.filename_generator.get_nextrun_number()
-        if not counters:
-            counters = self._default_counters
-        if checker == "default":
-            checker = self.checker
-        s = StepScan(
-            [adjustable],
-            values,
-            counters,
-            file_name,
-            Npulses=N_pulses,
-            basepath=self.data_base_dir,
-            scan_info_dir=self.scan_info_dir,
-            checker=self.checker,
-            settling_time=settling_time,
-            scan_directories=self._scan_directories,
-            return_at_end=return_at_end,
-            callbacks_start_scan=self.callbacks_start_scan,
-            callbacks_start_step=self.callbacks_start_step,
-            callbacks_end_step=self.callbacks_end_step,
-            callbacks_end_scan=self.callbacks_end_scan,
-            run_table=self._run_table,
-            elog=self._elog,
-            run_number=run_number,
-            **kwargs_callbacks,
-        )
-        if start_immediately:
-            s.scan_all(step_info=step_info)
-        return s
-    
-    def ascan_position_list(
-        self,
-        adjustable,
-        position_list,
-        N_pulses,
         description="",
         counters=[],
-        # checker="default",
         start_immediately=True,
+        return_at_end="timeout",
         settling_time=0,
         step_info=None,
-        return_at_end="question",
         **kwargs_callbacks,
     ):
-        positions = position_list
+        
+        if type(N_intervals) is float:
+            print('Interval size defined as float, interpreting as interval size.')
+            positions = np.arange(start_pos, N_intervals, end_pos)
+        elif type(N_intervals) is int:
+            print('Interval size defined as int, interpreting as number of intervals.')
+            positions = np.linspace(start_pos, end_pos, N_intervals + 1)
+        
         values = [[tp] for tp in positions]
-        # description = self.filename_generator.get_nextrun_filename(description)
-        # run_number = self.filename_generator.get_nextrun_number()
         if not counters:
             counters = self._default_counters
-        # if checker == "default":
-        #     checker = self.checker
         s = StepScan(
             [adjustable],
             values,
@@ -606,11 +704,55 @@ class Scans:
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
+            name='acquiring_scan',
             **kwargs_callbacks,
         )
+        self._append(s,name='acquiring_scan', overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        return s
+        # return s
+    
+    def ascan_position_list(
+        self,
+        adjustable,
+        position_list,
+        N_pulses,
+        description="",
+        counters=[],
+        # checker="default",
+        start_immediately=True,
+        settling_time=0,
+        step_info=None,
+        return_at_end="timeout",
+        name='acquiring_scan',
+        **kwargs_callbacks,
+        ):
+        positions = position_list
+        values = [[tp] for tp in positions]
+        
+        if not counters:
+            counters = self._default_counters
+        
+        s = StepScan(
+            [adjustable],
+            values,
+            counters=counters,
+            description=description,
+            Npulses=N_pulses,
+            settling_time=settling_time,
+            return_at_end=return_at_end,
+            callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
+            callbacks_end_scan=self.callbacks_end_scan,
+            elog=self._elog,
+            name='acquiring_scan',
+            **kwargs_callbacks,
+        )
+        self._append(s,name='acquiring_scan', overwrite=True)
+        if start_immediately:
+            s.scan_all(step_info=step_info)
+        # return s
 
 
     def dscan(
@@ -620,49 +762,112 @@ class Scans:
         end_pos,
         N_intervals,
         N_pulses,
-        file_name="",
+        description="",
         counters=[],
-        checker="default",
         start_immediately=True,
         settling_time=0,
         step_info=None,
-        return_at_end="question",
+        return_at_end="timeout",
         **kwargs_callbacks,
     ):
-        positions = np.linspace(start_pos, end_pos, N_intervals + 1)
+        """Differential scan, i.e. the adjustable is moved to the start position and then moved in steps of the interval size."""
+
+        if type(N_intervals) is float:
+            print('Interval size defined as float, interpreting as interval size.')
+            positions = np.arange(start_pos, N_intervals, end_pos)
+        elif type(N_intervals) is int:
+            print('Interval size defined as int, interpreting as number of intervals.')
+            positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         current = adjustable.get_current_value()
         values = [[tp + current] for tp in positions]
-        file_name = self.filename_generator.get_nextrun_filename(file_name)
-        run_number = self.filename_generator.get_nextrun_number()
+        
+        
         if not counters:
             counters = self._default_counters
-        if checker == "default":
-            checker = self.checker
+        
         s = StepScan(
             [adjustable],
             values,
             counters,
-            file_name,
             Npulses=N_pulses,
-            basepath=self.data_base_dir,
-            scan_info_dir=self.scan_info_dir,
-            checker=self.checker,
-            scan_directories=self._scan_directories,
+            description=description,
             return_at_end=return_at_end,
             settling_time=settling_time,
             callbacks_start_scan=self.callbacks_start_scan,
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            run_table=self._run_table,
             elog=self._elog,
-            run_number=run_number,
+            name='acquiring_scan',
             **kwargs_callbacks,
         )
+        self._append(s,name='acquiring_scan', overwrite=True, status=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        return s
+        # return s
 
+
+    def snakescan(
+        self,
+        adjustable_slow,
+        step_interval,
+        Nrows,
+        adjustable_fast,        
+        interval,
+        description="",
+        counters=[],
+        start_immediately=True,
+        settling_time=0,
+        step_info=None,
+        return_at_end="timeout",
+        **kwargs_callbacks,
+    ):
+        
+
+        adj_slow_start = adjustable_slow.get_current_value()
+        adj_fast_start = adjustable_fast.get_current_value()
+        print('Snakescan is relative, starting from here: %s, %s' % (adj_slow_start, adj_fast_start))
+
+        start_positions = [
+            [adj_slow_start + step_interval * i, adj_fast_start + (i%2)*interval ]
+              for i in range(Nrows)]
+        
+        def counting_function(scan):
+            cv = adjustable_fast.get_current_value()
+            print(cv)
+            if abs(cv - adj_fast_start) < abs(cv - adj_fast_start - interval):
+                print('moving to interval')
+                adjustable_fast.set_target_value(adj_fast_start +interval).wait()
+            else:
+                print('moving back')
+                adjustable_fast.set_target_value(adj_fast_start).wait()
+
+        
+        if not counters:
+            counters = self._default_counters
+        
+        s = StepScan(
+            [adjustable_slow, adjustable_fast],
+            start_positions,
+            counters,
+            Npulses=1, 
+            description=description,
+            return_at_end=return_at_end,
+            settling_time=settling_time,
+            callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_step_counting=[counting_function],
+            callbacks_end_step=self.callbacks_end_step,
+            callbacks_end_scan=self.callbacks_end_scan,
+            elog=self._elog,
+            name='acquiring_scan',
+            **kwargs_callbacks,
+        )
+        self._append(s,name='acquiring_scan', overwrite=True)
+        if start_immediately:
+            s.scan_all(step_info=step_info)
+        # return s
+    
     def a2scan(
         self,
         adjustable0,
@@ -685,7 +890,7 @@ class Scans:
         positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
         values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
         if not counters:
-            counters = self._default_counters
+            counters = self.default_counters.get_current_value()
         if checker == "default":
             checker = self.checker
         s = StepScan(
@@ -705,78 +910,86 @@ class Scans:
             run_table=self._run_table,
             elog=self._elog,
             return_at_end=return_at_end,
+            name='acquiring_scan',
             **kwargs_callbacks,
         )
+        self._append(s,name='acquiring_scan', overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        return s
+        # return s
+
+    def meshscan(
+        self,
+        *adj_specs,
+        scanning_order='last_fastest',
+        N_pulses=None,
+        description="",
+        counters=[],
+        start_immediately=True,
+        return_at_end="timeout",
+        settling_time=0,
+        step_info=None,
+        **kwargs_callbacks,
+    ):
+        """
+        Mesh scan, i.e. a scan in multiple dimensions, where the last adjustable is moved first.
+        The scanning order can be changed by setting the `scanning_order` parameter.
+        """
+        adjustables = []
+        positions = []
+        for adj_spec in adj_specs:
+            adj = adj_spec[0]
+            spec = adj_spec[1:]
+            if isinstance(adj, Adjustable):
+                adjustables.append(adj)
+                positions.append(interpret_step_specification(spec))
+
+        shape = [len(tp) for tp in positions]
+        
+        if scanning_order=='last_fastest':
+            index_plan = list(product(*[range(n) for n in shape]))
+        elif scanning_order=='fist_fastst':
+            index_plan = [tc[::-1] for tc in product(*[range(n) for n in shape][::-1])]
+
+        values = []
+        for ixs in index_plan:
+            values.append([tp[ti] for ti,tp in zip(ixs,positions)])
+
+        gridspecs = {
+            'shape' : shape,
+            'positions':positions,
+            'index_plan':index_plan,
+        }
+        
+        if not counters:
+            counters = self._default_counters
+        
+        s = StepScan(
+            adjustables,
+            values,
+            counters=counters,
+            Npulses=N_pulses,
+            description=description,
+            return_at_end=return_at_end,
+            settling_time=settling_time,
+            callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
+            callbacks_end_scan=self.callbacks_end_scan,
+            elog=self._elog,
+            gridspecs=gridspecs,
+            name='acquiring_scan',
+            **kwargs_callbacks,
+        )
+        
+        self._append(s,name='acquiring_scan', overwrite=True)
+        if start_immediately:
+            s.scan_all(step_info=step_info)
+
+
 
     
 
-    
-
-    
-
-    # def rscan(self, *args, **kwargs):
-    #     print(
-    #         "Warning: This is not implemented, should be reflectivity scan. \n for relative/differential scan please use dscan ."
-    #     )
-    #     # return self.rscan(*args, **kwargs)
-
-    
-
-    # def a2scanList(
-    #     self,
-    #     adjustable0,
-    #     start0_pos,
-    #     end0_pos,
-    #     adjustable1,
-    #     start1_pos,
-    #     end1_pos,
-    #     N_intervals,
-    #     N_pulses,
-    #     file_name=None,
-    #     counters=[],
-    #     checker="default",
-    #     start_immediately=True,
-    #     step_info=None,
-    #     return_at_end="question",
-    #     **kwargs_callbacks,
-    # ):
-    #     positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
-    #     positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
-    #     # self.prefix
-    #     #     + f"{runno:{self.Ndigits}0d}"
-    #     #     + self.separator
-    #     #     + "*."
-    #     #     + self.suffix
-    #     values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
-    #     if not counters:
-    #         counters = self._default_counters
-    #     if checker == "default":
-    #         checker = self.checker
-    #     s = Scan(
-    #         [adjustable0, adjustable1],
-    #         values,
-    #         self.counters,
-    #         file_name,
-    #         Npulses=N_pulses,
-    #         basepath=self.data_base_dir,
-    #         scan_info_dir=self.scan_info_dir,
-    #         checker=self.checker,
-    #         scan_directories=self._scan_directories,
-    #         return_at_end=return_at_end,
-    #         callbacks_start_scan=self.callbacks_start_scan,
-    #         callbacks_start_step=self.callbacks_start_step,
-    #         callbacks_end_step=self.callbacks_end_step,
-    #         callbacks_end_scan=self.callbacks_end_scan,
-    #         run_table=self._run_table,
-    #         elog=self._elog,
-    #         **kwargs_callbacks,
-    #     )
-    #     if start_immediately:
-    #         s.scan_all(step_info=step_info)
-    #     return s
 
 
 class RunFilenameGenerator:
@@ -832,4 +1045,27 @@ class RunFilenameGenerator:
             + name
             + "."
             + self.suffix
+        )
+
+
+
+def interpret_step_specification(spec):
+    # normal linear scan                                 
+    if len(spec) == 3 and all(isinstance(ta,Number) for ta in spec):
+        start_pos, end_pos, N_intervals = spec
+        if type(N_intervals) is float:
+            print('Interval size defined as float, interpreting as interval size.')
+            positions = np.arange(start_pos, N_intervals, end_pos)
+        elif type(N_intervals) is int:
+            print('Interval size defined as int, interpreting as number of intervals.')
+            positions = np.linspace(start_pos, end_pos, N_intervals + 1)
+        return positions
+    elif len(spec) == 1 and np.iterable(spec[0]):
+        if type(spec[0]) is str:
+            raise Exception("Step position specification is a string, interpreting as position list!")
+        positions = spec[0]
+        return positions
+    else:
+        raise Exception(
+            "Step position specification is not understood, should be 3 numbers or a list of positions."
         )
