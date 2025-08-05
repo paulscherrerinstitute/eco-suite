@@ -36,39 +36,59 @@ class Collection:
             raise Exception("A name of collection is required")
         self.name = name
         self._list = []
+        self._recurse = []
 
-    def get_list(self):
-        return self._list
+
+    # def get_list(self):
+    #     return self._list
     
     # esired new way, in order to old containers and allow them to be replaced "on top" of a structure. 
     # causes other issues  from recoursion, bigger issue...
-    #  def get_list(self):
-    #     ls = []
-    #     for item in self._list:
-    #         if hasattr(item, f"{self.name}") and isinstance(item.__dict__[self.name],Collection):
-    #             ls.append(item.__dict__[self.name].get_list())
-    #         else:
-    #             ls.append(ls)
-    #     return ls
+    def get_list(self):
+        ls = []
+        for item in self._list:
+            
+            # if item in ls:
+            #     print(f"Item {item.alias.get_full_name()} is already in list!")
+            #     continue
+            if (
+                hasattr(item, f"{self.name}") 
+                and isinstance(item.__dict__[self.name],Collection) 
+                # and not (item.__dict__[self.name]==self)
+            ):
+                # if item.__dict__[self.name]==self:
+                    # print(f"Item {item.alias.get_full_name()} contains itself in collection!")
+                
+                if item in self._recurse:
+                    # print(f"Item {item.alias.get_full_name()} is recursing ↳ ↳ ↳ ")
+                    for titem in item.__dict__[self.name].get_list():
+                        # print(titem.name)
+                        # if titem.__dict__[self.name]==self:
+                        #     print(titem.name)
+                        if (
+                            titem not in ls
+                            # and not 
+                            ):
+                            ls.append(titem)
+                else:
+                    ls.append(item)
+            else:
+                ls.append(item)
+        return ls
 
     def append(self, obj, recursive=True, force=False):
+        if (obj in self._list):
+            return
         if force:
-            if not (obj in self._list):
-                self._list.append(obj)
+            self._list.append(obj)
 
         elif hasattr(obj, self.name):
             if isinstance(obj.__dict__[self.name], type(self)):
-                if not recursive:
-                    # if (obj in obj.__dict__[self.name]()):
-                    if not (obj in self._list):
-                        self._list.append(obj)
-                else:
-                    for it in obj.__dict__[self.name].get_list():
-                        if not (it in self._list):
-                            self._list.append(it)
-        else:
-            if not (obj in self._list):
+                if recursive:
+                    self._recurse.append(obj)
                 self._list.append(obj)
+        else:
+            self._list.append(obj)
 
     def pop(self, index):
         return self._list.pop(index)
@@ -89,8 +109,7 @@ class Collection:
     def __call__(self):
         return self.get_list()
 
-    # def __repr__(self):
-    #     return f'{{id(self)}'
+
 
 
 class NumpyEncoder(json.JSONEncoder):

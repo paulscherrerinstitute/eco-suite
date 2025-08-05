@@ -19,17 +19,18 @@ from eco.epics import get_from_archive
 class DetectorPvData(Assembly):
     def __init__(self, pvname, name=None, unit=None, has_unit=False):
         super().__init__(name=name)
-        self.status_collection.append(self)
+        
         self.pvname = pvname
         singular = (unit is None) and (not has_unit)
+            
         # if name == "aramis_undulator_photon_energy":
         #     print(f"singular is {singular}", unit, has_unit)
-
         if unit:
             self._append(AdjustableMemory, unit, name="unit")
             has_unit = False
         if not singular:
             self._append(AdjustablePv, pvname, name="readback", is_setting=False)
+            # self.status_collection.append(self)
         else:
             self._pv = PV(pvname)
             self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
