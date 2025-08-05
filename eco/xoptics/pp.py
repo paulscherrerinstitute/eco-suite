@@ -76,7 +76,9 @@ class XrayPulsePicker(Assembly):
     def __init__(self,pvbase="",
                  evr_output_base=None, 
                  evr_pulser_base=None, 
-                 evronoff=None, evrsrc=None, event_master = None, name=None):
+                 evronoff=None, evrsrc=None, event_master = None, 
+                 sequencer=None,
+                 name=None):
         super().__init__(name=name)
         self.evrsrc = evrsrc
         self.evronoff = evronoff
@@ -96,6 +98,7 @@ class XrayPulsePicker(Assembly):
         pulser = EvrPulser(evr_pulser_base, event_master, name="pulser_xp")
         self._append(EvrOutput,evr_output_base, pulsers=[pulser], name='evr_output', is_display=False)
         self._append(DetectorGet,self.get_picker_status,name='picker_status')
+        self.sequencer = sequencer
         self._STATENUM = IntEnum('Pulsepicker_open', {'open': 1, 'closed':0, 'unknown':-1})
         
     def get_picker_status(self):
@@ -133,3 +136,34 @@ class XrayPulsePicker(Assembly):
             return self._STATENUM(0)
         if stat=='unknown':
             return self._STATENUM(-1)
+        
+
+    def set_reprate(self, freq, number_of_pulses = "inf", event_code=200, pid_offset=0):
+        rate = round(100/freq)
+        print(f"Rounding to rate {rate} / {round(1/rate*100)} Hz")
+        # self.
+        self.sequencer.stop()
+        self.sequencer.start_condition_enabled(1)
+        self.sequencer.start_condition_pulse_id_divisor(rate)
+        self.sequencer.start_condition_pulse_id_offset(pid_offset)
+        if number_of_pulses == "inf":
+            self.sequencer.number_of_repetitions(0)
+        else:
+            self.sequencer.number_of_repetitions(number_of_pulses)
+        self.sequencer.reset_sequence()
+        self.sequencer.append_sequence_step(event_code,rate,send_immediately=True)        
+        if number_of_pulses == "inf":
+            print("Starting pulse picker action")
+            self.sequencer.start()
+
+    def setup_for_pulse_selection(self,event_code=200 ):
+        self.evr_output.pulserA_number(0)
+        self.evr_output.pulserA_polarity(0)
+        self.evr_output.pulserA_eventcode(event_code)
+        self.evr_output.pulserA_delay(100)
+        self.evr_output.pulserA_width(510)
+    
+    def setup_for_general_open_close(self):
+        self.evr_output_source(62)
+    
+        

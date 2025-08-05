@@ -229,6 +229,7 @@ namespace.append_obj(
     evr_output_base="SGE-CPCW-72-EVR0:FrontUnivOut15",
     evr_pulser_base="SGE-CPCW-72-EVR0:Pul0",
     event_master=NamespaceComponent(namespace, "event_master"),
+    sequencer=NamespaceComponent(namespace, "seq"),
     name="xp",
     module_name="eco.xoptics.pp",
     lazy=True,
@@ -1996,8 +1997,14 @@ class ConvergentBeamDiffraction(Assembly):
         self._append(
             SmaractRecord, "SARES20-MCS3:MOT_3", preferred_home_direction='reverse', name="sample_z", is_setting=True
         )
-        # self._append(DetectorGet,self._get_zmq_dataset, name='positions', is_display=False)
+        self._append(DetectorGet,self._get_zmq_dataset, name='positions', is_display=False)
         # self._append(DetectorObject,self._positions, name='positions')
+
+        self._append(SmaractRecord, "SARES20-MCS3:MOT_4", name="ublock_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-MF1:MOT_15", name="ublock_y", is_setting=True)
+        self._append(SmaractRecord, "SARES20-MCS3:MOT_5", name="ublock_z", is_setting=True)
+        self._append(SmaractRecord, "SARES20-MCS3:MOT_6", name="ublock_ry", is_setting=True)
+        self._append(SmaractRecord, "SARES20-MCS3:MOT_7", name="ublock_rz", is_setting=True)
 
 
     def _get_zmq_dataset(self):

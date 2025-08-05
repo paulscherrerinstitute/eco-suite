@@ -1480,6 +1480,12 @@ class SmaractSettings(Assembly):
             is_setting=True,
         )
         self._append(
+            AdjustablePvEnum,
+            self.pvname + "_PTYP_SP",
+            name="sensor_type_name",
+            is_setting=True,
+        )
+        self._append(
             AdjustablePv,
             self.pvname + "_AUTOZERO",
             name="autozero_on_homing",
@@ -1582,7 +1588,7 @@ class SmaractRecord(Assembly):
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
-        self._append(AdjustableMemory,preferred_home_direction, name=preferred_home_direction) 
+        self._append(AdjustableMemory,preferred_home_direction, name="preferred_home_direction", is_setting=True) 
         self._elog = elog
         for an, af in alias_fields.items():
             self.alias.append(

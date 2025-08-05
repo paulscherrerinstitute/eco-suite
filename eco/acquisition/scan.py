@@ -832,7 +832,7 @@ class Scans(Assembly):
             [adj_slow_start + step_interval * i, adj_fast_start + (i%2)*interval ]
               for i in range(Nrows)]
         
-        def counting_function(scan):
+        def counting_function(scan,**kwargs):
             cv = adjustable_fast.get_current_value()
             print(cv)
             if abs(cv - adj_fast_start) < abs(cv - adj_fast_start - interval):

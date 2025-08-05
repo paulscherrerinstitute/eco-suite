@@ -155,7 +155,7 @@ class AttenuatorAramis(Assembly):
             m.stop()
 
     def move(self, value, check=False, wait=True, update_value_time=0.1, timeout=120):
-        self.shutter.close()
+        # self.shutter.close()
         self.updateE()
         self.transmission_fund(value)
         if wait:
@@ -165,7 +165,7 @@ class AttenuatorAramis(Assembly):
                 if (time.time() - t_start) > timeout:
                     raise AdjustableError(f"motion timeout reached in att motion")
                 time.sleep(update_value_time)
-            self.shutter.open()
+            # self.shutter.open()
 
     def set_target_value(self, value, hold=False, check=True):
         changer = lambda value: self.move(value, check=check, wait=True)

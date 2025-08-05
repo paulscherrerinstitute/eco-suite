@@ -461,7 +461,7 @@ class Daq(Assembly):
     def pulse_picker_action_start_step(
             self,
             scan,
-            do_pulse_picker_action=True,
+            do_pulse_picker_action=False,
             **kwargs,
             ):
                                        
@@ -475,7 +475,7 @@ class Daq(Assembly):
     def pulse_picker_action_end_step(
             self,
             scan,
-            do_pulse_picker_action=True,
+            do_pulse_picker_action=False,
             **kwargs,
             ):
         if not self.pulse_picker:
@@ -539,11 +539,11 @@ class Daq(Assembly):
 #     except Exception as e:
 #         print(f"Error to set dap configuration {e}")
 
-    def init_namespace(self,scan=None, init_required_namespace_components_only=True, append_status_info=True):
+    def init_namespace(self,scan=None, init_required_namespace_components_only=True, append_status_info=True, **kwargs):
         if append_status_info:
             self.namespace.init_all(silent=False, required_only=init_required_namespace_components_only)
 
-    def append_start_status_to_scan(self,scan=None, append_status_info=True):
+    def append_start_status_to_scan(self,scan=None, append_status_info=True, **kwargs):
         if not append_status_info:
             return
         namespace_status = self.namespace.get_status(base=None)
@@ -553,7 +553,8 @@ class Daq(Assembly):
     def _create_runtable_metadata_append_status_to_runtable(
             self,
             scan,
-            append_status_info=True):
+            append_status_info=True,
+            **kwargs):
 
         print("run_table appending run")
         runno = scan.daq_run_number
@@ -728,8 +729,12 @@ class Daq(Assembly):
             
     def check_checker_after_step(self,scan, **kwargs):
         if self.checker:
-            if not self.checker.stop_and_analyze():
-                scan._current_step_ok = False
+            try:
+                if not self.checker.stop_and_analyze():
+                    scan._current_step_ok = False
+            except:
+                print("Checking failed, assuming last step was ok.")
+                scan._current_step_ok = True
 
     
     def copy_aliases_to_scan(self, scan, send_aliases_now=False, **kwargs):

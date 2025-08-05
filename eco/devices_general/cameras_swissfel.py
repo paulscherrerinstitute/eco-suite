@@ -642,7 +642,7 @@ class CameraPCO(Assembly):
             is_display=True,
         )
         self._append(AdjustablePv, self.pvname + ":BOARD", name="board_no")
-        self._append(AdjustablePv, self.pvname + ":SERIALNR", name="serial_no")
+        # self._append(AdjustablePv, self.pvname + ":SERIALNR", name="serial_no") Apparently not exisitng and timing out.
         self._append(AdjustablePv, self.pvname + ":EXPOSURE", name="_exposure_time")
         self._append(AdjustablePvEnum, self.pvname + ":ACQMODE", name="_acq_mode")
         self._append(AdjustablePvEnum, self.pvname + ":RECMODE", name="_req_mode")

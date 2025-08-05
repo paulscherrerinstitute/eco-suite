@@ -1,3 +1,4 @@
+import time
 from epics.ca import element_count
 from epics.pv import PV
 import numpy as np
@@ -152,6 +153,7 @@ class CtaSequencer(Assembly):
         for ch in chs:
             ch.wait()
         self.length.set_target_value(0).wait()
+        time.sleep(.2) # race condition for some reason!
 
     def get_reduced_sequence(self):
         seq = self.get_sequence_array()

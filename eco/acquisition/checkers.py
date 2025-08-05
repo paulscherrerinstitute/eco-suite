@@ -108,7 +108,7 @@ class CheckerBS(Assembly):
         data = np.asarray(self.monitor.accumulate_stop())
         thresholds = self.thresholds()
         good = np.logical_and(data > thresholds[0], data < thresholds[1])
-        fraction = good.sum() / len(good)
+        fraction = np.nansum(good) / len(good)
         isgood = fraction >= self.required_fraction()
         if not isgood:
             print(f"Checker: {fraction*100}% inside limits {self.thresholds()},")
