@@ -179,8 +179,7 @@ def linlog_intervals(*args, verbose=True, plot=False):
                 intlog = np.log10(tlims[0]+idef[1])-np.log10(tlims[0])
                 a.append(10**np.arange(np.log10(tlims[0]),np.log10(tlims[1]),intlog))
             if verbose:
-                intervals = np.diff(np.log10(a[-1]))
-                
+                intervals = np.diff(a[-1])
                 print(f'From {tlims[0]:5g} to {a[-1][-1]:5g}: {len(a[-1])-1} logarithmic intervals between {np.min(intervals):5g} and {np.max(intervals):5g} in sizes.')
             if plot:
                 plt.plot(np.arange(len(np.hstack(a))-len(a[-1]), len(np.hstack(a))),a[-1],'or',mfc='none')

@@ -10,7 +10,7 @@ from pathlib import Path
 import colorama
 
 from eco.elements.protocols import Adjustable
-from eco.utilities.utilities import NumpyEncoder, foo_get_kwargs
+from eco.utilities.utilities import NumpyEncoder, foo_get_kwargs, linlog_intervals
 from ..elements.adjustable import AdjustableMemory, DummyAdjustable
 from IPython import get_ipython
 from .daq_client import Daq
@@ -1067,12 +1067,24 @@ class RunFilenameGenerator:
 
 
 def interpret_step_specification(spec):
+    """Create a list of step positions from a specification.
+
+    Args:
+        spec (tuple/list): interable of different format:
+            - 3 numbers: start, end, N_intervals or interval size (int or float)
+            - 1 iterable of positions
+            - anchor positions with linear or logarithmic filled spaces. 
+              i.e. odd number of elements, where every second element is an iterable ('lin',<float size or int intervals>), interpreted as lin-log intervals
+    
+    Returns:
+        array: array of positions
+    """
     # normal linear scan
     if len(spec) == 3 and all(isinstance(ta, Number) for ta in spec):
         start_pos, end_pos, N_intervals = spec
         if type(N_intervals) is float:
             print("Interval size defined as float, interpreting as interval size.")
-            positions = np.arange(start_pos, N_intervals, end_pos)
+            positions = np.arange(start_pos, end_pos+N_intervals, N_intervals)
         elif type(N_intervals) is int:
             print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)
@@ -1084,6 +1096,8 @@ def interpret_step_specification(spec):
             )
         positions = spec[0]
         return positions
+    elif len(spec)%2 and all([np.iterable(ts) for ts in spec[1::2]]):
+        return linlog_intervals(*spec)
     else:
         raise Exception(
             "Step position specification is not understood, should be 3 numbers or a list of positions."
