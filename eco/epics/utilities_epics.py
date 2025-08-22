@@ -55,7 +55,7 @@ class MonitorAccumulator:
         self.values = []
         self.accumulate()
         return d
-    
+
 
 class Monitor:
     def __init__(self, pvname, start_immediately=True):
@@ -83,7 +83,6 @@ class Monitor:
             print(
                 f"{pvname}:  {value};  time: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
             )
-
 
 
 class Positioner:

@@ -141,7 +141,7 @@ class DoubleCrystalMono(Assembly):
             is_setting=False,
             is_display=False,
         )
-        self.settings_collection.append(self)
+        # self.settings_collection.append(self)
         if self._fel is not None:
             self._append(
                 AdjustableFS,

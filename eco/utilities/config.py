@@ -392,7 +392,7 @@ class Namespace(Assembly):
 
     def select_required_names(self):
         terminal_menu = TerminalMenu(
-            self.all_names,
+            sorted(self.all_names),
             multi_select=True,
             show_multi_select_hint=True,
             preselected_entries=list(self.required_names()),

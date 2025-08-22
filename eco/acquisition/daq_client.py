@@ -23,6 +23,7 @@ import inputimeout
 from IPython import get_ipython
 from os.path import relpath
 
+
 class Daq(Assembly):
     def __init__(
         self,
@@ -45,7 +46,7 @@ class Daq(Assembly):
         checker=None,
         run_table=None,
         pulse_picker=None,
-        elog = None,
+        elog=None,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -81,7 +82,7 @@ class Daq(Assembly):
         self.name = name
         self.namespace = namespace
         self.checker = checker
-        self.run_table=run_table
+        self.run_table = run_table
         self.pulse_picker = pulse_picker
         self._default_file_path = None
         if not rate_multiplicator == "auto":
@@ -89,29 +90,30 @@ class Daq(Assembly):
                 "warning: rate multiplicator automatically determined from event_master!"
             )
         self.callbacks_start_scan = [
-            self.check_counters_for_scan, 
+            self.check_counters_for_scan,
             self.init_namespace,
-            self.append_start_status_to_scan, 
-            self.count_run_number_up_and_attach_to_scan, 
+            self.append_start_status_to_scan,
+            self.count_run_number_up_and_attach_to_scan,
             self.scan_message_to_elog,
-            self._create_runtable_metadata_append_status_to_runtable, 
-            self.append_scan_monitors]
+            self._create_runtable_metadata_append_status_to_runtable,
+            self.append_scan_monitors,
+        ]
         self.callbacks_start_step = [
             self.copy_aliases_to_scan,
             self.check_checker_before_step,
             self.pulse_picker_action_start_step,
-            ]
+        ]
         self.callbacks_step_counting = []
         self.callbacks_end_step = [
             self.pulse_picker_action_end_step,
-            self.copy_scan_info_to_raw, 
-            self.check_checker_after_step
-            ]
+            self.copy_scan_info_to_raw,
+            self.check_checker_after_step,
+        ]
         self.callbacks_end_scan = [
-            self.append_status_to_scan_and_store, 
-            self.copy_scan_info_to_raw, 
+            self.append_status_to_scan_and_store,
+            self.copy_scan_info_to_raw,
             self.end_scan_monitors,
-            ]
+        ]
         self.elog = elog
 
     @property
@@ -134,9 +136,7 @@ class Daq(Assembly):
             return self._pgroup.set_target_value().wait()
         self._pgroup = value
 
-    
-
-    def acquire(self, scan=None, file_name=None, run_number=None, Npulses=100, acq_pars={}):
+    def acquire(self, scan=None, run_number=None, Npulses=100, acq_pars={}, **kwargs):
         acq_pars = {}
         if scan:
             acq_pars = {
@@ -156,15 +156,13 @@ class Daq(Assembly):
         if run_number is not None:
             acq_pars["run_number"] = run_number
 
-        
-            
         acquisition = Acquisition(
             acquire=None,
             acquisition_kwargs={"Npulses": Npulses},
         )
 
         def acquire():
-            
+
             response = self.acquire_pulses(
                 Npulses,
                 # directory_relative=Path(file_name).parents[0],
@@ -176,10 +174,10 @@ class Daq(Assembly):
                 **acq_pars,
             )
             acquisition.acquisition_kwargs.update({"file_names": response["files"]})
-            if scan and not scan.daq_run_number==int(response["run_number"]):
+            if scan and not scan.daq_run_number == int(response["run_number"]):
                 raise Exception(
-                    f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
-                )            
+                    f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['·run_number'])}"
+                )
 
             for key, val in acquisition.acquisition_kwargs.items():
                 acquisition.__dict__[key] = val
@@ -211,11 +209,19 @@ class Daq(Assembly):
                 "user_tag": "usertag",
             }
             kwargs.update(acq_pars)
-        kwargs['channels_JF'] = kwargs.get('channels_JF',self.channels["channels_JF"].get_current_value())
-        kwargs['channels_BS'] = kwargs.get('channels_BS',self.channels["channels_BS"].get_current_value())
-        kwargs['channels_BSCAM'] = kwargs.get('channels_BSCAM',self.channels["channels_BSCAM"].get_current_value())
-        kwargs['channels_CA'] = kwargs.get('channels_CA',self.channels["channels_CA"].get_current_value())
-        
+        kwargs["channels_JF"] = kwargs.get(
+            "channels_JF", self.channels["channels_JF"].get_current_value()
+        )
+        kwargs["channels_BS"] = kwargs.get(
+            "channels_BS", self.channels["channels_BS"].get_current_value()
+        )
+        kwargs["channels_BSCAM"] = kwargs.get(
+            "channels_BSCAM", self.channels["channels_BSCAM"].get_current_value()
+        )
+        kwargs["channels_CA"] = kwargs.get(
+            "channels_CA", self.channels["channels_CA"].get_current_value()
+        )
+
         starttime_local = time.time()
         while self.pulse_id._pv.get_timevars() is None:
             time.sleep(0.02)
@@ -239,11 +245,11 @@ class Daq(Assembly):
         label=None,
         wait=True,
         wait_cycle_sleep=0.01,
-        scan=None, 
+        scan=None,
     ):
         if not stop_id:
             stop_id = int(self.pulse_id.get_current_value())
-        
+
         if scan:
             acq_ix = scan.daq_current_acquisition_index
         if not acq_ix:
@@ -264,21 +270,25 @@ class Daq(Assembly):
         response = self.retrieve(**acq_pars)
         # print(response)
 
-        if scan and not scan.daq_run_number==int(response["run_number"]):
-                raise Exception(
-                    f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
-                )
-        
+        if scan and not scan.daq_run_number == int(response["run_number"]):
+            raise Exception(
+                f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
+            )
+
         # correct file names to relative paths
         if scan:
             run_directory = list(
-                Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(f"run{scan.daq_run_number:04d}*")
+                Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(
+                    f"run{scan.daq_run_number:04d}*"
+                )
             )[0].as_posix()
-                
-            response['files'] = [relpath(file, run_directory) for file in response['files']]
-        
+
+            response["files"] = [
+                relpath(file, run_directory) for file in response["files"]
+            ]
+
         return response
-    
+
         # if scan:
         #     response = self.acquire_pulses(
         #         Npulses,
@@ -294,13 +304,10 @@ class Daq(Assembly):
         #     if scan and not scan.daq_run_number==int(response["run_number"]):
         #         raise Exception(
         #             f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
-        #         )            
+        #         )
 
         #     for key, val in acquisition.acquisition_kwargs.items():
         #         acquisition.__dict__[key] = val
-
-
-
 
     def retrieve(
         self,
@@ -355,15 +362,15 @@ class Daq(Assembly):
         self._last_server_post = f"{self.broker_address}/retrieve_from_buffers"
         self._last_server_post_parameters = parameters
         self._last_server_resp = requests.post(
-                                f"{self.broker_address}/retrieve_from_buffers",
-                                json=parameters,
-                                timeout=self.timeout,
-                            )
+            f"{self.broker_address}/retrieve_from_buffers",
+            json=parameters,
+            timeout=self.timeout,
+        )
 
-        response = validate_response(self._last_server_resp.json() )
+        response = validate_response(self._last_server_resp.json())
 
         runno = response["run_number"]
-        message = response["message"]       
+        message = response["message"]
         acquisition_number = response["acquisition_number"]
         unique_acquisition_number = response["unique_acquisition_number"]
         filenames = response["files"]
@@ -384,7 +391,9 @@ class Daq(Assembly):
             json={"pgroup": pgroup},
             timeout=self.timeout,
         )
-        assert res.ok, f"Advancing and getting next run number failed {res.raise_for_status()}"
+        assert (
+            res.ok
+        ), f"Advancing and getting next run number failed {res.raise_for_status()}"
         return int(res.json()["run_number"])
 
     def get_last_run_number(self, pgroup=None):
@@ -457,37 +466,39 @@ class Daq(Assembly):
             json={"pgroup": pgroup, "run_number": run_number, "files": file_names},
         )
 
-    
     def pulse_picker_action_start_step(
-            self,
-            scan,
-            do_pulse_picker_action=False,
-            **kwargs,
-            ):
-                                       
+        self,
+        scan,
+        do_pulse_picker_action=False,
+        **kwargs,
+    ):
+
         if not self.pulse_picker:
             return
         if not do_pulse_picker_action:
             return
-        
+
         self.pulse_picker.open(verbose=False)
-    
+
     def pulse_picker_action_end_step(
-            self,
-            scan,
-            do_pulse_picker_action=False,
-            **kwargs,
-            ):
+        self,
+        scan,
+        do_pulse_picker_action=False,
+        **kwargs,
+    ):
         if not self.pulse_picker:
             return
         if not do_pulse_picker_action:
             return
-        
+
         self.pulse_picker.close(verbose=False)
-    
-    
+
     def check_counters_for_scan(
-        self, scan, channels_to_check=["channels_BSCAM", "channels_JF"], channels_check_timeout=3, **kwargs
+        self,
+        scan,
+        channels_to_check=["channels_BSCAM", "channels_JF"],
+        channels_check_timeout=3,
+        **kwargs,
     ):
         if not set(self.channels.keys()).intersection(set(channels_to_check)):
             return
@@ -507,8 +518,8 @@ class Daq(Assembly):
         else:
             if o == "c":
                 raise Exception("User-requested cancelling!")
-            
-    def count_run_number_up_and_attach_to_scan(self,scan,**kwargs):
+
+    def count_run_number_up_and_attach_to_scan(self, scan, **kwargs):
         """
         Increments the run number by one.
         """
@@ -516,34 +527,41 @@ class Daq(Assembly):
         print(f"Run number incremented to {runno}")
         scan.daq_run_number = runno
 
+    #     def get_dap_settings(detector_name):
+    #     dap_parameters = {}
+    #     try:
+    #         r = requests.post(f'{broker_slow_address}/get_dap_settings', json={'detector_name': detector_name}, timeout=TIMEOUT_DAQ)
+    #         answer = r.json()
+    #         if "status" in answer and answer["status"] == "ok":
+    #             dap_parameters = answer.get("message", {})
+    #         else:
+    #             print(f"Got bad result from daq for dap parameters : {answer}")
+    #         return dap_parameters
+    #     except Exception as e:
+    #         print(f"Error to get dap configuration {e}")
+    #         return dap_parameters
 
-#     def get_dap_settings(detector_name):
-#     dap_parameters = {}
-#     try:
-#         r = requests.post(f'{broker_slow_address}/get_dap_settings', json={'detector_name': detector_name}, timeout=TIMEOUT_DAQ)
-#         answer = r.json()
-#         if "status" in answer and answer["status"] == "ok":
-#             dap_parameters = answer.get("message", {})
-#         else:
-#             print(f"Got bad result from daq for dap parameters : {answer}")
-#         return dap_parameters
-#     except Exception as e:
-#         print(f"Error to get dap configuration {e}")
-#         return dap_parameters
+    # def set_dap_settings(detector_name, parameters):
+    #     try:
+    #         r = requests.post(f'{broker_slow_address}/set_dap_settings', json={'detector_name': detector_name, 'parameters': parameters}, timeout=TIMEOUT_DAQ)
+    #         answer = r.json()
+    #         print(f"answer from daq for changing dap parameters for detector {detector_name} : {answer}")
+    #     except Exception as e:
+    #         print(f"Error to set dap configuration {e}")
 
-# def set_dap_settings(detector_name, parameters):
-#     try:
-#         r = requests.post(f'{broker_slow_address}/set_dap_settings', json={'detector_name': detector_name, 'parameters': parameters}, timeout=TIMEOUT_DAQ)
-#         answer = r.json()
-#         print(f"answer from daq for changing dap parameters for detector {detector_name} : {answer}")
-#     except Exception as e:
-#         print(f"Error to set dap configuration {e}")
-
-    def init_namespace(self,scan=None, init_required_namespace_components_only=True, append_status_info=True, **kwargs):
+    def init_namespace(
+        self,
+        scan=None,
+        init_required_namespace_components_only=True,
+        append_status_info=True,
+        **kwargs,
+    ):
         if append_status_info:
-            self.namespace.init_all(silent=False, required_only=init_required_namespace_components_only)
+            self.namespace.init_all(
+                silent=False, required_only=init_required_namespace_components_only
+            )
 
-    def append_start_status_to_scan(self,scan=None, append_status_info=True, **kwargs):
+    def append_start_status_to_scan(self, scan=None, append_status_info=True, **kwargs):
         if not append_status_info:
             return
         namespace_status = self.namespace.get_status(base=None)
@@ -551,17 +569,15 @@ class Daq(Assembly):
         scan.namespace_status = stat
 
     def _create_runtable_metadata_append_status_to_runtable(
-            self,
-            scan,
-            append_status_info=True,
-            **kwargs):
+        self, scan, append_status_info=True, **kwargs
+    ):
 
         print("run_table appending run")
         runno = scan.daq_run_number
         metadata = {
             "type": "scan",
             "name": scan.description.get_current_value(),
-            "scan_info_file": '',
+            "scan_info_file": "",
         }
         for n, adj in enumerate(scan.adjustables):
             nname = None
@@ -593,13 +609,16 @@ class Daq(Assembly):
         )
         t_start_rt = time.time()
         try:
-            self.run_table.append_run(runno, metadata=metadata, d=scan.namespace_status["status_run_start"]["status"])
+            self.run_table.append_run(
+                runno,
+                metadata=metadata,
+                d=scan.namespace_status["status_run_start"]["status"],
+            )
         except:
             print("WARNING: issue adding data to run table")
         print(f"Runtable appending took: {time.time()-t_start_rt:.3f} s")
 
-
-    def copy_scan_info_to_raw(self,scan, **kwargs):
+    def copy_scan_info_to_raw(self, scan, **kwargs):
         t_start = time.time()
 
         if hasattr(scan, "daq_run_number"):
@@ -611,11 +630,11 @@ class Daq(Assembly):
         # run_directory = list(
         #     Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(f"run{runno:04d}*")
         # )[0].as_posix()
-                
+
         # Get scan info from scan
         si = scan.scan_info
         # save temprary file and send then to raw
-        
+
         pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
@@ -654,23 +673,20 @@ class Daq(Assembly):
         #     f"--> creating and copying file took{time.time()-t_start} s, presently adding to deadtime."
         # )
 
-
-    def append_status_to_scan_and_store(self,
-        scan, append_status_info=True, **kwargs
-    ):
+    def append_status_to_scan_and_store(self, scan, append_status_info=True, **kwargs):
         if not append_status_info:
             return
-        
-        if not len(scan.values_done())>0:
+
+        if not len(scan.values_done()) > 0:
             return
-        
+
         namespace_status = self.namespace.get_status(base=None)
         scan.namespace_status["status_run_end"] = namespace_status
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
         else:
             runno = self.get_last_run_number()
-        
+
         pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
@@ -682,11 +698,15 @@ class Daq(Assembly):
         statusfile = tmpdir / Path("status.json")
         if not statusfile.exists():
             with open(statusfile, "w") as f:
-                json.dump(scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+                json.dump(
+                    scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                )
         else:
             with open(statusfile, "r+") as f:
                 f.seek(0)
-                json.dump(scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+                json.dump(
+                    scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                )
                 f.truncate()
                 print("Wrote status with seek truncate!")
         if not statusfile.group() == statusfile.parent.group():
@@ -702,13 +722,12 @@ class Daq(Assembly):
         # print("###############################")
         scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
 
-   
-    def check_checker_before_step(self,scan, **kwargs):
+    def check_checker_before_step(self, scan, **kwargs):
         # self.
         if self.checker:
             first_check = time.time()
             checker_unhappy = False
-            print('')
+            print("")
             while not self.checker.check_now():
                 print(
                     colorama.Fore.RED
@@ -717,7 +736,7 @@ class Daq(Assembly):
                     # end="\r",
                 )
                 sleep(1)
-                
+
                 checker_unhappy = True
             if checker_unhappy:
                 print(
@@ -726,8 +745,8 @@ class Daq(Assembly):
                     + colorama.Fore.RESET
                 )
             self.checker.clear_and_start_counting()
-            
-    def check_checker_after_step(self,scan, **kwargs):
+
+    def check_checker_after_step(self, scan, **kwargs):
         if self.checker:
             try:
                 if not self.checker.stop_and_analyze():
@@ -736,7 +755,6 @@ class Daq(Assembly):
                 print("Checking failed, assuming last step was ok.")
                 scan._current_step_ok = True
 
-    
     def copy_aliases_to_scan(self, scan, send_aliases_now=False, **kwargs):
         if send_aliases_now or (len(scan.values_done()) == 1):
             namespace_aliases = self.namespace.alias.get_all()
@@ -745,7 +763,9 @@ class Daq(Assembly):
             else:
                 runno = self.daq.get_last_run_number()
             pgroup = self.pgroup
-            tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
+            tmpdir = Path(
+                f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux"
+            )
             tmpdir.mkdir(exist_ok=True, parents=True)
             try:
                 tmpdir.chmod(0o775)
@@ -788,21 +808,21 @@ class Daq(Assembly):
             # print(response.json())
             # print("################################")
             scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
-    
+
     def scan_message_to_elog(self, scan=None, **kwargs):
         # def _create_metadata_structure_start_scan(
-    # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
+        # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
         # ):
         runno = scan.daq_run_number
         message_string = f"#### DAQ run {runno}"
         if scan.description():
-            message_string += f': {scan.description()}\n'
+            message_string += f": {scan.description()}\n"
         else:
-            message_string += f'\n'
+            message_string += f"\n"
         try:
-            elog_ids = scan.status_to_elog(message_string,auto_title=False)
+            elog_ids = scan.status_to_elog(message_string, auto_title=False)
             scan._elog_id = elog_ids[1]
-        
+
         # message_string += "`" + metadata["scan_info_file"] + "`\n"
         # try:
         #     elog_ids = self.elog.post(
@@ -810,21 +830,21 @@ class Daq(Assembly):
         #         Title=f'Run {runno}: {scan.description()}',
         #         text_encoding="markdown",
         #     )
-            
-    #     metadata.update({"elog_message_id": scan._elog_id})
-    #     metadata.update(
-    #         {"elog_post_link": scan._elog.elogs[1]._log._url + str(scan._elog_id)}
-    #     )
+
+        #     metadata.update({"elog_message_id": scan._elog_id})
+        #     metadata.update(
+        #         {"elog_post_link": scan._elog.elogs[1]._log._url + str(scan._elog_id)}
+        #     )
         except:
             print("Elog posting failed with:")
             traceback.print_exc()
 
     def append_scan_monitors(
-            self,
-            scan,
-            custom_monitors={},
-            **kwargs,
-        ):
+        self,
+        scan,
+        custom_monitors={},
+        **kwargs,
+    ):
         scan.daq_monitors = {}
         for adj in scan.adjustables:
             try:
@@ -843,7 +863,8 @@ class Daq(Assembly):
                 print("no readback configured")
                 # traceback.print_exc()
             try:
-                scan.daq_monitors[rname] = Monitor(adj.readback.pvname)
+                if hasattr(adj, "readback"):
+                    scan.daq_monitors[rname] = Monitor(adj.readback.pvname)
             except Exception:
                 print(f"Could not add CA readback monitor for {tname}")
                 traceback.print_exc()
@@ -864,19 +885,20 @@ class Daq(Assembly):
             print(f"Could not add daq.pulse_id monitor")
             traceback.print_exc()
 
-
     def end_scan_monitors(self, scan, **kwargs):
         for tmon in scan.daq_monitors:
             scan.daq_monitors[tmon].stop_callback()
 
-        monitor_result = {tmon: scan.daq_monitors[tmon].data for tmon in scan.daq_monitors}
+        monitor_result = {
+            tmon: scan.daq_monitors[tmon].data for tmon in scan.daq_monitors
+        }
 
         # save temprary file and send then to raw
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
         else:
             runno = self.get_last_run_number()
-        
+
         tmpdir = Path(f"/sf/bernina/data/{self.pgroup}/res/run_data/daq/run{runno}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
         try:
@@ -888,18 +910,21 @@ class Daq(Assembly):
             with open(scanmonitorfile, "wb") as f:
                 pickle.dump(monitor_result, f)
 
-        print(f"Copying monitor file to run {runno} to the raw directory of {self.pgroup}.")
+        print(
+            f"Copying monitor file to run {runno} to the raw directory of {self.pgroup}."
+        )
         response = self.append_aux(
             scanmonitorfile.as_posix(), pgroup=self.pgroup, run_number=runno
         )
-        print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
-
+        print(
+            f"Status: {response.json()['status']} Message: {response.json()['message']}"
+        )
 
     def get_callback_keywords(self):
         kws_all = set([])
         for cb in self.callbacks_start_scan:
             kws = foo_get_kwargs(cb)
-            
+
             if kws:
                 kws_all.update(set(kws))
                 print(cb.__name__, "has keywords:", kws)
@@ -927,7 +952,7 @@ class Daq(Assembly):
 
     # scan.monitors = None
 
-    # def run_table_stuff(self):        
+    # def run_table_stuff(self):
     #     #for run table
     #     metadata = {
     #         "type": "scan",
@@ -1007,11 +1032,6 @@ class Daq(Assembly):
     # print(f"RT appending: {time.time()-t_start_rt:.3f} s")
 
 
-
-
-
-
-
 def validate_response(resp):
     if resp.get("status") == "ok":
         return resp
@@ -1033,10 +1053,7 @@ def validate_response(resp):
 # r = requests.post(f'{broker_address}/retrieve_from_buffers',json=parameters, timeout=TIMEOUT_DAQ).json()
 
 
-
-
 #### >>> TODO implment >>>
-
 
 
 #### <<< TODO  implment <<<

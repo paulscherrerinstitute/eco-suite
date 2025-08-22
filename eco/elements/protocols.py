@@ -19,8 +19,8 @@ class Detector(Protocol):
 
 
 @runtime_checkable
-class ValueUpdateMonitorable(Protocol):
-    def get_current_value_callback(self):
+class MonitorableValueUpdate(Protocol):
+    def set_current_value_callback(self):
         ...
 
 
@@ -37,8 +37,30 @@ class Counter(Protocol):
         ...
     def stop(self):
         ...
+
+    def __enter__(self):
+        self.start()
+    
+    def __exit__(self, type, value, traceback):
+        self.stop()
  
         
         # file_name=fina, Npulses=self.pulses_per_step[0], acq_pars=acq_pars):
                 
         
+
+# class Callback:
+#     self.__init__(self, func=None, *args, **kwargs):
+#         self.func = func
+#         self.args = args
+#         self.kwargs = kwargs
+    
+#     def start(self,func=None):
+#         if func is not None:
+#             self.func = func
+        
+
+    
+    
+#     def 
+    

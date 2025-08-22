@@ -5,6 +5,9 @@ import numpy as np
 from epics import PV
 
 from eco.acquisition.utilities import Acquisition
+from eco.acquisition.decorators import scannable
+
+
 from eco.aliases import Alias
 from eco.elements.adjustable import AdjustableMemory
 from eco.elements.assembly import Assembly
@@ -12,17 +15,20 @@ from eco.elements.detector import call_convenience, value_property
 from eco.epics.adjustable import AdjustablePvString, AdjustablePv
 from eco.epics import get_from_archive
 
+from eco.acquisition.decorators import scannable
+
 
 # @call_convenience
 # @value_property
 @get_from_archive
+@scannable
 class DetectorPvData(Assembly):
     def __init__(self, pvname, name=None, unit=None, has_unit=False):
         super().__init__(name=name)
-        
+
         self.pvname = pvname
         singular = (unit is None) and (not has_unit)
-            
+
         # if name == "aramis_undulator_photon_energy":
         #     print(f"singular is {singular}", unit, has_unit)
         if unit:
@@ -49,12 +55,19 @@ class DetectorPvData(Assembly):
         else:
             return self.readback.get_current_value()
 
-    def get_current_value_callback(self, foo='accumulate',collector = [], run_once=True, print_output=False):
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
         if hasattr(self, "_pv"):
-            return CallbackEpics(self,self._pv,foo=foo,collector=collector, run_once=run_once, print_output=print_output)
+            return CallbackEpics(
+                self._pv,
+                func=func,
+                run_once=run_once,
+                print_output=print_output,
+                **kwargs,
+            )
         # else:
         #     raise Exception('the object does not have a _pv')
-        
 
     def __call__(self):
         return self.get_current_value()
@@ -255,28 +268,43 @@ class DetectorPvDataStream(Assembly):
     def get_current_value(self, **kwargs):
         return self._pv.get(**kwargs)
 
-class CallbackEpics:
-    def __init__(self,pv,foo='accumulate',collector = [], run_once=True, print_output=False):
-        self.pv = pv
-        if collector is not None:
-            self.data = collector
 
-        if foo=='accumulate':
-            foo = self.accumulate_values
-        self.foo = foo
+class CallbackEpics:
+    def __init__(
+        self,
+        pv,
+        func="accumulate",
+        collector={"timestamps": [], "values": [], "timestamps_ioc": []},
+        run_once=True,
+        print_output=False,
+    ):
+        self.pv = pv
+        # self.data = collector
+        if func == "accumulate":
+            func = self.accumulate_values
+            self.data = {"timestamps": [], "values": [], "timestamps_ioc": []}
+        self.foo = func
         self.run_once = run_once
         self.print = print_output
 
-    def start(self):
-        self.cb_index = self.pv.add_callback(self.foo,run_once=True,)
-    
+    def start(self, add_current_value=True):
+        if add_current_value:
+            ts_local = time()
+            self.data["timestamps"].append(ts_local)
+            self.data["values"].append(self.pv.get())
+            self.data["timestamps_ioc"].append(self.pv.timestamp)
+        self.cb_index = self.pv.add_callback(
+            self.foo,
+            run_once=True,
+        )
+
     def stop(self):
         self.pv.remove_callback(self.cb_index)
-    
+
     def __enter__(self):
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
 
@@ -284,9 +312,15 @@ class CallbackEpics:
         # if not self.data:
         #     self.data = []
         ts_local = time()
-        self.data.append(
-            {"value": value, "timestamp_ioc": timestamp, "timestamp_local": ts_local}
+        assert (
+            len(self.data["timestamps"])
+            == len(self.data["values"])
+            == len(self.data["timestamps_ioc"])
         )
+        self.data["timestamps"].append(ts_local)
+        self.data["values"].append(value)
+        self.data["timestamps_ioc"].append(timestamp)
+
         if self.print:
             print(
                 f"{pvname}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"

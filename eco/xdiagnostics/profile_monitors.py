@@ -94,12 +94,14 @@ class Target_xyz(Assembly):
             is_setting=True,
         )
         # temporarily remove the offsets for the limit switch homed stages
-        ix = self.settings_collection._list.index(self.x.offset)
-        self.settings_collection._list.pop(ix)
-        ix = self.settings_collection._list.index(self.y.offset)
-        self.settings_collection._list.pop(ix)
-        ix = self.settings_collection._list.index(self.z.offset)
-        self.settings_collection._list.pop(ix)
+        # should not be rquired anymor2 2025-08-11
+
+        # ix = self.settings_collection._list.index(self.x.offset)
+        # self.settings_collection._list.pop(ix)
+        # ix = self.settings_collection._list.index(self.y.offset)
+        # self.settings_collection._list.pop(ix)
+        # ix = self.settings_collection._list.index(self.z.offset)
+        # self.settings_collection._list.pop(ix)
 
 
 class ProfKbBernina(Assembly):
@@ -157,8 +159,8 @@ class ProfKbBernina(Assembly):
         self._append(
             MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_display=True
         )
-        ix = self.settings_collection._list.index(self.zoom.offset)
-        self.settings_collection._list.pop(ix)
+        ix = self.zoom.settings_collection._list.index(self.zoom.offset)
+        self.zoom.settings_collection._list.pop(ix)
 
     def movein_keep_target(self, wait=False):
         ch = self.mirror_in.set_target_value(1)

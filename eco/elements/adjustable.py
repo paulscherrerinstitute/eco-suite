@@ -83,7 +83,7 @@ def spec_convenience(Adj):
             try:
                 self._currentChange = self.set_target_value(value)
                 self._currentChange.wait()
-            except (KeyboardInterrupt,SystemExit):
+            except (KeyboardInterrupt, SystemExit):
                 self._currentChange.stop()
             return self._currentChange
 
@@ -104,10 +104,10 @@ def spec_convenience(Adj):
                 )
                 print("spec conven")
                 self._currentChange.wait()
-                
-            except (KeyboardInterrupt,SystemExit):
+
+            except (KeyboardInterrupt, SystemExit):
                 self._currentChange.stop()
-                
+
             return self._currentChange
 
         Adj.mv = mv
@@ -418,10 +418,24 @@ def _keywordChecker(kw_key_list_tups):
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
 
+def valueprop(Obj):
+    @property
+    def value(self):
+        return self.get_current_value()
+
+    @value.setter
+    def value(self, val):
+        self.set_target_value(val).wait()
+
+    Obj.value = value
+    return Obj
+
+
 @spec_convenience
 @update_changes
 @tweak_option
 @value_property
+@valueprop
 class AdjustableMemory:
     def __init__(self, value=0, name="adjustable_memory", return_deep_copy=True):
         self.name = name
@@ -605,17 +619,18 @@ class AdjustableVirtual:
 
     def set_target_value(self, value, hold=False):
         vals = self._foo_set_target_value_current_value(value)
-        
+
         if not hasattr(vals, "__iter__"):
             vals = (vals,)
-            
 
         vals_before = [adj.get_current_value() for adj in self._adjustables]
         value_before = self._foo_get_current_value(*vals_before)
-        self.last_change = {'value_before':value_before,
-                            'value_requested':value,
-                            'values_children_before':vals_before,
-                            'values_children_requested:':vals}
+        self.last_change = {
+            "value_before": value_before,
+            "value_requested": value,
+            "values_children_before": vals_before,
+            "values_children_requested:": vals,
+        }
 
         def changer(value):
             if self._check_limits:
@@ -623,7 +638,7 @@ class AdjustableVirtual:
                     raise Exception(
                         f"Target value of virtual adjustable {self.name} is outside limit values some of {[adj.name for adj in self._adjustables]}!"
                     )
-            # TODO try except for stopping all on any exception + option to return to old values before the change. 
+            # TODO try except for stopping all on any exception + option to return to old values before the change.
             if self._change_simultaneously:
                 self._active_changers = [
                     adj.set_target_value(val, hold=False)

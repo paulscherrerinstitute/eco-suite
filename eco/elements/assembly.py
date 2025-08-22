@@ -38,27 +38,26 @@ class Collection:
         self._list = []
         self._recurse = []
 
-
     # def get_list(self):
     #     return self._list
-    
-    # esired new way, in order to old containers and allow them to be replaced "on top" of a structure. 
+
+    # esired new way, in order to old containers and allow them to be replaced "on top" of a structure.
     # causes other issues  from recoursion, bigger issue...
     def get_list(self):
         ls = []
         for item in self._list:
-            
+
             # if item in ls:
             #     print(f"Item {item.alias.get_full_name()} is already in list!")
             #     continue
             if (
-                hasattr(item, f"{self.name}") 
-                and isinstance(item.__dict__[self.name],Collection) 
+                hasattr(item, f"{self.name}")
+                and isinstance(item.__dict__[self.name], Collection)
                 # and not (item.__dict__[self.name]==self)
             ):
                 # if item.__dict__[self.name]==self:
-                    # print(f"Item {item.alias.get_full_name()} contains itself in collection!")
-                
+                # print(f"Item {item.alias.get_full_name()} contains itself in collection!")
+
                 if item in self._recurse:
                     # print(f"Item {item.alias.get_full_name()} is recursing ↳ ↳ ↳ ")
                     for titem in item.__dict__[self.name].get_list():
@@ -66,9 +65,10 @@ class Collection:
                         # if titem.__dict__[self.name]==self:
                         #     print(titem.name)
                         if (
-                            titem not in ls
-                            # and not 
-                            ):
+                            titem
+                            not in ls
+                            # and not
+                        ):
                             ls.append(titem)
                 else:
                     ls.append(item)
@@ -77,7 +77,7 @@ class Collection:
         return ls
 
     def append(self, obj, recursive=True, force=False):
-        if (obj in self._list):
+        if obj in self._list:
             return
         if force:
             self._list.append(obj)
@@ -98,18 +98,16 @@ class Collection:
 
     def pop_item(self, item):
         return self.pop(self.index(item))
-    
+
     def pop_obj_children(self, obj):
         o = []
         for it in obj.__dict__[self.name].get_list():
-            if (it in self._list):
+            if it in self._list:
                 o.append(self.pop_item(it))
         return o
 
     def __call__(self):
         return self.get_list()
-
-
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -144,6 +142,7 @@ class Assembly:
         else:
             self.__class__.__elog = property(lambda dum: ELOG)
 
+    # TODO: Lazy an threaded append! (for PVs, should be quite a speedup).
     def _append(
         self,
         foo_obj_init,
@@ -160,14 +159,14 @@ class Assembly:
         **kwargs,
     ):
         if overwrite:
-            
+
             if name in self.__dict__:
                 old = self.__dict__[name]
                 for collection in [
                     self.settings_collection,
                     self.status_collection,
                 ]:
-                    if isinstance(old,Assembly):
+                    if isinstance(old, Assembly):
                         collection.pop_obj_children(old)
                     else:
                         if old in collection.get_list():
@@ -175,8 +174,7 @@ class Assembly:
                 self.display_collection.pop_item(old)
                 self.alias.pop_object(old.alias)
                 # del self.__dict__[name]
-            
-        
+
         if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
             # adj_copy = copy.copy(foo_obj_init)
             adj_copy = foo_obj_init
@@ -354,11 +352,11 @@ class Assembly:
 
         if verbose:
             if nodet:
-                print("Could not retrieve status from: " + ", ".join(nodet))
+                print("Could not retrieve status from:\n    " + ",\n    ".join(nodet))
             if geterror:
                 print(
-                    "Retrieved error while running get_current_value from: "
-                    + ", ".join(geterror)
+                    "Retrieved error while running get_current_value from:\n    "
+                    + ",\n    ".join(geterror)
                 )
 
         if print_times:
@@ -414,7 +412,10 @@ class Assembly:
         return s
 
     def get_display_str(
-        self, tablefmt="simple", with_base_name=False, maxcolwidths=[None, 50, None, None, None]
+        self,
+        tablefmt="simple",
+        with_base_name=False,
+        maxcolwidths=[None, 50, None, None, None],
     ):
         main_name = self.name
         stats = self.display_collection()
@@ -422,7 +423,7 @@ class Assembly:
         tab = []
         for to in stats:
             name = to.alias.get_full_name(base=self)
-            
+
             is_adjustable = isinstance(to, Adjustable)
             is_detector = isinstance(to, Detector)
             typechar = ""
@@ -457,9 +458,7 @@ class Assembly:
                     [".".join([main_name, name]), value, unit, typechar, description]
                 )
             else:
-                tab.append(
-                    [ name, value, unit, typechar, description]
-                )
+                tab.append([name, value, unit, typechar, description])
         if tab:
             s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
         else:

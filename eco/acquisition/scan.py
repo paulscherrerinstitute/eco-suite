@@ -9,7 +9,6 @@ import traceback
 from pathlib import Path
 import colorama
 
-from eco.elements.detector import DetectorGet, DetectorMemory
 from eco.elements.protocols import Adjustable
 from eco.utilities.utilities import NumpyEncoder, foo_get_kwargs
 from ..elements.adjustable import AdjustableMemory, DummyAdjustable
@@ -20,12 +19,13 @@ from rich.progress import Progress
 import inputimeout
 
 
+# TODO circular import issue
+from eco.elements.detector import DetectorGet, DetectorMemory
 
 inval_chars = [" ", "/"]
 ScanNameError = Exception(
     f"invalid character in acquisition name, please use a name without {inval_chars}"
 )
-
 
 
 class RunList(Assembly):
@@ -42,7 +42,7 @@ class StepScan(Assembly):
         adjustables,
         values,
         counters,
-        description='',
+        description="",
         Npulses=100,
         basepath="",
         settling_time=0,
@@ -52,57 +52,75 @@ class StepScan(Assembly):
         callbacks_end_step=[],
         callbacks_end_scan=[],
         return_at_end="timeout",
-        gridspecs = None,
+        gridspecs=None,
         elog=None,
-        name='current_scan',
+        name="current_scan",
         **kwargs_callbacks,
     ):
         # if np.any([char in fina for char in inval_chars]):
         #     raise ScanNameError
-        super().__init__(name=name)
-        self._append(DetectorMemory, datetime.now().strftime('%Y-%M-%d %H:%M:%S'), name='start_time')
-        self._description = description
-        self._append(DetectorGet, lambda : self._description, name='description')
-        self.adjustables = adjustables
-        self._append(DetectorGet, lambda : self._get_names(self.adjustables), name='adjustables_names')
-        self.counters = counters
-        self._append(DetectorGet, lambda : self._get_names(self.counters), name='counters_names')
 
-        self._append(DetectorMemory, len(values), name='number_of_steps')
+        super().__init__(name=name)
+        self._append(
+            DetectorMemory,
+            datetime.now().strftime("%Y-%M-%d %H:%M:%S"),
+            name="start_time",
+        )
+        self._description = description
+        self._append(DetectorGet, lambda: self._description, name="description")
+        self.adjustables = adjustables
+        self._append(
+            DetectorGet,
+            lambda: self._get_names(self.adjustables),
+            name="adjustables_names",
+        )
+        self.counters = counters
+        self._append(
+            DetectorGet, lambda: self._get_names(self.counters), name="counters_names"
+        )
+
+        self._append(DetectorMemory, len(values), name="number_of_steps")
         try:
             scan_command = get_ipython().user_ns["In"][-1]
         except:
             scan_command = "unknown"
-        self._append(DetectorMemory, scan_command, name='scan_command')
+        self._append(DetectorMemory, scan_command, name="scan_command")
 
+        # TODO: make Npulses and pulses_per_step general counter arguments that are eihter interpreted by the counter or that are replaced by counter depedent kwargs.
         if not isinstance(Npulses, Number):
             if not len(Npulses) == len(values):
                 raise ValueError("steps for Number of pulses and values must match!")
             self.pulses_per_step = Npulses
         else:
             self.pulses_per_step = [Npulses] * len(values)
-        
+
         self._values_todo = values
-        self._append(DetectorGet, lambda : self._values_todo, name='values_todo', is_display=False)
+        self._append(
+            DetectorGet, lambda: self._values_todo, name="values_todo", is_display=False
+        )
         self._values_done = []
-        self._append(DetectorGet, lambda : self._values_done, name='values_done', is_display=False)
-        self._append(DetectorMemory, gridspecs, name='grid_specs', is_display=False)
-        
+        self._append(
+            DetectorGet, lambda: self._values_done, name="values_done", is_display=False
+        )
+        self._append(DetectorMemory, gridspecs, name="grid_specs", is_display=False)
+
         self.pulses_done = []
-        
+
         self.readbacks = []
-        
+
         self._settling_time = settling_time
-        self._append(DetectorGet, lambda : self._settling_time, name='settling_time', is_display=False)
+        self._append(
+            DetectorGet,
+            lambda: self._settling_time,
+            name="settling_time",
+            is_display=False,
+        )
         self.next_step = 0
-        
-        
-        
+
         self.scan_info = {
             "scan_parameters": {
                 "name": self.adjustables_names.get_current_value(),
                 "grid_specs": self.grid_specs.get_current_value(),
-                
                 # "Id": [ta.Id if hasattr(ta, "Id") else "noId" for ta in adjustables],
             },
             "scan_description": self._description,
@@ -113,17 +131,17 @@ class StepScan(Assembly):
             "scan_step_info": [],
         }
 
-        self._append(DetectorGet, lambda : self.scan_info, name='info', is_display=False)
+        self._append(DetectorGet, lambda: self.scan_info, name="info", is_display=False)
 
-
-        
         initial_values = []
         for adj in self.adjustables:
             tv = adj.get_current_value()
             initial_values.append(adj.get_current_value())
             print("Initial value of %s : %g" % (adj.name, tv))
 
-        self._append(DetectorMemory, initial_values, name='initial_values', is_display=False)
+        self._append(
+            DetectorMemory, initial_values, name="initial_values", is_display=False
+        )
 
         self.return_at_end = return_at_end
         self._elog = elog
@@ -134,8 +152,6 @@ class StepScan(Assembly):
         self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
         self.callbacks_kwargs = kwargs_callbacks
-        
-        
 
         self._have_run_callbacks_start_scan = False
 
@@ -150,6 +166,7 @@ class StepScan(Assembly):
             else:
                 names.append("unknown")
         return names
+
     def run_callbacks_start_scan(self):
         if self.callbacks_start_scan:
             for caller in self.callbacks_start_scan:
@@ -158,6 +175,7 @@ class StepScan(Assembly):
             if hasattr(ctr, "callbacks_start_scan") and ctr.callbacks_start_scan:
                 for tcb in ctr.callbacks_start_scan:
                     tcb(self, **self.callbacks_kwargs)
+
     def run_callbacks_start_step(self):
         if self.callbacks_start_step:
             for caller in self.callbacks_start_step:
@@ -166,6 +184,7 @@ class StepScan(Assembly):
             if hasattr(ctr, "callbacks_start_step") and ctr.callbacks_start_step:
                 for tcb in ctr.callbacks_start_step:
                     tcb(self, **self.callbacks_kwargs)
+
     def run_callbacks_step_counting(self):
         if self.callbacks_step_counting:
             for caller in self.callbacks_step_counting:
@@ -174,6 +193,7 @@ class StepScan(Assembly):
             if hasattr(ctr, "callbacks_step_counting") and ctr.callbacks_step_counting:
                 for tcb in ctr.callbacks_step_counting:
                     tcb(self, **self.callbacks_kwargs)
+
     def has_callbacks_step_counting(self):
         if self.callbacks_step_counting:
             return True
@@ -181,6 +201,7 @@ class StepScan(Assembly):
             if hasattr(ctr, "callbacks_step_counting") and ctr.callbacks_step_counting:
                 return True
         return False
+
     def run_callbacks_end_step(self):
         if self.callbacks_end_step:
             for caller in self.callbacks_end_step:
@@ -188,7 +209,8 @@ class StepScan(Assembly):
         for ctr in self.counters:
             if hasattr(ctr, "callbacks_end_step") and ctr.callbacks_end_step:
                 for tcb in ctr.callbacks_end_step:
-                    tcb(self, **self.callbacks_kwargs)                    
+                    tcb(self, **self.callbacks_kwargs)
+
     def run_callbacks_end_scan(self):
         if self.callbacks_end_scan:
             for caller in self.callbacks_end_scan:
@@ -197,8 +219,6 @@ class StepScan(Assembly):
             if hasattr(ctr, "callbacks_end_scan") and ctr.callbacks_end_scan:
                 for tcb in ctr.callbacks_end_scan:
                     tcb(self, **self.callbacks_kwargs)
-
-
 
     # def get_filename(self, stepNo, Ndigits=4):
     #     fina = os.path.join(self.basepath, Path(self.fina).stem)
@@ -212,13 +232,16 @@ class StepScan(Assembly):
         t_step_start = time()
         self.run_callbacks_start_step()
 
-        dt_callbacks_step_start = time()-t_step_start
+        dt_callbacks_step_start = time() - t_step_start
 
         if not len(self._values_todo) > 0:
             return False
         self.values_current_step = self._values_todo[0]
-        statstr = "Step %d of %d" % (self.next_step + 1, len(self._values_todo) + len(self._values_done))
-                
+
+        statstr = "Step %d of %d" % (
+            self.next_step + 1,
+            len(self._values_todo) + len(self._values_done),
+        )
 
         # fina = self.get_filename(self.nextStep)
         t_adj_start = time()
@@ -227,7 +250,7 @@ class StepScan(Assembly):
             ms.append(adj.set_target_value(tv))
         for tm in ms:
             tm.wait()
-        dt_adj = time()-t_adj_start
+        dt_adj = time() - t_adj_start
 
         # settling
         sleep(self._settling_time)
@@ -238,8 +261,8 @@ class StepScan(Assembly):
         adjs_name = []
         adjs_offset = []
         adjs_id = []
-        
-        statstr += '   '
+
+        statstr += "   "
         for adj in self.adjustables:
             self.readbacks_current_step.append(adj.get_current_value())
             try:
@@ -249,15 +272,14 @@ class StepScan(Assembly):
             except:
                 print("acquiring metadata failed")
                 pass
-        
-        
 
-        
-        statstr += ' ; Ctrs '
+        statstr += " ; Ctrs "
         if not self.has_callbacks_step_counting():
             acs = []
             for ctr in self.counters:
-                acq = ctr.acquire(scan=self, Npulses=self.pulses_per_step[0])
+                acq = ctr.acquire(
+                    scan=self, Npulses=self.pulses_per_step[0]
+                )  # TODO make sure step-individual aquisition argument is possible.
                 acs.append(acq)
                 try:
                     if hasattr(ctr, "name"):
@@ -267,7 +289,8 @@ class StepScan(Assembly):
             filenames = []
             for ta in acs:
                 ta.wait()
-                filenames.extend(ta.file_names)
+                if hasattr(ta, "file_names"):
+                    filenames.extend(ta.file_names)
         else:
             acs = []
             for ctr in self.counters:
@@ -283,13 +306,11 @@ class StepScan(Assembly):
             for ctr in self.counters:
                 resp = ctr.stop(scan=self)
                 filenames.extend(resp["files"])
-        statstr = statstr[:-2] + ' done.'
-        print(statstr, end='\n')
-        
-        dt_ctr = time() - t_ctr_start
-        sleep(.003) # from display debugging, maybe unnecessary.
+        statstr = statstr[:-2] + " done."
+        print(statstr, end="\n")
 
-        
+        dt_ctr = time() - t_ctr_start
+        sleep(0.003)  # from display debugging, maybe unnecessary.
 
         ### >>> Callback end
         t_callbacks_step_end = time()
@@ -304,25 +325,32 @@ class StepScan(Assembly):
         self.pulses_done.append(self.pulses_per_step.pop(0))
         self.readbacks.append(self.readbacks_current_step)
 
+        gridspecs = self.grid_specs.get_current_value()
+        if gridspecs:
+            tstepinfo["grid_index"] = gridspecs["index_plan"][self.next_step]
+
+        tstepinfo["times"] = {
+            "callbacks_step_start": dt_callbacks_step_start,
+            "adjustables": dt_adj,
+            "counters": dt_ctr,
+        }
+
+        self.appendScanInfo(
+            self.values_current_step,
+            self.readbacks_current_step,
+            step_files=filenames,
+            step_info=tstepinfo,
+        )
+        # self.writeScanInfo()
+
         self.run_callbacks_end_step()
         dt_callbacks_step_end = time() - t_callbacks_step_end
         ### <<<< Callback end
 
-        tstepinfo['times'] = {
-            "callbacks_step_start":dt_callbacks_step_start,
-            "adjustables" : dt_adj,
-            "counters" : dt_ctr,
-            "callbacks_step_end": dt_callbacks_step_end,
-        }
-
-        gridspecs = self.grid_specs.get_current_value()
-        if gridspecs:
-            tstepinfo['grid_index'] = gridspecs['index_plan'][self.next_step]
-
-        self.appendScanInfo(
-            self.values_current_step, self.readbacks_current_step, step_files=filenames, step_info=tstepinfo
-        )
-        # self.writeScanInfo()
+        # hack to update the times
+        self.scan_info["scan_step_info"][-1]["times"][
+            "callbacks_step_end"
+        ] = dt_callbacks_step_end
 
         if self._current_step_ok:
             self.next_step += 1
@@ -342,7 +370,7 @@ class StepScan(Assembly):
         kws_all = set([])
         for cb in self.callbacks_start_scan:
             kws = foo_get_kwargs(cb)
-            
+
             if kws:
                 kws_all.update(set(kws))
                 print(cb.__name__, "has keywords:", kws)
@@ -400,20 +428,18 @@ class StepScan(Assembly):
 
         return kws_all
 
-            
         # kws = set([])
         # kws.union(*[set(foo_get_kwargs(cb)) for cb in self.callbacks_start_scan])
         # kws.union(*[set(foo_get_kwargs(cb)) for cb in self.callbacks_start_step])
         # kws.union(*[set(foo_get_kwargs(cb)) for cb in self.callbacks_end_step])
         # kws.union(*[set(foo_get_kwargs(cb)) for cb in self.callbacks_end_scan])
 
-        # for ctr in self.counters:    
+        # for ctr in self.counters:
         #     kws.union(*[set(foo_get_kwargs(cb)) for cb in ctr.callbacks_start_scan if hasattr(ctr, "callbacks_start_scan")])
         #     kws.union(*[set(foo_get_kwargs(cb)) for cb in ctr.callbacks_start_step if hasattr(ctr, "callbacks_start_step")])
         #     kws.union(*[set(foo_get_kwargs(cb)) for cb in ctr.callbacks_end_step if hasattr(ctr, "callbacks_end_step")])
         #     kws.union(*[set(foo_get_kwargs(cb)) for cb in ctr.callbacks_end_scan if hasattr(ctr, "callbacks_end_step")])
         # return kws
-
 
     def writeScanInfo(self):
         if not Path(self.scan_info_filename).exists():
@@ -494,11 +520,9 @@ class StepScan(Assembly):
         return c
 
 
-
-
-
 class Scans(Assembly):
     """Convenience class to initialte typical scans with some default parameters the base StepScan and others."""
+
     def __init__(
         self,
         # data_base_dir="",
@@ -513,14 +537,14 @@ class Scans(Assembly):
         callbacks_end_scan=[],
         # run_table=None,
         elog=None,
-        name='scans',
+        name="scans",
     ):
         super().__init__(name=name)
         # self._run_table = run_table
         self.callbacks_start_scan = callbacks_start_scan
         self.callbacks_start_step = callbacks_start_step
         self.callbacks_step_counting = callbacks_step_counting
-        
+
         self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
         # self.data_base_dir = data_base_dir
@@ -549,22 +573,23 @@ class Scans(Assembly):
         # self.scan_info_dir = scan_info_dir
         # self.filename_generator = RunFilenameGenerator(self.scan_info_dir)
         self._default_counters = default_counters
-        self._append(DetectorGet, self._get_counter_names, name='default_counters_names')
-        self._append(DetectorMemory, 'none since session start', name='acquiring_scan')
+        self._append(
+            DetectorGet, self._get_counter_names, name="default_counters_names"
+        )
+        self._append(DetectorMemory, "none since session start", name="acquiring_scan")
         # self.checker = checker
         # self._scan_directories = scan_directories
         self._elog = elog
 
-
     def _get_counter_names(self):
         """Get the names of the default counters."""
         return [tc.name for tc in self._default_counters]
-    
+
     def get_callback_keywords(self):
         kws_all = set([])
         for cb in self.callbacks_start_scan:
             kws = foo_get_kwargs(cb)
-            
+
             if kws:
                 kws_all.update(set(kws))
                 print(cb.__name__, "has keywords:", kws)
@@ -622,12 +647,11 @@ class Scans(Assembly):
 
         return kws_all
 
-    
     def acquire(
         self,
         N_pulses,
         N_repetitions=1,
-        description='',
+        description="",
         counters=[],
         start_immediately=True,
         settling_time=0,
@@ -641,14 +665,14 @@ class Scans(Assembly):
         # file_name = self.filename_generator.get_nextrun_filename(file_name)
         # run_number = self.filename_generator.get_nextrun_number()
         # if checker == "default":
-            # checker = self.checker
+        # checker = self.checker
         if not counters:
             counters = self._default_counters
         s = StepScan(
             [adjustable],
             values,
-            counters = counters,
-            description = description,
+            counters=counters,
+            description=description,
             Npulses=N_pulses,
             settling_time=settling_time,
             callbacks_start_scan=self.callbacks_start_scan,
@@ -657,14 +681,14 @@ class Scans(Assembly):
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
             return_at_end=return_at_end,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s,name='acquiring_scan', overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
-    
+
     def ascan(
         self,
         adjustable,
@@ -680,14 +704,14 @@ class Scans(Assembly):
         step_info=None,
         **kwargs_callbacks,
     ):
-        
+
         if type(N_intervals) is float:
-            print('Interval size defined as float, interpreting as interval size.')
+            print("Interval size defined as float, interpreting as interval size.")
             positions = np.arange(start_pos, N_intervals, end_pos)
         elif type(N_intervals) is int:
-            print('Interval size defined as int, interpreting as number of intervals.')
+            print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)
-        
+
         values = [[tp] for tp in positions]
         if not counters:
             counters = self._default_counters
@@ -704,14 +728,14 @@ class Scans(Assembly):
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s,name='acquiring_scan', overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
-    
+
     def ascan_position_list(
         self,
         adjustable,
@@ -724,15 +748,15 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         return_at_end="timeout",
-        name='acquiring_scan',
+        name="acquiring_scan",
         **kwargs_callbacks,
-        ):
+    ):
         positions = position_list
         values = [[tp] for tp in positions]
-        
+
         if not counters:
             counters = self._default_counters
-        
+
         s = StepScan(
             [adjustable],
             values,
@@ -746,14 +770,13 @@ class Scans(Assembly):
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s,name='acquiring_scan', overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
-
 
     def dscan(
         self,
@@ -773,18 +796,17 @@ class Scans(Assembly):
         """Differential scan, i.e. the adjustable is moved to the start position and then moved in steps of the interval size."""
 
         if type(N_intervals) is float:
-            print('Interval size defined as float, interpreting as interval size.')
+            print("Interval size defined as float, interpreting as interval size.")
             positions = np.arange(start_pos, N_intervals, end_pos)
         elif type(N_intervals) is int:
-            print('Interval size defined as int, interpreting as number of intervals.')
+            print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         current = adjustable.get_current_value()
         values = [[tp + current] for tp in positions]
-        
-        
+
         if not counters:
             counters = self._default_counters
-        
+
         s = StepScan(
             [adjustable],
             values,
@@ -798,21 +820,20 @@ class Scans(Assembly):
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s,name='acquiring_scan', overwrite=True, status=True)
+        self._append(s, name="acquiring_scan", overwrite=True, status=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
-
 
     def snakescan(
         self,
         adjustable_slow,
         step_interval,
         Nrows,
-        adjustable_fast,        
+        adjustable_fast,
         interval,
         description="",
         counters=[],
@@ -822,35 +843,37 @@ class Scans(Assembly):
         return_at_end="timeout",
         **kwargs_callbacks,
     ):
-        
 
         adj_slow_start = adjustable_slow.get_current_value()
         adj_fast_start = adjustable_fast.get_current_value()
-        print('Snakescan is relative, starting from here: %s, %s' % (adj_slow_start, adj_fast_start))
+        print(
+            "Snakescan is relative, starting from here: %s, %s"
+            % (adj_slow_start, adj_fast_start)
+        )
 
         start_positions = [
-            [adj_slow_start + step_interval * i, adj_fast_start + (i%2)*interval ]
-              for i in range(Nrows)]
-        
-        def counting_function(scan,**kwargs):
+            [adj_slow_start + step_interval * i, adj_fast_start + (i % 2) * interval]
+            for i in range(Nrows)
+        ]
+
+        def counting_function(scan, **kwargs):
             cv = adjustable_fast.get_current_value()
             print(cv)
             if abs(cv - adj_fast_start) < abs(cv - adj_fast_start - interval):
-                print('moving to interval')
-                adjustable_fast.set_target_value(adj_fast_start +interval).wait()
+                print("moving to interval")
+                adjustable_fast.set_target_value(adj_fast_start + interval).wait()
             else:
-                print('moving back')
+                print("moving back")
                 adjustable_fast.set_target_value(adj_fast_start).wait()
 
-        
         if not counters:
             counters = self._default_counters
-        
+
         s = StepScan(
             [adjustable_slow, adjustable_fast],
             start_positions,
             counters,
-            Npulses=1, 
+            Npulses=1,
             description=description,
             return_at_end=return_at_end,
             settling_time=settling_time,
@@ -860,14 +883,14 @@ class Scans(Assembly):
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s,name='acquiring_scan', overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
-    
+
     def a2scan(
         self,
         adjustable0,
@@ -910,10 +933,10 @@ class Scans(Assembly):
             run_table=self._run_table,
             elog=self._elog,
             return_at_end=return_at_end,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s,name='acquiring_scan', overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
@@ -921,7 +944,7 @@ class Scans(Assembly):
     def meshscan(
         self,
         *adj_specs,
-        scanning_order='last_fastest',
+        scanning_order="last_fastest",
         N_pulses=None,
         description="",
         counters=[],
@@ -945,25 +968,25 @@ class Scans(Assembly):
                 positions.append(interpret_step_specification(spec))
 
         shape = [len(tp) for tp in positions]
-        
-        if scanning_order=='last_fastest':
+
+        if scanning_order == "last_fastest":
             index_plan = list(product(*[range(n) for n in shape]))
-        elif scanning_order=='fist_fastst':
+        elif scanning_order == "fist_fastst":
             index_plan = [tc[::-1] for tc in product(*[range(n) for n in shape][::-1])]
 
         values = []
         for ixs in index_plan:
-            values.append([tp[ti] for ti,tp in zip(ixs,positions)])
+            values.append([tp[ti] for ti, tp in zip(ixs, positions)])
 
         gridspecs = {
-            'shape' : shape,
-            'positions':positions,
-            'index_plan':index_plan,
+            "shape": shape,
+            "positions": positions,
+            "index_plan": index_plan,
         }
-        
+
         if not counters:
             counters = self._default_counters
-        
+
         s = StepScan(
             adjustables,
             values,
@@ -978,18 +1001,13 @@ class Scans(Assembly):
             callbacks_end_scan=self.callbacks_end_scan,
             elog=self._elog,
             gridspecs=gridspecs,
-            name='acquiring_scan',
+            name="acquiring_scan",
             **kwargs_callbacks,
         )
-        
-        self._append(s,name='acquiring_scan', overwrite=True)
+
+        self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-
-
-
-    
-
 
 
 class RunFilenameGenerator:
@@ -1048,21 +1066,22 @@ class RunFilenameGenerator:
         )
 
 
-
 def interpret_step_specification(spec):
-    # normal linear scan                                 
-    if len(spec) == 3 and all(isinstance(ta,Number) for ta in spec):
+    # normal linear scan
+    if len(spec) == 3 and all(isinstance(ta, Number) for ta in spec):
         start_pos, end_pos, N_intervals = spec
         if type(N_intervals) is float:
-            print('Interval size defined as float, interpreting as interval size.')
+            print("Interval size defined as float, interpreting as interval size.")
             positions = np.arange(start_pos, N_intervals, end_pos)
         elif type(N_intervals) is int:
-            print('Interval size defined as int, interpreting as number of intervals.')
+            print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)
         return positions
     elif len(spec) == 1 and np.iterable(spec[0]):
         if type(spec[0]) is str:
-            raise Exception("Step position specification is a string, interpreting as position list!")
+            raise Exception(
+                "Step position specification is a string, interpreting as position list!"
+            )
         positions = spec[0]
         return positions
     else:

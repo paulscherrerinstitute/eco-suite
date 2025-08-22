@@ -201,24 +201,19 @@ def linlog_intervals(*args, verbose=True, plot=False):
         
     
 
+class ArrayTimestamp:
+    def __init__(self, data=None, timestamps = None):
+        if len(data) != len(timestamps):
+            raise ValueError("Data and timestamps must have the same length.")
+        if not isinstance(data, np.ndarray):
+            data = np.array(data)
+        if not isinstance(timestamps, np.ndarray):
+            timestamps = np.array(timestamps)
+        self.data = data
+        self.timestamps = timestamps
 
-# TODO
 
-# _wait_strs = '\|/-\|/-'
-
-# class WaitInput:
-#     def __init__(self,text,wait_time=5,update_interval=1):
-#         self.text = text
-#         self.wait_time=wait_time
-
-
-#     def start(self):
-#         resttime = self.wait_time
-#         while resttime>0:
-#             print(f"You have {resttime} seconds to answer!")
-#             i, o, e = select.select( [sys.stdin], [], [], 2 )
-
-#         if (i):
-#             print("You said", sys.stdin.readline().strip())
-#         else:
-#             print("You said nothing!")
+class ScanTimestamp:
+    def __init__(self, timestamp_intervals,par_steps):
+        self.timestamp_intervals = timestamp_intervals
+        
