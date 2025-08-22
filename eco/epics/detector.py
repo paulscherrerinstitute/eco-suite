@@ -146,6 +146,7 @@ class DetectorPvString:
 # @call_convenience
 # @value_property
 @get_from_archive
+@scannable
 class DetectorPvDataStream(Assembly):
     def __init__(self, pvname, name=None, has_fields=False):
         super().__init__(name=name)
@@ -264,6 +265,20 @@ class DetectorPvDataStream(Assembly):
         ]
 
     data = property(get_data)
+
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        if hasattr(self, "_pv"):
+            return CallbackEpics(
+                self._pv,
+                func=func,
+                run_once=run_once,
+                print_output=print_output,
+                **kwargs,
+            )
+        # else:
+        #     raise Exception('the object does not have a _pv')
 
     def get_current_value(self, **kwargs):
         return self._pv.get(**kwargs)

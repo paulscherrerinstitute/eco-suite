@@ -8,9 +8,12 @@ from ..epics import get_from_archive
 from escape import stream
 from time import time, sleep
 from eco.acquisition.utilities import Acquisition
+from eco.acquisition.decorators import scannable
+from eco.epics.detector import CallbackEpics
 
 
 @get_from_archive
+@scannable
 class DetectorBsStream:
     def __init__(self, bs_channel, cachannel="same", name=None):
         self.name = name
@@ -159,6 +162,18 @@ class DetectorBsStream:
             + 1
             + self._accumulate["n_buffer"]
         ]
+
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        if hasattr(self, "_pv"):
+            return CallbackEpics(
+                self._pv,
+                func=func,
+                run_once=run_once,
+                print_output=print_output,
+                **kwargs,
+            )
 
 
 @get_from_archive

@@ -171,8 +171,8 @@ class Daq(Assembly):
                 channels_BS=self.channels["channels_BS"].get_current_value(),
                 channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
                 channels_CA=self.channels["channels_CA"].get_current_value(),
-                **acq_pars,
-            )
+                **acq_pars
+                )
             acquisition.acquisition_kwargs.update({"file_names": response["files"]})
             if scan and not scan.daq_run_number == int(response["run_number"]):
                 raise Exception(

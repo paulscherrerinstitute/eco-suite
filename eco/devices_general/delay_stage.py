@@ -19,7 +19,6 @@ _status_messages = {
     4: "move-without-wait finished, soft limit violation seen",
 }
 
-
 class DelayStage:
     def __init__(self, stage, name=None):
         self._stage = stage

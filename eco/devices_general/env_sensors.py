@@ -63,6 +63,3 @@ class WagoSensor(Assembly):
     
     def get_current_value(self):
         return self.temperature.get_current_value()
-    
-    
-

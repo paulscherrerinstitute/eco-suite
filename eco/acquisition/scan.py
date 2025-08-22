@@ -707,7 +707,7 @@ class Scans(Assembly):
 
         if type(N_intervals) is float:
             print("Interval size defined as float, interpreting as interval size.")
-            positions = np.arange(start_pos, N_intervals, end_pos)
+            positions = np.arange(start_pos, end_pos + N_intervals, N_intervals)
         elif type(N_intervals) is int:
             print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)
@@ -797,7 +797,7 @@ class Scans(Assembly):
 
         if type(N_intervals) is float:
             print("Interval size defined as float, interpreting as interval size.")
-            positions = np.arange(start_pos, N_intervals, end_pos)
+            positions = np.arange(start_pos, end_pos + N_intervals, N_intervals)
         elif type(N_intervals) is int:
             print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)

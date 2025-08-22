@@ -135,11 +135,12 @@ class CounterValue:
                 timestamps=mon.data["timestamps"],
                 timestamp_intervals=scan.timestamp_intervals,
                 parameter=parameter_from_scan(scan),
+                name=monname,
             )
 
     def plot_arrays(self, scan, **kwargs):
         if not hasattr(scan, "animation"):
-            print("calledddddddddddddddd")
+
             plt.close("CounterValue")
             f, axs = plt.subplots(
                 len(scan.monitor_scan_arrays), 1, sharex=True, num="CounterValue"
