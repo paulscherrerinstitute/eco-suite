@@ -254,7 +254,6 @@ class TimetoolBerninaUSD(Assembly):
             except Exception as e:
                 print(f"Andor spectrometer initialization failed with: \n{e}")
 
-
     def get_calibration_values(
         self, seconds=5, scan_range=0.8e-12, plot=False, pipeline=True, to_elog=False
     ):
@@ -272,8 +271,8 @@ class TimetoolBerninaUSD(Assembly):
                     sleep(5)
                 ys = self.edge_position_px.acquire(seconds=seconds).wait()
                 y.append(ys)
-                ymean.append(np.mean(ys))
-                yerr.append(np.std(ys) / np.sqrt(len(ys)))
+                ymean.append(np.nanmean(ys))
+                yerr.append(np.nanstd(ys) / np.sqrt(len(ys)))
         except Exception as e:
             print(e)
             print(f"Moving back to inital value of {t0}")

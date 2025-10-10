@@ -503,13 +503,13 @@ class PositionMonitors(Assembly):
             is_display="recursive",
             is_status=True,
         )
-        self._append(
-            CameraPositionMonitor,
-            "SLAAR21-LCAM-CS841",
-            name="table2_position",
-            is_display="recursive",
-            is_status=True,
-        )
+        # self._append(
+        #     CameraPositionMonitor,
+        #     "SLAAR21-LCAM-CS841",
+        #     name="table2_position",
+        #     is_display="recursive",
+        #     is_status=True,
+        # )
         # self._append(
         #     CameraPositionMonitor,
         #     "SLAAR21-LCAM-C511",

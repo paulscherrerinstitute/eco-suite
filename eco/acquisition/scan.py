@@ -253,6 +253,7 @@ class StepScan(Assembly):
         dt_adj = time() - t_adj_start
 
         # settling
+
         sleep(self._settling_time)
 
         # counters
@@ -321,9 +322,6 @@ class StepScan(Assembly):
             tstepinfo = step_info.get_current_value()
         else:
             tstepinfo = {}
-        self._values_done.append(self._values_todo.pop(0))
-        self.pulses_done.append(self.pulses_per_step.pop(0))
-        self.readbacks.append(self.readbacks_current_step)
 
         gridspecs = self.grid_specs.get_current_value()
         if gridspecs:
@@ -334,15 +332,13 @@ class StepScan(Assembly):
             "adjustables": dt_adj,
             "counters": dt_ctr,
         }
-
-        self.appendScanInfo(
+        # Preliminary appending info for end step callbacks
+        self.append_scan_info(
             self.values_current_step,
             self.readbacks_current_step,
             step_files=filenames,
             step_info=tstepinfo,
         )
-        # self.writeScanInfo()
-
         self.run_callbacks_end_step()
         dt_callbacks_step_end = time() - t_callbacks_step_end
         ### <<<< Callback end
@@ -353,18 +349,31 @@ class StepScan(Assembly):
         ] = dt_callbacks_step_end
 
         if self._current_step_ok:
+            self._values_done.append(self._values_todo.pop(0))
+            self.pulses_done.append(self.pulses_per_step.pop(0))
+            self.readbacks.append(self.readbacks_current_step)
             self.next_step += 1
-            return True
         else:
-            return False
+            # removing scan step info again if step was not ok
+            self.remove_last_scan_info_entry()
 
-    def appendScanInfo(
+        return True
+
+    def append_scan_info(
         self, values_step, readbacks_step, step_files=None, step_info=None
     ):
         self.scan_info["scan_values"].append(values_step)
         self.scan_info["scan_readbacks"].append(readbacks_step)
         self.scan_info["scan_files"].append(step_files)
         self.scan_info["scan_step_info"].append(step_info)
+
+    def remove_last_scan_info_entry(
+        self,
+    ):
+        self.scan_info["scan_values"].pop(-1)
+        self.scan_info["scan_readbacks"].pop(-1)
+        self.scan_info["scan_files"].pop(-1)
+        self.scan_info["scan_step_info"].pop(-1)
 
     def get_callback_keywords(self):
         kws_all = set([])
@@ -734,7 +743,7 @@ class Scans(Assembly):
         self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        # return s
+        return s
 
     def ascan_position_list(
         self,
@@ -776,7 +785,7 @@ class Scans(Assembly):
         self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        # return s
+        return s
 
     def dscan(
         self,
@@ -826,7 +835,7 @@ class Scans(Assembly):
         self._append(s, name="acquiring_scan", overwrite=True, status=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        # return s
+        return s
 
     def snakescan(
         self,
@@ -889,7 +898,7 @@ class Scans(Assembly):
         self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        # return s
+        return s
 
     def a2scan(
         self,
@@ -939,7 +948,7 @@ class Scans(Assembly):
         self._append(s, name="acquiring_scan", overwrite=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        # return s
+        return s
 
     def meshscan(
         self,
@@ -1009,6 +1018,8 @@ class Scans(Assembly):
         if start_immediately:
             s.scan_all(step_info=step_info)
 
+        return s
+
 
 class RunFilenameGenerator:
     def __init__(self, path, prefix="run", Ndigits=4, separator="_", suffix="json"):
@@ -1073,9 +1084,9 @@ def interpret_step_specification(spec):
         spec (tuple/list): interable of different format:
             - 3 numbers: start, end, N_intervals or interval size (int or float)
             - 1 iterable of positions
-            - anchor positions with linear or logarithmic filled spaces. 
+            - anchor positions with linear or logarithmic filled spaces.
               i.e. odd number of elements, where every second element is an iterable ('lin',<float size or int intervals>), interpreted as lin-log intervals
-    
+
     Returns:
         array: array of positions
     """
@@ -1084,7 +1095,7 @@ def interpret_step_specification(spec):
         start_pos, end_pos, N_intervals = spec
         if type(N_intervals) is float:
             print("Interval size defined as float, interpreting as interval size.")
-            positions = np.arange(start_pos, end_pos+N_intervals, N_intervals)
+            positions = np.arange(start_pos, end_pos + N_intervals, N_intervals)
         elif type(N_intervals) is int:
             print("Interval size defined as int, interpreting as number of intervals.")
             positions = np.linspace(start_pos, end_pos, N_intervals + 1)
@@ -1096,7 +1107,7 @@ def interpret_step_specification(spec):
             )
         positions = spec[0]
         return positions
-    elif len(spec)%2 and all([np.iterable(ts) for ts in spec[1::2]]):
+    elif len(spec) % 2 and all([np.iterable(ts) for ts in spec[1::2]]):
         return linlog_intervals(*spec)
     else:
         raise Exception(

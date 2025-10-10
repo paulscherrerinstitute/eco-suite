@@ -105,14 +105,19 @@ class CheckerBS(Assembly):
     #     self.PV.clear_callbacks()
 
     def stop_and_analyze(self):
-        data = np.asarray(self.monitor.accumulate_stop())
-        thresholds = self.thresholds()
-        good = np.logical_and(data > thresholds[0], data < thresholds[1])
-        fraction = np.nansum(good) / len(good)
-        isgood = fraction >= self.required_fraction()
-        if not isgood:
-            print(f"Checker: {fraction*100}% inside limits {self.thresholds()},")
-            print(f"         given limit was {self.required_fraction()*100}%.")
+        try:
+            data = np.asarray(self.monitor.accumulate_stop())
+            thresholds = self.thresholds()
+            good = np.logical_and(data > thresholds[0], data < thresholds[1])
+
+            fraction = np.nansum(good) / len(good)
+            isgood = fraction >= self.required_fraction()
+
+            if not isgood:
+                print(f"Checker: {fraction*100}% inside limits {self.thresholds()},")
+                print(f"         given limit was {self.required_fraction()*100}%.")
+        except:
+            return False
         return fraction >= self.required_fraction()
 
 

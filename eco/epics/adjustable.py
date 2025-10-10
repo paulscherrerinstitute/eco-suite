@@ -16,7 +16,6 @@ from eco.devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 
 
-
 # Work in progress! TODO
 @spec_convenience
 @get_from_archive
@@ -41,7 +40,9 @@ class AdjustableAtomicPv:
         self.accuracy = accuracy
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.pvname, count=element_count, connection_timeout=0.05)
+            self._pvreadback = PV(
+                self.pvname, count=element_count, connection_timeout=0.05
+            )
             pvreadbackname = self.pvname
             self.pvname = self.pvname
         else:
@@ -72,7 +73,7 @@ class AdjustableAtomicPv:
             self._pv_lowlim.wait_for_connection()
         if hasattr(self, "_pv_highlim") and self._pv_highlim:
             self._pv_highlim.wait_for_connection()
-    
+
     def get_current_value(self, readback=True):
         if readback:
             currval = self._pvreadback.get()
@@ -185,7 +186,7 @@ class AdjustablePv:
             self._pv_lowlim.wait_for_connection()
         if hasattr(self, "_pv_highlim") and self._pv_highlim:
             self._pv_highlim.wait_for_connection()
-    
+
     def get_current_value(self, readback=True):
         if readback:
             currval = self._pvreadback.get()
@@ -198,7 +199,7 @@ class AdjustablePv:
         """ 0: moving 1: move done"""
         change_done = 1
         if self.accuracy is not None:
-            
+
             if (
                 np.abs(
                     self.get_current_value(readback=False)
@@ -222,6 +223,12 @@ class AdjustablePv:
                 )
 
         self._pv.put(value)
+        if self.accuracy is not None:
+            while (
+                np.abs(self.get_current_value(readback=False) - value) > self.accuracy
+            ):
+                time.sleep(0.01)
+
         while self.get_change_done() == 0:
             time.sleep(0.01)
 
@@ -234,10 +241,10 @@ class AdjustablePv:
         )
 
     def get_limits(self):
-        return(self._pvlowlim.get(),self._pvhighlim.get())
-    
+        return (self._pvlowlim.get(), self._pvhighlim.get())
+
     def set_limits(self, lowlim, highlim):
-        return(self._pvlowlim.put(lowlim),self._pvhighlim.put(highlim))
+        return (self._pvlowlim.put(lowlim), self._pvhighlim.put(highlim))
 
     # spec-inspired convenience methods
     # def mv(self, value):
@@ -268,7 +275,7 @@ class AdjustablePvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05*2)
+        self._pv = PV(pvname, connection_timeout=0.05 * 2)
         self.name = name
         self._pv.wait_for_connection()
         self.enum_strs = self._pv.enum_strs
@@ -278,15 +285,14 @@ class AdjustablePvEnum:
         #     self.enum_strs = self._pv.enum_strs
 
         if pvname_set:
-            self._pv_set = PV(pvname_set, connection_timeout=0.05*2)
+            self._pv_set = PV(pvname_set, connection_timeout=0.05 * 2)
             tstrs = self._pv_set.enum_strs
             if not all([tstr in self.enum_strs for tstr in tstrs]):
                 raise Exception("pv enum setter strings are not all a readback option!")
-            
-            self.get2set={}
-            for nset,tstr in enumerate(tstrs):
+
+            self.get2set = {}
+            for nset, tstr in enumerate(tstrs):
                 self.get2set[self.enum_strs.index(tstr)] = nset
-            
 
         else:
             self._pv_set = None
@@ -319,7 +325,7 @@ class AdjustablePvEnum:
         value = self.validate(value)
         if self._pv_set:
             tpv = self._pv_set
-            if hasattr(self,'get2set'):
+            if hasattr(self, "get2set"):
                 value = self.get2set[value]
         else:
             tpv = self._pv

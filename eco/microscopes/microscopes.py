@@ -54,7 +54,7 @@ class MicroscopeFeturaPlus(Assembly):
         pvname_camera=None,
         pv_get_position="SARES20-FETURA:POS_RB",
         pv_set_position="SARES20-FETURA:POS_SP",
-        pvname_focus = None, 
+        pvname_focus=None,
         name=None,
     ):
         super().__init__(name=name)
@@ -72,7 +72,7 @@ class MicroscopeFeturaPlus(Assembly):
                 FeturaPlusZoom,
                 pv_get_position=pv_get_position,
                 pv_set_position=pv_set_position,
-                name='zoom',
+                name="zoom",
             )
 
         if pvname_focus:
@@ -84,7 +84,6 @@ class MicroscopeFeturaPlus(Assembly):
                 is_display=True,
                 schneider_config=(pvname_zoom, pv_base + f":{port}"),
             )
-
 
 
 class BerninaInlineMicroscope(Assembly):
@@ -110,6 +109,16 @@ class BerninaInlineMicroscope(Assembly):
     # def zoom
 
 
+# NB: please note this should be moved to microscopes which are using cameras plus zooms,
+class QioptiqMicroscope(CameraBasler):
+    def __init__(self, pvname_camera, pvname_zoom=None, pvname_focus=None, name=None):
+        super().__init__(pvname_camera, name=name)
+        if pvname_zoom:
+            self._append(MotorRecord, pvname_zoom, name="zoom", is_setting=True)
+        if pvname_focus:
+            self._append(MotorRecord, pvname_focus, name="focus", is_setting=True)
+
+
 @spec_convenience
 class OptoSigmaZoom(Assembly):
     def __init__(
@@ -120,7 +129,7 @@ class OptoSigmaZoom(Assembly):
         name=None,
     ):
         super().__init__(name=name)
-        self.settings_collection.append(self)
+        # self.settings_collection.append(self)
         self._append(
             AdjustablePv,
             pv_set_position,
@@ -147,7 +156,7 @@ class OptoSigmaZoom(Assembly):
 
     def set_target_value(self, value, **kwargs):
         return self.zoom.set_target_value(value, **kwargs)
-    
+
 
 @spec_convenience
 class FeturaPlusZoom(Assembly):
@@ -155,11 +164,10 @@ class FeturaPlusZoom(Assembly):
         self,
         pv_get_position="SARES20-FETURA:POS_RB",
         pv_set_position="SARES20-FETURA:POS_SP",
-        
         name=None,
     ):
         super().__init__(name=name)
-        self.settings_collection.append(self)
+        # self.settings_collection.append(self)
         self._append(
             AdjustablePv,
             pv_set_position,
@@ -168,7 +176,7 @@ class FeturaPlusZoom(Assembly):
             name="zoom_raw",
             is_setting=False,
         )
-        
+
         self._append(
             AdjustableVirtual,
             [self.zoom_raw],
@@ -183,4 +191,3 @@ class FeturaPlusZoom(Assembly):
 
     def set_target_value(self, value, **kwargs):
         return self.zoom.set_target_value(value, **kwargs)
-

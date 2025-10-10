@@ -237,13 +237,13 @@ class MidIR(Assembly):
             name="delay_cep",
             is_setting=True,
         )
-        self._append(
-            CameraBasler,
-            "SLAAR21-LCAM-CS841",
-            name="camera_spectrometer",
-            camserver_alias="MIR_CEP",
-            is_setting=True,
-        )
+        # self._append(
+        #     CameraBasler,
+        #     "SLAAR21-LCAM-CS841",
+        #     name="camera_spectrometer",
+        #     camserver_alias="MIR_CEP",
+        #     is_setting=True,
+        # )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-SPATTT:AT",
@@ -1300,21 +1300,21 @@ class PositionMonitors(Assembly):
             is_display="recursive",
             is_status=True,
         )
-        # self._append(
-        #     CameraPositionMonitor,
-        #     "SLAAR21-LCAM-CS842",
-        #     name="table2_angle",
-        #     is_display="recursive",
-        #     is_status=True,
-        # )
         self._append(
             CameraPositionMonitor,
-            "SLAAR21-LCAM-CS841",
-            # name="table2_position",
-            name="timing_drift",
+            "SLAAR21-LCAM-CS842",
+            name="table2_angle",
             is_display="recursive",
             is_status=True,
         )
+        # self._append(
+        #     CameraPositionMonitor,
+        #     "SLAAR21-LCAM-CS841",
+        #     # name="table2_position",
+        #     name="timing_drift",
+        #     is_display="recursive",
+        #     is_status=True,
+        # )
         self._append(
             CameraPositionMonitor,
             "SLAAR21-LCAM-C561",

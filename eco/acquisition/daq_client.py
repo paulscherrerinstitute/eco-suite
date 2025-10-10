@@ -748,12 +748,8 @@ class Daq(Assembly):
 
     def check_checker_after_step(self, scan, **kwargs):
         if self.checker:
-            try:
-                if not self.checker.stop_and_analyze():
-                    scan._current_step_ok = False
-            except:
-                print("Checking failed, assuming last step was ok.")
-                scan._current_step_ok = True
+            if not self.checker.stop_and_analyze():
+                scan._current_step_ok = False
 
     def copy_aliases_to_scan(self, scan, send_aliases_now=False, **kwargs):
         if send_aliases_now or (len(scan.values_done()) == 1):

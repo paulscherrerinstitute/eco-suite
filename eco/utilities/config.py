@@ -36,7 +36,7 @@ class NamespaceComponent:
     def __init__(self, namespace, namestring, get_current_value=False):
         self.namespace = namespace
         comps = namestring.split(".")
-        self._get_current_value= get_current_value
+        self._get_current_value = get_current_value
         for n, comp in enumerate(comps):
             tn = ".".join(comps[: n + 1])
             if tn in self.namespace.all_names:
@@ -324,7 +324,14 @@ class IsInitialisingError(Exception):
 
 
 class Namespace(Assembly):
-    def __init__(self, name=None, root_module=None, alias_namespace=None, required_names=[], required_names_directory=None):
+    def __init__(
+        self,
+        name=None,
+        root_module=None,
+        alias_namespace=None,
+        required_names=[],
+        required_names_directory=None,
+    ):
         super().__init__(name)
         # self.name = name
         self.lazy_items = {}
@@ -341,11 +348,22 @@ class Namespace(Assembly):
         self.root_module = root_module
         self.alias_namespace = alias_namespace
         if required_names_directory:
-            self._append(AdjustableFS,required_names_directory,name='required_names', is_setting=True, is_display=True)
+            self._append(
+                AdjustableFS,
+                required_names_directory,
+                name="required_names",
+                is_setting=True,
+                is_display=True,
+            )
         else:
-            self._append(AdjustableMemory,[], name='required_names', is_setting=True, is_display=True)
-        
-    
+            self._append(
+                AdjustableMemory,
+                [],
+                name="required_names",
+                is_setting=True,
+                is_display=True,
+            )
+
     @property
     def initialisation_times_sorted(self):
         return dict(sorted(self.initialisation_times.items(), key=lambda w: w[1]))
@@ -365,7 +383,7 @@ class Namespace(Assembly):
     @property
     def failed_names(self):
         return set(self.failed_items.keys())
-    
+
     @property
     def failed_items_exception_prop(self):
         return self.failed_items_exception
@@ -373,8 +391,8 @@ class Namespace(Assembly):
     @property
     def all_names(self):
         return self.initialized_names | self.lazy_names | self.failed_names
-    
-    def move_failed_to_lazy(self,*names):
+
+    def move_failed_to_lazy(self, *names):
         if not names:
             names = self.failed_names
         for name in names:
@@ -391,6 +409,13 @@ class Namespace(Assembly):
                 pass
 
     def select_required_names(self):
+
+        nonex_reqnames = set(self.required_names()).difference(self.all_names)
+        if nonex_reqnames:
+            print(
+                f"WARNING: The following required names do not exist in namespace {self.name} \n and will be removed from required names: {nonex_reqnames}"
+            )
+
         terminal_menu = TerminalMenu(
             sorted(self.all_names),
             multi_select=True,
@@ -402,8 +427,6 @@ class Namespace(Assembly):
         selected_names = terminal_menu.chosen_menu_entries
         if selected_names:
             self.required_names(list(selected_names))
-
-
 
     def init_name(self, name, verbose=True, raise_errors=False):
         # for name in self.all_names:
@@ -423,7 +446,8 @@ class Namespace(Assembly):
             self.initialisation_times[name] = time() - starttime
             if verbose:
                 print(
-                    ("Init %s " % (name)).ljust(40) + f"{round(1000*(time()-starttime)): 6d} ms "
+                    ("Init %s " % (name)).ljust(40)
+                    + f"{round(1000*(time()-starttime)): 6d} ms "
                     + (_color.GREEN + "OK" + _color.RESET).rjust(5)
                 )
                 sys.stdout.flush()
@@ -435,7 +459,8 @@ class Namespace(Assembly):
             self.initialisation_times[name] = time() - starttime
             if verbose:
                 print(
-                    ("Init %s " % (name)).ljust(40) + f"{round(1000*(time()-starttime)): 6d} ms "
+                    ("Init %s " % (name)).ljust(40)
+                    + f"{round(1000*(time()-starttime)): 6d} ms "
                     + (_color.RED + "FAILED" + _color.RESET).rjust(5)
                 )
                 # print(sys.exc_info())
@@ -472,9 +497,7 @@ class Namespace(Assembly):
                 ) & set(self.required_names())
         else:
             names_to_init = self.all_names - self.initialized_names - set(exclude_names)
-        
-        
-        
+
         if silent:
             self.silently_initializing = True
             print(
@@ -495,9 +518,7 @@ class Namespace(Assembly):
                     self.exc_init.submit(
                         self.init_name, name, verbose=verbose, raise_errors=raise_errors
                     )
-                    for name in (
-                        names_to_init
-                    )
+                    for name in (names_to_init)
                 ]
                 self.exc_init.shutdown(wait=True)
                 self.silently_initializing = False
@@ -529,9 +550,7 @@ class Namespace(Assembly):
                             names_to_init,
                         ),
                         description="Initializing ...",
-                        total=len(
-                            names_to_init
-                        ),
+                        total=len(names_to_init),
                         transient=True,
                     )
                 )
@@ -547,33 +566,29 @@ class Namespace(Assembly):
                             names_to_init,
                         ),
                         description="Initializing ...",
-                        total=len(
-                            names_to_init
-                        ),
+                        total=len(names_to_init),
                         transient=True,
                     )
                 )
                 # )
                 #     # )
             if giveup_failed:
-                    failed_names = names_to_init.intersection(self.lazy_names)
-                    for k in failed_names:
-                        self.failed_items[k] = self.lazy_items.pop(k)
+                failed_names = names_to_init.intersection(self.lazy_names)
+                for k in failed_names:
+                    self.failed_items[k] = self.lazy_items.pop(k)
             if print_summary:
-                    print(
-                        f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
-                    )
-                    print(
-                        "Failed objects: "
-                        + ", ".join(self.failed_names & names_to_init)
-                    )
-                    print(f"Initialisation took {time()-starttime} seconds")
+                print(
+                    f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
+                )
+                print("Failed objects: " + ", ".join(self.failed_names & names_to_init))
+                print(f"Initialisation took {time()-starttime} seconds")
 
             if (not silent) and print_times:
                 try:
                     from collections import Iterable
                 except:
                     import collections.abc
+
                     collections.Iterable = collections.abc.Iterable
                 from ascii_graph import Pyasciigraph
 
@@ -753,7 +768,14 @@ class Namespace(Assembly):
         return aliases, has_no_aliases
 
     def append_obj(
-        self, obj_factory, *args, lazy=False, name=None, module_name=None, init_timeout=30, **kwargs
+        self,
+        obj_factory,
+        *args,
+        lazy=False,
+        name=None,
+        module_name=None,
+        init_timeout=30,
+        **kwargs,
     ):
         if lazy:
 
@@ -764,27 +786,30 @@ class Namespace(Assembly):
                     if isinstance(tmpexc[name], BaseException):
                         raise tmpexc[name]
                     else:
-                        raise IsInitialisingError(f'{name} failed previously to initialize.')
-                
+                        raise IsInitialisingError(
+                            f"{name} failed previously to initialize."
+                        )
+
                 if name in self._initializing:
                     self._init_priority[name] += 1
                     while name in self._initializing:
-                        if (time()-self._initialisation_start_time[name]) <= init_timeout:
+                        if (
+                            time() - self._initialisation_start_time[name]
+                        ) <= init_timeout:
                             sleep(5)
                         else:
-                    #     print(f'{name} waiting init since {time()-self._initialisation_start_time[name]} s')
-                    #     sleep(5)
-                    # # passfailed_items_excpetion
+                            #     print(f'{name} waiting init since {time()-self._initialisation_start_time[name]} s')
+                            #     sleep(5)
+                            # # passfailed_items_excpetion
                             self._initializing.pop(self._initializing.index(name))
-                            raise IsInitialisingError(f"NB: {name} initialization timed out!")
-                    
-
+                            raise IsInitialisingError(
+                                f"NB: {name} initialization timed out!"
+                            )
 
                 else:
                     self._initializing.append(name)
                     self._init_priority[name] = 0
                     self._initialisation_start_time[name] = time()
-                
 
                 # args, kwargs = replace_NamespaceComponents(*args, **kwargs)
 
@@ -811,7 +836,6 @@ class Namespace(Assembly):
                     self._initializing.pop(self._initializing.index(name))
                     raise Exception
 
-
                 try:
                     self.initialized_items[name] = self.lazy_items.pop(name)
                 except KeyError:
@@ -820,7 +844,9 @@ class Namespace(Assembly):
                 # if name in self.initialisation_times_lazy.keys():
                 #     self.initialisation_times_lazy[name] += time() - starttime
                 # else:
-                self.initialisation_times_lazy[name] = time() - self._initialisation_start_time[name] 
+                self.initialisation_times_lazy[name] = (
+                    time() - self._initialisation_start_time[name]
+                )
                 if hasattr(obj_initialized, "alias"):
                     self._append(
                         obj_initialized,

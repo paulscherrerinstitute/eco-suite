@@ -104,7 +104,7 @@ class DetectorBsStream:
                 if (time() - time_wait_start) > seconds:
                     if len(self.data_collected) == 0:
                         print(
-                            f"No {self.name}({self.Id}) data update in time interval, reporting last value"
+                            f"No {self.name}({self.pvname}) data update in time interval, reporting last value"
                         )
                         self._pv.callbacks.pop(self._collection["ix_cb"])
                         self.data_collected.append(self.get_current_value())

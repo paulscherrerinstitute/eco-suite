@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from threading import Thread
+import traceback
 
 import zmq
 import eco
@@ -1020,9 +1021,38 @@ namespace.append_obj(
 
 
 # TODO: need to check if the value property actually works here for the pgroup in the run table to make is dynamic!
+def path_from_id(exp_id):
+    path = f"/sf/bernina/data/{exp_id}/res/run_data/run_table/"
+    path_old = f"/sf/bernina/data/{exp_id}/res/run_table/"
+    if os.path.exists(path_old):
+        path = path_old
+    return path
+
+
+def id_from_name(name):
+    if name[0] == "p" and name[1:].isdigit():  # is pgroup
+        return name
+    else:
+        return name2pgroups(name)[0][1]  # take the first one found
+
+
+namespace.append_obj(
+    "Runtable_Manager",
+    name="run_table",
+    module_name="eco.utilities.runtable_stripped",
+    path_from_id=path_from_id,
+    id_from_name=id_from_name,
+    devices="eco.bernina",
+    keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
+    cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
+    gsheet_key_path="/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
+    parse=False,
+    lazy=True,
+)
+
 namespace.append_obj(
     "Run_Table2",
-    name="run_table",
+    name="run_table_old",
     module_name="eco.utilities.runtable_stripped",
     exp_id=config_bernina.pgroup._value,
     # exp_path=f"/sf/bernina/data/{config_bernina.pgroup._value}/res/run_table/",
@@ -1137,6 +1167,7 @@ namespace.append_obj(
     module_name="eco.microscopes",
 )
 
+
 # namespace.append_obj(
 #     "CameraBasler",
 #     "SARES20-CAMS142-C1",
@@ -1145,14 +1176,14 @@ namespace.append_obj(
 #     module_name="eco.microscopes",
 # )
 
-# namespace.append_obj(
-#    "MicroscopeMotorRecord",
-#    pvname_camera="SARES20-CAMS142-C1",
-#    lazy=True,
-#    name="samplecam",
-#    module_name="eco.microscopes",
-#    pvname_zoom="SARES20-MF1:MOT_5",
-# )
+namespace.append_obj(
+    "MicroscopeMotorRecord",
+    pvname_camera="SARES20-CAMS142-M3",
+    lazy=True,
+    name="samplecam_sideview",
+    module_name="eco.microscopes",
+    pvname_zoom="SARES20-MF1:MOT_14",
+)
 
 
 # from eco.devices_general.cameras_swissfel import FeturaMicroscope
@@ -1199,14 +1230,14 @@ namespace.append_obj(
 #     module_name="eco.devices_general.cameras_swissfel",
 # )
 
-namespace.append_obj(
-    "CameraBasler",
-    # "SARES20-CAMS142-C1", # THC
-    "SARES20-CAMS142-M3",  # GIC
-    lazy=True,
-    name="samplecam_sideview",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     # "SARES20-CAMS142-C1", # THC
+#     "SARES20-CAMS142-M3",  # GIC
+#     lazy=True,
+#     name="samplecam_sideview",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
 namespace.append_obj(
     "OxygenSensor",
@@ -1392,13 +1423,16 @@ from eco.devices_general.motors import ThorlabsPiezoRecord
 class Incoupling(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
-        self._append(SmaractRecord, "SARES20-MCS1:MOT_13", name="ry", is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_4", name="rx", is_setting=True)
-        self._append(SmaractRecord, "SARES20-MCS1:MOT_15", name="y", is_setting=True)
-        self._append(MotorRecord, "SARES20-MF2:MOT_5", name="x", is_setting=True)
-        self._append(
-            SmaractRecord, "SARES23-USR:MOT_3", name="eos_focus", is_setting=True
-        )
+        # self._append(SmaractRecord, "SARES20-MCS1:MOT_13", name="ry", is_setting=True)
+        # self._append(SmaractRecord, "SARES23-USR:MOT_4", name="rx", is_setting=True)
+        # self._append(SmaractRecord, "SARES20-MCS1:MOT_15", name="y", is_setting=True)
+        # self._append(MotorRecord, "SARES20-MF2:MOT_5", name="x", is_setting=True)
+        # self._append(
+        #     SmaractRecord, "SARES23-USR:MOT_3", name="eos_focus", is_setting=True
+        # )
+        self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_y", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_z", is_setting=True)
 
         self._append(
             AnalogOutput,
@@ -2149,24 +2183,26 @@ class ConvergentBeamDiffraction(Assembly):
 #     lazy=True,
 # )
 
+# WHAT WAS THIS FOR? --> removed 1015-09-01 >>>>>>>>
 
-class Pumpdelay(Assembly):
-    def __init__(
-        self,
-        delaystage_PV="SARES23-USR:MOT_2",
-        name=None,
-    ):
-        super().__init__(name=name)
+# class Pumpdelay(Assembly):
+#     def __init__(
+#         self,
+#         delaystage_PV="SARES23-USR:MOT_2",
+#         name=None,
+#     ):
+#         super().__init__(name=name)
 
-        self._append(SmaractRecord, delaystage_PV, name="delaystage", is_setting=True)
-        self._append(DelayTime, self.delaystage, name="pdelay", is_setting=True)
+#         self._append(SmaractRecord, delaystage_PV, name="delaystage", is_setting=True)
+#         self._append(DelayTime, self.delaystage, name="pdelay", is_setting=True)
 
 
-namespace.append_obj(
-    Pumpdelay,
-    name="pumpdelay",
-    lazy=True,
-)
+# namespace.append_obj(
+#     Pumpdelay,
+#     name="pumpdelay",
+#     lazy=True,
+# )
+# <<<<< WHAT WAS THIS FOR? --> removed 1015-09-01
 
 
 from eco.loptics.bernina_laser import Stage_LXT_Delay
@@ -2322,7 +2358,7 @@ class SampleHeaterJet(Assembly):
         )
 
 
-# namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
+namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 
 
 ## sample illumination
@@ -2729,12 +2765,12 @@ def change_pgroup(searchstring="", config=config_bernina):
             if sel < 0 or sel >= len(gs):
                 raise ValueError("Invalid selection")
 
-            config.pgroup.set_target_value(gs[sel][1])
-            print(
-                f"Changed pgroup from {old_group} to {config.pgroup.get_current_value()}"
-            )
+            config.pgroup.set_target_value(gs[sel][1]).wait()
+            print(f"Changed pgroup from {old_group} to {gs[sel][1]}")
+
         except ValueError as e:
             print(f"Invalid selection: {e}")
+            # traceback.print_exc()
 
 
 from eco.utilities import linlog_intervals, roundto
@@ -2742,6 +2778,7 @@ from eco.utilities import linlog_intervals, roundto
 
 def timetool_data_monitor(warning_threshold=1000, loopsleep=5):
     dir(bs_worker)
+
     tt_kb.spectrum_signal.stream.accumulate(do_accumulate=True)
     print("Monitoring timetool data ...")
 

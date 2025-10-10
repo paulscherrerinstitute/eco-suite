@@ -125,29 +125,53 @@ def append_diffractometer_modules(obj, configuration):
         )
         obj.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
 
-    if hasattr(configuration, "detector_flighttube"):
-        if configuration.detector_flighttube():
+    if hasattr(configuration, "flighttube_connected"):
+        if configuration.flighttube_connected():
             ### slit close to sample
             # up down according to You-B geometry
             obj._append(
                 SlitBladesGeneral,
-                def_blade_up={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_X2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                def_blade_down={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_X1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                def_blade_left={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_Y2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                def_blade_right={"args": [MotorRecord,obj.pvname + ":MOT_SLT_T_Y1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                name='slit_sam'
-                )
+                def_blade_up={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_X2"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                def_blade_down={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_X1"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                def_blade_left={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_Y2"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                def_blade_right={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_Y1"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                name="slit_sam",
+            )
             ### slit close to detector
             # up down according to You-B geometry
             obj._append(
                 SlitBladesGeneral,
-                def_blade_up={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_X2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                def_blade_down={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_X1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                def_blade_left={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_Y2"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                def_blade_right={"args": [MotorRecord,obj.pvname + ":MOT_SLT_C_Y1"], "kwargs": {'resolution_pars':True, 'backlash_definition':True}},
-                name='slit_det'
-                )
-            
+                def_blade_up={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_X2"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                def_blade_down={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_X1"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                def_blade_left={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_Y2"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                def_blade_right={
+                    "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_Y1"],
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                },
+                name="slit_det",
+            )
+
             # missing: slits of flight tube
             obj.set_det_slits_off = DeltaTauCurrOff("SARES21-XRD:asyn2.AOUT")
 
@@ -419,10 +443,10 @@ class GPS(Assembly):
         fina_hex_angle_offset=None,
         recspace_conv="escape.swissfel.recspace_conv:SixCircleBernina",
         recspace_conv_JFID="JF01T03V01",
-        xp = None,
-        helium_control_valve = None,
-        illumination_mpod = None, 
-        thc_config = [],
+        xp=None,
+        helium_control_valve=None,
+        illumination_mpod=None,
+        thc_config=[],
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -446,7 +470,7 @@ class GPS(Assembly):
                 name="thc",
                 illumination_mpod=illumination_mpod,
                 configuration=thc_config,
-                helium_control_valve = helium_control_valve,
+                helium_control_valve=helium_control_valve,
                 is_setting=False,
                 is_display=True,
             )
@@ -455,8 +479,8 @@ class GPS(Assembly):
             self._append(
                 GrazingIncidenceLowTemperatureChamber,
                 name="gic",
-                xp = xp,
-                helium_control_valve = helium_control_valve,
+                xp=xp,
+                helium_control_valve=helium_control_valve,
                 is_setting=False,
                 is_display=True,
             )

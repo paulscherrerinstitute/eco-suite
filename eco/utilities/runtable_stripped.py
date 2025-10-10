@@ -166,11 +166,20 @@ class Container:
             if len(next_level_names) == 0:
                 columns_to_keep = [self._top_level_name[:-1]]
             else:
-                columns_to_keep = [
-                    f"{self._top_level_name}{n}"
-                    for n in next_level_names
-                    if f"{self._top_level_name}{n}" in self._cols
-                ]
+                columns_to_keep = []
+                for n in next_level_names:
+                    if f"{self._top_level_name}{n}" in self._cols:
+                        columns_to_keep.append(f"{self._top_level_name}{n}")
+                    elif f"{self._top_level_name}{n}{".readback"}" in self._cols:
+                        columns_to_keep.append(
+                            f"{self._top_level_name}{n}{".readback"}"
+                        )
+                # columns_to_keep = [
+                #    f"{self._top_level_name}{n}"
+                #    for n in next_level_names
+                #    if f"{self._top_level_name}{n}" in self._cols
+                # ]
+
             sdf = self._df[columns_to_keep]
         except:
             sdf = pd.DataFrame(columns=next_level_names)
@@ -281,6 +290,64 @@ class Container:
         return df
 
 
+class Runtable_Manager:
+    def __init__(
+        self,
+        data=None,
+        path_from_id=None,
+        id_from_name=None,
+        keydf_fname=None,
+        cred_fname=None,
+        devices=None,
+        name=None,
+        gsheet_key_path=None,
+        parse=True,
+    ):
+        self._defaults = {
+            "keydf_fname": keydf_fname,
+            "cred_fname": cred_fname,
+            "devices": devices,
+            "gsheet_key_path": gsheet_key_path,
+        }
+        self._path_from_id = path_from_id
+        self._run_tables_initialized = {}
+        self._id_from_name = id_from_name
+
+    def _get_runtable(self, exp_id=None):
+        if exp_id is None:
+            exp_id = namespace.config_bernina.pgroup._value
+            update_dict = True
+        kwargs = {}
+        kwargs.update(self._defaults)
+        kwargs.update(
+            {
+                "exp_id": exp_id,
+                "exp_path": self._path_from_id(exp_id),
+                "name": f"run_table_{exp_id}",
+            }
+        )
+        if exp_id not in self._run_tables_initialized.keys():
+            self._run_tables_initialized[exp_id] = Run_Table2(**kwargs)
+        return self._run_tables_initialized[exp_id]
+
+    def __call__(self, exp_id=None):
+        if self._id_from_name is not None and exp_id is not None:
+            exp_id = self._id_from_name(exp_id)
+        return self._get_runtable(exp_id)
+
+    def __dir__(self):
+        return self._get_runtable().__dir__()
+
+    def __repr__(self):
+        return self._get_runtable().__repr__()
+
+    def __getattr__(self, attr):
+        if hasattr(self._get_runtable(), attr):
+            return getattr(self._get_runtable(), attr)
+        else:
+            raise AttributeError
+
+
 class Run_Table2:
     def __init__(
         self,
@@ -294,6 +361,7 @@ class Run_Table2:
         gsheet_key_path=None,
         parse=True,
     ):
+        self.exp_id = exp_id
         self._data = Run_Table_DataFrame(
             data=data,
             exp_id=exp_id,
@@ -312,15 +380,19 @@ class Run_Table2:
                 gsheet_key_path,
             )
             self.channels_gsheet = self._google_sheet_api.gsheet_keys
-            self._rt_gsheet = RuntableGsheet(self._google_sheet_api.gc.open_by_key(self._google_sheet_api._spreadsheet_key))
+            self._rt_gsheet = RuntableGsheet(
+                self._google_sheet_api.gc.open_by_key(
+                    self._google_sheet_api._spreadsheet_key
+                )
+            )
             # self._rt_gsheet.require_worksheets()
         else:
             self._google_sheet_api = None
 
-        
-        self.__dir__() # why necessary to run here?
+        self.__dir__()  # why necessary to run here?
 
     def update(self):
+        self._data.load()
         self._rt_gsheet.set_available_keys(self._data.df.keys())
         self._rt_gsheet.fill_run_table_data(self._data.df)
 
@@ -331,7 +403,14 @@ class Run_Table2:
         d={},
         wait=False,
     ):
-        ar = threading.Thread(target=self._append_run, args=(runno, metadata,), kwargs={"d": d})
+        ar = threading.Thread(
+            target=self._append_run,
+            args=(
+                runno,
+                metadata,
+            ),
+            kwargs={"d": d},
+        )
         ar.start()
         if wait:
             ar.join()
@@ -348,7 +427,6 @@ class Run_Table2:
             self._google_sheet_api._upload_all(df=df)
             # self._rt_gsheet.set_available_keys(self._data.df.keys())
             self._rt_gsheet.fill_run_table_data(self._data.df)
-
 
     def append_pos(
         self,
@@ -437,7 +515,7 @@ class Run_Table2:
 
     def __str__(self):
         devs = np.unique(np.array([n.split(".")[0] for n in self._data.columns]))
-        devs = np.array([dev for dev in devs if 0<len(dev)])
+        devs = np.array([dev for dev in devs if 0 < len(dev)])
         devs_abc = np.array([dev[0] for dev in devs])
         devs_dict = {abc: devs[devs_abc == abc] for abc in np.unique(devs_abc)}
         devs_str = ""
@@ -474,6 +552,7 @@ class Run_Table_DataFrame(DataFrame):
         ### Load devices to parse for adjustables ###
         if type(devices) == str:
             import importlib
+
             devices = importlib.import_module(devices)
         self.devices = devices
         self.name = name
@@ -572,13 +651,9 @@ class Run_Table_DataFrame(DataFrame):
             self._parse_parent()
         dat = self._get_adjustable_values(d=d)
         dat["metadata.time"] = datetime.now()
-        dat.update({"metadata."+k:v for k, v in metadata.items()})
-        values = np.array(
-            list(dat.values()), dtype=object
-        )
-        index = np.array(
-            list(dat.keys())
-        )
+        dat.update({"metadata." + k: v for k, v in metadata.items()})
+        values = np.array(list(dat.values()), dtype=object)
+        index = np.array(list(dat.keys()))
         run_df = DataFrame([values], columns=index, index=[runno])
         # deprecated: self.df = self.append(run_df)
         self.df = pd.concat([self.df, run_df])
@@ -598,13 +673,15 @@ class Run_Table_DataFrame(DataFrame):
         except:
             posno = 0
         dat = self._get_adjustable_values(d=d)
-        dat.update({"metadata.time": datetime.now(), "metadata.name": name, "metadata.type": "pos"})
-        values = np.array(
-            list(dat.values()), dtype=object
+        dat.update(
+            {
+                "metadata.time": datetime.now(),
+                "metadata.name": name,
+                "metadata.type": "pos",
+            }
         )
-        index = np.array(
-            list(dat.keys())
-        )
+        values = np.array(list(dat.values()), dtype=object)
+        index = np.array(list(dat.keys()))
         pos_df = DataFrame([values], columns=index, index=[f"p{posno}"])
 
         # deprecated: self.df = self.append(pos_df)
@@ -639,20 +716,27 @@ class Run_Table_DataFrame(DataFrame):
                         )
                         self.ids_bad.append(aid)
                         continue
-               
+
                 for name in adict["names"]:
-                    dat[name]=v
+                    dat[name] = v
         else:
-            if len(d)==0:
+            if len(d) == 0:
                 st = namespace.get_status(base=None)
                 d = st["status"]
                 d.update(st["settings"])
 
-            dat = {k[len(k.split(".")[0])+1:] : v for k,v in d.items()}
+            dat = {k[len(k.split(".")[0]) + 1 :]: v for k, v in d.items()}
         return dat
 
     def _get_all_adjustables(
-        self, device, adj_prefix=None, parent_name=None, verbose=False, exclude_keys=[], adjustable_exclude_class_types=[], foo_get_current_value="get_current_value"
+        self,
+        device,
+        adj_prefix=None,
+        parent_name=None,
+        verbose=False,
+        exclude_keys=[],
+        adjustable_exclude_class_types=[],
+        foo_get_current_value="get_current_value",
     ):
         if verbose:
             print(f"\nparsing children of {parent_name}")
@@ -710,9 +794,9 @@ class Run_Table_DataFrame(DataFrame):
                     self.ids_parsed[id(value)]["names"] = [k]
                     self.ids_parsed[id(value)]["value"] = value
 
-        #if parent_name == name:
+        # if parent_name == name:
         ## only a fix to record get_current_values() of top level devices
-        #if hasattr(device, foo_get_current_value):
+        # if hasattr(device, foo_get_current_value):
         #    ## create device entry only if it has adjustables
         #    if id(device) in self.ids_parsed.keys():
         #        if not "ids" in self.ids_parsed[id(device)].keys():
@@ -726,14 +810,29 @@ class Run_Table_DataFrame(DataFrame):
         #    self.ids_parsed[id(device)]["value"] = device
 
     def _parse_child_instances(
-        self, parent_class, adj_prefix=None, parent_name=None, verbose=False, exclude_keys=[], parse_exclude_class_types=[], adjustable_exclude_class_types=[], is_eco=True, foo_get_current_value="get_current_value"
+        self,
+        parent_class,
+        adj_prefix=None,
+        parent_name=None,
+        verbose=False,
+        exclude_keys=[],
+        parse_exclude_class_types=[],
+        adjustable_exclude_class_types=[],
+        is_eco=True,
+        foo_get_current_value="get_current_value",
     ):
         # check if the parent_class was already parsed in its parents
         if adj_prefix is not None:
             if parent_class.name in adj_prefix:
                 return []
         self._get_all_adjustables(
-            parent_class, adj_prefix, parent_name, verbose=verbose, exclude_keys=exclude_keys, adjustable_exclude_class_types=adjustable_exclude_class_types, foo_get_current_value=foo_get_current_value
+            parent_class,
+            adj_prefix,
+            parent_name,
+            verbose=verbose,
+            exclude_keys=exclude_keys,
+            adjustable_exclude_class_types=adjustable_exclude_class_types,
+            foo_get_current_value=foo_get_current_value,
         )
         if adj_prefix is not None:
             adj_prefix = ".".join([adj_prefix, parent_class.name])
@@ -750,10 +849,10 @@ class Run_Table_DataFrame(DataFrame):
                         "eco" in str(s_class.__class__),
                     ]
                 if np.all(
-                    reqs + 
-                    [
-                    hasattr(s_class, "__dict__"),
-                    s_class.__hash__ is not None,
+                    reqs
+                    + [
+                        hasattr(s_class, "__dict__"),
+                        s_class.__hash__ is not None,
                         ~np.any(
                             [
                                 s in str(s_class.__class__)
@@ -778,11 +877,29 @@ class Run_Table_DataFrame(DataFrame):
             [
                 s
                 for c in sub_classes
-                for s in self._parse_child_instances(c, adj_prefix, parent_name, exclude_keys=exclude_keys, parse_exclude_class_types=parse_exclude_class_types, adjustable_exclude_class_types=adjustable_exclude_class_types, is_eco=is_eco, foo_get_current_value=foo_get_current_value)
+                for s in self._parse_child_instances(
+                    c,
+                    adj_prefix,
+                    parent_name,
+                    exclude_keys=exclude_keys,
+                    parse_exclude_class_types=parse_exclude_class_types,
+                    adjustable_exclude_class_types=adjustable_exclude_class_types,
+                    is_eco=is_eco,
+                    foo_get_current_value=foo_get_current_value,
+                )
             ]
         )
 
-    def _parse_parent(self, parent=None, verbose=False, exclude_keys=[], parse_exclude_class_types=[], adjustable_exclude_class_types=[], is_eco=True, foo_get_current_value="get_current_value"):
+    def _parse_parent(
+        self,
+        parent=None,
+        verbose=False,
+        exclude_keys=[],
+        parse_exclude_class_types=[],
+        adjustable_exclude_class_types=[],
+        is_eco=True,
+        foo_get_current_value="get_current_value",
+    ):
         if len(exclude_keys) == 0:
             exclude_keys = self._parse_exclude_keys
         if len(parse_exclude_class_types) == 0:
@@ -803,8 +920,8 @@ class Run_Table_DataFrame(DataFrame):
                             "eco" in str(s_class.__class__),
                         ]
                     if np.all(
-                        reqs + 
-                        [
+                        reqs
+                        + [
                             hasattr(s_class, "__dict__"),
                             s_class.__hash__ is not None,
                             ~np.any(
@@ -821,7 +938,14 @@ class Run_Table_DataFrame(DataFrame):
                         if s_class_name == None:
                             s_class.name = key
                         self._parse_child_instances(
-                            s_class, parent_name=key, verbose=verbose, exclude_keys=exclude_keys, parse_exclude_class_types=parse_exclude_class_types, adjustable_exclude_class_types=adjustable_exclude_class_types, is_eco=is_eco, foo_get_current_value=foo_get_current_value
+                            s_class,
+                            parent_name=key,
+                            verbose=verbose,
+                            exclude_keys=exclude_keys,
+                            parse_exclude_class_types=parse_exclude_class_types,
+                            adjustable_exclude_class_types=adjustable_exclude_class_types,
+                            is_eco=is_eco,
+                            foo_get_current_value=foo_get_current_value,
                         )
             except Exception as e:
                 print(e)
