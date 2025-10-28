@@ -156,6 +156,7 @@ class Assembly:
         call_obj=True,
         # append_property_with_name=False,
         overwrite=False,
+        delete_old=False,
         **kwargs,
     ):
         if overwrite:
@@ -173,7 +174,8 @@ class Assembly:
                             collection.pop_item(old)
                 self.display_collection.pop_item(old)
                 self.alias.pop_object(old.alias)
-                # del self.__dict__[name]
+            if delete_old:
+                del old
 
         if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
             # adj_copy = copy.copy(foo_obj_init)
@@ -469,14 +471,17 @@ class Assembly:
     def status_to_elog(
         self,
         text="",
+        elog=None,
+        files=None,
         text_encoding="markdown",
         auto_title=True,
         attach_display=True,
         attach_status_file=True,
     ):
-        elog = self._get_elog()
+        if elog is None:
+            elog = self._get_elog()
         message = ""
-        files = []
+
         if auto_title:
             message += markdown(f"#### Status {self.alias.get_full_name()}")
 
@@ -485,7 +490,8 @@ class Assembly:
                 message += markdown(text)
         if attach_display:
             message += self.get_display_str(tablefmt="html")
-
+        if files is None:
+            files = []
         if attach_status_file:
             stat = self.get_status()
             tmppath = Path("/tmp")
@@ -496,6 +502,9 @@ class Assembly:
                 # json.dump(stat, f, cls=NumpyEncoder, indent=4)
                 json.dump(stat, f, indent=4, cls=NumpyEncoder)
             files.append(filepath)
+
+        if len(files) > 1:
+            print(files)
 
         return elog.post(
             message,

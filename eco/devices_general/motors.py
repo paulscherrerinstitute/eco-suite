@@ -405,7 +405,7 @@ class SmaractStreamdevice(Assembly):
                     break
                 else:
                     print(help)
-        except (KeyboardInterrupt,SystemExit):
+        except (KeyboardInterrupt, SystemExit):
             print("NB: aborted tweak !")
         self.clear_value_callback(index=ind_callback)
         print(f"final position: {self.get_current_value()}")
@@ -838,6 +838,12 @@ class ThorlabsPiezoRecord(Assembly):
             is_setting=True,
         )
 
+    def reset_current_value_to(self, value):
+        new_offset = (
+            -(self.get_current_value() - self.offset.get_current_value()) + value
+        )
+        self.offset.set_target_value(new_offset).wait()
+
     def stop(self):
         self._stop_pv(1)
 
@@ -900,7 +906,7 @@ class MotorRecord(Assembly):
         # alias_fields={"readback": "RBV"},
         alias_fields={},
         backlash_definition=False,
-        resolution_pars = False, 
+        resolution_pars=False,
         is_psi_mforce=False,
         schneider_config=None,
         expect_bad_limits=True,
@@ -993,7 +999,6 @@ class MotorRecord(Assembly):
             is_setting=True,
         )
 
-
         if resolution_pars:
             self._append(
                 AdjustablePv,
@@ -1051,7 +1056,6 @@ class MotorRecord(Assembly):
                 is_setting=False,
                 is_display=False,
             )
-
 
         if has_park_pv:
             self._append(
@@ -1502,7 +1506,7 @@ class SmaractSettings(Assembly):
             self.pvname + "_HOLD",
             name="holding_time",
             is_setting=True,
-        )        
+        )
 
         self._append(
             AdjustableFS,
@@ -1579,7 +1583,7 @@ class SmaractRecord(Assembly):
         alias_fields={},
         backlash_definition=False,
         expect_bad_limits=True,
-        preferred_home_direction='forward',
+        preferred_home_direction="forward",
         **kwargs,
     ):
         super().__init__(name=name)
@@ -1588,7 +1592,12 @@ class SmaractRecord(Assembly):
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
-        self._append(AdjustableMemory,preferred_home_direction, name="preferred_home_direction", is_setting=True) 
+        self._append(
+            AdjustableMemory,
+            preferred_home_direction,
+            name="preferred_home_direction",
+            is_setting=True,
+        )
         self._elog = elog
         for an, af in alias_fields.items():
             self.alias.append(
@@ -1718,9 +1727,16 @@ class SmaractRecord(Assembly):
             self.set_limits(-abs_set_value, abs_set_value)
 
     def home(self):
-        if self.preferred_home_direction.get_current_value() == "forward" or self.preferred_home_direction.get_current_value() is None or self.preferred_home_direction.get_current_value():
+        if (
+            self.preferred_home_direction.get_current_value() == "forward"
+            or self.preferred_home_direction.get_current_value() is None
+            or self.preferred_home_direction.get_current_value()
+        ):
             self.home_forward(1)
-        elif self.preferred_home_direction.get_current_value() == "reverse" or self.preferred_home_direction.get_current_value() is False:
+        elif (
+            self.preferred_home_direction.get_current_value() == "reverse"
+            or self.preferred_home_direction.get_current_value() is False
+        ):
             self.home_reverse(1)
         time.sleep(0.1)
         while not self.flags.is_homed.get_current_value():

@@ -2,9 +2,14 @@ import time
 from eco.acquisition.utilities import Acquisition
 from eco.elements.protocols import Detector, MonitorableValueUpdate
 from collections import namedtuple
-from eco.utilities.data_obj_dev import ArrayTimestamps
+from escape import ArrayTimestamps
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
+from pathlib import Path
+from datetime import datetime
+from escape import DataSet
+
+DEFAULT_STORAGE_DIR = Path("./")
 
 StepTime = namedtuple("StepTime", "start stop")
 
@@ -14,6 +19,24 @@ class CounterValue:
         self.detectors = []
         self.detector_values = []
         self.monitorables = []
+        self.append_detectors(*detectors)
+        self.callbacks_start_scan = [self.start_scan]
+        self.callbacks_start_step = []
+        self.callbacks_step_counting = []
+        self.callbacks_end_step = [self.create_arrays, self.plot_arrays]
+
+        def stopani(scan, **kwargs):
+            scan.animation.event_source.stop()
+
+        self.callbacks_end_scan = [
+            self.stop_monitoring,
+            self.create_arrays,
+            stopani,
+            self.store_arrays,
+        ]
+        self.name = name
+
+    def append_detectors(self, *detectors):
         for detector in detectors:
             if isinstance(detector, MonitorableValueUpdate):
                 self.monitorables.append(detector)
@@ -24,18 +47,9 @@ class CounterValue:
                     f"Expected Detector or MonitorableValueUpdate, got {type(detector)}"
                 )
                 self.detectors = detectors
-        self.callbacks_start_scan = [self.start_scan]
-        self.callbacks_start_step = []
-        self.callbacks_step_counting = []
-        self.callbacks_end_step = [self.create_arrays, self.plot_arrays]
-        self.callbacks_end_scan = [
-            self.stop_monitoring,
-            self.create_arrays,
-            lambda scan: scan.animation.event_source.stop(),
-        ]
-        self.name = name
 
-    def start_scan(self, scan=None, **kwargs):
+    def start_scan(self, scan=None, detectors=[], **kwargs):
+        self.append_detectors(*detectors)
         scan.detector_values = []
         scan.detector_names = self.get_detector_names()
         self.start_monitoring(scan=scan)
@@ -162,6 +176,70 @@ class CounterValue:
             scan.fig.tight_layout()
             scan.fig.canvas.draw()
             scan.fig.canvas.flush_events()
+
+    def store_arrays(
+        self, scan, filename="auto", directory="auto", elog=None, **kwargs
+    ):
+
+        if directory == "auto":
+            directory = DEFAULT_STORAGE_DIR
+        if callable(directory):
+            directory = directory()
+        directory = Path(directory)
+        if not directory.exists():
+            try:
+                directory.mkdir(parents=True)
+            except:
+                print(f"Warning: Could not create directory {directory.resolve()} !")
+
+        if filename == "auto":
+            filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".esc.h5"
+
+        d = DataSet.create_with_new_result_file(
+            Path(directory) / Path(filename), force_overwrite=False
+        )
+        names = []
+        for k, v in scan.monitor_scan_arrays.items():
+            names.append(k)
+            d.append(v, name=k)
+            v.store()
+        d.results_file.close()
+        scan.stored_filename = (Path(directory) / Path(filename)).resolve().as_posix()
+        print(
+            f"Stored filename {(Path(directory) / Path(filename)).resolve().as_posix()}"
+        )
+
+        d = DataSet.load_from_result_file(Path(directory) / Path(filename))
+        for name in names:
+            scan.monitor_scan_arrays[name] = d.datasets[name]
+
+        files = []
+        try:
+            # import mpld3
+
+            plotfilename = Path(directory) / Path(
+                Path(filename).stem.split(".")[0] + ".png"
+            )
+            scan.fig.savefig(
+                plotfilename.as_posix(),
+            )
+            files.append(plotfilename)
+            # print(plotfilename, plotfilename.as_posix())
+
+        except Exception:
+            pass
+
+        files.append(Path(directory) / Path(filename))
+
+        if elog:
+            if elog == True:
+                elog = None
+            scan.status_to_elog(
+                text=f"### Quick scan: {scan.description()}\nData stored in {filename}.",
+                auto_title=False,
+                elog=elog,
+                files=files,
+            )
 
     # TODO
     def start(self):

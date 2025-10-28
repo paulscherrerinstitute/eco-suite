@@ -71,8 +71,11 @@ class Gsheet_API:
         spreadsheet = self.gc.create(
             title=f"run_table_{exp_id}", folder_id="1F7DgF0HW1O71nETpfrTvQ35lRZCs5GvH"
         )
+        spreadsheet.add_worksheet("Custom table")
         spreadsheet.add_worksheet("runtable", 10, 10)
         spreadsheet.add_worksheet("positions", 10, 10)
+        spreadsheet.add_worksheet("Available keys")
+
         ws = spreadsheet.get_worksheet(0)
         spreadsheet.del_worksheet(ws)
         return spreadsheet
@@ -116,13 +119,18 @@ class Gsheet_API:
         keys takes a string of keys separated by a space, e.g. 'gps xrd las'. All columns, which contain
         any of these strings are uploaded. keys = None defaults to self.keys. keys = '' returns all columns
         """
-        self.gc = gspread.authorize(self._credentials)
-        ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
-        upload_df = df[df["metadata.type"].str.contains("scan", na=False)]
-        gd.set_with_dataframe(ws, upload_df, include_index=True, col=2)
-        gf_dataframe.format_with_dataframe(
-            ws, upload_df, include_index=True, include_column_header=True, col=2
-        )
+        try:
+            self.gc = gspread.authorize(self._credentials)
+            ws = self.gc.open_by_key(self._spreadsheet_key).worksheet(worksheet)
+            upload_df = df[df["metadata.type"].str.contains("scan", na=False)]
+            gd.set_with_dataframe(ws, upload_df, include_index=True, col=2)
+            gf_dataframe.format_with_dataframe(
+                ws, upload_df, include_index=True, include_column_header=True, col=2
+            )
+        except:
+            print(
+                f"Uploading of runtable to gsheet https://docs.google.com/spreadsheets/d/{self._spreadsheet_key}/ failed. Run run_table.upload_rt() for error traceback"
+            )
 
     def upload_pos(self, worksheet="positions", keys=None, df=None):
         """
@@ -168,12 +176,13 @@ class Container:
             else:
                 columns_to_keep = []
                 for n in next_level_names:
-                    if f"{self._top_level_name}{n}" in self._cols:
-                        columns_to_keep.append(f"{self._top_level_name}{n}")
-                    elif f"{self._top_level_name}{n}{".readback"}" in self._cols:
+                    if f"{self._top_level_name}{n}{".readback"}" in self._cols:
                         columns_to_keep.append(
                             f"{self._top_level_name}{n}{".readback"}"
                         )
+                    elif f"{self._top_level_name}{n}" in self._cols:
+                        columns_to_keep.append(f"{self._top_level_name}{n}")
+
                 # columns_to_keep = [
                 #    f"{self._top_level_name}{n}"
                 #    for n in next_level_names
@@ -312,6 +321,7 @@ class Runtable_Manager:
         self._path_from_id = path_from_id
         self._run_tables_initialized = {}
         self._id_from_name = id_from_name
+        self.parse = parse
 
     def _get_runtable(self, exp_id=None):
         if exp_id is None:
@@ -319,6 +329,7 @@ class Runtable_Manager:
             update_dict = True
         kwargs = {}
         kwargs.update(self._defaults)
+        kwargs.update({"parse": self.parse})
         kwargs.update(
             {
                 "exp_id": exp_id,
@@ -399,7 +410,7 @@ class Run_Table2:
     def append_run(
         self,
         runno,
-        metadata,
+        metadata={},
         d={},
         wait=False,
     ):
@@ -638,8 +649,8 @@ class Run_Table_DataFrame(DataFrame):
         runno,
         metadata={
             "type": "ascan",
-            "name": "phi scan (001)",
-            "scan_motor": "phi",
+            "name": "dummy",
+            "scan_motor": "dummy_adjustable",
             "from": 1,
             "to": 2,
             "steps": 51,
@@ -721,11 +732,26 @@ class Run_Table_DataFrame(DataFrame):
                     dat[name] = v
         else:
             if len(d) == 0:
-                st = namespace.get_status(base=None)
-                d = st["status"]
-                d.update(st["settings"])
+                d = namespace.get_status(base=None)
 
-            dat = {k[len(k.split(".")[0]) + 1 :]: v for k, v in d.items()}
+            # 2025-10-17: get_namespace has changed and does not include "bernina."
+            # anymore --> for safety:
+            d_clean = {}
+            d_clean.update(
+                {
+                    k: v
+                    for k, v in d.items()
+                    if not any([k == s for s in ["status", "settings"]])
+                }
+            )
+            if "status" in d.keys():
+                d_clean.update(d["status"])
+            if "settings" in d.keys():
+                d_clean.update(d["settings"])
+            dat = {
+                k.split("bernina.")[1] if "bernina." in k else k: v
+                for k, v in d_clean.items()
+            }
         return dat
 
     def _get_all_adjustables(

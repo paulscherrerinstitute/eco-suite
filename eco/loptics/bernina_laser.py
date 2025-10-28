@@ -72,8 +72,9 @@ class IncouplingCleanBernina(Assembly):
             is_display=True,
         )
 
+
 class MIRVirtualStages(Assembly):
-    def __init__(self, name=None, nx=None, nz=None,mx=None, mz=None):
+    def __init__(self, name=None, nx=None, nz=None, mx=None, mz=None):
         super().__init__(name=name)
         self._nx = nx
         self._nz = nz
@@ -112,7 +113,7 @@ class MIRVirtualStages(Assembly):
             return nz - self.offset_lens_z()
 
         def set_focus_lens_z(z):
-            nx = self.offset_lens_x() - z*np.tan(np.deg2rad(14.1))
+            nx = self.offset_lens_x() - z * np.tan(np.deg2rad(14.1))
             nz = self.offset_lens_z() + z
             return nx, nz
 
@@ -124,6 +125,7 @@ class MIRVirtualStages(Assembly):
             reset_current_value_to=True,
             name="focus_lens",
         )
+
         def get_focus_par_z(mx, mz):
             return mz - self.offset_par_z()
 
@@ -146,9 +148,6 @@ class MIRVirtualStages(Assembly):
         self.offset_lens_z.mv(self._nz())
         self.offset_par_z.mv(self._mx())
         self.offset_mir_z.mv(self._mz())
-
-    
-        
 
 
 class MidIR(Assembly):
@@ -319,30 +318,30 @@ class MidIR(Assembly):
             "SARES20-CEP01:spectrometer_ratio",
             cachannel=None,
             name="spectrometer_ratio",
-            is_setting=False,            
+            is_setting=False,
             is_display=True,
         )
-            # Virtual stages ###
+        # Virtual stages ###
         self._append(
             CartCooRotated,
             x_adj=self.x,
             y_adj=self.y,
             z_adj=self.z,
-            names_rotated_axes=['xlens','ylens','zlens'],
-            file_rotation='/photonics/home/gac-bernina/eco/configuration/p21954_lens_stage_rotation',
-            name='lens_beam_direction'
-            )
-        
-        self._append(
-                MIRVirtualStages,
-                name="virtual_stages",
-                nx=self.x,
-                nz=self.z,
-                mx=self.mirr_z,
-                mz=self.z,
-                is_setting=False,
+            names_rotated_axes=["xlens", "ylens", "zlens"],
+            file_rotation="/photonics/home/gac-bernina/eco/configuration/p21954_lens_stage_rotation",
+            name="lens_beam_direction",
         )
-            
+
+        self._append(
+            MIRVirtualStages,
+            name="virtual_stages",
+            nx=self.x,
+            nz=self.z,
+            mx=self.mirr_z,
+            mz=self.z,
+            is_setting=False,
+        )
+
         self._append(
             DetectorBsStream,
             "SARES20-CEP01:spectrometer_correlation",
@@ -422,6 +421,7 @@ class MidIR(Assembly):
             )
         except Exception as e:
             print(f"Timetool pv writing pipeline initialization failed with: \n{e}")
+
 
 class Spectrometer(Assembly):
     def __init__(self, pvname, name=None):
@@ -563,10 +563,10 @@ class FilterWheelAttenuator(Assembly):
 
 
 class StageLxtDelay(Assembly):
-    def __init__(self, fine_delay_adj, las, direction=1, name=None):
+    def __init__(self, fine_delay_adj, xlt, direction=1, name=None):
         super().__init__(name=name)
         self._append(fine_delay_adj, name="_fine_delay_adj", is_setting=True)
-        self._append(las.xlt, name="_coarse_delay_adj", is_setting=True)
+        self._append(xlt, name="_coarse_delay_adj", is_setting=True)
         self._append(AdjustableMemory, direction, name="_direction", is_setting=True)
         self._append(
             AdjustableFS,
@@ -945,12 +945,12 @@ class LaserBernina(Assembly):
             is_setting=True,
         )
 
-        self._append(
-            Phaseshifter_MK2,
-            pvname="SLAAR-CSOC-DLL3-PYIOC",
-            name="phaseshifter_mk2",
-            is_setting=True,
-        )
+        # self._append(
+        #     Phaseshifter_MK2,
+        #     pvname="SLAAR-CSOC-DLL3-PYIOC",
+        #     name="phaseshifter_mk2",
+        #     is_setting=True,
+        # )
 
         ############# Keysight arrival times ##########
         self._append(
@@ -974,7 +974,10 @@ class LaserBernina(Assembly):
 
         # Table 1, Benrina hutch
         self._append(
-            MotorRecord,"SLAAR21-LMOT-M523:MOTOR_1",name="delaystage_glob", is_setting=True,
+            MotorRecord,
+            "SLAAR21-LMOT-M523:MOTOR_1",
+            name="delaystage_glob",
+            is_setting=True,
         )
 
         self._append(
@@ -990,7 +993,10 @@ class LaserBernina(Assembly):
             MotorRecord, self.pvname + "-M534:MOT", name="wp_att", is_setting=True
         )
         self._append(
-            MotorRecord,self.pvname + "-M548:MOT", name="switch_35to100fs", is_setting=True,
+            MotorRecord,
+            self.pvname + "-M548:MOT",
+            name="switch_35to100fs",
+            is_setting=True,
         )
 
         ####### Implementation segmented ND filter wheel in rotation stage #########
@@ -1069,13 +1075,13 @@ class LaserBernina(Assembly):
             except:
                 return np.nan
 
-
         self._append(
             LaserRateControl, name="rate", is_setting=True, is_display="recursive"
         )
         self._append(
             XltEpics,
-            pvname="SLAAR02-LTIM-PDLY2",
+            # pvname="SLAAR02-LTIM-PDLY2", # for new phase shifter
+            pvname="SLAAR02-LTIM-PDLY",  # old phase shifter
             name="xlt",
             is_setting=True,
             is_display="recursive",
@@ -1092,6 +1098,16 @@ class LaserBernina(Assembly):
             self.delaystage_pump,
             name="delay_pump",
             is_setting=True,
+        )
+
+        self._append(
+            AdjustableVirtual,
+            [self.delay_pump],
+            lambda t: -t,
+            lambda t: [-t],
+            name="advance_pump",
+            is_setting=False,
+            is_display=False,
         )
 
         self._append(

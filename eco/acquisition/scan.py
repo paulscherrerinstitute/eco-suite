@@ -53,7 +53,7 @@ class StepScan(Assembly):
         callbacks_end_scan=[],
         return_at_end="timeout",
         gridspecs=None,
-        elog=None,
+        # elog=None,
         name="current_scan",
         **kwargs_callbacks,
     ):
@@ -144,7 +144,7 @@ class StepScan(Assembly):
         )
 
         self.return_at_end = return_at_end
-        self._elog = elog
+        # self._elog = elog
         self.remaining_tasks = []
         self.callbacks_start_scan = callbacks_start_scan
         self.callbacks_start_step = callbacks_start_step
@@ -545,7 +545,7 @@ class Scans(Assembly):
         callbacks_end_step=[],
         callbacks_end_scan=[],
         # run_table=None,
-        elog=None,
+        # elog=None,
         name="scans",
     ):
         super().__init__(name=name)
@@ -588,7 +588,7 @@ class Scans(Assembly):
         self._append(DetectorMemory, "none since session start", name="acquiring_scan")
         # self.checker = checker
         # self._scan_directories = scan_directories
-        self._elog = elog
+        # self._elog = elog
 
     def _get_counter_names(self):
         """Get the names of the default counters."""
@@ -688,12 +688,12 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            elog=self._elog,
+            # elog=self._elog,
             return_at_end=return_at_end,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         # return s
@@ -736,11 +736,11 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            elog=self._elog,
+            # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -778,11 +778,11 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            elog=self._elog,
+            # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -828,11 +828,13 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            elog=self._elog,
+            # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True, status=True)
+        self._append(
+            s, name="acquiring_scan", overwrite=True, status=True, delete_old=True
+        )
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -891,11 +893,11 @@ class Scans(Assembly):
             callbacks_step_counting=[counting_function],
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            elog=self._elog,
+            # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -940,12 +942,12 @@ class Scans(Assembly):
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
             run_table=self._run_table,
-            elog=self._elog,
+            # elog=self._elog,
             return_at_end=return_at_end,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -1008,13 +1010,13 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
-            elog=self._elog,
+            # elog=self._elog,
             gridspecs=gridspecs,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
 
-        self._append(s, name="acquiring_scan", overwrite=True)
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
 

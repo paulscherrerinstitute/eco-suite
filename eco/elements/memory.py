@@ -332,7 +332,10 @@ class Memory:
             else:
                 changed = True
                 if not tsel:
-                    comp_indicator = f"not changed ({recall_value-present_value:+g})"
+                    try:
+                        comp_indicator = f"not changed ({recall_value-present_value:+g})"
+                    except:
+                        comp_indicator = f"not changed"
                 else:
                     try:
                         tdiff = f"{recall_value - present_value:+g}"

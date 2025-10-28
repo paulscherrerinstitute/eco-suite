@@ -171,8 +171,8 @@ class Daq(Assembly):
                 channels_BS=self.channels["channels_BS"].get_current_value(),
                 channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
                 channels_CA=self.channels["channels_CA"].get_current_value(),
-                **acq_pars
-                )
+                **acq_pars,
+            )
             acquisition.acquisition_kwargs.update({"file_names": response["files"]})
             if scan and not scan.daq_run_number == int(response["run_number"]):
                 raise Exception(
@@ -612,7 +612,7 @@ class Daq(Assembly):
             self.run_table.append_run(
                 runno,
                 metadata=metadata,
-                d=scan.namespace_status["status_run_start"]["status"],
+                d=scan.namespace_status["status_run_start"],
             )
         except:
             print("WARNING: issue adding data to run table")
@@ -816,7 +816,7 @@ class Daq(Assembly):
         else:
             message_string += f"\n"
         try:
-            elog_ids = scan.status_to_elog(message_string, auto_title=False)
+            elog_ids = scan.status_to_elog(text=message_string, auto_title=False)
             scan._elog_id = elog_ids[1]
 
         # message_string += "`" + metadata["scan_info_file"] + "`\n"

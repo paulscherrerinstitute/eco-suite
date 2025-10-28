@@ -28,6 +28,7 @@ def get_camclient():
     global CAM_CLIENT
     if not CAM_CLIENT:
         CAM_CLIENT = CamClient()
+        CAM_CLIENT.timeout = 1
     return CAM_CLIENT
 
 
@@ -35,6 +36,7 @@ def get_pipelineclient():
     global PIPELINE_CLIENT
     if not PIPELINE_CLIENT:
         PIPELINE_CLIENT = PipelineClient()
+        PIPELINE_CLIENT.timeout=1
     return PIPELINE_CLIENT
 
 
@@ -325,7 +327,7 @@ class CameraBasler(Assembly):
                 camserver_group=camserver_group,
                 name="config_cs",
                 is_display="recursive",
-                is_setting=True
+                is_setting=True,
             )
 
             self.config_cs.set_alias()
@@ -479,6 +481,11 @@ class CameraBasler(Assembly):
             name="_gain",
             is_setting=True,
             is_display=False,
+        )
+        self._append(
+            AdjustablePvEnum,
+            self.pvname + ":TRIGGER",
+            name="trigger_on",
         )
         self._append(
             AdjustablePvEnum,

@@ -415,12 +415,15 @@ class Namespace(Assembly):
             print(
                 f"WARNING: The following required names do not exist in namespace {self.name} \n and will be removed from required names: {nonex_reqnames}"
             )
+            pres_req = set(self.required_names()) - nonex_reqnames
+        else:
+            pres_req = set(self.required_names())
 
         terminal_menu = TerminalMenu(
             sorted(self.all_names),
             multi_select=True,
             show_multi_select_hint=True,
-            preselected_entries=list(self.required_names()),
+            preselected_entries=list(pres_req),
             title="Select required names for namespace %s" % self.name,
         )
         selected_indices = terminal_menu.show()

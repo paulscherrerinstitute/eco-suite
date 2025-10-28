@@ -32,6 +32,7 @@ from ..utilities.path_alias import PathAlias
 import sys, os, shutil
 import numpy as np
 from IPython import get_ipython
+from eco.acquisition import counters
 
 
 path_aliases = PathAlias()
@@ -53,6 +54,11 @@ _config_bernina_dict = AdjustableFS(
 from eco.elements.adj_obj import AdjustableObject, DetectorObject
 
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
+
+
+counters.DEFAULT_STORAGE_DIR = (
+    lambda: f"/sf/bernina/data/{config_bernina.pgroup.get_current_value()}/res/run_data/tmp"
+)
 
 
 namespace.append_obj(
@@ -939,13 +945,6 @@ namespace.append_obj(
     lazy=True,
     name="channels_CA",
 )
-namespace.append_obj(
-    "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_CA_epicsdaq",
-    module_name="eco.elements.adjustable",
-    lazy=True,
-    name="channels_CA_epicsdaq",
-)
 
 namespace.append_obj(
     "MpodModule",
@@ -994,29 +993,6 @@ namespace.append_obj(
 )
 
 
-### draft new epics daq ###
-namespace.append_obj(
-    "EpicsDaq",
-    channel_list=channels_CA_epicsdaq,
-    name="daq_epics_local",
-    module_name="eco.acquisition.epics_data",
-    lazy=True,
-)
-
-# namespace.append_obj(
-#     "Scans",
-#     name="scans_epics",
-#     module_name="eco.acquisition.scan",
-#     data_base_dir=f"{config_bernina.pgroup()}/scan_data",
-#     scan_info_dir=f"{daq_epics_local.default_file_path()}/{config_bernina.pgroup()}/scan_info",
-#     default_counters=[daq_epics_local],
-#     checker=None,
-#     scan_directories=True,
-#     run_table=None,
-#     lazy=True,
-# )
-#
-#
 ##### standard DAQ #######
 
 
@@ -1082,7 +1058,7 @@ namespace.append_obj(
     rate_multiplicator="auto",
     name="daq",
     namespace=namespace,
-    checker=checker,
+    checker=NamespaceComponent(namespace, "checker"),
     run_table=run_table,
     pulse_picker=NamespaceComponent(namespace, "xp"),
     elog=elog,
@@ -1099,7 +1075,7 @@ namespace.append_obj(
     callbacks_start_scan=[],
     callbacks_end_step=[],
     callbacks_end_scan=[],
-    elog=elog,
+    # elog=elog,
     name="scans",
     module_name="eco.acquisition.scan",
     lazy=True,
@@ -1159,32 +1135,22 @@ namespace.append_obj(
 
 # this is the large inline camera
 namespace.append_obj(
-    "BerninaInlineMicroscope",
-    # pvname_camera="SARES20-CAMS142-M3", #THC
-    pvname_camera="SARES20-CAMS142-M1",  # GIC
+    "MicroscopeMotorRecord",
+    pvname_camera="SARES20-CAMS142-M3",  # GIC
+    pvname_zoom="SARES20-MF1:MOT_14",
     lazy=True,
-    name="samplecam_inline",
+    name="samplecam_inline_top",
     module_name="eco.microscopes",
 )
-
-
-# namespace.append_obj(
-#     "CameraBasler",
-#     "SARES20-CAMS142-C1",
-#     lazy=True,
-#     name="samplecam_front",
-#     module_name="eco.microscopes",
-# )
 
 namespace.append_obj(
-    "MicroscopeMotorRecord",
-    pvname_camera="SARES20-CAMS142-M3",
+    "CameraBasler",
+    # pvname_camera="SARES20-CAMS142-M3", #THC
+    "SARES20-CAMS142-C1",  # GIC
     lazy=True,
-    name="samplecam_sideview",
+    name="samplecam_inline_bottom",
     module_name="eco.microscopes",
-    pvname_zoom="SARES20-MF1:MOT_14",
 )
-
 
 # from eco.devices_general.cameras_swissfel import FeturaMicroscope
 # from eco.elements.assembly import Assembly
@@ -1421,18 +1387,83 @@ from eco.devices_general.motors import ThorlabsPiezoRecord
 
 # # ad hoc incoupling device
 class Incoupling(Assembly):
-    def __init__(self, name=None):
+    def __init__(self, delaystage_pump=None, name=None):
         super().__init__(name=name)
-        # self._append(SmaractRecord, "SARES20-MCS1:MOT_13", name="ry", is_setting=True)
-        # self._append(SmaractRecord, "SARES23-USR:MOT_4", name="rx", is_setting=True)
-        # self._append(SmaractRecord, "SARES20-MCS1:MOT_15", name="y", is_setting=True)
-        # self._append(MotorRecord, "SARES20-MF2:MOT_5", name="x", is_setting=True)
-        # self._append(
-        #     SmaractRecord, "SARES23-USR:MOT_3", name="eos_focus", is_setting=True
-        # )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_13", name="thz_par2_x", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_16", name="thz_par2_z", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_14", name="thz_par2_ry", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_15", name="thz_par2_rx", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
+        )
+
+        try:
+            self.motor_configuration_thorlabs = {
+                "thz_filter": {
+                    "pvname": "SLAAR21-LMOT-ELL2",
+                },
+                "thz_crystal": {
+                    "pvname": "SLAAR21-LMOT-ELL3",
+                },
+                "thz_waveplate": {
+                    "pvname": "SLAAR21-LMOT-ELL5",
+                },
+                "block": {
+                    "pvname": "SLAAR21-LMOT-ELL4",
+                },
+                "polarizer": {
+                    "pvname": "SLAAR21-LMOT-ELL1",
+                },
+            }
+
+            ### thorlabs piezo motors ###
+            for name, config in self.motor_configuration_thorlabs.items():
+                self._append(
+                    ThorlabsPiezoRecord,
+                    pvname=config["pvname"],
+                    name=name,
+                    is_setting=True,
+                    accuracy=0.5,
+                )
+        except Exception as e:
+            print(e)
+
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
+        )
+        self._append(
+            SmaractRecord, "SARES20-MCS2:MOT_10", name="opa_mirr2_rx", is_setting=True
+        )
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC07_VOLTS",
+            name="opa_mirr1_ry",
+            is_setting=True,
+        )
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC08_VOLTS",
+            name="opa_mirr1_rx",
+            is_setting=True,
+        )
+
         self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_x", is_setting=True)
         self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_y", is_setting=True)
         self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_z", is_setting=True)
+        self._append(
+            MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
+        )
 
         self._append(
             AnalogOutput,
@@ -1444,32 +1475,6 @@ class Incoupling(Assembly):
             AnalogOutput,
             "SLAAR21-LDIO-LAS6991:DAC05_VOLTS",
             name="eos_fb_ry",
-            is_setting=True,
-        )
-
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC09_VOLTS",
-            name="nir_mirr1_ry",
-            is_setting=True,
-        )
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC10_VOLTS",
-            name="nir_mirr1_rx",
-            is_setting=True,
-        )
-
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC11_VOLTS",
-            name="nir_mirr2_ry",
-            is_setting=True,
-        )
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC12_VOLTS",
-            name="nir_mirr2_rx",
             is_setting=True,
         )
 
@@ -1494,33 +1499,50 @@ class Incoupling(Assembly):
             accuracy=1,
             is_setting=True,
         )
-        try:
-            self.motor_configuration_thorlabs = {
-                "nir_block": {
-                    "pvname": "SLAAR21-LMOT-ELL2",
-                },
-                "eos_block": {
-                    "pvname": "SLAAR21-LMOT-ELL4",
-                },
-            }
 
-            ### thorlabs piezo motors ###
-            for name, config in self.motor_configuration_thorlabs.items():
-                self._append(
-                    ThorlabsPiezoRecord,
-                    pvname=config["pvname"],
-                    name=name,
-                    is_setting=True,
-                )
-        except Exception as e:
-            print(e)
+        self._append(
+            AdjustableVirtual,
+            [self.thz_crystal, self.thz_waveplate],
+            lambda c, w: c,
+            lambda angle: [angle, angle / 2],
+            name="thz_polarization",
+            is_setting=False,
+        )
 
-    #     self._append(AdjustableVirtual,
-    #                 [self.crystal, self.hwp],
-    #                 self.thz_pol_get,
-    #                 self.thz_pol_set,
-    #                 name="thz_polarization",
-    #             )
+        self._append(
+            AdjustableVirtual,
+            [self.thz_par1_z, self.thz_par2_z],
+            lambda z1, z2: z2,
+            lambda z: [
+                self.thz_par1_z.get_current_value()
+                + (z - self.thz_par2_z.get_current_value()),
+                z,
+            ],
+            name="thz_focus",
+            is_setting=False,
+            is_display=False,
+        )
+
+        self._append(
+            delaystage_pump,
+            name="delaystage_pump",
+            is_setting=False,
+            is_display=False,
+        )
+
+        self._append(
+            AdjustableVirtual,
+            [self.delaystage_pump, self.thz_par2_x],
+            lambda d, x: x,
+            lambda x: [
+                self.delaystage_pump.get_current_value()
+                + (x - self.thz_par2_x.get_current_value()) / 2,
+                x,
+            ],
+            name="thz_par2_x_delaycomp",
+            is_setting=False,
+            is_display=False,
+        )
 
     # def thz_pol_set(self, val):
     #     return 1.0 * val, 1.0 / 2 * val
@@ -1531,6 +1553,7 @@ class Incoupling(Assembly):
 
 namespace.append_obj(
     Incoupling,
+    delaystage_pump=NamespaceComponent(namespace, "las.delaystage_pump"),
     lazy=True,
     name="las_inc",
 )
@@ -2063,6 +2086,12 @@ namespace.append_obj(
 
 ############## experiment specific #############
 
+namespace.append_obj(
+    MotorRecord,
+    "SARES20-MF1:MOT_12",
+    name="bsx",
+)
+
 
 class ConvergentBeamDiffraction(Assembly):
     def __init__(self, name=None):
@@ -2207,26 +2236,29 @@ class ConvergentBeamDiffraction(Assembly):
 
 from eco.loptics.bernina_laser import Stage_LXT_Delay
 
-
-# namespace.append_obj(
-#     "StageLxtDelay",
-#     ocb.delay_thz,
-#     las,
-#     lazy=True,
-#     name="lxt",
-#     direction=-1,
-#     module_name="eco.loptics.bernina_laser",
-# )
+# OLD type lxt
 
 namespace.append_obj(
-    "LxtCompStageDelay",
-    NamespaceComponent(namespace, "tt_kb.delay"),
+    "StageLxtDelay",
+    NamespaceComponent(namespace, "las.delay_pump"),
     NamespaceComponent(namespace, "las.xlt"),
-    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
     lazy=True,
     name="lxt",
+    direction=-1,
     module_name="eco.loptics.bernina_laser",
 )
+
+# NEW type lxt
+
+# namespace.append_obj(
+#     "LxtCompStageDelay",
+#     NamespaceComponent(namespace, "tt_kb.delay"),
+#     NamespaceComponent(namespace, "las.xlt"),
+#     feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
+#     lazy=True,
+#     name="lxt",
+#     module_name="eco.loptics.bernina_laser",
+# )
 
 ##combined delaystage with phase shifter motion##
 
@@ -2371,7 +2403,7 @@ class IlluminatorsLasers(Assembly):
         self._append(
             MpodChannel,
             pvbase="SARES21-PS7071",
-            channel_number=3,
+            channel_number=4,
             name="illumination_inline",
         )
         self._append(
