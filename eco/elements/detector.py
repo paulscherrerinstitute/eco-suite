@@ -1,5 +1,9 @@
 from copy import deepcopy
-from eco.elements.adjustable import AdjustableMemory, default_representation, spec_convenience
+from eco.elements.adjustable import (
+    AdjustableMemory,
+    default_representation,
+    spec_convenience,
+)
 from eco.elements.assembly import Assembly
 from eco.aliases import Alias
 import time
@@ -59,9 +63,9 @@ class DetectorVirtual(Assembly):
         self._foo_get_current_value = foo_get_current_value
         if unit:
             self.unit = AdjustableMemory(unit, name="unit")
-        self.settings_collection.append(self, force=True)
-        self.status_collection.append(self, force=True)
-        self.display_collection.append(self, force=True)
+        self.status_collection.append(self)
+        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="display")
 
     def get_current_value(self):
         return self._foo_get_current_value(
@@ -93,6 +97,7 @@ class DetectorGet:
             self._get_cache = (ts, value)
         return value
 
+
 @call_convenience
 @value_property
 class DetectorMemory:
@@ -108,7 +113,6 @@ class DetectorMemory:
         else:
             return self.current_value
 
-    
     def __repr__(self):
         name = self.name
         cv = self.get_current_value()

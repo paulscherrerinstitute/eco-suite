@@ -92,7 +92,7 @@ class SmaractStreamdevice(Assembly):
     ):
         super().__init__(name=name)
         # self.settings.append(self)
-        self.settings_collection.append(self, force=True)
+        self.status_collection.append(self, selection="settings")
 
         self.pvname = pvname
         self._elog = elog
@@ -916,7 +916,8 @@ class MotorRecord(Assembly):
     ):
         super().__init__(name=name)
         # self.settings.append(self)
-        self.settings_collection.append(self, force=True)
+
+        self.status_collection.append(self, selection="settings")
 
         self.pvname = pvname
         self._motor = _Motor(pvname)

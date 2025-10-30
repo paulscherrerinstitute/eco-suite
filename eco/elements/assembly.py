@@ -30,6 +30,68 @@ import eco
 _initializing_assemblies = []
 
 
+class StatusCollection:
+    def __init__(self, parent, name="status_collection"):
+        self.parent = parent
+        self.selections = {}
+
+        if name is None:
+            raise Exception("A name of collection is required")
+        self.name = name
+        self._list = []
+
+    def get_list(self, selection=None):
+        ls = []
+        for item in self._list:
+            if item is self:
+                continue
+            if item is self.parent:
+                continue
+            recurse = True
+            item_name = item.alias.get_full_name(base=self.parent)
+            if selection is not None:
+                if item_name not in self.selections[selection].keys():
+                    continue
+                recurse = self.selections[selection][item_name]["recurse"]
+
+            if hasattr(item, f"{self.name}") and isinstance(
+                item.__dict__[self.name], self.__class__
+            ):
+                if recurse:
+                    for titem in item.__dict__[self.name].get_list():
+                        if titem not in ls:
+                            ls.append(titem)
+                else:
+                    ls.append(item)
+            else:
+                ls.append(item)
+        return ls
+
+    def append(self, obj, selection=None, recursive=True):
+
+        if selection is not None:
+            if selection not in self.selections:
+                self.selections[selection] = {}
+            obj_name = obj.alias.get_full_name(base=self.parent)
+            self.selections[selection][obj_name] = {"recurse": recursive}
+        if obj not in self._list:
+            self._list.append(obj)
+
+    def remove(self, obj):
+        if obj in self._list:
+            obj_name = obj.alias.get_full_name(base=self.parent)
+            self._list.remove(obj)
+        else:
+            raise ValueError("Item not in list")
+
+        for selection in self.selections:
+            if obj_name in self.selections[selection]:
+                del self.selections[selection][obj_name]
+
+    def __call__(self):
+        return self.get_list()
+
+
 class Collection:
     def __init__(self, name=None):
         if name is None:
@@ -131,10 +193,8 @@ class Assembly:
         self.alias = Alias(name, parent=parent)
         # self.settings = []
         # self.status_indicators = []
-        self.settings_collection = Collection(name="settings_collection")
-        self.status_collection = Collection(name="status_collection")
-        self.display_collection = Collection(name="display_collection")
-        self.view_toplevel_only = []
+        self.status_collection = StatusCollection(self, name="status_collection")
+
         if memory.global_memory_dir:
             self.memory = memory.Memory(self)
         if elog:
@@ -151,12 +211,8 @@ class Assembly:
         is_setting=False,
         is_display=True,
         is_status=True,
-        is_alias=True,
-        view_toplevel_only=True,
         call_obj=True,
-        # append_property_with_name=False,
         overwrite=False,
-        delete_old=False,
         **kwargs,
     ):
         if overwrite:
@@ -180,7 +236,6 @@ class Assembly:
         if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
             # adj_copy = copy.copy(foo_obj_init)
             adj_copy = foo_obj_init
-            # adj_copy.alias = Alias(name,parent=self)
             self.__dict__[name] = adj_copy
         elif isinstance(foo_obj_init, Detector) and not isclass(foo_obj_init):
             self.__dict__[name] = foo_obj_init
@@ -191,36 +246,18 @@ class Assembly:
         else:
             self.__dict__[name] = foo_obj_init
         self.alias.append(self.__dict__[name].alias)
-        # except:
-        #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
-        #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
-        # if append_property_with_name:
-        #     if isinstance(self.__dict__[name], Adjustable):
-        #         self.__class__.__dict__[append_property_with_name] = property(
-        #             self.__dict__[name].get_current_value,
-        #             lambda val: self.__dict__[name].set_target_value(val).wait(),
-        #         )
-        #     elif isinstance(self.__dict__[name], Detector):
-        #         self.__class__.__dict__[append_property_with_name] = property(
-        #             self.__dict__[name].get_current_value,
-        #         )
 
-        # if is_setting == "auto":
-        #     is_setting = isinstance(self.__dict__[name], Adjustable)
-        if is_setting:
-            self.settings_collection.append(self.__dict__[name], recursive=True)
+        self.status_collection.append(self.__dict__[name])
         # if is_status == "auto":
         #     is_status = isinstance(self.__dict__[name], Detector)
-        if is_status:
-            self.status_collection.append(self.__dict__[name], recursive=True)
+        if is_setting:
+            self.status_collection.append(
+                self.__dict__[name], selection="settings", recursive=True
+            )
         if is_display:
-            if is_display == "recursive":
-                self.display_collection.append(self.__dict__[name], recursive=True)
-            else:
-                self.display_collection.append(self.__dict__[name], recursive=False)
-
-        if view_toplevel_only:
-            self.view_toplevel_only.append(self.__dict__[name])
+            self.status_collection.append(
+                self.__dict__[name], selection="display", recursive=is_display
+            )
 
     def get_status(
         self,
@@ -320,38 +357,6 @@ class Assembly:
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
 
-        for ts in track(
-            self.settings_collection.get_list(),
-            transient=True,
-            description="Reading settings ...",
-        ):
-
-            if print_name:
-                print(ts.name)
-            # if (not (ts is self)) and hasattr(ts, "get_status"):
-            #     tstat = ts.get_status(base=base)
-            #     settings.update(tstat["settings"])
-            #     status_indicators.update(tstat["status_indicators"])
-            # else:
-            if hasattr(ts, "get_current_value"):
-                tstart = time.time()
-                try:
-                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                        settings[ts.alias.get_full_name(base=base)] = (
-                            ts.get_current_value()
-                        )
-                        try:
-                            settings_channels[ts.alias.get_full_name(base=base)] = (
-                                ts.alias.channel
-                            )
-                        except:
-                            pass
-                except:
-                    geterror.append(ts.alias.get_full_name(base=base))
-                settings_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
-            else:
-                nodet.append(ts.alias.get_full_name(base=base))
-
         if verbose:
             if nodet:
                 print("Could not retrieve status from:\n    " + ",\n    ".join(nodet))
@@ -372,11 +377,11 @@ class Assembly:
                 print(line)
 
         return {
-            "settings": settings,
+            # "settings": settings,
             "status": status,
-            "settings_channels": settings_channels,
+            # "settings_channels": settings_channels,
             "status_channels": status_channels,
-            "settings_times": settings_times,
+            # "settings_times": settings_times,
             "status_times": status_times,
         }
 
@@ -420,7 +425,7 @@ class Assembly:
         maxcolwidths=[None, 50, None, None, None],
     ):
         main_name = self.name
-        stats = self.display_collection()
+        stats = self.status_collection.get_list(selection="display")
         # stats_dict = {}
         tab = []
         for to in stats:
