@@ -4,6 +4,7 @@ from inspect import isclass
 import json
 from pathlib import Path
 from tkinter import W
+import weakref
 from markdown import markdown
 
 from numpy import isin
@@ -43,9 +44,9 @@ class StatusCollection:
     def get_list(self, selection=None):
         ls = []
         for item in self._list:
-            if item is self:
+            if item == self:
                 continue
-            if item is self.parent:
+            if item == self.parent:
                 continue
             recurse = True
             item_name = item.alias.get_full_name(base=self.parent)
@@ -58,7 +59,7 @@ class StatusCollection:
                 item.__dict__[self.name], self.__class__
             ):
                 if recurse:
-                    for titem in item.__dict__[self.name].get_list():
+                    for titem in item.__dict__[self.name].get_list(selection=selection):
                         if titem not in ls:
                             ls.append(titem)
                 else:
@@ -77,14 +78,19 @@ class StatusCollection:
         if obj not in self._list:
             self._list.append(obj)
 
-    def remove(self, obj):
+    def remove(self, obj, selection=None):
+        """Remove an object from the collection. If selection is given, only remove from that selection."""
         if obj in self._list:
             obj_name = obj.alias.get_full_name(base=self.parent)
-            self._list.remove(obj)
+            if selection is None:
+                self._list.remove(obj)
         else:
             raise ValueError("Item not in list")
-
-        for selection in self.selections:
+        if selection is not None:
+            selections = [selection]
+        else:
+            selections = self.selections.keys()
+        for selection in selections:
             if obj_name in self.selections[selection]:
                 del self.selections[selection][obj_name]
 
@@ -255,8 +261,12 @@ class Assembly:
                 self.__dict__[name], selection="settings", recursive=True
             )
         if is_display:
+            if isinstance(is_display, str):
+                recursive = is_display.lower() == "recursive"
+            else:
+                recursive = False
             self.status_collection.append(
-                self.__dict__[name], selection="display", recursive=is_display
+                self.__dict__[name], selection="display", recursive=recursive
             )
 
     def get_status(
@@ -438,13 +448,13 @@ class Assembly:
                 typechar += "✏️"
             elif is_detector:
                 typechar += "👁️"
-            if hasattr(to, "settings_collection"):
+            if hasattr(to, "status_collection"):
                 typechar += " ↳"
 
             try:
                 value = to.get_current_value()
             except AttributeError:
-                if hasattr(to, "settings_collection"):
+                if hasattr(to, "status_collection"):
                     value = "\x1b[3mhas lower level items\x1b[0m"
 
             if isinstance(value, Enum):

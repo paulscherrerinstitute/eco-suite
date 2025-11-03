@@ -70,7 +70,7 @@ class SwissFel(Assembly):
         self._append(
             AdjustablePvEnum,
             "SAROP-ARAMIS:BEAMLINE",
-            pvname_set = "SAROP-ARAMIS:BEAMLINE_SP",
+            pvname_set="SAROP-ARAMIS:BEAMLINE_SP",
             name="aramis_beamline_switch",
             is_display=True,
             is_setting=True,
@@ -241,7 +241,9 @@ class MessageBoard(Assembly):
             name="cristallina_status",
             is_setting=True,
         )
-        self._append(Message, "SF-OP:ESC-MSG", name="cristallina_message", is_setting=True)
+        self._append(
+            Message, "SF-OP:ESC-MSG", name="cristallina_message", is_setting=True
+        )
         self._append(
             AdjustablePvEnum,
             "SF-OP:ESE-MSG:STATUS",
@@ -330,7 +332,7 @@ class UndulatorK(Assembly):
                 is_display=False,
             )
             self.gaps.append(self.__dict__[f"und{undno:02d}_gap"])
-        self.settings_collection.append(self)
+        self.status_collection.append(self, selection="settings")
         self.unit = self.aramis_undulator_photon_energy.unit
 
     def calc_new_Ksets(self, energy_target, energy_start=None):
@@ -353,18 +355,17 @@ class UndulatorK(Assembly):
         start_time = time.time()
         for kset, val in zip(self.ksets, vals):
             kset.set_target_value(val)
-            
-                
-        
+
         sleep(0.2)
         for gap in self.gaps:
             while gap.get_change_done() == 0:
                 sleep(0.02)
-                if (time.time()-start_time) > 10:
-                    print('NB: did not see all Undulators start move and stop for 10s, calling move done anyways.')
+                if (time.time() - start_time) > 10:
+                    print(
+                        "NB: did not see all Undulators start move and stop for 10s, calling move done anyways."
+                    )
                     break
         sleep(1)
-        
 
     def set_target_value(self, value, hold=False):
         return Changer(

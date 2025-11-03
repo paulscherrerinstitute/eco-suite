@@ -19,6 +19,7 @@ from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 from eco.xoptics.dcm_pathlength_compensation import MonoTimecompensation
 
+
 @get_from_archive
 @spec_convenience
 @update_changes
@@ -64,7 +65,9 @@ class DoubleCrystalMono(Assembly):
 
         self._append(DcmConfig, self.pvname, name="mono_config")
 
-        self._append(AdjustablePvEnum, pvname + ":BRAGG_ACCURACY_SP", name="theta_accuracy")
+        self._append(
+            AdjustablePvEnum, pvname + ":BRAGG_ACCURACY_SP", name="theta_accuracy"
+        )
         self._append(AdjustablePvEnum, pvname + ":HOLDING_BRAGG_SP", name="theta_hold")
 
         self._append(
@@ -72,21 +75,18 @@ class DoubleCrystalMono(Assembly):
             pvname + ":RX12",
             name="theta",
             is_setting=True,
-            view_toplevel_only=True,
         )
         self._append(
             MotorRecord,
             pvname + ":TX12",
             name="x",
             is_setting=True,
-            view_toplevel_only=True,
         )
         self._append(
             MotorRecord,
             pvname + ":T2",
             name="gap",
             is_setting=True,
-            view_toplevel_only=True,
         )
         self._append(
             MotorRecord,
@@ -94,7 +94,6 @@ class DoubleCrystalMono(Assembly):
             name="roll1",
             is_setting=True,
             has_park_pv=True,
-            view_toplevel_only=True,
         )
         self._append(
             AdjustablePv,
@@ -102,14 +101,12 @@ class DoubleCrystalMono(Assembly):
             pvreadbackname=pvname + ":PIEZO1_VOLTAGE",
             name="roll1_piezo",
             is_setting=True,
-            view_toplevel_only=True,
         )
         self._append(
             MotorRecord,
             pvname + ":RZ2",
             name="roll2",
             is_setting=True,
-            view_toplevel_only=True,
         )
         self._append(
             MotorRecord,
@@ -117,7 +114,6 @@ class DoubleCrystalMono(Assembly):
             name="pitch2",
             is_setting=True,
             has_park_pv=True,
-            view_toplevel_only=True,
         )
         self._append(
             AdjustablePv,
@@ -125,7 +121,6 @@ class DoubleCrystalMono(Assembly):
             pvreadbackname=pvname + ":PIEZO2_VOLTAGE",
             name="pitch2_piezo",
             is_setting=True,
-            view_toplevel_only=True,
         )
         self._append(
             AdjustablePv,
@@ -200,9 +195,9 @@ class DoubleCrystalMono(Assembly):
             )
 
         if feedback_enable:
-            self._append(AdjustablePvEnum,feedback_enable,name="feedback_enabled")
+            self._append(AdjustablePvEnum, feedback_enable, name="feedback_enabled")
         if feedback_message:
-            self._append(DetectorPvString,feedback_message,name="feedback_message")
+            self._append(DetectorPvString, feedback_message, name="feedback_message")
 
     def add_mono_und_calibration_point(self):
         mono_energy = self.energy.get_current_value()
@@ -232,15 +227,14 @@ class DoubleCrystalMono(Assembly):
             self.energy._pvreadback.remove_callback(index)
         else:
             self.energy._pvreadback.clear_callbacks()
-    
+
     def feedback_start(self):
         self.pitch2.parked(1)
         self.roll1.parked(1)
         self.feedback_enabled(1)
-    
+
     def feedback_stop(self):
         self.feedback_enabled(0)
-    
 
 
 class DcmConfig(Assembly):

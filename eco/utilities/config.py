@@ -1,3 +1,4 @@
+import io
 import json
 import importlib
 from pathlib import Path
@@ -543,6 +544,20 @@ class Namespace(Assembly):
         else:
             if hasattr(self, "exc_init"):
                 self.exc_init.shutdown(wait=False)
+
+            # class TeeTextIO(io.TextIOBase):
+            #     def __init__(self, target):
+            #         self.target = target
+            #         self.stringio = io.StringIO()
+
+            #     def write(self, s):
+            #         writecount = self.target.write(s)
+            #         self.stringio.write(s[:writecount])
+            #         return writecount
+
+            # stdout = sys.stdout
+            # sys.stdout = TeeTextIO(sys.stdout)
+
             with ThreadPoolExecutor(max_workers=max_workers) as exc:
                 list(
                     progress.track(
@@ -575,6 +590,10 @@ class Namespace(Assembly):
                 )
                 # )
                 #     # )
+
+            # output = sys.stdout.stringio.getvalue()
+            # sys.stdout = stdout
+
             if giveup_failed:
                 failed_names = names_to_init.intersection(self.lazy_names)
                 for k in failed_names:
