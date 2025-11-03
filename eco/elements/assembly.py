@@ -44,11 +44,16 @@ class StatusCollection:
     def get_list(self, selection=None):
         ls = []
         for item in self._list:
-            if item == self:
-                continue
+            # if item == self:
+            #     continue
             if item == self.parent:
+                recurse = False  # This is avoiding recursion when e.g. adding a readback to self
+            #     continue
+            else:
+                recurse = True
+            if item in ls:
                 continue
-            recurse = True
+
             item_name = item.alias.get_full_name(base=self.parent)
             if selection is not None:
                 if item_name not in self.selections[selection].keys():
@@ -67,6 +72,15 @@ class StatusCollection:
             else:
                 ls.append(item)
         return ls
+
+    def get_names(self, selection=None):
+        return [
+            item.alias.get_full_name(base=self.parent)
+            for item in self.get_list(selection=selection)
+        ]
+
+    def get_selections_names(self):
+        return self.selections.keys()
 
     def append(self, obj, selection=None, recursive=True):
 
@@ -275,13 +289,14 @@ class Assembly:
         verbose=True,
         print_times=False,
         channeltypes=None,
-        print_name=False,
+        selections=[],
+        # print_name=False,
     ):
         if base == "self":
             base = self
-        settings = {}
-        settings_channels = {}
-        settings_times = {}
+        # settings = {}
+        # settings_channels = {}
+        # settings_times = {}
         status = {}
         status_channels = {}
         status_times = {}
@@ -386,6 +401,11 @@ class Assembly:
             ):
                 print(line)
 
+        sel_dict = {}
+        for selection_name in selections:
+            sel = self.status_collection.get_names(selection=selection_name)
+            sel_dict[selection_name] = {tname: status[tname] for tname in sel}
+
         return {
             # "settings": settings,
             "status": status,
@@ -393,6 +413,7 @@ class Assembly:
             "status_channels": status_channels,
             # "settings_times": settings_times,
             "status_times": status_times,
+            "selections": sel_dict,
         }
 
     def status(self, get_string=False):
@@ -605,97 +626,6 @@ class Monitor:
         self.data[self.channelkeys[pvname]].append(
             {"value": value, "timestamp": timestamp, "timestamp_local": ts_local}
         )
-
-
-class Assembly_old:
-    def __init__(self, name=None, parent=None, is_alias=True):
-        self.name = name
-        self.alias = Alias(name, parent=parent)
-        self.settings = []
-        self.status_indicators = []
-        self.view_toplevel_only = []
-        if memory.global_memory_dir:
-            self.memory = memory.Memory(self)
-
-    def _append(
-        self,
-        foo_obj_init,
-        *args,
-        name=None,
-        is_setting=False,
-        is_display=True,
-        is_alias=True,
-        view_toplevel_only=True,
-        **kwargs,
-    ):
-        self.__dict__[name] = foo_obj_init(*args, **kwargs, name=name)
-        self.alias.append(self.__dict__[name].alias)
-        # except:
-        #     print(f'object {name} / {foo_obj_init} not initialized with name/parent')
-        #     self.__dict__[name] = foo_obj_init(*args, **kwargs)
-        if is_setting:
-            self.settings.append(self.__dict__[name])
-            try:
-                subsettings_names = self.__dict__[name].get_status()["settings"]
-                subsettings = []
-            except AttributeError:
-                pass
-        if (not is_setting) and is_status:
-            self.status_indicators.append(self.__dict__[name])
-        if view_toplevel_only:
-            self.view_toplevel_only.append(self.__dict__[name])
-
-    def get_status(self, base=None):
-        if base is None:
-            base = self
-        settings = {}
-        status_indicators = {}
-        for ts in self.settings:
-            if (not (ts is self)) and hasattr(ts, "get_status"):
-                tstat = ts.get_status(base=base)
-                settings.update(tstat["settings"])
-                status_indicators.update(tstat["status_indicators"])
-            else:
-                settings[ts.alias.get_full_name(base=base)] = ts.get_current_value()
-        for ts in self.status_indicators:
-            if (not (ts is self)) and hasattr(ts, "get_status"):
-                tstat = ts.get_status(base=base)
-                status_indicators.update(tstat["settings"])
-                status_indicators.update(tstat["status_indicators"])
-            else:
-                status_indicators[ts.alias.get_full_name(base=base)] = (
-                    ts.get_current_value()
-                )
-        return {"settings": settings, "status_indicators": status_indicators}
-
-    def status(self, get_string=False):
-        stat = self.get_status()
-        s = tabulate(
-            [
-                [colorama.Style.BRIGHT + name + colorama.Style.RESET_ALL, value]
-                for name, value in stat["settings"].items()
-            ]
-            + [[name, value] for name, value in stat["status_indicators"].items()]
-        )
-        if get_string:
-            return s
-        else:
-            print(s)
-
-    def get_status_str(self, base=None, stat_fields=["settings"]):
-        stat = self.get_status(base=base)
-        stat_filt = {}
-        for stat_field in stat_fields:
-            tstat = stat[stat_field]
-            for to in self.view_toplevel_only:
-                tname = to.alias.get_full_name(base=base)
-                tstat = filter_names(tname, tstat)
-            stat_filt[stat_field] = tstat
-        s = tabulate([[name, value] for name, value in stat_filt[stat_field].items()])
-        return s
-
-    def __repr__(self):
-        return self.get_status_str(base=self)
 
 
 def filter_names(name, stat_dict):

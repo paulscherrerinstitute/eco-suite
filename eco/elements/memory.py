@@ -5,9 +5,10 @@ from .adjustable import AdjustableFS
 from ..utilities.keypress import KeyPress
 from tabulate import tabulate
 import sys, colorama
+
 try:
     from inspect import getargspec
-except: # for python 3.12
+except:  # for python 3.12
     from inspect import getfullargspec as getargspec
 
 import eco
@@ -33,7 +34,7 @@ class Memory:
         self,
         obj,
         memory_dir=global_memory_dir,
-        categories={"recall": ["settings"], "track": ["status_indicators"]},
+        categories={"recall": ["settings"], "track": ["status"]},
     ):
         self.obj_parent = obj
         self.categories = categories
@@ -155,7 +156,8 @@ class Memory:
         to_elog=True,
     ):
         self.setup_path()
-        stat_now = self.obj_parent.get_status(base=self.obj_parent)
+        cats = list(itertools.chain.from_iterable(self.categories.values()))
+        stat_now = self.obj_parent.get_status(base=self.obj_parent, selections=cats)
         stat_now["memorized_attributes"] = attributes
         key = datetime.now().isoformat()
         stat_now["date"] = key
@@ -333,7 +335,9 @@ class Memory:
                 changed = True
                 if not tsel:
                     try:
-                        comp_indicator = f"not changed ({recall_value-present_value:+g})"
+                        comp_indicator = (
+                            f"not changed ({recall_value-present_value:+g})"
+                        )
                     except:
                         comp_indicator = f"not changed"
                 else:
