@@ -1,6 +1,7 @@
 import itertools
 from pathlib import Path
 from datetime import datetime
+import weakref
 from .adjustable import AdjustableFS
 from ..utilities.keypress import KeyPress
 from tabulate import tabulate
@@ -34,17 +35,17 @@ class Memory:
         self,
         obj,
         memory_dir=global_memory_dir,
-        categories={"recall": ["settings"], "track": ["status"]},
+        categories={"recall": ["settings"], "track": ["display"]},
     ):
-        self.obj_parent = obj
+        self.obj_parent = weakref.ref(obj)
         self.categories = categories
         if not memory_dir:
             memory_dir = global_memory_dir
         self.base_dir = Path(memory_dir)
-        self.obj_parent.presets = Presets(self)
+        self.obj_parent().presets = Presets(self)
 
     def setup_path(self):
-        name = self.obj_parent.alias.get_full_name(joiner=None)
+        name = self.obj_parent().alias.get_full_name(joiner=None)
         self.dir = Path(self.base_dir) / Path("/".join(reversed(name)))
         try:
             self.dir.mkdir(exist_ok=True)
@@ -157,7 +158,14 @@ class Memory:
     ):
         self.setup_path()
         cats = list(itertools.chain.from_iterable(self.categories.values()))
-        stat_now = self.obj_parent.get_status(base=self.obj_parent, selections=cats)
+        stat_now = {}
+        allstat = self.obj_parent().get_status(base=self.obj_parent(), selections=cats)
+        stat_now["status"] = allstat["status"]
+        for trec in self.categories["recall"]:
+            stat_now[trec] = allstat["selections"][trec]
+        for trec in self.categories["track"]:
+            stat_now[trec] = allstat["selections"][trec]
+
         stat_now["memorized_attributes"] = attributes
         key = datetime.now().isoformat()
         stat_now["date"] = key
@@ -177,12 +185,12 @@ class Memory:
         tmp = AdjustableFS(self.dir / Path(key + ".json"))
         tmp(stat_now)
         self._memories(mem)
-        print(f"Saved memory for {self.obj_parent.alias.get_full_name()}: {message}")
+        print(f"Saved memory for {self.obj_parent().alias.get_full_name()}: {message}")
         print(f"memory file:  {tmp.file_path.as_posix()}")
         if to_elog:
             elog = self._get_elog()
             elog.post(
-                f"Saved memory for {self.obj_parent.alias.get_full_name()}: {message}",
+                f"Saved memory for {self.obj_parent().alias.get_full_name()}: {message}",
                 tmp.file_path,
                 text_encoding="markdown",
             )
@@ -207,7 +215,7 @@ class Memory:
                     mem_filt[tkey] = {}
                     for ttkey, ttval in tval.items():
                         try:
-                            name2obj(self.obj_parent, ttkey)
+                            name2obj(self.obj_parent(), ttkey)
                             mem_filt[tkey][ttkey] = ttval
                         except KeyError:
                             ...
@@ -262,15 +270,17 @@ class Memory:
             key=key,
             input_obj=input_obj,
         )
-        rec = mem["settings"]
+        rec = {}
+        for trec in self.categories["recall"]:
+            rec.update(mem[trec])
+
+        print(rec)
         if force:
             select = [True] * len(rec.items())
         else:
             select = self.select_from_memory(
-                memory_index=memory_index,
-                key=key,
+                rec,
                 show_changes_only=show_changes_only,
-                input_obj=input_obj,
             )
             if not select:
                 return
@@ -302,20 +312,20 @@ class Memory:
 
     def get_memory_difference_str(
         self,
-        memory,
+        recall_dict,
         select=None,
         ask_select=True,
         show_changes_only=False,
         tablefmt="plain",
     ):
-        # mem = self.get_memory(index=memory_index)
-        mem = memory
-        rec = mem["settings"]
+
         if not select:
-            select = [True] * len(rec)
+            select = [True] * len(recall_dict)
         table = []
-        for n, (tsel, (key, recall_value)) in enumerate(zip(select, rec.items())):
-            present_value = name2obj(self.obj_parent, key).get_current_value()
+        for n, (tsel, (key, recall_value)) in enumerate(
+            zip(select, recall_dict.items())
+        ):
+            present_value = name2obj(self.obj_parent(), key).get_current_value()
             if tsel:
                 tselstr = "x"
             else:
@@ -375,11 +385,9 @@ class Memory:
             tablefmt=tablefmt,
         )
 
-    def select_from_memory(
-        self, input_obj=None, key=None, memory_index=None, show_changes_only=True
-    ):
-        mem = self.get_memory(input_obj=input_obj, key=key, index=memory_index)
-        rec = mem["settings"]
+    def select_from_memory(self, recall_dict, show_changes_only=True):
+        # mem = self.get_memory(input_obj=input_obj, key=key, index=memory_index)
+
         k = KeyPress()
         # cll = colorama.ansi.clear_line()
 
@@ -393,13 +401,13 @@ class Memory:
         class Printer:
             def __init__(self, o=self):
                 self.o = o
-                self.len = len(rec)
+                self.len = len(recall_dict)
                 self.select = [True] * self.len
 
             def print(self, **kwargs):
                 print(
                     self.o.get_memory_difference_str(
-                        mem,
+                        recall_dict,
                         select=self.select,
                         show_changes_only=show_changes_only,
                     )

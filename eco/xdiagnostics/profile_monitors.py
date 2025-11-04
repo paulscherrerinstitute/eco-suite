@@ -93,15 +93,6 @@ class Target_xyz(Assembly):
             name="z",
             is_setting=True,
         )
-        # temporarily remove the offsets for the limit switch homed stages
-        # should not be rquired anymor2 2025-08-11
-
-        # ix = self.settings_collection._list.index(self.x.offset)
-        # self.settings_collection._list.pop(ix)
-        # ix = self.settings_collection._list.index(self.y.offset)
-        # self.settings_collection._list.pop(ix)
-        # ix = self.settings_collection._list.index(self.z.offset)
-        # self.settings_collection._list.pop(ix)
 
 
 class ProfKbBernina(Assembly):

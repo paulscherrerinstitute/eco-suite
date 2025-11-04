@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import copy
 from datetime import datetime
 from inspect import isclass
@@ -33,7 +34,7 @@ _initializing_assemblies = []
 
 class StatusCollection:
     def __init__(self, parent, name="status_collection"):
-        self.parent = parent
+        self.parent = weakref.ref(parent)
         self.selections = {}
 
         if name is None:
@@ -41,41 +42,47 @@ class StatusCollection:
         self.name = name
         self._list = []
 
-    def get_list(self, selection=None):
-        ls = []
-        for item in self._list:
-            # if item == self:
-            #     continue
-            if item == self.parent:
-                recurse = False  # This is avoiding recursion when e.g. adding a readback to self
-            #     continue
-            else:
-                recurse = True
+    def get_list(self, selection=None, **kwargs):
+        ls = kwargs.get("ls", [])
+        for witem in self._list:
+            item = witem()
+            if item is None:
+                continue
+
             if item in ls:
                 continue
 
-            item_name = item.alias.get_full_name(base=self.parent)
             if selection is not None:
+                item_name = item.alias.get_full_name(base=self.parent())
                 if item_name not in self.selections[selection].keys():
                     continue
                 recurse = self.selections[selection][item_name]["recurse"]
+            else:
+                recurse = True
+                ls.append(
+                    item
+                )  # important to get field in case no recursion is defined.
 
             if hasattr(item, f"{self.name}") and isinstance(
                 item.__dict__[self.name], self.__class__
             ):
                 if recurse:
-                    for titem in item.__dict__[self.name].get_list(selection=selection):
+                    for titem in item.__dict__[self.name].get_list(
+                        selection=selection, ls=ls
+                    ):
                         if titem not in ls:
                             ls.append(titem)
                 else:
-                    ls.append(item)
+                    if item not in ls:
+                        ls.append(item)
             else:
-                ls.append(item)
+                if item not in ls:
+                    ls.append(item)
         return ls
 
     def get_names(self, selection=None):
         return [
-            item.alias.get_full_name(base=self.parent)
+            item.alias.get_full_name(base=self.parent())
             for item in self.get_list(selection=selection)
         ]
 
@@ -87,17 +94,18 @@ class StatusCollection:
         if selection is not None:
             if selection not in self.selections:
                 self.selections[selection] = {}
-            obj_name = obj.alias.get_full_name(base=self.parent)
+            obj_name = obj.alias.get_full_name(base=self.parent())
             self.selections[selection][obj_name] = {"recurse": recursive}
         if obj not in self._list:
-            self._list.append(obj)
+            self._list.append(weakref.ref(obj))
 
     def remove(self, obj, selection=None):
         """Remove an object from the collection. If selection is given, only remove from that selection."""
-        if obj in self._list:
-            obj_name = obj.alias.get_full_name(base=self.parent)
+        if obj in [wobj() for wobj in self._list]:
+            obj_name = obj.alias.get_full_name(base=self.parent())
             if selection is None:
-                self._list.remove(obj)
+                ix = [wobj() for wobj in self._list].index(obj)
+                self._list.remove(self._list[ix])
         else:
             raise ValueError("Item not in list")
         if selection is not None:
@@ -107,86 +115,6 @@ class StatusCollection:
         for selection in selections:
             if obj_name in self.selections[selection]:
                 del self.selections[selection][obj_name]
-
-    def __call__(self):
-        return self.get_list()
-
-
-class Collection:
-    def __init__(self, name=None):
-        if name is None:
-            raise Exception("A name of collection is required")
-        self.name = name
-        self._list = []
-        self._recurse = []
-
-    # def get_list(self):
-    #     return self._list
-
-    # esired new way, in order to old containers and allow them to be replaced "on top" of a structure.
-    # causes other issues  from recoursion, bigger issue...
-    def get_list(self):
-        ls = []
-        for item in self._list:
-
-            # if item in ls:
-            #     print(f"Item {item.alias.get_full_name()} is already in list!")
-            #     continue
-            if (
-                hasattr(item, f"{self.name}")
-                and isinstance(item.__dict__[self.name], Collection)
-                # and not (item.__dict__[self.name]==self)
-            ):
-                # if item.__dict__[self.name]==self:
-                # print(f"Item {item.alias.get_full_name()} contains itself in collection!")
-
-                if item in self._recurse:
-                    # print(f"Item {item.alias.get_full_name()} is recursing ↳ ↳ ↳ ")
-                    for titem in item.__dict__[self.name].get_list():
-                        # print(titem.name)
-                        # if titem.__dict__[self.name]==self:
-                        #     print(titem.name)
-                        if (
-                            titem
-                            not in ls
-                            # and not
-                        ):
-                            ls.append(titem)
-                else:
-                    ls.append(item)
-            else:
-                ls.append(item)
-        return ls
-
-    def append(self, obj, recursive=True, force=False):
-        if obj in self._list:
-            return
-        if force:
-            self._list.append(obj)
-
-        elif hasattr(obj, self.name):
-            if isinstance(obj.__dict__[self.name], type(self)):
-                if recursive:
-                    self._recurse.append(obj)
-                self._list.append(obj)
-        else:
-            self._list.append(obj)
-
-    def pop(self, index):
-        return self._list.pop(index)
-
-    def index(self, item):
-        return self._list.index(item)
-
-    def pop_item(self, item):
-        return self.pop(self.index(item))
-
-    def pop_obj_children(self, obj):
-        o = []
-        for it in obj.__dict__[self.name].get_list():
-            if it in self._list:
-                o.append(self.pop_item(it))
-        return o
 
     def __call__(self):
         return self.get_list()
@@ -239,18 +167,8 @@ class Assembly:
 
             if name in self.__dict__:
                 old = self.__dict__[name]
-                for collection in [
-                    self.settings_collection,
-                    self.status_collection,
-                ]:
-                    if isinstance(old, Assembly):
-                        collection.pop_obj_children(old)
-                    else:
-                        if old in collection.get_list():
-                            collection.pop_item(old)
-                self.display_collection.pop_item(old)
+                self.status_collection.remove(old)
                 self.alias.pop_object(old.alias)
-            if delete_old:
                 del old
 
         if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
@@ -290,6 +208,8 @@ class Assembly:
         print_times=False,
         channeltypes=None,
         selections=[],
+        threads=False,
+        max_workers=10,
         # print_name=False,
     ):
         if base == "self":
@@ -322,65 +242,60 @@ class Assembly:
         #             )
         #         )
 
-        def get_stat_one_assembly(ts):
-            if hasattr(ts, "get_current_value"):
-                try:
-                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                        status[ts.alias.get_full_name(base=base)] = (
-                            ts.get_current_value()
+        def get_stat_one_detector(ts):
+            tstart = time.time()
+            try:
+                if (not channeltypes) or (ts.alias.channeltype in channeltypes):
+                    status[ts.alias.get_full_name(base=base)] = ts.get_current_value()
+                    try:
+                        status_channels[ts.alias.get_full_name(base=base)] = (
+                            ts.alias.channel
                         )
-                        try:
-                            status_channels[ts.alias.get_full_name(base=base)] = (
-                                ts.alias.channel
-                            )
-                        except:
-                            pass
-                except:
-                    geterror.append(ts.alias.get_full_name(base=base))
-            else:
-                nodet.append(ts.alias.get_full_name(base=base))
+                    except:
+                        pass
+            except:
+                geterror.append(ts.alias.get_full_name(base=base))
+                status_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
 
-        #  with ThreadPoolExecutor(max_workers=max_workers) as exc:
-        #         list(
-        #             progress.track(
-        #                 exc.map(
-        #                     get_stat_one_assembly,
-        #                     self.status_collection.get_list(),
-        #                 ),
-        #             description="Getting status...",
-        #             total=len(self.status_collection.get_list()),
-        #             transient=True,
-        #             )
-        #         )
-
+        ts_t = []
         for ts in track(
             self.status_collection.get_list(),
             transient=True,
             description="Reading status indicators ...",
         ):
-            # if (not (ts is self)) and hasattr(ts, "get_status"):
-            #     tstat = ts.get_status(base=base)
-            #     status_indicators.update(tstat["settings"])
-            #     status_indicators.update(tstat["status_indicators"])
-            # else:
-            if hasattr(ts, "get_current_value"):
-                tstart = time.time()
-                try:
-                    if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                        status[ts.alias.get_full_name(base=base)] = (
-                            ts.get_current_value()
-                        )
-                        try:
-                            status_channels[ts.alias.get_full_name(base=base)] = (
-                                ts.alias.channel
+            if isinstance(ts, Detector):
+                if threads:
+                    ts_t.append(ts)
+                else:
+                    tstart = time.time()
+                    try:
+                        if (not channeltypes) or (ts.alias.channeltype in channeltypes):
+                            status[ts.alias.get_full_name(base=base)] = (
+                                ts.get_current_value()
                             )
-                        except:
-                            pass
-                except:
-                    geterror.append(ts.alias.get_full_name(base=base))
-                status_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
+                            try:
+                                status_channels[ts.alias.get_full_name(base=base)] = (
+                                    ts.alias.channel
+                                )
+                            except:
+                                pass
+                    except:
+                        geterror.append(ts.alias.get_full_name(base=base))
+                    status_times[ts.alias.get_full_name(base=base)] = (
+                        time.time() - tstart
+                    )
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
+        if threads:
+
+            with ThreadPoolExecutor(max_workers=max_workers) as exc:
+                list(
+                    track(
+                        exc.map(get_stat_one_detector, ts_t),
+                        description="Getting status...",
+                        total=len(ts_t),
+                    )
+                )
 
         if verbose:
             if nodet:

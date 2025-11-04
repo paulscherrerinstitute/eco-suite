@@ -332,7 +332,7 @@ class UndulatorK(Assembly):
                 is_display=False,
             )
             self.gaps.append(self.__dict__[f"und{undno:02d}_gap"])
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
         self.unit = self.aramis_undulator_photon_energy.unit
 
     def calc_new_Ksets(self, energy_target, energy_start=None):

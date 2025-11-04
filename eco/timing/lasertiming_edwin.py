@@ -174,7 +174,7 @@ from ..elements.assembly import Assembly
 class XltEpics(Assembly):
     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name="lxt_epics"):
         super().__init__(name=name)
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
         self.pvname = pvname
         # self.settings_collection.append(self, force=True)
         # self.status_collection.append(self, force=True)
@@ -339,7 +339,7 @@ class XltEpics(Assembly):
 class LaserRateControl(Assembly):
     def __init__(self, pvname="SLAAR02-LTIM-PDLY", name=None):
         super().__init__(name=name)
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
         self.pvname = pvname
         # self.settings_collection.append(self, force=True)
         # self.status_collection.append(self, force=True)

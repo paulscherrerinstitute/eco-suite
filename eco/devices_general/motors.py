@@ -92,7 +92,7 @@ class SmaractStreamdevice(Assembly):
     ):
         super().__init__(name=name)
         # self.settings.append(self)
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
 
         self.pvname = pvname
         self._elog = elog
@@ -449,7 +449,7 @@ class PshellMotor(Assembly):
         self.name_pshell = name_pshell
         self.robot = robot
         self.pc = self.robot.pc
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
         self._append(
             AdjustableFS,
             f"/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json",
@@ -917,7 +917,7 @@ class MotorRecord(Assembly):
         super().__init__(name=name)
         # self.settings.append(self)
 
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
@@ -1589,7 +1589,7 @@ class SmaractRecord(Assembly):
     ):
         super().__init__(name=name)
         # self.settings.append(self)
-        self.status_collection.append(self, selection="settings")
+        self.status_collection.append(self, selection="settings", recursive=False)
 
         self.pvname = pvname
         self._motor = _Motor(pvname)

@@ -41,8 +41,8 @@ class DetectorPvData(Assembly):
             self._pv = PV(pvname)
             self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
             self.status_collection.append(self)
-            self.status_collection.append(self, selection="settings")
-            self.status_collection.append(self, selection="display")
+            self.status_collection.append(self, selection="settings", recursive=False)
+            self.status_collection.append(self, selection="display", recursive=False)
 
         self.name = name
         if has_unit:

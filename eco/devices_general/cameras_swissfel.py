@@ -28,7 +28,7 @@ def get_camclient():
     global CAM_CLIENT
     if not CAM_CLIENT:
         CAM_CLIENT = CamClient()
-        CAM_CLIENT.timeout = 1
+        CAM_CLIENT.timeout = 5
     return CAM_CLIENT
 
 
@@ -36,7 +36,7 @@ def get_pipelineclient():
     global PIPELINE_CLIENT
     if not PIPELINE_CLIENT:
         PIPELINE_CLIENT = PipelineClient()
-        PIPELINE_CLIENT.timeout=1
+        PIPELINE_CLIENT.timeout = 5
     return PIPELINE_CLIENT
 
 

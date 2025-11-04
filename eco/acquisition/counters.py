@@ -1,4 +1,5 @@
 import time
+import weakref
 from eco.acquisition.utilities import Acquisition
 from eco.elements.protocols import Detector, MonitorableValueUpdate
 from collections import namedtuple
@@ -111,6 +112,7 @@ class CounterValue:
         acq_pars = {}
 
         if scan:
+            scan_wr = weakref.ref(scan)
             acq_pars = {
                 "scan_info": {
                     "scan_name": scan.description(),
@@ -132,10 +134,10 @@ class CounterValue:
         def acquire():
             t_tmp = time.time()
             det_val = self.get_detector_values()
-            scan.detector_values.append(det_val)
+            scan_wr().detector_values.append(det_val)
             time.sleep(collection_time - (time.time() - t_tmp))
             t_stop = time.time()
-            scan.timestamp_intervals.append(StepTime(t_tmp, t_stop))
+            scan_wr().timestamp_intervals.append(StepTime(t_tmp, t_stop))
 
         acquisition.set_acquire_foo(acquire, hold=False)
 
