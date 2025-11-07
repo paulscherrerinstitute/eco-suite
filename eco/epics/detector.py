@@ -290,7 +290,7 @@ class CallbackEpics:
         self,
         pv,
         func="accumulate",
-        collector={"timestamps": [], "values": [], "timestamps_ioc": []},
+        collector=None,
         run_once=True,
         print_output=False,
     ):
@@ -298,7 +298,11 @@ class CallbackEpics:
         # self.data = collector
         if func == "accumulate":
             func = self.accumulate_values
-            self.data = {"timestamps": [], "values": [], "timestamps_ioc": []}
+            if collector is None:
+                collector = {"timestamps": [], "values": [], "timestamps_ioc": []}
+            self.data = (
+                collector  # {"timestamps": [], "values": [], "timestamps_ioc": []}
+            )
         self.foo = func
         self.run_once = run_once
         self.print = print_output
@@ -314,8 +318,12 @@ class CallbackEpics:
             run_once=True,
         )
 
+    def is_running(self):
+        return hasattr(self, "cb_index") and self.cb_index in self.pv.callbacks.keys()
+
     def stop(self):
-        self.pv.remove_callback(self.cb_index)
+        if self.is_running():
+            self.pv.remove_callback(self.cb_index)
 
     def __enter__(self):
         self.start()

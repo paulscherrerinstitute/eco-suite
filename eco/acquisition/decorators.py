@@ -1,3 +1,4 @@
+import weakref
 from eco.acquisition.counters import CounterValue
 from eco.acquisition import scan
 
@@ -7,10 +8,16 @@ from eco.acquisition import scan
 def scannable(Obj):
     @property
     def scans(self):
-        if not hasattr(self, "_counter"):
-            self._counter = CounterValue(self, name=self.alias.get_full_name())
+        if hasattr(self, "_counter"):
+            if not hasattr(self, "_old_counters"):
+                self._old_counters = []
+            self._old_counters.append(weakref.ref(self._counter))
+            del self._counter
+        self._counter = CounterValue(self, name=self.alias.get_full_name())
         if not hasattr(self, "_scans"):
             self._scans = scan.Scans(default_counters=[self._counter])
+        else:
+            self._scans.default_counters = [self._counter]
         return self._scans
 
     Obj.scans = scans

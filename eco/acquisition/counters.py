@@ -30,8 +30,9 @@ class CounterValue:
             scan.animation.event_source.stop()
 
         self.callbacks_end_scan = [
-            self.stop_monitoring,
             self.create_arrays,
+            self.stop_monitoring,
+            self.clear_detectors,
             stopani,
             self.store_arrays,
         ]
@@ -39,15 +40,22 @@ class CounterValue:
 
     def append_detectors(self, *detectors):
         for detector in detectors:
-            if isinstance(detector, MonitorableValueUpdate):
-                self.monitorables.append(detector)
-            elif isinstance(detector, Detector):
-                self.detectors.append(detector)
-            else:
+            if not isinstance(detector, MonitorableValueUpdate) and not isinstance(
+                detector, Detector
+            ):
                 raise TypeError(
                     f"Expected Detector or MonitorableValueUpdate, got {type(detector)}"
                 )
-                self.detectors = detectors
+
+            if (
+                isinstance(detector, MonitorableValueUpdate)
+                and detector not in self.monitorables
+            ):
+                self.monitorables.append(detector)
+            elif isinstance(detector, Detector) and detector not in self.detectors:
+                self.detectors.append(detector)
+
+                # self.detectors = detectors
 
     def start_scan(self, scan=None, detectors=[], **kwargs):
         self.append_detectors(*detectors)
@@ -72,9 +80,20 @@ class CounterValue:
         if scan is not None:
             for tm in scan.monitors.values():
                 tm.stop()
+            del scan.monitors
         else:
             for tm in self.monitors:
                 tm.stop()
+            del self.monitors
+
+    def clear_detectors(self, scan, **kwargs):
+        for det in self.detectors:
+            tmpref = weakref.ref(det)
+            del det
+            if tmpref() is not None:
+                print(
+                    f"Warning: Detector {tmpref().name} could not be deleted properly!"
+                )
 
     def get_monitorable_names(self):
         names = []
@@ -158,6 +177,7 @@ class CounterValue:
         if not hasattr(scan, "animation"):
 
             plt.close("CounterValue")
+
             f, axs = plt.subplots(
                 len(scan.monitor_scan_arrays), 1, sharex=True, num="CounterValue"
             )
@@ -197,23 +217,28 @@ class CounterValue:
         if filename == "auto":
             filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".esc.h5"
 
-        d = DataSet.create_with_new_result_file(
-            Path(directory) / Path(filename), force_overwrite=False
-        )
-        names = []
-        for k, v in scan.monitor_scan_arrays.items():
-            names.append(k)
-            d.append(v, name=k)
-            v.store()
-        d.results_file.close()
-        scan.stored_filename = (Path(directory) / Path(filename)).resolve().as_posix()
-        print(
-            f"Stored filename {(Path(directory) / Path(filename)).resolve().as_posix()}"
-        )
+        try:
+            d = DataSet.create_with_new_result_file(
+                Path(directory) / Path(filename), force_overwrite=False
+            )
+            names = []
+            for k, v in scan.monitor_scan_arrays.items():
+                names.append(k)
+                d.append(v, name=k)
+                v.store()
+            d.results_file.close()
+            scan.stored_filename = (
+                (Path(directory) / Path(filename)).resolve().as_posix()
+            )
+            print(
+                f"Stored filename {(Path(directory) / Path(filename)).resolve().as_posix()}"
+            )
 
-        d = DataSet.load_from_result_file(Path(directory) / Path(filename))
-        for name in names:
-            scan.monitor_scan_arrays[name] = d.datasets[name]
+            d = DataSet.load_from_result_file(Path(directory) / Path(filename))
+            for name in names:
+                scan.monitor_scan_arrays[name] = d.datasets[name]
+        except:
+            print("Could not create dataset file!")
 
         files = []
         try:
