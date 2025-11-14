@@ -71,10 +71,10 @@ class Gsheet_API:
         spreadsheet = self.gc.create(
             title=f"run_table_{exp_id}", folder_id="1F7DgF0HW1O71nETpfrTvQ35lRZCs5GvH"
         )
-        spreadsheet.add_worksheet("Custom table")
+        spreadsheet.add_worksheet("Custom table", 10,10)
         spreadsheet.add_worksheet("runtable", 10, 10)
         spreadsheet.add_worksheet("positions", 10, 10)
-        spreadsheet.add_worksheet("Available keys")
+        spreadsheet.add_worksheet("Available keys", 10,10)
 
         ws = spreadsheet.get_worksheet(0)
         spreadsheet.del_worksheet(ws)

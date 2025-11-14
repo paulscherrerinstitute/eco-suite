@@ -1112,15 +1112,15 @@ class LaserBernina(Assembly):
 
         self._append(
             SmaractRecord,
-            "SLAAR21-LMTS-SMAR1:MOT_0",
-            name="delaystage_frog",
+            "SLAAR21-LMTS-SMAR1:MOT_3",
+            name="delaystage_thz_lno",
             is_setting=True,
         )
 
         self._append(
             DelayTime,
-            self.delaystage_frog,
-            name="delay_frog",
+            self.delaystage_thz_lno,
+            name="delay_thz_lno",
             is_setting=True,
         )
 
