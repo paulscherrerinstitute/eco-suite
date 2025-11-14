@@ -147,8 +147,8 @@ class Assembly:
             self.memory = memory.Memory(self)
         if elog:
             self.__elog = elog
-        else:
-            self.__class__.__elog = property(lambda dum: ELOG)
+        # else:
+        #     self.__class__.__elog = property(lambda dum: ELOG)
 
     # TODO: Lazy an threaded append! (for PVs, should be quite a speedup).
     def _append(
@@ -505,6 +505,11 @@ class Assembly:
             return eco.defaults.ELOG
         else:
             return None
+
+    def widget(self):
+        from eco.widgets.display_widget import make_assembly_widget
+
+        return make_assembly_widget(self)
 
 
 import epics.pv

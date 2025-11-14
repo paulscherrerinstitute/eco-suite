@@ -136,7 +136,18 @@ class Daq(Assembly):
             return self._pgroup.set_target_value().wait()
         self._pgroup = value
 
-    def acquire(self, scan=None, run_number=None, Npulses=100, acq_pars={}, **kwargs):
+    def acquire(
+        self,
+        scan=None,
+        run_number=None,
+        Npulses=100,
+        acq_pars={},
+        pgroup=None,
+        **kwargs,
+    ):
+        if pgroup is None:
+            pgroup = self.pgroup
+
         acq_pars = {}
         if scan:
             acq_pars = {
@@ -171,6 +182,7 @@ class Daq(Assembly):
                 channels_BS=self.channels["channels_BS"].get_current_value(),
                 channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
                 channels_CA=self.channels["channels_CA"].get_current_value(),
+                pgroup=pgroup,
                 **acq_pars,
             )
             acquisition.acquisition_kwargs.update({"file_names": response["files"]})
@@ -186,10 +198,15 @@ class Daq(Assembly):
 
         return acquisition
 
-    def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
+    def acquire_pulses(self, Npulses, label=None, wait=True, pgroup=None, **kwargs):
+        if pgroup is None:
+            pgroup = self.pgroup
         ix = self.start(label=label, **kwargs)
         return self.stop(
-            stop_id=self.running[ix]["start_id"] + Npulses - 1, acq_ix=ix, wait=wait
+            stop_id=self.running[ix]["start_id"] + Npulses - 1,
+            acq_ix=ix,
+            wait=wait,
+            pgroup=pgroup,
         )
 
     def start(self, label=None, scan=None, **kwargs):
@@ -246,7 +263,10 @@ class Daq(Assembly):
         wait=True,
         wait_cycle_sleep=0.01,
         scan=None,
+        pgroup=None,
     ):
+        if pgroup is None:
+            pgroup = self.pgroup
         if not stop_id:
             stop_id = int(self.pulse_id.get_current_value())
 
@@ -257,6 +277,7 @@ class Daq(Assembly):
 
         acq_pars = self.running.pop(acq_ix)
         acq_pars["stop_id"] = stop_id
+
         label = acq_pars.pop("label")
 
         # if scan:
@@ -267,6 +288,7 @@ class Daq(Assembly):
             while int(self.pulse_id.get_current_value()) < stop_id:
                 sleep(wait_cycle_sleep)
 
+        acq_pars["pgroup"] = pgroup
         response = self.retrieve(**acq_pars)
         # print(response)
 
@@ -278,7 +300,7 @@ class Daq(Assembly):
         # correct file names to relative paths
         if scan:
             run_directory = list(
-                Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(
+                Path(f"/sf/bernina/data/{pgroup}/raw").glob(
                     f"run{scan.daq_run_number:04d}*"
                 )
             )[0].as_posix()
@@ -917,9 +939,7 @@ class Daq(Assembly):
             with open(scanmonitorfile, "wb") as f:
                 pickle.dump(monitor_result, f)
 
-        print(
-            f"Copying monitor file to run {runno} to the raw directory of {self.pgroup}."
-        )
+        print(f"Copying monitor file to run {runno} to the raw directory of {pgroup}.")
         response = self.append_aux(
             scanmonitorfile.as_posix(), pgroup=pgroup, run_number=runno
         )
