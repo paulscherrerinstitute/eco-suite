@@ -274,7 +274,6 @@ class Memory:
         for trec in self.categories["recall"]:
             rec.update(mem[trec])
 
-        print(rec)
         if force:
             select = [True] * len(rec.items())
         else:
@@ -290,7 +289,7 @@ class Memory:
         changes = []
         for sel, (key, val) in zip(select, rec.items()):
             if sel:
-                to = name2obj(self.obj_parent, key)
+                to = name2obj(self.obj_parent(), key)
                 if set_changes_only:
                     if to.get_current_value() == val:
                         continue

@@ -48,7 +48,7 @@ class Pipeline(Assembly):
             precision=0,
             check_interval=None,
             name="_config",
-            is_setting=False,
+            is_setting=True,
             is_display=False,
         )
 
@@ -56,7 +56,8 @@ class Pipeline(Assembly):
             AdjustableObject,
             self._config,
             name="config",
-            is_setting=True,
+            is_setting=False,
+            # recursive=False,
             is_display="recursive",
         )
         self._append(

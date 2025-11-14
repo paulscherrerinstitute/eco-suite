@@ -159,6 +159,7 @@ class Assembly:
         is_setting=False,
         is_display=True,
         is_status=True,
+        recursive=None,
         call_obj=True,
         overwrite=False,
         **kwargs,
@@ -189,12 +190,23 @@ class Assembly:
         # if is_status == "auto":
         #     is_status = isinstance(self.__dict__[name], Detector)
         if is_setting:
+            if isinstance(is_setting, str):
+                recursive = is_setting.lower() == "recursive"
+            elif not (recursive is None):
+                recursive = recursive
+            else:
+                recursive = True
             self.status_collection.append(
-                self.__dict__[name], selection="settings", recursive=True
+                self.__dict__[name], selection="settings", recursive=recursive
             )
+            # self.status_collection.append(
+            #     self.__dict__[name], selection="settings", recursive=True
+            # )
         if is_display:
             if isinstance(is_display, str):
                 recursive = is_display.lower() == "recursive"
+            elif not (recursive is None):
+                recursive = recursive
             else:
                 recursive = False
             self.status_collection.append(

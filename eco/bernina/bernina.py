@@ -1136,19 +1136,19 @@ namespace.append_obj(
 # this is the large inline camera
 namespace.append_obj(
     "MicroscopeMotorRecord",
-    pvname_camera="SARES20-CAMS142-M3",  # GIC
+    pvname_camera="SARES20-CAMS142-C1",  # GIC
     pvname_zoom="SARES20-MF1:MOT_14",
     lazy=True,
-    name="samplecam_inline_top",
+    name="jetcam_top",
     module_name="eco.microscopes",
 )
 
 namespace.append_obj(
     "CameraBasler",
     # pvname_camera="SARES20-CAMS142-M3", #THC
-    "SARES20-CAMS142-C1",  # GIC
+    "SARES20-CAMS142-M1",  # GIC
     lazy=True,
-    name="samplecam_inline_bottom",
+    name="jetcam_back",
     module_name="eco.microscopes",
 )
 
@@ -1389,18 +1389,18 @@ from eco.devices_general.motors import ThorlabsPiezoRecord
 class Incoupling(Assembly):
     def __init__(self, delaystage_pump=None, name=None):
         super().__init__(name=name)
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_13", name="thz_par2_x", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_16", name="thz_par2_z", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_14", name="thz_par2_ry", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_15", name="thz_par2_rx", is_setting=True
-        )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_13", name="thz_par2_x", is_setting=True
+        # )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_16", name="thz_par2_z", is_setting=True
+        # )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_14", name="thz_par2_ry", is_setting=True
+        # )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_15", name="thz_par2_rx", is_setting=True
+        # )
         self._append(
             SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
         )
@@ -1509,40 +1509,40 @@ class Incoupling(Assembly):
             is_setting=False,
         )
 
-        self._append(
-            AdjustableVirtual,
-            [self.thz_par1_z, self.thz_par2_z],
-            lambda z1, z2: z2,
-            lambda z: [
-                self.thz_par1_z.get_current_value()
-                + (z - self.thz_par2_z.get_current_value()),
-                z,
-            ],
-            name="thz_focus",
-            is_setting=False,
-            is_display=False,
-        )
+        # self._append(
+        #     AdjustableVirtual,
+        #     [self.thz_par1_z, self.thz_par2_z],
+        #     lambda z1, z2: z2,
+        #     lambda z: [
+        #         self.thz_par1_z.get_current_value()
+        #         + (z - self.thz_par2_z.get_current_value()),
+        #         z,
+        #     ],
+        #     name="thz_focus",
+        #     is_setting=False,
+        #     is_display=False,
+        # )
 
-        self._append(
-            delaystage_pump,
-            name="delaystage_pump",
-            is_setting=False,
-            is_display=False,
-        )
+        # self._append(
+        #     delaystage_pump,
+        #     name="delaystage_pump",
+        #     is_setting=False,
+        #     is_display=False,
+        # )
 
-        self._append(
-            AdjustableVirtual,
-            [self.delaystage_pump, self.thz_par2_x],
-            lambda d, x: x,
-            lambda x: [
-                self.delaystage_pump.get_current_value()
-                + (x - self.thz_par2_x.get_current_value()) / 2,
-                x,
-            ],
-            name="thz_par2_x_delaycomp",
-            is_setting=False,
-            is_display=False,
-        )
+        # self._append(
+        #     AdjustableVirtual,
+        #     [self.delaystage_pump, self.thz_par2_x],
+        #     lambda d, x: x,
+        #     lambda x: [
+        #         self.delaystage_pump.get_current_value()
+        #         + (x - self.thz_par2_x.get_current_value()) / 2,
+        #         x,
+        #     ],
+        #     name="thz_par2_x_delaycomp",
+        #     is_setting=False,
+        #     is_display=False,
+        # )
 
     # def thz_pol_set(self, val):
     #     return 1.0 * val, 1.0 / 2 * val
@@ -2439,8 +2439,12 @@ namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
 
 
 class LiquidJetSpectroscopy(Assembly):
-    def __init__(self, pgroup_adj=None, config_JF_adj=None, name=None):
+    def __init__(
+        self, pgroup_adj=None, config_JF_adj=None, name=None, v_g=None, e2v=None
+    ):
         super().__init__(name=name)
+        self._v_g = v_g
+        self._e2v = e2v
         self._append(
             MotorRecord,
             "SARES20-MF1:MOT_12",
@@ -2450,17 +2454,23 @@ class LiquidJetSpectroscopy(Assembly):
         )
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_10",
+            "SARES20-XPS1:MOT_JET_Y",
             name="y",
             backlash_definition=True,
             is_setting=True,
         )
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_11",
+            "SARES20-MF1:MOT_13",
             name="z",
             backlash_definition=True,
             is_setting=True,
+        )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-PS7071",
+            channel_number=4,
+            name="light",
         )
         # self._append(
         #     MotorRecord,y=True,
@@ -2477,20 +2487,62 @@ class LiquidJetSpectroscopy(Assembly):
         #
         self._append(
             Jungfrau,
-            "JF04T01V01",
-            name="det_em",
+            "JF03T01V02",
+            name="det_jf",
             pgroup_adj=pgroup_adj,
             config_adj=config_JF_adj,
         )
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-PS7071",
+            module_string="HV_EHS_3",
+            channel_number=1,
+            name="apd",
+        )
+        self._append(
+            AdjustableFS,
+            "/photonics/home/gac-bernina/eco/configuration/apd_voltage_calibration",
+            name="apd_voltage_calibration",
+            is_display=False,
+            is_setting=True,
+        )
+
+        # Convert energy → voltage through calibration
+        def ene2volt(energy):
+            try:
+                E, V = np.asarray(self.apd_voltage_calibration()).T
+                return np.interp(energy, E, V)
+            except:
+                return np.nan
+
+        # Getter: read the APD voltage and return it as the virtual value
+        def get_voltage(apd_voltage):
+            return apd_voltage
+
+        # Setter: compute voltage from energy and set it
+        def set_voltage(target_energy):
+            voltage = ene2volt(target_energy)
+            self.apd.voltage.set_target_value(voltage)
+            return voltage
+
+        # Create virtual adjustable:
+        self._append(
+            AdjustableVirtual,
+            [self.apd.voltage],  # real adjustable(s)
+            get_voltage,  # getter
+            set_voltage,  # setter
+            reset_current_value_to=False,
+            name="ene2volt",
+        )
 
 
-# namespace.append_obj(
-#     LiquidJetSpectroscopy,
-#     pgroup_adj=config_bernina.pgroup,
-#     config_JF_adj=config_JFs,
-#     name="liquidjet",
-#     lazy=True,
-# )
+namespace.append_obj(
+    LiquidJetSpectroscopy,
+    pgroup_adj=config_bernina.pgroup,
+    config_JF_adj=config_JFs,
+    name="jet",
+    lazy=True,
+)
 
 from eco.detector import Jungfrau
 

@@ -23,7 +23,7 @@ from eco.xoptics.dcm_pathlength_compensation import MonoTimecompensation
 @get_from_archive
 @spec_convenience
 @update_changes
-@tweak_option
+# @tweak_option
 class DoubleCrystalMono(Assembly):
     def __init__(
         self,

@@ -163,7 +163,7 @@ class SolidTargetDetectorPBPS(Assembly):
         # calc=None,
         # calc_calib={},
         pipeline_computation=None,
-        bias_pvextensions = {'all':":Lnk9-BP0-V-HV-ALL-SP"},
+        bias_pvextensions={"all": ":Lnk9-BP0-V-HV-ALL-SP"},
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -234,10 +234,10 @@ class SolidTargetDetectorPBPS(Assembly):
             )
 
         if bias_pvextensions:
-            if 'all' in bias_pvextensions.keys():
+            if "all" in bias_pvextensions.keys():
                 self._append(
                     AdjustablePv,
-                    self.pvname+bias_pvextensions['all'],
+                    self.pvname + bias_pvextensions["all"],
                     name="bias_all",
                     is_setting=True,
                 )
@@ -318,7 +318,13 @@ class SolidTargetDetectorPBPS(Assembly):
                     is_display=False,
                 )
         if pipeline_computation:
-            self._append(Pipeline, pipeline_computation,name='pipeline_comp', is_setting=True, is_display=False)
+            self._append(
+                Pipeline,
+                pipeline_computation,
+                name="pipeline_comp",
+                is_setting=True,
+                is_display=False,
+            )
 
     def get_calibration_values(self, seconds=5, return_data=False):
         self.x_diodes.set_target_value(0).wait()
@@ -338,7 +344,7 @@ class SolidTargetDetectorPBPS(Assembly):
         print(f"Got {nsamples} samples in {seconds} s.")
         norm_diodes = [1 / tm / 4 for tm in mean]
         if return_data:
-            return data,norm_diodes
+            return data, norm_diodes
         return norm_diodes
 
     def set_calibration_values(self, norm_diodes):
@@ -1016,7 +1022,7 @@ class SolidTargetDetectorPBPS_assembly(Assembly):
         std = [np.std(td) for td in data]
         norm_diodes = [1 / tm / 4 for tm in mean]
         if return_data:
-            return data,norm_diodes
+            return data, norm_diodes
         return norm_diodes
 
     def set_calibration_values(self, norm_diodes):
@@ -1156,7 +1162,7 @@ class SolidTargetDetectorBerninaUSD(Assembly):
         name=None,
         # calc=None,
         # calc_calib={},
-        pipeline_computation = None,
+        pipeline_computation=None,
     ):
         super().__init__(name=name)
 
@@ -1268,7 +1274,13 @@ class SolidTargetDetectorBerninaUSD(Assembly):
             #         is_display=False,
             #     )
         if pipeline_computation:
-            self._append(Pipeline, pipeline_computation,name='pipeline_comp', is_setting=True, is_display=False)
+            self._append(
+                Pipeline,
+                pipeline_computation,
+                name="pipeline_comp",
+                is_setting=True,
+                is_display=False,
+            )
 
     def get_calibration_values(self, seconds=5):
         self.x_diodes.set_target_value(0).wait()
