@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "textual-status-editor"
+version = "0.1.0"
+description = "A textual tabular widget to display and edit status values."
+authors = ["Your Name <youremail@example.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/yourusername/textual-status-editor"
+repository = "https://github.com/yourusername/textual-status-editor"
+keywords = ["textual", "status", "editor", "widget"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+textual = "^0.1.0"  # Replace with the actual version you want to use
+rich = "^10.0.0"  # For rich text formatting in the terminal
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.0"
+pytest-cov = "^2.10"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

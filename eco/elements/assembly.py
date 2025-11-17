@@ -43,42 +43,61 @@ class StatusCollection:
         self._list = []
 
     def get_list(self, selection=None, **kwargs):
-        ls = kwargs.get("ls", [])
+        rec_list_items = kwargs.get("rec_list_items", [])
+        ls = []
         for witem in self._list:
             item = witem()
             if item is None:
+                continue
+
+            if item is self.parent:
                 continue
 
             if item in ls:
                 continue
 
             if selection is not None:
+                if selection not in self.selections.keys():
+                    continue
                 item_name = item.alias.get_full_name(base=self.parent())
                 if item_name not in self.selections[selection].keys():
                     continue
                 recurse = self.selections[selection][item_name]["recurse"]
             else:
                 recurse = True
-                ls.append(
-                    item
-                )  # important to get field in case no recursion is defined.
+
+                ls.append(item)
+
+                # important to get field in case no recursion is defined.
+                if item is self.parent():
+                    recurse = False
 
             if hasattr(item, f"{self.name}") and isinstance(
                 item.__dict__[self.name], self.__class__
             ):
                 if recurse:
+                    # if hasattr(item, "recursing") and item.recursing:
+                    #     print(
+                    #         f"recursing detected loop at {item.alias.get_full_name()}"
+                    #     )
+                    # item.recursing = True
+
                     for titem in item.__dict__[self.name].get_list(
-                        selection=selection, ls=ls
+                        selection=selection, ls=[]
                     ):
+
                         if titem not in ls:
                             ls.append(titem)
+
                 else:
 
                     if item not in ls:
                         ls.append(item)
+
             else:
                 if item not in ls:
                     ls.append(item)
+
         return ls
 
     def get_names(self, selection=None):
@@ -97,7 +116,7 @@ class StatusCollection:
                 self.selections[selection] = {}
             obj_name = obj.alias.get_full_name(base=self.parent())
             self.selections[selection][obj_name] = {"recurse": recursive}
-        if obj not in self._list:
+        if obj not in [tl() for tl in self._list]:
             self._list.append(weakref.ref(obj))
 
     def remove(self, obj, selection=None):
@@ -148,8 +167,8 @@ class Assembly:
             self.memory = memory.Memory(self)
         if elog:
             self.__elog = elog
-        else:
-            self.__class__.__elog = property(lambda dum: ELOG)
+        # else:
+        #     self.__class__.__elog = property(lambda dum: ELOG)
 
     # TODO: Lazy an threaded append! (for PVs, should be quite a speedup).
     def _append(
@@ -160,11 +179,19 @@ class Assembly:
         is_setting=False,
         is_display=True,
         is_status=True,
-        recursive=None,
+        # recursive=None,
         call_obj=True,
         overwrite=False,
         **kwargs,
     ):
+        """This hidden method appends an object to the assembly. It can take either an object instance, or a class (in which case it will be called with the provided args and kwargs).
+        Parameters
+        ----------
+        foo_obj_init : Adjustable, Detector, Assembly, class, callable
+            The object to append, or a class/callable to instantiate.
+            name : str, optional
+            The name of the object within the assembly. If None, the name attribute of the object will be used.
+        is_setting : bool or str "recursive", optional"""
         if overwrite:
 
             if name in self.__dict__:
@@ -193,8 +220,6 @@ class Assembly:
         if is_setting:
             if isinstance(is_setting, str):
                 recursive = is_setting.lower() == "recursive"
-            elif not (recursive is None):
-                recursive = recursive
             else:
                 recursive = True
             self.status_collection.append(
@@ -206,8 +231,6 @@ class Assembly:
         if is_display:
             if isinstance(is_display, str):
                 recursive = is_display.lower() == "recursive"
-            elif not (recursive is None):
-                recursive = recursive
             else:
                 recursive = False
             self.status_collection.append(
@@ -334,7 +357,9 @@ class Assembly:
         sel_dict = {}
         for selection_name in selections:
             sel = self.status_collection.get_names(selection=selection_name)
-            sel_dict[selection_name] = {tname: status[tname] for tname in sel}
+            sel_dict[selection_name] = {
+                tname: status[tname] for tname in sel if tname in status.keys()
+            }
 
         return {
             # "settings": settings,
@@ -520,6 +545,11 @@ class Assembly:
             return eco.defaults.ELOG
         else:
             return None
+
+    def widget(self):
+        from eco.widgets.display_widget import make_assembly_widget
+
+        return make_assembly_widget(self)
 
 
 import epics.pv

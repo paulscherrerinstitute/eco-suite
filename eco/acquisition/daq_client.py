@@ -136,7 +136,18 @@ class Daq(Assembly):
             return self._pgroup.set_target_value().wait()
         self._pgroup = value
 
-    def acquire(self, scan=None, run_number=None, Npulses=100, acq_pars={}, **kwargs):
+    def acquire(
+        self,
+        scan=None,
+        run_number=None,
+        Npulses=100,
+        acq_pars={},
+        pgroup=None,
+        **kwargs,
+    ):
+        if pgroup is None:
+            pgroup = self.pgroup
+
         acq_pars = {}
         if scan:
             acq_pars = {
@@ -171,6 +182,7 @@ class Daq(Assembly):
                 channels_BS=self.channels["channels_BS"].get_current_value(),
                 channels_BSCAM=self.channels["channels_BSCAM"].get_current_value(),
                 channels_CA=self.channels["channels_CA"].get_current_value(),
+                pgroup=pgroup,
                 **acq_pars,
             )
             acquisition.acquisition_kwargs.update({"file_names": response["files"]})
@@ -186,10 +198,15 @@ class Daq(Assembly):
 
         return acquisition
 
-    def acquire_pulses(self, Npulses, label=None, wait=True, **kwargs):
+    def acquire_pulses(self, Npulses, label=None, wait=True, pgroup=None, **kwargs):
+        if pgroup is None:
+            pgroup = self.pgroup
         ix = self.start(label=label, **kwargs)
         return self.stop(
-            stop_id=self.running[ix]["start_id"] + Npulses - 1, acq_ix=ix, wait=wait
+            stop_id=self.running[ix]["start_id"] + Npulses - 1,
+            acq_ix=ix,
+            wait=wait,
+            pgroup=pgroup,
         )
 
     def start(self, label=None, scan=None, **kwargs):
@@ -246,7 +263,10 @@ class Daq(Assembly):
         wait=True,
         wait_cycle_sleep=0.01,
         scan=None,
+        pgroup=None,
     ):
+        if pgroup is None:
+            pgroup = self.pgroup
         if not stop_id:
             stop_id = int(self.pulse_id.get_current_value())
 
@@ -257,6 +277,7 @@ class Daq(Assembly):
 
         acq_pars = self.running.pop(acq_ix)
         acq_pars["stop_id"] = stop_id
+
         label = acq_pars.pop("label")
 
         # if scan:
@@ -267,6 +288,7 @@ class Daq(Assembly):
             while int(self.pulse_id.get_current_value()) < stop_id:
                 sleep(wait_cycle_sleep)
 
+        acq_pars["pgroup"] = pgroup
         response = self.retrieve(**acq_pars)
         # print(response)
 
@@ -278,7 +300,7 @@ class Daq(Assembly):
         # correct file names to relative paths
         if scan:
             run_directory = list(
-                Path(f"/sf/bernina/data/{self.pgroup}/raw").glob(
+                Path(f"/sf/bernina/data/{pgroup}/raw").glob(
                     f"run{scan.daq_run_number:04d}*"
                 )
             )[0].as_posix()
@@ -519,11 +541,13 @@ class Daq(Assembly):
             if o == "c":
                 raise Exception("User-requested cancelling!")
 
-    def count_run_number_up_and_attach_to_scan(self, scan, **kwargs):
+    def count_run_number_up_and_attach_to_scan(self, scan, pgroup=None, **kwargs):
         """
         Increments the run number by one.
         """
-        runno = self.get_next_run_number(self.pgroup)
+        if pgroup is None:
+            pgroup = self.pgroup
+        runno = self.get_next_run_number(pgroup)
         print(f"Run number incremented to {runno}")
         scan.daq_run_number = runno
 
@@ -618,8 +642,11 @@ class Daq(Assembly):
             print("WARNING: issue adding data to run table")
         print(f"Runtable appending took: {time.time()-t_start_rt:.3f} s")
 
-    def copy_scan_info_to_raw(self, scan, **kwargs):
+    def copy_scan_info_to_raw(self, scan, pgroup=None, **kwargs):
         t_start = time.time()
+
+        if pgroup is None:
+            pgroup = self.pgroup
 
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
@@ -635,7 +662,6 @@ class Daq(Assembly):
         si = scan.scan_info
         # save temprary file and send then to raw
 
-        pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
         try:
@@ -673,7 +699,9 @@ class Daq(Assembly):
         #     f"--> creating and copying file took{time.time()-t_start} s, presently adding to deadtime."
         # )
 
-    def append_status_to_scan_and_store(self, scan, append_status_info=True, **kwargs):
+    def append_status_to_scan_and_store(
+        self, scan, pgroup=None, append_status_info=True, **kwargs
+    ):
         if not append_status_info:
             return
 
@@ -687,7 +715,8 @@ class Daq(Assembly):
         else:
             runno = self.get_last_run_number()
 
-        pgroup = self.pgroup
+        if pgroup is None:
+            pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
         try:
@@ -751,14 +780,15 @@ class Daq(Assembly):
             if not self.checker.stop_and_analyze():
                 scan._current_step_ok = False
 
-    def copy_aliases_to_scan(self, scan, send_aliases_now=False, **kwargs):
+    def copy_aliases_to_scan(self, scan, send_aliases_now=False, pgroup=None, **kwargs):
         if send_aliases_now or (len(scan.values_done()) == 1):
             namespace_aliases = self.namespace.alias.get_all()
             if hasattr(scan, "daq_run_number"):
                 runno = scan.daq_run_number
             else:
                 runno = self.daq.get_last_run_number()
-            pgroup = self.pgroup
+            if pgroup is None:
+                pgroup = self.pgroup
             tmpdir = Path(
                 f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux"
             )
@@ -881,7 +911,7 @@ class Daq(Assembly):
             print(f"Could not add daq.pulse_id monitor")
             traceback.print_exc()
 
-    def end_scan_monitors(self, scan, **kwargs):
+    def end_scan_monitors(self, scan, pgroup=None, **kwargs):
         for tmon in scan.daq_monitors:
             scan.daq_monitors[tmon].stop_callback()
 
@@ -895,7 +925,10 @@ class Daq(Assembly):
         else:
             runno = self.get_last_run_number()
 
-        tmpdir = Path(f"/sf/bernina/data/{self.pgroup}/res/run_data/daq/run{runno}/aux")
+        if pgroup is None:
+            pgroup = self.pgroup
+
+        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
         try:
             tmpdir.chmod(0o775)
@@ -906,11 +939,9 @@ class Daq(Assembly):
             with open(scanmonitorfile, "wb") as f:
                 pickle.dump(monitor_result, f)
 
-        print(
-            f"Copying monitor file to run {runno} to the raw directory of {self.pgroup}."
-        )
+        print(f"Copying monitor file to run {runno} to the raw directory of {pgroup}.")
         response = self.append_aux(
-            scanmonitorfile.as_posix(), pgroup=self.pgroup, run_number=runno
+            scanmonitorfile.as_posix(), pgroup=pgroup, run_number=runno
         )
         print(
             f"Status: {response.json()['status']} Message: {response.json()['message']}"

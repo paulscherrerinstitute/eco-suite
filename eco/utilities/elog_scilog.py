@@ -37,7 +37,7 @@ def getDefaultElogInstance(
             print(f"Found more than one elog for user group {pgroup}")
             for lb in lbs:
                 creater = lb.createdBy
-                if creater == 'scilog-admin@psi.ch':
+                if creater == "scilog-admin@psi.ch":
                     log.select_logbook(lb)
                     print(f"Choosing default logbook created by 'scilog-admin@psi.ch'")
         else:
@@ -78,6 +78,7 @@ class Elog(Assembly):
         self,
         *args,
         tags=[],
+        pgroups=None,
         text_encoding="markdown",
         markdown_extensions=["fenced_code"],
         **kwargs,

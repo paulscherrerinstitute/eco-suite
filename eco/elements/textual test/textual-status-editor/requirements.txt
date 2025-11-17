@@ -1,0 +1,5 @@
+textual
+rich
+pytest
+pytest-asyncio
+textual-widget

@@ -279,7 +279,7 @@ class StepScan(Assembly):
             acs = []
             for ctr in self.counters:
                 acq = ctr.acquire(
-                    scan=self, Npulses=self.pulses_per_step[0]
+                    scan=self, Npulses=self.pulses_per_step[0], **self.callbacks_kwargs
                 )  # TODO make sure step-individual aquisition argument is possible.
                 acs.append(acq)
                 try:
@@ -295,7 +295,7 @@ class StepScan(Assembly):
         else:
             acs = []
             for ctr in self.counters:
-                ctr.start(scan=self)
+                ctr.start(scan=self, **self.callbacks_kwargs)
                 try:
                     if hasattr(ctr, "name"):
                         statstr += f"{ctr.name}, "
@@ -305,7 +305,7 @@ class StepScan(Assembly):
 
             filenames = []
             for ctr in self.counters:
-                resp = ctr.stop(scan=self)
+                resp = ctr.stop(scan=self, **self.callbacks_kwargs)
                 filenames.extend(resp["files"])
         statstr = statstr[:-2] + " done."
         print(statstr, end="\n")
@@ -1000,6 +1000,119 @@ class Scans(Assembly):
 
         s = StepScan(
             adjustables,
+            values,
+            counters=counters,
+            Npulses=N_pulses,
+            description=description,
+            return_at_end=return_at_end,
+            settling_time=settling_time,
+            callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
+            callbacks_end_scan=self.callbacks_end_scan,
+            # elog=self._elog,
+            gridspecs=gridspecs,
+            name="acquiring_scan",
+            **kwargs_callbacks,
+        )
+
+        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        if start_immediately:
+            s.scan_all(step_info=step_info)
+
+        return s
+
+    def scan(
+        self,
+        *adj_specs,
+        scanning_order="last_fastest",
+        N_pulses=None,
+        description="",
+        counters=[],
+        start_immediately=True,
+        return_at_end="timeout",
+        settling_time=0,
+        step_info=None,
+        **kwargs_callbacks,
+    ):
+        """
+        Most general scan, i.e. a scan of multiple adjustable in multiple dimensions, where the last adjustable is moved first.
+        The scanning order can be changed by setting the `scanning_order` parameter.
+        """
+        adjustables = []
+        positions = []
+        for adj_spec in adj_specs:
+            # simultaneous scan
+            if all([isinstance(ts[0], Adjustable) for ts in adj_spec]):
+                s_adjustables = [ts[0] for ts in adj_spec]
+                s_positions = [interpret_step_specification(ts[1:]) for ts in adj_spec]
+                if not len(set(map(len, s_positions))) == 1:
+                    raise Exception(
+                        "Simultaneous scan adjustables must have the same number of step positions!"
+                    )
+
+                adjustables.append(s_adjustables)
+                positions.append(np.asarray(s_positions).T)
+
+            # mesh scan
+            else:
+                adj = adj_spec[0]
+                spec = adj_spec[1:]
+                if isinstance(adj, Adjustable):
+                    adjustables.append(adj)
+                    positions.append(interpret_step_specification(spec))
+
+        shape = [len(tp) for tp in positions]
+
+        if scanning_order == "last_fastest":
+            index_plan = list(product(*[range(n) for n in shape]))
+        elif scanning_order == "fist_fastst":
+            index_plan = [tc[::-1] for tc in product(*[range(n) for n in shape][::-1])]
+
+        values = []
+        for ixs in index_plan:
+            for ti, tp in zip(ixs, positions):
+                tpos = tp[ti]
+                if np.iterable(tpos) and len(tpos) > 1:
+                    for ttpos in tpos:
+                        values.append(ttpos)
+
+                else:
+                    values.append(tpos)
+
+        adjustables_names = []
+        for ta in adjustables:
+            if isinstance(ta, list):
+                tas = []
+                for tta in ta:
+                    tas.append(
+                        tta.alias.get_full_name() if hasattr(tta, "alias") else tta.name
+                    )
+                adjustables_names.append(tas)
+            else:
+                adjustables_names.append(
+                    ta.alias.get_full_name() if hasattr(tta, "alias") else tta.name
+                )
+
+        gridspecs = {
+            "shape": shape,
+            "positions": positions,
+            "index_plan": index_plan,
+            "adjustables": adjustables_names,
+        }
+
+        adjustables_flat = []
+        for ta in adjustables:
+            if isinstance(ta, list):
+                adjustables_flat.extend(ta)
+            else:
+                adjustables_flat.append(ta)
+
+        if not counters:
+            counters = self._default_counters
+
+        s = StepScan(
+            adjustables_flat,
             values,
             counters=counters,
             Npulses=N_pulses,
