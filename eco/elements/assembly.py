@@ -73,6 +73,7 @@ class StatusCollection:
                         if titem not in ls:
                             ls.append(titem)
                 else:
+
                     if item not in ls:
                         ls.append(item)
             else:
@@ -269,12 +270,14 @@ class Assembly:
                 geterror.append(ts.alias.get_full_name(base=base))
                 status_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
 
+        print("tracking")
         ts_t = []
         for ts in track(
             self.status_collection.get_list(),
             transient=True,
             description="Reading status indicators ...",
         ):
+            print("starting")
             if isinstance(ts, Detector):
                 if threads:
                     ts_t.append(ts)

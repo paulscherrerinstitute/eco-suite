@@ -1461,9 +1461,9 @@ class Incoupling(Assembly):
         self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_x", is_setting=True)
         self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_y", is_setting=True)
         self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_z", is_setting=True)
-        self._append(
-            MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
-        )
+        # self._append(
+        #     MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
+        # )
 
         self._append(
             AnalogOutput,
@@ -2507,19 +2507,20 @@ class LiquidJetSpectroscopy(Assembly):
             is_setting=True,
         )
 
-        # Convert energy → voltage through calibration
+        # Convert energy - voltage using calibration
         def ene2volt(energy):
             try:
                 E, V = np.asarray(self.apd_voltage_calibration()).T
                 return np.interp(energy, E, V)
+
             except:
                 return np.nan
 
-        # Getter: read the APD voltage and return it as the virtual value
+        # Read the APD voltage and return it as the virtual value
         def get_voltage(apd_voltage):
-            return apd_voltage
+            return self.apd.voltage.get_current_value()
 
-        # Setter: compute voltage from energy and set it
+        # compute voltage from energy and set it
         def set_voltage(target_energy):
             voltage = ene2volt(target_energy)
             self.apd.voltage.set_target_value(voltage)
@@ -2528,11 +2529,13 @@ class LiquidJetSpectroscopy(Assembly):
         # Create virtual adjustable:
         self._append(
             AdjustableVirtual,
-            [self.apd.voltage],  # real adjustable(s)
-            get_voltage,  # getter
-            set_voltage,  # setter
+            [self.apd.voltage],
+            get_voltage,
+            set_voltage,
             reset_current_value_to=False,
             name="ene2volt",
+            is_display=True,
+            is_setting=True,
         )
 
 

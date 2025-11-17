@@ -9,6 +9,7 @@ from pathlib import Path
 from .utilities import Acquisition
 import time
 from ..elements.adjustable import AdjustableFS
+from escape import ArrayTimestamps
 
 
 class RunFilenameGenerator:
@@ -84,10 +85,19 @@ class EpicsDaq:
             name="alternative_file_path",
         )
         self._elog = elog
+        self.data = []
         self.channels = {}
         self.pulse_id = PV("SLAAR11-LTIM01-EVR0:RX-PULSEID")
         self.channel_list = channel_list
         self.update_channels()
+        self.callbacks_start_scan = [self.generate_run_number]
+        self.callbacks_start_step = []
+        self.callbacks_step_counting = []
+        self.callbacks_end_step = [self.write_scan_info]
+        self.callbacks_end_scan = [
+            self.create_arrays,
+            self.store_arrays,
+        ]
 
     @property
     def _default_file_path(self):
@@ -106,6 +116,34 @@ class EpicsDaq:
         for channel in channels:
             if not (channel in self.channels.keys()):
                 self.channels[channel] = PV(channel, auto_monitor=True)
+
+    def generate_run_number(self, scan, **kwargs):
+        os.glob(self._default_file_path)
+
+    def get_existing_runnumbers(self):
+        fl = self.path.glob(
+            self.prefix + self.Ndigits * "[0-9]" + self.separator + "*." + self.suffix
+        )
+        fl = [tf for tf in fl if tf.is_file()]
+        runnos = [
+            int(tf.name.split(self.prefix)[1].split(self.separator)[0]) for tf in fl
+        ]
+        return runnos
+
+        channels = self.channel_list.get_current_value()
+        for channel in channels:
+            if not (channel in self.channels.keys()):
+                self.channels[channel] = PV(channel, auto_monitor=True)
+
+    def write_scan_info(self, scan, **kwargs):
+        if not Path(scan.scan_info_filename).exists():
+            with open(scan.scan_info_filename, "w") as f:
+                json.dump(scan.scan_info, f, sort_keys=True, cls=NumpyEncoder)
+        else:
+            with open(self.scan_info_filename, "r+") as f:
+                f.seek(0)
+                json.dump(self.scan_info, f, sort_keys=True, cls=NumpyEncoder)
+                f.truncate()
 
     def h5(self, fina=None, channel_list=None, Npulses=None, queue_size=100):
         if channel_list is None:
@@ -230,17 +268,18 @@ class EpicsDaq:
 
         def acquire():
             t_tmp = time.time()
-            det_val = self.get_data(Npulses)
-            scan_wr().detector_values.append(det_val)
+            data_step = self.get_data(Npulses)
+            scan_wr().data.append(data_step)
             t_stop = time.time()
             scan_wr().timestamp_intervals.append(StepTime(t_tmp, t_stop))
 
         acquisition.set_acquire_foo(acquire, hold=False)
-
         return acquisition
 
     def create_arrays(self, scan, **kwargs):
         scan.monitor_scan_arrays = {}
+        nsteps = len(scan.data)
+
         for monname, mon in scan.monitors.items():
             scan.monitor_scan_arrays[monname] = ArrayTimestamps(
                 data=mon.data["values"],
@@ -248,6 +287,72 @@ class EpicsDaq:
                 timestamp_intervals=scan.timestamp_intervals,
                 parameter=parameter_from_scan(scan),
                 name=monname,
+            )
+
+    def store_arrays(
+        self, scan, filename="auto", directory="auto", elog=None, **kwargs
+    ):
+
+        if directory == "auto":
+            directory = self._default_file_path
+        if not directory.exists():
+            try:
+                directory.mkdir(parents=True)
+            except:
+                print(f"Warning: Could not create directory {directory.resolve()} !")
+
+        if filename == "auto":
+            filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".esc.h5"
+
+        try:
+            d = DataSet.create_with_new_result_file(
+                Path(directory) / Path(filename), force_overwrite=False
+            )
+            names = []
+            for k, v in scan.monitor_scan_arrays.items():
+                names.append(k)
+                d.append(v, name=k)
+                v.store()
+            d.results_file.close()
+            scan.stored_filename = (
+                (Path(directory) / Path(filename)).resolve().as_posix()
+            )
+            print(
+                f"Stored filename {(Path(directory) / Path(filename)).resolve().as_posix()}"
+            )
+
+            d = DataSet.load_from_result_file(Path(directory) / Path(filename))
+            for name in names:
+                scan.monitor_scan_arrays[name] = d.datasets[name]
+        except:
+            print("Could not create dataset file!")
+
+        files = []
+        try:
+            # import mpld3
+
+            plotfilename = Path(directory) / Path(
+                Path(filename).stem.split(".")[0] + ".png"
+            )
+            scan.fig.savefig(
+                plotfilename.as_posix(),
+            )
+            files.append(plotfilename)
+            # print(plotfilename, plotfilename.as_posix())
+
+        except Exception:
+            pass
+
+        files.append(Path(directory) / Path(filename))
+
+        if elog:
+            if elog == True:
+                elog = None
+            scan.status_to_elog(
+                text=f"### Quick scan: {scan.description()}\nData stored in {filename}.",
+                auto_title=False,
+                elog=elog,
+                files=files,
             )
 
     def wait_done(self):
