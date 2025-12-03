@@ -592,6 +592,8 @@ class AdjustableVirtual:
         append_aliases=False,
         name=None,
         unit=None,
+        callbacks_before_change=[],
+        callbacks_after_change=[],
         check_limits=False,
     ):
         self.name = name
@@ -609,6 +611,8 @@ class AdjustableVirtual:
         self._reset_current_value_to = reset_current_value_to
         self._change_simultaneously = change_simultaneously
         self._check_limits = check_limits
+        self._callbacks_before_change = callbacks_before_change
+        self._callbacks_after_change = callbacks_after_change
         self.last_change = None
         if reset_current_value_to:
             for adj in self._adjustables:
@@ -618,6 +622,8 @@ class AdjustableVirtual:
             self.unit = AdjustableMemory(unit, name="unit")
 
     def set_target_value(self, value, hold=False):
+        for cb in self._callbacks_before_change:
+            cb()
         vals = self._foo_set_target_value_current_value(value)
 
         if not hasattr(vals, "__iter__"):
@@ -652,6 +658,8 @@ class AdjustableVirtual:
                     if val is not None:
                         self._active_changers = [adj.set_target_value(val, hold=False)]
                         self._active_changers[0].wait()
+            for cb in self._callbacks_after_change:
+                cb()
 
         def stopper():
             for tc in self._active_changers:

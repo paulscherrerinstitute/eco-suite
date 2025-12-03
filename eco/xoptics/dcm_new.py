@@ -32,14 +32,16 @@ class DoubleCrystalMono(Assembly):
         energy_sp="SAROP21-ARAMIS:ENERGY_SP",
         energy_rb="SAROP21-ARAMIS:ENERGY",
         fel=None,
-        las=None,
+        # las=None,
+        delay_time=None,
+        timing_feedback_enabled=None,
         undulator_deadband_eV=None,
         feedback_enable="SFBEB01-OMON-PBPS133:FB_ON_GLOBAL",
         feedback_message="SFBEB01-OMON-PBPS133:MSG",
     ):
         super().__init__(name=name)
         self._fel = fel
-        self._las = las
+        self._delay_time = delay_time
         self.undulator_deadband_eV = undulator_deadband_eV
         self.pvname = pvname
 
@@ -171,24 +173,26 @@ class DoubleCrystalMono(Assembly):
                 en_set,
                 name="mono_und_energy",
             )
-            if self._las is not None:
+            if self._delay_time is not None:
                 self._append(
                     MonoTimecompensation,
-                    self._las.delay_glob,
+                    self._delay_time,
                     self.mono_und_energy,
                     "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
                     "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+                    timing_feedback_enabled=timing_feedback_enabled,
                     name="mono_und_energy_time_corrected",
                     is_setting=False,
                     is_display=True,
                 )
-        if self._las is not None:
+        if self._delay_time is not None:
             self._append(
                 MonoTimecompensation,
-                self._las.delay_glob,
+                self._delay_time,
                 self.energy,
                 "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
                 "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+                timing_feedback_enabled=timing_feedback_enabled,
                 name="mono_time_corrected",
                 is_setting=False,
                 is_display=True,

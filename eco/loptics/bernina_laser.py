@@ -34,6 +34,7 @@ from pint import UnitRegistry
 import numpy as np
 import time
 from epics import PV
+from .opa import White, Prime
 
 # from time import sleep
 
@@ -981,7 +982,45 @@ class LaserBernina(Assembly):
         )
 
         self._append(
-            DelayTime, self.delaystage_glob, name="delay_glob", is_setting=True
+            CorrectionSumCalculation,
+            name="delaystage_glob_splitter",
+            valnames={
+                "A": "glob",
+                "B": "feedback_adjust",
+                "C": "monochromator_extension",
+            },
+            is_setting=False,
+            is_display="False",
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_glob,
+            name="delay_glob_raw",
+            reset_current_value_to=True,
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_glob_splitter.glob,
+            name="delay_glob",
+            reset_current_value_to=False,
+            is_setting=False,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_glob_splitter.feedback_adjust,
+            name="delay_feedback_adjust",
+            reset_current_value_to=False,
+            is_setting=False,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_glob_splitter.monochromator_extension,
+            name="delay_monochromator_extension",
+            reset_current_value_to=False,
+            is_setting=False,
         )
 
         # Table 2, Bernina hutch
@@ -1160,6 +1199,34 @@ class LaserBernina(Assembly):
             name="delay_eos",
             is_setting=True,
         )
+        self._append(Prime, "SLAAR21-LTOP-TOPHE", name="prime")
+        self._append(White, "SLAAR21-LTOP-TOPNOPA", name="white")
+        self._append(White, "SLAAR21-LTOP-TOPTWS", name="twins_seed")
+        self._append(White, "SLAAR21-LTOP-TOPTWP", name="twins_pump")
+
+
+from eco.epics.adjustable import AdjustablePvString
+
+
+class CorrectionSumCalculation(Assembly):
+    def __init__(
+        self,
+        valnames={"A": "val_A", "B": "val_B", "C": "val_C"},
+        pvbase="SLAAR21-TIM1:CALC1",
+        name=None,
+    ):
+        super().__init__(name=name)
+        self.pvbase = pvbase
+        self._append(
+            AdjustablePvString, pvbase + ".OUT", name="pvname_out", is_display=False
+        )
+        self._append(DetectorPvData, pvbase + ".OVAL", name="value_out")
+        self._append(
+            DetectorPvString, pvbase + ".OCAL", name="calculation", is_display=False
+        )
+        self._append(AdjustablePv, self.pvbase + "_INPA", name=valnames["A"])
+        self._append(AdjustablePv, self.pvbase + "_INPB", name=valnames["B"])
+        self._append(AdjustablePv, self.pvbase + "_INPC", name=valnames["C"])
 
 
 class DelayTime(AdjustableVirtual):

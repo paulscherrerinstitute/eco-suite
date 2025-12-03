@@ -36,6 +36,7 @@ class MonoTimecompensation(Assembly):
         mono_energy_eV,
         path_ref_energy,
         path_laser_delay_inverted,
+        timing_feedback_enabled=None,
         name=None,
     ):
         super().__init__(name=name)
@@ -52,6 +53,13 @@ class MonoTimecompensation(Assembly):
             raise Exception("issue getting laser delay for mono compensation")
 
         self._mono_energy = mono_energy_eV
+        self._last_timing_feedback_state = True
+        if timing_feedback_enabled is not None:
+            callbacks_before_change = [self.stop_timing_feedback]
+            callbacks_after_change = [self.restart_timing_feedback]
+        else:
+            callbacks_before_change = []
+            callbacks_after_change = []
         self._append(
             AdjustableVirtual,
             [self._mono_energy, self._laser_delay],
@@ -62,6 +70,8 @@ class MonoTimecompensation(Assembly):
                     self._mono_energy.get_current_value(), delay
                 ),
             ),
+            callbacks_before_change=callbacks_before_change,
+            callbacks_after_change=callbacks_after_change,
             name="delay_monodelay_corr",
             unit="s",
         )
@@ -75,9 +85,23 @@ class MonoTimecompensation(Assembly):
                     energy, self.delay_monodelay_corr.get_current_value()
                 ),
             ),
+            callbacks_before_change=callbacks_before_change,
+            callbacks_after_change=callbacks_after_change,
             name="mono_delay_corr",
             unit="eV",
         )
+        if timing_feedback_enabled is not None:
+            self._append(timing_feedback_enabled, name="timing_feedback_enable")
+
+    def stop_timing_feedback(self):
+        self._last_timing_feedback_state = (
+            self.timing_feedback_enable.get_current_value()
+        )
+        self.timing_feedback_enable.set_target_value(False)
+
+    def restart_timing_feedback(self):
+        if self._last_timing_feedback_state:
+            self.timing_feedback_enable.set_target_value(True)
 
     def calc_delay_correction(self, target_energy, target_delay):
         x_ref = calcDcmExtension(self.ref_energy.get_current_value())

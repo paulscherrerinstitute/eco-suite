@@ -17,7 +17,7 @@ class DigitizerKeysightBoxcarChannel(Assembly):
             is_status=True,
         )
 
-        self.status_collection.append(self.waveform_slow, force=True)
+        # self.status_collection.append(self.waveform_slow, force=True)
         self._append(
             DetectorPvDataStream,
             self.pvbase + "_BOXCAR.VALH",
@@ -145,7 +145,7 @@ class DigitizerIoxosBoxcarChannel(Assembly):
             is_display=False,
             is_status=True,
         )
-        self.status_collection.append(self.waveform_slow)
+        # self.status_collection.append(self.waveform_slow)
         self._append(
             DetectorPvDataStream,
             self.pvbase + ":BOXCAR.VALH",

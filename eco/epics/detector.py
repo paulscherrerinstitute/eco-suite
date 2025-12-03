@@ -23,7 +23,7 @@ from eco.acquisition.decorators import scannable
 @get_from_archive
 @scannable
 class DetectorPvData(Assembly):
-    def __init__(self, pvname, name=None, unit=None, has_unit=False):
+    def __init__(self, pvname, name=None, unit=None, has_unit=False, has_unit_pv=False):
         super().__init__(name=name)
 
         self.pvname = pvname
@@ -49,6 +49,8 @@ class DetectorPvData(Assembly):
             self._append(
                 AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
             )
+        if has_unit_pv:
+            self._append(AdjustablePv, has_unit_pv, name="unit", is_setting=False)
 
     def get_current_value(self):
         if hasattr(self, "_pv"):

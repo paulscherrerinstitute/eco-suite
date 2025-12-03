@@ -7,6 +7,7 @@ import zmq
 import eco
 from eco.acquisition.scan import NumpyEncoder
 from eco.devices_general.digitizers import DigitizerIoxosBoxcarChannel
+from eco.devices_general.pipelines_swissfel import Pipeline
 from eco.devices_general.powersockets import MpodModule
 from eco.devices_general.wago import AnalogOutput
 from eco.elements.adjustable import AdjustableFS
@@ -726,7 +727,8 @@ namespace.append_obj(
 )
 namespace.append_obj(
     "DigitizerKeysight",
-    "SARES21-GES1",
+    # "SARES21-GES1", # normal one
+    "SARES22-GES1",  # not quite clear, old PALM?
     name="digitizer_keysight_user",
     module_name="eco.devices_general.digitizers",
     lazy=True,
@@ -1142,6 +1144,7 @@ namespace.append_obj(
     name="jetcam_top",
     module_name="eco.microscopes",
 )
+jetcam_top._append(Pipeline, "SARES20-CAMS142-C1_fb", name="pipeline_fb")
 
 namespace.append_obj(
     "CameraBasler",
@@ -1151,6 +1154,7 @@ namespace.append_obj(
     name="jetcam_back",
     module_name="eco.microscopes",
 )
+# jetcam_top._append(Pipeline,'SARES20-CAMS142-C1_fb',name="pipeline_fb")
 
 # from eco.devices_general.cameras_swissfel import FeturaMicroscope
 # from eco.elements.assembly import Assembly
@@ -1273,6 +1277,13 @@ namespace.append_obj(
     lazy=True,
     name="midir",
     module_name="eco.loptics.bernina_laser",
+)
+
+namespace.append_obj(
+    "OPAHE_bernina",
+    name="opa_he",
+    lazy=True,
+    module_name="eco.loptics.opa",
 )
 
 from ..elements.assembly import Assembly
@@ -1411,7 +1422,7 @@ class Incoupling(Assembly):
         try:
             self.motor_configuration_thorlabs = {
                 "thz_filter": {
-                    "pvname": "SLAAR21-LMOT-ELL2",
+                    "pvname": "SLAAR21-LMOT-ELL4",
                 },
                 "thz_crystal": {
                     "pvname": "SLAAR21-LMOT-ELL3",
@@ -1420,7 +1431,7 @@ class Incoupling(Assembly):
                     "pvname": "SLAAR21-LMOT-ELL5",
                 },
                 "block": {
-                    "pvname": "SLAAR21-LMOT-ELL4",
+                    "pvname": "SLAAR21-LMOT-ELL2",
                 },
                 "polarizer": {
                     "pvname": "SLAAR21-LMOT-ELL1",
@@ -1458,9 +1469,9 @@ class Incoupling(Assembly):
             is_setting=True,
         )
 
-        self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_x", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_y", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_z", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_z", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_y", is_setting=True)
         # self._append(
         #     MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
         # )
@@ -2002,9 +2013,10 @@ namespace.append_obj(
 namespace.append_obj(
     "DoubleCrystalMono",
     pvname="SAROP21-ODCM098",
-    fel=fel,
-    las=las,
-    undulator_deadband_eV=2.0,
+    fel=NamespaceComponent(namespace, "fel"),
+    delay_time=NamespaceComponent(namespace, "las.delay_monochromator_extension"),
+    timing_feedback_enabled=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
+    undulator_deadband_eV=0.5,
     name="mono",
     lazy=True,
     module_name="eco.xoptics.dcm_new",
@@ -2447,21 +2459,21 @@ class LiquidJetSpectroscopy(Assembly):
         self._e2v = e2v
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_12",
+            "SARES20-MF1:MOT_5",
             name="x",
             backlash_definition=True,
             is_setting=True,
         )
         self._append(
             MotorRecord,
-            "SARES20-XPS1:MOT_JET_Y",
+            "SARES20-MF1:MOT_6",
             name="y",
             backlash_definition=True,
             is_setting=True,
         )
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_13",
+            "SARES20-MF1:MOT_7",
             name="z",
             backlash_definition=True,
             is_setting=True,
