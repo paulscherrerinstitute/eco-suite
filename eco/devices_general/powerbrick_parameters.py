@@ -135,6 +135,9 @@ pars_StatusCoordListCtrl = {
 
 pars_default = {
     ("EncTable[{}].PrevEnc", "r"),
+    ("EncTable[{}].EncLoss", "r"),
+    ("EncTable[{}].EncLossBit", "r"),
+    ("EncTable[{}].MaxDelta", "rw"),
     ("Motor[{}].pos", "r"),
     ("Motor[{}].idCmd", "r"),
     ("Motor[{}].Ctrl", "r"),

@@ -237,6 +237,7 @@ class CounterValue:
             d = DataSet.load_from_result_file(Path(directory) / Path(filename))
             for name in names:
                 scan.monitor_scan_arrays[name] = d.datasets[name]
+            d.results_file.close()
         except:
             print("Could not create dataset file!")
 

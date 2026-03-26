@@ -67,8 +67,8 @@ namespace.append_obj(
     config_bernina.pgroup,
     name="runs",
     load_kwargs={
-        # "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/res",
-        "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/scratch",
+        "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/res",
+        # "checknstore_parsing_result": "/sf/bernina/data/{pgroup}/scratch",
         "load_dap_data": True,
         "lazyEscArrays": True,
         "exclude_from_files": ["PVDATA"],
@@ -306,6 +306,12 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+# namespace.append_obj(
+#     "JJSlitUnd_new",
+#     name="slit_und_test",
+#     module_name="eco.xoptics.slits",
+#     lazy=True,
+# )
 namespace.append_obj(
     "SlitBlades",
     "SAROP21-OAPU092",
@@ -350,16 +356,34 @@ from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
 namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_kb",
+    # normal config
+    # def_blade_up={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_2"],
+    #     "kwargs": {},
+    # },
+    # def_blade_down={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_1"],
+    #     "kwargs": {},
+    # },
+    # def_blade_left={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_9"],
+    #     "kwargs": {},
+    # },
+    # def_blade_right={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
+    #     "kwargs": {},
+    # },
+    # backup config 2025-02-27 broken drivers
     def_blade_up={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_2"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_14"],
         "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_1"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_13"],
         "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_9"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_18"],
         "kwargs": {},
     },
     def_blade_right={
@@ -374,6 +398,24 @@ namespace.append_obj(
 namespace.append_obj(
     "SlitBladesGeneral",
     name="slit_cleanup",
+    # normal config
+    # def_blade_up={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
+    #     "kwargs": {},
+    # },
+    # def_blade_down={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_5"],
+    #     "kwargs": {},
+    # },
+    # def_blade_left={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_8"],
+    #     "kwargs": {},
+    # },
+    # def_blade_right={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_7"],
+    #     "kwargs": {},
+    # },
+    # backup config 2025-02-27 broken drivers
     def_blade_up={
         "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
         "kwargs": {},
@@ -383,11 +425,11 @@ namespace.append_obj(
         "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_8"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
         "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_7"],
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
         "kwargs": {},
     },
     module_name="eco.xoptics.slits",
@@ -413,7 +455,7 @@ namespace.append_obj(
     name="mon_und",
     use_calibration=False,
     module_name="eco.xdiagnostics.intensity_monitors",
-    pipeline_computation="SAROP21-PBPS103_proc",
+    pipeline_computation="SARFE10-PBPS053_proc",
     lazy=True,
 )
 
@@ -970,6 +1012,28 @@ namespace.append_obj(
     module_name="eco.devices_general.powersockets",
 )
 
+# namespace.append_obj(
+#     "NEW_MpodModule",
+#     "SARES20-MPD1",
+#     [0, 1, 2, 3],
+#     ["ch1", "ch2", "ch3", "ch4"],
+#     module_string='1',
+#     name="power_LV_patch1",
+#     lazy=True,
+#     module_name="eco.devices_general.powersockets",
+# )
+
+# namespace.append_obj(
+#     "NEW_MpodModule",
+#     "SARES21-MPD1",
+#     [4, 5, 6, 7],
+#     ["ch4", "ch5", "ch6", "ch7"],
+#     module_string='1',
+#     name="power_LV_patch2",
+#     lazy=True,
+#     module_name="eco.devices_general.powersockets",
+# )
+
 namespace.append_obj(
     "CheckerCA",
     module_name="eco.acquisition.checkers",
@@ -1135,26 +1199,6 @@ namespace.append_obj(
     module_name="eco.devices_general.cameras_ptz",
 )
 
-# this is the large inline camera
-namespace.append_obj(
-    "MicroscopeMotorRecord",
-    pvname_camera="SARES20-CAMS142-C1",  # GIC
-    pvname_zoom="SARES20-MF1:MOT_14",
-    lazy=True,
-    name="jetcam_top",
-    module_name="eco.microscopes",
-)
-jetcam_top._append(Pipeline, "SARES20-CAMS142-C1_fb", name="pipeline_fb")
-
-namespace.append_obj(
-    "CameraBasler",
-    # pvname_camera="SARES20-CAMS142-M3", #THC
-    "SARES20-CAMS142-M1",  # GIC
-    lazy=True,
-    name="jetcam_back",
-    module_name="eco.microscopes",
-)
-# jetcam_top._append(Pipeline,'SARES20-CAMS142-C1_fb',name="pipeline_fb")
 
 # from eco.devices_general.cameras_swissfel import FeturaMicroscope
 # from eco.elements.assembly import Assembly
@@ -1183,22 +1227,30 @@ namespace.append_obj(
 #    module_name="eco.microscopes",
 # )
 
-# namespace.append_obj(
-#    "MicroscopeMotorRecord",
-#    "SARES20-CAMS142-C1",
-#    lazy=True,
-#    pvname_zoom="SARES20-MF1:MOT_7",
-#    name="samplecam_topview",
-#    module_name="eco.microscopes",
-# )
+namespace.append_obj(
+    "MicroscopeMotorRecord",
+    "SARES20-CAMS142-C1",
+    lazy=True,
+    pvname_zoom="SARES20-MF1:MOT_14",
+    name="samplecam_below",
+    module_name="eco.microscopes",
+)
 
-# namespace.append_obj(
-#     "CameraBasler",
-#     "SARES20-CAMS142-M2",
-#     lazy=True,
-#     name="samplecam_sideview_45",
-#     module_name="eco.devices_general.cameras_swissfel",
-# )
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C2",
+    lazy=True,
+    name="samplecam_sideview_45",
+    module_name="eco.devices_general.cameras_swissfel",
+)
+
+namespace.append_obj(
+    "CameraBasler",
+    "SARES20-CAMS142-C3",
+    lazy=True,
+    name="samplecam_top",
+    module_name="eco.devices_general.cameras_swissfel",
+)
 
 # namespace.append_obj(
 #     "CameraBasler",
@@ -1430,7 +1482,7 @@ class Incoupling(Assembly):
                 "thz_waveplate": {
                     "pvname": "SLAAR21-LMOT-ELL5",
                 },
-                "block": {
+                "nd_filter": {
                     "pvname": "SLAAR21-LMOT-ELL2",
                 },
                 "polarizer": {
@@ -1450,11 +1502,11 @@ class Incoupling(Assembly):
         except Exception as e:
             print(e)
 
+        # self._append(
+        #    SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
+        # )
         self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_10", name="opa_mirr2_rx", is_setting=True
+            SmaractRecord, "SARES20-MCS2:MOT_10", name="tt_nopa_target", is_setting=True
         )
         self._append(
             AnalogOutput,
@@ -1549,7 +1601,7 @@ class Incoupling(Assembly):
         #         self.delaystage_pump.get_current_value()
         #         + (x - self.thz_par2_x.get_current_value()) / 2,
         #         x,
-        #     ],
+        #     ],las_inc
         #     name="thz_par2_x_delaycomp",
         #     is_setting=False,
         #     is_display=False,
@@ -1563,10 +1615,11 @@ class Incoupling(Assembly):
 
 
 namespace.append_obj(
-    Incoupling,
+    "Incoupling",
     delaystage_pump=NamespaceComponent(namespace, "las.delaystage_pump"),
     lazy=True,
     name="las_inc",
+    module_name="eco.endstations.bernina_incoupling",
 )
 
 
@@ -2250,27 +2303,27 @@ from eco.loptics.bernina_laser import Stage_LXT_Delay
 
 # OLD type lxt
 
-namespace.append_obj(
-    "StageLxtDelay",
-    NamespaceComponent(namespace, "las.delay_pump"),
-    NamespaceComponent(namespace, "las.xlt"),
-    lazy=True,
-    name="lxt",
-    direction=-1,
-    module_name="eco.loptics.bernina_laser",
-)
+# namespace.append_obj(
+#     "StageLxtDelay",
+#     NamespaceComponent(namespace, "las.delay_nopa"),
+#     NamespaceComponent(namespace, "las.xlt"),
+#     lazy=True,
+#     name="lxt",
+#     direction=-1,
+#     module_name="eco.loptics.bernina_laser",
+# )
 
 # NEW type lxt
 
-# namespace.append_obj(
-#     "LxtCompStageDelay",
-#     NamespaceComponent(namespace, "tt_kb.delay"),
-#     NamespaceComponent(namespace, "las.xlt"),
-#     feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
-#     lazy=True,
-#     name="lxt",
-#     module_name="eco.loptics.bernina_laser",
-# )
+namespace.append_obj(
+    "LxtCompStageDelay",
+    NamespaceComponent(namespace, "tt_kb.delay"),
+    NamespaceComponent(namespace, "las.xlt"),
+    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
+    lazy=True,
+    name="lxt",
+    module_name="eco.loptics.bernina_laser",
+)
 
 ##combined delaystage with phase shifter motion##
 
@@ -2409,36 +2462,7 @@ namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 from eco.devices_general.powersockets import MpodChannel
 
 
-class IlluminatorsLasers(Assembly):
-    def __init__(self, name="sample_illumination"):
-        super().__init__(name=name)
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-PS7071",
-            channel_number=4,
-            name="illumination_inline",
-        )
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-PS7071",
-            channel_number=2,
-            name="illumination_side",
-        )
-        # self._append(
-        #    MpodChannel,
-        #    pvbase="SARES21-CPCL-PS7071",
-        #    channel_number=6,
-        #    name="illumination_top",
-        # )
-        # self._append(
-        #    MpodChannel,
-        #    pvbase="SARES21-CPCL-PS7071",
-        #    channel_number=4,
-        #    name="flattening_laser",
-        # )
-
-
-namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
+# namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
 
 ## LIQUID jet setup
 
@@ -2450,112 +2474,19 @@ namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
 # import numpy as np
 
 
-class LiquidJetSpectroscopy(Assembly):
-    def __init__(
-        self, pgroup_adj=None, config_JF_adj=None, name=None, v_g=None, e2v=None
-    ):
-        super().__init__(name=name)
-        self._v_g = v_g
-        self._e2v = e2v
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_5",
-            name="x",
-            backlash_definition=True,
-            is_setting=True,
-        )
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_6",
-            name="y",
-            backlash_definition=True,
-            is_setting=True,
-        )
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_7",
-            name="z",
-            backlash_definition=True,
-            is_setting=True,
-        )
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-PS7071",
-            channel_number=4,
-            name="light",
-        )
-        # self._append(
-        #     MotorRecord,y=True,
-        #     "SARES20-MF1:MOT_3",
-        #     name="x_analyzer",
-        #     backlash_definition=True,
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     MotorRecord,
-        #     "SARES21-XRD:MOT_P_T",
-        #     name="y_vhdet",
-        #     is_setting=True,
-        #
-        self._append(
-            Jungfrau,
-            "JF03T01V02",
-            name="det_jf",
-            pgroup_adj=pgroup_adj,
-            config_adj=config_JF_adj,
-        )
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-PS7071",
-            module_string="HV_EHS_3",
-            channel_number=1,
-            name="apd",
-        )
-        self._append(
-            AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/apd_voltage_calibration",
-            name="apd_voltage_calibration",
-            is_display=False,
-            is_setting=True,
-        )
-
-        # Convert energy - voltage using calibration
-        def ene2volt(energy):
-            try:
-                E, V = np.asarray(self.apd_voltage_calibration()).T
-                return np.interp(energy, E, V)
-
-            except:
-                return np.nan
-
-        # Read the APD voltage and return it as the virtual value
-        def get_voltage(apd_voltage):
-            return self.apd.voltage.get_current_value()
-
-        # compute voltage from energy and set it
-        def set_voltage(target_energy):
-            voltage = ene2volt(target_energy)
-            self.apd.voltage.set_target_value(voltage)
-            return voltage
-
-        # Create virtual adjustable:
-        self._append(
-            AdjustableVirtual,
-            [self.apd.voltage],
-            get_voltage,
-            set_voltage,
-            reset_current_value_to=False,
-            name="ene2volt",
-            is_display=True,
-            is_setting=True,
-        )
-
-
 namespace.append_obj(
-    LiquidJetSpectroscopy,
+    "LiquidJetSpectroscopy",
     pgroup_adj=config_bernina.pgroup,
     config_JF_adj=config_JFs,
     name="jet",
+    module_name="eco.bernina.bernina_exp",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "TimetoolBerninaDSD",
+    name="tt_opt",
+    module_name="eco.timing.timing_diag",
     lazy=True,
 )
 

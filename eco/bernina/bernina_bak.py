@@ -37,7 +37,10 @@ path_aliases = PathAlias()
 sys.path.append("/sf/bernina/config/src/python/bernina_analysis")
 
 namespace = Namespace(
-    name="bernina", root_module=__name__, alias_namespace=NamespaceCollection().bernina, required_names_directory="/sf/bernina/config/eco/required_bernina_names.json"
+    name="bernina",
+    root_module=__name__,
+    alias_namespace=NamespaceCollection().bernina,
+    required_names_directory="/sf/bernina/config/eco/required_bernina_names.json",
 )
 namespace.alias_namespace.data = []
 
@@ -50,7 +53,8 @@ from eco.elements.adj_obj import AdjustableObject, DetectorObject
 
 namespace.append_obj(AdjustableObject, _config_bernina_dict, name="config_bernina")
 
-def change_pgroup(searchstring='', config=config_bernina):
+
+def change_pgroup(searchstring="", config=config_bernina):
     """
     Change the pgroup of the bernina config.
     """
@@ -66,7 +70,7 @@ def change_pgroup(searchstring='', config=config_bernina):
     else:
         old_group = config.pgroup.get_current_value()
         try:
-            print(f'Currently {pgroup2name(old_group)}: {old_group}')
+            print(f"Currently {pgroup2name(old_group)}: {old_group}")
         except:
             pass
 
@@ -80,11 +84,11 @@ def change_pgroup(searchstring='', config=config_bernina):
                 raise ValueError("Invalid selection")
 
             config.pgroup.set_target_value(gs[sel][1])
-            print(f"Changed pgroup from {old_group} to {config.pgroup.get_current_value()}")
+            print(
+                f"Changed pgroup from {old_group} to {config.pgroup.get_current_value()}"
+            )
         except ValueError as e:
             print(f"Invalid selection: {e}")
-
-
 
 
 namespace.append_obj(
@@ -141,7 +145,7 @@ namespace.append_obj(
 #     screenshot_directory="/tmp",
 #     name="elog",
 #     module_name="eco.utilities.elog",
-# 
+#
 
 eco.defaults.ELOG = elog
 namespace.append_obj(
@@ -988,22 +992,24 @@ namespace.append_obj(
     pgroup_adj=config_bernina.pgroup,
     jf_config=config_JFs,
     fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
-    xp = NamespaceComponent(namespace,"xp"),
+    xp=NamespaceComponent(namespace, "xp"),
     helium_control_valve={
         "pvbase": "SARES21-PS7071",
         "channel_number": 4,
         "name": "helium_control_valve",
         "pvname": "SARES20-CWAG-GPS01:DAC04",
-        },
+    },
     illumination_mpod=[
-                    {
-                        "pvbase": "SARES21-PS7071",
-                        "channel_number": 5,
-                        "module_string": "LV_OMPV_1",
-                        "name": "illumination",
-                    }
-                ],
-    thc_config = NamespaceComponent(namespace,'config_bernina.thc_config',get_current_value=True),
+        {
+            "pvbase": "SARES21-PS7071",
+            "channel_number": 5,
+            "module_string": "LV_OMPV_1",
+            "name": "illumination",
+        }
+    ],
+    thc_config=NamespaceComponent(
+        namespace, "config_bernina.thc_config", get_current_value=True
+    ),
     lazy=True,
 )
 
@@ -1177,7 +1183,7 @@ namespace.append_obj(
 
 #
 # namespace.append_obj(
-#    "MpodModule",
+#    "Module",
 #    "SARES21-CPCL-PS7071",
 #    [1,2,3,4],
 #    ['ch1','ch2','ch3','ch4'],
@@ -1264,7 +1270,6 @@ namespace.append_obj(
 ##### standard DAQ #######
 
 
-
 namespace.append_obj(
     "Daq",
     instrument="bernina",
@@ -1306,7 +1311,7 @@ namespace.append_obj(
 # )
 
 
-#TODO: need to check if the value property actually works here for the pgroup in the run table to make is dynamic!
+# TODO: need to check if the value property actually works here for the pgroup in the run table to make is dynamic!
 namespace.append_obj(
     "Run_Table2",
     name="run_table",
@@ -1863,7 +1868,7 @@ def _create_metadata_structure_start_scan(
 
 # <<<< Extract for run table and elog
 
-# TODO resove scans pgroup sensitivity! Clearly non dynamic. 
+# TODO resove scans pgroup sensitivity! Clearly non dynamic.
 namespace.append_obj(
     "Scans",
     # data_base_dir="scan_data",
@@ -2174,29 +2179,62 @@ class N2jet(Assembly):
             name="gas_remaining",
             is_setting=False,
         )
+
+
 from eco.devices_general.motors import ThorlabsPiezoRecord
 
 
 # # ad hoc incoupling device
 class Incoupling(Assembly):
     def __init__(self, name=None):
-        super().__init__(name=name)        
+        super().__init__(name=name)
         self._append(SmaractRecord, "SARES20-MCS1:MOT_13", name="ry", is_setting=True)
         self._append(SmaractRecord, "SARES23-USR:MOT_4", name="rx", is_setting=True)
         self._append(SmaractRecord, "SARES20-MCS1:MOT_15", name="y", is_setting=True)
-        self._append(MotorRecord, "SARES20-MF2:MOT_5",  name="x",is_setting=True)
-        self._append(SmaractRecord, "SARES23-USR:MOT_3",  name="eos_focus",is_setting=True)
+        self._append(MotorRecord, "SARES20-MF2:MOT_5", name="x", is_setting=True)
+        self._append(
+            SmaractRecord, "SARES23-USR:MOT_3", name="eos_focus", is_setting=True
+        )
 
-        
-        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC06_VOLTS',name='eos_fb_rx', is_setting=True)
-        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC05_VOLTS',name='eos_fb_ry', is_setting=True)
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC06_VOLTS",
+            name="eos_fb_rx",
+            is_setting=True,
+        )
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC05_VOLTS",
+            name="eos_fb_ry",
+            is_setting=True,
+        )
 
-        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC09_VOLTS',name='nir_mirr1_ry', is_setting=True)
-        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC10_VOLTS',name='nir_mirr1_rx', is_setting=True)
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC09_VOLTS",
+            name="nir_mirr1_ry",
+            is_setting=True,
+        )
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC10_VOLTS",
+            name="nir_mirr1_rx",
+            is_setting=True,
+        )
 
-        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC11_VOLTS',name='nir_mirr2_ry', is_setting=True)
-        self._append(AnalogOutput, 'SLAAR21-LDIO-LAS6991:DAC12_VOLTS',name='nir_mirr2_rx', is_setting=True)
-    
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC11_VOLTS",
+            name="nir_mirr2_ry",
+            is_setting=True,
+        )
+        self._append(
+            AnalogOutput,
+            "SLAAR21-LDIO-LAS6991:DAC12_VOLTS",
+            name="nir_mirr2_rx",
+            is_setting=True,
+        )
+
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LCAM-C561:FIT2_REQUIRED.PROC",
@@ -2217,7 +2255,7 @@ class Incoupling(Assembly):
             name="eos_fd_enable",
             accuracy=1,
             is_setting=True,
-        )         
+        )
         try:
             self.motor_configuration_thorlabs = {
                 "nir_block": {
@@ -2225,8 +2263,7 @@ class Incoupling(Assembly):
                 },
                 "eos_block": {
                     "pvname": "SLAAR21-LMOT-ELL4",
-                }
-                
+                },
             }
 
             ### thorlabs piezo motors ###
@@ -2239,6 +2276,7 @@ class Incoupling(Assembly):
                 )
         except Exception as e:
             print(e)
+
     #     self._append(AdjustableVirtual,
     #                 [self.crystal, self.hwp],
     #                 self.thz_pol_get,
@@ -2251,14 +2289,13 @@ class Incoupling(Assembly):
 
     # def thz_pol_get(self, val, val2):
     #     return 1.0 * val2
-            
+
+
 namespace.append_obj(
     Incoupling,
     lazy=True,
     name="las_inc",
 )
-
-
 
 
 # namespace.append_obj(
@@ -2788,27 +2825,38 @@ namespace.append_obj(
 
 ############## experiment specific #############
 
+
 class ConvergentBeamDiffraction(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
         self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_1", preferred_home_direction='forward',name="sample_x", is_setting=True
+            SmaractRecord,
+            "SARES20-MCS3:MOT_1",
+            preferred_home_direction="forward",
+            name="sample_x",
+            is_setting=True,
         )
         self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_2", preferred_home_direction='forward', name="sample_y", is_setting=True
+            SmaractRecord,
+            "SARES20-MCS3:MOT_2",
+            preferred_home_direction="forward",
+            name="sample_y",
+            is_setting=True,
         )
         self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_3", preferred_home_direction='reverse', name="sample_z", is_setting=True
+            SmaractRecord,
+            "SARES20-MCS3:MOT_3",
+            preferred_home_direction="reverse",
+            name="sample_z",
+            is_setting=True,
         )
         # self._append(DetectorGet,self._get_zmq_dataset, name='positions', is_display=False)
         # self._append(DetectorObject,self._positions, name='positions')
-
 
     def _get_zmq_dataset(self):
         # import zmq
         # import json
         # from pprint import pprint
-
 
         ATTRS = [
             "SlitU - left (float64, mm)",
@@ -2836,7 +2884,7 @@ class ConvergentBeamDiffraction(Assembly):
             "OSA - Z (int64, pm)",
             "SAM - X (float64, mm)",
             "SAM - Y (float64, mm)",
-            "SAM - Z (float64, mm)",    
+            "SAM - Z (float64, mm)",
             "SAM - pitch (int64, ndeg)",
             "SAM - yaw (int64, ndeg)",
             "CONE - X (float64, mm)",
@@ -2850,15 +2898,17 @@ class ConvergentBeamDiffraction(Assembly):
             "BSU - Z (float64, mm)",
             "BSD - X (float64, mm)",
             "BSD - Y (float64, mm)",
-            "BSD - Z (float64, mm)"
+            "BSD - Z (float64, mm)",
         ]
 
-        HOST = "129.129.243.102"  # Replace with the IP address of our server in BL network
+        HOST = (
+            "129.129.243.102"  # Replace with the IP address of our server in BL network
+        )
 
         socket = zmq.Context.instance().socket(zmq.SUB)
         socket.setsockopt(zmq.RCVTIMEO, 100)
         socket.setsockopt(zmq.LINGER, 0)
-        socket.connect(f"tcp://{HOST}:50002")  
+        socket.connect(f"tcp://{HOST}:50002")
         socket.setsockopt_string(zmq.SUBSCRIBE, "")
         while not socket.poll(timeout=100):
             pass
@@ -2876,6 +2926,7 @@ namespace.append_obj(
     name="cbd",
     lazy=True,
 )
+
 
 class Pumpdelay(Assembly):
     def __init__(

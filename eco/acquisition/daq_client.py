@@ -10,6 +10,7 @@ import requests
 from pathlib import Path
 from time import sleep
 
+from eco.elements.detector import DetectorMemory
 from eco.utilities import NumpyEncoder
 from eco.elements.protocols import Adjustable
 from eco.utilities.utilities import foo_get_kwargs
@@ -92,8 +93,8 @@ class Daq(Assembly):
         self.callbacks_start_scan = [
             self.check_counters_for_scan,
             self.init_namespace,
-            self.append_start_status_to_scan,
             self.count_run_number_up_and_attach_to_scan,
+            self.append_start_status_to_scan,
             self.scan_message_to_elog,
             self._create_runtable_metadata_append_status_to_runtable,
             self.append_scan_monitors,
@@ -161,7 +162,7 @@ class Daq(Assembly):
                     "name": [adj.name for adj in scan.adjustables],
                     "expected_total_number_of_steps": scan.number_of_steps(),
                 },
-                "run_number": scan.daq_run_number,
+                "run_number": scan.daq_run_number.get_current_value(),
                 "user_tag": "usertag",
             }
         if run_number is not None:
@@ -186,9 +187,11 @@ class Daq(Assembly):
                 **acq_pars,
             )
             acquisition.acquisition_kwargs.update({"file_names": response["files"]})
-            if scan and not scan.daq_run_number == int(response["run_number"]):
+            if scan and not scan.daq_run_number.get_current_value() == int(
+                response["run_number"]
+            ):
                 raise Exception(
-                    f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['·run_number'])}"
+                    f"Run number mismatch: scan {scan.daq_run_number.get_current_value()} != response {int(response['·run_number'])}"
                 )
 
             for key, val in acquisition.acquisition_kwargs.items():
@@ -222,7 +225,7 @@ class Daq(Assembly):
                     "name": [adj.name for adj in scan.adjustables],
                     "expected_total_number_of_steps": scan.number_of_steps(),
                 },
-                "run_number": scan.daq_run_number,
+                "run_number": scan.daq_run_number.get_current_value(),
                 "user_tag": "usertag",
             }
             kwargs.update(acq_pars)
@@ -240,11 +243,29 @@ class Daq(Assembly):
         )
 
         starttime_local = time.time()
-        while self.pulse_id._pv.get_timevars() is None:
+        tvars = self.pulse_id._pv.get_timevars()
+
+        while (tvars is None) or (tvars["timestamp"] < starttime_local):
             time.sleep(0.02)
-        while self.pulse_id._pv.get_timevars()["timestamp"] < starttime_local:
-            time.sleep(0.02)
+            # if tvars is not None:
+            #     print(f'timestanp delta is {starttime_local - tvars["timestamp"]} s')
+            # attempt for higher stability
+            self.pulse_id._pv.get(use_monitor=False)
+            tvars = self.pulse_id._pv.get_timevars()
+            if time.time() - starttime_local > self.timeout:
+                raise TimeoutError(
+                    f"Timeout {self.timeout} s hit while waiting for pulse_id timestamp to be recent. timevars None: {tvars is None}; "
+                )
         start_id = self.pulse_id.get_current_value(use_monitor=False)
+        start_time = time.time()
+        while start_id is None:
+            start_id = self.pulse_id.get_current_value(use_monitor=False)
+            time.sleep(0.02)
+            if time.time() - start_time > self.timeout:
+                raise TimeoutError(
+                    f"Timeout {self.timeout} s hit while waiting for pulse_id to be valid. "
+                )
+
         acq_pars = {
             "label": label,
             "start_id": start_id,
@@ -292,16 +313,18 @@ class Daq(Assembly):
         response = self.retrieve(**acq_pars)
         # print(response)
 
-        if scan and not scan.daq_run_number == int(response["run_number"]):
+        if scan and not scan.daq_run_number.get_current_value() == int(
+            response["run_number"]
+        ):
             raise Exception(
-                f"Run number mismatch: scan {scan.daq_run_number} != response {int(response['run_number'])}"
+                f"Run number mismatch: scan {scan.daq_run_number.get_current_value()} != response {int(response['run_number'])}"
             )
 
         # correct file names to relative paths
         if scan:
             run_directory = list(
                 Path(f"/sf/bernina/data/{pgroup}/raw").glob(
-                    f"run{scan.daq_run_number:04d}*"
+                    f"run{scan.daq_run_number.get_current_value():04d}*"
                 )
             )[0].as_posix()
 
@@ -549,7 +572,8 @@ class Daq(Assembly):
             pgroup = self.pgroup
         runno = self.get_next_run_number(pgroup)
         print(f"Run number incremented to {runno}")
-        scan.daq_run_number = runno
+        # scan.daq_run_number = runno
+        scan._append(DetectorMemory, runno, name="daq_run_number")
 
     #     def get_dap_settings(detector_name):
     #     dap_parameters = {}
@@ -585,19 +609,69 @@ class Daq(Assembly):
                 silent=False, required_only=init_required_namespace_components_only
             )
 
-    def append_start_status_to_scan(self, scan=None, append_status_info=True, **kwargs):
+    def append_start_status_to_scan(
+        self, scan=None, pgroup=None, append_status_info=True, **kwargs
+    ):
         if not append_status_info:
             return
         namespace_status = self.namespace.get_status(base=None)
         stat = {"status_run_start": namespace_status}
         scan.namespace_status = stat
 
+        if True:
+            if hasattr(scan, "daq_run_number"):
+                runno = scan.daq_run_number.get_current_value()
+            else:
+                runno = self.get_last_run_number()
+
+            if pgroup is None:
+                pgroup = self.pgroup
+            tmpdir = Path(
+                f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux"
+            )
+            tmpdir.mkdir(exist_ok=True, parents=True)
+            try:
+                tmpdir.chmod(0o775)
+            except:
+                pass
+
+            statusfile = tmpdir / Path("status.json")
+            if not statusfile.exists():
+                with open(statusfile, "w") as f:
+                    json.dump(
+                        scan.namespace_status,
+                        f,
+                        sort_keys=True,
+                        cls=NumpyEncoder,
+                        indent=4,
+                    )
+            else:
+                with open(statusfile, "r+") as f:
+                    f.seek(0)
+                    json.dump(
+                        scan.namespace_status,
+                        f,
+                        sort_keys=True,
+                        cls=NumpyEncoder,
+                        indent=4,
+                    )
+                    f.truncate()
+                    print("Wrote status with seek truncate!")
+            if not statusfile.group() == statusfile.parent.group():
+                shutil.chown(statusfile, group=statusfile.parent.group())
+
+            response = self.append_aux(
+                statusfile.resolve().as_posix(),
+                pgroup=pgroup,
+                run_number=runno,
+            )
+
     def _create_runtable_metadata_append_status_to_runtable(
         self, scan, append_status_info=True, **kwargs
     ):
 
         print("run_table appending run")
-        runno = scan.daq_run_number
+        runno = scan.daq_run_number.get_current_value()
         metadata = {
             "type": "scan",
             "name": scan.description.get_current_value(),
@@ -649,7 +723,7 @@ class Daq(Assembly):
             pgroup = self.pgroup
 
         if hasattr(scan, "daq_run_number"):
-            runno = scan.daq_run_number
+            runno = scan.daq_run_number.get_current_value()
         else:
             runno = self.get_last_run_number()
 
@@ -661,7 +735,8 @@ class Daq(Assembly):
         # Get scan info from scan
         si = scan.scan_info
         # save temprary file and send then to raw
-
+        if pgroup is None:
+            pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         tmpdir.mkdir(exist_ok=True, parents=True)
         try:
@@ -711,7 +786,7 @@ class Daq(Assembly):
         namespace_status = self.namespace.get_status(base=None)
         scan.namespace_status["status_run_end"] = namespace_status
         if hasattr(scan, "daq_run_number"):
-            runno = scan.daq_run_number
+            runno = scan.daq_run_number.get_current_value()
         else:
             runno = self.get_last_run_number()
 
@@ -784,7 +859,7 @@ class Daq(Assembly):
         if send_aliases_now or (len(scan.values_done()) == 1):
             namespace_aliases = self.namespace.alias.get_all()
             if hasattr(scan, "daq_run_number"):
-                runno = scan.daq_run_number
+                runno = scan.daq_run_number.get_current_value()
             else:
                 runno = self.daq.get_last_run_number()
             if pgroup is None:
@@ -839,7 +914,7 @@ class Daq(Assembly):
         # def _create_metadata_structure_start_scan(
         # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
         # ):
-        runno = scan.daq_run_number
+        runno = scan.daq_run_number.get_current_value()
         message_string = f"#### DAQ run {runno}"
         if scan.description():
             message_string += f": {scan.description()}\n"
@@ -921,7 +996,7 @@ class Daq(Assembly):
 
         # save temprary file and send then to raw
         if hasattr(scan, "daq_run_number"):
-            runno = scan.daq_run_number
+            runno = scan.daq_run_number.get_current_value()
         else:
             runno = self.get_last_run_number()
 

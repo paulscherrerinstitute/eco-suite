@@ -12,8 +12,12 @@ class Changer:
         if not hold:
             self._thread.start()
 
-    def wait(self):
-        self._thread.join()
+    def wait(self, timeout=None):
+        self._thread.join(timeout=timeout)
+        if self._thread.is_alive():
+            raise TimeoutError(
+                f"Changer did not finish within timeout period {timeout}."
+            )
 
     def start(self):
         self._thread.start()

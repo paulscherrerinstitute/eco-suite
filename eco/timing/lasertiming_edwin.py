@@ -428,6 +428,12 @@ class LaserRateControl(Assembly):
         #     Alias("delay_dial_rb", "SLAAR-LGEN:DLY_OFFS2", channeltype="CA")
         # )
 
+    def get_current_value(self):
+        return self.reference_mode.get_current_value()
+
+    def set_target_value(self, value):
+        return self.reference_mode.set_target_value(value)
+
     def _set_ref_mode(self, value):
         if value == 0:
             self._pv_set_normal_mode.put(1)

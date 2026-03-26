@@ -698,6 +698,67 @@ class AdjustableVirtual:
                 adj.reset_current_value_to(val)
 
 
+class AdjustableInterpolate(AdjustableVirtual):
+    def __init__(
+        self,
+        adjustable,
+        filename_calib=None,
+        deadband=None,
+        interp_method="linear",
+        callbacks_before_change=[],
+        callbacks_after_change=[],
+        unit=None,
+        name=None,
+    ):
+        self._adjustable = adjustable
+
+        if filename_calib:
+            self.calibration = AdjustableFS(
+                filename_calib, default_value=[], name="calibration"
+            )
+        else:
+            self.calibration = AdjustableMemory(value=[], name="calibration")
+        self._interp_method = interp_method
+        self.deadband = deadband
+
+        super().__init__(
+            [adjustable],
+            self.get_interp_value,
+            lambda v: [self.get_raw_value(v)],
+            callbacks_before_change=callbacks_before_change,
+            callbacks_after_change=callbacks_after_change,
+            unit=unit,
+            name=name,
+        )
+
+    def get_interp_value(self, value):
+        x, y = np.asarray(self.calibration.get_current_value()).T
+        if self._interp_method == "linear":
+            return np.interp(value, x, y)
+        elif self._interp_method == "next":
+            if self.deadband:
+                if not (np.min(np.abs(x - value)) < self.deadband):
+                    raise Exception(
+                        "position not within deadband of any calibration value !"
+                    )
+            return y[np.argmin(np.abs(x - value))]
+
+    def get_raw_value(self, value):
+        x, y = np.asarray(self.calibration.get_current_value()).T
+        if self._interp_method == "linear":
+            return np.interp(value, y, x)
+        elif self._interp_method == "next":
+            return x[np.argmin(np.abs(y - value))]
+
+    def reset_calibration(self):
+        self.calibration.set_target_value([]).wait()
+
+    def add_calibration_value_here(self, value):
+        c = self.calibration.get_current_value()
+        c.append([self._adjustable.get_current_value(), value])
+        self.calibration.set_target_value(c).wait()
+
+
 @default_representation
 @spec_convenience
 @tweak_option

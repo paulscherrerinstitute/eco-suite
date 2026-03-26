@@ -718,7 +718,7 @@ class CameraPCO(Assembly):
 
 
 # NB: please note this should be moved to microscopes which are using cameras plus zooms,
-class FeturaMicroscope(CameraPCO):
+class FeturaMicroscope(CameraBasler):
     def __init__(
         self, pvname_camera, pvname_base_zoom=None, name=None, camserver_alias=None
     ):

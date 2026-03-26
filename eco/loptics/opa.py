@@ -32,8 +32,8 @@ class OPA(Assembly):
             )
             self._append(
                 AdjustablePv,
-                pvbase + ":MOT1_SET_ABS_STEPS",
-                pvreadbackname=pvbase + ":MOT1_GET_POS",
+                pvbase + f":MOT{mnum}_SET_ABS_STEPS",
+                pvreadbackname=pvbase + f":MOT{mnum}_GET_POS",
                 name=mdef["name"],
                 is_setting=True,
             )
@@ -84,7 +84,7 @@ class TwinsSeed(OPA):
                 3: {"name": "crystal2"},
                 4: {"name": "delay2"},
                 5: {"name": "ndfg_mirror_h"},
-                6: {"name": "ndfg_mirror_h"},
+                6: {"name": "ndfg_mirror_v"},
                 7: {"name": "ndfg_delay"},
                 8: {"name": "ndfg_crystal"},
             },

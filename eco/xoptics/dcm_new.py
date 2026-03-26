@@ -140,6 +140,7 @@ class DoubleCrystalMono(Assembly):
         )
         # self.settings_collection.append(self)
         if self._fel is not None:
+
             self._append(
                 AdjustableFS,
                 "/photonics/home/gac-bernina/eco/configuration/mono_und_offset",
@@ -162,6 +163,7 @@ class DoubleCrystalMono(Assembly):
                     return en, None
                 else:
                     return en, en / 1000 - fel_ofs
+                # return en, en / 1000 - fel_ofs
 
             def en_get(monoen, felen):
                 return monoen
@@ -185,18 +187,24 @@ class DoubleCrystalMono(Assembly):
                     is_setting=False,
                     is_display=True,
                 )
-        if self._delay_time is not None:
-            self._append(
-                MonoTimecompensation,
-                self._delay_time,
-                self.energy,
-                "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
-                "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
-                timing_feedback_enabled=timing_feedback_enabled,
-                name="mono_time_corrected",
-                is_setting=False,
-                is_display=True,
-            )
+            else:
+                print("Warning delay time is not used in mono!")
+        else:
+            print("Warning FEL energy change is not used in mono!")
+            if self._delay_time is not None:
+                self._append(
+                    MonoTimecompensation,
+                    self._delay_time,
+                    self.energy,
+                    "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
+                    "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+                    timing_feedback_enabled=timing_feedback_enabled,
+                    name="mono_time_corrected",
+                    is_setting=False,
+                    is_display=True,
+                )
+            else:
+                print("Warning delay time is not used in mono!")
 
         if feedback_enable:
             self._append(AdjustablePvEnum, feedback_enable, name="feedback_enabled")

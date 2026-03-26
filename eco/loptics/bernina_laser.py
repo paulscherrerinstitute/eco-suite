@@ -1,8 +1,14 @@
+import datahub as dh
+from scipy.signal import find_peaks
+from scipy.optimize import curve_fit
 from eco.loptics.position_monitors import CameraPositionMonitor
-
+from scipy.special import erf
+import pylab as plt
 from eco.motion.coordinate_transformation import CartCooRotated
 from ..elements.assembly import Assembly
 from functools import partial
+from pathlib import Path
+
 from ..devices_general.motors import (
     SmaractStreamdevice,
     MotorRecord,
@@ -26,7 +32,11 @@ from eco.devices_general.pipelines_swissfel import Pipeline
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData, DetectorPvString
 from eco.detector.detectors_psi import DetectorBsStream
-from ..devices_general.detectors import DetectorVirtual
+from ..devices_general.detectors import (
+    DetectorVirtual,
+)  # TODO should not come from swvices_general but from elements.
+from ..devices_general.powersockets import MpodChannel
+
 from ..timing.lasertiming_edwin import XltEpics, LaserRateControl
 import colorama
 import datetime
@@ -34,7 +44,7 @@ from pint import UnitRegistry
 import numpy as np
 import time
 from epics import PV
-from .opa import White, Prime
+from .opa import White, Prime, TwinsPump, TwinsSeed
 
 # from time import sleep
 
@@ -114,7 +124,7 @@ class MIRVirtualStages(Assembly):
             return nz - self.offset_lens_z()
 
         def set_focus_lens_z(z):
-            nx = self.offset_lens_x() - z * np.tan(np.deg2rad(14.1))
+            nx = self.offset_lens_x() - z * np.tan(np.deg2rad(10))
             nz = self.offset_lens_z() + z
             return nx, nz
 
@@ -128,7 +138,7 @@ class MIRVirtualStages(Assembly):
         )
 
         def get_focus_par_z(mx, mz):
-            return mz - self.offset_par_z()
+            return mx - self.offset_par_z()
 
         def set_focus_par_z(z):
             mx = self.offset_par_z() + z
@@ -158,12 +168,16 @@ class MidIR(Assembly):
         pipeline_projection="Bernina_mid_IR_CEP_projection",
         pipeline_analysis="Bernina_mid_IR_CEP_analysis",
         pipeline_pv_writing="Bernina_mid_IR_CEP_populate_pvs",
+        pvname_onoff="SARES20-MPD1:103-SWITCH_SP",
     ):
         super().__init__(name=name)
 
         self.motor_configuration_thorlabs = {
-            "polarizer_small": {
-                "pvname": "SLAAR21-LMOT-ELL3",
+            "polarizer1": {
+                "pvname": "SLAAR21-LMOT-ELL1",
+            },
+            "polarizer2": {
+                "pvname": "SLAAR21-LMOT-ELL5",
             },
         }
 
@@ -175,37 +189,45 @@ class MidIR(Assembly):
                 name=name,
                 is_setting=True,
             )
+        # self._append(AdjustablePvEnum, pvname_onoff, name="light", is_setting=True)
+        self._append(
+            MpodChannel,
+            pvbase="SARES21-PS7071",
+            channel_number=4,
+            name="light",
+        )
+
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_14",
+            "SARES20-XPS1:MOT_Y",
             name="x",
             is_setting=True,
             is_display=True,
         )
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_15",
+            "SARES20-XPS1:MOT_Z",
             name="y",
             is_setting=True,
             is_display=True,
         )
         self._append(
             MotorRecord,
-            "SARES20-MF1:MOT_13",
+            "SARES20-XPS1:MOT_X",
             name="z",
             is_setting=True,
             is_display=True,
         )
-        self._append(
-            MotorRecord,
-            "SARES20-MF1:MOT_16",
-            name="polariser",
-            is_setting=True,
-            is_display=True,
-        )
+        # self._append(
+        #     MotorRecord,
+        #     "SARES20-MF1:MOT_16",
+        #     name="polariser",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
         self._append(
             SmaractRecord,
-            "SARES23-USR:MOT_4",
+            "SARES20-MCS1:MOT_1",
             name="mirr_z",
             is_setting=True,
             is_display=True,
@@ -218,8 +240,8 @@ class MidIR(Assembly):
             is_display=True,
         )
         self._append(
-            MotorRecord,
-            "SARES23-USR:MOT_5",
+            SmaractRecord,
+            "SARES20-MCS1:MOT_7",
             name="power_check",
             is_setting=True,
             is_display=True,
@@ -237,13 +259,13 @@ class MidIR(Assembly):
             name="delay_cep",
             is_setting=True,
         )
-        # self._append(
-        #     CameraBasler,
-        #     "SLAAR21-LCAM-CS841",
-        #     name="camera_spectrometer",
-        #     camserver_alias="MIR_CEP",
-        #     is_setting=True,
-        # )
+        self._append(
+            CameraBasler,
+            "SLAAR21-LCAM-CS841",
+            name="camera_spectrometer",
+            camserver_alias="MIR_CEP",
+            is_setting=True,
+        )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-SPATTT:AT",
@@ -340,7 +362,7 @@ class MidIR(Assembly):
             nz=self.z,
             mx=self.mirr_z,
             mz=self.z,
-            is_setting=False,
+            is_setting=True,
         )
 
         self._append(
@@ -422,6 +444,131 @@ class MidIR(Assembly):
             )
         except Exception as e:
             print(f"Timetool pv writing pipeline initialization failed with: \n{e}")
+
+    #### Functions for calibrating the piepline ####
+    def normstep(self, step):
+        """normalizing a test signal for np.correlate"""
+        step = step - np.mean(step)
+        step = step / np.sum(step**2)
+        return step
+
+    def get_reference_function(self, sigma_px=30, reflen=150):
+        rng = reflen / np.sqrt(2) / sigma_px / 2
+        ref = -erf(np.linspace(-rng, rng, reflen)) / 2
+        ref = self.normstep(ref)
+        return ref
+
+    def gauss(self, x, x0, fwhm, a):
+        return a * np.exp(-((x - x0) ** 2) / fwhm**2 * 4 * np.log(2))
+
+    def gauss_cos(self, x, x0, fwhm, a, f, phase):
+        return (
+            a
+            * np.exp(-((x - x0) ** 2) / fwhm**2 * 4 * np.log(2))
+            * np.cos(2 * np.pi * f * (x - x0) - phase)
+        )
+
+    def find_signal(self, time, y, distance, diag=False):
+        dt = time[1] - time[0]
+        xp, _ = find_peaks(abs(y), height=abs(y).max() / 5, distance=distance)
+        yp = abs(y)[xp]
+        p0 = [xp[yp.argmax()], (xp[-1] - xp[0]) / 3, yp.max()]
+        popt, pcov = curve_fit(self.gauss, xp, yp, p0)
+        x0, fwhm, a = popt
+        xp_sign = xp * np.sign(y[xp])
+        xp_pos = xp_sign[xp_sign > 0]
+        idx_closest = np.argmin(np.abs(xp_pos - x0))
+        weights = abs(y)[xp[:-1]] + abs(y)[xp[1:]]
+        f = 1 / (dt * np.average(np.diff(xp), weights=weights) * 2)
+        phase = f * (np.min(xp_pos[xp_pos > x0] - x0) * dt) * 2 * np.pi
+        x0 = x0 * dt
+        fwhm = fwhm * dt
+        if diag:
+            return x0, fwhm, a, f, phase, xp, yp, xp_pos, idx_closest, popt
+        else:
+            return x0, fwhm, a, f, phase
+
+    def calibrate(self, wavelength):
+        """ """
+        table = dh.Table()
+        with dh.Bsread() as bsread:
+            bsread.add_listener(table)
+            bsread.req(["SARES20-CEP01:spectrometer_ratio"], None, 500)
+        ratio = np.mean(
+            table.as_dataframe()["SARES20-CEP01:spectrometer_ratio"].array, axis=0
+        )
+
+        ref = self.get_reference_function(
+            self.pipeline_analysis.config.sigma_px(),
+            self.pipeline_analysis.config.reflen(),
+        )
+        c = np.correlate(ratio - 1, ref, "same")
+        x = np.arange(len(c))
+        x0, fwhm, a, f, phase, xp, yp, xp_pos, idx_closest, popt = self.find_signal(
+            x, c, distance=50, diag=True
+        )
+        weights = abs(c)[xp[:-1]] + abs(c)[xp[1:]]
+        period_px = np.average(np.diff(xp), weights=weights) * 2
+        ps_per_px = 1 / (3e8 / wavelength / 1e12) / (period_px)
+        calibration = [0, ps_per_px, -x0 * ps_per_px]
+        time = np.polyval(calibration, x)
+        dt = time[1] - time[0]
+        plt.close("CEP_calibration")
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(
+            4, figsize=(12, 9), num="CEP_calibration", sharex=True
+        )
+
+        ax1_px = ax1.twiny()
+        ax1_px.plot(
+            time,
+            self.gauss_cos(x, *popt, f, phase),
+            "orange",
+            label=f"Reconstructed pulse:    FWHM={popt[1]*ps_per_px*1e3:.4}fs, f={f/dt:.3}THz, phi={phase:.3}",
+        )
+        ax2.plot(x, ratio, "royalblue", label="sig/bg")
+        ax2.plot(
+            np.arange(len(ref)) + x0,
+            ref / np.max(ref) * (np.max(ratio - 1) - np.min(ratio - 1)) / 2
+            + (np.max(ratio - 1) - np.min(ratio - 1)) / 2
+            + 0.5,
+            "red",
+            label="Correlation reference",
+        )
+        ax3.plot(x, c, "royalblue", label="Correlation")
+        ax3.plot(xp, yp, "ko", label="half period")
+        ax3.plot(x, self.gauss(x, *popt), "r", label="gaussian fit envelope")
+        ax3.axvline(x0, color="k", linestyle="--")
+        ax4.axvline(x0, color="k", linestyle="--")
+        ax4.plot(xp_pos, c[xp_pos.astype(int)], "ok")
+        ax4.plot(
+            [x0, xp_pos[idx_closest]],
+            [c[xp_pos[idx_closest].astype(int)], c[xp_pos[idx_closest].astype(int)]],
+            "-|r",
+            label="phase",
+        )
+        ax4.plot(x, c, "royalblue", label="Correlation")
+
+        for a in (ax1_px, ax2, ax3, ax4):
+            a.legend()
+        ax4.set_xlabel("pixel")
+        ax1_px.set_xlabel("time (ps)")
+
+        fpath = "/photonics/home/gac-bernina/cep_calib.jpg"
+        fig.savefig(fpath, dpi=200)
+        fpath = Path(fpath)
+        try:
+            msg = f"<h1>CEP calibration results:</h1>\n"
+            msg += f"Polynomial c0*x(px)^2 + c1*xs(px) + c2:\n {calibration} \n\n"
+            elog = self._get_elog()
+            elog.post(msg.replace("\n", "<br>"), fpath)
+        except Exception as e:
+            print(f"Elog posting failed with:\n {e}")
+        print(f"c0*x(px)^2 + c1*xs(px) + c2:\n {calibration}")
+        print(f"DID NOT SET CALIBRATION. TO DO SO, TYPE:")
+        print(
+            f"midir.pipeline_analysis.config.calibration([{calibration[0]},{calibration[1]},{calibration[2]}])"
+        )
+        return
 
 
 class Spectrometer(Assembly):
@@ -946,12 +1093,12 @@ class LaserBernina(Assembly):
             is_setting=True,
         )
 
-        # self._append(
-        #     Phaseshifter_MK2,
-        #     pvname="SLAAR-CSOC-DLL3-PYIOC",
-        #     name="phaseshifter_mk2",
-        #     is_setting=True,
-        # )
+        self._append(
+            Phaseshifter_MK2,
+            pvname="SLAAR-CSOC-DLL3-PYIOC",
+            name="phaseshifter_mk2",
+            is_setting=True,
+        )
 
         ############# Keysight arrival times ##########
         self._append(
@@ -1095,10 +1242,10 @@ class LaserBernina(Assembly):
                     is_setting=False,
                     is_display=True,
                 )
-                print("SUCCESS: oscillator spectrometer configured!")
+
                 break
             except:
-                pass
+                print("oscillator spectrometer not configured!")
 
         def uJ2wp(uJ):
             direction = 1
@@ -1115,15 +1262,18 @@ class LaserBernina(Assembly):
                 return np.nan
 
         self._append(
-            LaserRateControl, name="rate", is_setting=True, is_display="recursive"
+            LaserRateControl,
+            name="rate",
+            is_setting=True,
+            is_display=True,
         )
         self._append(
             XltEpics,
-            # pvname="SLAAR02-LTIM-PDLY2", # for new phase shifter
-            pvname="SLAAR02-LTIM-PDLY",  # old phase shifter
+            pvname="SLAAR02-LTIM-PDLY2",  # for new phase shifter
+            # pvname="SLAAR02-LTIM-PDLY",  # old phase shifter
             name="xlt",
             is_setting=True,
-            is_display="recursive",
+            is_display=True,
         )
 
         self._append(
@@ -1160,6 +1310,45 @@ class LaserBernina(Assembly):
             DelayTime,
             self.delaystage_thz_lno,
             name="delay_thz_lno",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_0",
+            name="delaystage_nopa",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_nopa,
+            name="delay_nopa",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SARES20-MCS2:MOT_16",
+            name="delaystage_tt_opt",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_tt_opt,
+            name="delay_tt_opt",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_1",
+            name="delaystage_twin",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_twin,
+            name="delay_twin",
             is_setting=True,
         )
 
@@ -1201,8 +1390,34 @@ class LaserBernina(Assembly):
         )
         self._append(Prime, "SLAAR21-LTOP-TOPHE", name="prime")
         self._append(White, "SLAAR21-LTOP-TOPNOPA", name="white")
-        self._append(White, "SLAAR21-LTOP-TOPTWS", name="twins_seed")
-        self._append(White, "SLAAR21-LTOP-TOPTWP", name="twins_pump")
+        self._append(TwinsSeed, "SLAAR21-LTOP-TOPTWS", name="twins_seed")
+        self._append(TwinsPump, "SLAAR21-LTOP-TOPTWP", name="twins_pump")
+        while (time.time() - tmptime) < 10:
+            try:
+                self._append(
+                    Spectrometer,
+                    "SLAAR21-LSPC-PSENOUT",
+                    name="spectrum_out",
+                    is_setting=False,
+                    is_display=True,
+                )
+
+                break
+            except:
+                print("spectrum_out spectrometer not configured!")
+        while (time.time() - tmptime) < 10:
+            try:
+                self._append(
+                    Spectrometer,
+                    "SLAAR21-LSPC-PSENINP",
+                    name="spectrum_in",
+                    is_setting=False,
+                    is_display=True,
+                )
+
+                break
+            except:
+                print("spectrum_in spectrometer not configured!")
 
 
 from eco.epics.adjustable import AdjustablePvString
@@ -1360,13 +1575,13 @@ class PositionMonitors(Assembly):
             is_display="recursive",
             is_status=True,
         )
-        self._append(
-            CameraPositionMonitor,
-            "SLAAR21-LCAM-CS843",
-            name="table1_position",
-            is_display="recursive",
-            is_status=True,
-        )
+        # self._append(
+        #     CameraPositionMonitor,
+        #     "SLAAR21-LCAM-CS843",
+        #     name="table1_position",
+        #     is_display="recursive",
+        #     is_status=True,
+        # )
         self._append(
             CameraPositionMonitor,
             "SLAAR21-LCAM-CT1C1",
@@ -1401,7 +1616,7 @@ class PositionMonitors(Assembly):
         self._append(
             CameraPositionMonitor,
             "SLAAR21-LCAM-C561",
-            name="opaout_focus",
+            name="nopa_pointing",
             is_display="recursive",
             is_status=True,
         )

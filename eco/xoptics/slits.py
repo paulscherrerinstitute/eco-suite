@@ -8,7 +8,8 @@ from ..elements.assembly import Assembly
 
 def addSlitRepr(Slitobj):
     def repr(self):
-        s = f"pos ({self.hpos.get_current_value():6.3f},{self.vpos.get_current_value():6.3f}), gap ({self.hgap.get_current_value():6.3f},{self.vgap.get_current_value():6.3f})"
+        s = ""
+        s += f"pos ({self.hpos.get_current_value():6.3f},{self.vpos.get_current_value():6.3f}), gap ({self.hgap.get_current_value():6.3f},{self.vgap.get_current_value():6.3f})"
         return s
 
     Slitobj.__repr__ = repr
@@ -42,9 +43,66 @@ def addSlitCall(Slitobj):
     return Slitobj
 
 
-@addSlitRepr
+# @addSlitRepr(show_repr=True)
 @addSlitCall
 class JJSlitUnd(Assembly):
+    def __init__(self, pvname="SARFE10-OAPU044", name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self._append(
+            SlitBladesGeneral,
+            def_blade_up={
+                "args": [MotorRecord, self.pvname + ":MOTOR_AY2"],
+                "kwargs": {},
+            },
+            def_blade_down={
+                "args": [MotorRecord, self.pvname + ":MOTOR_AY1"],
+                "kwargs": {},
+            },
+            def_blade_left={
+                "args": [MotorRecord, self.pvname + ":MOTOR_AX2"],
+                "kwargs": {},
+            },
+            def_blade_right={
+                "args": [MotorRecord, self.pvname + ":MOTOR_AX1"],
+                "kwargs": {},
+            },
+            is_display="recursive",
+            name="lowZ",
+        )
+
+        self._append(
+            SlitBladesGeneral,
+            def_blade_up={
+                "args": [MotorRecord, self.pvname + ":MOTOR_BY2"],
+                "kwargs": {},
+            },
+            def_blade_down={
+                "args": [MotorRecord, self.pvname + ":MOTOR_BY1"],
+                "kwargs": {},
+            },
+            def_blade_left={
+                "args": [MotorRecord, self.pvname + ":MOTOR_BX2"],
+                "kwargs": {},
+            },
+            def_blade_right={
+                "args": [MotorRecord, self.pvname + ":MOTOR_BX1"],
+                "kwargs": {},
+            },
+            is_display="recursive",
+            name="highZ",
+        )
+        self._append(MotorRecord, self.pvname + ":MOTOR_OVLX", name="h_overlap")
+        self._append(MotorRecord, self.pvname + ":MOTOR_OVLY", name="v_overlap")
+        self._append(MotorRecord, self.pvname + ":MOTOR_W", name="hgap")
+        self._append(MotorRecord, self.pvname + ":MOTOR_H", name="vgap")
+        self._append(MotorRecord, self.pvname + ":MOTOR_X", name="hpos")
+        self._append(MotorRecord, self.pvname + ":MOTOR_Y", name="vpos")
+
+
+@addSlitRepr
+@addSlitCall
+class JJSlitUnd_old(Assembly):
     def __init__(self, pvname="SARFE10-OAPU044", name=None):
         super().__init__(name=name)
         self.pvname = pvname
@@ -330,7 +388,7 @@ class SlitBlades(Assembly):
 
 @addSlitRepr
 class SlitPosWidth(Assembly):
-    def __init__(self, pvname, motornames = None, name=None, elog=None):
+    def __init__(self, pvname, motornames=None, name=None, elog=None):
         super().__init__(name=name)
 
         self.pvname = pvname
@@ -844,10 +902,26 @@ class SlitBladesGeneral(Assembly):
             return tuple([tx + self.vpos.get_current_value() for tx in [-x / 2, x / 2]])
 
         def sethpos(x):
-            return tuple([x + tx for tx in [-self.hgap.get_current_value()/2, self.hgap.get_current_value()/2]])
+            return tuple(
+                [
+                    x + tx
+                    for tx in [
+                        -self.hgap.get_current_value() / 2,
+                        self.hgap.get_current_value() / 2,
+                    ]
+                ]
+            )
 
         def setvpos(x):
-            return tuple([x + tx for tx in [-self.vgap.get_current_value()/2, self.vgap.get_current_value()/2]])
+            return tuple(
+                [
+                    x + tx
+                    for tx in [
+                        -self.vgap.get_current_value() / 2,
+                        self.vgap.get_current_value() / 2,
+                    ]
+                ]
+            )
 
         self._append(
             AdjustableVirtual,

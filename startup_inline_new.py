@@ -1,9 +1,25 @@
 #!/usr/bin/env python
 
+## pylab activity >>>>
+import numpy
+import matplotlib
+from matplotlib import pylab, mlab, pyplot
+
+np = numpy
+plt = pyplot
+
+from IPython.core.pylabtools import figsize, getfigs
+
+from pylab import *
+from numpy import *
+
+plt.ion()
+## pylab activity <<<<
+
+
 from eco import ecocnf
 from eco.utilities.config import Terminal
 import sys
-
 
 import argparse
 
@@ -59,7 +75,7 @@ if scope:
     # mdl = importlib.import_module('eco.bernina')
     if arguments.lazy:
         ecocnf.startup_lazy = True
-    exec(f'import eco.{scope} as {scope}')
+    exec(f"import eco.{scope} as {scope}")
     exec(f"from eco.{scope} import *")
     # exec(f"op = {scope}.init()")
     # for tk, tv in op.items():

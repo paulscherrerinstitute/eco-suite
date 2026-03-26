@@ -56,7 +56,7 @@ class RunData:
         )
 
         ###
-        self.adjust_group()
+        # self.adjust_group()
 
         self.loaded_runs[run_number] = {"dataset": trun}
         self.__setattr__(f"run{run_number:04d}", trun)
@@ -82,9 +82,13 @@ class RunData:
     #     else:
     #         return getattr(self, name)
 
-    def adjust_group(self,subdir_type='scratch/.escape_parse_result'):
-        os.system("chgrp -R "+self.pgroup.get_current_value()[1:]+f" /sf/bernina/data/{self.pgroup.get_current_value()}/{subdir_type}")
-    
+    def adjust_group(self, subdir_type="scratch/.escape_parse_result"):
+        os.system(
+            "chgrp -R "
+            + self.pgroup.get_current_value()[1:]
+            + f" /sf/bernina/data/{self.pgroup.get_current_value()}/{subdir_type}"
+        )
+
     def get_run(self, run_number, **kwargs):
         if run_number < 0:
             run_number = self.get_available_run_numbers()[run_number]

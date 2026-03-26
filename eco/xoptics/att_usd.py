@@ -58,7 +58,10 @@ class Att_usd(Assembly):
         )
         self._append(
             SmaractRecord,
-            "SARES20-MCS1:MOT_3",
+            # normal
+            # "SARES20-MCS1:MOT_3",
+            # backup 2025-02-27 broken drivers
+            "SARES20-MCS1:MOT_15",
             name="transl_1",
             is_setting=True,
             is_display=True,
@@ -188,7 +191,9 @@ class Att_usd(Assembly):
             if energy < self.E_min:
                 n = n + 1
                 if n > check_times:
-                    raise ValueError(f"Machine photon energy is below {self.E_min} since {self._sleeptime*n}s")
+                    raise ValueError(
+                        f"Machine photon energy is below {self.E_min} since {self._sleeptime*n}s"
+                    )
                 energy = None
                 sleep(self._sleeptime)
                 print(
@@ -382,4 +387,3 @@ class Att_usd(Assembly):
             plt.ylabel("reachable transmission")
             plt.tight_layout()
         return act_values.T[1]
-

@@ -87,9 +87,10 @@ class MonoTimecompensation(Assembly):
             ),
             callbacks_before_change=callbacks_before_change,
             callbacks_after_change=callbacks_after_change,
-            name="mono_delay_corr",
+            name="energy_delay_corr",
             unit="eV",
         )
+        self.mono_delay_corr = self.energy_delay_corr
         if timing_feedback_enabled is not None:
             self._append(timing_feedback_enabled, name="timing_feedback_enable")
 

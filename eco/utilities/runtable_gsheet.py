@@ -92,7 +92,7 @@ class RuntableGsheet:
                 set_vals = table[tstr]
                 for n, set_val in enumerate(set_vals):
                     try:
-                        if np.isnan(set_val):
+                        if np.any(np.isnan(set_val)):
                             set_val = "nan"
                     except TypeError:
                         pass

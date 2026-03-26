@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 from itertools import product
 from numbers import Number
@@ -46,12 +47,14 @@ class StepScan(Assembly):
         Npulses=100,
         basepath="",
         settling_time=0,
+        repetitions=1,
         callbacks_start_scan=[],
         callbacks_start_step=[],
         callbacks_step_counting=[],
         callbacks_end_step=[],
         callbacks_end_scan=[],
         return_at_end="timeout",
+        timeout_adjustables=60,
         gridspecs=None,
         # elog=None,
         name="current_scan",
@@ -87,12 +90,23 @@ class StepScan(Assembly):
         self._append(DetectorMemory, scan_command, name="scan_command")
 
         # TODO: make Npulses and pulses_per_step general counter arguments that are eihter interpreted by the counter or that are replaced by counter depedent kwargs.
+        Npulses = copy.deepcopy(Npulses)
+        values = copy.deepcopy(values)
         if not isinstance(Npulses, Number):
             if not len(Npulses) == len(values):
                 raise ValueError("steps for Number of pulses and values must match!")
             self.pulses_per_step = Npulses
         else:
             self.pulses_per_step = [Npulses] * len(values)
+
+        values = list(values)
+        self.pulses_per_step = list(self.pulses_per_step)
+        if repetitions > 1:
+            values = values * repetitions
+            self.pulses_per_step = self.pulses_per_step * repetitions
+            print(
+                f"Repeating scan {repetitions} times. Total steps: {len(values)}, {len(values)/repetitions} per repetition."
+            )
 
         self._values_todo = values
         self._append(
@@ -144,6 +158,7 @@ class StepScan(Assembly):
         )
 
         self.return_at_end = return_at_end
+        self.timeout_adjustables = timeout_adjustables
         # self._elog = elog
         self.remaining_tasks = []
         self.callbacks_start_scan = callbacks_start_scan
@@ -249,7 +264,7 @@ class StepScan(Assembly):
         for adj, tv in zip(self.adjustables, self.values_current_step):
             ms.append(adj.set_target_value(tv))
         for tm in ms:
-            tm.wait()
+            tm.wait(timeout=self.timeout_adjustables)
         dt_adj = time() - t_adj_start
 
         # settling
@@ -711,6 +726,7 @@ class Scans(Assembly):
         return_at_end="timeout",
         settling_time=0,
         step_info=None,
+        repetitions=1,
         **kwargs_callbacks,
     ):
 
@@ -738,6 +754,7 @@ class Scans(Assembly):
             callbacks_end_scan=self.callbacks_end_scan,
             # elog=self._elog,
             name="acquiring_scan",
+            repetitions=repetitions,
             **kwargs_callbacks,
         )
         self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
@@ -758,6 +775,7 @@ class Scans(Assembly):
         step_info=None,
         return_at_end="timeout",
         name="acquiring_scan",
+        repetitions=1,
         **kwargs_callbacks,
     ):
         positions = position_list
@@ -778,6 +796,7 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
+            repetitions=repetitions,
             # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
@@ -800,6 +819,7 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         return_at_end="timeout",
+        repetitions=1,
         **kwargs_callbacks,
     ):
         """Differential scan, i.e. the adjustable is moved to the start position and then moved in steps of the interval size."""
@@ -828,6 +848,7 @@ class Scans(Assembly):
             callbacks_start_step=self.callbacks_start_step,
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
+            repetitions=repetitions,
             # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
@@ -852,6 +873,7 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         return_at_end="timeout",
+        repetitions=1,
         **kwargs_callbacks,
     ):
 
@@ -893,6 +915,7 @@ class Scans(Assembly):
             callbacks_step_counting=[counting_function],
             callbacks_end_step=self.callbacks_end_step,
             callbacks_end_scan=self.callbacks_end_scan,
+            repetitions=repetitions,
             # elog=self._elog,
             name="acquiring_scan",
             **kwargs_callbacks,
@@ -918,6 +941,7 @@ class Scans(Assembly):
         step_info=None,
         checker="default",
         return_at_end="question",
+        repetitions=1,
         **kwargs_callbacks,
     ):
         positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
@@ -944,6 +968,7 @@ class Scans(Assembly):
             run_table=self._run_table,
             # elog=self._elog,
             return_at_end=return_at_end,
+            repetitions=repetitions,
             name="acquiring_scan",
             **kwargs_callbacks,
         )
@@ -963,6 +988,7 @@ class Scans(Assembly):
         return_at_end="timeout",
         settling_time=0,
         step_info=None,
+        repetitions=1,
         **kwargs_callbacks,
     ):
         """
@@ -1012,6 +1038,7 @@ class Scans(Assembly):
             callbacks_end_scan=self.callbacks_end_scan,
             # elog=self._elog,
             gridspecs=gridspecs,
+            repetitions=repetitions,
             name="acquiring_scan",
             **kwargs_callbacks,
         )

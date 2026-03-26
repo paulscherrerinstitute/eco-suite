@@ -1,3 +1,4 @@
+import time
 from epics import PV
 import numpy as np
 from ..elements.adjustable import AdjustableFS
@@ -88,7 +89,11 @@ class CheckerBS(Assembly):
         )
 
     def check_now(self):
-        cv = self.monitor.get_current_value()
+        cv = None
+        while cv is None:
+            cv = self.monitor.get_current_value()
+            time.sleep(0.02)
+
         thresholds = self.thresholds()
         if cv > thresholds[0] and cv < thresholds[1]:
             return True
