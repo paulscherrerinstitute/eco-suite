@@ -154,7 +154,7 @@ class StaeubliTx200(Assembly):
                     print(f"Adding visual model of GPS failed with {e}")
             self._append(
                 AdjustableFS,
-                f"/sf/bernina/config/eco/reference_values/robot_auto_update_simulation.json",
+                f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/robot_auto_update_simulation.json",
                 default_value=True,
                 name="auto_update_simulation",
                 is_setting=False,

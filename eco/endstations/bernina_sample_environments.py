@@ -276,7 +276,7 @@ class High_field_thz_chamber(Assembly):
 
         self._append(
             AdjustableFS,
-            "/sf/bernina/config/eco/reference_values/thc_parabola_center.json",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/thc_parabola_center.json",
             name="x_center",
             is_setting=True,
         )
@@ -355,7 +355,7 @@ class High_field_thz_chamber(Assembly):
 
         self._append(
             AdjustableFS,
-            "/sf/bernina/config/eco/reference_values/thc_par_in_pos",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/thc_par_in_pos",
             name="par_in_pos",
             is_setting=False,
         )
@@ -389,7 +389,7 @@ class High_field_thz_chamber(Assembly):
             )
             self._append(
                 AdjustableFS,
-                "/sf/bernina/config/eco/reference_values/otti_det_rot_offset.json",
+                "/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/otti_det_rot_offset.json",
                 name="otti_det_rotation",
                 is_display=True,
                 is_setting=True,

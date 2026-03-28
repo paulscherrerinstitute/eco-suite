@@ -639,21 +639,21 @@ class PshellMotor(Assembly):
         self.status_collection.append(self, selection="settings", recursive=False)
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/robot_{name}_limit_high.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/robot_{name}_limit_high.json",
             default_value=0,
             name="limit_high",
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/robot_{name}_limit_low.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/robot_{name}_limit_low.json",
             default_value=0,
             name="limit_low",
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/robot_{name}_unit.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/robot_{name}_unit.json",
             default_value=unit,
             name="unit",
             is_setting=True,
@@ -769,11 +769,11 @@ class AdjustablePiHex(AdjustablePv):
             name=name,
         )
         self.limit_high = AdjustableFS(
-            f"/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_high.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/hex_pi_{name}_limit_high.json",
             default_value=0,
         )
         self.limit_low = AdjustableFS(
-            f"/sf/bernina/config/eco/reference_values/hex_pi_{name}_limit_low.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/hex_pi_{name}_limit_low.json",
             default_value=0,
         )
 
@@ -838,21 +838,21 @@ class SmarActOpenLoopRecord(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_limit_high.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_limit_high.json",
             default_value=-1e6,
             name="limit_high",
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_limit_low.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_limit_low.json",
             default_value=1e6,
             name="limit_low",
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_voltage.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_voltage.json",
             name="voltage",
             default_value=25,
             is_setting=True,
@@ -860,7 +860,7 @@ class SmarActOpenLoopRecord(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_frequency.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_frequency.json",
             name="frequency",
             default_value=250,
             is_setting=True,
@@ -868,7 +868,7 @@ class SmarActOpenLoopRecord(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_position.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_position.json",
             name="position",
             default_value=0,
             is_setting=True,
@@ -876,7 +876,7 @@ class SmarActOpenLoopRecord(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/smaract_openloop_{name}_direction.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_direction.json",
             name="direction",
             default_value=1,
             is_setting=True,

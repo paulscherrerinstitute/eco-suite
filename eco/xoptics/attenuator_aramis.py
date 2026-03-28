@@ -69,8 +69,8 @@ class AttenuatorAramis(Assembly):
                 is_display=False,
             )
             self.motors.append(self.__dict__[f"motor{n+1}"])
-        # self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
-        # self._append(AdjustableFS, f'/sf/bernina/config/eco/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
+        # self._append(AdjustableFS, f'/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_limit_high.json', default_value=1, name="limit_high", is_setting=True)
+        # self._append(AdjustableFS, f'/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_limit_low.json', default_value=0, name="limit_low", is_setting=True)
         # self._append(AdjustablePv, "SAROP21-ARAMIS:ENERGY", name="energy_rb", is_setting=False, is_display=False)
         # self._append(AdjustablePv, "SARUN:FELPHOTENE", name="energy_rb_backup", is_setting=False, is_display=False)
         # self._append(AdjustablePv, self.pvname + ":ENERGY", name="energy", is_setting=True, is_display=False)
@@ -203,14 +203,14 @@ class AttenuatorAramisOld(Assembly):
             self.motors.append(self.__dict__[f"motor{n+1}"])
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/{name}_limit_high.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_limit_high.json",
             default_value=1,
             name="limit_high",
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/{name}_limit_low.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_limit_low.json",
             default_value=0,
             name="limit_low",
             is_setting=True,

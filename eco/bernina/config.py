@@ -21,7 +21,7 @@ from ..utilities.config import (
 _eco_lazy_init = False
 
 config = Configuration(
-    "/sf/bernina/config/eco/bernina_config_eco.json", name="bernina_config"
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/bernina_config_eco.json", name="bernina_config"
 )
 
 components = [
@@ -235,7 +235,7 @@ components = [
     #     "kwargs": {
     #         "Id": "SARES22-GPS",
     #         "configuration": config["gps_config"],
-    #         "fina_hex_angle_offset": "/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
+    #         "fina_hex_angle_offset": "/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/hex_pi_angle_offset.json",
     #     },
     #     "lazy": True,
     # },
