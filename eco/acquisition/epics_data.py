@@ -80,7 +80,7 @@ class EpicsDaq:
         self.name = name
         self.pgroup = pgroup
         self.alternative_file_path = AdjustableFS(
-            f"/sf/bernina/config/eco/reference_values/{name}_alternative_file_path.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_alternative_file_path.json",
             default_value=False,
             name="alternative_file_path",
         )

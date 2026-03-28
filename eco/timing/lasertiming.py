@@ -5,7 +5,7 @@ import time
 from ..devices_general.utilities import Changer
 
 
-_basefolder = "/sf/bernina/config/eco/offsets"
+_basefolder = "/sf/bernina/code/gac-bernina/eco_cnf_bernina/offsets"
 
 
 def timeToStr(value, n=12):

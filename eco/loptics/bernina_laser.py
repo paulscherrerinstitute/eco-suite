@@ -1016,14 +1016,14 @@ class Phaseshifter_MK2(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/{name}_limit_high.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_limit_high.json",
             default_value=1,
             name="limit_high",
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/sf/bernina/config/eco/reference_values/{name}_limit_low.json",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/{name}_limit_low.json",
             default_value=0,
             name="limit_low",
             is_setting=True,

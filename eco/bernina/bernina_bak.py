@@ -40,13 +40,13 @@ namespace = Namespace(
     name="bernina",
     root_module=__name__,
     alias_namespace=NamespaceCollection().bernina,
-    required_names_directory="/sf/bernina/config/eco/required_bernina_names.json",
+    required_names_directory="/sf/bernina/code/gac-bernina/eco_cnf_bernina/required_bernina_names.json",
 )
 namespace.alias_namespace.data = []
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
 _config_bernina_dict = AdjustableFS(
-    "/sf/bernina/config/eco/configuration/bernina_config.json",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/bernina_config.json",
     name="_config_bernina_dict",
 )
 from eco.elements.adj_obj import AdjustableObject, DetectorObject
@@ -156,7 +156,7 @@ namespace.append_obj(
 )
 namespace.append_obj(
     "set_global_memory_dir",
-    "/sf/bernina/config/eco/memory",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/memory",
     module_name="eco.elements.memory",
     name="path_memory",
     lazy=False,
@@ -536,7 +536,7 @@ namespace.append_obj(
     "RefLaser_BerninaUSD",
     module_name="eco.xoptics.reflaser",
     name="reflaser",
-    outpos_adjfs_path="/sf/bernina/config/eco/configuration/reflaser_usd_lastposition.json",
+    outpos_adjfs_path="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/reflaser_usd_lastposition.json",
     lazy=True,
 )
 
@@ -991,7 +991,7 @@ namespace.append_obj(
     configuration=config_bernina.gps_config,
     pgroup_adj=config_bernina.pgroup,
     jf_config=config_JFs,
-    fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
+    fina_hex_angle_offset="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/hex_pi_angle_offset.json",
     xp=NamespaceComponent(namespace, "xp"),
     helium_control_valve={
         "pvbase": "SARES21-PS7071",
@@ -1043,7 +1043,7 @@ namespace.append_obj(
     pgroup_adj=config_bernina.pgroup,
     jf_config=config_JFs,
     invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
-    fina_hex_angle_offset="/sf/bernina/config/eco/reference_values/hex_pi_angle_offset.json",
+    fina_hex_angle_offset="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/hex_pi_angle_offset.json",
     name="xrd",
     lazy=True,
 )
@@ -1321,7 +1321,7 @@ namespace.append_obj(
     devices="eco.bernina",
     keydf_fname="/sf/bernina/config/src/python/gspread/gspread_keys.pkl",
     cred_fname="/sf/bernina/config/src/python/gspread/pandas_push",
-    gsheet_key_path="/sf/bernina/config/eco/reference_values/run_table_gsheet_keys",
+    gsheet_key_path="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/run_table_gsheet_keys",
     lazy=True,
     parse=True,  # <-- set this to False to avoid parsing and only add the status information to the runtable
 )
@@ -2763,8 +2763,8 @@ namespace.append_obj(
 #     "MonoTimecompensation",
 #     las.delay_glob,
 #     mono.mono_und_energy,
-#     "/sf/bernina/config/eco/reference_values/dcm_reference_timing.json",
-#     "/sf/bernina/config/eco/reference_values/dcm_reference_invert_delay.json",
+#     "/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/dcm_reference_timing.json",
+#     "/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/dcm_reference_invert_delay.json",
 #     lazy=True,
 #     name="mono_und_time_corrected",
 #     module_name="eco.xoptics.dcm_pathlength_compensation",

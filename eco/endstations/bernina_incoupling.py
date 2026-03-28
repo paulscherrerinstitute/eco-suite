@@ -63,7 +63,7 @@ class Incoupling(Assembly):
         self._append(
             AdjustableInterpolate,
             self.nd_filter,
-            filename_calib="/sf/bernina/config/eco/reference_values/nd_filter_wheel_thlabs.json",
+            filename_calib="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/nd_filter_wheel_thlabs.json",
             deadband=None,
             interp_method="next",
             callbacks_before_change=[],

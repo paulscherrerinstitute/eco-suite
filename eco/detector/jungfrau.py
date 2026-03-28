@@ -121,7 +121,7 @@ class Jungfrau(Assembly):
         self._last_dap_req_time = 0
         self._append(
             AdjustableFS,
-            '/sf/bernina/config/eco/reference_values/dap_settings',
+            '/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/dap_settings',
             name="_dap_settings_storage",
             is_display=False,
             is_setting=False,
