@@ -20,6 +20,8 @@ from epics import PV
 from ..acquisition.utilities import Acquisition
 from ..elements.assembly import Assembly
 from ..utilities.path_alias import PathAlias
+
+# from ..acquisition.decorators import scannable
 import inputimeout
 from IPython import get_ipython
 from os.path import relpath

@@ -1,4 +1,6 @@
 from copy import deepcopy
+from threading import Thread
+from eco.acquisition.decorators import scannable
 from eco.elements.adjustable import (
     AdjustableMemory,
     default_representation,
@@ -76,13 +78,19 @@ class DetectorVirtual(Assembly):
 @call_convenience
 @value_property
 @default_representation
+@scannable
 class DetectorGet:
-    def __init__(self, foo_get, cache_get_seconds=None, name=None):
+    def __init__(
+        self, foo_get, cache_get_seconds=None, monitor_frequency=None, name=None
+    ):
         """ """
         self.alias = Alias(name)
         self.name = name
         self._get = foo_get
         self._cache_get_seconds = cache_get_seconds
+        self._accumulate_frequency = monitor_frequency
+        if monitor_frequency:
+            self.set_current_value_callback = self._set_current_value_callback
 
     def get_current_value(self):
         ts = time.time()
@@ -96,6 +104,11 @@ class DetectorGet:
         if self._cache_get_seconds:
             self._get_cache = (ts, value)
         return value
+
+    def _set_current_value_callback(self):
+        return CallbackTimedelta(
+            self, frequency=self._accumulate_frequency, func="accumulate"
+        )
 
 
 @call_convenience
@@ -118,3 +131,43 @@ class DetectorMemory:
         cv = self.get_current_value()
         s = f"{name} at value: {cv}" + "\n"
         return s
+
+
+class CallbackTimedelta:
+    def __init__(
+        self, detector, frequency=10, func="accumulate", collector=None, run_once=True
+    ):
+        self.detector = detector
+        self.frequency = frequency
+        # self.data = collector
+        if func == "accumulate":
+            func = self.accumulate_values
+            if collector is None:
+                collector = {"timestamps": [], "values": []}
+            self.data = (
+                collector  # {"timestamps": [], "values": [], "timestamps_ioc": []}
+            )
+        self.foo = func
+        self.run_once = run_once
+        self.running = False
+        self.thread = None
+
+    def start(self, add_current_value=True):
+        if add_current_value:
+            ts_local = time.time()
+            self.data["timestamps"].append(ts_local)
+            self.data["values"].append(self.detector.get_current_value())
+        self.running = True
+        self.thread = Thread(target=self.accumulate_values)
+        self.thread.start()
+
+    def accumulate_values(self, *args, **kwargs):
+        while self.running:
+            ts_local = time.time()
+            self.data["timestamps"].append(ts_local)
+            self.data["values"].append(self.detector.get_current_value())
+            time.sleep(1 / self.frequency)
+
+    def stop(self):
+        self.running = False
+        self.thread.join()
