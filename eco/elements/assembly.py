@@ -369,6 +369,45 @@ class Assembly:
             "status_times": status_times,
             "selections": sel_dict,
         }
+    def get_tree(self, level=1, print_tree=True):
+        """Return nested status_collection member names as a dictionary."""
+
+        def build_tree(node, depth):
+            result = {}
+            for wref in node.status_collection._list:
+                item = wref()
+                if item is None or item is node:
+                    continue
+                try:
+                    name = item.alias.get_full_name(base=node)
+                except Exception:
+                    name = getattr(item, 'name', str(item))
+                if hasattr(item, 'status_collection') and (depth > 1 or depth <= 0):
+                    next_depth = depth - 1 if depth > 0 else depth
+                    result[name] = build_tree(item, next_depth)
+                else:
+                    result[name] = {}
+            return result
+
+        def format_tree(tree, prefix=''):
+            lines = []
+            items = list(tree.items())
+            for index, (name, subtree) in enumerate(items):
+                connector = '└── ' if index == len(items) - 1 else '├── '
+                lines.append(f"{prefix}{connector}{name}")
+                if subtree:
+                    extension = '    ' if index == len(items) - 1 else '│   '
+                    lines.extend(format_tree(subtree, prefix + extension))
+            return lines
+
+        tree = build_tree(self, level)
+        if print_tree:
+            if tree:
+                for line in format_tree(tree):
+                    print(line)
+            else:
+                print('(empty)')
+        return tree
 
     def status(self, get_string=False):
         stat = self.get_status()

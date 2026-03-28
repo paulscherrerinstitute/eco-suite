@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import sys
 import time
 from json import load, dump
 from pathlib import Path
@@ -416,6 +417,16 @@ class DummyAdjustable:
 def _keywordChecker(kw_key_list_tups):
     for tkw, tkey, tlist in kw_key_list_tups:
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
+
+
+def _is_notebook():
+    try:
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        return ip is not None and ip.__class__.__name__ == "ZMQInteractiveShell"
+    except Exception:
+        return False
 
 
 def valueprop(Obj):
@@ -902,6 +913,145 @@ class Tweak:
             adj.set_target_value(target) for adj, target in zip(self.adjs, targets)
         ]
 
+    def reset_current_value_to(self, value, *objs):
+        if objs:
+            indexes = []
+            for obj in objs:
+                indexes.append(obj if type(obj) is int else self.adjs.index(obj))
+        else:
+            indexes = list(range(len(self.adjs)))
+        for index in indexes:
+            adj = self.adjs[index]
+            if hasattr(adj, "reset_current_value_to"):
+                adj.reset_current_value_to(value)
+            else:
+                adj.set_target_value(value).wait()
+
+    def xy_adjustable_tweak(self):
+        if len(self.adjs) != 2:
+            raise AdjustableError("xy_adjustable_tweak requires exactly two adjustables")
+
+        x_adj, y_adj = self.adjs
+        i_x, i_y = 0, 1
+        help = (
+            "q = exit; left/right = x +/-; up/down = y +/-\n"
+            "ctrl+right = x step*2; ctrl+left = x step/2;\n"
+            "ctrl+up = y step*2; ctrl+down = y step/2;\n"
+            "gx = go x abs; gy = go y abs;\n"
+            "s = origin; sx = x origin; sy = y origin;\n"
+            "rx = reset x current value; ry = reset y current value; r = reset both"
+        )
+        print(f"tweaking x={x_adj.name}, y={y_adj.name}")
+        print(help)
+        print(f"Starting at x={self.target_positions[0][i_x]}, y={self.target_positions[0][i_y]}")
+        k = KeyPress()
+        cll = colorama.ansi.clear_line()
+
+        class Printer:
+            def __init__(self, tweak=self):
+                self.tweak = tweak
+                self.thread = None
+
+            def print(self):
+                if self.thread and self.thread.is_alive():
+                    return
+                else:
+                    self.thread = Thread(target=self.print_foo)
+                    self.thread.daemon = True
+                    self.thread.start()
+
+            def print_foo(self, **kwargs):
+                if self.tweak._changers:
+                    print(
+                        cll
+                        + f"x step: {self.tweak.step_sizes[i_x]}; y step: {self.tweak.step_sizes[i_y]}; current: changing",
+                        end="\r",
+                    )
+                self.tweak.wait()
+                current = self.tweak.get_current_values()
+                print(
+                    cll
+                    + f"x step: {self.tweak.step_sizes[i_x]}; y step: {self.tweak.step_sizes[i_y]}; x: {current[i_x]:1.5g}; y: {current[i_y]:1.5g}",
+                    end="\r",
+                )
+
+        p = Printer()
+        print(" ")
+        p.print()
+        while k.isq() is False:
+            if k.iscr():
+                self.set_step_size((x_adj, self.step_sizes[i_x] * 2.0))
+                p.print()
+            elif k.iscl():
+                self.set_step_size((x_adj, self.step_sizes[i_x] / 2.0))
+                p.print()
+            elif k.iscu():
+                self.set_step_size((y_adj, self.step_sizes[i_y] * 2.0))
+                p.print()
+            elif k.iscd():
+                self.set_step_size((y_adj, self.step_sizes[i_y] / 2.0))
+                p.print()
+            elif k.isu():
+                self.set_target_step_increment((y_adj, +1))
+                p.print()
+            elif k.isd():
+                self.set_target_step_increment((y_adj, -1))
+                p.print()
+            elif k.isr():
+                self.set_target_step_increment((x_adj, +1))
+                p.print()
+            elif k.isl():
+                self.set_target_step_increment((x_adj, -1))
+                p.print()
+            elif k.iskey("s"):
+                print("enter s/sx/sy for origin reset")
+                sys.stdout.flush()
+                cmd = sys.stdin.readline().strip()
+                current = self.get_current_values()
+                if cmd == "sx":
+                    self.change_to_targets([self.startpositions[i_x], current[i_y]])
+                elif cmd == "sy":
+                    self.change_to_targets([current[i_x], self.startpositions[i_y]])
+                else:
+                    self.change_to_targets(self.startpositions)
+                p.print()
+            elif k.iskey("g"):
+                print("enter gx <value> or gy <value>")
+                sys.stdout.flush()
+                parts = sys.stdin.readline().strip().split()
+                if len(parts) >= 2:
+                    axis = parts[0]
+                    try:
+                        val = float(parts[1])
+                        if axis == "gx":
+                            self.change_to_targets([val, self.get_current_values()[i_y]])
+                        elif axis == "gy":
+                            self.change_to_targets([self.get_current_values()[i_x], val])
+                    except ValueError:
+                        print("value cannot be converted to float, aborting go-to")
+                p.print()
+            elif k.iskey("r"):
+                print("enter r <value>, rx <value>, or ry <value>")
+                sys.stdout.flush()
+                parts = sys.stdin.readline().strip().split()
+                if len(parts) >= 2:
+                    axis = parts[0]
+                    try:
+                        val = float(parts[1])
+                        if axis == "rx":
+                            self.reset_current_value_to(val, x_adj)
+                        elif axis == "ry":
+                            self.reset_current_value_to(val, y_adj)
+                        else:
+                            self.reset_current_value_to(val)
+                    except ValueError:
+                        print("value cannot be converted to float, aborting reset")
+                p.print()
+            elif k.isq():
+                break
+
+            k.waitkey()
+
     def wait(self, sleeptime=0.02):
         if self._changers:
             changing = True
@@ -925,7 +1075,205 @@ class Tweak:
             new_steps[index] = stepsize
         self.step_sizes = new_steps
 
+    def _single_adjustable_tweak_notebook(self):
+        try:
+            from IPython.display import display, Javascript
+            import ipywidgets as widgets
+        except Exception as exc:
+            raise RuntimeError(
+                "Notebook tweak mode requires IPython and ipywidgets."
+            ) from exc
+
+        i_adj = 0
+        adj = self.adjs[i_adj]
+
+        def _format_value(value):
+            try:
+                return f"{value:1.6g}"
+            except Exception:
+                return str(value)
+
+        current_value = adj.get_current_value()
+        step_value = self.step_sizes[i_adj]
+        current_label = widgets.HTML(
+            value=f"<b>Current position:</b> {_format_value(current_value)}"
+        )
+        status_label = widgets.HTML(
+            value=f"<b>Step size:</b> {_format_value(step_value)}"
+        )
+        help_label = widgets.HTML(
+            value=(
+                "<b>Controls:</b> Stepsize *2, Stepsize /2, Down, Up, Go abs, Reset offset, Exit"
+            )
+        )
+        step_input = widgets.FloatText(
+            value=step_value,
+            description="Step:",
+            layout=widgets.Layout(width="220px"),
+        )
+        go_input = widgets.FloatText(
+            value=current_value,
+            description="Go:",
+            layout=widgets.Layout(width="220px"),
+        )
+        set_input = widgets.FloatText(
+            value=current_value,
+            description="Set:",
+            layout=widgets.Layout(width="220px"),
+        )
+
+        def _refresh_current(value=None):
+            if value is None:
+                value = adj.get_current_value()
+            current_label.value = f"<b>Current position:</b> {_format_value(value)}"
+            status_label.value = f"<b>Step size:</b> {_format_value(step_input.value)}"
+            go_input.value = value
+            set_input.value = value
+
+        def _update_callback(**kwargs):
+            if "value" in kwargs:
+                _refresh_current(kwargs["value"])
+            else:
+                _refresh_current()
+
+        callback_id = None
+        if hasattr(adj, "add_value_callback"):
+            try:
+                callback_id = adj.add_value_callback(_update_callback)
+            except Exception:
+                callback_id = None
+
+        def _set_step(factor):
+            new_step = float(step_input.value) * factor
+            step_input.value = new_step
+            self.set_step_size((adj, new_step))
+            status_label.value = f"<b>Step size:</b> {_format_value(new_step)}"
+
+        def _click_up(_):
+            _set_step(2.0)
+
+        def _click_down(_):
+            _set_step(0.5)
+
+        def _click_left(_):
+            self.set_target_step_increment((adj, -1))
+            _refresh_current()
+
+        def _click_right(_):
+            self.set_target_step_increment((adj, +1))
+            _refresh_current()
+
+        def _click_go(_):
+            try:
+                value = float(go_input.value)
+                changer = adj.set_target_value(value)
+                if hasattr(changer, "wait"):
+                    changer.wait()
+                _refresh_current(value)
+            except Exception as exc:
+                status_label.value = f"<b>Error:</b> {exc}"
+
+        def _click_set(_):
+            try:
+                value = float(set_input.value)
+                if hasattr(adj, "reset_current_value_to"):
+                    adj.reset_current_value_to(value)
+                else:
+                    changer = adj.set_target_value(value)
+                    if hasattr(changer, "wait"):
+                        changer.wait()
+                _refresh_current(value)
+            except Exception as exc:
+                status_label.value = f"<b>Error:</b> {exc}"
+
+        def _shutdown(_=None):
+            if callback_id is not None and hasattr(adj, "clear_value_callback"):
+                try:
+                    adj.clear_value_callback(index=callback_id)
+                except TypeError:
+                    adj.clear_value_callback()
+                except Exception:
+                    pass
+            for ctl in [
+                step_input,
+                go_input,
+                set_input,
+                btn_up,
+                btn_down,
+                btn_left,
+                btn_right,
+                btn_go,
+                btn_set,
+                btn_exit,
+            ]:
+                ctl.disabled = True
+            status_label.value = "<b>Tweak UI closed.</b>"
+
+        btn_up = widgets.Button(description="Stepsize *2", button_style="success")
+        btn_down = widgets.Button(description="Stepsize /2", button_style="warning")
+        btn_left = widgets.Button(description="Down", button_style="info")
+        btn_right = widgets.Button(description="Up", button_style="info")
+        btn_go = widgets.Button(description="Go abs", button_style="primary")
+        btn_set = widgets.Button(description="Reset offset", button_style="primary")
+        btn_exit = widgets.Button(description="Exit", button_style="danger")
+
+        btn_up.on_click(_click_up)
+        btn_down.on_click(_click_down)
+        btn_left.on_click(_click_left)
+        btn_right.on_click(_click_right)
+        btn_go.on_click(_click_go)
+        btn_set.on_click(_click_set)
+        btn_exit.on_click(_shutdown)
+
+        controls = widgets.HBox(
+            [btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit]
+        )
+        inputs = widgets.HBox([step_input, go_input, set_input])
+        ui = widgets.VBox([current_label, status_label, help_label, inputs, controls])
+
+        js = f"""
+(function() {{
+  const mapping = {{
+    u: '{btn_up._model_id}',
+    d: '{btn_down._model_id}',
+    l: '{btn_left._model_id}',
+    r: '{btn_right._model_id}',
+    g: '{btn_go._model_id}',
+    s: '{btn_set._model_id}',
+    q: '{btn_exit._model_id}'
+  }};
+  window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
+  window.__eco_tweak_keys = Object.assign(window.__eco_tweak_keys, mapping);
+  if (!window.__eco_tweak_key_handler) {{
+    window.__eco_tweak_key_handler = function(event) {{
+      const key = event.key.toLowerCase();
+      const targetId = window.__eco_tweak_keys[key];
+      if (!targetId) return;
+      const root = document.querySelector('[data-widget-id="' + targetId + '"]');
+      if (!root) return;
+      const btn = root.querySelector('button');
+      if (btn && !btn.disabled) {{
+        btn.click();
+        event.preventDefault();
+      }}
+    }};
+    document.addEventListener('keydown', window.__eco_tweak_key_handler);
+  }}
+}})();
+"""
+        display(ui)
+        display(Javascript(js))
+        return ui
+
     def single_adjustable_tweak(self):
+        if _is_notebook():
+            try:
+                return self._single_adjustable_tweak_notebook()
+            except Exception as exc:
+                print(
+                    "Notebook tweak UI failed; falling back to terminal mode:",
+                    exc,
+                )
         i_adj = 0
         adj = self.adjs[i_adj]
         # step_value = float(self.step_sizes[0])

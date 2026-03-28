@@ -13,6 +13,10 @@ shift_arrow_up = "\x1b[1;2A"
 shift_arrow_down = "\x1b[1;2B"
 shift_arrow_right = "\x1b[1;2C"
 shift_arrow_left = "\x1b[1;2D"
+ctrl_arrow_up = "\x1b[1;5A"
+ctrl_arrow_down = "\x1b[1;5B"
+ctrl_arrow_right = "\x1b[1;5C"
+ctrl_arrow_left = "\x1b[1;5D"
 
 
 def isData():
@@ -96,6 +100,18 @@ class KeyPress:
 
     def issr(self):
         return self.last_key == shift_arrow_right
+
+    def iscu(self):
+        return self.last_key == ctrl_arrow_up
+
+    def iscd(self):
+        return self.last_key == ctrl_arrow_down
+
+    def iscl(self):
+        return self.last_key == ctrl_arrow_left
+
+    def iscr(self):
+        return self.last_key == ctrl_arrow_right
 
     def isq(self):
         return self.last_key == self.esc_key

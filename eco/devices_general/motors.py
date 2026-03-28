@@ -91,9 +91,14 @@ def _tweak_ioc_notebook(self, step_value=None):
             "Notebook tweak mode requires IPython and ipywidgets."
         ) from exc
 
-    pv = PV(self.pvname + ":TWV")
-    pvf = PV(self.pvname + ":TWF.PROC")
-    pvr = PV(self.pvname + ":TWR.PROC")
+    if hasattr(self, "_motor") and hasattr(self._motor, "get_pv"):
+        pv = self._motor.get_pv("TWV")
+        pvf = self._motor.get_pv("TWF")
+        pvr = self._motor.get_pv("TWR")
+    else:
+        pv = PV(self.pvname + ":TWV")
+        pvf = PV(self.pvname + ":TWF.PROC")
+        pvr = PV(self.pvname + ":TWR.PROC")
     if step_value is None:
         step_value = pv.get()
     try:
@@ -116,8 +121,7 @@ def _tweak_ioc_notebook(self, step_value=None):
     )
     help_label = widgets.HTML(
         value=(
-            "<b>Controls:</b> Up (u), Down (d), Left (l), Right (r), "
-            "Go absolute (g), Set offset (s), Exit (q)"
+            "<b>Controls:</b> Stepsize *2, Stepsize /2, Down, Up, Go abs, Reset offset, Exit"
         )
     )
     step_input = widgets.FloatText(
@@ -195,13 +199,13 @@ def _tweak_ioc_notebook(self, step_value=None):
             ctl.disabled = True
         status_label.value = "<b>Tweak UI closed.</b>"
 
-    btn_up = widgets.Button(description="Up ×2 (u)", button_style="success")
-    btn_down = widgets.Button(description="Down ÷2 (d)", button_style="warning")
-    btn_left = widgets.Button(description="Left ← (l)", button_style="info")
-    btn_right = widgets.Button(description="Right → (r)", button_style="info")
-    btn_go = widgets.Button(description="Go abs (g)", button_style="primary")
-    btn_set = widgets.Button(description="Set offset (s)", button_style="primary")
-    btn_exit = widgets.Button(description="Exit (q)", button_style="danger")
+    btn_up = widgets.Button(description="Stepsize *2", button_style="success")
+    btn_down = widgets.Button(description="Stepsize /2", button_style="warning")
+    btn_left = widgets.Button(description="Down", button_style="info")
+    btn_right = widgets.Button(description="Up", button_style="info")
+    btn_go = widgets.Button(description="Go abs", button_style="primary")
+    btn_set = widgets.Button(description="Reset offset", button_style="primary")
+    btn_exit = widgets.Button(description="Exit", button_style="danger")
 
     btn_up.on_click(_click_up)
     btn_down.on_click(_click_down)
@@ -1469,6 +1473,15 @@ class MotorRecord(Assembly):
         self._currentChange = self.set_target_value(value)
 
     def _tweak_ioc(self, step_value=None):
+        if _is_notebook():
+            try:
+                return _tweak_ioc_notebook(self, step_value=step_value)
+            except Exception as exc:
+                print(
+                    "Notebook tweak UI failed; falling back to terminal mode:",
+                    exc,
+                )
+
         pv = self._motor.get_pv("TWV")
         pvf = self._motor.get_pv("TWF")
         pvr = self._motor.get_pv("TWR")
@@ -2057,6 +2070,15 @@ class SmaractRecord(Assembly):
         self._currentChange = self.set_target_value(value)
 
     def _tweak_ioc(self, step_value=None):
+        if _is_notebook():
+            try:
+                return _tweak_ioc_notebook(self, step_value=step_value)
+            except Exception as exc:
+                print(
+                    "Notebook tweak UI failed; falling back to terminal mode:",
+                    exc,
+                )
+
         pv = self._motor.get_pv("TWV")
         pvf = self._motor.get_pv("TWF")
         pvr = self._motor.get_pv("TWR")
