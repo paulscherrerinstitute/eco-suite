@@ -72,6 +72,184 @@ def _keywordChecker(kw_key_list_tups):
         assert tkey in tlist, "Keyword %s should be one of %s" % (tkw, tlist)
 
 
+def _is_notebook():
+    try:
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        return ip is not None and ip.__class__.__name__ == "ZMQInteractiveShell"
+    except Exception:
+        return False
+
+
+def _tweak_ioc_notebook(self, step_value=None):
+    try:
+        from IPython.display import display, Javascript
+        import ipywidgets as widgets
+    except Exception as exc:
+        raise RuntimeError(
+            "Notebook tweak mode requires IPython and ipywidgets."
+        ) from exc
+
+    pv = PV(self.pvname + ":TWV")
+    pvf = PV(self.pvname + ":TWF.PROC")
+    pvr = PV(self.pvname + ":TWR.PROC")
+    if step_value is None:
+        step_value = pv.get()
+    try:
+        step_value = float(step_value)
+    except Exception:
+        step_value = 1.0
+
+    def _format_value(value):
+        try:
+            return f"{value:1.6g}"
+        except Exception:
+            return str(value)
+
+    target_value = self.get_current_value()
+    current_label = widgets.HTML(
+        value=f"<b>Current position:</b> {_format_value(target_value)}"
+    )
+    status_label = widgets.HTML(
+        value=f"<b>Step size:</b> {_format_value(step_value)}"
+    )
+    help_label = widgets.HTML(
+        value=(
+            "<b>Controls:</b> Up (u), Down (d), Left (l), Right (r), "
+            "Go absolute (g), Set offset (s), Exit (q)"
+        )
+    )
+    step_input = widgets.FloatText(
+        value=step_value,
+        description="Step:",
+        layout=widgets.Layout(width="220px"),
+    )
+    go_input = widgets.FloatText(
+        value=target_value,
+        description="Go:",
+        layout=widgets.Layout(width="220px"),
+    )
+    set_input = widgets.FloatText(
+        value=target_value,
+        description="Set:",
+        layout=widgets.Layout(width="220px"),
+    )
+
+    def _refresh_current(value=None):
+        if value is None:
+            value = self.get_current_value()
+        current_label.value = f"<b>Current position:</b> {_format_value(value)}"
+        status_label.value = f"<b>Step size:</b> {_format_value(step_input.value)}"
+
+    def _update_callback(**kwargs):
+        if "value" in kwargs:
+            _refresh_current(kwargs["value"])
+        else:
+            _refresh_current()
+
+    callback_id = self.add_value_callback(_update_callback)
+
+    def _set_step(factor):
+        step_input.value = float(step_input.value) * factor
+        pv.put(step_input.value)
+        status_label.value = f"<b>Step size:</b> {_format_value(step_input.value)}"
+
+    def _click_up(_):
+        _set_step(2.0)
+
+    def _click_down(_):
+        _set_step(0.5)
+
+    def _click_left(_):
+        pvr.put(1)
+        status_label.value = "<b>Command:</b> left"
+
+    def _click_right(_):
+        pvf.put(1)
+        status_label.value = "<b>Command:</b> right"
+
+    def _click_go(_):
+        try:
+            self.set_target_value(float(go_input.value), check=True).wait()
+            _refresh_current()
+            status_label.value = (
+                f"<b>Moved to:</b> {_format_value(go_input.value)}"
+            )
+        except Exception as exc:
+            status_label.value = f"<b>Error:</b> {exc}"
+
+    def _click_set(_):
+        try:
+            self.reset_current_value_to(float(set_input.value))
+            _refresh_current()
+            status_label.value = (
+                f"<b>Offset reset to:</b> {_format_value(set_input.value)}"
+            )
+        except Exception as exc:
+            status_label.value = f"<b>Error:</b> {exc}"
+
+    def _shutdown(_=None):
+        self.clear_value_callback(index=callback_id)
+        for ctl in [step_input, go_input, set_input, btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit]:
+            ctl.disabled = True
+        status_label.value = "<b>Tweak UI closed.</b>"
+
+    btn_up = widgets.Button(description="Up ×2 (u)", button_style="success")
+    btn_down = widgets.Button(description="Down ÷2 (d)", button_style="warning")
+    btn_left = widgets.Button(description="Left ← (l)", button_style="info")
+    btn_right = widgets.Button(description="Right → (r)", button_style="info")
+    btn_go = widgets.Button(description="Go abs (g)", button_style="primary")
+    btn_set = widgets.Button(description="Set offset (s)", button_style="primary")
+    btn_exit = widgets.Button(description="Exit (q)", button_style="danger")
+
+    btn_up.on_click(_click_up)
+    btn_down.on_click(_click_down)
+    btn_left.on_click(_click_left)
+    btn_right.on_click(_click_right)
+    btn_go.on_click(_click_go)
+    btn_set.on_click(_click_set)
+    btn_exit.on_click(_shutdown)
+
+    controls = widgets.HBox([btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit])
+    inputs = widgets.HBox([step_input, go_input, set_input])
+    ui = widgets.VBox([current_label, status_label, help_label, inputs, controls])
+
+    js = f"""
+(function() {{
+  const mapping = {{
+    u: '{btn_up._model_id}',
+    d: '{btn_down._model_id}',
+    l: '{btn_left._model_id}',
+    r: '{btn_right._model_id}',
+    g: '{btn_go._model_id}',
+    s: '{btn_set._model_id}',
+    q: '{btn_exit._model_id}'
+  }};
+  window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
+  window.__eco_tweak_keys = Object.assign(window.__eco_tweak_keys, mapping);
+  if (!window.__eco_tweak_key_handler) {{
+    window.__eco_tweak_key_handler = function(event) {{
+      const key = event.key.toLowerCase();
+      const targetId = window.__eco_tweak_keys[key];
+      if (!targetId) return;
+      const root = document.querySelector('[data-widget-id="' + targetId + '"]');
+      if (!root) return;
+      const btn = root.querySelector('button');
+      if (btn && !btn.disabled) {{
+        btn.click();
+        event.preventDefault();
+      }}
+    }};
+    document.addEventListener('keydown', window.__eco_tweak_key_handler);
+  }}
+}})();
+"""
+    display(ui)
+    display(Javascript(js))
+    return ui
+
+
 @spec_convenience
 @update_changes
 @get_from_archive
@@ -334,6 +512,15 @@ class SmaractStreamdevice(Assembly):
         self._currentChange = self.set_target_value(value)
 
     def _tweak_ioc(self, step_value=None):
+        if _is_notebook():
+            try:
+                return _tweak_ioc_notebook(self, step_value=step_value)
+            except Exception as exc:
+                print(
+                    "Notebook tweak UI failed; falling back to terminal mode:",
+                    exc,
+                )
+
         pv = PV(self.pvname + ":TWV")
         pvf = PV(self.pvname + ":TWF.PROC")
         pvr = PV(self.pvname + ":TWR.PROC")
