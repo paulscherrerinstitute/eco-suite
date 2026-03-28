@@ -931,15 +931,22 @@ class Tweak:
         if len(self.adjs) != 2:
             raise AdjustableError("xy_adjustable_tweak requires exactly two adjustables")
 
+        if _is_notebook():
+            try:
+                return self._xy_adjustable_tweak_notebook()
+            except Exception as exc:
+                print(
+                    "Notebook tweak UI failed; falling back to terminal mode:",
+                    exc,
+                )
+
         x_adj, y_adj = self.adjs
         i_x, i_y = 0, 1
         help = (
             "q = exit; left/right = x +/-; up/down = y +/-\n"
             "ctrl+right = x step*2; ctrl+left = x step/2;\n"
             "ctrl+up = y step*2; ctrl+down = y step/2;\n"
-            "gx = go x abs; gy = go y abs;\n"
-            "s = origin; sx = x origin; sy = y origin;\n"
-            "rx = reset x current value; ry = reset y current value; r = reset both"
+            "s = reset both axes to origin"
         )
         print(f"tweaking x={x_adj.name}, y={y_adj.name}")
         print(help)
@@ -1004,48 +1011,7 @@ class Tweak:
                 self.set_target_step_increment((x_adj, -1))
                 p.print()
             elif k.iskey("s"):
-                print("enter s/sx/sy for origin reset")
-                sys.stdout.flush()
-                cmd = sys.stdin.readline().strip()
-                current = self.get_current_values()
-                if cmd == "sx":
-                    self.change_to_targets([self.startpositions[i_x], current[i_y]])
-                elif cmd == "sy":
-                    self.change_to_targets([current[i_x], self.startpositions[i_y]])
-                else:
-                    self.change_to_targets(self.startpositions)
-                p.print()
-            elif k.iskey("g"):
-                print("enter gx <value> or gy <value>")
-                sys.stdout.flush()
-                parts = sys.stdin.readline().strip().split()
-                if len(parts) >= 2:
-                    axis = parts[0]
-                    try:
-                        val = float(parts[1])
-                        if axis == "gx":
-                            self.change_to_targets([val, self.get_current_values()[i_y]])
-                        elif axis == "gy":
-                            self.change_to_targets([self.get_current_values()[i_x], val])
-                    except ValueError:
-                        print("value cannot be converted to float, aborting go-to")
-                p.print()
-            elif k.iskey("r"):
-                print("enter r <value>, rx <value>, or ry <value>")
-                sys.stdout.flush()
-                parts = sys.stdin.readline().strip().split()
-                if len(parts) >= 2:
-                    axis = parts[0]
-                    try:
-                        val = float(parts[1])
-                        if axis == "rx":
-                            self.reset_current_value_to(val, x_adj)
-                        elif axis == "ry":
-                            self.reset_current_value_to(val, y_adj)
-                        else:
-                            self.reset_current_value_to(val)
-                    except ValueError:
-                        print("value cannot be converted to float, aborting reset")
+                self.change_to_targets(self.startpositions)
                 p.print()
             elif k.isq():
                 break
@@ -1240,6 +1206,214 @@ class Tweak:
     r: '{btn_right._model_id}',
     g: '{btn_go._model_id}',
     s: '{btn_set._model_id}',
+    q: '{btn_exit._model_id}'
+  }};
+  window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
+  window.__eco_tweak_keys = Object.assign(window.__eco_tweak_keys, mapping);
+  if (!window.__eco_tweak_key_handler) {{
+    window.__eco_tweak_key_handler = function(event) {{
+      const key = event.key.toLowerCase();
+      const targetId = window.__eco_tweak_keys[key];
+      if (!targetId) return;
+      const root = document.querySelector('[data-widget-id="' + targetId + '"]');
+      if (!root) return;
+      const btn = root.querySelector('button');
+      if (btn && !btn.disabled) {{
+        btn.click();
+        event.preventDefault();
+      }}
+    }};
+    document.addEventListener('keydown', window.__eco_tweak_key_handler);
+  }}
+}})();
+"""
+        display(ui)
+        display(Javascript(js))
+        return ui
+
+    def _xy_adjustable_tweak_notebook(self):
+        try:
+            from IPython.display import display, Javascript
+            import ipywidgets as widgets
+        except Exception as exc:
+            raise RuntimeError(
+                "Notebook tweak mode requires IPython and ipywidgets."
+            ) from exc
+
+        x_adj, y_adj = self.adjs
+        i_x, i_y = 0, 1
+
+        def _format_value(value):
+            try:
+                return f"{value:1.6g}"
+            except Exception:
+                return str(value)
+
+        def _refresh_current(value=None):
+            if value is None:
+                current = self.get_current_values()
+            else:
+                current = value
+            x_current = current[i_x]
+            y_current = current[i_y]
+            x_label.value = f"<b>x ({x_adj.name}):</b> {_format_value(x_current)}"
+            y_label.value = f"<b>y ({y_adj.name}):</b> {_format_value(y_current)}"
+            status_label.value = (
+                f"<b>Step sizes:</b> x={_format_value(x_step_input.value)}, y={_format_value(y_step_input.value)}"
+            )
+
+        def _update_callback(**kwargs):
+            _refresh_current()
+
+        callback_id_x = None
+        callback_id_y = None
+        if hasattr(x_adj, "add_value_callback"):
+            try:
+                callback_id_x = x_adj.add_value_callback(_update_callback)
+            except Exception:
+                callback_id_x = None
+        if hasattr(y_adj, "add_value_callback"):
+            try:
+                callback_id_y = y_adj.add_value_callback(_update_callback)
+            except Exception:
+                callback_id_y = None
+
+        x_step_input = widgets.FloatText(
+            value=self.step_sizes[i_x],
+            description="X step:",
+            layout=widgets.Layout(width="220px"),
+        )
+        y_step_input = widgets.FloatText(
+            value=self.step_sizes[i_y],
+            description="Y step:",
+            layout=widgets.Layout(width="220px"),
+        )
+
+        x_label = widgets.HTML(
+            value=f"<b>x ({x_adj.name}):</b> {_format_value(x_adj.get_current_value())}"
+        )
+        y_label = widgets.HTML(
+            value=f"<b>y ({y_adj.name}):</b> {_format_value(y_adj.get_current_value())}"
+        )
+        status_label = widgets.HTML(
+            value=(
+                f"<b>Step sizes:</b> x={_format_value(x_step_input.value)}, y={_format_value(y_step_input.value)}"
+            )
+        )
+        help_label = widgets.HTML(
+            value=(
+                "<b>Controls:</b> x-/x+, y-/y+, X step *2, X step /2, Y step *2, Y step /2, Reset origin, Exit"
+            )
+        )
+
+        def _set_step(adj, index, factor, ctl):
+            new_step = float(ctl.value) * factor
+            ctl.value = new_step
+            self.set_step_size((adj, new_step))
+            status_label.value = (
+                f"<b>Step sizes:</b> x={_format_value(x_step_input.value)}, y={_format_value(y_step_input.value)}"
+            )
+
+        def _click_x_minus(_):
+            self.set_target_step_increment((x_adj, -1))
+            _refresh_current()
+
+        def _click_x_plus(_):
+            self.set_target_step_increment((x_adj, +1))
+            _refresh_current()
+
+        def _click_y_minus(_):
+            self.set_target_step_increment((y_adj, -1))
+            _refresh_current()
+
+        def _click_y_plus(_):
+            self.set_target_step_increment((y_adj, +1))
+            _refresh_current()
+
+        def _click_x_step_up(_):
+            _set_step(x_adj, i_x, 2.0, x_step_input)
+
+        def _click_x_step_down(_):
+            _set_step(x_adj, i_x, 0.5, x_step_input)
+
+        def _click_y_step_up(_):
+            _set_step(y_adj, i_y, 2.0, y_step_input)
+
+        def _click_y_step_down(_):
+            _set_step(y_adj, i_y, 0.5, y_step_input)
+
+        def _click_origin(_):
+            self.change_to_targets(self.startpositions)
+            _refresh_current()
+
+        def _shutdown(_=None):
+            if callback_id_x is not None and hasattr(x_adj, "clear_value_callback"):
+                try:
+                    x_adj.clear_value_callback(index=callback_id_x)
+                except TypeError:
+                    x_adj.clear_value_callback()
+                except Exception:
+                    pass
+            if callback_id_y is not None and hasattr(y_adj, "clear_value_callback"):
+                try:
+                    y_adj.clear_value_callback(index=callback_id_y)
+                except TypeError:
+                    y_adj.clear_value_callback()
+                except Exception:
+                    pass
+            for ctl in [
+                x_step_input,
+                y_step_input,
+                btn_x_minus,
+                btn_x_plus,
+                btn_y_minus,
+                btn_y_plus,
+                btn_x_step_up,
+                btn_x_step_down,
+                btn_y_step_up,
+                btn_y_step_down,
+                btn_origin,
+                btn_exit,
+            ]:
+                ctl.disabled = True
+            status_label.value = "<b>Tweak UI closed.</b>"
+
+        btn_x_minus = widgets.Button(description="X -", button_style="info")
+        btn_x_plus = widgets.Button(description="X +", button_style="info")
+        btn_y_minus = widgets.Button(description="Y -", button_style="info")
+        btn_y_plus = widgets.Button(description="Y +", button_style="info")
+        btn_x_step_up = widgets.Button(description="X step *2", button_style="success")
+        btn_x_step_down = widgets.Button(description="X step /2", button_style="warning")
+        btn_y_step_up = widgets.Button(description="Y step *2", button_style="success")
+        btn_y_step_down = widgets.Button(description="Y step /2", button_style="warning")
+        btn_origin = widgets.Button(description="Reset origin", button_style="primary")
+        btn_exit = widgets.Button(description="Exit", button_style="danger")
+
+        btn_x_minus.on_click(_click_x_minus)
+        btn_x_plus.on_click(_click_x_plus)
+        btn_y_minus.on_click(_click_y_minus)
+        btn_y_plus.on_click(_click_y_plus)
+        btn_x_step_up.on_click(_click_x_step_up)
+        btn_x_step_down.on_click(_click_x_step_down)
+        btn_y_step_up.on_click(_click_y_step_up)
+        btn_y_step_down.on_click(_click_y_step_down)
+        btn_origin.on_click(_click_origin)
+        btn_exit.on_click(_shutdown)
+
+        row1 = widgets.HBox([btn_x_minus, btn_x_plus, btn_y_minus, btn_y_plus])
+        row2 = widgets.HBox([btn_x_step_up, btn_x_step_down, btn_y_step_up, btn_y_step_down])
+        row3 = widgets.HBox([btn_origin, btn_exit])
+        inputs = widgets.HBox([x_step_input, y_step_input])
+        ui = widgets.VBox([x_label, y_label, status_label, help_label, inputs, row1, row2, row3])
+
+        js = f"""
+(function() {{
+  const mapping = {{
+    l: '{btn_x_minus._model_id}',
+    r: '{btn_x_plus._model_id}',
+    u: '{btn_y_plus._model_id}',
+    d: '{btn_y_minus._model_id}',
+    s: '{btn_origin._model_id}',
     q: '{btn_exit._model_id}'
   }};
   window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
