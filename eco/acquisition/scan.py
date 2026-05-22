@@ -19,7 +19,6 @@ from eco.elements.assembly import Assembly
 from rich.progress import Progress
 import inputimeout
 
-
 # TODO circular import issue
 from eco.elements.detector import DetectorGet, DetectorMemory
 
@@ -1019,6 +1018,7 @@ class Scans(Assembly):
             "shape": shape,
             "positions": positions,
             "index_plan": index_plan,
+            "grid_dimension_names": [adj.name for adj in adjustables],
         }
 
         if not counters:
