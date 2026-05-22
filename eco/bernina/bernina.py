@@ -1031,30 +1031,6 @@ namespace.append_obj(
 
 from eco.loptics.bernina_laser import Stage_LXT_Delay
 
-# OLD type lxt
-
-# namespace.append_obj(
-#     "StageLxtDelay",
-#     NamespaceComponent(namespace, "las.delay_nopa"),
-#     NamespaceComponent(namespace, "las.xlt"),
-#     lazy=True,
-#     name="lxt",
-#     direction=-1,
-#     module_name="eco.loptics.bernina_laser",
-# )
-
-# NEW type lxt
-
-namespace.append_obj(
-    "LxtCompStageDelay",
-    NamespaceComponent(namespace, "tt_kb.delay"),
-    NamespaceComponent(namespace, "las.xlt"),
-    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
-    lazy=True,
-    name="lxt",
-    module_name="eco.loptics.bernina_laser",
-)
-
 # namespace.append_obj(
 #     "NEW_MpodModule",
 #     "SARES20-MPD1",
@@ -1398,6 +1374,31 @@ namespace.append_obj(
     name="las_pointing_monitors",
     module_name="eco.loptics.bernina_laser",
 )
+
+# OLD type lxt
+
+# namespace.append_obj(
+#     "StageLxtDelay",
+#     NamespaceComponent(namespace, "las.delay_nopa"),
+#     NamespaceComponent(namespace, "las.xlt"),
+#     lazy=True,
+#     name="lxt",
+#     direction=-1,
+#     module_name="eco.loptics.bernina_laser",
+# )
+
+# NEW type lxt
+
+namespace.append_obj(
+    "LxtCompStageDelay",
+    NamespaceComponent(namespace, "tt_kb.delay"),
+    NamespaceComponent(namespace, "las.xlt"),
+    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
+    lazy=True,
+    name="lxt",
+    module_name="eco.loptics.bernina_laser",
+)
+
 
 # namespace.append_obj(
 #     "IncouplingCleanBernina",
