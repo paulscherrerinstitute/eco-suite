@@ -1,6 +1,8 @@
 from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
 from ..elements.assembly import Assembly
 from ..epics.detector import DetectorPvEnum, DetectorPvData
+from .detectors import DetectorVirtual
+from functools import partial
 from eco.elements.adjustable import spec_convenience
 
 
@@ -275,38 +277,54 @@ class MpodModule(Assembly):
             )
 
 
-class NEW_MpodStatus(Assembly):
-    def __init__(self, pvbase, channel_number, module_string, name=None):
-        # two module strings available 1 = low voltage and 3 = high voltage
+# for new ioc by Thierry
+
+flag_names_mpod = [
+    "outputOn",
+    "outputInhibit",
+    "outputFailureMinSenseVoltage",
+    "outputFailureMaxSenseVoltage",
+    "outputFailureMaxTerminalVoltage",
+    "outputFailureMaxCurrent",
+    "outputFailureMaxTemperature",
+    "outputFailureMaxPower",
+    "outputFailureTimeout",
+    "outputCurrentLimited",
+    "outputRampUp",
+    "outputRampDown",
+    "outputEnableKill",
+    "outputEmergencyOff",
+    "outputAdjusting",
+    "outputConstantVoltage",
+    "outputLowCurrentRange",
+    "outputCurrentBoundsExceeded",
+    "outputFailureCurrentLimit",
+    "outputCurrentIncreasing",
+    "outputCurrentDecreasing",
+    "outputConstantPower",
+    "outputVoltageRampSpeedLimited",
+    "outputVoltageBottomReached",
+    "outputInitCrcCheckBad",
+]
+
+
+class NEW_MpodFlags(Assembly):
+    def __init__(self, flags, name="flags"):
         super().__init__(name=name)
-        self.pvbase = pvbase
-        self._module_string = module_string
-        self.channel_number = channel_number
-        self._append(
-            DetectorPvEnum,
-            self.pvbase + f":M{self._module_string}-VRAMP_RB",
-            name="RAMP_V_RB",
-        )
-        self._append(
-            DetectorPvEnum,
-            self.pvbase + f":M{self._module_string}-IRAMP_RB",
-            name="RAMP_I_RB",
-        )
-        self._append(
-            AdjustablePv,
-            self.pvbase + f":M{self._module_string}-VRAMP_SP",
-            name="RAMP_V_SP",
-        )
-        self._append(
-            AdjustablePv,
-            self.pvbase + f":M{self._module_string}-IRAMP_SP",
-            name="RAMP_I_SP",
-        )
-        self._append(
-            DetectorPvEnum,
-            self.pvbase + f":{self._module_string}0{self.channel_number}-ONOFF_RB",
-            name="power",
-        )
+        self._flags = flags
+        for flag_name in flag_names_mpod:
+            self._append(
+                DetectorVirtual,
+                [self._flags],
+                partial(self._get_flag_name_value, flag_name=flag_name),
+                name=flag_name,
+                is_status=False,
+                is_display=True,
+            )
+
+    def _get_flag_name_value(self, value, flag_name=None):
+        index = flag_names_mpod.index(flag_name)
+        return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
 
 
 class NEW_MpodChannel(Assembly):
@@ -315,6 +333,7 @@ class NEW_MpodChannel(Assembly):
         self.pvbase = pvbase
         self._module_string = module_string
         self.channel_number = channel_number
+
         self._append(
             AdjustablePvEnum,
             self.pvbase + f":{self._module_string}0{self.channel_number}-SWITCH_SP",
@@ -344,12 +363,63 @@ class NEW_MpodChannel(Assembly):
             is_setting=True,
             is_display=True,
         )
+
+        # self._append(
+        #     AdjustablePv,
+        #     self.pvbase + f":{self._module_string}0{self.channel_number}-VRISE_SP",
+        #     pvreadbackname=self.pvbase
+        #     + f":{self._module_string}0{self.channel_number}-VRISE_RB",
+        #     pvlowlimname=self.pvbase,
+        #     name="V_rise",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+
+        # self._append(
+        #     AdjustablePv,
+        #     self.pvbase + f":{self._module_string}0{self.channel_number}-IRISE_SP",
+        #     pvreadbackname=self.pvbase
+        #     + f":{self._module_string}0{self.channel_number}-IRISE_RB",
+        #     pvlowlimname=self.pvbase,
+        #     name="I_rise",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+        # self._append(
+        #     AdjustablePv,
+        #     self.pvbase + f":{self._module_string}0{self.channel_number}-VFALL_SP",
+        #     pvreadbackname=self.pvbase
+        #     + f":{self._module_string}0{self.channel_number}-VFALL_RB",
+        #     pvlowlimname=self.pvbase,
+        #     name="V_fall",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+
+        # self._append(
+        #     AdjustablePv,
+        #     self.pvbase + f":{self._module_string}0{self.channel_number}-IFALL_SP",
+        #     pvreadbackname=self.pvbase
+        #     + f":{self._module_string}0{self.channel_number}-IFALL_RB",
+        #     pvlowlimname=self.pvbase,
+        #     name="I_fall",
+        #     is_setting=True,
+        #     is_display=True,
+        # )
+
         self._append(
-            NEW_MpodStatus,
-            self.pvbase,
-            self.channel_number,
-            self._module_string,
+            DetectorPvData,
+            self.pvbase + f":{self._module_string}0{self.channel_number}-STAT",
+            name="_flags",
+            is_setting=False,
+        )
+
+        self._append(
+            NEW_MpodFlags,
+            self._flags,
             name="flags",
+            is_setting=False,
+            is_status=True,
         )
 
     def get_current_value(self, *args, **kwargs):

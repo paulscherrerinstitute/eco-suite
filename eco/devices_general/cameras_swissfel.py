@@ -28,7 +28,7 @@ def get_camclient():
     global CAM_CLIENT
     if not CAM_CLIENT:
         CAM_CLIENT = CamClient()
-        CAM_CLIENT.timeout = 5
+        CAM_CLIENT.timeout = 8
     return CAM_CLIENT
 
 
@@ -36,7 +36,7 @@ def get_pipelineclient():
     global PIPELINE_CLIENT
     if not PIPELINE_CLIENT:
         PIPELINE_CLIENT = PipelineClient()
-        PIPELINE_CLIENT.timeout = 5
+        PIPELINE_CLIENT.timeout = 8
     return PIPELINE_CLIENT
 
 
@@ -326,7 +326,7 @@ class CameraBasler(Assembly):
                 camserver_alias=camserver_alias,
                 camserver_group=camserver_group,
                 name="config_cs",
-                is_display="recursive",
+                is_display=True,
                 is_setting=True,
             )
 
@@ -344,14 +344,14 @@ class CameraBasler(Assembly):
             DetectorPvEnum,
             self.pvname + ":BUSY_INIT",
             name="is_initializing",
-            is_setting=True,
-            is_display=True,
+            is_setting=False,
+            is_display=False,
         )
         self._append(
             AdjustablePvEnum,
             self.pvname + ":CAMERASTATUS",
             name="cam_status",
-            is_setting=True,
+            is_setting=False,
             is_display=True,
         )
         self._append(
@@ -536,6 +536,13 @@ class CameraBasler(Assembly):
         for ob, val in args:
             ob(val)
         self._set_parameters(1)
+        self.cam_status(2)
+
+    def re_initialize(self, wait_before_init=1, wait_for_init=3):
+        self.cam_status(0)
+        time.sleep(wait_before_init)
+        self.cam_status(1)
+        time.sleep(wait_for_init)
         self.cam_status(2)
 
     def get_camera_images(self, n):

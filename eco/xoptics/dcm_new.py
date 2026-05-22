@@ -1,7 +1,7 @@
 from eco.bs.detector import DetectorPvString
 from eco.epics import get_from_archive
-from ..devices_general.motors import MotorRecord, MotorRecord
-from eco.elements.adjustable import AdjustableFS, AdjustableVirtual
+from ..devices_general.motors import MotorRecord  # , DcmConfigAdj
+from eco.elements.adjustable import AdjustableFS, AdjustableVirtual, value_property
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from ..epics.detector import DetectorPvData
 from epics import PV
@@ -18,6 +18,52 @@ from ..elements.adjustable import (
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 from eco.xoptics.dcm_pathlength_compensation import MonoTimecompensation
+
+
+@spec_convenience
+@value_property
+@tweak_option
+class DcmConfigAdj(Assembly):
+    def __init__(
+        self,
+        name=None,
+        dcm_config_dict=None,
+        energy=None,
+        crystal=None,
+    ):
+        super().__init__(name=name)
+        self.dcm_config_dict = dcm_config_dict
+        self.crystal = crystal
+        self.energy = energy
+
+    def get_adjustable(self):
+        crystal_number = self.crystal().value
+        config_crystal = self.dcm_config_dict[crystal_number]
+        adj = config_crystal.__dict__[self.name]
+        return adj
+
+    def move(self, value):
+        adj = self.get_adjustable()
+        adj.set_target_value(value).wait()
+        sleep(0.2)
+        energy = self.energy.get_current_value()
+        self.energy.set_target_value(energy).wait()
+
+    def stop(self):
+        """Adjustable convention"""
+        pass
+
+    def set_target_value(self, value, hold=False):
+        return Changer(
+            target=value,
+            parent=self,
+            changer=self.move,
+            hold=hold,
+        )
+
+    def get_current_value(self):
+        adj = self.get_adjustable()
+        return adj.get_current_value()
 
 
 @get_from_archive
@@ -57,18 +103,21 @@ class DoubleCrystalMono(Assembly):
             self.pvname + ":CRYSTAL",
             pvname_set=self.pvname + ":CRYSTAL_SP",
             name="crystal",
+            is_setting=True,
         )
 
         self._append(
             AdjustablePvEnum,
             self.pvname + ":DIFF_ORDER",
             name="diffraction_order",
+            is_setting=True,
         )
 
-        self._append(DcmConfig, self.pvname, name="mono_config")
-
         self._append(
-            AdjustablePvEnum, pvname + ":BRAGG_ACCURACY_SP", name="theta_accuracy"
+            AdjustablePvEnum,
+            pvname + ":BRAGG_ACCURACY_SP",
+            name="theta_accuracy",
+            is_setting=True,
         )
         self._append(AdjustablePvEnum, pvname + ":HOLDING_BRAGG_SP", name="theta_hold")
 
@@ -143,7 +192,7 @@ class DoubleCrystalMono(Assembly):
 
             self._append(
                 AdjustableFS,
-                "/photonics/home/gac-bernina/eco/configuration/mono_und_offset",
+                "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/mono_und_offset.json",
                 name="mono_und_calib",
                 default_value=[[6500, 0], [7100, 0]],
                 is_setting=True,
@@ -211,6 +260,16 @@ class DoubleCrystalMono(Assembly):
         if feedback_message:
             self._append(DetectorPvString, feedback_message, name="feedback_message")
 
+        self._append(
+            DcmConfig,
+            self.pvname,
+            name="mono_config",
+            energy=self.energy,
+            crystal=self.crystal,
+            is_setting="recursive",
+            is_display=True,
+        )
+
     def add_mono_und_calibration_point(self):
         mono_energy = self.energy.get_current_value()
         fel_offset = (
@@ -250,21 +309,100 @@ class DoubleCrystalMono(Assembly):
 
 
 class DcmConfig(Assembly):
-    def __init__(self, pvbase, name=None):
+    def __init__(self, pvbase, name=None, energy=None, crystal=None):
         super().__init__(name=name)
         self.pvbase = pvbase
-
-        self._append(DetectorPvData, self.pvbase + ":PITCH1_OFF", name="pitch1_offset")
-        self._append(DetectorPvData, self.pvbase + ":ROLL1_OFF", name="roll1_offset")
-        self._append(DetectorPvData, self.pvbase + ":PITCH2_OFF", name="pitch2_offset")
-        self._append(DetectorPvData, self.pvbase + ":ROLL2_OFF", name="roll2_offset")
-        self._append(DetectorPvData, self.pvbase + ":T2_OFF", name="gap_offset")
-        self._append(DetectorPvData, self.pvbase + ":TX_OFF", name="x_offset")
+        # self._append(DetectorPvData, self.pvbase + ":PITCH1_OFF", name="pitch1_offset")
+        # self._append(DetectorPvData, self.pvbase + ":ROLL1_OFF", name="roll1_offset")
+        # self._append(DetectorPvData, self.pvbase + ":PITCH2_OFF", name="pitch2_offset")
+        # self._append(DetectorPvData, self.pvbase + ":ROLL2_OFF", name="roll2_offset")
+        # self._append(DetectorPvData, self.pvbase + ":T2_OFF", name="gap_offset")
+        # self._append(DetectorPvData, self.pvbase + ":TX_OFF", name="x_offset")
         self._append(DetectorPvData, self.pvbase + ":T2_MIN", name="gap_min")
         self._append(DetectorPvData, self.pvbase + ":T2_MAX", name="gap_max")
-        self._append(DcmConfigSet, self.pvbase, "CRY1", name="config_Si111")
-        self._append(DcmConfigSet, self.pvbase, "CRY2", name="config_Si311")
-        self._append(DcmConfigSet, self.pvbase, "CRY3", name="config_InSb111")
+        self._append(
+            DcmConfigSet,
+            self.pvbase,
+            "CRY1",
+            name="config_Si111",
+            is_setting="recursive",
+            is_display=False,
+        )
+        self._append(
+            DcmConfigSet,
+            self.pvbase,
+            "CRY2",
+            name="config_Si311",
+            is_setting="recursive",
+            is_display=False,
+        )
+        self._append(
+            DcmConfigSet,
+            self.pvbase,
+            "CRY3",
+            name="config_InSb111",
+            is_setting="recursive",
+            is_display=False,
+        )
+        dcm_config_dict = {
+            1: self.config_Si111,
+            2: self.config_Si311,
+            3: self.config_InSb111,
+        }
+        self._append(
+            DcmConfigAdj,
+            name="pitch1_offset",
+            dcm_config_dict=dcm_config_dict,
+            energy=energy,
+            crystal=crystal,
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DcmConfigAdj,
+            name="roll1_offset",
+            dcm_config_dict=dcm_config_dict,
+            energy=energy,
+            crystal=crystal,
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DcmConfigAdj,
+            name="pitch2_offset",
+            dcm_config_dict=dcm_config_dict,
+            energy=energy,
+            crystal=crystal,
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DcmConfigAdj,
+            name="roll2_offset",
+            dcm_config_dict=dcm_config_dict,
+            energy=energy,
+            crystal=crystal,
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DcmConfigAdj,
+            name="gap_offset",
+            dcm_config_dict=dcm_config_dict,
+            energy=energy,
+            crystal=crystal,
+            is_setting=False,
+            is_display=True,
+        )
+        self._append(
+            DcmConfigAdj,
+            name="x_offset",
+            dcm_config_dict=dcm_config_dict,
+            energy=energy,
+            crystal=crystal,
+            is_setting=False,
+            is_display=True,
+        )
 
 
 class DcmConfigSet(Assembly):
@@ -277,31 +415,37 @@ class DcmConfigSet(Assembly):
             AdjustablePv,
             self.pvbase + ":PITCH1_" + self.par_set_name + "_OFF",
             name="pitch1_offset",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
             self.pvbase + ":ROLL1_" + self.par_set_name + "_OFF",
             name="roll1_offset",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
             self.pvbase + ":PITCH2_" + self.par_set_name + "_OFF",
             name="pitch2_offset",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
             self.pvbase + ":ROLL2_" + self.par_set_name + "_OFF",
             name="roll2_offset",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
             self.pvbase + ":T2_" + self.par_set_name + "_OFF",
             name="gap_offset",
+            is_setting=True,
         )
         self._append(
             AdjustablePv,
             self.pvbase + ":TX_" + self.par_set_name + "_OFF",
             name="x_offset",
+            is_setting=True,
         )
 
 

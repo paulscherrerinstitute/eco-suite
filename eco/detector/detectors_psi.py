@@ -2,7 +2,11 @@ from ..elements.assembly import Assembly
 from ..aliases import Alias
 from eco import ecocnf
 from epics.pv import PV
-from bsread.bsavail import pollStream
+
+# try:
+#     from bsread.bsavail import pollStream
+# except:
+#     from bsread.unused.bsavail import pollStream
 from bsread import dispatcher, source
 from ..epics import get_from_archive
 from escape import stream
@@ -45,8 +49,8 @@ class DetectorBsStream:
                 "setup of stream for bs channel not implemented yet"
             )
 
-    def get_stream_state(self, timeout=1):
-        return pollStream(self.bs_channel, timeout=1)
+    # def get_stream_state(self, timeout=1):
+    #     return pollStream(self.bs_channel, timeout=1)
 
     def create_stream_callback(self, foo):
         with source(channels=[self.bs_channel]) as s:
