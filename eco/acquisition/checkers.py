@@ -15,8 +15,8 @@ class CheckerCA(Assembly):
         pvname=None,
         thresholds=None,
         required_fraction=None,
-        filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
-        filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+        filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_thresholds.json",
+        filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_required_fraction.json",
         name=None,
     ):
         super().__init__(name=name)
@@ -69,8 +69,8 @@ class CheckerBS(Assembly):
         bs_channel=None,
         thresholds=None,
         required_fraction=None,
-        filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds",
-        filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction",
+        filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_thresholds.json",
+        filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_required_fraction.json",
         name=None,
     ):
         super().__init__(name=name)

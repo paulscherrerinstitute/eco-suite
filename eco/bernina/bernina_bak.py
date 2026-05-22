@@ -32,7 +32,6 @@ import sys, os, shutil
 import numpy as np
 from IPython import get_ipython
 
-
 path_aliases = PathAlias()
 sys.path.append("/sf/bernina/config/src/python/bernina_analysis")
 
@@ -201,7 +200,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/run_table_channels_CA.json",
     name="_env_channels_ca",
     module_name="eco.elements.adjustable",
     lazy=True,
@@ -977,7 +976,7 @@ namespace.append_obj(
 ## diffractometers
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/config_JFs",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/config_JFs.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="config_JFs",
@@ -1067,35 +1066,35 @@ namespace.append_obj(
 ### channelsfor daq ###
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_JF",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_JF.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_JF",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channTest of new scilog for Ovuka experimentels_BS",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channTest of new scilog for Ovuka experimentels_BS.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_BS",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_BSCAM",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_BSCAM.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_BSCAM",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_CA",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_CA.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_CA",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_CA_epicsdaq",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_CA_epicsdaq.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_CA_epicsdaq",
@@ -1208,8 +1207,8 @@ namespace.append_obj(
     pvname="SLAAR21-LTIM01-EVR0:CALCI",
     thresholds=[0.2, 10],
     required_fraction=0.6,
-    filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds_default",
-    filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction_default",
+    filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_thresholds_default.json",
+    filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_required_fraction_default.json",
     lazy=True,
     name="checker_mon_opt_ioxos",
 )
@@ -1220,8 +1219,8 @@ namespace.append_obj(
     bs_channel="SAROP21-PBPS133:INTENSITY",
     thresholds=[0.2, 10],
     required_fraction=0.6,
-    filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds_default",
-    filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction_default",
+    filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_thresholds_default.json",
+    filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/checker_required_fraction_default.json",
     lazy=True,
     name="checker",
 )
@@ -2078,7 +2077,6 @@ from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice
 from ..loptics.bernina_laser import DelayTime
 
-
 # namespace.append_obj(
 #     "Organic_crystal_breadboard",
 #     lazy=True,
@@ -2088,7 +2086,6 @@ from ..loptics.bernina_laser import DelayTime
 # )
 
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-
 
 # class Double_Pulse_Pump(Assembly):
 #     def __init__(self, name=None):
@@ -2367,28 +2364,28 @@ namespace.append_obj(
 #         self._pz = pz
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_x0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_mirr_x0.json",
 #             name="offset_mirr_x",
 #             default_value=0,
 #             is_setting=True,
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_z0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_mirr_z0.json",
 #             name="offset_mirr_z",
 #             default_value=0,
 #             is_setting=True,
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_par_x0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_par_x0.json",
 #             name="offset_par_x",
 #             default_value=0,
 #             is_setting=True,
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_par_z0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_par_z0.json",
 #             name="offset_par_z",
 #             default_value=0,
 #             is_setting=True,
@@ -2538,7 +2535,7 @@ namespace.append_obj(
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/combined_delta",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/combined_delta.json",
 #             name="combined_delta",
 #             default_value=0,
 #             is_setting=True,
@@ -2618,7 +2615,6 @@ namespace.append_obj(
 from ..devices_general.motors import MotorRecord
 from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
-
 
 # class JohannAnalyzer(Assembly):
 #     def __init__(self, name=""):
@@ -2949,7 +2945,6 @@ namespace.append_obj(
 
 from eco.loptics.bernina_laser import Stage_LXT_Delay
 
-
 # namespace.append_obj(
 #     "StageLxtDelay",
 #     ocb.delay_thz,
@@ -3277,7 +3272,7 @@ class Tapedrive(Assembly):
 
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p20231_mono_und_offset.json",
             name="mono_und_calib",
             default_value=[[6500, 0], [7100, 0]],
             is_setting=True,

@@ -55,14 +55,14 @@ class THzVirtualStages(Assembly):
         self._pz = pz
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_z0",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_mirr_z0.json",
             name="offset_mirr_z",
             default_value=0,
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p21145_par_z0",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_par_z0.json",
             name="offset_par_z",
             default_value=0,
             is_setting=True,
@@ -89,24 +89,26 @@ class THzVirtualStages(Assembly):
         self.offset_mirr_z.mv(self._mz())
         self.offset_par_z.mv(self._pz())
 
+
 class THz_cameras(Assembly):
     def __init__(self, name=None, camera_config={}):
         super().__init__(name=name)
         for name, cfg in camera_config.items():
             self._append(
                 CameraBasler,
-                cfg["pvname"], 
-                camserver_alias = "THC_" + name,
-                name=name, 
-                is_setting=True, 
+                cfg["pvname"],
+                camserver_alias="THC_" + name,
+                name=name,
+                is_setting=True,
                 is_display="recursive",
             )
             self.__dict__[name].serial_no.mv(cfg["serial_number"])
 
+
 class High_field_thz_chamber(Assembly):
     def __init__(
         self,
-        delay_offset_detector = None,
+        delay_offset_detector=None,
         thc_x_adjustable=None,
         name=None,
         configuration=[],
@@ -235,11 +237,11 @@ class High_field_thz_chamber(Assembly):
 
         ### Cameras ###
         self._append(
-            THz_cameras, 
+            THz_cameras,
             name="camera",
             camera_config=self.camera_configuration,
-            )
-        
+        )
+
         ### lakeshore temperatures ####
         self._append(
             AdjustablePv,
@@ -1608,14 +1610,14 @@ def get_array_frame(a):
 
 
 class GrazingIncidenceLowTemperatureChamber(Assembly):
-    def __init__(self, xp = None, helium_control_valve = None, name=None):
+    def __init__(self, xp=None, helium_control_valve=None, name=None):
         super().__init__(name=name)
         self.name = name
 
         ### SmarAct stages ###
         self.motor_configuration = {
             "beam_block": {
-                "id": "SARES23-USR:MOT_18",
+                "id": "SARES20-MCS3:MOT_18",
                 "pv_descr": "6:3 LSD Chamber Beam Block",
                 "direction": 0,
                 "sensor": 1,
@@ -1624,7 +1626,7 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
                 "kwargs": {"accuracy": 0.000001},
             },
             "interferrometer_paddle": {
-                "id": "SARES23-USR:MOT_16",
+                "id": "SARES20-MCS3:MOT_16",
                 "pv_descr": "6:1 LSD Interferrometer Paddle",
                 "direction": 0,
                 "sensor": 1,
@@ -1635,12 +1637,12 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
         }
         self.motor_configuration_openloop = {
             "interferrometer_ver": {
-                "id": "SARES23-USR:asyn",
+                "id": "SARES20-MCS3:asyn",
                 "pv_descr": "5:1 LSD interferrometer hor",
                 "channel": 13,
             },
             "interferrometer_hor": {
-                "id": "SARES23-USR:asyn",
+                "id": "SARES20-MCS3:asyn",
                 "pv_descr": "5:2 LSD interferrometer ver",
                 "channel": 14,
             },
@@ -1700,17 +1702,17 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
             name="interferometer_value",
         )
 
-        self._append(
-            MpodChannel,
-            pvbase="SARES21-PS7071",
-            channel_number=3,
-            name="illumination",
-        )
+        #        self._append(
+        #            MpodChannel,
+        #            pvbase="SARES21-PS7071",
+        #            channel_number=3,
+        #            name="illumination",
+        #        )
         self._append(
             AttenuatorSafetyBernina,
             xp=xp,
             name="attenuator_safety",
-            is_display='recursive',
+            is_display="recursive",
         )
 
         if helium_control_valve:

@@ -75,7 +75,7 @@ class Analyzer(Assembly):
             # print(f"Initialization of epics motor {name}: {pvname}:{pvmot} failed, replaced by dummy!")
         # append the detector
         self._append(
-            Detector,
+            DetectorStages,
             name="det",
             pvname=pvname,
             is_setting=False,
@@ -137,6 +137,33 @@ class Analyzer(Assembly):
         det_rot = -(180 - tth) / 2
         t_hor = abs(x_s)
         return om, t_hor, det_t_hor, det_t_ver, det_rot
+
+    def positions_for_energy(self, energy):
+        """Print the motor positions corresponding to a given energy in eV"""
+        om, t_hor, det_t_hor, det_t_ver, det_rot = self.motor_pos_from_energy(energy)
+
+        def unit_for(name):
+            if name.startswith("det_"):
+                motor = getattr(getattr(self, "det", None), name[4:], None)
+            else:
+                motor = getattr(self, name, None)
+            return f" ({motor.unit})" if getattr(motor, "unit", None) else ""
+
+        fields = [
+            ("om", om),
+            ("t_hor", t_hor),
+            ("det_t_hor", det_t_hor),
+            ("det_t_ver", det_t_ver),
+            ("det_rot", det_rot),
+        ]
+
+        print(
+            f"Positions for energy {energy:.2f} eV:\n"
+            + "\n".join(
+                f"    {name:<10} = {value:8.2f}{unit_for(name)}"
+                for name, value in fields
+            )
+        )
 
     def energy_from_motor_pos(self, om, t_hor, det_t_hor, det_t_ver, *args):
         tth = self.tth_from_motor_pos(
@@ -240,7 +267,7 @@ class Analyzer(Assembly):
         return np.rad2deg(np.arctan(t_ver / t_hor))
 
 
-class Detector(Assembly):
+class DetectorStages(Assembly):
     def __init__(
         self,
         name=None,
@@ -282,10 +309,22 @@ class RIXS(Assembly):
         self,
         name=None,
         pvname="SARES22-RIXS",
+        jf_id="JF05T01V01",
+        config_jf_adj=None,
+        pgroup_adj=None,
         alias_namespace=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
+
+        self._append(
+            DetectorStages,
+            name="det",
+            pvname=pvname,
+            is_setting=True,
+            is_display="recursive",
+        )
+
         self.config = {
             "crystals": {
                 "Si533": {
@@ -300,6 +339,12 @@ class RIXS(Assembly):
                     ),
                     "material": xu.materials.Si,
                 },
+                "Si931": {
+                    "xu": xu.HXRD(
+                        xu.materials.Si.Q(0, -1, 1), xu.materials.Si.Q(9, 3, 1)
+                    ),
+                    "material": xu.materials.Si,
+                },
             },
             "rowland": {
                 "r": 1000,
@@ -311,10 +356,10 @@ class RIXS(Assembly):
 
         # append an analyzer
         self.append_analyzer(
-            pos=2,
-            analyzer="Si533",
+            pos=1,
+            analyzer="Si844",
             hkl=(8, 4, 4),
-            name="ana2",
+            name="ana_right",
             pvname=pvname,
         )
 
@@ -322,8 +367,33 @@ class RIXS(Assembly):
             pos=2,
             analyzer="Si844",
             hkl=(8, 4, 4),
-            name="ana2_laser",
+            name="ana_center",
             pvname=pvname,
+        )
+
+        self.append_analyzer(
+            pos=3,
+            analyzer="Si844",
+            hkl=(8, 4, 4),
+            name="ana_left",
+            pvname=pvname,
+        )
+
+        # self.append_analyzer(
+        #     pos=2,
+        #     analyzer="Si844",
+        #     hkl=(8, 4, 4),
+        #     name="ana2_laser",
+        #     pvname=pvname,
+        # )
+
+        self._append(
+            Jungfrau,
+            jf_id,
+            config_adj=config_jf_adj,
+            pgroup_adj=pgroup_adj,
+            name="detector",
+            is_setting=True,
         )
 
     def append_analyzer(
@@ -352,7 +422,7 @@ class RIXS(Assembly):
             name=name,
             config=self.config,
             pvname=pvname,
-            is_setting=False,
+            is_setting=True,
             is_display="recursive",
         )
 

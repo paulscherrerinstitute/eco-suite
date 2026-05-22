@@ -91,9 +91,9 @@ class Incoupling(Assembly):
             is_setting=True,
         )
 
-        self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_z", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_x", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_y", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_5", name="lens_z", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_6", name="lens_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_4", name="lens_y", is_setting=True)
         # self._append(
         #     MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
         # )

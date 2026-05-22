@@ -80,7 +80,7 @@ class Crystals(Assembly):
         self.diffractometer = diffractometer_you
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_list",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_list.json",
             name="_crystal_list",
             default_value={},
             is_setting=True,
@@ -106,7 +106,7 @@ class Crystals(Assembly):
         }
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_constraints",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_constraints.json",
             name="_constraints",
             default_value=cons,
             is_setting=True,
@@ -231,10 +231,10 @@ class Crystals(Assembly):
             ]
             for a in attrs:
                 if os.path.exists(
-                    f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"
+                    f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_{a}.json"
                 ):
                     os.remove(
-                        f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_{a}"
+                        f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_{a}.json"
                     )
             print(f"Deleted crystal {name}.")
         else:
@@ -342,7 +342,7 @@ class DiffGeometryYou(Assembly):
         # self._append(diffractometer_you,call_obj=False, name='diffractometer')
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_unit_cell",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_unit_cell.json",
             name="unit_cell",
             default_value={
                 "name": "",
@@ -357,7 +357,7 @@ class DiffGeometryYou(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_u_matrix",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_u_matrix.json",
             name="u_matrix",
             default_value=[],
             is_setting=True,
@@ -365,7 +365,7 @@ class DiffGeometryYou(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_ub_matrix",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_ub_matrix.json",
             name="ub_matrix",
             default_value=[],
             is_setting=True,
@@ -373,14 +373,14 @@ class DiffGeometryYou(Assembly):
         )
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_orientations",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_orientations.json",
             name="orientations",
             default_value=[],
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/{name}_reflections",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/{name}_reflections.json",
             name="reflections",
             default_value=[],
             is_setting=True,
@@ -398,20 +398,36 @@ class DiffGeometryYou(Assembly):
         ### use robot motors if robot is in config
         if cfg.robot():
             self._append(
-            AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/crystals/move_robot",
-            name="move_robot",
-            default_value=True,
-            is_setting=False,
-        )
-            def rob_get(a): return a
+                AdjustableFS,
+                f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/move_robot.json",
+                name="move_robot",
+                default_value=True,
+                is_setting=False,
+            )
+
+            def rob_get(a):
+                return a
+
             def rob_set(a):
-                if self.move_robot(): 
+                if self.move_robot():
                     return [a]
                 else:
                     return None
-            gam_rob = AdjustableVirtual([self.diffractometer.gamma_robot],rob_get, rob_set, name="gamma_robot", check_limits=True)
-            del_rob = AdjustableVirtual([self.diffractometer.delta_robot],rob_get, rob_set, name="delta_robot", check_limits=True)
+
+            gam_rob = AdjustableVirtual(
+                [self.diffractometer.gamma_robot],
+                rob_get,
+                rob_set,
+                name="gamma_robot",
+                check_limits=True,
+            )
+            del_rob = AdjustableVirtual(
+                [self.diffractometer.delta_robot],
+                rob_get,
+                rob_set,
+                name="delta_robot",
+                check_limits=True,
+            )
             get_lims = lambda a: a
             gam_rob.get_limits = get_lims(self.diffractometer.gamma_robot.get_limits)
             del_rob.get_limits = get_lims(self.diffractometer.delta_robot.get_limits)
@@ -423,9 +439,20 @@ class DiffGeometryYou(Assembly):
             )
         ### add the phi constraint to thc as phi_wobble if thc is in config
         if cfg.thc():
-            def phi_wobble_get(a): return a
-            def phi_wobble_set(a): return [a]
-            self.diffractometer.thc._append(AdjustableVirtual, [self.constraints.phi], phi_wobble_get, phi_wobble_set, name='phi_wobble')
+
+            def phi_wobble_get(a):
+                return a
+
+            def phi_wobble_set(a):
+                return [a]
+
+            self.diffractometer.thc._append(
+                AdjustableVirtual,
+                [self.constraints.phi],
+                phi_wobble_get,
+                phi_wobble_set,
+                name="phi_wobble",
+            )
         if cfg.kappa():
             adjs = ["gamma", "mu", "delta", "eta_kap", "kappa", "phi_kap"]
 
@@ -570,7 +597,7 @@ class DiffGeometryYou(Assembly):
         beta = float(input(f"Angle beta ({alpha}): ") or alpha)
         gamma = float(input(f"Angle gamma ({alpha}): ") or alpha)
         im = Image.open(
-            "/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png"
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/you_diffractometer.png"
         )
         normal = []
         while not len(normal) == 3:
@@ -782,7 +809,7 @@ class DiffGeometryYou(Assembly):
 
     def show_you_geometry(self):
         im = Image.open(
-            "/photonics/home/gac-bernina/eco/configuration/crystals/you_diffractometer.png"
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/crystals/you_diffractometer.png"
         )
         im.show()
 

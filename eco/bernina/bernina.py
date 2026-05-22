@@ -35,7 +35,6 @@ import numpy as np
 from IPython import get_ipython
 from eco.acquisition import counters
 
-
 path_aliases = PathAlias()
 sys.path.append("/sf/bernina/config/src/python/bernina_analysis")
 
@@ -165,7 +164,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/run_table_channels_CA",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/run_table_channels_CA.json",
     name="_env_channels_ca",
     module_name="eco.elements.adjustable",
     lazy=True,
@@ -653,13 +652,6 @@ namespace.append_obj(
     lazy=True,
 )
 
-# namespace.append_obj(
-#     "TimetoolSpatial",
-#     module_name="eco.timing.timing_diag",
-#     name="tt_spatial_dev",
-#     lazy=True,
-# )
-
 namespace.append_obj(
     "HexapodSymmetrie",
     name="usd_table",
@@ -864,7 +856,8 @@ namespace.append_obj(
 ## diffractometers
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/config_JFs",
+    # "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/config_JFs.json",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/config_JFs.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="config_JFs",
@@ -963,53 +956,103 @@ namespace.append_obj(
 ### channelsfor daq ###
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_JF",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_JF.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_JF",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channTest of new scilog for Ovuka experimentels_BS",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_BS.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_BS",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_BSCAM",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_BSCAM.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_BSCAM",
 )
 namespace.append_obj(
     "AdjustableFS",
-    "/photonics/home/gac-bernina/eco/configuration/channels_CA",
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_CA.json",
     module_name="eco.elements.adjustable",
     lazy=True,
     name="channels_CA",
 )
 
+# namespace.append_obj(
+#     "MpodModule",
+#     "SARES21-PS7071",
+#     [1, 2, 3, 4],
+#     ["ch1", "ch2", "ch3", "ch4"],
+#     module_string="LV_OMPV_1",
+#     name="power_LV_patch1",
+#     lazy=True,
+#     module_name="eco.devices_general.powersockets",
+# )
+
+# namespace.append_obj(
+#     "MpodModule",
+#     "SARES21-PS7071",
+#     [5, 6, 7, 8],
+#     ["ch1", "ch2", "ch3", "ch4"],
+#     module_string="LV_OMPV_1",
+#     name="power_LV_patch2",
+#     lazy=True,
+#     module_name="eco.devices_general.powersockets",
+# )
+
+# new MPOD implementation
+
 namespace.append_obj(
-    "MpodModule",
-    "SARES21-PS7071",
-    [1, 2, 3, 4],
+    "NEW_MpodModule",
+    "SARES20-MPD1",
+    [0, 1, 2, 3],
     ["ch1", "ch2", "ch3", "ch4"],
-    module_string="LV_OMPV_1",
+    module_string="1",
     name="power_LV_patch1",
     lazy=True,
     module_name="eco.devices_general.powersockets",
 )
 
 namespace.append_obj(
-    "MpodModule",
-    "SARES21-PS7071",
-    [5, 6, 7, 8],
+    "NEW_MpodModule",
+    "SARES20-MPD1",
+    [4, 5, 6, 7],
     ["ch1", "ch2", "ch3", "ch4"],
-    module_string="LV_OMPV_1",
+    module_string="1",
     name="power_LV_patch2",
     lazy=True,
     module_name="eco.devices_general.powersockets",
+)
+
+from eco.loptics.bernina_laser import Stage_LXT_Delay
+
+# OLD type lxt
+
+# namespace.append_obj(
+#     "StageLxtDelay",
+#     NamespaceComponent(namespace, "las.delay_nopa"),
+#     NamespaceComponent(namespace, "las.xlt"),
+#     lazy=True,
+#     name="lxt",
+#     direction=-1,
+#     module_name="eco.loptics.bernina_laser",
+# )
+
+# NEW type lxt
+
+namespace.append_obj(
+    "LxtCompStageDelay",
+    NamespaceComponent(namespace, "tt_kb.delay"),
+    NamespaceComponent(namespace, "las.xlt"),
+    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
+    lazy=True,
+    name="lxt",
+    module_name="eco.loptics.bernina_laser",
 )
 
 # namespace.append_obj(
@@ -1040,8 +1083,8 @@ namespace.append_obj(
     pvname="SLAAR21-LTIM01-EVR0:CALCI",
     thresholds=[0.2, 10],
     required_fraction=0.6,
-    filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds_default",
-    filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction_default",
+    filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds.json",
+    filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds_fraction.json",
     lazy=True,
     name="checker_mon_opt_ioxos",
 )
@@ -1052,8 +1095,8 @@ namespace.append_obj(
     bs_channel="SAROP21-PBPS133:INTENSITY",
     thresholds=[0.2, 10],
     required_fraction=0.6,
-    filepath_thresholds="/photonics/home/gac-bernina/eco/configuration/checker_thresholds_default",
-    filepath_fraction="/photonics/home/gac-bernina/eco/configuration/checker_required_fraction_default",
+    filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds.json",
+    filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds_fraction.json",
     lazy=True,
     name="checker",
 )
@@ -1162,12 +1205,42 @@ namespace.append_obj(
 
 #####################################################################################################
 ## more temporary devices will be outcoupled to temorary module.
-# namespace.append_obj(
-#    "RIXS",
-#    lazy=True,
-#    name="rixs",
-#    module_name="eco.endstations.bernina_rixs",
-# )
+namespace.append_obj(
+    "RIXS",
+    lazy=True,
+    name="rixs",
+    config_jf_adj=config_JFs,
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.endstations.bernina_rixs",
+)
+
+namespace.append_obj(
+    "SaxsSpectrometer",
+    lazy=True,
+    name="xspec_gc",
+    config_jf_adj=config_JFs,
+    pgroup_adj=config_bernina.pgroup,
+    module_name="eco.bernina.bernina_exp",
+)
+
+
+namespace.append_obj(
+    "CameraBasler",
+    pvname="SARES20-CAMS142-M1",
+    lazy=True,
+    name="samplecam",
+    camserver_group=["Laser", "Bernina"],
+    module_name="eco.devices_general.cameras_swissfel",
+)
+
+namespace.append_obj(
+    "CameraBasler",
+    pvname="SARES20-CAMS142-C1",
+    lazy=True,
+    name="gccam",
+    camserver_group=["Laser", "Bernina"],
+    module_name="eco.devices_general.cameras_swissfel",
+)
 
 #### Beam pointing cameras for THz setups ####
 
@@ -1238,6 +1311,14 @@ namespace.append_obj(
 
 namespace.append_obj(
     "CameraBasler",
+    "SARES20-CAMS142-M1",
+    lazy=True,
+    name="samplecam_RIXS",
+    module_name="eco.devices_general.cameras_swissfel",
+)
+
+namespace.append_obj(
+    "CameraBasler",
     "SARES20-CAMS142-C2",
     lazy=True,
     name="samplecam_sideview_45",
@@ -1248,7 +1329,7 @@ namespace.append_obj(
     "CameraBasler",
     "SARES20-CAMS142-C3",
     lazy=True,
-    name="samplecam_top",
+    name="samplecam_inline",
     module_name="eco.devices_general.cameras_swissfel",
 )
 
@@ -1261,13 +1342,13 @@ namespace.append_obj(
 #     module_name="eco.devices_general.cameras_swissfel",
 # )
 
-namespace.append_obj(
-    "OxygenSensor",
-    "SARES20-CWAG-GPS01:ADC08",
-    lazy=True,
-    name="oxygen_sensor",
-    module_name="eco.devices_general.sensors_ai",
-)
+# namespace.append_obj(
+#     "OxygenSensor",
+#     "SARES20-CWAG-GPS01:ADC08",
+#     lazy=True,
+#     name="oxygen_sensor",
+#     module_name="eco.devices_general.sensors_ai",
+# )
 
 # namespace.append_obj(
 #     "CameraBasler",
@@ -1324,12 +1405,12 @@ namespace.append_obj(
 #     name="clic",
 #     module_name="eco.loptics.bernina_laser",
 # )
-namespace.append_obj(
-    "MidIR",
-    lazy=True,
-    name="midir",
-    module_name="eco.loptics.bernina_laser",
-)
+# namespace.append_obj(
+#     "MidIR",
+#     lazy=True,
+#     name="midir",
+#     module_name="eco.loptics.bernina_laser",
+# )
 
 namespace.append_obj(
     "OPAHE_bernina",
@@ -1343,6 +1424,33 @@ from ..devices_general.motors import SmaractStreamdevice
 from ..loptics.bernina_laser import DelayTime
 
 
+class VonHamos(Assembly):
+    def __init__(self, config_jf_adj, pgroup_adj, name="vhamos"):
+        super().__init__(name=name)
+        self._append(
+            Jungfrau,
+            jf_id="JF04T01V01",
+            name="detector",
+            config_adj=config_jf_adj,
+            pgroup_adj=pgroup_adj,
+        )
+        self._append(
+            MotorRecord, "SARES20-XPS1:MOT_1", name="slit_hor", is_setting=True
+        )
+        self._append(
+            MotorRecord, "SARES20-XPS1:MOT_2", name="slit_ver", is_setting=True
+        )
+
+
+namespace.append_obj(
+    VonHamos,
+    lazy=True,
+    name="vhamos",
+    config_jf_adj=config_JFs,
+    pgroup_adj=config_bernina.pgroup,
+)
+
+
 # namespace.append_obj(
 #     "Organic_crystal_breadboard",
 #     lazy=True,
@@ -1352,7 +1460,6 @@ from ..loptics.bernina_laser import DelayTime
 # )
 
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-
 
 # class Double_Pulse_Pump(Assembly):
 #     def __init__(self, name=None):
@@ -1692,28 +1799,28 @@ namespace.append_obj(
 #         self._pz = pz
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_x0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_mirr_x0.json",
 #             name="offset_mirr_x",
 #             default_value=0,
 #             is_setting=True,
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_mirr_z0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_mirr_z0.json",
 #             name="offset_mirr_z",
 #             default_value=0,
 #             is_setting=True,
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_par_x0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_par_x0.json",
 #             name="offset_par_x",
 #             default_value=0,
 #             is_setting=True,
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/p21145_par_z0",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/p21145_par_z0.json",
 #             name="offset_par_z",
 #             default_value=0,
 #             is_setting=True,
@@ -1863,7 +1970,7 @@ namespace.append_obj(
 #         )
 #         self._append(
 #             AdjustableFS,
-#             "/photonics/home/gac-bernina/eco/configuration/combined_delta",
+#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/combined_delta.json",
 #             name="combined_delta",
 #             default_value=0,
 #             is_setting=True,
@@ -1943,7 +2050,6 @@ namespace.append_obj(
 from ..devices_general.motors import MotorRecord
 from ..loptics.bernina_laser import DelayTime
 from ..microscopes import MicroscopeMotorRecord
-
 
 # class JohannAnalyzer(Assembly):
 #     def __init__(self, name=""):
@@ -2151,124 +2257,139 @@ namespace.append_obj(
 
 ############## experiment specific #############
 
-namespace.append_obj(
-    MotorRecord,
-    "SARES20-MF1:MOT_12",
-    name="bsx",
-)
+# namespace.append_obj(
+#     MotorRecord,
+#     "SARES20-MF1:MOT_12",
+#     name="bsx",
+# )
+
+# namespace.append_obj(
+#     "LinearFresnelZonePlate",
+#     name="fzp",
+#     module_name="eco.bernina.bernina_exp",
+#     lazy=True,
+# )
 
 
-class ConvergentBeamDiffraction(Assembly):
-    def __init__(self, name=None):
-        super().__init__(name=name)
-        self._append(
-            SmaractRecord,
-            "SARES20-MCS3:MOT_1",
-            preferred_home_direction="forward",
-            name="sample_x",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SARES20-MCS3:MOT_2",
-            preferred_home_direction="forward",
-            name="sample_y",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SARES20-MCS3:MOT_3",
-            preferred_home_direction="reverse",
-            name="sample_z",
-            is_setting=True,
-        )
-        self._append(
-            DetectorGet, self._get_zmq_dataset, name="positions", is_display=False
-        )
-        # self._append(DetectorObject,self._positions, name='positions')
+# namespace.append_obj(
+#     "TimetoolSpatial",
+#     module_name="eco.timing.timing_diag",
+#     name="tt_spatial_dev",
+#     lazy=True,
+# )
 
-        self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_4", name="ublock_x", is_setting=True
-        )
-        self._append(
-            MotorRecord, "SARES20-MF1:MOT_15", name="ublock_y", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_5", name="ublock_z", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_6", name="ublock_ry", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_7", name="ublock_rz", is_setting=True
-        )
 
-    def _get_zmq_dataset(self):
-        # import zmq
-        # import json
-        # from pprint import pprint
+# class ConvergentBeamDiffraction(Assembly):
+#     def __init__(self, name=None):
+#         super().__init__(name=name)
+#         self._append(
+#             SmaractRecord,
+#             "SARES20-MCS3:MOT_1",
+#             preferred_home_direction="forward",
+#             name="sample_x",
+#             is_setting=True,
+#         )
+#         self._append(
+#             SmaractRecord,
+#             "SARES20-MCS3:MOT_2",
+#             preferred_home_direction="forward",
+#             name="sample_y",
+#             is_setting=True,
+#         )
+#         self._append(
+#             SmaractRecord,
+#             "SARES20-MCS3:MOT_3",
+#             preferred_home_direction="reverse",
+#             name="sample_z",
+#             is_setting=True,
+#         )
+#         self._append(
+#             DetectorGet, self._get_zmq_dataset, name="positions", is_display=False
+#         )
+#         # self._append(DetectorObject,self._positions, name='positions')
 
-        ATTRS = [
-            "SlitU - left (float64, mm)",
-            "SlitU - right (float64, mm)",
-            "SlitU - up (float64, mm)",
-            "SlitU - down (float64, mm)",
-            "SlitD - left (int64, pm)",
-            "SlitD - right (int64, pm)",
-            "SlitD - up (int64, pm)",
-            "SlitD - down (int64, pm)",
-            "MLL - UP - X (float64, nm)",
-            "MLL - UP - Y (float64, nm)",
-            "MLL - UP - Z (float64, nm)",
-            "MLL - UP - Pitch (float64, ndeg)",
-            "MLL - UP - Roll (float64, ndeg)",
-            "MLL - UP - Yaw (float64, ndeg)",
-            "MLL - DOWN - X (float64, nm)",
-            "MLL - DOWN - Y (float64, nm)",
-            "MLL - DOWN - Z (float64, nm)",
-            "MLL - DOWN - Pitch (float64, ndeg)",
-            "MLL - DOWN - Roll (float64, ndeg)",
-            "MLL - DOWN - Yaw (float64, ndeg)",
-            "OSA - X (int64, pm)",
-            "OSA - Y (int64, pm)",
-            "OSA - Z (int64, pm)",
-            "SAM - X (float64, mm)",
-            "SAM - Y (float64, mm)",
-            "SAM - Z (float64, mm)",
-            "SAM - pitch (int64, ndeg)",
-            "SAM - yaw (int64, ndeg)",
-            "CONE - X (float64, mm)",
-            "CONE - Y (float64, mm)",
-            "CONE - Z (float64, mm)",
-            "MIC - X (float64, mm)",
-            "MIC - Y (int64, nm)",
-            "MIC - Z (float64, mm)",
-            "BSU - X (float64, mm)",
-            "BSU - Y (float64, mm)",
-            "BSU - Z (float64, mm)",
-            "BSD - X (float64, mm)",
-            "BSD - Y (float64, mm)",
-            "BSD - Z (float64, mm)",
-        ]
+#         self._append(
+#             SmaractRecord, "SARES20-MCS3:MOT_4", name="ublock_x", is_setting=True
+#         )
+#         self._append(
+#             MotorRecord, "SARES20-MF1:MOT_15", name="ublock_y", is_setting=True
+#         )
+#         self._append(
+#             SmaractRecord, "SARES20-MCS3:MOT_5", name="ublock_z", is_setting=True
+#         )
+#         self._append(
+#             SmaractRecord, "SARES20-MCS3:MOT_6", name="ublock_ry", is_setting=True
+#         )
+#         self._append(
+#             SmaractRecord, "SARES20-MCS3:MOT_7", name="ublock_rz", is_setting=True
+#         )
 
-        HOST = (
-            "129.129.243.102"  # Replace with the IP address of our server in BL network
-        )
+#     def _get_zmq_dataset(self):
+#         # import zmq
+#         # import json
+#         # from pprint import pprint
 
-        socket = zmq.Context.instance().socket(zmq.SUB)
-        socket.setsockopt(zmq.RCVTIMEO, 100)
-        socket.setsockopt(zmq.LINGER, 0)
-        socket.connect(f"tcp://{HOST}:50002")
-        socket.setsockopt_string(zmq.SUBSCRIBE, "")
-        while not socket.poll(timeout=100):
-            pass
+#         ATTRS = [
+#             "SlitU - left (float64, mm)",
+#             "SlitU - right (float64, mm)",
+#             "SlitU - up (float64, mm)",
+#             "SlitU - down (float64, mm)",
+#             "SlitD - left (int64, pm)",
+#             "SlitD - right (int64, pm)",
+#             "SlitD - up (int64, pm)",
+#             "SlitD - down (int64, pm)",
+#             "MLL - UP - X (float64, nm)",
+#             "MLL - UP - Y (float64, nm)",
+#             "MLL - UP - Z (float64, nm)",
+#             "MLL - UP - Pitch (float64, ndeg)",
+#             "MLL - UP - Roll (float64, ndeg)",
+#             "MLL - UP - Yaw (float64, ndeg)",
+#             "MLL - DOWN - X (float64, nm)",
+#             "MLL - DOWN - Y (float64, nm)",
+#             "MLL - DOWN - Z (float64, nm)",
+#             "MLL - DOWN - Pitch (float64, ndeg)",
+#             "MLL - DOWN - Roll (float64, ndeg)",
+#             "MLL - DOWN - Yaw (float64, ndeg)",
+#             "OSA - X (int64, pm)",
+#             "OSA - Y (int64, pm)",
+#             "OSA - Z (int64, pm)",
+#             "SAM - X (float64, mm)",
+#             "SAM - Y (float64, mm)",
+#             "SAM - Z (float64, mm)",
+#             "SAM - pitch (int64, ndeg)",
+#             "SAM - yaw (int64, ndeg)",
+#             "CONE - X (float64, mm)",
+#             "CONE - Y (float64, mm)",
+#             "CONE - Z (float64, mm)",
+#             "MIC - X (float64, mm)",
+#             "MIC - Y (int64, nm)",
+#             "MIC - Z (float64, mm)",
+#             "BSU - X (float64, mm)",
+#             "BSU - Y (float64, mm)",
+#             "BSU - Z (float64, mm)",
+#             "BSD - X (float64, mm)",
+#             "BSD - Y (float64, mm)",
+#             "BSD - Z (float64, mm)",
+#         ]
 
-        positions = socket.recv()
-        positions = json.loads(positions.decode()).split(";")
+#         HOST = (
+#             "129.129.243.102"  # Replace with the IP address of our server in BL network
+#         )
 
-        data = {ATTRS[i]: positions[i] for i in range(len(ATTRS))}
-        # pprint(data)
-        return data
+#         socket = zmq.Context.instance().socket(zmq.SUB)
+#         socket.setsockopt(zmq.RCVTIMEO, 100)
+#         socket.setsockopt(zmq.LINGER, 0)
+#         socket.connect(f"tcp://{HOST}:50002")
+#         socket.setsockopt_string(zmq.SUBSCRIBE, "")
+#         while not socket.poll(timeout=100):
+#             pass
+
+#         positions = socket.recv()
+#         positions = json.loads(positions.decode()).split(";")
+
+#         data = {ATTRS[i]: positions[i] for i in range(len(ATTRS))}
+#         # pprint(data)
+#         return data
 
 
 # namespace.append_obj(
@@ -2298,32 +2419,6 @@ class ConvergentBeamDiffraction(Assembly):
 # )
 # <<<<< WHAT WAS THIS FOR? --> removed 1015-09-01
 
-
-from eco.loptics.bernina_laser import Stage_LXT_Delay
-
-# OLD type lxt
-
-# namespace.append_obj(
-#     "StageLxtDelay",
-#     NamespaceComponent(namespace, "las.delay_nopa"),
-#     NamespaceComponent(namespace, "las.xlt"),
-#     lazy=True,
-#     name="lxt",
-#     direction=-1,
-#     module_name="eco.loptics.bernina_laser",
-# )
-
-# NEW type lxt
-
-namespace.append_obj(
-    "LxtCompStageDelay",
-    NamespaceComponent(namespace, "tt_kb.delay"),
-    NamespaceComponent(namespace, "las.xlt"),
-    feedback_enabled_adj=NamespaceComponent(namespace, "tt_kb.feedback_enabled"),
-    lazy=True,
-    name="lxt",
-    module_name="eco.loptics.bernina_laser",
-)
 
 ##combined delaystage with phase shifter motion##
 
@@ -2360,28 +2455,29 @@ except:
     print("Did not succeed to append an eco folder in current prgoup")
 
 
-class Xspect_EH55(Assembly):
-    def __init__(self, name="xspect_bernina"):
-        super().__init__(name=name)
-        self._append(
-            MotorRecord, "SARES20-MF1:MOT_15", name="x_crystal", is_setting=True
-        )
-        self._append(
-            MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES23-USR:MOT_17", name="theta_crystal", is_setting=True
-        )
-        self._append(
-            CameraBasler,
-            "SARES20-CAMS142-M3",
-            name="camera_bsss",
-            is_display=False,
-            is_setting=False,
-        )
+# class Xspect_EH55(Assembly):
+#     def __init__(self, name="xspect_bernina"):
+#         super().__init__(name=name)
+#         self._append(
+#             MotorRecord, "SARES20-MF1:MOT_15", name="x_crystal", is_setting=True
+#         )
+#         self._append(
+#             MotorRecord, "SARES20-MF1:MOT_16", name="y_crystal", is_setting=True
+#         )
+#         self._append(
+#             SmaractRecord, "SARES23-USR:MOT_17", name="theta_crystal", is_setting=True
+#         )
+#         self._append(
+#             CameraBasler,
+#             "SARES20-CAMS142-M3",
+#             name="camera_bsss",
+#             is_display=False,
+#             is_setting=False,
+#         )
 
 
-namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
+# namespace.append_obj(Xspect_EH55, name="xspect_bernina", lazy=True)
+
 
 ############## BIG JJ SLIT #####################
 namespace.append_obj(
@@ -2460,7 +2556,6 @@ namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 
 ## sample illumination
 from eco.devices_general.powersockets import MpodChannel
-
 
 # namespace.append_obj(IlluminatorsLasers, name="sample_illumination", lazy=True)
 
@@ -2619,7 +2714,7 @@ class Tapedrive(Assembly):
 
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/p20231_mono_und_offset",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configurationmono_und_offset.json",
             name="mono_und_calib",
             default_value=[[6500, 0], [7100, 0]],
             is_setting=True,

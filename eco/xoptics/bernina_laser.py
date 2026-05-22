@@ -166,21 +166,21 @@ class StageLxtDelay(Assembly):
         self._append(AdjustableMemory, direction, name="_direction", is_setting=True)
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_delay_phase_shifter_threshold",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/{name}_combined_delay_phase_shifter_threshold.json",
             name="switch_threshold",
             default_value=50e-12,
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/{name}_conbined_fine_adj_offset",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/{name}_conbined_fine_adj_offset.json",
             name="offset_fine_adj",
             default_value=0.0,
             is_setting=True,
         )
         self._append(
             AdjustableFS,
-            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_coarse_adj_offset",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/{name}_combined_coarse_adj_offset.json",
             name="offset_coarse_adj",
             default_value=0.0,
             is_setting=True,
@@ -235,17 +235,17 @@ class Stage_LXT_Delay(AdjustableVirtual):
         self._coarse_delay_adj = coarse_delay_adj
         self._direction = direction
         self.switch_threshold = AdjustableFS(
-            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_delay_phase_shifter_threshold",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/{name}_combined_delay_phase_shifter_threshold.json",
             name="switch_threshold",
             default_value=50e-12,
         )
         self.offset_fine_adj = AdjustableFS(
-            f"/photonics/home/gac-bernina/eco/configuration/{name}_conbined_fine_adj_offset",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/{name}_conbined_fine_adj_offset.json",
             name="offset_fine_adj",
             default_value=0.0,
         )
         self.offset_coarse_adj = AdjustableFS(
-            f"/photonics/home/gac-bernina/eco/configuration/{name}_combined_coarse_adj_offset",
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/{name}_combined_coarse_adj_offset.json",
             name="offset_coarse_adj",
             default_value=0.0,
         )
@@ -308,7 +308,7 @@ class LaserBernina(Assembly):
 
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/wp_att_calibration",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/wp_att_calibration.json",
             name="wp_att_calibration",
             is_display=False,
         )

@@ -34,13 +34,13 @@ class Feedback_Timetool(Assembly):
         self.control_adj = control_adj
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/tt_feedback_setpoint",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/tt_feedback_setpoint.json",
             default_value=setpoint,
             name="setpoint",
         )
         self._append(
             AdjustableFS,
-            "/photonics/home/gac-bernina/eco/configuration/tt_feedback_calib_s_per_px",
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/tt_feedback_calib_s_per_px.json",
             default_value=calib_s_per_px,
             name="calib_s_per_px",
         )

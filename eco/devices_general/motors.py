@@ -1,5 +1,6 @@
 # from ..eco_epics.motor import Motor as _Motor
 from functools import partial
+import warnings
 from epics.motor import Motor as _Motor
 from epics import PV
 
@@ -116,9 +117,7 @@ def _tweak_ioc_notebook(self, step_value=None):
     current_label = widgets.HTML(
         value=f"<b>Current position:</b> {_format_value(target_value)}"
     )
-    status_label = widgets.HTML(
-        value=f"<b>Step size:</b> {_format_value(step_value)}"
-    )
+    status_label = widgets.HTML(value=f"<b>Step size:</b> {_format_value(step_value)}")
     help_label = widgets.HTML(
         value=(
             "<b>Controls:</b> Stepsize *2, Stepsize /2, Down, Up, Go abs, Reset offset, Exit"
@@ -177,9 +176,7 @@ def _tweak_ioc_notebook(self, step_value=None):
         try:
             self.set_target_value(float(go_input.value), check=True).wait()
             _refresh_current()
-            status_label.value = (
-                f"<b>Moved to:</b> {_format_value(go_input.value)}"
-            )
+            status_label.value = f"<b>Moved to:</b> {_format_value(go_input.value)}"
         except Exception as exc:
             status_label.value = f"<b>Error:</b> {exc}"
 
@@ -195,7 +192,18 @@ def _tweak_ioc_notebook(self, step_value=None):
 
     def _shutdown(_=None):
         self.clear_value_callback(index=callback_id)
-        for ctl in [step_input, go_input, set_input, btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit]:
+        for ctl in [
+            step_input,
+            go_input,
+            set_input,
+            btn_up,
+            btn_down,
+            btn_left,
+            btn_right,
+            btn_go,
+            btn_set,
+            btn_exit,
+        ]:
             ctl.disabled = True
         status_label.value = "<b>Tweak UI closed.</b>"
 
@@ -215,7 +223,9 @@ def _tweak_ioc_notebook(self, step_value=None):
     btn_set.on_click(_click_set)
     btn_exit.on_click(_shutdown)
 
-    controls = widgets.HBox([btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit])
+    controls = widgets.HBox(
+        [btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit]
+    )
     inputs = widgets.HBox([step_input, go_input, set_input])
     ui = widgets.VBox([current_label, status_label, help_label, inputs, controls])
 
@@ -1353,8 +1363,9 @@ class MotorRecord(Assembly):
         def changer(value):
             statflag_start = self.status_flag.get_current_value()
             if not statflag_start.value == 0:
-                raise AdjustableError(
-                    f"Motor {self.alias.get_full_name()}({self.pvname}) cannot start moving with status flag {statflag_start.name} ."
+                warnings.warn(
+                    f"Motor {self.alias.get_full_name()}({self.pvname}) might not or move uncontrolled with status flag {statflag_start.name} .",
+                    Warning,
                 )
             self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
             self._status_message = _status_messages[self._status]
@@ -1472,7 +1483,9 @@ class MotorRecord(Assembly):
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
 
-    def _tweak_ioc(self, step_value=None):
+    def _tweak_ioc(self, step_value=None, go_to_current_value_first=True):
+        if go_to_current_value_first:
+            self.set_target_value(self.get_current_value()).wait()
         if _is_notebook():
             try:
                 return _tweak_ioc_notebook(self, step_value=step_value)
@@ -1709,13 +1722,19 @@ class SmaractSettings(Assembly):
             is_setting=True,
         )
 
-        self._append(
-            AdjustableFS,
-            file_path="/photonics/home/gac-bernina/eco/configuration/smaract/setting_table",
-            name="_setting_table",
-            is_setting=False,
-            is_display=False,
-        )
+        try:
+            self._append(
+                AdjustableFS,
+                file_path="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/smaract_settings_collection.json",
+                name="_setting_table",
+                is_setting=False,
+                is_display=False,
+            )
+        except:
+            print(
+                "Failed to load smaract settings collection. Please check the file path and content of smaract_settings_collection.json."
+            )
+            self._setting_table = None
 
     def recall(self, stage_alias_or_model=None):
         setting_table = self._setting_table()
@@ -2069,7 +2088,9 @@ class SmaractRecord(Assembly):
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
 
-    def _tweak_ioc(self, step_value=None):
+    def _tweak_ioc(self, step_value=None, go_to_current_value_first=True):
+        if go_to_current_value_first:
+            self.set_target_value(self.get_current_value()).wait()
         if _is_notebook():
             try:
                 return _tweak_ioc_notebook(self, step_value=step_value)
@@ -2564,3 +2585,44 @@ class SmaractRecordFlags(Assembly):
 
     def _get_flag_index_value(self, value, index):
         return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
+
+
+@spec_convenience
+@value_property
+@tweak_option
+class DcmConfigAdj(Assembly):
+    def __init__(
+        self,
+        name=None,
+        dcm_config_dict=None,
+        energy=None,
+        crystal=None,
+    ):
+        super().__init__(name=name)
+        self.dcm_config_dict = dcm_config_dict
+        self.crystal = crystal
+        self.energy = energy
+
+    def get_adjustable(self):
+        crystal_number = self.crystal().value
+        config_crystal = self.dcm_config_dict[crystal_number]
+        adj = config_crystal.__dict__[self.name]
+        return adj
+
+    def move(self, value):
+        adj = self.get_adjustable()
+        adj(value)
+        sleep(0.2)
+        energy = self.energy.get_current_value()
+        self.energy.set_target_value(energy)
+
+    def stop(self):
+        """Adjustable convention"""
+        pass
+
+    def set_target_value(self, value):
+        return self.set_target_value(value)
+
+    def get_current_value(self):
+        adj = self.get_adjustable()
+        return adj.get_current_value()
