@@ -1,11 +1,21 @@
 import pytest
 
-from eco.utilities.config import Namespace
+from eco.utilities.config import Component, Namespace
 
 
 class BadThing:
     def __init__(self, value, name=None):
         raise ValueError("boom")
+
+
+class DependencyThing:
+    def __init__(self, name=None):
+        self.name = name
+
+
+class NeedsDependency:
+    def __init__(self, dependency, name=None):
+        self.dependency = dependency
 
 
 def test_lazy_init_failure_includes_manual_instantiation_string():
@@ -26,3 +36,23 @@ def test_lazy_init_failure_includes_manual_instantiation_string():
         "BadThing(1, name='bad')"
     )
     assert ns.failed_items_excpetion["bad"].args[-1] == manual
+
+
+def test_append_obj_from_config_resolves_component_dependencies_eagerly_for_non_lazy_nodes():
+    ns = Namespace(name="test")
+    ns.append_obj(DependencyThing, lazy=True, name="dependency")
+
+    ns.append_obj_from_config(
+        {
+            "type": f"{__name__}:NeedsDependency",
+            "name": "needs_dependency",
+            "args": [Component("dependency")],
+            "kwargs": {},
+            "lazy": False,
+        }
+    )
+
+    root = ns.initialized_items["needs_dependency"]
+    assert isinstance(root.dependency, DependencyThing)
+    assert root.dependency is not ns.get_obj("dependency")
+    assert root.dependency.name == "dependency"
