@@ -6,11 +6,35 @@ from threading import Thread
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from typing import Any
+from eco.aliases.aliases import Alias
 import numpy as np
 import matplotlib.pyplot as plt
 from numbers import Number
 
 import inspect
+
+
+def get_eco_name(obj):
+    if hasattr(obj, "alias") and obj.alias is not None and isinstance(obj.alias, Alias):
+        return obj.alias.get_full_name()
+    elif hasattr(obj, "name") and obj.name is not None and isinstance(obj.name, str):
+        return obj.name
+    elif (
+        hasattr(obj, "__name__")
+        and obj.__name__ is not None
+        and isinstance(obj.__name__, str)
+    ):
+        return obj.__name__
+    # elif get_variable_name(obj) is not None:
+    #     return get_variable_name(obj)
+    elif (
+        hasattr(obj, "__class__")
+        and obj.__class__.__name__ is not None
+        and isinstance(obj.__class__.__name__, str)
+    ):
+        return obj.__class__.__name__
+    else:
+        return None
 
 
 def is_notebook() -> bool:
