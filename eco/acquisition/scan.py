@@ -11,7 +11,12 @@ from pathlib import Path
 import colorama
 
 from eco.elements.protocols import Adjustable
-from eco.utilities.utilities import NumpyEncoder, foo_get_kwargs, linlog_intervals
+from eco.utilities.utilities import (
+    NumpyEncoder,
+    foo_get_kwargs,
+    get_eco_name,
+    linlog_intervals,
+)
 from ..elements.adjustable import AdjustableMemory, DummyAdjustable
 from IPython import get_ipython
 from .daq_client import Daq
@@ -1018,7 +1023,7 @@ class Scans(Assembly):
             "shape": shape,
             "positions": positions,
             "index_plan": index_plan,
-            "grid_dimension_names": [adj.name for adj in adjustables],
+            "grid_dimension_names": [get_eco_name(adj) for adj in adjustables],
         }
 
         if not counters:

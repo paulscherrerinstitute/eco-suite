@@ -90,6 +90,38 @@ def init_name_obj(obj, args, kwargs, name=None):
         return obj(*args, **kwargs)
 
 
+def format_manual_instantiation(
+    obj_factory, args, kwargs, name=None, accepts_name=False, module_name=None
+):
+    if callable(obj_factory):
+        obj_name = getattr(obj_factory, "__name__", str(obj_factory))
+        import_path = module_name or getattr(obj_factory, "__module__", None)
+        if import_path:
+            import_stmt = f"from {import_path} import {obj_name}"
+        else:
+            import_stmt = obj_name
+    else:
+        obj_name = str(obj_factory)
+        import_stmt = obj_name
+
+    call_kwargs = dict(kwargs)
+    if accepts_name:
+        call_kwargs["name"] = name
+
+    call_parts = [repr(arg) for arg in args] + [
+        f"{key}={repr(value)}" for key, value in call_kwargs.items()
+    ]
+    call_text = f"{obj_name}({', '.join(call_parts)})"
+
+    return f"For manual instantiation copy/paste: {import_stmt}; {call_text}"
+
+
+def append_manual_context(exc, manual_context):
+    if manual_context and manual_context not in exc.args:
+        exc.args = exc.args + (manual_context,)
+    return exc
+
+
 def init_device(type_string, name, args=[], kwargs={}, verbose=True, lazy=True):
     if verbose:
         print(("Configuring %s " % (name)).ljust(25), end="")
@@ -840,23 +872,36 @@ class Namespace(Assembly):
                 else:
                     obj_maker = obj_factory
 
+                args_resolved, kwargs_resolved = replace_NamespaceComponents(
+                    *args, **kwargs
+                )
+                accepts_name = "name" in signature(obj_maker).parameters
+                manual_context = format_manual_instantiation(
+                    obj_maker,
+                    args_resolved,
+                    kwargs_resolved,
+                    name=name,
+                    accepts_name=accepts_name,
+                    module_name=module_name,
+                )
                 try:
-                    if "name" in signature(obj_maker).parameters:
+                    if accepts_name:
                         obj_initialized = obj_maker(
-                            *replace_NamespaceComponents(*args)[0],
+                            *args_resolved,
                             name=name,
-                            **replace_NamespaceComponents(**kwargs)[1],
+                            **kwargs_resolved,
                         )
                     else:
                         obj_initialized = obj_maker(
-                            *replace_NamespaceComponents(*args)[0],
-                            **replace_NamespaceComponents(**kwargs)[1],
+                            *args_resolved,
+                            **kwargs_resolved,
                         )
                 except Exception as e:
+                    append_manual_context(e, manual_context)
                     self.failed_items[name] = self.lazy_items.pop(name)
                     self.failed_items_excpetion[name] = e
                     self._initializing.pop(self._initializing.index(name))
-                    raise Exception
+                    raise
 
                 try:
                     self.initialized_items[name] = self.lazy_items.pop(name)
