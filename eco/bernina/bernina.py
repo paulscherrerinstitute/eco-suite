@@ -1318,13 +1318,13 @@ namespace.append_obj(
 #     module_name="eco.devices_general.cameras_swissfel",
 # )
 
-# namespace.append_obj(
-#     "OxygenSensor",
-#     "SARES20-CWAG-GPS01:ADC08",
-#     lazy=True,
-#     name="oxygen_sensor",
-#     module_name="eco.devices_general.sensors_ai",
-# )
+namespace.append_obj(
+    "OxygenSensor",
+    "SARES20-CWAG-GPS01:ADC08",
+    lazy=True,
+    name="oxygen_sensor",
+    module_name="eco.devices_general.sensors_ai",
+)
 
 # namespace.append_obj(
 #     "CameraBasler",
@@ -1400,12 +1400,12 @@ namespace.append_obj(
 )
 
 
-# namespace.append_obj(
-#     "IncouplingCleanBernina",
-#     lazy=True,
-#     name="clic",
-#     module_name="eco.loptics.bernina_laser",
-# )
+namespace.append_obj(
+    "IncouplingCleanBernina",
+    lazy=True,
+    name="clic",
+    module_name="eco.loptics.bernina_laser",
+)
 # namespace.append_obj(
 #     "MidIR",
 #     lazy=True,

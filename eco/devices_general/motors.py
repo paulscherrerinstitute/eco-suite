@@ -10,6 +10,7 @@ from ..aliases import Alias
 from ..elements.adjustable import (
     AdjustableError,
     AdjustableFS,
+    AdjustableGetSet,
     AdjustableMemory,
     spec_convenience,
     ValueInRange,
@@ -883,7 +884,7 @@ class SmarActOpenLoopRecord(Assembly):
         self._append(
             AdjustableFS,
             f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_position.json",
-            name="position",
+            name="_position",
             default_value=0,
             is_setting=True,
             is_display=True,
@@ -907,7 +908,7 @@ class SmarActOpenLoopRecord(Assembly):
 
     def move(self, value, check=True, wait=False):
         value = int(value) * self.direction()
-        pos = int(self.position() * self.direction())
+        pos = int(self._position() * self.direction())
         target_rel = value - pos
         if check:
             if self.limit_low:
@@ -924,7 +925,7 @@ class SmarActOpenLoopRecord(Assembly):
             f":MST{self.channel-1},{target_rel},{int(self.voltage()*40.95)},{int(self.frequency())}"
         )
         if res[-1] == "0":
-            self.position.mv(value)
+            self._position.mv(value)
         else:
             raise Exception(
                 f"Motion of SmarAct Motor {self.name} failed with error code {res}"
@@ -938,7 +939,197 @@ class SmarActOpenLoopRecord(Assembly):
         self.limit_high.set_target_value(limit_high)
 
     def get_current_value(self):
-        return self.position.get_current_value()
+        return self._position.get_current_value()
+
+    def set_current_value(self, value):
+        self._position(value)
+
+    def set_target_value(self, value, hold=False, check=True, **kwargs):
+        return Changer(
+            target=value,
+            parent=self,
+            changer=self.move,
+            hold=hold,
+            stopper=self.stop,
+        )
+
+    # return string with motor value as variable representation
+    def __str__(self):
+        # """ return short info for the current motor"""
+        s = f"{self.name}"
+        # s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL} stat: {self.status_flag().name}"
+        s += f"\t@ {colorama.Style.BRIGHT}{self.get_current_value():1.6g}{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{:1.6g}\n".format(*self.get_limits())
+        s += f"\n{colorama.Style.DIM}low limit {colorama.Style.RESET_ALL}"
+        s += ValueInRange(*self.get_limits()).get_str(self.get_current_value())
+        s += f" {colorama.Style.DIM}high limit{colorama.Style.RESET_ALL}"
+        # # s +=  "\tuser limits      (low,high) : {:1.6g},{1.6g}".format(self.get_limits())
+        return s
+
+    def __repr__(self):
+        print(str(self))
+        return object.__repr__(self)
+
+
+@spec_convenience
+# @get_from_archive
+@value_property
+@tweak_option
+class SmarActOpenLoopRecordMCS2(Assembly):
+    def __init__(self, pvname=None, channel=None, name=None):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self.channel = channel
+
+        self._append(
+            AdjustablePv,
+            self.pvname.split(":")[0] + f":MOT_{self.channel}.DESC",
+            name="description",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".AOUT",
+            name="_com_set",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".TINP",
+            name="_com_get",
+            is_setting=False,
+            is_display=False,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_limit_high.json",
+            default_value=-1e6,
+            name="limit_high",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_limit_low.json",
+            default_value=1e6,
+            name="limit_low",
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_voltage.json",
+            name="voltage",
+            default_value=25,
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_frequency.json",
+            name="frequency",
+            default_value=250,
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_position.json",
+            name="_position",
+            default_value=0,
+            is_setting=True,
+            is_display=True,
+        )
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/smaract_openloop_{name}_direction.json",
+            name="direction",
+            default_value=1,
+            is_setting=True,
+            is_display=True,
+        )
+
+        def get_motion_mode():
+            return int(self.eval_command(f":CHAN{self.channel-1}:MMOD?"))
+
+        def set_motion_mode(value):
+            self.eval_command(f":CHAN{self.channel-1}:MMOD {value}")
+
+        self._append(
+            AdjustableGetSet,
+            get_motion_mode,
+            set_motion_mode,
+            set_returns_changer=False,
+            precision=0,
+            check_interval=None,
+            cache_get_seconds=None,
+            unit=None,
+            name="motion_mode",
+        )
+
+        if not self.motion_mode() == 4:
+            self.motion_mode.mv_elog(
+                4,
+                f"Setting SmarAct Channel {self.channel} on {self.pvname} to Open Loop (4). To go back to closed loop, set it to (0)",
+            )
+
+    def eval_command(self, cmd):
+        self._com_set(cmd)
+        sleep(0.2)
+        return self._com_get()
+
+    def stop(self):
+        self._com_set(f":STOP{self.channel-1}")
+
+    def move(self, value, check=True, wait=True):
+        value = int(value) * self.direction()
+        pos = int(self._position() * self.direction())
+        target_rel = value - pos
+        if check:
+            if self.limit_low:
+                if value < self.limit_low():
+                    raise Exception(
+                        f"Target value of {self.name} is smaller than limit value!"
+                    )
+            if self.limit_high:
+                if self.limit_high() < value:
+                    raise Exception(
+                        f"Target value of {self.name} is higher than limit value!"
+                    )
+        self.eval_command(f":MOVE{self.channel-1} {target_rel}")
+        if wait:
+            while not self.get_move_done():
+                sleep(0.1)
+        self._position.mv(value)
+
+    def get_limits(self):
+        return (self.limit_low(), self.limit_high())
+
+    def get_move_done(self):
+        stat = self.get_status()
+        if int(stat[-1]) == 9:
+            return False
+        else:
+            return True
+
+    def get_status(self):
+        stat = self.eval_command(f":CHAN{self.channel-1}:STAT?")
+        if len(stat) == 0:
+            for n in range(10):
+                stat = self.eval_command(f":CHAN{self.channel-1}:STAT?")
+                if len(stat) > 0:
+                    break
+        return stat
+
+    def set_limits(self, limit_low, limit_high):
+        self.limit_low.set_target_value(limit_low)
+        self.limit_high.set_target_value(limit_high)
+
+    def get_current_value(self):
+        return self._position.get_current_value()
+
+    def set_current_value(self, value):
+        self._position(value)
 
     def set_target_value(self, value, hold=False, check=True, **kwargs):
         return Changer(
