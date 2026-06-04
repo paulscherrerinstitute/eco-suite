@@ -7,28 +7,26 @@ class OxygenSensor(AnalogInput):
         super().__init__(pvname, name=name)
         self.unit.set_target_value("%")
 
-    def set_no_oxygen(self, val_curr=None):
-        if not val_curr:
-            val_curr = self.raw.get_current_value()
+    def set_no_oxygen(self, raw_val=None):
+        if not raw_val:
+            raw_val = self.raw.get_current_value()
         slo = self.linear_calibration_slope.get_current_value()
         off = self.linear_calibration_offset.get_current_value()
-
-        off_n = -slo * val_curr
-        af = (100 - off) / slo
-        # slo_new = slo*((100-val_curr)/(100-off))
-        slo_n = 100 / af
+        r0 = raw_val
+        r100 = (100 - off) / slo
+        slo_n = 100 / (r100 - r0)
+        off_n = -slo_n * r0
         self.linear_calibration_offset(off_n)
         self.linear_calibration_slope(slo_n)
 
-    def set_full_oxygen(self, val_curr=None):
-        if not val_curr:
-            val_curr = self.raw.get_current_value()
-        af = val_curr
+    def set_full_oxygen(self, raw_val=None):
+        if not raw_val:
+            raw_val = self.raw.get_current_value()
         slo = self.linear_calibration_slope.get_current_value()
         off = self.linear_calibration_offset.get_current_value()
-
-        az = -off / slo
-        slo_n = 100 / (af - az)
-        off_n = -slo_n * az
+        r0 = -(off / slo)
+        r100 = raw_val
+        slo_n = 100 / (r100 - r0)
+        off_n = -slo_n * r0
         self.linear_calibration_offset(off_n)
         self.linear_calibration_slope(slo_n)

@@ -13,7 +13,7 @@ from ..devices_general.motors import (
     MotorRecord,
     SmaractRecord,
     ThorlabsPiezoRecord,
-    SmarActOpenLoopRecord,
+    SmarActOpenLoopRecordMCS2,
 )
 from ..epics.adjustable import AdjustablePv
 import numpy as np
@@ -1657,7 +1657,7 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
 
         for name, config in self.motor_configuration_openloop.items():
             self._append(
-                SmarActOpenLoopRecord,
+                SmarActOpenLoopRecordMCS2,
                 pvname=config["id"],
                 name=name,
                 channel=config["channel"],

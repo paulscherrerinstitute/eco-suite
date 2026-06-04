@@ -1350,6 +1350,30 @@ class LaserBernina(Assembly):
             name="delay_twin",
             is_setting=True,
         )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_5",
+            name="delaystage_ftir",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_4",
+            name="dfg_rot",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_3",
+            name="dfg_pos",
+            is_setting=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_ftir,
+            name="delay_ftir",
+            is_setting=True,
+        )
 
         self._append(
             DelayTime,
