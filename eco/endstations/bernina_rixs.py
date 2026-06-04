@@ -303,7 +303,6 @@ class DetectorStages(Assembly):
                     f"Initialization of epics motor {name}: {pvname}:{pvmot} failed, replaced by dummy!"
                 )
 
-
 class RIXS(Assembly):
     def __init__(
         self,
@@ -379,13 +378,10 @@ class RIXS(Assembly):
             pvname=pvname,
         )
 
-        # self.append_analyzer(
-        #     pos=2,
-        #     analyzer="Si844",
-        #     hkl=(8, 4, 4),
-        #     name="ana2_laser",
-        #     pvname=pvname,
-        # )
+        self.append_multi_analyzer_motion(
+            analyzer_list=[self.ana_right, self.ana_center, self.ana_left],
+            name="energy_all_analyzers"
+        )
 
         self._append(
             Jungfrau,
@@ -426,20 +422,45 @@ class RIXS(Assembly):
             is_display="recursive",
         )
 
+    def append_multi_analyzer_motion(self, analyzer_list = [], name=None):
+
+        detector_motors = [self.det.t_hor, self.det.t_ver, self.det.rot]
+        analyzer_motors = [motor for ana in analyzer_list for motor in [ana.__dict__["om"], ana.__dict__["t_hor"]]]
+
+        def motor_pos_from_energy_multy_analyzers(energy):
+            motor_positions = np.array([ana.motor_pos_from_energy(energy) for ana in analyzer_list])
+
+            detector_positions = motor_positions[:,2:]
+            if np.sum(np.std(detector_positions, axis=0)) > 0.1:
+                raise (f"Conflicting detector target positions in multi analyzer motion: {[[ana.name, det_pos] for ana, det_pos in zip(analyzer_list, detector_positions)]}, check analyzer configuration")
+            else:
+                detector_position = np.mean(detector_positions, axis=0)
+            analyzer_positions = np.concat(motor_positions[:,0:2])
+            return np.concat([detector_position, analyzer_positions])
+
+        def energy_from_motor_pos_multy_analyzers(*args, **kwargs):
+            energies = np.array([[ana.energy()] for ana in analyzer_list])
+            if None in energies:
+                return None
+            elif np.std(energies) > 0.1:
+                return None
+            else:
+                return np.mean(energies)
+
+        self._append(
+            AdjustableVirtual,
+            detector_motors+analyzer_motors,
+            energy_from_motor_pos_multy_analyzers,
+            motor_pos_from_energy_multy_analyzers,
+            is_setting=False,
+            is_display=True,
+            name=name,
+            unit="eV",
+        )
+
     def gui(self, guiType="xdm"):
         """Adjustable convention"""
         cmd = ["caqtdm", "-macro"]
         cmd += ["P=SARES22-RIXS", "ESB_RIXS_motors.ui"]
         return self._run_cmd(" ".join(cmd))
 
-    # def get_adjustable_positions_str(self):
-    #     ostr = "*****GPS motor positions******\n"
-
-    #     for tkey, item in self.__dict__.items():
-    #         if hasattr(item, "get_current_value"):
-    #             pos = item.get_current_value()
-    #             ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
-    #     return ostr
-
-    # def __repr__(self):
-    #     return self.get_adjustable_positions_str()
