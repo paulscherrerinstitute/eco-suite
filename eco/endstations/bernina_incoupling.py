@@ -22,32 +22,39 @@ class Incoupling(Assembly):
         # self._append(
         #     SmaractRecord, "SARES20-MCS2:MOT_15", name="thz_par2_rx", is_setting=True
         # )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
-        )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
+        # )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
+        # )
 
         try:
             self.motor_configuration_thorlabs = {
-                "thz_filter": {
-                    "pvname": "SLAAR21-LMOT-ELL4",
-                },
-                "thz_crystal": {
-                    "pvname": "SLAAR21-LMOT-ELL3",
-                },
-                "thz_waveplate": {
+            #     "thz_filter": {
+            #         "pvname": "SLAAR21-LMOT-ELL4",
+            #     },
+            #     "thz_crystal": {
+            #         "pvname": "SLAAR21-LMOT-ELL3",
+            #     },
+            #     "thz_waveplate": {
+            #         "pvname": "SLAAR21-LMOT-ELL5",
+            #     },
+            #     "nd_filter": {
+            #         "pvname": "SLAAR21-LMOT-ELL2",
+            #     },
+            #     "polarizer": {
+            #         "pvname": "SLAAR21-LMOT-ELL1",
+            #     },
+            
+                "waveplate": {
                     "pvname": "SLAAR21-LMOT-ELL5",
                 },
-                "nd_filter": {
+                "filter_wheel": {
                     "pvname": "SLAAR21-LMOT-ELL2",
                 },
-                "polarizer": {
-                    "pvname": "SLAAR21-LMOT-ELL1",
-                },
-            }
 
+            }
             ### thorlabs piezo motors ###
             for name, config in self.motor_configuration_thorlabs.items():
                 self._append(
@@ -60,24 +67,24 @@ class Incoupling(Assembly):
         except Exception as e:
             print(e)
 
-        self._append(
-            AdjustableInterpolate,
-            self.nd_filter,
-            filename_calib="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/nd_filter_wheel_thlabs.json",
-            deadband=None,
-            interp_method="next",
-            callbacks_before_change=[],
-            callbacks_after_change=[],
-            unit="OptDens",
-            name="nd_filter_optical_density",
-        )
+        # self._append(
+        #     AdjustableInterpolate,
+        #     self.nd_filter,
+        #     filename_calib="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/nd_filter_wheel_thlabs.json",
+        #     deadband=None,
+        #     interp_method="next",
+        #     callbacks_before_change=[],
+        #     callbacks_after_change=[],
+        #     unit="OptDens",
+        #     name="nd_filter_optical_density",
+        # )
 
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_10", name="tt_nopa_target", is_setting=True
-        )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
+        # )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_10", name="tt_nopa_target", is_setting=True
+        # )
         self._append(
             AnalogOutput,
             "SLAAR21-LDIO-LAS6991:DAC07_VOLTS",
@@ -91,56 +98,56 @@ class Incoupling(Assembly):
             is_setting=True,
         )
 
-        self._append(MotorRecord, "SARES20-XPS1:MOT_5", name="lens_z", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_6", name="lens_x", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_4", name="lens_y", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_1", name="lens_z", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_2", name="lens_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_3", name="lens_y", is_setting=True)
         # self._append(
         #     MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
         # )
 
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC06_VOLTS",
-            name="eos_fb_rx",
-            is_setting=True,
-        )
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC05_VOLTS",
-            name="eos_fb_ry",
-            is_setting=True,
-        )
+        # self._append(
+        #     AnalogOutput,
+        #     "SLAAR21-LDIO-LAS6991:DAC06_VOLTS",
+        #     name="eos_fb_rx",
+        #     is_setting=True,
+        # )
+        # self._append(
+        #     AnalogOutput,
+        #     "SLAAR21-LDIO-LAS6991:DAC05_VOLTS",
+        #     name="eos_fb_ry",
+        #     is_setting=True,
+        # )
 
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LCAM-C561:FIT2_REQUIRED.PROC",
-            name="eos_fb_setpoint_rq",
+            name="fb_setpoint_rq",
             accuracy=1,
             is_setting=True,
         )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LCAM-C561:FIT2_DEFAULT.PROC",
-            name="eos_fb_setpoint_df",
+            name="fb_setpoint_df",
             accuracy=1,
             is_setting=True,
         )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LTIM01-EVR0:CALCW.A",
-            name="eos_fd_enable",
+            name="fd_enable",
             accuracy=1,
             is_setting=True,
         )
 
-        self._append(
-            AdjustableVirtual,
-            [self.thz_crystal, self.thz_waveplate],
-            lambda c, w: c,
-            lambda angle: [angle, angle / 2],
-            name="thz_polarization",
-            is_setting=False,
-        )
+        # self._append(
+        #     AdjustableVirtual,
+        #     [self.thz_crystal, self.thz_waveplate],
+        #     lambda c, w: c,
+        #     lambda angle: [angle, angle / 2],
+        #     name="thz_polarization",
+        #     is_setting=False,
+        # )
 
         self._append(
             DetectorPvData,
@@ -154,11 +161,11 @@ class Incoupling(Assembly):
             name="pump_intensity",
         )
 
-        self._append(
-            DetectorPvData,
-            "SARES20-LSCP9-FNS:CH6:VAL_GET",
-            name="shg_intensity",
-        )
+        # self._append(
+        #     DetectorPvData,
+        #     "SARES20-LSCP9-FNS:CH6:VAL_GET",
+        #     name="shg_intensity",
+        # )
         # IOXAS (SARES20_CH6)
 
         # self._append(
