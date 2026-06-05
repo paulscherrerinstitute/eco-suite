@@ -401,10 +401,10 @@ class TimetoolBerninaUSD(Assembly):
             fig.tight_layout()
             plt.show()
             if to_elog:
-                fpath = "/home/gac-bernina/tt_calib.jpg"
+                fpath = f"{Path.home()}/temp/tt_calib.jpg"
                 fig.savefig(fpath, dpi=200)
                 fpath = Path(fpath)
-                dpath = Path("/home/gac-bernina/tt_calib.pkl")
+                dpath = Path(f"{Path.home()}/temp/tt_calib.pkl")
                 df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
                 df.to_pickle(dpath)
         if to_elog:
@@ -767,10 +767,10 @@ class TimetoolBerninaDSD(Assembly):
             fig.tight_layout()
             plt.show()
             if to_elog:
-                fpath = "/home/gac-bernina/tt_calib.jpg"
+                fpath = f"{Path.home()}/temp/tt_calib.jpg"
                 fig.savefig(fpath, dpi=200)
                 fpath = Path(fpath)
-                dpath = Path("/home/gac-bernina/tt_calib.pkl")
+                dpath = Path(f"{Path.home()}/temp/tt_calib.pkl")
                 df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
                 df.to_pickle(dpath)
         if to_elog:

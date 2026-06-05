@@ -28,6 +28,10 @@ class Incoupling(Assembly):
         # self._append(
         #     SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
         # )
+        self._append(
+            SmaractRecord, "SARES20-MCS3:MOT_17", name="power_check", is_setting=True
+        )
+
 
         try:
             self.motor_configuration_thorlabs = {
