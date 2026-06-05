@@ -1609,6 +1609,21 @@ def get_array_frame(a):
     return np.concatenate([a[:, 0], a[-1, 1:], a[-2::-1, -1], a[0, -2::-1]])
 
 
+class GicCameras(Assembly):
+    def __init__(self, name=None, camera_config={}):
+        super().__init__(name=name)
+        for name, cfg in camera_config.items():
+            self._append(
+                CameraBasler,
+                cfg["pvname"],
+                camserver_alias="GIC_" + name,
+                name=name,
+                is_setting=True,
+                is_display="recursive",
+            )
+            self.__dict__[name].serial_no.mv(cfg["serial_number"])
+
+
 class GrazingIncidenceLowTemperatureChamber(Assembly):
     def __init__(self, xp=None, helium_control_valve=None, name=None):
         super().__init__(name=name)
@@ -1647,6 +1662,23 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
                 "channel": 14,
             },
         }
+        self.camera_configuration = {
+            "inline": {
+                "pvname": "SARES20-CAMS142-M1",
+                "serial_number": 40298870,
+            },
+            "sideview": {
+                "pvname": "SARES20-CAMS142-M2",
+                "serial_number": 40298884,
+            },
+        }
+
+        self._append(
+            GicCameras,
+            name="samplecam",
+            camera_config=self.camera_configuration,
+        )
+
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractRecord,
