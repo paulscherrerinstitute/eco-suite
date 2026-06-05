@@ -1185,6 +1185,7 @@ namespace.append_obj(
     "RIXS",
     lazy=True,
     name="rixs",
+    jf_id="JF14T01V01",
     config_jf_adj=config_JFs,
     pgroup_adj=config_bernina.pgroup,
     module_name="eco.endstations.bernina_rixs",
@@ -1572,29 +1573,38 @@ class Incoupling(Assembly):
         # self._append(
         #     SmaractRecord, "SARES20-MCS2:MOT_15", name="thz_par2_rx", is_setting=True
         # )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
-        )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
-        )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
+        # )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
+        # )
 
+        # try:
+        #     self.motor_configuration_thorlabs = {
+        #         "thz_filter": {
+        #             "pvname": "SLAAR21-LMOT-ELL4",
+        #         },
+        #         "thz_crystal": {
+        #             "pvname": "SLAAR21-LMOT-ELL3",
+        #         },
+        #         "thz_waveplate": {
+        #             "pvname": "SLAAR21-LMOT-ELL5",
+        #         },
+        #         "nd_filter": {
+        #             "pvname": "SLAAR21-LMOT-ELL2",
+        #         },
+        #         "polarizer": {
+        #             "pvname": "SLAAR21-LMOT-ELL1",
+        #         },
+        #     }
         try:
             self.motor_configuration_thorlabs = {
-                "thz_filter": {
-                    "pvname": "SLAAR21-LMOT-ELL4",
-                },
-                "thz_crystal": {
-                    "pvname": "SLAAR21-LMOT-ELL3",
-                },
-                "thz_waveplate": {
+                "hwp": {
                     "pvname": "SLAAR21-LMOT-ELL5",
                 },
-                "nd_filter": {
+                "fw": {
                     "pvname": "SLAAR21-LMOT-ELL2",
-                },
-                "polarizer": {
-                    "pvname": "SLAAR21-LMOT-ELL1",
                 },
             }
 
@@ -1613,9 +1623,9 @@ class Incoupling(Assembly):
         # self._append(
         #    SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
         # )
-        self._append(
-            SmaractRecord, "SARES20-MCS2:MOT_10", name="tt_nopa_target", is_setting=True
-        )
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS2:MOT_10", name="tt_nopa_target", is_setting=True
+        # )
         self._append(
             AnalogOutput,
             "SLAAR21-LDIO-LAS6991:DAC07_VOLTS",
@@ -1629,9 +1639,9 @@ class Incoupling(Assembly):
             is_setting=True,
         )
 
-        self._append(MotorRecord, "SARES20-XPS1:MOT_X", name="lens_z", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_Y", name="lens_x", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_Z", name="lens_y", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_1", name="lens_z", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_2", name="lens_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-XPS1:MOT_3", name="lens_y", is_setting=True)
         # self._append(
         #     MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
         # )
