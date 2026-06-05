@@ -292,9 +292,9 @@ class TimetoolBerninaUSD(Assembly):
                 for pos in x:
                     print(f"Moving to {pos*1e15} fs")
                     self.delay.set_target_value(pos).wait()
-                    pids_start.append(pid.value)
+                    pids_start.append(int(pid.value))
                     sleep(seconds)
-                    pids_stop.append(pid.value)
+                    pids_stop.append(int(pid.value))
                 retrieving = True
                 i = 1
                 source = dh.Daqbuf()
@@ -401,10 +401,10 @@ class TimetoolBerninaUSD(Assembly):
             fig.tight_layout()
             plt.show()
             if to_elog:
-                fpath = "/photonics/home/gac-bernina/tt_calib.jpg"
+                fpath = "/home/gac-bernina/tt_calib.jpg"
                 fig.savefig(fpath, dpi=200)
                 fpath = Path(fpath)
-                dpath = Path("/photonics/home/gac-bernina/tt_calib.pkl")
+                dpath = Path("/home/gac-bernina/tt_calib.pkl")
                 df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
                 df.to_pickle(dpath)
         if to_elog:
@@ -767,10 +767,10 @@ class TimetoolBerninaDSD(Assembly):
             fig.tight_layout()
             plt.show()
             if to_elog:
-                fpath = "/photonics/home/gac-bernina/tt_calib.jpg"
+                fpath = "/home/gac-bernina/tt_calib.jpg"
                 fig.savefig(fpath, dpi=200)
                 fpath = Path(fpath)
-                dpath = Path("/photonics/home/gac-bernina/tt_calib.pkl")
+                dpath = Path("/home/gac-bernina/tt_calib.pkl")
                 df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
                 df.to_pickle(dpath)
         if to_elog:

@@ -308,7 +308,7 @@ class RIXS(Assembly):
         self,
         name=None,
         pvname="SARES22-RIXS",
-        jf_id="JF05T01V01",
+        jf_id="JF14T01V01",
         config_jf_adj=None,
         pgroup_adj=None,
         alias_namespace=None,
