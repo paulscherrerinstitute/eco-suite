@@ -84,7 +84,7 @@ class Pipeline(Assembly):
     def pc(self):
         return get_pipelineclient()
 
-    @cachebox.cached(cachebox.TTLCache(maxsize=0, ttl=1))
+    @cachebox.cached(cachebox.TTLCache(0, 1))
     def _get_config(self):
         return self.pc.get_instance_config(self.pipeline_name)
 

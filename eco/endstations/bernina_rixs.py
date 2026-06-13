@@ -424,7 +424,10 @@ class RIXS(Assembly):
 
     def append_multi_analyzer_motion(self, analyzer_list = [], name=None):
 
-        detector_motors = [self.det.t_hor, self.det.t_ver, self.det.rot]
+        # detector_motors = [self.det.t_hor, self.det.t_ver, self.det.rot]
+        dummy = AdjustableMemory(name='dummy')
+        # Hack 2026-06-09 for non working rixs rotation.
+        detector_motors = [self.det.t_hor, self.det.t_ver, dummy]
         analyzer_motors = [motor for ana in analyzer_list for motor in [ana.__dict__["om"], ana.__dict__["t_hor"]]]
 
         def motor_pos_from_energy_multy_analyzers(energy):

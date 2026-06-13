@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+import os
+os.environ["EPICS_CA_MAX_ARRAY_BYTES"] = "120000000"
+
 ## pylab activity >>>>
 import numpy
 import matplotlib
