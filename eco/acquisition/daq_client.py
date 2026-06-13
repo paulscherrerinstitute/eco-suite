@@ -32,7 +32,8 @@ class Daq(Assembly):
         self,
         broker_address="http://sf-daq:10002",
         broker_address_aux="http://sf-daq:10003",
-        timeout=10,
+        timeout=2,
+        # timeout=10,
         pgroup=None,
         pulse_id_adj=None,
         event_master=None,
@@ -246,7 +247,6 @@ class Daq(Assembly):
 
         starttime_local = time.time()
         tvars = self.pulse_id._pv.get_timevars()
-
         while (tvars is None) or (tvars["timestamp"] < starttime_local):
             time.sleep(0.02)
             # if tvars is not None:
@@ -256,8 +256,9 @@ class Daq(Assembly):
             tvars = self.pulse_id._pv.get_timevars()
             if time.time() - starttime_local > self.timeout:
                 raise TimeoutError(
-                    f"Timeout {self.timeout} s hit while waiting for pulse_id timestamp to be recent. timevars None: {tvars is None}; "
+                    f"Timeout {self.timeout} s hit while waiting for pulse_id timestamp to be recent. timevars None: {tvars is None}; \npulse id timestamp: {tvars["timestamp"]}: starttime of scan step {starttime_local} Difference: {tvars["timestamp"] - starttime_local}"
                 )
+        print(f"Got pulse id with correct time stamp: \npulse id timestamp: {tvars["timestamp"]}: starttime of scan step {starttime_local} Difference: {tvars["timestamp"] - starttime_local}")
         start_id = self.pulse_id.get_current_value(use_monitor=False)
         start_time = time.time()
         while start_id is None:
