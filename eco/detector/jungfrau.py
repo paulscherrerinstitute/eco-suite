@@ -121,7 +121,7 @@ class Jungfrau(Assembly):
         self._last_dap_req_time = 0
         self._append(
             AdjustableFS,
-            '/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/dap_settings',
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/dap_settings_{self.jf_id:s}.json",
             name="_dap_settings_storage",
             is_display=False,
             is_setting=False,
@@ -140,7 +140,6 @@ class Jungfrau(Assembly):
             is_setting_children=True,
             name="settings_dap",
         )
-        
 
         if config_adj:
             self._append(
@@ -160,13 +159,13 @@ class Jungfrau(Assembly):
                 is_display="recursive",
             )
 
-    def set_dap_rois(self,*rois):
-            tmp = self.settings_dap._base_dict()
-            tmp['roi_x1']=[roi[0] for roi in rois if roi]
-            tmp['roi_x2']=[roi[1] for roi in rois if roi]
-            tmp['roi_y1']=[roi[2] for roi in rois if roi]
-            tmp['roi_y2']=[roi[3] for roi in rois if roi]
-            self.settings_dap._base_dict(tmp)
+    def set_dap_rois(self, *rois):
+        tmp = self.settings_dap._base_dict()
+        tmp["roi_x1"] = [roi[0] for roi in rois if roi]
+        tmp["roi_x2"] = [roi[1] for roi in rois if roi]
+        tmp["roi_y1"] = [roi[2] for roi in rois if roi]
+        tmp["roi_y2"] = [roi[3] for roi in rois if roi]
+        self.settings_dap._base_dict(tmp)
 
     def _set_trigger_enable(self, value):
         if value:
@@ -243,7 +242,9 @@ class Jungfrau(Assembly):
                 self._last_dap_req_time = time.time()
 
             if self._last_dap_message["status"] == "ok":
-                self._dap_settings_storage.set_target_value(self._last_dap_message["parameters"]).wait()
+                self._dap_settings_storage.set_target_value(
+                    self._last_dap_message["parameters"]
+                ).wait()
                 return self._last_dap_message["parameters"]
         else:
             val = self._dap_settings_storage.get_current_value()
