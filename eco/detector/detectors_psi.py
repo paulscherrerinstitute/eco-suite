@@ -29,7 +29,7 @@ class DetectorBsStream:
         else:
             self.pvname = cachannel
         if self.pvname:
-            self._pv = PV(self.pvname)
+            self._pv = PV(self.pvname, auto_monitor=False)
         self.alias = Alias(name, channel=bs_channel, channeltype="BS")
 
         self.stream = stream.EscData(source=stream.EventSource(self.bs_channel, None))
