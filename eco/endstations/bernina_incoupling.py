@@ -32,29 +32,32 @@ class Incoupling(Assembly):
             SmaractRecord, "SARES20-MCS3:MOT_17", name="power_check", is_setting=True
         )
 
+
         try:
             self.motor_configuration_thorlabs = {
-                #     "thz_filter": {
-                #         "pvname": "SLAAR21-LMOT-ELL4",
-                #     },
-                #     "thz_crystal": {
-                #         "pvname": "SLAAR21-LMOT-ELL3",
-                #     },
-                #     "thz_waveplate": {
-                #         "pvname": "SLAAR21-LMOT-ELL5",
-                #     },
-                #     "nd_filter": {
-                #         "pvname": "SLAAR21-LMOT-ELL2",
-                #     },
-                #     "polarizer": {
-                #         "pvname": "SLAAR21-LMOT-ELL1",
-                #     },
+            #     "thz_filter": {
+            #         "pvname": "SLAAR21-LMOT-ELL4",
+            #     },
+            #     "thz_crystal": {
+            #         "pvname": "SLAAR21-LMOT-ELL3",
+            #     },
+            #     "thz_waveplate": {
+            #         "pvname": "SLAAR21-LMOT-ELL5",
+            #     },
+            #     "nd_filter": {
+            #         "pvname": "SLAAR21-LMOT-ELL2",
+            #     },
+            #     "polarizer": {
+            #         "pvname": "SLAAR21-LMOT-ELL1",
+            #     },
+            
                 "waveplate": {
                     "pvname": "SLAAR21-LMOT-ELL5",
                 },
                 "filter_wheel": {
                     "pvname": "SLAAR21-LMOT-ELL2",
                 },
+
             }
             ### thorlabs piezo motors ###
             for name, config in self.motor_configuration_thorlabs.items():
@@ -121,15 +124,22 @@ class Incoupling(Assembly):
 
         self._append(
             AdjustablePv,
-            pvsetname="SLAAR21-LCAM-CS842:FIT2_DEFAULT.PROC",
-            name="feedback_opa_reset_cross",
+            pvsetname="SLAAR21-LCAM-C561:FIT2_REQUIRED.PROC",
+            name="fb_setpoint_rq",
+            accuracy=1,
+            is_setting=True,
+        )
+        self._append(
+            AdjustablePv,
+            pvsetname="SLAAR21-LCAM-C561:FIT2_DEFAULT.PROC",
+            name="fb_setpoint_df",
             accuracy=1,
             is_setting=True,
         )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LTIM01-EVR0:CALCW.A",
-            name="feedback_opa_enable",
+            name="fd_enable",
             accuracy=1,
             is_setting=True,
         )
@@ -153,16 +163,6 @@ class Incoupling(Assembly):
             DetectorPvData,
             "SLAAR-LADC-WL009:ADC1_VAL",
             name="pump_intensity",
-        )
-        self._append(
-            DetectorPvData,
-            "SLAAR21-LSPC-PSENOUT:FWHM",
-            name="pump_spec_fwhm",
-        )
-        self._append(
-            DetectorPvData,
-            "SLAAR21-LSPC-PSENOUT:CENTRE",
-            name="pump_spec_wavelength",
         )
 
         # self._append(

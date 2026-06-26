@@ -1786,10 +1786,10 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
     def beam_block_in(self, target=7):
         self.beam_block.set_target_value(target)
 
-    def beam_block_out(self, target=2):
+    def beam_block_out(self, target=0):
         self.beam_block.set_target_value(target)
 
-    def interferrometer_in(self, target=14.5):
+    def interferrometer_in(self, target=13.35):
         self.interferrometer_paddle.set_target_value(target)
 
     def interferrometer_out(self, target=-10):
