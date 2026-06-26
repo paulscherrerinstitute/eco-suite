@@ -258,7 +258,6 @@ class Daq(Assembly):
                 raise TimeoutError(
                     f"Timeout {self.timeout} s hit while waiting for pulse_id timestamp to be recent. timevars None: {tvars is None}; \npulse id timestamp: {tvars["timestamp"]}: starttime of scan step {starttime_local} Difference: {tvars["timestamp"] - starttime_local}"
                 )
-        print(f"Got pulse id with correct time stamp: \npulse id timestamp: {tvars["timestamp"]}: starttime of scan step {starttime_local} Difference: {tvars["timestamp"] - starttime_local}")
         start_id = self.pulse_id.get_current_value(use_monitor=False)
         start_time = time.time()
         while start_id is None:

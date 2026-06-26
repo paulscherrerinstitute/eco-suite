@@ -1053,17 +1053,17 @@ from eco.loptics.bernina_laser import Stage_LXT_Delay
 #     module_name="eco.devices_general.powersockets",
 # )
 
-namespace.append_obj(
-    "CheckerCA",
-    module_name="eco.acquisition.checkers",
-    pvname="SLAAR21-LTIM01-EVR0:CALCI",
-    thresholds=[0.2, 10],
-    required_fraction=0.6,
-    filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds.json",
-    filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds_fraction.json",
-    lazy=True,
-    name="checker_mon_opt_ioxos",
-)
+# namespace.append_obj(
+#     "CheckerCA",
+#     module_name="eco.acquisition.checkers",
+#     pvname="SLAAR21-LTIM01-EVR0:CALCI",
+#     thresholds=[0.2, 10],
+#     required_fraction=0.6,
+#     filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds.json",
+#     filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds_fraction.json",
+#     lazy=True,
+#     name="checker_mon_opt_ioxos",
+# )
 
 namespace.append_obj(
     "CheckerBS",

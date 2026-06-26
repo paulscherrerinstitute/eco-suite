@@ -1,3 +1,4 @@
+import copy
 import time
 import weakref
 from eco.acquisition.utilities import Acquisition
@@ -10,9 +11,11 @@ from pathlib import Path
 from datetime import datetime
 from escape import DataSet
 
+
 DEFAULT_STORAGE_DIR = Path("./")
 
 StepTime = namedtuple("StepTime", "start stop")
+
 
 
 class CounterValue:
@@ -66,6 +69,8 @@ class CounterValue:
         # scan.moniitorable_names = self.get_monitorable_names()
 
     def start_monitoring(self, scan=None, **kwargs):
+        if hasattr(scan, "monitors"):
+            del scan.monitors
         monitors = [tm.set_current_value_callback() for tm in self.monitorables]
         for tm in monitors:
             tm.start()
@@ -80,11 +85,11 @@ class CounterValue:
         if scan is not None:
             for tm in scan.monitors.values():
                 tm.stop()
-            del scan.monitors
+            # del scan.monitors
         else:
             for tm in self.monitors:
                 tm.stop()
-            del self.monitors
+            # del self.monitors
 
     def clear_detectors(self, scan, **kwargs):
         for det in self.detectors:
@@ -132,18 +137,19 @@ class CounterValue:
 
         if scan:
             scan_wr = weakref.ref(scan)
-            acq_pars = {
-                "scan_info": {
-                    "scan_name": scan.description(),
-                    "scan_values": scan.values_current_step,
-                    "scan_readbacks": scan.readbacks_current_step,
-                    "name": [adj.name for adj in scan.adjustables],
-                    "expected_total_number_of_steps": scan.number_of_steps(),
-                    "scan_step_info": {
-                        "step_number": scan.next_step + 1,
-                    },
-                },
-            }
+            # TODO: why is this necessary and not assigned?
+            # acq_pars = {
+            #     "scan_info": {
+            #         "scan_name": scan.description(),
+            #         "scan_values": scan.values_current_step,
+            #         "scan_readbacks": scan.readbacks_current_step,
+            #         "name": [adj.name for adj in scan.adjustables],
+            #         "expected_total_number_of_steps": scan.number_of_steps(),
+            #         "scan_step_info": {
+            #             "step_number": scan.next_step + 1,
+            #         },
+            #     },
+            # }
 
         acquisition = Acquisition(
             acquire=None,
@@ -165,13 +171,15 @@ class CounterValue:
     def create_arrays(self, scan, **kwargs):
         scan.monitor_scan_arrays = {}
         for monname, mon in scan.monitors.items():
+            tdata = copy.copy(mon.data["values"]) # needed for array data, apparently 
             scan.monitor_scan_arrays[monname] = ArrayTimestamps(
-                data=mon.data["values"],
+                data=tdata,
                 timestamps=mon.data["timestamps"],
                 timestamp_intervals=scan.timestamp_intervals,
                 parameter=parameter_from_scan(scan),
                 name=monname,
             )
+
 
     def plot_arrays(self, scan, **kwargs):
         if not hasattr(scan, "animation"):

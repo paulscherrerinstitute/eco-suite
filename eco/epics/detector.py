@@ -38,7 +38,7 @@ class DetectorPvData(Assembly):
             self._append(AdjustablePv, pvname, name="readback", is_setting=False)
             # self.status_collection.append(self)
         else:
-            self._pv = PV(pvname)
+            self._pv = PV(pvname, auto_monitor=False)
             self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
             self.status_collection.append(self)
             self.status_collection.append(self, selection="settings", recursive=False)
@@ -83,7 +83,7 @@ class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05)
+        self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
         self.name = name
         self.enum_strs = self._pv.enum_strs
 
@@ -129,7 +129,7 @@ class DetectorPvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05)
+        self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
@@ -155,7 +155,7 @@ class DetectorPvDataStream(Assembly):
         super().__init__(name=name)
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname)
+        self._pv = PV(pvname, auto_monitor=False)
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
         if has_fields:
             self._append(
@@ -319,6 +319,8 @@ class CallbackEpics:
             self.foo,
             run_once=True,
         )
+        self.auto_monitor_state = self.pv.auto_monitor
+        self.pv.auto_monitor = True
 
     def is_running(self):
         return hasattr(self, "cb_index") and self.cb_index in self.pv.callbacks.keys()
@@ -326,6 +328,7 @@ class CallbackEpics:
     def stop(self):
         if self.is_running():
             self.pv.remove_callback(self.cb_index)
+            self.pv.auto_monitor = self.auto_monitor_state
 
     def __enter__(self):
         self.start()
