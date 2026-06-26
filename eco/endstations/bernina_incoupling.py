@@ -124,22 +124,15 @@ class Incoupling(Assembly):
 
         self._append(
             AdjustablePv,
-            pvsetname="SLAAR21-LCAM-C561:FIT2_REQUIRED.PROC",
-            name="fb_setpoint_rq",
-            accuracy=1,
-            is_setting=True,
-        )
-        self._append(
-            AdjustablePv,
-            pvsetname="SLAAR21-LCAM-C561:FIT2_DEFAULT.PROC",
-            name="fb_setpoint_df",
+            pvsetname="SLAAR21-LCAM-CS842:FIT2_DEFAULT.PROC",
+            name="feedback_opa_reset_cross",
             accuracy=1,
             is_setting=True,
         )
         self._append(
             AdjustablePv,
             pvsetname="SLAAR21-LTIM01-EVR0:CALCW.A",
-            name="fd_enable",
+            name="feedback_opa_enable",
             accuracy=1,
             is_setting=True,
         )
