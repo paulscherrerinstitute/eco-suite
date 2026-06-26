@@ -81,14 +81,7 @@ class StepScan(Assembly):
             lambda: self._get_names(self.adjustables),
             name="adjustables_names",
         )
-        # try:
-        #     iter(counters)
-
-        #     self.counters = counters
-        # except TypeError:
-        #     self.counters = [counters]
         self.counters = counters
-
         self._append(
             DetectorGet, lambda: self._get_names(self.counters), name="counters_names"
         )

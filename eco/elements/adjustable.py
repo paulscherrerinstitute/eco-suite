@@ -525,14 +525,14 @@ class AdjustableFS:
         return self._read_value()
 
     # @cache_file_access
-    @cachebox.cached(cachebox.TTLCache(0, ADJUSTABLEFS_MAX_READ_PERIOD))
+    @cachebox.cached(cachebox.TTLCache(maxsize=0, ttl=ADJUSTABLEFS_MAX_READ_PERIOD))
     def _read_value(self):
         with open(self.file_path, "r") as f:
             res = load(f)
         return res["value"]
 
     def _cache_file_access(self, foo):
-        @cachebox.cached(cachebox.TTLCache(0, self.max_read_period))
+        @cachebox.cached(cachebox.TTLCache(maxsize=0, ttl=self.max_read_period))
         def wrapper(*args, **kwargs):
             return foo(*args, **kwargs)
 
@@ -1370,7 +1370,7 @@ class Tweak:
                 btn_y_plus,
                 btn_x_step_up,
                 btn_x_step_down,
-                    btn_y_step_up,
+                btn_y_step_up,
                 btn_y_step_down,
                 btn_origin,
                 btn_exit,

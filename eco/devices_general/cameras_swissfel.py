@@ -599,7 +599,7 @@ class CameraBasler(Assembly):
                 if event.button is MouseButton.LEFT:
                     x = event.xdata
                     y = event.ydata
-                    cross_plot.set_data(np.atleast_1d(x), np.atleast_1d(y))
+                    cross_plot.set_data(x, y)
                     plt.draw()
                     print(f"cross at x: {x:.4} and y: {y:.4}")
                     self.config_cs._cross = [x, y]
@@ -610,7 +610,7 @@ class CameraBasler(Assembly):
             fig = plt.figure(num=self.config_cs.cam_id)
             plt.title(f"Set cross: left mouse click, Finish: right click")
             plt.imshow(img)
-            cross_plot = plt.plot(np.atleast_1d(x), np.atleast_1d(y), "+r", markersize=10)[0]
+            cross_plot = plt.plot(x, y, "+r", markersize=10)[0]
             bid = fig.canvas.mpl_connect("button_press_event", on_click)
             plt.show(block=True)
             x, y = self.config_cs._cross

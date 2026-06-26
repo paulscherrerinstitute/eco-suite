@@ -1442,19 +1442,6 @@ class LaserBernina(Assembly):
             except:
                 print("spectrum_in spectrometer not configured!")
 
-    def fluence(self, a,b,energy, alpha=5):
-        """This function calculates the fluence on the sample, taking spot size elongation into account.
-
-        Args:
-            a (float)      : Spot diameter in the horizontal direction in units of m
-            b (dloat)      : Spot diameter in the vertical direction in units of m
-            energy (float) : Pulse energy in units of J
-            alpha (float)  : Incidence angle of the laser with respect to the sample surface plane.
-
-        Returns:
-            fluence in mJ/cm2
-        """
-        return energy/(a/2*b/2*np.pi)*1e3/1e4*np.sin(np.deg2rad(alpha))
 
 from eco.epics.adjustable import AdjustablePvString
 
