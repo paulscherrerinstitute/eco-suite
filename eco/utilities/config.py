@@ -378,6 +378,7 @@ class Namespace(Assembly):
 
         self.names_without_alias = []
         self._initializing = []
+        
         self.root_module = root_module
         self.alias_namespace = alias_namespace
         if required_names_directory:

@@ -35,31 +35,31 @@ class AdjustableAtomicPv:
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
         #            )
 
-        self._pv = PV(self.pvname, connection_timeout=0.05, count=element_count)
+        self._pv = PV(self.pvname, connection_timeout=0.05, count=element_count, auto_monitor=False)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
             self._pvreadback = PV(
-                self.pvname, count=element_count, connection_timeout=0.05
+                self.pvname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
             pvreadbackname = self.pvname
             self.pvname = self.pvname
         else:
             self._pvreadback = PV(
-                pvreadbackname, count=element_count, connection_timeout=0.05
+                pvreadbackname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
             self.pvname = pvreadbackname
 
         if pvlowlimname:
             self._pvlowlim = PV(
-                pvlowlimname, count=element_count, connection_timeout=0.05
+                pvlowlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
         else:
             self._pvlowlim = None
         if pvhighlimname:
             self._pvhighlim = PV(
-                pvhighlimname, count=element_count, connection_timeout=0.05
+                pvhighlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
         else:
             self._pvhighlim = None
@@ -155,24 +155,24 @@ class AdjustablePv:
             self.unit = AdjustableMemory(unit, name="unit")
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id, count=element_count, connection_timeout=0.05)
+            self._pvreadback = PV(self.Id, count=element_count, connection_timeout=0.05, auto_monitor=False)
             pvreadbackname = self.Id
             self.pvname = self.Id
         else:
             self._pvreadback = PV(
-                pvreadbackname, count=element_count, connection_timeout=0.05
+                pvreadbackname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
             self.pvname = pvreadbackname
 
         if pvlowlimname:
             self._pvlowlim = PV(
-                pvlowlimname, count=element_count, connection_timeout=0.05
+                pvlowlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
         else:
             self._pvlowlim = None
         if pvhighlimname:
             self._pvhighlim = PV(
-                pvhighlimname, count=element_count, connection_timeout=0.05
+                pvhighlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
             )
         else:
             self._pvhighlim = None
@@ -275,7 +275,7 @@ class AdjustablePvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05 * 2)
+        self._pv = PV(pvname, connection_timeout=0.05 * 2, auto_monitor=False)
         self.name = name
         self._pv.wait_for_connection()
         self.enum_strs = self._pv.enum_strs
@@ -356,7 +356,7 @@ class AdjustablePvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05)
+        self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 

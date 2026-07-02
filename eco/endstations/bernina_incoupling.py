@@ -32,6 +32,7 @@ class Incoupling(Assembly):
             SmaractRecord, "SARES20-MCS3:MOT_17", name="power_check", is_setting=True
         )
 
+
         try:
             self.motor_configuration_thorlabs = {
                 #     "thz_filter": {
