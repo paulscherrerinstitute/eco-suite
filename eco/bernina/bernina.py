@@ -1203,23 +1203,23 @@ namespace.append_obj(
 )
 
 
-namespace.append_obj(
-    "CameraBasler",
-    pvname="SARES20-CAMS142-M1",
-    lazy=True,
-    name="samplecam",
-    camserver_group=["Laser", "Bernina"],
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     pvname="SARES20-CAMS142-M1",
+#     lazy=True,
+#     name="samplecam",
+#     camserver_group=["Laser", "Bernina"],
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
-namespace.append_obj(
-    "CameraBasler",
-    pvname="SARES20-CAMS142-C1",
-    lazy=True,
-    name="gccam",
-    camserver_group=["Laser", "Bernina"],
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     pvname="SARES20-CAMS142-C1",
+#     lazy=True,
+#     name="gccam",
+#     camserver_group=["Laser", "Bernina"],
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
 #### Beam pointing cameras for THz setups ####
 
@@ -1279,36 +1279,39 @@ namespace.append_obj(
 #    module_name="eco.microscopes",
 # )
 
+# namespace.append_obj(
+#     "MicroscopeMotorRecord",
+#     "SARES20-CAMS142-C1",
+#     lazy=True,
+#     pvname_zoom="SARES20-MF1:MOT_14",
+#     name="samplecam_below",
+#     module_name="eco.microscopes",
+# )
+
+# this is the large inline camera
 namespace.append_obj(
-    "MicroscopeMotorRecord",
-    "SARES20-CAMS142-C1",
+    "BerninaInlineMicroscope",
+    # pvname_camera="SARES20-CAMS142-M3", #THC
+    pvname_camera="SARES20-CAMS142-M1",  # GIC
     lazy=True,
-    pvname_zoom="SARES20-MF1:MOT_14",
-    name="samplecam_below",
+    name="samplecam_microscope",
     module_name="eco.microscopes",
 )
 
+
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-M1",
+    "SARES20-CAMS142-M2",
     lazy=True,
-    name="samplecam_RIXS",
+    name="samplecam_top",
     module_name="eco.devices_general.cameras_swissfel",
 )
 
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-C2",
+    "SARES20-CAMS142-M3",
     lazy=True,
-    name="samplecam_sideview_45",
-    module_name="eco.devices_general.cameras_swissfel",
-)
-
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C3",
-    lazy=True,
-    name="samplecam_inline",
+    name="samplecam_sideview_90",
     module_name="eco.devices_general.cameras_swissfel",
 )
 
@@ -1346,13 +1349,6 @@ namespace.append_obj(
 # )
 
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-C2",
-    lazy=True,
-    name="samplecam_xrd",
-    module_name="eco.devices_general.cameras_swissfel",
-)
 
 # namespace.append_obj(
 #     "PaseShifterAramis",
