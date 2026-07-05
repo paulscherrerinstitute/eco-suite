@@ -208,7 +208,10 @@ class Jungfrau(Assembly):
         searchpath = Path(f"/sf/jungfrau/data/pedestal/{self.jf_id}")
         filelist = list(searchpath.glob("*.h5"))
         times = [datetime.strptime(f.stem, "%Y%m%d_%H%M%S") for f in filelist]
-        return filelist[times.index(max(times))].as_posix()
+        if len(times) == 0:
+            return ''
+        else:
+            return filelist[times.index(max(times))].as_posix()
 
     def get_present_pedestal_filename_in_run(self, intempdir=False):
         f = Path(self.get_present_pedestal_filename())

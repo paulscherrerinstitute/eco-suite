@@ -153,9 +153,11 @@ class DetectorBsStream:
             self._data_inf.append(kw["value"])
 
         self._accumulate_inf["n_cb"] = self._pv.add_callback(addData)
+        self._pv.auto_monitor = True
 
     def accumulate_stop(self):
         self._pv.callbacks.pop(self._accumulate_inf["n_cb"], None)
+        self._pv.auto_monitor = False
         return self._data_inf
 
     @property
