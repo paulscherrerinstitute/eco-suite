@@ -128,10 +128,26 @@ def make_assembly_widget(assembly, poll_interval: float = 1.0, auto_start: bool 
                 input_widget.layout.margin = "0 6px 0 0"
             else:
                 input_widget = widgets.Label("n/a", layout=widgets.Layout(width="80px"))
+                reader = None
 
             def make_tweak_handlers(
-                it, val_widget, inp_reader, step_reader, up_b, down_b
+                it, val_widget, inp_widget, inp_reader, step_reader
             ):
+                # guards recursive triggering of the input's on-change handler
+                # when we update inp_widget.value ourselves after a move
+                suppress_input_event = [False]
+
+                def _sync_input_widget(value):
+                    if inp_reader is None:
+                        return
+                    suppress_input_event[0] = True
+                    try:
+                        inp_widget.value = value
+                    except Exception:
+                        pass
+                    finally:
+                        suppress_input_event[0] = False
+
                 def _do_set(newval, btn=None):
                     try:
                         r = it.set_target_value(newval)
@@ -141,13 +157,16 @@ def make_assembly_widget(assembly, poll_interval: float = 1.0, auto_start: bool 
                         except Exception:
                             pass
                         try:
-                            val_widget.value = str(it.get_current_value())
+                            new_current = it.get_current_value()
+                        except Exception:
+                            new_current = newval
+                        try:
+                            val_widget.value = str(new_current)
                         except Exception:
                             pass
-                        if btn:
-                            btn.description = (
-                                btn.description
-                            )  # no-op to keep UI consistent
+                        # always reflect the real current value, so the next
+                        # tweak/move starts from where the device actually is
+                        _sync_input_widget(new_current)
                     except Exception:
                         if btn:
                             old = btn.description
@@ -162,68 +181,41 @@ def make_assembly_widget(assembly, poll_interval: float = 1.0, auto_start: bool 
                 def _on_up(b=None):
                     try:
                         step = step_reader()
-                        if inp_reader:
-                            base = inp_reader()
-                        else:
-                            base = it.get_current_value()
-                        newv = base + step
-                        _do_set(newv, up_b)
-                        # sync input widget if present
-                        if inp_reader:
-                            try:
-                                input_widget.value = str(newv)
-                            except Exception:
-                                pass
+                        base = it.get_current_value()
+                        _do_set(base + step, b)
                     except Exception:
-                        _do_set(None, up_b)  # triggers error visual
+                        _do_set(None, b)  # triggers error visual
 
                 def _on_down(b=None):
                     try:
                         step = step_reader()
-                        if inp_reader:
-                            base = inp_reader()
-                        else:
-                            base = it.get_current_value()
-                        newv = base - step
-                        _do_set(newv, down_b)
-                        if inp_reader:
-                            try:
-                                input_widget.value = str(newv)
-                            except Exception:
-                                pass
+                        base = it.get_current_value()
+                        _do_set(base - step, b)
                     except Exception:
-                        _do_set(None, down_b)
+                        _do_set(None, b)
 
-                def _on_set_direct(b=None):
-                    if not inp_reader:
+                def _on_input_change(change):
+                    if suppress_input_event[0] or inp_reader is None:
                         return
-                    try:
-                        val = inp_reader()
-                        _do_set(val, None)
-                        # update shown value
-                        try:
-                            val_widget.value = str(it.get_current_value())
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
+                    if change.get("name") != "value":
+                        return
+                    _do_set(inp_reader(), None)
 
-                return _on_up, _on_down, _on_set_direct
+                return _on_up, _on_down, _on_input_change
 
-            on_up, on_down, on_set_direct = make_tweak_handlers(
-                item, value_w, reader, step_reader, up_btn, down_btn
+            on_up, on_down, on_input_change = make_tweak_handlers(
+                item, value_w, input_widget, reader, step_reader
             )
             up_btn.on_click(on_up)
             down_btn.on_click(on_down)
+            # set the value as soon as a new one is entered (on Enter/blur,
+            # not per keystroke) instead of requiring a separate "Set" button
+            if reader is not None:
+                if hasattr(input_widget, "continuous_update"):
+                    input_widget.continuous_update = False
+                input_widget.observe(on_input_change, names="value")
 
-            set_btn = widgets.Button(
-                description="Set",
-                button_style="primary",
-                layout=widgets.Layout(width="60px"),
-            )
-            set_btn.on_click(on_set_direct)
-
-            control_box.children = (step_w, up_btn, down_btn, input_widget, set_btn)
+            control_box.children = (step_w, up_btn, down_btn, input_widget)
 
         # Fallback: if item has set_target_value (callable) but wasn't captured above, allow simple set
         elif hasattr(item, "set_target_value") and callable(
@@ -232,14 +224,11 @@ def make_assembly_widget(assembly, poll_interval: float = 1.0, auto_start: bool 
             # create input widget based on current value
             input_widget, reader = _make_input_widget_for_value(cur)
             input_widget.layout.margin = "0 6px 0 0"
-            set_button = widgets.Button(
-                description="Set",
-                button_style="primary",
-                layout=widgets.Layout(width="60px"),
-            )
 
-            def make_on_set(it, rw, vw, btn):
-                def _on_set(b):
+            def make_on_set(it, rw, vw, inp):
+                def _on_set(change):
+                    if change.get("name") != "value":
+                        return
                     try:
                         val = rw()
                         r = it.set_target_value(val)
@@ -252,20 +241,26 @@ def make_assembly_widget(assembly, poll_interval: float = 1.0, auto_start: bool 
                             vw.value = str(it.get_current_value())
                         except Exception:
                             pass
-                        btn.description = "Set"
                     except Exception:
-                        btn.description = "Err"
+                        old_border = inp.layout.border
+                        inp.layout.border = "1px solid red"
 
-                        def _reset():
+                        def _reset(o=old_border):
                             time.sleep(1.2)
-                            btn.description = "Set"
+                            inp.layout.border = o
 
                         threading.Thread(target=_reset, daemon=True).start()
 
                 return _on_set
 
-            set_button.on_click(make_on_set(item, reader, value_w, set_button))
-            control_box.children = (input_widget, set_button)
+            # set the value as soon as a new one is entered (on Enter/blur,
+            # not per keystroke) instead of requiring a separate "Set" button
+            if hasattr(input_widget, "continuous_update"):
+                input_widget.continuous_update = False
+            input_widget.observe(
+                make_on_set(item, reader, value_w, input_widget), names="value"
+            )
+            control_box.children = (input_widget,)
 
         else:
             control_box.children = (

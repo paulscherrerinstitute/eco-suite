@@ -585,9 +585,21 @@ class Assembly:
             return None
 
     def widget(self):
-        from eco.widgets.display_widget import make_assembly_widget
+        from eco.utilities.utilities import is_notebook
 
-        return make_assembly_widget(self)
+        if is_notebook():
+            from eco.widgets.display_widget import make_assembly_widget
+
+            return make_assembly_widget(self)
+        else:
+            try:
+                from eco.widgets.display_qt import make_assembly_qt_window
+
+                return make_assembly_qt_window(self)
+            except ImportError:
+                from eco.widgets.display_tk import make_assembly_tk_window
+
+                return make_assembly_tk_window(self)
 
 
 import epics.pv

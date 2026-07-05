@@ -28,6 +28,16 @@ from simple_term_menu import TerminalMenu
 import traceback
 
 
+def _is_notebook():
+    try:
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        return ip is not None and ip.__class__.__name__ == "ZMQInteractiveShell"
+    except Exception:
+        return False
+
+
 class Component:
     def __init__(self, namestring):
         self.name = namestring
@@ -453,6 +463,15 @@ class Namespace(Assembly):
         else:
             pres_req = set(self.required_names())
 
+        if _is_notebook():
+            try:
+                return self._select_required_names_notebook(pres_req)
+            except Exception as exc:
+                print(
+                    "Notebook selection UI failed; falling back to terminal mode:",
+                    exc,
+                )
+
         terminal_menu = TerminalMenu(
             sorted(self.all_names),
             multi_select=True,
@@ -464,6 +483,62 @@ class Namespace(Assembly):
         selected_names = terminal_menu.chosen_menu_entries
         if selected_names:
             self.required_names(list(selected_names))
+
+    def _select_required_names_notebook(self, preselected_names):
+        try:
+            from IPython.display import display
+            import ipywidgets as widgets
+        except Exception as exc:
+            raise RuntimeError(
+                "Notebook selection mode requires IPython and ipywidgets."
+            ) from exc
+
+        names = sorted(self.all_names)
+        checkboxes = [
+            widgets.Checkbox(
+                value=(name in preselected_names),
+                description=name,
+                indent=False,
+                layout=widgets.Layout(width="auto"),
+            )
+            for name in names
+        ]
+        select_all_button = widgets.Button(description="Select all")
+        select_none_button = widgets.Button(description="Select none")
+        apply_button = widgets.Button(description="Apply", button_style="success")
+        status_label = widgets.HTML(value="")
+
+        def _select_all(_):
+            for checkbox in checkboxes:
+                checkbox.value = True
+
+        def _select_none(_):
+            for checkbox in checkboxes:
+                checkbox.value = False
+
+        def _apply(_):
+            selected_names = [cb.description for cb in checkboxes if cb.value]
+            self.required_names(selected_names)
+            status_label.value = f"<b>Applied required names:</b> {selected_names}"
+
+        select_all_button.on_click(_select_all)
+        select_none_button.on_click(_select_none)
+        apply_button.on_click(_apply)
+
+        box = widgets.VBox(
+            [
+                widgets.HTML(
+                    value=f"<b>Select required names for namespace {self.name}</b>"
+                ),
+                *checkboxes,
+                widgets.HBox(
+                    [select_all_button, select_none_button, apply_button]
+                ),
+                status_label,
+            ]
+        )
+        display(box)
+        return box
 
     def init_name(self, name, verbose=True, raise_errors=False):
         # for name in self.all_names:
