@@ -97,6 +97,26 @@ def _build_extract_command_js(namespace_prefix, exclude_group_ids):
     return header + _EXTRACT_COMMAND_JS
 
 
+def _peek_svg_dimensions(svg_content, default=(800, 600)):
+    """Reads an SVG's own width/height so viewers can open at a sane,
+    correctly-proportioned size instead of an arbitrary default."""
+    import xml.etree.ElementTree as ET
+
+    width, height = default
+    try:
+        root = ET.fromstring(svg_content)
+        width = float(root.get("width", width))
+        height = float(root.get("height", height))
+    except Exception:
+        pass
+    return width, height
+
+
+def _in_notebook(ip):
+    """True for a Jupyter notebook/lab kernel, False for terminal IPython."""
+    return ip.__class__.__name__ == "ZMQInteractiveShell"
+
+
 def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None):
     """Launches a local webserver hosting the interactive Inkscape SVG."""
     app = Dash(__name__)
@@ -241,7 +261,12 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
     app.run(port=8050, debug=False, use_reloader=False)
 
 
-def _run_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None):
+_qt_app_ref = None  # keep a strong reference to any QApplication we create ourselves
+_qt_windows = []  # keep strong refs to open SVG windows (+ their bridge/channel) so they aren't GC'd
+
+
+def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
+                      blocking=False):
     """Opens a native, resizable window rendering the SVG via Qt's QWebEngineView.
 
     QWebEngineView embeds Chromium (the same class of engine as
@@ -260,12 +285,21 @@ def _run_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_i
     Incompatible QT Binding". qtpy detects and reuses whichever binding is
     already active instead.
 
+    Unlike the former WebKitGTK backend (whose Gtk.main() tolerated running
+    in a background thread), Qt's event loop hard-requires the main thread -
+    QApplication.exec() raises "Must be called from the main thread"
+    otherwise. So this is called directly on the main thread from
+    launch_svg_viewer, exactly like eco.widgets.display_qt.DisplayQt.start():
+    when blocking=False, IPython's own Qt event-loop integration
+    (ip.enable_gui("qt")) is expected to already be pumping the loop, so this
+    only needs to show() the window and return; when blocking=True (a
+    different, incompatible GUI loop is already active), it runs its own
+    exec() and blocks until the window is closed.
+
     The SVG is embedded directly inline in the loaded HTML (as with the
     former WebKitGTK backend), and JS-to-Python communication goes through a
     QWebChannel bridge rather than WebKitGTK's script-message-handler API.
     """
-    import xml.etree.ElementTree as ET
-
     from qtpy.QtCore import Qt, QObject, QUrl, Slot
     from qtpy.QtWidgets import QApplication
     from qtpy.QtWebChannel import QWebChannel
@@ -274,17 +308,10 @@ def _run_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_i
     with open(svg_path, "r", encoding="utf-8") as f:
         svg_content = f.read()
 
-    # Peek at the SVG's own dimensions so the window opens at a sane,
-    # correctly-proportioned size. It stays freely resizable afterward - the
-    # inline <svg>'s own viewBox scaling (CSS below) keeps it from
-    # distorting, the same way it would in a real browser tab.
-    width, height = 800, 600
-    try:
-        root = ET.fromstring(svg_content)
-        width = float(root.get("width", width))
-        height = float(root.get("height", height))
-    except Exception:
-        pass
+    # The window stays freely resizable afterward - the inline <svg>'s own
+    # viewBox scaling (CSS below) keeps it from distorting, the same way it
+    # would in a real browser tab.
+    width, height = _peek_svg_dimensions(svg_content)
 
     html_content = """
     <!DOCTYPE html>
@@ -339,44 +366,63 @@ def _run_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_i
                 ip_instance.run_cell(command)
 
     class SvgWindow(QWebEngineView):
-        # Mirrors the GTK backend's window.connect("destroy", Gtk.main_quit):
-        # without this, closing the window would leave app.exec_() blocking
-        # forever and the background thread never exits.
         def closeEvent(self, event):
-            QApplication.instance().quit()
+            if self in _qt_windows:
+                _qt_windows.remove(self)
             super().closeEvent(event)
 
+    global _qt_app_ref
     app = QApplication.instance()
-    if app is None:
+    created_app = app is None
+    if created_app:
         # Must be set before the QApplication is constructed, not after.
         QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
         app = QApplication([])
+        _qt_app_ref = app
 
     bridge = Bridge()
     channel = QWebChannel()
     channel.registerObject("pybridge", bridge)
 
     view = SvgWindow()
+    # Don't let closing this window quit a shared QApplication/event loop
+    # (e.g. the one IPython's "qt" gui integration is pumping).
+    view.setAttribute(Qt.WA_QuitOnClose, False)
     view.page().setWebChannel(channel)
+    view._bridge = bridge  # keep alive alongside the window
+    view._channel = channel
     base_url = QUrl.fromLocalFile(os.path.dirname(os.path.abspath(svg_path)) + "/")
     view.setHtml(html_content, base_url)
     view.setWindowTitle("Interactive SVG Viewer")
     view.resize(max(int(width), 200), max(int(height), 150))
     view.show()
+    _qt_windows.append(view)
 
-    # .exec() (not the legacy .exec_() alias, which PyQt6 dropped) works
-    # across all bindings qtpy supports.
-    app.exec()
+    if blocking and created_app:
+        # No GUI event-loop integration is available to pump this window
+        # non-blockingly (see launch_svg_viewer) - block here instead;
+        # closing the window returns control. .exec() (not the legacy
+        # .exec_() alias, which PyQt6 dropped) works across all qtpy bindings.
+        app.exec()
 
 
-def launch_svg_viewer(svg_path, in_window=False, namespace_prefix=None, exclude_group_ids=None):
+def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_group_ids=None):
     """Spawns an isolated background service for the SVG interface.
 
-    By default this launches a browser-based Dash server. Pass
-    in_window=True to instead open a native, resizable window rendered via
+    in_window defaults to None, which auto-selects based on the calling
+    context: a terminal IPython session opens a native window (in_window=
+    True behavior), while a Jupyter notebook/lab kernel displays inline in
+    the notebook output instead (in_window=False behavior, via an embedded
+    IFrame onto the browser-based Dash server rather than a plain printed
+    URL) - a native window would open on the server's display, not the
+    user's, so it's not a usable option from a notebook. Pass True/False
+    explicitly to override the auto-detection.
+
+    With in_window=True, this opens a native, resizable window rendered via
     Qt's QWebEngineView (requires qtpy plus a Qt binding with WebEngine
     support - e.g. PyQt5+PyQtWebEngine or PySide6+qt6-webengine) - no browser tab
-    needed, but still real browser-engine (Chromium) rendering fidelity.
+    needed, but still real browser-engine (Chromium) rendering fidelity. With
+    in_window=False, this launches a browser-based Dash server instead.
 
     Clickable commands can come from (checked in this order): an
     onclick="// eco: <command>" attribute (Inkscape's Object Properties >
@@ -403,6 +449,9 @@ def launch_svg_viewer(svg_path, in_window=False, namespace_prefix=None, exclude_
         print("Error: Must run inside an interactive IPython terminal context.")
         return
 
+    if in_window is None:
+        in_window = not _in_notebook(ip)
+
     if in_window:
         try:
             from qtpy.QtWidgets import QApplication  # noqa: F401
@@ -412,12 +461,34 @@ def launch_svg_viewer(svg_path, in_window=False, namespace_prefix=None, exclude_
                   f"WebEngine support (conda-forge: qtpy, pyqt, pyqtwebengine - or "
                   f"qtpy, pyside6, qt6-webengine). Details: {err}")
             return
-        threading.Thread(
-            target=_run_qt_window,
-            args=(svg_path, ip, namespace_prefix, exclude_group_ids),
-            daemon=True,
-        ).start()
-        print("Interactive SVG window launched in the background.")
+
+        # Qt's event loop must run on the main thread (unlike the former
+        # WebKitGTK backend's Gtk.main(), which tolerated a background
+        # thread), so this can't be threading.Thread'd like _run_dash_server
+        # below. Instead, reuse IPython's own Qt event-loop integration -
+        # same pattern as eco.widgets.display_qt.DisplayQt.start() - so the
+        # window is pumped on the main thread between prompts.
+        blocking = False
+        active = getattr(ip, "active_eventloop", None)
+        if active is None:
+            try:
+                ip.enable_gui("qt")
+            except Exception:
+                pass
+        elif active not in ("qt", "qt4", "qt5", "qt6"):
+            print(
+                f"eco SVG viewer: a different GUI event loop ('{active}') is already "
+                "active in this IPython session, so the window can't be pumped "
+                "non-blockingly alongside it. Showing it in blocking mode instead "
+                "(closing the window returns control) - re-run after '%gui' "
+                "(no arguments) to disable the current loop if you want the "
+                "non-blocking window."
+            )
+            blocking = True
+
+        _build_qt_window(svg_path, ip, namespace_prefix, exclude_group_ids, blocking=blocking)
+        if not blocking:
+            print("Interactive SVG window launched.")
         return
 
     threading.Thread(
@@ -425,6 +496,15 @@ def launch_svg_viewer(svg_path, in_window=False, namespace_prefix=None, exclude_
         args=(svg_path, ip, namespace_prefix, exclude_group_ids),
         daemon=True,
     ).start()
-    print("Interactive SVG application initialized successfully!")
-    print("--> Open your web browser and navigate to: http://127.0.0.1:8050")
+
+    url = "http://127.0.0.1:8050"
+    if _in_notebook(ip):
+        from IPython.display import IFrame, display
+
+        with open(svg_path, "r", encoding="utf-8") as f:
+            _, height = _peek_svg_dimensions(f.read())
+        display(IFrame(src=url, width="100%", height=int(height) + 20))
+    else:
+        print("Interactive SVG application initialized successfully!")
+        print(f"--> Open your web browser and navigate to: {url}")
 
