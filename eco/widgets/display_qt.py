@@ -33,9 +33,11 @@ _app_ref = None  # keep a strong reference to any QApplication we create ourselv
 # Try to import types for isinstance checks if available.
 try:
     from eco import Adjustable, Detector
+    from eco.elements.assembly import Assembly
 except Exception:
     Adjustable = object
     Detector = object
+    Assembly = object
 
 
 def _label_of(item: Any, assembly=None) -> str:
@@ -73,6 +75,11 @@ def _default_step_for(value: Any):
     return 0.1
 
 
+def _is_tweakable(value: Any) -> bool:
+    """Only plain numeric values support +/- step tweaking; e.g. strings don't."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _flash_error(widget):
     try:
         widget.setStyleSheet("background-color: #ffb3b3;")
@@ -88,6 +95,7 @@ class DisplayQt:
         self.window = None
         self._timer = None
         self._entries = []  # list of dicts: item, value_label
+        self._child_windows = {}  # id(child_assembly) -> DisplayQt shown in its own window
 
         if auto_start:
             self.start()
@@ -111,7 +119,18 @@ class DisplayQt:
             cur = "<error>"
 
         row = QtWidgets.QHBoxLayout()
-        name_label = QtWidgets.QLabel(name)
+        if isinstance(item, Assembly):
+            name_label = QtWidgets.QPushButton(name)
+            name_label.setFlat(True)
+            name_label.setStyleSheet(
+                "text-align:left; border:none; color:#2a6fdb; text-decoration: underline;"
+            )
+            name_label.setCursor(QtCore.Qt.PointingHandCursor)
+            name_label.clicked.connect(
+                lambda checked=False, it=item: self._open_child_window(it)
+            )
+        else:
+            name_label = QtWidgets.QLabel(name)
         name_label.setFixedWidth(200)
         row.addWidget(name_label)
 
@@ -125,20 +144,26 @@ class DisplayQt:
 
         # Adjustable: step field + up/down + absolute entry (commits on Enter/focus-out)
         elif isinstance(item, Adjustable):
+            original_value = cur
             is_plain_scalar = not isinstance(cur, (list, dict, bytes, bytearray))
+            tweakable = _is_tweakable(cur)
+            changer_ref = {"changer": None}
 
-            step_edit = QtWidgets.QLineEdit(str(_default_step_for(cur)))
-            step_edit.setFixedWidth(60)
-            row.addWidget(step_edit)
+            if tweakable:
+                step_edit = QtWidgets.QLineEdit(str(_default_step_for(cur)))
+                step_edit.setFixedWidth(60)
+                row.addWidget(step_edit)
 
             if is_plain_scalar:
                 input_edit = QtWidgets.QLineEdit(str(cur))
                 input_edit.setFixedWidth(100)
 
-                def _apply_absolute(it=item, vl=value_label, ie=input_edit, ref=cur):
+                def _apply_absolute(it=item, vl=value_label, ie=input_edit, ref=cur,
+                                     cref=changer_ref):
                     try:
                         newval = _coerce_like(ie.text(), ref)
                         r = it.set_target_value(newval)
+                        cref["changer"] = r
                         try:
                             if hasattr(r, "wait"):
                                 r.wait(timeout=5)
@@ -155,38 +180,77 @@ class DisplayQt:
                 input_edit = QtWidgets.QLabel("n/a")
                 input_edit.setFixedWidth(100)
 
-            def _make_tweak(sign, it=item, vl=value_label, se=step_edit,
-                             ie=input_edit, plain=is_plain_scalar):
-                def _on_click():
-                    try:
-                        step = _coerce_like(se.text(), _default_step_for(cur))
-                        base = it.get_current_value()
-                        newval = base + sign * step
-                        r = it.set_target_value(newval)
+            if tweakable:
+                def _make_tweak(sign, it=item, vl=value_label, se=step_edit,
+                                 ie=input_edit, plain=is_plain_scalar, cref=changer_ref):
+                    def _on_click():
                         try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
+                            step = _coerce_like(se.text(), _default_step_for(cur))
+                            base = it.get_current_value()
+                            newval = base + sign * step
+                            r = it.set_target_value(newval)
+                            cref["changer"] = r
+                            try:
+                                if hasattr(r, "wait"):
+                                    r.wait(timeout=5)
+                            except Exception:
+                                pass
+                            new_current = it.get_current_value()
+                            vl.setText(str(new_current))
+                            if plain:
+                                ie.setText(str(new_current))
                         except Exception:
-                            pass
-                        new_current = it.get_current_value()
-                        vl.setText(str(new_current))
-                        if plain:
-                            ie.setText(str(new_current))
-                    except Exception:
-                        _flash_error(ie if isinstance(ie, QtWidgets.QLineEdit) else vl)
+                            _flash_error(ie if isinstance(ie, QtWidgets.QLineEdit) else vl)
 
-                return _on_click
+                    return _on_click
 
-            up_btn = QtWidgets.QPushButton("▲")
-            up_btn.setFixedWidth(30)
-            up_btn.clicked.connect(_make_tweak(1))
-            down_btn = QtWidgets.QPushButton("▼")
-            down_btn.setFixedWidth(30)
-            down_btn.clicked.connect(_make_tweak(-1))
-            row.addWidget(up_btn)
-            row.addWidget(down_btn)
+                up_btn = QtWidgets.QPushButton("▲")
+                up_btn.setFixedWidth(30)
+                up_btn.clicked.connect(_make_tweak(1))
+                down_btn = QtWidgets.QPushButton("▼")
+                down_btn.setFixedWidth(30)
+                down_btn.clicked.connect(_make_tweak(-1))
+                row.addWidget(up_btn)
+                row.addWidget(down_btn)
 
             row.addWidget(input_edit)
+
+            def _on_stop(checked=False, it=item, cref=changer_ref):
+                changer = cref.get("changer")
+                if changer is not None and hasattr(changer, "stop"):
+                    try:
+                        changer.stop()
+                    except Exception:
+                        pass
+
+            def _on_reset(checked=False, it=item, vl=value_label, ie=input_edit,
+                          plain=is_plain_scalar, ref=original_value, cref=changer_ref):
+                try:
+                    r = it.set_target_value(ref)
+                    cref["changer"] = r
+                    try:
+                        if hasattr(r, "wait"):
+                            r.wait(timeout=5)
+                    except Exception:
+                        pass
+                    new_current = it.get_current_value()
+                    vl.setText(str(new_current))
+                    if plain:
+                        ie.setText(str(new_current))
+                except Exception:
+                    if isinstance(ie, QtWidgets.QLineEdit):
+                        _flash_error(ie)
+
+            stop_btn = QtWidgets.QPushButton("🛑")
+            stop_btn.setFixedWidth(30)
+            stop_btn.setToolTip("Stop the current move")
+            stop_btn.clicked.connect(_on_stop)
+            reset_btn = QtWidgets.QPushButton("↺")
+            reset_btn.setFixedWidth(30)
+            reset_btn.setToolTip("Reset to the value from when this widget was opened")
+            reset_btn.clicked.connect(_on_reset)
+            row.addWidget(stop_btn)
+            row.addWidget(reset_btn)
 
         # Fallback: has set_target_value but not recognized as Adjustable
         elif hasattr(item, "set_target_value") and callable(
@@ -260,6 +324,16 @@ class DisplayQt:
 
         self.window.show()
 
+    def _open_child_window(self, child_assembly):
+        existing = self._child_windows.get(id(child_assembly))
+        if existing is not None and existing.window is not None:
+            existing.window.raise_()
+            existing.window.activateWindow()
+            return
+        child = DisplayQt(child_assembly, poll_interval=self.poll_interval, auto_start=False)
+        child._build_window()
+        self._child_windows[id(child_assembly)] = child
+
     def _poll(self):
         if self.window is None:
             return
@@ -327,7 +401,13 @@ class DisplayQt:
         self._build_window()
 
     def stop(self):
-        """Close the window."""
+        """Close the window (and any open child-assembly windows)."""
+        for child in list(self._child_windows.values()):
+            try:
+                child.stop()
+            except Exception:
+                pass
+        self._child_windows.clear()
         if self.window is not None:
             try:
                 self.window.close()

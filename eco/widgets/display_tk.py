@@ -28,9 +28,11 @@ from typing import Any, List
 # Try to import types for isinstance checks if available.
 try:
     from eco import Adjustable, Detector
+    from eco.elements.assembly import Assembly
 except Exception:
     Adjustable = object
     Detector = object
+    Assembly = object
 
 
 def _label_of(item: Any, assembly=None) -> str:
@@ -68,12 +70,18 @@ def _default_step_for(value: Any):
     return 0.1
 
 
+def _is_tweakable(value: Any) -> bool:
+    """Only plain numeric values support +/- step tweaking; e.g. strings don't."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 class DisplayTk:
     def __init__(self, assembly, poll_interval: float = 1.0, auto_start: bool = True):
         self.assembly = assembly
         self.poll_interval = poll_interval
         self.root = None
         self._entries = []  # list of dicts: item, value_var, input_widget/var, reader
+        self._child_windows = {}  # id(child_assembly) -> DisplayTk shown in a Toplevel
 
         if auto_start:
             self.start()
@@ -132,7 +140,16 @@ class DisplayTk:
 
             row = ttk.Frame(root)
             row.pack(fill="x", padx=4, pady=2)
-            ttk.Label(row, text=name, width=28).pack(side="left")
+            if isinstance(item, Assembly):
+                name_label = ttk.Label(
+                    row, text=name, width=28, foreground="#2a6fdb", cursor="hand2"
+                )
+                name_label.pack(side="left")
+                name_label.bind(
+                    "<Button-1>", lambda _evt, it=item: self._open_child_window(it)
+                )
+            else:
+                ttk.Label(row, text=name, width=28).pack(side="left")
             value_var = tk.StringVar(value=str(cur))
             ttk.Label(row, textvariable=value_var, width=20).pack(side="left")
             control = ttk.Frame(row)
@@ -146,11 +163,16 @@ class DisplayTk:
 
             # Adjustable: step field + up/down + absolute entry (commits on Enter/focus-out)
             elif isinstance(item, Adjustable):
+                original_value = cur
                 is_plain_scalar = not isinstance(cur, (list, dict, bytes, bytearray))
+                tweakable = _is_tweakable(cur)
+                changer_ref = {"changer": None}
+                entry["changer_ref"] = changer_ref
 
-                step_var = tk.StringVar(value=str(_default_step_for(cur)))
-                step_entry = ttk.Entry(control, textvariable=step_var, width=8)
-                step_entry.pack(side="left", padx=(0, 4))
+                if tweakable:
+                    step_var = tk.StringVar(value=str(_default_step_for(cur)))
+                    step_entry = ttk.Entry(control, textvariable=step_var, width=8)
+                    step_entry.pack(side="left", padx=(0, 4))
 
                 if is_plain_scalar:
                     input_var = tk.StringVar(value=str(cur))
@@ -165,10 +187,12 @@ class DisplayTk:
                         iv=input_var,
                         iw=input_widget,
                         ref=cur,
+                        cref=changer_ref,
                     ):
                         try:
                             newval = _coerce_like(iv.get(), ref)
                             r = it.set_target_value(newval)
+                            cref["changer"] = r
                             try:
                                 if hasattr(r, "wait"):
                                     r.wait(timeout=5)
@@ -186,37 +210,74 @@ class DisplayTk:
                     input_widget = ttk.Label(control, text="n/a", width=14)
                     input_widget.pack(side="left", padx=(0, 4))
 
-                # base is always read fresh from the device, and the absolute
-                # entry is resynced to the real current value after every move
-                def make_tweak_handler(sign, it=item, vv=value_var, sv=step_var,
-                                        iw=input_widget,
-                                        input_var=(input_var if is_plain_scalar else None)):
-                    def _on_click():
-                        try:
-                            step = _coerce_like(sv.get(), _default_step_for(cur))
-                            base = it.get_current_value()
-                            newval = base + sign * step
-                            r = it.set_target_value(newval)
+                if tweakable:
+                    # base is always read fresh from the device, and the absolute
+                    # entry is resynced to the real current value after every move
+                    def make_tweak_handler(sign, it=item, vv=value_var, sv=step_var,
+                                            iw=input_widget, cref=changer_ref,
+                                            input_var=(input_var if is_plain_scalar else None)):
+                        def _on_click():
                             try:
-                                if hasattr(r, "wait"):
-                                    r.wait(timeout=5)
+                                step = _coerce_like(sv.get(), _default_step_for(cur))
+                                base = it.get_current_value()
+                                newval = base + sign * step
+                                r = it.set_target_value(newval)
+                                cref["changer"] = r
+                                try:
+                                    if hasattr(r, "wait"):
+                                        r.wait(timeout=5)
+                                except Exception:
+                                    pass
+                                new_current = it.get_current_value()
+                                vv.set(str(new_current))
+                                if input_var is not None:
+                                    input_var.set(str(new_current))
                             except Exception:
-                                pass
-                            new_current = it.get_current_value()
-                            vv.set(str(new_current))
-                            if input_var is not None:
-                                input_var.set(str(new_current))
+                                self._flash_error(iw)
+
+                        return _on_click
+
+                    up_btn = ttk.Button(control, text="▲", width=3,
+                                         command=make_tweak_handler(1))
+                    up_btn.pack(side="left")
+                    down_btn = ttk.Button(control, text="▼", width=3,
+                                          command=make_tweak_handler(-1))
+                    down_btn.pack(side="left")
+
+                def _on_stop(it=item, cref=changer_ref):
+                    changer = cref.get("changer")
+                    if changer is not None and hasattr(changer, "stop"):
+                        try:
+                            changer.stop()
                         except Exception:
+                            pass
+
+                def _on_reset(
+                    it=item, vv=value_var,
+                    iw=input_widget if is_plain_scalar else None,
+                    input_var=(input_var if is_plain_scalar else None),
+                    ref=original_value, cref=changer_ref,
+                ):
+                    try:
+                        r = it.set_target_value(ref)
+                        cref["changer"] = r
+                        try:
+                            if hasattr(r, "wait"):
+                                r.wait(timeout=5)
+                        except Exception:
+                            pass
+                        new_current = it.get_current_value()
+                        vv.set(str(new_current))
+                        if input_var is not None:
+                            input_var.set(str(new_current))
+                    except Exception:
+                        if iw is not None:
                             self._flash_error(iw)
 
-                    return _on_click
-
-                up_btn = ttk.Button(control, text="▲", width=3,
-                                     command=make_tweak_handler(1))
-                up_btn.pack(side="left")
-                down_btn = ttk.Button(control, text="▼", width=3,
-                                      command=make_tweak_handler(-1))
-                down_btn.pack(side="left")
+                stop_btn = ttk.Button(control, text="🛑", width=3, command=_on_stop)
+                stop_btn.pack(side="left", padx=(4, 0))
+                reset_btn = ttk.Button(control, text="↺", width=3, command=_on_reset)
+                reset_btn.pack(side="left")
 
             # Fallback: has set_target_value but not recognized as Adjustable
             elif hasattr(item, "set_target_value") and callable(
@@ -275,14 +336,25 @@ class DisplayTk:
             self.root.after(int(self.poll_interval * 1000), self._poll)
 
     def _on_close(self):
-        try:
-            self.root.destroy()
-        except Exception:
-            pass
-        self.root = None
+        self.stop()
 
-    def _build_window(self):
-        self.root = tk.Tk()
+    def _open_child_window(self, child_assembly):
+        existing = self._child_windows.get(id(child_assembly))
+        if existing is not None and existing.root is not None:
+            try:
+                existing.root.deiconify()
+                existing.root.lift()
+                existing.root.focus_force()
+                return
+            except Exception:
+                pass
+        top = tk.Toplevel(self.root)
+        child = DisplayTk(child_assembly, poll_interval=self.poll_interval, auto_start=False)
+        child._build_window(top)
+        self._child_windows[id(child_assembly)] = child
+
+    def _build_window(self, root=None):
+        self.root = root if root is not None else tk.Tk()
         self.root.title(f"Assembly Display - {getattr(self.assembly, 'name', '')}")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._entries = []
@@ -329,7 +401,13 @@ class DisplayTk:
             self.run()
 
     def stop(self):
-        """Close the window and stop polling."""
+        """Close the window (and any open child-assembly windows) and stop polling."""
+        for child in list(self._child_windows.values()):
+            try:
+                child.stop()
+            except Exception:
+                pass
+        self._child_windows.clear()
         if self.root is not None:
             try:
                 self.root.destroy()

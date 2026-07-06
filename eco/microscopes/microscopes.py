@@ -142,8 +142,9 @@ class OptoSigmaZoom(Assembly):
         self._append(
             AdjustableVirtual,
             [self.zoom_raw],
-            lambda x: abs(round(x / 4260 * 100) - 100),
-            lambda x: round(abs(x - 100) / 100 * 4260),
+            # lambda x: abs(round(x / 4260 * 100) - 100),
+            # lambda x: round(abs(x - 100) / 100 * 4260),
+            lambda x: 4260 - (x * 5260 / 100),
             name="zoom",
             is_setting=False,
         )
