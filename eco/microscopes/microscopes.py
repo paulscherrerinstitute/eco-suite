@@ -144,7 +144,8 @@ class OptoSigmaZoom(Assembly):
             [self.zoom_raw],
             # lambda x: abs(round(x / 4260 * 100) - 100),
             # lambda x: round(abs(x - 100) / 100 * 4260),
-            lambda x: 4260 - (x * 5260 / 100),
+            lambda x: abs(round((x+1006) / 5260 * 100) - 100),
+            lambda x: round(abs(x - 100) / 100 * 5260 - 1006),
             name="zoom",
             is_setting=False,
         )

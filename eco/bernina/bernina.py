@@ -45,6 +45,7 @@ namespace = Namespace(
     required_names_directory="/sf/bernina/code/gac-bernina/eco_cnf_bernina/required_bernina_names.json",
 )
 namespace.alias_namespace.data = []
+namespace._show_svg = str(Path(__file__).parent / "beamline_interact.svg")
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
 _config_bernina_dict = AdjustableFS(

@@ -601,6 +601,28 @@ class Assembly:
 
                 return make_assembly_tk_window(self)
 
+    def show(self, in_window=False, exclude_group_ids=None):
+        """Opens the interactive SVG viewer for `_show_svg`, if defined on this instance.
+
+        Commands clicked in the SVG run against this assembly's own full
+        alias name as namespace prefix, e.g. clicking a device labelled
+        "slit_att" inside an assembly aliased "bernina.optics" runs
+        "bernina.optics.slit_att" in the IPython session.
+        """
+        svg_path = getattr(self, "_show_svg", None)
+        if not svg_path:
+            print(f"No _show_svg defined for {self.alias.get_full_name()}.")
+            return
+
+        from eco.utilities.svg_interactor import launch_svg_viewer
+
+        launch_svg_viewer(
+            svg_path,
+            in_window=in_window,
+            namespace_prefix=self.alias.get_full_name(),
+            exclude_group_ids=exclude_group_ids,
+        )
+
 
 import epics.pv
 import time
