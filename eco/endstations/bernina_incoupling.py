@@ -28,10 +28,9 @@ class Incoupling(Assembly):
         # self._append(
         #     SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
         # )
-        self._append(
-            SmaractRecord, "SARES20-MCS3:MOT_17", name="power_check", is_setting=True
-        )
-
+        # self._append(
+        #     SmaractRecord, "SARES20-MCS3:MOT_17", name="power_check", is_setting=True
+        # )
 
         try:
             self.motor_configuration_thorlabs = {
@@ -89,14 +88,14 @@ class Incoupling(Assembly):
         # )
         self._append(
             AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC07_VOLTS",
-            name="opa_mirr1_ry",
+            "SLAAR21-LDIO-LAS6991:DAC09_VOLTS",
+            name="nopa_mirr1_ry",
             is_setting=True,
         )
         self._append(
             AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC08_VOLTS",
-            name="opa_mirr1_rx",
+            "SLAAR21-LDIO-LAS6991:DAC10_VOLTS",
+            name="nopa_mirr1_rx",
             is_setting=True,
         )
 
@@ -109,15 +108,7 @@ class Incoupling(Assembly):
 
         # self._append(
         #     AnalogOutput,
-        #     "SLAAR21-LDIO-LAS6991:DAC06_VOLTS",
-        #     name="eos_fb_rx",
-        #     is_setting=True,
-        # )
-        # self._append(
-        #     AnalogOutput,
-        #     "SLAAR21-LDIO-LAS6991:DAC05_VOLTS",
-        #     name="eos_fb_ry",
-        #     is_setting=True,
+        #     "SLAAR21-LDIO-LAS6991:DAC06l
         # )
 
         self._append(
@@ -147,7 +138,7 @@ class Incoupling(Assembly):
         self._append(
             DetectorPvData,
             "SLAAR21-L-BECKBS:PR1_CH0_VAL_GET",
-            name="energymeter_intensity_raw",
+            name="energymeter_intensity_lraw",
         )
 
         self._append(
@@ -191,12 +182,7 @@ class Incoupling(Assembly):
         #     delaystage_pump,
         #     name="delaystage_pump",
         #     is_setting=False,
-        #     is_display=False,
-        # )
-
-        # self._append(
-        #     AdjustableVirtual,
-        #     [self.delaystage_pump, self.thz_par2_x],
+        #     is_display=False,lself.thz_par2_x],
         #     lambda d, x: x,
         #     lambda x: [
         #         self.delaystage_pump.get_current_value()

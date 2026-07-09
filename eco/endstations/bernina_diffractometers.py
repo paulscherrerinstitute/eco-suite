@@ -1,6 +1,7 @@
 from importlib import import_module
 import sys
 
+from eco.elements.detector import DetectorVirtual
 from eco.endstations.bernina_sample_environments import (
     GrazingIncidenceLowTemperatureChamber,
     High_field_thz_chamber,
@@ -184,6 +185,17 @@ def append_diffractometer_modules(obj, configuration):
             is_display=True,
             pb_conf={"type": "motor", "axis": 1},
         )
+
+        obj._append(
+                DetectorVirtual,
+                [obj.gamma, obj.delta],
+                lambda g, d: np.degrees(
+                    np.arccos(np.cos(np.radians(g)) * np.cos(np.radians(d)))
+                ),
+                name="two_theta",
+                is_setting=False,
+                unit="deg",
+            )
         ### motors XRD area detector branch ###
         obj._append(
             MotorRecord,
@@ -630,6 +642,8 @@ class XRDYou(Assembly):
         pgroup_adj=None,
         jf_config=None,
         fina_hex_angle_offset=None,
+        recspace_conv="escape.swissfel.recspace_conv:SixCircleBernina",
+        recspace_conv_JFID="JF01T03V01",
     ):
         """X-ray diffractometer platform in SiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
@@ -660,6 +674,13 @@ class XRDYou(Assembly):
                 config_adj=jf_config,
                 name=jf_name,
             )
+
+        if recspace_conv is not None:
+            module_name, Conv_name = recspace_conv.split(":")
+            Conv = getattr(import_module(module_name), Conv_name)
+            self.recspace_conv = Conv(JF_ID=recspace_conv_JFID)
+        else:
+            self.recspace_conv = None
 
     def get_adjustable_positions_str(self):
         ostr = "*****XRD motor positions******\n"
@@ -920,6 +941,17 @@ class XRD(Assembly):
             )
             self._append(
                 MotorRecord, Id + ":MOT_DT_RX2TH", name="delta", is_setting=True
+            )
+
+            self._append(
+                DetectorVirtual,
+                [self.gamma, self.delta],
+                lambda g, d: np.degrees(
+                    np.arccos(np.cos(np.radians(g)) * np.cos(np.radians(d)))
+                ),
+                name="two_theta",
+                is_setting=False,
+                unit="deg",
             )
             ### motors XRD area detector branch ###
             self._append(MotorRecord, Id + ":MOT_D_T", name="tdet", is_setting=True)

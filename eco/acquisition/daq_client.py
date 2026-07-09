@@ -246,28 +246,26 @@ class Daq(Assembly):
         )
 
         starttime_local = time.time()
-        tvars = self.pulse_id._pv.get_timevars()
-        while (tvars is None) or (tvars["timestamp"] < starttime_local):
-            time.sleep(0.02)
-            # if tvars is not None:
-            #     print(f'timestanp delta is {starttime_local - tvars["timestamp"]} s')
-            # attempt for higher stability
-            self.pulse_id._pv.get(use_monitor=False)
-            tvars = self.pulse_id._pv.get_timevars()
+        pv = self.pulse_id._pv
+        start_id = None
+        tvars = None
+        poll_interval = 0.02
+        max_poll_interval = 0.25
+        per_call_timeout = 1.0  # headroom for a saturated CA processing thread
+        while True:
+            tvars = pv.get_timevars(timeout=per_call_timeout)
+            if tvars is not None and tvars["timestamp"] >= starttime_local:
+                start_id = pv.get(use_monitor=False, timeout=per_call_timeout)
+                if start_id is not None:
+                    break
             if time.time() - starttime_local > self.timeout:
                 raise TimeoutError(
-                    f"Timeout {self.timeout} s hit while waiting for pulse_id timestamp to be recent. timevars None: {tvars is None}; \npulse id timestamp: {tvars["timestamp"]}: starttime of scan step {starttime_local} Difference: {tvars["timestamp"] - starttime_local}"
+                    f"Timeout {self.timeout} s hit while waiting for a valid, up-to-date "
+                    f"pulse_id. timevars: {tvars}; start_id: {start_id}; "
+                    f"starttime of scan step: {starttime_local}"
                 )
-        print(f"Got pulse id with correct time stamp: \npulse id timestamp: {tvars["timestamp"]}: starttime of scan step {starttime_local} Difference: {tvars["timestamp"] - starttime_local}")
-        start_id = self.pulse_id.get_current_value(use_monitor=False)
-        start_time = time.time()
-        while start_id is None:
-            start_id = self.pulse_id.get_current_value(use_monitor=False)
-            time.sleep(0.02)
-            if time.time() - start_time > self.timeout:
-                raise TimeoutError(
-                    f"Timeout {self.timeout} s hit while waiting for pulse_id to be valid. "
-                )
+            time.sleep(poll_interval)
+            poll_interval = min(poll_interval * 1.5, max_poll_interval)
 
         acq_pars = {
             "label": label,
@@ -715,6 +713,7 @@ class Daq(Assembly):
                 metadata=metadata,
                 d=scan.namespace_status["status_run_start"],
             )
+            # self.run_table.update()
         except:
             print("WARNING: issue adding data to run table")
         print(f"Runtable appending took: {time.time()-t_start_rt:.3f} s")

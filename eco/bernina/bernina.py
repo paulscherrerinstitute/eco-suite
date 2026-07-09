@@ -47,6 +47,9 @@ namespace = Namespace(
 namespace.alias_namespace.data = []
 namespace._show_svg = str(Path(__file__).parent / "beamline_interact.svg")
 
+def show():
+    namespace.show(in_window=True)
+
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
 _config_bernina_dict = AdjustableFS(
     "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/bernina_config.json",
@@ -1293,7 +1296,7 @@ namespace.append_obj(
 namespace.append_obj(
     "BerninaInlineMicroscope",
     # pvname_camera="SARES20-CAMS142-M3", #THC
-    pvname_camera="SARES20-CAMS142-M1",  # GIC
+    pvname_camera="SARES20-CAMS142-M3",  # GIC
     lazy=True,
     name="samplecam_microscope",
     module_name="eco.microscopes",
@@ -1310,7 +1313,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "CameraBasler",
-    "SARES20-CAMS142-M3",
+    "SARES20-CAMS142-M1",
     lazy=True,
     name="samplecam_sideview_90",
     module_name="eco.devices_general.cameras_swissfel",

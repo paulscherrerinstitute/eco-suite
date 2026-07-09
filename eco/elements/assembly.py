@@ -601,6 +601,23 @@ class Assembly:
 
                 return make_assembly_tk_window(self)
 
+    def _ipython_display_(self):
+        """Show the interactive widget when this object is the result of a
+        Jupyter cell, or passed to `display()`. Falls back to the normal
+        repr for a terminal/non-notebook IPython session, or if building
+        the widget fails.
+        """
+        from eco.utilities.utilities import is_notebook
+        from IPython.display import display
+
+        if is_notebook():
+            try:
+                display(self.widget())
+                return
+            except Exception as e:
+                print(f"Could not build widget for {self.alias.get_full_name()}: {e}")
+        print(repr(self))
+
     def show(self, in_window=False, exclude_group_ids=None):
         """Opens the interactive SVG viewer for `_show_svg`, if defined on this instance.
 

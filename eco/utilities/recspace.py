@@ -976,6 +976,8 @@ class DiffGeometryYou(Assembly):
         clear_fig=True,
         ax=None,
     ):
+        if energy is None:
+            energy = self.get_energy()
         sols = self.calc_angles(
             h=h, k=k, l=l, energy=energy, constraints_update=constraints_update
         )

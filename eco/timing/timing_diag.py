@@ -24,7 +24,6 @@ import datahub as dh
 from pandas import DataFrame
 from scipy.optimize import curve_fit
 
-
 # from time import sleep
 
 ureg = UnitRegistry()
@@ -264,7 +263,326 @@ class TimetoolBerninaUSD(Assembly):
         data_f = data[(-sig < score) & (score < sig)]
         return data_f
 
-    def get_calibration_values(
+    def dataframe_to_escape_dataset(self, x, df, pids_start, pids_stop, filepath=""):
+        from escape.storage import DataSet, Array
+        import json
+
+        alias_mapping = {
+            "SAROP21-ATT01:edge_pos": "tt_kb.edge_pos",
+            "SAR-CVME-TIFALL5:EvtSet": "eventset",
+            "SARES20-CAMS142-M5.bsen_signal_x_profile": "tt_kb.spectrum",
+        }
+
+        dfs = [df.query(f"{a}<index<{b}") for a, b in zip(pids_start, pids_stop)]
+
+        ds = DataSet.create_with_new_result_file(
+            results_filepath=filepath, force_overwrite=True
+        )
+        # try:
+        for key in df.keys():
+            if key in alias_mapping.keys():
+                name = alias_mapping[key]
+            else:
+                name = key
+            pulseids = np.concat(
+                [np.array(df[key].dropna().index.to_list()) for df in dfs]
+            )
+            data = np.concat([np.array(df[key].dropna().to_list()) for df in dfs])
+            step_lengths = [len(df[key].dropna().index.to_list()) for df in dfs]
+
+            ds.append(
+                Array(
+                    data=data,
+                    index=pulseids,
+                    step_lengths=step_lengths,
+                    parameter={"tt_kb.delay": {"values": x}},
+                ),
+                name=name,
+            )
+
+        status = json._default_decoder.decode(
+            json._default_encoder.encode(self.get_status())
+        )
+        ds.append(status, name="tt_kb_status")
+        ds.store_datasets_max_element_size(100000)
+        ds.results_file.close()
+
+    def scan_calibration(
+        self,
+        seconds=5,
+        scan_range=0.8e-12,
+        scan_steps=20,
+        reverse_direction=False,
+    ):
+        t0 = self.delay()
+        x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
+        if reverse_direction:
+            x = x[::-1]
+        try:
+            pids_start = []
+            pids_stop = []
+            pid = PV("SARES20-CVME-01-EVR0:RX-PULSEID")
+            for pos in x:
+                print(f"Moving to {pos*1e15} fs")
+                self.delay.set_target_value(pos).wait()
+                pids_start.append(pid.value)
+                sleep(seconds)
+                pids_stop.append(pid.value)
+
+        except Exception as e:
+            print(e)
+            print(f"Moving back to inital value of {t0}")
+            self.delay.set_target_value(t0)
+
+        print(f"Moving back to inital value of {t0}")
+        self.delay.set_target_value(t0)
+        return x, pids_start, pids_stop
+
+    def retrieve_calibration_data(
+        self,
+        pids_start,
+        pids_stop,
+        additional_channels=["SARES20-CAMS142-M5.bsen_signal_x_profile"],
+    ):
+        retrieving = True
+        i = 1
+        source = dh.Daqbuf()
+        table = dh.Table()
+        source.add_listener(table)
+        while retrieving:
+            if i == 60:
+                raise TimeoutError("Retrieval failed after 60 attempts")
+            print(f"Waiting for data to arrive in the Data Buffer: try {i}")
+            i = i + 1
+            sleep(1)
+            source.req(
+                ["SAROP21-ATT01:edge_pos", "SAR-CVME-TIFALL5:EvtSet"]
+                + additional_channels,
+                int(pids_start[0]),
+                int(pids_stop[-1]),
+            )
+            df = table.as_dataframe(index="pulse_id")
+            y = [
+                np.array(
+                    df.query(f"{a}<index<{b}")["SAROP21-ATT01:edge_pos"]
+                    .dropna()
+                    .to_list()
+                )
+                for a, b in zip(pids_start, pids_stop)
+            ]
+            lens = [sum(~np.isnan(a)) for a in y]
+            print(f"Shots per Step: {lens}")
+            retrieving = np.any([l < 0.5 * len(df) / len(y) for l in lens])
+        return y, df
+
+    def fit_calibration_data(self, x, y, filter_outliers=True):
+        if filter_outliers:
+            yf = [self.filter_outliers(a) for a in y]
+            y = yf
+        ymed = [np.nanmedian(a) for a in y]
+        yerr = [np.nanstd(a) for a in y]
+        p = np.polyfit(ymed, x, 2, w=1 / np.array(yerr))
+        print(f"Fit results c0*px^2 + c1*px + c2:\n{p}")
+        return p, x, y, ymed, yerr
+
+    def gauss(self, x, fwhm, x0, a):
+        return a * np.exp(-0.5 * (x - x0) ** 2 / (fwhm / 2.3482) ** 2)
+
+    def plot_calibration(
+        self,
+        p,
+        x,
+        y,
+        ymed,
+        yerr,
+        to_display=True,
+        to_elog=True,
+        path_figure="",
+        filepath_data="",
+    ):
+
+        binmin = np.min([np.min(step) for step in y])
+        binmax = np.max([np.max(step) for step in y])
+        bins = np.arange(binmin, binmax, 1)
+        bins_center = bins[:-1] + 0.5
+        hists = np.array([np.histogram(step, bins=bins)[0] for step in y]).T
+        plt.close("tt_calib")
+        fig = plt.figure("tt_calib", figsize=(13, 6))
+        gs = plt.GridSpec(1, 6, figure=fig)
+        ax0 = fig.add_subplot(gs[0, 0])
+        ax1 = fig.add_subplot(gs[0, 1:4], sharey=ax0)
+        ax2 = fig.add_subplot(gs[0, 4:])
+        ax1.pcolor(1e15 * x, bins_center, hists)
+        line = ax1.errorbar(1e15 * x, ymed, yerr, color="red", marker=".", linestyle="")
+        fit = ax1.plot(
+            1e15 * np.polyval(p, ymed), ymed, label="poly fit", color="yellow"
+        )
+        ax0.axvline(0, linestyle="--", color="k")
+        ax0.plot(1e15 * (np.polyval(p, ymed) - x), ymed, color="royalblue")
+        ax1.set_xlabel("tt_kb.delay (fs)")
+        ax1.set_ylabel("edge position (px)")
+        at = (
+            np.hstack(
+                [np.polyval(p, ys) - np.polyval(p, ymeds) for ys, ymeds in zip(y, ymed)]
+            )
+            * 1e15
+        )
+        d = ax2.hist(
+            at, bins="auto", label=f"std {np.std(at):.3} fs", color="royalblue"
+        )
+        ax2.hist(at, bins="auto", edgecolor="black", histtype="step")
+        try:
+            fx = d[1][:-1] + d[1][1] - d[1][0]
+            parsopt, parss = curve_fit(self.gauss, fx, d[0], [30, 0, 50])
+            plx = np.arange(np.min(d[1]), np.max(d[1]), 0.1)
+            ax2.plot(plx, self.gauss(plx, *parsopt), color="k")
+        except:
+            print("Fitting of arrival time histogram failed")
+            parsopt = [0, 0, 0]
+            pass
+        ax0.set_title("Residual")
+        ax1.set_title("Scan")
+        ax2.set_title(f"Jitter {parsopt[0]:.3} fs fwhm")
+        ax1.legend()
+        ax2.set_xlabel("arrival time (fs)")
+        ax0.set_xlabel("$\Delta$t (fs)")
+        ax0.set_ylabel("edge position (px)")
+        ax2.set_yticks([])
+        fig.tight_layout()
+        plt.show()
+
+        if to_elog:
+            fpath = path_figure + ".jpg"
+            fig.savefig(fpath, dpi=200)
+            fpath = Path(fpath)
+            dpath = Path(filepath_data)
+        if to_elog:
+            try:
+                msg = f"<h3>Timetool calibration results:</h3>\n"
+                msg += f"Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
+                elog = self._get_elog()
+                elog.post(msg.replace("\n", "<br>"), fpath, dpath)
+            except Exception as e:
+                print(f"Elog posting failed with:\n {e}")
+        return fig
+
+    def set_calibration_values(self, p, pipeline=True, to_elog=True):
+        if pipeline:
+            old_calib = self.pipeline_edgefinding.config.calibration()
+            # self.pipeline_edgefinding.config.calibration.set_target_value(p).wait() #This does not work because some issues with caching!
+            self.update_proc_config({"calibration": list(p)}, self.pipeline_edgefinding)
+            msg = f"Updated timetool processing pipeline calibration:\n"
+            msg += f"old values: {old_calib} \nnew values: {p}"
+        else:
+            self.calibration.const_E.set_target_value(p[0]).wait()
+            self.calibration.const_F.set_target_value(p[1]).wait()
+            self.calibration.const_G.set_target_value(p[2]).wait()
+            msg = f"Updated timetool processing epics calibration:\nnew values: {p}"
+        if to_elog:
+            try:
+                elog = self._get_elog()
+                elog.post(msg)
+            except Exception as e:
+                print(f"Elog posting failed with:\n {e}")
+
+    def calibrate(
+        self,
+        seconds=5,
+        scan_range=1e-12,
+        scan_steps=20,
+        plot=True,
+        pipeline=True,
+        to_elog=True,
+        filter_outliers=True,
+        reverse_direction=False,
+        bidirectional=False,
+        update_pipeline_config=False,
+        additional_channels=["SARES20-CAMS142-M5.roi_signal_x_profile"],
+    ):
+        from datetime import datetime
+        from eco.bernina import config_bernina
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        pgroup = config_bernina.pgroup()
+        path_data = (
+            "/sf/bernina/config/src/beamline_devices/tt_kb/data/"
+            + f"{timestamp}_{pgroup}"
+        )
+        path_figure = (
+            "/sf/bernina/config/src/beamline_devices/tt_kb/figures/"
+            + f"{timestamp}_{pgroup}"
+        )
+
+        feedback = self.feedback_enabled()
+        t0 = self.delay()
+        if abs(t0) > 50e-15:
+            ans = ""
+            while not any([a in ans for a in ["y", "n"]]):
+                try:
+                    ans = input(
+                        f"Timetool delay stage is at {t0*1e15} fs. Continue the calibration (y/n)?"
+                    )
+                except:
+                    continue
+            if ans == "n":
+                return
+        if feedback:
+            self.feedback_enabled(0)
+            print("Turned feedback off")
+
+        ##########    scan    ##########
+        x, pids_start, pids_stop = self.scan_calibration(
+            seconds=seconds,
+            scan_range=scan_range,
+            scan_steps=scan_steps,
+            reverse_direction=reverse_direction,
+        )
+
+        ########## retrieve data ##########
+        y, df = self.retrieve_calibration_data(
+            pids_start=pids_start,
+            pids_stop=pids_stop,
+            additional_channels=additional_channels,
+        )
+
+        ########## save data ##########
+        self.dataframe_to_escape_dataset(
+            x, df, pids_start, pids_stop, filepath=path_data + ".esc.h5"
+        )
+
+        ##########  fit data ##########
+        p, x, y, ymed, yerr = self.fit_calibration_data(
+            x, y, filter_outliers=filter_outliers
+        )
+
+        ####### save calibration ######
+        dpath_calib = Path(f"{path_data}_calib.pkl")
+        df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
+        df.to_pickle(dpath_calib)
+
+        ########## plot data ##########
+        if plot:
+            fig = self.plot_calibration(
+                p,
+                x,
+                y,
+                ymed,
+                yerr,
+                to_elog=to_elog,
+                path_figure=path_figure,
+                filepath_data=dpath_calib,
+            )
+
+        if update_pipeline_config:
+            self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
+
+        if feedback:
+            self.feedback_enabled(1)
+            print("Turned feedback on")
+
+    ##############  OLD functions  #####################
+
+    def get_calibration_values_old(
         self,
         seconds=5,
         scan_range=0.8e-12,
@@ -421,7 +739,7 @@ class TimetoolBerninaUSD(Assembly):
         self.delay.set_target_value(t0)
         return p, x, y
 
-    def set_calibration_values(self, p, pipeline=True, to_elog=True):
+    def set_calibration_values_old(self, p, pipeline=True, to_elog=True):
         if pipeline:
             old_calib = self.pipeline_edgefinding.config.calibration()
             # self.pipeline_edgefinding.config.calibration.set_target_value(p).wait() #This does not work because some issues with caching!
@@ -440,7 +758,7 @@ class TimetoolBerninaUSD(Assembly):
             except Exception as e:
                 print(f"Elog posting failed with:\n {e}")
 
-    def calibrate(
+    def calibrate_old(
         self,
         seconds=5,
         scan_range=1e-12,
@@ -630,161 +948,143 @@ class TimetoolBerninaDSD(Assembly):
         data_f = data[(-sig < score) & (score < sig)]
         return data_f
 
-    def get_calibration_values(
+    def get_calibration_data(
         self,
         seconds=5,
         scan_range=0.8e-12,
-        plot=False,
-        pipeline=True,
-        use_bsread=False,
-        to_elog=False,
-        filter_outliers=False,
+        scan_steps=20,
         reverse_direction=False,
+        additional_channels=[],
     ):
         t0 = self.delay()
-        x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, 20)
+        x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
         if reverse_direction:
             x = x[::-1]
-        y = []
-        ymed = []
-        yerr = []
-
         try:
-            if use_bsread:
+            pids_start = []
+            pids_stop = []
+            pid = PV("SARES20-CVME-01-EVR0:RX-PULSEID")
+            for pos in x:
+                print(f"Moving to {pos*1e15} fs")
+                self.delay.set_target_value(pos).wait()
+                pids_start.append(pid.value)
+                sleep(seconds)
+                pids_stop.append(pid.value)
+            retrieving = True
+            i = 1
+            source = dh.Daqbuf()
+            table = dh.Table()
+            source.add_listener(table)
+            while retrieving:
+                if i == 60:
+                    raise TimeoutError("Retrieval failed after 60 attempts")
+                print(f"Waiting for data to arrive in the Data Buffer: try {i}")
+                i = i + 1
+                sleep(1)
+                source.req(
+                    ["SAROP21-ATT02:edge_pos"] + additional_channels,
+                    pids_start[0],
+                    pids_stop[-1],
+                )
+                df = table.as_dataframe(index="pulse_id")
+                y = [
+                    df.query(f"{a}<index<{b}")["SAROP21-ATT02:edge_pos"].array
+                    for a, b in zip(pids_start, pids_stop)
+                ]
+                lens = [len(a) for a in y]
+                print(f"Shots per Step: {lens}")
+                retrieving = np.any([l < 0.5 * len(df) / len(x) for l in lens])
 
-                pids_start = []
-                pids_stop = []
-                pid = PV("SARES20-CVME-01-EVR0:RX-PULSEID")
-                for pos in x:
-                    print(f"Moving to {pos*1e15} fs")
-                    self.delay.set_target_value(pos).wait()
-                    pids_start.append(pid.value)
-                    sleep(seconds)
-                    pids_stop.append(pid.value)
-                retrieving = True
-                i = 1
-                source = dh.Daqbuf()
-                table = dh.Table()
-                source.add_listener(table)
-                while retrieving:
-                    if i == 60:
-                        raise TimeoutError("Retrieval failed after 60 attempts")
-                    print(f"Waiting for data to arrive in the Data Buffer: try {i}")
-                    i = i + 1
-                    sleep(1)
-                    source.req(["SAROP21-ATT02:edge_pos"], pids_start[0], pids_stop[-1])
-                    df = table.as_dataframe(index="pulse_id")
-                    y = [
-                        df.query(f"{a}<index<{b}")["SAROP21-ATT02:edge_pos"].array
-                        for a, b in zip(pids_start, pids_stop)
-                    ]
-                    lens = [len(a) for a in y]
-                    print(f"Shots per Step: {lens}")
-                    retrieving = np.any([l < 0.5 * len(df) / len(x) for l in lens])
-
-                if filter_outliers:
-                    yf = [self.filter_outliers(a) for a in y]
-                    y = yf
-                ymed = [np.nanmedian(a) for a in y]
-                yerr = [np.nanstd(a) for a in y]
-            else:
-                for pos in x:
-                    print(f"Moving to {pos*1e15} fs")
-                    self.delay.set_target_value(pos).wait()
-                    if pipeline:
-                        # needed due to delay of data arrival
-                        sleep(5)
-                    ys = self.edge_position_px.acquire(seconds=seconds).wait()
-                    if filter_outliers:
-                        ys = self.filter_outliers(ys)
-                    y.append(ys)
-                    ymed.append(np.nanmedian(ys))
-                    yerr.append(np.nanstd(ys) / np.sqrt(len(ys)))
         except Exception as e:
             print(e)
             print(f"Moving back to inital value of {t0}")
             self.delay.set_target_value(t0)
 
+        print(f"Moving back to inital value of {t0}")
+        self.delay.set_target_value(t0)
+        return x, y, df
+
+    def fit_calibration_data(self, x, y, filter_outliers=True):
+        if filter_outliers:
+            yf = [self.filter_outliers(a) for a in y]
+            y = yf
+        ymed = [np.nanmedian(a) for a in y]
+        yerr = [np.nanstd(a) for a in y]
         p = np.polyfit(ymed, x, 2, w=1 / np.array(yerr))
+        print(f"Fit results c0*px^2 + c1*px + c2:\n{p}")
+        return p, x, y
+
+    def gauss(self, x, fwhm, x0, a):
+        return a * np.exp(-0.5 * (x - x0) ** 2 / (fwhm / 2.3482) ** 2)
+
+    def plot_calibration(self, p, x, y, to_elog=True):
         fpath = ""
 
-        def gauss(x, fwhm, x0, a):
-            return a * np.exp(-0.5 * (x - x0) ** 2 / (fwhm / 2.3482) ** 2)
+        binmin = np.min([np.min(step) for step in y])
+        binmax = np.max([np.max(step) for step in y])
+        bins = np.arange(binmin, binmax, 1)
+        bins_center = bins[:-1] + 0.5
+        hists = np.array([np.histogram(step, bins=bins)[0] for step in y]).T
+        plt.close("tt_calib")
+        fig = plt.figure("tt_calib", figsize=(13, 6))
+        gs = plt.GridSpec(1, 6, figure=fig)
+        ax0 = fig.add_subplot(gs[0, 0])
+        ax1 = fig.add_subplot(gs[0, 1:4], sharey=ax0)
+        ax2 = fig.add_subplot(gs[0, 4:])
+        ax1.pcolor(1e15 * x, bins_center, hists)
+        line = ax1.errorbar(1e15 * x, ymed, yerr, color="red", marker=".", linestyle="")
+        fit = ax1.plot(
+            1e15 * np.polyval(p, ymed), ymed, label="poly fit", color="yellow"
+        )
+        ax0.axvline(0, linestyle="--", color="k")
+        ax0.plot(1e15 * (np.polyval(p, ymed) - x), ymed, color="royalblue")
+        ax1.set_xlabel("tt_kb.delay (fs)")
+        ax1.set_ylabel("edge position (px)")
+        at = (
+            np.hstack(
+                [np.polyval(p, ys) - np.polyval(p, ymeds) for ys, ymeds in zip(y, ymed)]
+            )
+            * 1e15
+        )
+        d = ax2.hist(
+            at, bins="auto", label=f"std {np.std(at):.3} fs", color="royalblue"
+        )
+        ax2.hist(at, bins="auto", edgecolor="black", histtype="step")
+        try:
+            fx = d[1][:-1] + d[1][1] - d[1][0]
+            parsopt, parss = curve_fit(self.gauss, fx, d[0], [30, 0, 50])
+            plx = np.arange(np.min(d[1]), np.max(d[1]), 0.1)
+            ax2.plot(plx, self.gauss(plx, *parsopt), color="k")
+        except:
+            print("Fitting of arrival time histogram failed")
+            parsopt = [0, 0, 0]
+            pass
+        ax0.set_title("Residual")
+        ax1.set_title("Scan")
+        ax2.set_title(f"Jitter {parsopt[0]:.3} fs fwhm")
+        ax1.legend()
+        ax2.set_xlabel("arrival time (fs)")
+        ax0.set_xlabel("$\Delta$t (fs)")
+        ax0.set_ylabel("edge position (px)")
+        ax2.set_yticks([])
+        fig.tight_layout()
+        plt.show()
 
-        if plot:
-            binmin = np.min([np.min(step) for step in y])
-            binmax = np.max([np.max(step) for step in y])
-            bins = np.arange(binmin, binmax, 1)
-            bins_center = bins[:-1] + 0.5
-            hists = np.array([np.histogram(step, bins=bins)[0] for step in y]).T
-            plt.close("tt_calib")
-            fig = plt.figure("tt_calib", figsize=(13, 6))
-            gs = plt.GridSpec(1, 6, figure=fig)
-            ax0 = fig.add_subplot(gs[0, 0])
-            ax1 = fig.add_subplot(gs[0, 1:4], sharey=ax0)
-            ax2 = fig.add_subplot(gs[0, 4:])
-            ax1.pcolor(1e15 * x, bins_center, hists)
-            line = ax1.errorbar(
-                1e15 * x, ymed, yerr, color="red", marker=".", linestyle=""
-            )
-            fit = ax1.plot(
-                1e15 * np.polyval(p, ymed), ymed, label="poly fit", color="yellow"
-            )
-            ax0.axvline(0, linestyle="--", color="k")
-            ax0.plot(1e15 * (np.polyval(p, ymed) - x), ymed, color="royalblue")
-            ax1.set_xlabel("tt_kb.delay (fs)")
-            ax1.set_ylabel("edge position (px)")
-            at = (
-                np.hstack(
-                    [
-                        np.polyval(p, ys) - np.polyval(p, ymeds)
-                        for ys, ymeds in zip(y, ymed)
-                    ]
-                )
-                * 1e15
-            )
-            d = ax2.hist(
-                at, bins="auto", label=f"std {np.std(at):.3} fs", color="royalblue"
-            )
-            ax2.hist(at, bins="auto", edgecolor="black", histtype="step")
-            try:
-                fx = d[1][:-1] + d[1][1] - d[1][0]
-                parsopt, parss = curve_fit(gauss, fx, d[0], [30, 0, 50])
-                plx = np.arange(np.min(d[1]), np.max(d[1]), 0.1)
-                ax2.plot(plx, gauss(plx, *parsopt), color="k")
-            except:
-                print("Fitting of arrival time histogram failed")
-                parsopt = [0, 0, 0]
-                pass
-            ax0.set_title("Residual")
-            ax1.set_title("Scan")
-            ax2.set_title(f"Jitter {parsopt[0]:.3} fs fwhm")
-            ax1.legend()
-            ax2.set_xlabel("arrival time (fs)")
-            ax0.set_xlabel("$\Delta$t (fs)")
-            ax0.set_ylabel("edge position (px)")
-            ax2.set_yticks([])
-            fig.tight_layout()
-            plt.show()
-            if to_elog:
-                fpath = f"{Path.home()}/temp/tt_calib.jpg"
-                fig.savefig(fpath, dpi=200)
-                fpath = Path(fpath)
-                dpath = Path(f"{Path.home()}/temp/tt_calib.pkl")
-                df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
-                df.to_pickle(dpath)
+        if to_elog:
+            fpath = f"{Path.home()}/temp/tt_calib.jpg"
+            fig.savefig(fpath, dpi=200)
+            fpath = Path(fpath)
+            dpath = Path(f"{Path.home()}/temp/tt_calib.pkl")
+            df = DataFrame({"tt_kb.delay": x, "tt_kb.edge_position_px": y})
+            df.to_pickle(dpath)
         if to_elog:
             try:
-                msg = f"<h1>Timetool calibration results:</h1>\n"
+                msg = f"<h3>Timetool calibration results:</h3>\n"
                 msg += f"Polynomial fit c0*edge_pos(px)^2 + c1*edge_pos(px) + c2:\n {p} \n\n"
                 elog = self._get_elog()
                 elog.post(msg.replace("\n", "<br>"), fpath, dpath)
             except Exception as e:
                 print(f"Elog posting failed with:\n {e}")
-        print(f"Fit results c0*px^2 + c1*px + c2:\n{p}")
-        print(f"Moving back to inital value of {t0}")
-        self.delay.set_target_value(t0)
-        return p, x, y
 
     def set_calibration_values(self, p, pipeline=True, to_elog=True):
         if pipeline:
@@ -813,8 +1113,9 @@ class TimetoolBerninaDSD(Assembly):
         pipeline=True,
         to_elog=True,
         filter_outliers=True,
-        use_bsread=True,
         reverse_direction=False,
+        bidirectional=False,
+        update_pipeline_config=False,
     ):
         t0 = self.delay()
         if abs(t0) > 50e-15:
@@ -828,18 +1129,24 @@ class TimetoolBerninaDSD(Assembly):
                     continue
             if ans == "n":
                 return
+        if bidirectional:
+            print("Starting calibration in forward direction")
 
-        p, x, y = self.get_calibration_values(
+            print("Starting calibration in backward direction")
+
+        x, y, df = self.get_calibration_data(
             seconds=seconds,
             scan_range=scan_range,
-            plot=plot,
-            to_elog=to_elog,
-            pipeline=pipeline,
-            use_bsread=use_bsread,
-            filter_outliers=filter_outliers,
             reverse_direction=reverse_direction,
         )
-        self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
+
+        p, x, y = self.fit_calibration_data(x, y, filter_outliers=filter_outliers)
+
+        if plot:
+            self.plot_calibration(p, x, y, to_elog=to_elog)
+
+        if update_pipeline_config:
+            self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
 
     def get_online_data(self):
         self.online_monitor = TtProcessor()
