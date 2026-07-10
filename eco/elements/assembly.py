@@ -244,8 +244,8 @@ class Assembly:
         print_times=False,
         channeltypes=None,
         selections=[],
-        threads=False,
-        max_workers=10,
+        threads=True,
+        max_workers=20,
         # print_name=False,
     ):
         if base == "self":
@@ -259,25 +259,6 @@ class Assembly:
         nodet = []
         geterror = []
 
-        #  with ThreadPoolExecutor(max_workers=max_workers) as exc:
-        #         list(
-        #             progress.track(
-        #                 exc.map(
-        #                     lambda name: self.init_name(
-        #                         name, verbose=verbose, raise_errors=raise_errors
-        #                     ),
-        #                     self.all_names
-        #                     - self.initialized_names
-        #                     - set(exclude_names),
-        #                 ),
-        #                 description="Initializing ...",
-        #                 total=len(
-        #                     self.all_names - self.initialized_names - set(exclude_names)
-        #                 ),
-        #                 transient=True,
-        #             )
-        #         )
-
         def get_stat_one_detector(ts):
             tstart = time.time()
             try:
@@ -287,52 +268,37 @@ class Assembly:
                         status_channels[ts.alias.get_full_name(base=base)] = (
                             ts.alias.channel
                         )
-                    except:
+                    except Exception:
                         pass
-            except:
+            except Exception:
                 geterror.append(ts.alias.get_full_name(base=base))
+            finally:
                 status_times[ts.alias.get_full_name(base=base)] = time.time() - tstart
 
-        ts_t = []
-        for ts in track(
-            self.status_collection.get_list(),
-            transient=True,
-            description="Reading status indicators ...",
-        ):
-
+        detectors = []
+        for ts in self.status_collection.get_list():
             if isinstance(ts, Detector):
-                if threads:
-                    ts_t.append(ts)
-                else:
-                    tstart = time.time()
-                    try:
-                        if (not channeltypes) or (ts.alias.channeltype in channeltypes):
-                            status[ts.alias.get_full_name(base=base)] = (
-                                ts.get_current_value()
-                            )
-                            try:
-                                status_channels[ts.alias.get_full_name(base=base)] = (
-                                    ts.alias.channel
-                                )
-                            except:
-                                pass
-                    except:
-                        geterror.append(ts.alias.get_full_name(base=base))
-                    status_times[ts.alias.get_full_name(base=base)] = (
-                        time.time() - tstart
-                    )
+                detectors.append(ts)
             else:
                 nodet.append(ts.alias.get_full_name(base=base))
-        if threads:
 
+        if threads and max_workers > 1 and len(detectors) > 1:
             with ThreadPoolExecutor(max_workers=max_workers) as exc:
                 list(
                     track(
-                        exc.map(get_stat_one_detector, ts_t),
-                        description="Getting status...",
-                        total=len(ts_t),
+                        exc.map(get_stat_one_detector, detectors),
+                        transient=True,
+                        description="Reading status indicators ...",
+                        total=len(detectors),
                     )
                 )
+        else:
+            for ts in track(
+                detectors,
+                transient=True,
+                description="Reading status indicators ...",
+            ):
+                get_stat_one_detector(ts)
 
         if verbose:
             if nodet:
