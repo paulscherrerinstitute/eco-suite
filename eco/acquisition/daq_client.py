@@ -1,7 +1,7 @@
 import json
 import pickle
 import shutil
-from threading import Thread
+from threading import Thread, Lock, Event
 import time
 import traceback
 import colorama
@@ -73,11 +73,23 @@ class Daq(Assembly):
         self._pgroup = pgroup
         if type(pulse_id_adj) is str:
             self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
-            self._pid_wo_automonitor = PV(
-                "SGE-CPCW-85-EVR0:RX-PULSEID",
-                connection_timeout=0.05,
-                auto_monitor=False,
-            )
+            # Dedicated, permanently-monitored PV used only to wait for a fresh
+            # pulse_id in start() without issuing competing CA get requests.
+            # Kept separate from self.pulse_id._pv (auto_monitor=False) so that
+            # get_current_value() elsewhere is unaffected; both share the same
+            # underlying CA channel, so this costs nothing extra on the wire.
+            self._pulse_id_latest = {"value": None, "timestamp": None}
+            self._pulse_id_latest_lock = Lock()
+            self._pulse_id_updated = Event()
+
+            def _on_pulse_id_update(value=None, timestamp=None, **kwargs):
+                with self._pulse_id_latest_lock:
+                    self._pulse_id_latest["value"] = value
+                    self._pulse_id_latest["timestamp"] = timestamp
+                self._pulse_id_updated.set()
+
+            self._pulse_id_monitor_pv = PV(pulse_id_adj, auto_monitor=True)
+            self._pulse_id_monitor_pv.add_callback(_on_pulse_id_update)
         else:
             self.pulse_id = pulse_id_adj
         self.running = []
@@ -246,26 +258,50 @@ class Daq(Assembly):
         )
 
         starttime_local = time.time()
-        pv = self.pulse_id._pv
         start_id = None
-        tvars = None
-        poll_interval = 0.02
-        max_poll_interval = 0.25
-        per_call_timeout = 1.0  # headroom for a saturated CA processing thread
-        while True:
-            tvars = pv.get_timevars(timeout=per_call_timeout)
-            if tvars is not None and tvars["timestamp"] >= starttime_local:
-                start_id = pv.get(use_monitor=False, timeout=per_call_timeout)
-                if start_id is not None:
+        if hasattr(self, "_pulse_id_updated"):
+            # Wait on the dedicated pulse_id monitor's cache instead of issuing
+            # explicit CA get requests, to avoid adding CA traffic that competes
+            # with itself/other concurrent CA activity right at scan start.
+            while True:
+                with self._pulse_id_latest_lock:
+                    ts = self._pulse_id_latest["timestamp"]
+                    val = self._pulse_id_latest["value"]
+                if ts is not None and val is not None and ts >= starttime_local:
+                    start_id = int(val)
                     break
-            if time.time() - starttime_local > self.timeout:
-                raise TimeoutError(
-                    f"Timeout {self.timeout} s hit while waiting for a valid, up-to-date "
-                    f"pulse_id. timevars: {tvars}; start_id: {start_id}; "
-                    f"starttime of scan step: {starttime_local}"
-                )
-            time.sleep(poll_interval)
-            poll_interval = min(poll_interval * 1.5, max_poll_interval)
+                remaining = self.timeout - (time.time() - starttime_local)
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"Timeout {self.timeout} s hit while waiting for a valid, "
+                        f"up-to-date pulse_id. last timestamp: {ts}; "
+                        f"starttime of scan step: {starttime_local}"
+                    )
+                self._pulse_id_updated.wait(timeout=min(remaining, 0.25))
+                self._pulse_id_updated.clear()
+        else:
+            # Fallback for a pulse_id_adj configured as a pre-built object rather
+            # than a PV name string: no dedicated monitor is set up in that case,
+            # so fall back to an explicit polling wait.
+            pv = self.pulse_id._pv
+            tvars = None
+            poll_interval = 0.02
+            max_poll_interval = 0.25
+            per_call_timeout = 1.0  # headroom for a saturated CA processing thread
+            while True:
+                tvars = pv.get_timevars(timeout=per_call_timeout)
+                if tvars is not None and tvars["timestamp"] >= starttime_local:
+                    start_id = pv.get(use_monitor=False, timeout=per_call_timeout)
+                    if start_id is not None:
+                        break
+                if time.time() - starttime_local > self.timeout:
+                    raise TimeoutError(
+                        f"Timeout {self.timeout} s hit while waiting for a valid, up-to-date "
+                        f"pulse_id. timevars: {tvars}; start_id: {start_id}; "
+                        f"starttime of scan step: {starttime_local}"
+                    )
+                time.sleep(poll_interval)
+                poll_interval = min(poll_interval * 1.5, max_poll_interval)
 
         acq_pars = {
             "label": label,
