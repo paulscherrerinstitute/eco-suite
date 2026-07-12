@@ -6,7 +6,7 @@ from ..detector.detectors_psi import DetectorBsStream
 from eco.epics.utilities_epics import EpicsString
 import logging
 from ..elements.assembly import Assembly
-from tabulate import tabulate
+from ..utilities.tables import format_table
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
 
@@ -239,7 +239,9 @@ class MasterEventSystem(Assembly):
         for cod in code:
             tc = self.__dict__[f"code{cod:03d}"]
             o.append([cod, tc.delay(), tc.frequency(), tc.description()])
-        s = tabulate(o, ["Code", "Delay / us", "Freq. / Hz", "Description"], "simple")
+        s = format_table(
+            o, headers=["Code", "Delay / us", "Freq. / Hz", "Description"], tablefmt="simple"
+        )
         if printit:
             print(s)
         else:
@@ -627,10 +629,10 @@ class EventReceiver(Assembly):
                     f"{output.pulserA_eventcode()}/{output.pulserA_eventcode()}",
                 ]
             )
-        s = tabulate(
+        s = format_table(
             o,
-            ["Output name", "Description", "On", "Pulsers", "Freqs. / Hz", "EvtCds"],
-            "simple",
+            headers=["Output name", "Description", "On", "Pulsers", "Freqs. / Hz", "EvtCds"],
+            tablefmt="simple",
         )
         if printit:
             print(s)

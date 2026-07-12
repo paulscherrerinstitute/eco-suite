@@ -7,7 +7,7 @@ from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
 from .kb_mirrors import KbVer, KbHor
 from time import sleep
 from numbers import Number
-from tabulate import tabulate
+from ..utilities.tables import format_table
 
 
 class KBMirrorBernina(Assembly):
@@ -277,7 +277,7 @@ class KBMirrorBernina(Assembly):
             ]
         if True:
             names = ["Window kb-usd", "Timetool target", "att_usd", "Window usd-lic"]
-            strg = tabulate(
+            strg = format_table(
                 [[tn, tx, ty] for tn, (tx, ty) in zip(names, out)],
                 headers=["Element", "horizontal", "vertical"],
             )

@@ -17,9 +17,9 @@ import colorama
 import socket
 from importlib import import_module
 from lazy_object_proxy import Proxy as Proxy_orig
-from tabulate import tabulate
+from .tables import format_table
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Thread
+from threading import Thread, Event
 from tqdm import tqdm
 from rich import progress
 from inspect import signature
@@ -388,7 +388,15 @@ class Namespace(Assembly):
 
         self.names_without_alias = []
         self._initializing = []
-        
+
+        # Only used when init_all(..., background=True) has been used at least
+        # once; makes threads waiting on a name that is already being
+        # initialized wake up as soon as it is done instead of polling every
+        # few seconds. Off by default, does not affect any existing behavior.
+        self._responsive_locking = False
+        self._init_events = {}
+        self._background_init_thread = None
+
         self.root_module = root_module
         self.alias_namespace = alias_namespace
         if required_names_directory:
@@ -540,14 +548,9 @@ class Namespace(Assembly):
         display(box)
         return box
 
-    def init_name(self, name, verbose=True, raise_errors=False):
-        # for name in self.all_names:
-        # if verbose:
-        #     print(("Configuring %s " % (name)).ljust(25), end="")
-        #     sys.stdout.flush()
-        # if verbose:
-        #     print(("(%s)" % (name)).ljust(25), end="")
-        #     sys.stdout.flush()
+    def init_name(self, name, verbose=True, raise_errors=False, quiet=False):
+        # quiet fully suppresses per-item output, even if verbose=True; it
+        # defaults to False so existing callers see unchanged output.
         starttime = time()
         try:
             titem = self.get_obj(name)
@@ -556,7 +559,7 @@ class Namespace(Assembly):
             else:
                 dir(titem)
             self.initialisation_times[name] = time() - starttime
-            if verbose:
+            if verbose and not quiet:
                 print(
                     ("Init %s " % (name)).ljust(40)
                     + f"{round(1000*(time()-starttime)): 6d} ms "
@@ -565,17 +568,13 @@ class Namespace(Assembly):
                 sys.stdout.flush()
 
         except Exception as expt:
-            # if isinstance(expt, IsInitialisingError):
-            #     raise IsInitialisingError(f"{name} is being initialized already")
-            # tb = traceback.format_exc()
             self.initialisation_times[name] = time() - starttime
-            if verbose:
+            if verbose and not quiet:
                 print(
                     ("Init %s " % (name)).ljust(40)
                     + f"{round(1000*(time()-starttime)): 6d} ms "
                     + (_color.RED + "FAILED" + _color.RESET).rjust(5)
                 )
-                # print(sys.exc_info())
             if raise_errors:
                 raise expt
 
@@ -591,17 +590,61 @@ class Namespace(Assembly):
         silent=True,
         giveup_failed=True,
         exclude_names=[],
+        background=False,
+        quiet=False,
+        background_max_workers=8,
     ):
+        """Initialize namespace items.
+
+        New, opt-in behavior (default parameters keep the previous behavior
+        unchanged):
+
+        background : bool
+            If True, initialization runs in a lightweight background thread
+            and init_all() returns immediately; the calling (e.g. ipython)
+            session stays usable. Uses a single concurrent pass (instead of
+            the legacy double pass) with up to `background_max_workers`
+            workers, and switches the namespace's internal lazy-init locking
+            to an event-based wakeup so that a component accessed directly
+            from the session while the background pass is also touching it
+            (e.g. as a dependency of another component) is returned as soon
+            as that single initialization finishes, instead of waiting on a
+            fixed poll interval. Components you access directly that the
+            background pass hasn't reached yet are simply initialized
+            on-the-spot by your own call, ahead of the background queue.
+        quiet : bool
+            If True, suppresses all output from this call (progress,
+            per-item, and summary messages), regardless of `verbose`,
+            `print_summary` or `print_times`. Can be combined with
+            `background` or used on its own with the existing blocking
+            behavior.
+        background_max_workers : int
+            Number of worker threads used only when `background=True`.
+        """
+        if background:
+            return self._init_all_background(
+                required_only=required_only,
+                raise_errors=raise_errors,
+                giveup_failed=giveup_failed,
+                exclude_names=exclude_names,
+                quiet=quiet,
+                max_workers=background_max_workers,
+            )
+
         starttime = time()
 
-        if self.failed_names:
+        if self.failed_names and not quiet:
             print(
                 f"WARNING - previously hard failed items are NOT initialized:\n{self.failed_names} "
             )
         if required_only:
             if not self.required_names():
-                print(
-                    f"WARNING - No required names defined in namespace {self.name}, initializing all items!"
+                if not quiet:
+                    print(
+                        f"WARNING - No required names defined in namespace {self.name}, initializing all items!"
+                    )
+                names_to_init = (
+                    self.all_names - self.initialized_names - set(exclude_names)
                 )
             else:
                 names_to_init = (
@@ -612,15 +655,20 @@ class Namespace(Assembly):
 
         if silent:
             self.silently_initializing = True
-            print(
-                f"Initializing all items in namespace {self.name} silently in background.\n Be aware of unrelated output!"
-            )
+            if not quiet:
+                print(
+                    f"Initializing all items in namespace {self.name} silently in background.\n Be aware of unrelated output!"
+                )
 
             def init():
                 self.exc_init = ThreadPoolExecutor(max_workers=max_workers)
                 jobs = [
                     self.exc_init.submit(
-                        self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                        self.init_name,
+                        name,
+                        verbose=verbose,
+                        raise_errors=raise_errors,
+                        quiet=quiet,
                     )
                     for name in names_to_init
                 ]
@@ -628,7 +676,11 @@ class Namespace(Assembly):
                 self.exc_init = ThreadPoolExecutor(max_workers=1)
                 jobs = [
                     self.exc_init.submit(
-                        self.init_name, name, verbose=verbose, raise_errors=raise_errors
+                        self.init_name,
+                        name,
+                        verbose=verbose,
+                        raise_errors=raise_errors,
+                        quiet=quiet,
                     )
                     for name in (names_to_init)
                 ]
@@ -638,7 +690,7 @@ class Namespace(Assembly):
                     failed_names = names_to_init.intersection(self.lazy_names)
                     for k in failed_names:
                         self.failed_items[k] = self.lazy_items.pop(k)
-                if print_summary:
+                if print_summary and not quiet:
                     print(
                         f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
                     )
@@ -671,29 +723,38 @@ class Namespace(Assembly):
                     progress.track(
                         exc.map(
                             lambda name: self.init_name(
-                                name, verbose=verbose, raise_errors=raise_errors
+                                name,
+                                verbose=verbose,
+                                raise_errors=raise_errors,
+                                quiet=quiet,
                             ),
                             names_to_init,
                         ),
                         description="Initializing ...",
                         total=len(names_to_init),
                         transient=True,
+                        disable=quiet,
                     )
                 )
-            print("Initializing in single thread...")
+            if not quiet:
+                print("Initializing in single thread...")
             self.move_failed_to_lazy()
             with ThreadPoolExecutor(max_workers=1) as exc:
                 list(
                     progress.track(
                         exc.map(
                             lambda name: self.init_name(
-                                name, verbose=verbose, raise_errors=raise_errors
+                                name,
+                                verbose=verbose,
+                                raise_errors=raise_errors,
+                                quiet=quiet,
                             ),
                             names_to_init,
                         ),
                         description="Initializing ...",
                         total=len(names_to_init),
                         transient=True,
+                        disable=quiet,
                     )
                 )
                 # )
@@ -706,14 +767,14 @@ class Namespace(Assembly):
                 failed_names = names_to_init.intersection(self.lazy_names)
                 for k in failed_names:
                     self.failed_items[k] = self.lazy_items.pop(k)
-            if print_summary:
+            if print_summary and not quiet:
                 print(
                     f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
                 )
                 print("Failed objects: " + ", ".join(self.failed_names & names_to_init))
                 print(f"Initialisation took {time()-starttime} seconds")
 
-            if (not silent) and print_times:
+            if (not silent) and print_times and not quiet:
                 try:
                     from collections import Iterable
                 except:
@@ -749,6 +810,121 @@ class Namespace(Assembly):
             #         # print(sys.exc_info())
             #     if raise_errors:
             #         raise expt
+
+    def _init_all_background(
+        self,
+        required_only=True,
+        raise_errors=False,
+        giveup_failed=True,
+        exclude_names=[],
+        quiet=False,
+        max_workers=8,
+    ):
+        """Backing implementation for init_all(background=True). Kept fully
+        separate from the legacy init_all body so the default (non-background)
+        call path is completely unaffected by this code.
+
+        Runs in a daemon thread and returns immediately: the calling (e.g.
+        ipython) session stays usable right away. Does a single concurrent
+        pass with `max_workers` workers (instead of the legacy concurrent
+        pass followed by a full sequential re-run of every name), retrying
+        only the specific names that lost a race to initialize a shared
+        dependency (IsInitialisingError). It also flips this namespace to
+        event-based lazy-init locking (`_responsive_locking`) so that a
+        component you access directly from the session - while it is also
+        being initialized in the background as someone else's dependency -
+        is handed to you the instant that single initialization completes,
+        rather than after a fixed polling interval. A component the
+        background pass hasn't reached yet is simply initialized on the
+        spot by your own call, ahead of the background queue, since lazy
+        objects only start initializing when first accessed.
+
+        Note: unlike the blocking init_all(), failures here are always
+        recorded (like giveup_failed) rather than raised, since exceptions
+        raised inside a background thread have no synchronous caller to
+        catch them; `raise_errors` is accepted for signature symmetry but
+        has no effect in this mode.
+        """
+        starttime = time()
+
+        def log(*args, **kwargs):
+            if not quiet:
+                print(*args, **kwargs)
+
+        if self.failed_names:
+            log(
+                f"WARNING - previously hard failed items are NOT initialized:\n{self.failed_names} "
+            )
+
+        if required_only and self.required_names():
+            names_to_init = (
+                self.all_names - self.initialized_names - set(exclude_names)
+            ) & set(self.required_names())
+        else:
+            if required_only:
+                log(
+                    f"WARNING - No required names defined in namespace {self.name}, initializing all items!"
+                )
+            names_to_init = self.all_names - self.initialized_names - set(exclude_names)
+
+        self.silently_initializing = True
+        self._responsive_locking = True
+        log(
+            f"Initializing {len(names_to_init)} items in namespace {self.name} in the "
+            "background; the session stays usable and any component you "
+            "access directly takes priority."
+        )
+
+        def worker():
+            pending = set(names_to_init)
+            with ThreadPoolExecutor(max_workers=max_workers) as exc:
+                while pending:
+                    futs = {
+                        exc.submit(
+                            self.init_name,
+                            name,
+                            verbose=False,
+                            raise_errors=True,
+                            quiet=quiet,
+                        ): name
+                        for name in pending
+                    }
+                    retry = set()
+                    for fut in as_completed(futs):
+                        name = futs[fut]
+                        try:
+                            fut.result()
+                        except IsInitialisingError:
+                            # Lost a race for a name someone else (the
+                            # background pass or the session itself) is
+                            # already initializing as a dependency; retry
+                            # it in the next round.
+                            retry.add(name)
+                        except Exception:
+                            pass
+                    pending = retry & (self.all_names - self.initialized_names)
+
+            self.silently_initializing = False
+            if giveup_failed:
+                failed_names = names_to_init.intersection(self.lazy_names)
+                for k in failed_names:
+                    self.failed_items[k] = self.lazy_items.pop(k)
+
+            log(
+                f"Background init of namespace {self.name} done: "
+                f"{len(self.initialized_names & names_to_init)} of {len(names_to_init)} initialized."
+            )
+            failed = self.failed_names & names_to_init
+            if failed:
+                log("Failed objects: " + ", ".join(failed))
+            log(f"Initialisation took {time()-starttime:.1f} seconds")
+
+        thread = Thread(
+            target=worker, name=f"init_all_background[{self.name}]", daemon=True
+        )
+        self._background_init_thread = thread
+        thread.start()
+        return thread
 
     def init_all_new(
         self,
@@ -922,24 +1098,46 @@ class Namespace(Assembly):
 
                 if name in self._initializing:
                     self._init_priority[name] += 1
-                    while name in self._initializing:
-                        if (
+                    if self._responsive_locking:
+                        # Only active once init_all(background=True) has been
+                        # used on this namespace: wake up as soon as the other
+                        # thread finishes instead of polling every 5s, so a
+                        # component accessed directly from the session is
+                        # returned as fast as possible.
+                        ev = self._init_events.setdefault(name, Event())
+                        remaining = init_timeout - (
                             time() - self._initialisation_start_time[name]
-                        ) <= init_timeout:
-                            sleep(5)
-                        else:
-                            #     print(f'{name} waiting init since {time()-self._initialisation_start_time[name]} s')
-                            #     sleep(5)
-                            # # passfailed_items_excpetion
-                            self._initializing.pop(self._initializing.index(name))
+                        )
+                        ev.wait(timeout=max(remaining, 0))
+                        if name in self._initializing:
+                            try:
+                                self._initializing.pop(self._initializing.index(name))
+                            except ValueError:
+                                pass
                             raise IsInitialisingError(
                                 f"NB: {name} initialization timed out!"
                             )
+                    else:
+                        while name in self._initializing:
+                            if (
+                                time() - self._initialisation_start_time[name]
+                            ) <= init_timeout:
+                                sleep(5)
+                            else:
+                                #     print(f'{name} waiting init since {time()-self._initialisation_start_time[name]} s')
+                                #     sleep(5)
+                                # # passfailed_items_excpetion
+                                self._initializing.pop(self._initializing.index(name))
+                                raise IsInitialisingError(
+                                    f"NB: {name} initialization timed out!"
+                                )
 
                 else:
                     self._initializing.append(name)
                     self._init_priority[name] = 0
                     self._initialisation_start_time[name] = time()
+                    if self._responsive_locking:
+                        self._init_events[name] = Event()
 
                 # args, kwargs = replace_NamespaceComponents(*args, **kwargs)
 
@@ -977,6 +1175,10 @@ class Namespace(Assembly):
                     self.failed_items[name] = self.lazy_items.pop(name)
                     self.failed_items_excpetion[name] = e
                     self._initializing.pop(self._initializing.index(name))
+                    if self._responsive_locking:
+                        ev = self._init_events.pop(name, None)
+                        if ev is not None:
+                            ev.set()
                     raise
 
                 try:
@@ -984,6 +1186,10 @@ class Namespace(Assembly):
                 except KeyError:
                     self.initialized_items[name] = self.failed_items.pop(name)
                 self._initializing.pop(self._initializing.index(name))
+                if self._responsive_locking:
+                    ev = self._init_events.pop(name, None)
+                    if ev is not None:
+                        ev.set()
                 # if name in self.initialisation_times_lazy.keys():
                 #     self.initialisation_times_lazy[name] += time() - starttime
                 # else:
@@ -1094,7 +1300,7 @@ class Namespace(Assembly):
             tab.append([name, "initialized"])
         for name in self.lazy_names:
             tab.append([name, "lazy"])
-        print(tabulate(tab))
+        print(format_table(tab))
 
 
 class Proxy(Proxy_orig):

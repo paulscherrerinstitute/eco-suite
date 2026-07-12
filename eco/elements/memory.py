@@ -4,7 +4,7 @@ from datetime import datetime
 import weakref
 from .adjustable import AdjustableFS
 from ..utilities.keypress import KeyPress
-from tabulate import tabulate
+from ..utilities.tables import format_table
 import sys, colorama
 
 try:
@@ -113,7 +113,7 @@ class Memory:
             row.append(content["message"])
             a.append(row)
 
-        return tabulate(a, headers=["Index", "Time", "Message"])
+        return format_table(a, headers=["Index", "Time", "Message"])
 
     def __call__(self, index=None, **kwargs):
         # print(self.get_memory_difference_str(index))
@@ -370,7 +370,7 @@ class Memory:
 
         if len(table) == 0:
             return "No changes compared to memory!"
-        return tabulate(
+        return format_table(
             table,
             headers=[
                 "",
@@ -509,7 +509,7 @@ class Presets:
             if "presetname" in dat.keys():
                 table.append([dat["presetname"], key, dat["message"]])
 
-        return tabulate(
+        return format_table(
             table,
             headers=[
                 "Preset",

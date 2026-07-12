@@ -17,7 +17,7 @@ from eco.elements.protocols import Detector, InitialisationWaitable
 from eco.epics import get_from_archive
 
 from ..aliases import Alias
-from tabulate import tabulate
+from ..utilities.tables import format_table
 import colorama
 from . import memory
 from enum import Enum
@@ -377,7 +377,7 @@ class Assembly:
 
     def status(self, get_string=False):
         stat = self.get_status()
-        s = tabulate([[name, value] for name, value in stat["status"].items()])
+        s = format_table([[name, value] for name, value in stat["status"].items()])
         if get_string:
             return s
         else:
@@ -385,7 +385,7 @@ class Assembly:
 
     def settings(self, get_string=False):
         stat = self.get_status()
-        s = tabulate(
+        s = format_table(
             [
                 [colorama.Style.BRIGHT + name + colorama.Style.RESET_ALL, value]
                 for name, value in stat["settings"].items()
@@ -405,7 +405,7 @@ class Assembly:
                 tname = to.alias.get_full_name(base=base)
                 tstat = filter_names(tname, tstat)
             stat_filt[stat_field] = tstat
-        s = tabulate([[name, value] for name, value in stat_filt[stat_field].items()])
+        s = format_table([[name, value] for name, value in stat_filt[stat_field].items()])
         return s
 
     def get_display_str(
@@ -457,7 +457,7 @@ class Assembly:
             else:
                 tab.append([name, value, unit, typechar, description])
         if tab:
-            s = tabulate(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
+            s = format_table(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
         else:
             s = ""
 

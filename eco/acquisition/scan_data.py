@@ -7,7 +7,8 @@ from escape.swissfel import load_dataset_from_scan
 import json
 
 from pandas import DataFrame
-from tabulate import tabulate
+
+from eco.utilities.tables import format_table
 
 
 class RunData:
@@ -281,7 +282,7 @@ class RunStatusView:
             tab.append([name, value, unit, typechar, description])
         if not tab:
             return ""
-        return tabulate(tab, tablefmt=tablefmt, maxcolwidths=[None, 50, None, None, None])
+        return format_table(tab, tablefmt=tablefmt, maxcolwidths=[None, 50, None, None, None])
 
     def __getitem__(self, key):
         return self.dic[key]
