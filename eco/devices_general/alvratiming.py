@@ -182,6 +182,9 @@ class PhaseShifterAramis:
 
 class Changer:
     def __init__(self, target=None, parent=None, mover=None, hold=True, stopper=None):
+        from eco.devices_general.utilities import _access_gate
+
+        _access_gate(parent)
         self.target = target
         self._mover = mover
         self._stopper = stopper

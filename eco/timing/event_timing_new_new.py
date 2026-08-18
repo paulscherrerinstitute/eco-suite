@@ -1,5 +1,6 @@
 from epics import caget_many
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
+from ..elements.detector import DetectorVirtual
 from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
 from ..epics.detector import DetectorPvData, DetectorPvDataStream
 from ..detector.detectors_psi import DetectorBsStream
@@ -327,16 +328,14 @@ class EvrPulser(Assembly):
 
         if self._eventcode is not None:
             self._append(
-                AdjustableVirtual,
+                DetectorVirtual,
                 [self._eventcode.frequency],
-                lambda x: x,
                 lambda x: x,
                 name="frequency",
             )
             self._append(
-                AdjustableVirtual,
+                DetectorVirtual,
                 [self._eventcode.delay],
-                lambda x: x,
                 lambda x: x,
                 name="delay_eventcode",
             )
@@ -414,9 +413,8 @@ class EvrOutput(Assembly):
             name="pulserA_delay_pulser",
         )
         self._append(
-            AdjustableVirtual,
+            DetectorVirtual,
             [self.pulserA.delay_eventcode],
-            lambda x: x,
             lambda x: x,
             name="pulserA_delay_eventcode",
         )
@@ -428,9 +426,8 @@ class EvrOutput(Assembly):
             name="pulserA_eventcode",
         )
         self._append(
-            AdjustableVirtual,
+            DetectorVirtual,
             [self.pulserA.frequency],
-            lambda x: x,
             lambda x: x,
             name="pulserA_frequency",
         )
@@ -484,9 +481,8 @@ class EvrOutput(Assembly):
             name="pulserB_delay_pulser",
         )
         self._append(
-            AdjustableVirtual,
+            DetectorVirtual,
             [self.pulserB.delay_eventcode],
-            lambda x: x,
             lambda x: x,
             name="pulserB_delay_eventcode",
         )
@@ -498,9 +494,8 @@ class EvrOutput(Assembly):
             name="pulserB_eventcode",
         )
         self._append(
-            AdjustableVirtual,
+            DetectorVirtual,
             [self.pulserB.frequency],
-            lambda x: x,
             lambda x: x,
             name="pulserB_frequency",
         )

@@ -1,0 +1,35 @@
+[Unit]
+Description=eco status/monitor server (namespace-hosted mode) for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=daq-bernina
+Group=daq-bernina
+
+# %i is the instance name, e.g.
+# `systemctl start eco-status-server-namespace@bernina` expects
+# /etc/eco-status-server/bernina_namespace.json to exist (copy of
+# example_config/bernina_namespace.json, adjusted for the target host).
+#
+# IMPORTANT: this mode imports the full eco stack (from eco.bernina.bernina
+# import namespace) and calls namespace.init_all() - it needs a Python
+# environment with eco's full dependency set (datahub, escape, bsread, ...),
+# e.g. the sfb312 conda env used while testing this, not the lighter
+# "default" env the registry mode gets by with. Adjust ExecStart below
+# to whichever environment actually has those installed, plus flask
+# (not part of eco's existing dependencies - see DESIGN.md section 9).
+#
+# Startup can take well over a minute (namespace.init_all() - see
+# DESIGN.md sections 12.3 and 13) - the service is not "up" from
+# systemd's point of view until that finishes; increase TimeoutStartSec
+# if systemd gives up on startup too early.
+ExecStart=/sf/bernina/applications/mm/envs/sfb312/bin/python -m eco.status_server --mode namespace --config /etc/eco-status-server/%i_namespace.json
+TimeoutStartSec=600
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

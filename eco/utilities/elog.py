@@ -1,10 +1,20 @@
+import warnings
 from pathlib import Path
-import elog as _elog_ha
+
+with warnings.catch_warnings():
+    # py_elog -> passlib imports stdlib `crypt` (removed in 3.13) behind a
+    # try/except ImportError -- already 3.13-safe, just noisy on import.
+    warnings.filterwarnings(
+        "ignore", message="'crypt' is deprecated", category=DeprecationWarning
+    )
+    import elog as _elog_ha
 from getpass import getuser as _getuser
 from getpass import getpass as _getpass
 import os, datetime, subprocess
 from markdown import markdown
 import urllib3
+
+from eco.utilities.secrets_gopass import get_gopass_password
 
 urllib3.disable_warnings()
 
@@ -32,12 +42,14 @@ def getDefaultElogInstance(url, **kwargs):
         kwargs.update(dict(user=_getuser()))
 
     if not ("password" in kwargs.keys()):
-        try:
-            with open(os.path.join(home, ".elog_psi"), "r") as f:
-                _pw = f.read().strip()
-        except:
-            print("Enter elog password for user: %s" % kwargs["user"])
-            _pw = _getpass()
+        _pw = get_gopass_password("elog/elog-password")
+        if _pw is None:
+            try:
+                with open(os.path.join(home, ".elog_psi"), "r") as f:
+                    _pw = f.read().strip()
+            except:
+                print("Enter elog password for user: %s" % kwargs["user"])
+                _pw = _getpass()
         kwargs.update(dict(password=_pw))
 
     return _elog_ha.open(url, **kwargs), kwargs["user"]

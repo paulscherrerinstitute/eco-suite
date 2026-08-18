@@ -1,0 +1,7 @@
+{
+  "module_name": "eco.bernina.bernina",
+  "attr_name": "namespace",
+  "init_required_only": true,
+  "instrument": "bernina",
+  "port": 8091
+}

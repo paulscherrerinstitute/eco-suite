@@ -1,7 +1,7 @@
 import json
 import pickle
 import shutil
-from threading import Thread, Lock, Event
+from threading import Thread, Lock, Event, Timer
 import time
 import traceback
 import colorama
@@ -28,6 +28,62 @@ from os.path import relpath
 
 
 class Daq(Assembly):
+    """
+    Client for the sf-daq broker REST API
+    (https://gitea.psi.ch/sf-daq/sf_daq_broker).
+
+    Two broker addresses are used here:
+      - ``broker_address`` (default port 10002): sf_daq_broker's "fast"
+        broker (``DEFAULT_BROKER_REST_PORT``). Endpoints used from here:
+        retrieve_from_buffers, take_pedestal, get_allowed_detectors,
+        get_running_detectors, power_on_detector, advance_run_number,
+        get_current_run_number, get_pvlist, set_pvlist. (close_pgroup_writing
+        also lives here but is not wrapped by this class.)
+      - ``broker_address_aux`` (default port 10003): despite the "aux" name
+        used in eco, this is what sf_daq_broker itself calls the *slow*
+        broker (``DEFAULT_BROKER_SLOW_REST_PORT``, served by
+        ``broker_slow.py``). It serves copy_user_files as well as
+        detector/DAP settings and hardware-diagnostics endpoints
+        (get/set_detector_settings, get/set_dap_settings, get_detector_status,
+        get_detector_pings, get_detector_temperatures, get_jfctrl_monitor,
+        get_jfstats). The get/set_dap_settings and get/set_detector_settings
+        wrappers live on :class:`eco.detector.jungfrau.Jungfrau` instead of
+        here, since they are per-detector, not per-Daq.
+
+    Request pacing (why the DAQ "feels" like it can only take requests at
+    low frequency): both broker processes are started with
+    ``bottle.run(app=app, host=hostname, port=rest_port)`` -- no ``server=``
+    argument, i.e. bottle's default *wsgiref* server. wsgiref is
+    single-threaded and fully synchronous: only one HTTP request is handled
+    at a time *per broker process*, regardless of which endpoint it hits.
+    retrieve_from_buffers and take_pedestal are themselves cheap and
+    asynchronous on the server side (they publish a message to RabbitMQ and
+    return immediately; the actual, potentially long-running, write/convert
+    job happens afterwards in a separate writer process) -- but a slow
+    synchronous call to the *same* broker process (e.g. get_detector_pings,
+    which pings detector module hosts over the network and can take seconds
+    per unreachable module) blocks every other client's request to that
+    broker for its entire duration. This -- not individual jobs being slow
+    -- is almost certainly the real limitation: the REST front-end has no
+    concurrency. Concretely:
+      - do not poll diagnostics/settings endpoints (get_dap_settings,
+        get_detector_settings, get_detector_status/pings/temperatures,
+        get_jfctrl_monitor, get_jfstats) in a tight loop or once per scan
+        step; ``Jungfrau.get_dap_settings`` already self-throttles to 5 s
+        between real network calls for exactly this reason, and the new
+        ``Jungfrau.get_detector_settings`` added alongside it does the same.
+      - :meth:`append_aux` (``copy_user_files``) fires once per scan step
+        (see ``copy_scan_info_to_raw``) against ``broker_address_aux`` --
+        the same process that also serves settings/diagnostics -- so heavy
+        use of those during an active scan adds latency to that per-step
+        upload too.
+      - the default ``timeout`` on this class applies per HTTP call; under
+        broker congestion a call can simply be queued behind another
+        request rather than the server being down, so a timeout is not on
+        its own reliable evidence of an actual outage (see
+        :meth:`check_alive`).
+    """
+
     def __init__(
         self,
         broker_address="http://sf-daq:10002",
@@ -132,6 +188,14 @@ class Daq(Assembly):
         ]
         self.elog = elog
 
+        # Trailing-edge debounce state for append_aux calls that would
+        # otherwise fire once per scan step (see copy_scan_info_to_raw and
+        # _debounced_append_aux): keyed pending threading.Timer per debounce
+        # key, plus a lock guarding read-cancel-replace of that dict.
+        self._debounce_timers = {}
+        self._debounce_lock = Lock()
+        self._scan_info_debounce_wait = 2.0
+
     @property
     def rate_multiplicator(self):
         freq = self._event_master.__dict__[
@@ -228,6 +292,13 @@ class Daq(Assembly):
         )
 
     def start(self, label=None, scan=None, **kwargs):
+        """
+        Mark the current pulse_id as the start of an acquisition; the
+        matching :meth:`stop` later sends the actual retrieve_from_buffers
+        request. Any extra keyword, e.g. ``selected_pulse_ids=[...]``
+        (see :meth:`retrieve`), is stored verbatim and forwarded through
+        :meth:`stop` to :meth:`retrieve` unchanged.
+        """
         if scan:
             acq_pars = {
                 "scan_info": {
@@ -404,8 +475,58 @@ class Daq(Assembly):
         pgroup=None,
         pgroup_base_path="/sf/bernina/data/{:s}/raw",
         filename_format="run_{:06d}",
+        selected_pulse_ids=None,
         **kwargs,
     ):
+        """
+        POST {broker_address}/retrieve_from_buffers -- request that data for
+        pulse ids [start_id, stop_id] be written to a run for pgroup.
+
+        Async on the server: this only publishes the write request to
+        RabbitMQ and returns predicted file paths/run_number immediately, it
+        does *not* wait for the writer process to actually finish producing
+        the files (that happens afterwards, out of band). This client only
+        waits for the *source* pulse_id counter to reach stop_id
+        (see :meth:`stop`), not for the write job itself to complete.
+
+        Hard server-side limit: sf_daq_broker's validate.py enforces
+        ``stop_id - start_id <= MAX_PULSEID_DELTA`` with
+        ``MAX_PULSEID_DELTA = 60001``; a larger span is rejected outright
+        rather than throttled.
+
+        Parameters
+        ----------
+        selected_pulse_ids : list[int], optional
+            Restrict channels_JF (detector) output to only these pulse ids,
+            instead of every pulse in [start_id, stop_id]. Maps to the
+            broker's top-level "selected_pulse_ids" request field
+            (sf_daq_broker/broker_manager.py), which the broker copies
+            verbatim into the per-detector write request; the writer then
+            outputs "only pulse IDs present in the list within the
+            specified by start_/stop_pulseid region" (broker_rest_api.md).
+            Limitations, straight from the broker source:
+              - only channels_JF is filtered this way. channels_BS,
+                channels_CA and channels_BSCAM are still written for the
+                *entire* contiguous [start_id, stop_id] range regardless of
+                this argument -- there is no non-consecutive selection for
+                those.
+              - every id must still lie within [start_id, stop_id], and the
+                MAX_PULSEID_DELTA cap above still applies to that bracketing
+                range -- this filters pulses out of a range, it is not a way
+                to request a sparse set of pulses spanning an unbounded
+                span.
+        """
+        if selected_pulse_ids is not None:
+            selected_pulse_ids = sorted(int(p) for p in selected_pulse_ids)
+            if selected_pulse_ids and (
+                selected_pulse_ids[0] < start_id or selected_pulse_ids[-1] > stop_id
+            ):
+                raise ValueError(
+                    f"selected_pulse_ids must all lie within "
+                    f"[{start_id}, {stop_id}]; got range "
+                    f"[{selected_pulse_ids[0]}, {selected_pulse_ids[-1]}]"
+                )
+            kwargs["selected_pulse_ids"] = selected_pulse_ids
         # print("This is the additional input:", kwargs)
         # Here the receiver code: https://github.com/paulscherrerinstitute/sf_daq_broker/blob/master/sf_daq_broker/broker_manager.py
         if not pgroup:
@@ -466,6 +587,20 @@ class Daq(Assembly):
         return response
 
     def get_next_run_number(self, pgroup=None):
+        """
+        POST {broker_address}/advance_run_number -- increment and return the
+        next run number for pgroup.
+
+        GET/POST discrepancy: broker_rest_api.md documents this endpoint as
+        GET, but sf_daq_broker/broker.py registers "advance_run_number" in
+        its POST endpoint list (ENDPOINTS_POST), so POST is what the server
+        actually routes -- the docs, not this client, look wrong. Left as
+        POST deliberately; if this call ever starts failing with a routing
+        error, check whether the server-side registration changed before
+        "fixing" this to GET. (get_current_run_number below is GET both in
+        the docs and in ENDPOINTS_GET, and is implemented as GET here --
+        consistent.)
+        """
         if pgroup is None:
             pgroup = self.pgroup
         res = requests.post(
@@ -506,6 +641,120 @@ class Daq(Assembly):
         else:
             return res["running_detectors"]
 
+    def get_pvlist(self):
+        """
+        List the EPICS (CA) channels the sf-daq epics buffer is currently
+        recording for this beamline.
+
+        REST: GET {broker_address}/get_pvlist, no parameters. Reads the
+        server-side config file
+        ``/home/svcusr-sfdaq/service_configs/sf.{beamline}.epics_buffer.json``
+        directly -- cheap, but still shares the single-threaded broker
+        process with retrieve_from_buffers etc. (see class docstring), so
+        avoid polling it in a tight loop.
+
+        Returns
+        -------
+        list[str]
+            PV names currently recorded to the EPICS buffer.
+        """
+        res = requests.get(f"{self.broker_address}/get_pvlist", timeout=self.timeout)
+        assert res.ok, f"Getting PV list failed {res.raise_for_status()}"
+        return res.json()["pv_list"]
+
+    def set_pvlist(self, pv_list):
+        """
+        Replace the list of EPICS (CA) channels the sf-daq epics buffer
+        records for this beamline.
+
+        REST: POST {broker_address}/set_pvlist, body {"pv_list": [...]}.
+        This is a **global, beamline-wide** change, not scoped to a single
+        scan/run -- it rewrites ``sf.{beamline}.epics_buffer.json`` on the
+        server (keeping a timestamped backup alongside it) and thereby
+        changes what *every* future acquisition on the beamline records,
+        until changed again. The broker deduplicates the list server-side
+        (``list(dict.fromkeys(pv_list))``, order-preserving) but does not
+        otherwise validate the PV names. It is not documented, and not
+        verified here, whether the running epics buffer writer picks the
+        new file up live or needs a restart -- treat a change as
+        best-effort/eventual, not immediate.
+
+        Length/size limit: there is **no hard, documented limit** on how
+        many PVs can be set in one call. sf_daq_broker's validate.py has no
+        explicit check on pv_list length or total size (unlike e.g. the
+        pulse-id range, which is capped at MAX_PULSEID_DELTA=60001 in the
+        same file). The broker is served by bottle's default wsgiref server
+        with no ``MEMFILE_MAX`` override, so an oversized JSON body is not
+        rejected either -- bottle just buffers request bodies above its
+        100 kB default from memory to a temp file rather than refusing them.
+        In practice the limiting factor is not this endpoint but the live
+        CA client inside the epics buffer writer having to keep up with
+        every PV in the list -- keep the list to what's actually needed
+        rather than relying on the absence of a server-side cap.
+
+        Parameters
+        ----------
+        pv_list : list[str]
+            EPICS PV names to record.
+        """
+        res = requests.post(
+            f"{self.broker_address}/set_pvlist",
+            json={"pv_list": list(pv_list)},
+            timeout=self.timeout,
+        )
+        assert res.ok, f"Setting PV list failed {res.raise_for_status()}"
+        return res.json()["pv_list"]
+
+    def check_alive(self, timeout=None):
+        """
+        Best-effort health/reachability check for the fast broker
+        (broker_address).
+
+        sf_daq_broker's REST API has no dedicated health/ping endpoint
+        (checked broker_rest_api.md and the endpoint lists registered in
+        sf_daq_broker/broker.py and broker_slow.py -- neither defines one).
+        This uses GET /get_allowed_detectors as a cheap stand-in: it only
+        reads static beamline config server-side, so an exception here is a
+        reasonable proxy for "the fast broker process is not answering",
+        while a slow-but-successful response is a proxy for "it's alive but
+        the single-threaded request queue (see class docstring) is backed
+        up" rather than down.
+
+        Per-detector hardware diagnostics live on the *slow* broker and are
+        wrapped on :class:`eco.detector.jungfrau.Jungfrau` instead (they
+        take a detector_name, so they don't fit this class): get_status()
+        (delay/exptime/gain_mode/detector_mode), get_pings() (per-module
+        network reachability), get_temperatures(), and get_stats()
+        (get_jfstats: bundles a "was the detector buffer file written to in
+        the last 30 s" flag with temperatures and jfctrl status -- the
+        closest thing sf-daq exposes to a single "is this detector actually
+        alive and recording right now" check).
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Overrides self.timeout for this call only. Consider passing
+            something more generous than self.timeout here: per the class
+            docstring, a slow response under broker congestion is not the
+            same as the broker being down, and self.timeout is tuned tight
+            for scan-critical calls, not diagnostics.
+
+        Returns
+        -------
+        dict
+            {"alive": bool, "latency_s": float, "error": str or None}
+        """
+        t0 = time.time()
+        try:
+            res = requests.get(
+                f"{self.broker_address}/get_allowed_detectors",
+                timeout=timeout or self.timeout,
+            )
+            res.raise_for_status()
+            return {"alive": True, "latency_s": time.time() - t0, "error": None}
+        except Exception as e:
+            return {"alive": False, "latency_s": time.time() - t0, "error": str(e)}
+
     def power_on_JF(self, JF_channel):
         par = {"detector_name": JF_channel}
         return requests.post(
@@ -515,6 +764,23 @@ class Daq(Assembly):
     def take_pedestal(
         self, JF_list=None, pedestalmode=False, pgroup=None, verbose=False
     ):
+        """
+        POST {broker_address}/take_pedestal for JF_list (default: currently
+        running detectors).
+
+        Async on the server, like retrieve_from_buffers: this call publishes
+        a request to RabbitMQ and returns immediately, it does not wait for
+        the dark run to actually be taken. The broker's own response message
+        states how long to wait: PEDESTAL_FRAMES / 100 * rate_multiplicator
+        + 10 seconds, with PEDESTAL_FRAMES hardcoded to 3000 in
+        sf_daq_broker/broker_manager.py -- i.e. ~40 s for the
+        rate_multiplicator=1 used here. Do not call this (or anything else
+        against broker_address) again before that estimated duration has
+        passed: per the class docstring the broker handles one request at a
+        time process-wide, so calling again while a pedestal job is in
+        flight only adds queuing delay for both calls, it does not make the
+        pedestal finish sooner.
+        """
         if pgroup is None:
             pgroup = self.pgroup
         if not JF_list:
@@ -533,7 +799,70 @@ class Daq(Assembly):
             f"{self.broker_address}/take_pedestal", json=parameters
         ).json()
 
+    def _debounced_append_aux(self, key, wait, *file_names, **aux_kwargs):
+        """
+        Trailing-edge debounce around :meth:`append_aux`.
+
+        Calls sharing the same ``key`` that arrive within ``wait`` seconds
+        of each other are coalesced: each new call cancels the previously
+        scheduled upload for that key and reschedules it ``wait`` seconds
+        out, so only the *last* call in a burst actually reaches the
+        network -- fired once the calls for that key go quiet for ``wait``
+        seconds, using whatever ``file_names``/``aux_kwargs`` that last call
+        supplied. If calls keep arriving faster than ``wait``, the upload
+        keeps getting pushed out and only ever fires after the burst ends
+        (there is no periodic/every-Nth-call fallback) -- fine here because
+        the thing being uploaded (e.g. scan_info_rel.json) is overwritten
+        in place on local disk synchronously before this is scheduled, so
+        by the time the deferred call fires it always ships the current
+        on-disk content regardless of which call triggered it.
+
+        Exists because :meth:`append_aux` posts to broker_address_aux,
+        sf_daq_broker's single-threaded slow broker (see class docstring),
+        and copy_scan_info_to_raw calls append_aux once per scan step --
+        on a fast scan that alone is enough traffic to noticeably back up
+        the broker's one-request-at-a-time queue.
+
+        The scheduling Timer is a daemon thread and is not joined anywhere
+        (matching the pre-existing plain Thread this replaces, which was
+        never joined via scan.remaining_tasks either -- see that list's use
+        in copy_scan_info_to_raw). On the very last call of a scan this
+        still fires and uploads correctly, just up to ``wait`` seconds
+        after the scan itself has finished.
+        """
+        with self._debounce_lock:
+            pending = self._debounce_timers.pop(key, None)
+            if pending is not None:
+                pending.cancel()
+
+            def fire():
+                with self._debounce_lock:
+                    self._debounce_timers.pop(key, None)
+                self.append_aux(*file_names, **aux_kwargs)
+
+            timer = Timer(wait, fire)
+            timer.daemon = True
+            self._debounce_timers[key] = timer
+            timer.start()
+        return timer
+
     def append_aux(self, *file_names, run_number=None, pgroup=None, check_group=True):
+        """
+        POST {broker_address_aux}/copy_user_files -- copy file_names into
+        the aux directory of run_number on the server.
+
+        broker_address_aux is sf_daq_broker's *slow* broker (see class
+        docstring), the same single-threaded process that also serves
+        detector/DAP settings and the hardware diagnostics endpoints. Called
+        directly once per scan (start/end status, aliases, monitors), always
+        from a background Thread so it doesn't block the scan itself --
+        copy_scan_info_to_raw instead goes through
+        :meth:`_debounced_append_aux` since it would otherwise fire once per
+        scan step. Even so, it still queues behind whatever else is talking
+        to broker_address_aux at the time. Avoid running settings/diagnostics
+        polling on broker_address_aux during an active scan; it will show
+        up as extra latency here.
+        """
         if pgroup is None:
             pgroup = self.pgroup
         if run_number is None:
@@ -612,27 +941,12 @@ class Daq(Assembly):
         # scan.daq_run_number = runno
         scan._append(DetectorMemory, runno, name="daq_run_number")
 
-    #     def get_dap_settings(detector_name):
-    #     dap_parameters = {}
-    #     try:
-    #         r = requests.post(f'{broker_slow_address}/get_dap_settings', json={'detector_name': detector_name}, timeout=TIMEOUT_DAQ)
-    #         answer = r.json()
-    #         if "status" in answer and answer["status"] == "ok":
-    #             dap_parameters = answer.get("message", {})
-    #         else:
-    #             print(f"Got bad result from daq for dap parameters : {answer}")
-    #         return dap_parameters
-    #     except Exception as e:
-    #         print(f"Error to get dap configuration {e}")
-    #         return dap_parameters
-
-    # def set_dap_settings(detector_name, parameters):
-    #     try:
-    #         r = requests.post(f'{broker_slow_address}/set_dap_settings', json={'detector_name': detector_name, 'parameters': parameters}, timeout=TIMEOUT_DAQ)
-    #         answer = r.json()
-    #         print(f"answer from daq for changing dap parameters for detector {detector_name} : {answer}")
-    #     except Exception as e:
-    #         print(f"Error to set dap configuration {e}")
+    # get/set_dap_settings and get/set_detector_settings are NOT dead here by
+    # accident -- they're implemented and used, just per-detector rather than
+    # per-Daq: see eco.detector.jungfrau.Jungfrau.get_dap_settings/
+    # set_dap_settings/get_detector_settings/set_detector_settings, which
+    # talk to broker_address_aux (the "slow" broker in sf_daq_broker's own
+    # naming) exactly as these old stubs intended.
 
     def init_namespace(
         self,
@@ -642,8 +956,14 @@ class Daq(Assembly):
         **kwargs,
     ):
         if append_status_info:
+            # background=False: this must block until init actually
+            # finishes - the status info appended right after depends on
+            # the namespace being initialized by then (background=True,
+            # now init_all()'s default, would return before that).
             self.namespace.init_all(
-                silent=False, required_only=init_required_namespace_components_only
+                background=False,
+                silent=False,
+                required_only=init_required_namespace_components_only,
             )
 
     def append_start_status_to_scan(
@@ -651,7 +971,12 @@ class Daq(Assembly):
     ):
         if not append_status_info:
             return
-        namespace_status = self.namespace.get_status(base=None)
+        # raise_on_incomplete=False: this is a best-effort snapshot of the
+        # whole namespace at run start -- an unrelated, incomplete component
+        # elsewhere must never abort a run just to collect status metadata.
+        namespace_status = self.namespace.get_status(
+            base=None, raise_on_incomplete=False
+        )
         stat = {"status_run_start": namespace_status}
         scan.namespace_status = stat
 
@@ -754,7 +1079,27 @@ class Daq(Assembly):
             print("WARNING: issue adding data to run table")
         print(f"Runtable appending took: {time.time()-t_start_rt:.3f} s")
 
-    def copy_scan_info_to_raw(self, scan, pgroup=None, **kwargs):
+    def copy_scan_info_to_raw(
+        self, scan, pgroup=None, debounce_wait=None, **kwargs
+    ):
+        """
+        Write scan_info_rel.json locally and upload it to the run's aux
+        directory on the server.
+
+        This runs once per scan step (callbacks_end_step) *and* once more
+        at scan end (callbacks_end_scan) with the final scan_info. The local
+        write is synchronous and cheap; the upload
+        (:meth:`_debounced_append_aux`) is debounced with a ``debounce_wait``
+        second trailing debounce (default: self._scan_info_debounce_wait,
+        2.0 s) keyed on (pgroup, runno), so a burst of fast steps only
+        produces one upload of the latest file, fired ``debounce_wait``
+        seconds after the last step in the burst -- see class docstring for
+        why this matters (broker_address_aux is single-threaded server-side).
+        Pass debounce_wait=0 to restore the previous fire-immediately
+        behaviour.
+        """
+        if debounce_wait is None:
+            debounce_wait = self._scan_info_debounce_wait
         t_start = time.time()
 
         if pgroup is None:
@@ -795,17 +1140,18 @@ class Daq(Assembly):
         # print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
 
         scan.remaining_tasks.append(
-            Thread(
-                target=self.append_aux,
-                args=[scaninfofile.as_posix()],
-                kwargs=dict(pgroup=pgroup, run_number=runno),
+            self._debounced_append_aux(
+                ("scan_info", pgroup, runno),
+                debounce_wait,
+                scaninfofile.as_posix(),
+                pgroup=pgroup,
+                run_number=runno,
             )
         )
         # DEBUG
         # print(
         #     f"Sending scan_info_rel.json in {Path(scaninfofile).parent.stem} to run number {runno}."
         # )
-        scan.remaining_tasks[-1].start()
         # response = daq.append_aux(scaninfofile.as_posix(), pgroup=pgroup, run_number=runno)
         # print(f"Status: {response.json()['status']} Message: {response.json()['message']}")
         # print(
@@ -821,7 +1167,11 @@ class Daq(Assembly):
         if not len(scan.values_done()) > 0:
             return
 
-        namespace_status = self.namespace.get_status(base=None)
+        # raise_on_incomplete=False: see append_start_status_to_scan above --
+        # a best-effort snapshot must not abort the run over unrelated status.
+        namespace_status = self.namespace.get_status(
+            base=None, raise_on_incomplete=False
+        )
         scan.namespace_status["status_run_end"] = namespace_status
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number.get_current_value()

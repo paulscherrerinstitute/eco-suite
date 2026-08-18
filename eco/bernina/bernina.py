@@ -47,8 +47,10 @@ namespace = Namespace(
 namespace.alias_namespace.data = []
 namespace._show_svg = str(Path(__file__).parent / "beamline_interact.svg")
 
+
 def show():
     namespace.show(in_window=True)
+
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
 _config_bernina_dict = AdjustableFS(
@@ -184,11 +186,89 @@ for tk in components:
 
 # Adding all beamline components the "new" way
 
+# Draft Beamline model of the whole beamline (see eco.xoptics.
+# beamline_bernina/eco.xoptics.beamline_assembly) -- lazy, so nothing here
+# is built (no EPICS touched) until `beamline` is actually accessed; its own
+# ~35 sub-components are in turn each lazy too (see
+# Beamline.add_component(lazy=True)), and any of them that fails to
+# construct is replaced by a DummyComponent instead of taking the rest down.
+namespace.append_obj(
+    "make_bernina_beamline",
+    name="beamline",
+    module_name="eco.xoptics.beamline_bernina",
+    lazy=True,
+)
 
 namespace.append_obj(
     "BerninaVacuum",
     name="vacuum",
     module_name="eco.endstations.bernina_vacuum",
+    lazy=True,
+)
+# "vacuum" as its own top-level beamline type, same front_end/optics/hutch
+# subtypes as "fel" above -- BerninaVacuum itself tags its 3 sections (see
+# eco.endstations.bernina_vacuum), and each section in turn tags its own
+# real devices (see eco.xoptics.aramis_vacuum._build_section), so
+# namespace.beamline.vacuum.<subtype> unfolds two levels deep into the
+# actual valves/gauges/pumps. z_source=90.0 here is just this top anchor
+# row's own position (roughly the middle of the whole 42-144m span); the
+# unfolded sections/devices each carry their own real z.
+namespace.mark_beamline(
+    "vacuum", types="vacuum", z_source=90.0, kind="vacuum",
+    description="Bernina vacuum system (front end + optics + endstation/hutch)",
+)
+
+# Consolidated prepump/venting system (see eco.devices_general.vacuum.prepump
+# for the model + spec this implements). One structured config dict holds
+# every line's valve/gauge/turbo PV names, so the whole system can be edited
+# here as a single literal. All PVs below are still None placeholders -- fill
+# them in once known; a line with all-None PVs still builds (just empty).
+# Line *kinds* are a guess (the source spec's "usage scenarios for permanent
+# lines 1-2" was truncated) -- adjust once confirmed. Lazy, so nothing here
+# touches EPICS until `prepump` is accessed.
+_prepump_config = {
+    "gp": "SARES21-VMCP142-620",  # common prevac-line gauge Gp base
+    "roots_pump": "SARES21-VPFO140-750",  # Roots pump base
+    "p_target": 1e-3,  # "pumped" threshold [mbar]
+    "lines": {
+        # permanent dual-access chambers (guess: prepump_access) -------------
+        "line1_usd": {
+            "kind": "turbo",
+            "gauge": "SARES21-VMFR140-510",  # G1 gauge base
+            "turbo": "SARES21-VPTM140-700",  # turbo pump base
+            "valve_prevac": "SARES21-VVPP140-300",  # P2 chamber roughing valve
+            "valve_vent": "SARES21-VVPP142-340",  # V2 chamber vent valve
+        },
+        "line2_lic": {
+            "kind": "turbo",
+            "gauge": "SARES21-VMCP141-531",  # G1 gauge base
+            "turbo": "SARES21-VPTM141-710",  # turbo pump base
+            "valve_prevac": "SARES21-VVPP141-320",  # P2 chamber roughing valve
+            "valve_vent": "SARES21-VVPP142-370",  # V2 chamber vent valve
+        },
+        # line 3 : valve_vent : "143-350", valve_prevac 142-330""
+        # line 4 : valve_vent : "142-340", valve_prevac
+        # "line2": {
+        #     "kind": "prepump_access",
+        #     "gauge": None, "turbo": None,
+        #     "valve_prevac": None, "valve_vent": None,
+        #     "valve_turbo_prevac": None, "valve_turbo_access": None,
+        # },
+        # # classic turbo prepump lines (guess: turbo) -------------------------
+        # "line3": {"kind": "turbo", "gauge": None, "turbo": None,
+        #           "valve_prevac": None, "valve_vent": None},
+        # "line4": {"kind": "turbo", "gauge": None, "turbo": None,
+        #           "valve_prevac": None, "valve_vent": None},
+        # # beam-transport pipe, pre-vacuum only (guess: transport) -----------
+        # "line5": {"kind": "transport", "gauge": None,
+        #           "valve_prevac": None, "valve_vent": None},
+    },
+}
+namespace.append_obj(
+    "make_prepump_system",
+    _prepump_config,
+    name="prepump",
+    module_name="eco.devices_general.vacuum.prepump",
     lazy=True,
 )
 
@@ -244,6 +324,9 @@ namespace.append_obj(
     module_name="eco.xoptics.pp",
     lazy=True,
 )
+namespace.mark_beamline(
+    "xp", types=("fel", "optics"), z_source=113.0, kind="chopper", description="x-ray pulse picker",
+)
 
 namespace.append_obj(
     "laser_shutter",
@@ -252,26 +335,36 @@ namespace.append_obj(
     module_name="eco.loptics.laser_shutter",
     lazy=True,
 )
-namespace.append_obj(
-    "PhotonShutter",
-    "SARFE10-OPSH044:REQUEST",
-    name="pshut_und",
-    module_name="eco.xoptics.shutters",
-    lazy=True,
-)
-namespace.append_obj(
-    "PhotonShutter",
-    "SARFE10-OPSH059:REQUEST",
-    name="pshut_fe",
-    module_name="eco.xoptics.shutters",
-    lazy=True,
-)
+# First real trial of the generalized beamline-view prototype (see
+# eco.elements.beamline_view / Assembly.mark_beamline) on the live namespace,
+# in parallel with the untouched eco.xoptics.beamline_assembly.Beamline draft
+# (eco.xoptics.beamline_bernina.make_bernina_front_end/make_bernina_experiment_
+# hutch) -- z_source/kind values below are taken straight from those modules
+# so they agree. Every "fel"-tagged component below also carries an
+# organisational subtype -- "front_end" (SARFE10, up to the end-of-front-end
+# shutter), "optics" (SAROP21 Bernina optics hutch), or "hutch" (the
+# experiment hutch itself, see further down) -- navigable by prefix via
+# mark_beamline's path/subtype doc. Purely additive bookkeeping:
+# mark_beamline() never touches EPICS or constructs anything, so nothing
+# here changes unless namespace.beamline (or .beamline_view(...)) is
+# actually used. Try e.g.:
+#   namespace.beamline.fel             # every "fel" position, any subtype
+#   namespace.beamline.fel.front_end   # just this subtype
+#   namespace.beamline.fel.optics
+#   namespace.beamline.fel.hutch
+#   namespace.beamline.vacuum          # the vacuum system, same 3 subtypes,
+#                                       # unfolding into each section's real
+#                                       # valve/gauge/pump devices
 namespace.append_obj(
     "SafetyShutter",
     "SGE01-EPKT822:BST1_oeffnen",
     name="sshut_opt",
     module_name="eco.xoptics.shutters",
     lazy=True,
+)
+namespace.mark_beamline(
+    "sshut_opt", types=("fel", "optics"), z_source=115.0, kind="shutter",
+    description="Bernina optics-hutch safety shutter",
 )
 namespace.append_obj(
     "SafetyShutter",
@@ -280,15 +373,12 @@ namespace.append_obj(
     module_name="eco.xoptics.shutters",
     lazy=True,
 )
-namespace.append_obj(
-    "AttenuatorAramis",
-    "SARFE10-OATT053",
-    shutter=pshut_und,
-    set_limits=[],
-    module_name="eco.xoptics.attenuator_aramis",
-    name="att_fe",
-    lazy=True,
-)
+# The whole "fel"/"front_end" group (pshut_und, slit_und, mon_und, pshut_fe,
+# att_fe, prof_fe) is delegated to bernina_front_end.py, which imports
+# `namespace` back and self-registers - only needs to come after
+# `namespace = Namespace(...)` above; see that module's docstring for why
+# that's not a circular import.
+from . import bernina_front_end  # noqa: F401
 
 namespace.append_obj(
     "Bernina_XEYE",
@@ -303,12 +393,6 @@ namespace.append_obj(
 
 ## beamline components ##
 
-namespace.append_obj(
-    "JJSlitUnd",
-    name="slit_und",
-    module_name="eco.xoptics.slits",
-    lazy=True,
-)
 # namespace.append_obj(
 #     "JJSlitUnd_new",
 #     name="slit_und_test",
@@ -322,12 +406,20 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+namespace.mark_beamline(
+    "slit_switch", types=("fel", "optics"), z_source=92.0, kind="slit",
+    description="switchyard slit",
+)
 
 namespace.append_obj(
     "OffsetMirrorsBernina",
     name="offset",
     lazy=True,
     module_name="eco.xoptics.offsetMirrors_new",
+)
+namespace.mark_beamline(
+    "offset", types=("fel", "optics"), z_source=94.0, kind="mirror",
+    description="offset mirror pair (mirr1@92m, mirr2@96m)",
 )
 
 namespace.append_obj(
@@ -337,6 +429,7 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+namespace.mark_beamline("slit_mono", types=("fel", "optics"), z_source=102.0, kind="slit")
 
 namespace.append_obj(
     "SolidTargetDetectorPBPS",
@@ -353,6 +446,7 @@ namespace.append_obj(
     pipeline_computation="SAROP21-PBPS103_proc",
     lazy=True,
 )
+namespace.mark_beamline("mon_mono", types=("fel", "optics"), z_source=103.0, kind="diagnostic")
 
 from eco.devices_general.motors import SmaractStreamdevice, SmaractRecord
 
@@ -396,6 +490,10 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+namespace.mark_beamline(
+    "slit_kb", types=("fel", "hutch"), z_source=140.15, kind="slit",
+    description="slits upstream of the KB mirrors",
+)
 
 
 namespace.append_obj(
@@ -438,27 +536,16 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+namespace.mark_beamline(
+    "slit_cleanup", types=("fel", "hutch"), z_source=140.2, kind="slit",
+    description="cleanup slit, upstream diagnostics",
+)
 
 
 namespace.append_obj(
     "GasDetector",
     name="mon_und_gas",
     module_name="eco.xdiagnostics.intensity_monitors",
-    lazy=True,
-)
-namespace.append_obj(
-    "SolidTargetDetectorPBPS",
-    "SARFE10-PBPS053",
-    # diode_channels_raw={
-    #     "up": "SARFE10-CVME-PHO6212:Lnk9Ch13-DATA-SUM",
-    #     "down": "SARFE10-CVME-PHO6212:Lnk9Ch12-DATA-SUM",
-    #     "left": "SARFE10-CVME-PHO6212:Lnk9Ch14-DATA-SUM",
-    #     "right": "SARFE10-CVME-PHO6212:Lnk9Ch15-DATA-SUM",
-    # },
-    name="mon_und",
-    use_calibration=False,
-    module_name="eco.xdiagnostics.intensity_monitors",
-    pipeline_computation="SARFE10-PBPS053_proc",
     lazy=True,
 )
 
@@ -510,15 +597,6 @@ namespace.append_obj(
     lazy=True,
 )
 
-namespace.append_obj(
-    "Pprm",
-    "SARFE10-PPRM064",
-    "SARFE10-PPRM064",
-    module_name="eco.xdiagnostics.profile_monitors",
-    name="prof_fe",
-    in_target=3,
-    lazy=True,
-)
 
 namespace.append_obj(
     "Pprm",
@@ -528,6 +606,10 @@ namespace.append_obj(
     name="prof_mirr_alv1",
     in_target=3,
     lazy=True,
+)
+namespace.mark_beamline(
+    "prof_mirr_alv1", types=("fel", "optics"), z_source=66.0, kind="profile",
+    description="shared Aramis switchyard profile monitor, upstream of the Alvra/Bernina split",
 )
 
 namespace.append_obj(
@@ -539,6 +621,7 @@ namespace.append_obj(
     in_target=3,
     lazy=True,
 )
+namespace.mark_beamline("prof_mirr1", types=("fel", "optics"), z_source=94.0, kind="profile")
 
 namespace.append_obj(
     "Pprm",
@@ -554,6 +637,7 @@ namespace.append_obj(
     in_target=3,
     lazy=True,
 )
+namespace.mark_beamline("prof_mono", types=("fel", "optics"), z_source=113.0, kind="profile")
 
 
 namespace.append_obj(
@@ -609,6 +693,7 @@ namespace.append_obj(
     name="mon_kb",
     lazy=True,
 )
+namespace.mark_beamline("mon_kb", types=("fel", "hutch"), z_source=140.25, kind="diagnostic")
 
 namespace.append_obj(
     "DownstreamDiagnostic",
@@ -616,6 +701,7 @@ namespace.append_obj(
     module_name="eco.xdiagnostics.dsd",
     lazy=True,
 )
+namespace.mark_beamline("dsd_table", types=("fel", "hutch"), z_source=145.15, kind="stage")
 
 namespace.append_obj(
     "Pprm_dsd",
@@ -625,6 +711,7 @@ namespace.append_obj(
     name="prof_dsd",
     lazy=True,
 )
+namespace.mark_beamline("prof_dsd", types=("fel", "hutch"), z_source=145.72, kind="profile")
 # namespace.append_obj(
 #    "SolidTargetDetectorPBPS",
 #    "SARES20-DSDPBPS",
@@ -647,6 +734,7 @@ namespace.append_obj(
     pvname_mirror="SARES20-MCS1:MOT_11",
     lazy=True,
 )
+namespace.mark_beamline("prof_kb", types=("fel", "hutch"), z_source=140.25, kind="profile")
 namespace.append_obj(
     "TimetoolBerninaUSD",
     module_name="eco.timing.timing_diag",
@@ -662,6 +750,10 @@ namespace.append_obj(
     module_name="eco.endstations.hexapod",
     offset=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     lazy=True,
+)
+namespace.mark_beamline(
+    "usd_table", types=("fel", "hutch"), z_source=140.4, kind="stage",
+    description="upstream-diagnostics hexapod table (carries slit_kb/att_usd)",
 )
 
 namespace.append_obj(
@@ -792,6 +884,10 @@ namespace.append_obj(
     lazy=True,
     name="cam_north",
     module_name="eco.devices_general.cameras_ptz",
+    # click-to-center/drag-to-zoom otherwise land diagonally opposite
+    # where clicked on this unit -- see AxisPTZ._to_sensor_xy
+    invert_click_x=True,
+    invert_click_y=True,
 )
 namespace.append_obj(
     "AxisPTZ",
@@ -799,6 +895,10 @@ namespace.append_obj(
     lazy=True,
     name="cam_west",
     module_name="eco.devices_general.cameras_ptz",
+    # click-to-center/drag-to-zoom otherwise land diagonally opposite
+    # where clicked on this unit -- see AxisPTZ._to_sensor_xy
+    invert_click_x=True,
+    invert_click_y=True,
 )
 namespace.append_obj(
     "AxisPTZ",
@@ -806,6 +906,10 @@ namespace.append_obj(
     lazy=True,
     name="cam_south",
     module_name="eco.devices_general.cameras_ptz",
+    # click-to-center/drag-to-zoom otherwise land diagonally opposite
+    # where clicked on this unit -- see AxisPTZ._to_sensor_xy
+    invert_click_x=True,
+    invert_click_y=True,
 )
 namespace.append_obj(
     "Xspect",
@@ -894,6 +998,8 @@ namespace.append_obj(
     thc_config=NamespaceComponent(
         namespace, "config_bernina.thc_config", get_current_value=True
     ),
+    event_master=NamespaceComponent(namespace, "event_master"),
+    detectors_event_code=50,
     lazy=True,
 )
 
@@ -928,6 +1034,23 @@ namespace.append_obj(
     jf_config=config_JFs,
     invert_kappa_ellbow=config_bernina.invert_kappa_ellbow._value,
     fina_hex_angle_offset="/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/hex_pi_angle_offset.json",
+    xp=NamespaceComponent(namespace, "xp"),
+    helium_control_valve={
+        "pvbase": "SARES21-PS7071",
+        "channel_number": 4,
+        "name": "helium_control_valve",
+        "pvname": "SARES20-CWAG-GPS01:DAC04",
+    },
+    illumination_mpod=[
+        {
+            "pvbase": "SARES21-PS7071",
+            "channel_number": 5,
+            "module_string": "LV_OMPV_1",
+            "name": "illumination",
+        }
+    ],
+    event_master=NamespaceComponent(namespace, "event_master"),
+    detectors_event_code=50,
     name="xrd",
     lazy=True,
 )
@@ -947,6 +1070,10 @@ namespace.append_obj(
     diffractometer=NamespaceComponent(namespace, "xrd"),
     lazy=True,
 )
+namespace.mark_beamline(
+    "kb", types=("fel", "hutch"), z_source=139.0, kind="mirror",
+    description="KB mirror pair (ver focus @ -3350 mm, hor focus @ -2600 mm)",
+)
 
 namespace.append_obj(
     "Att_usd",
@@ -954,6 +1081,10 @@ namespace.append_obj(
     module_name="eco.xoptics.att_usd",
     xp=NamespaceComponent(namespace, "xp"),
     lazy=True,
+)
+namespace.mark_beamline(
+    "att_usd", types=("fel", "hutch"), z_source=140.58, kind="attenuator",
+    description="upstream diagnostics attenuator",
 )
 
 
@@ -1134,23 +1265,23 @@ namespace.append_obj(
 namespace.append_obj(
     "Daq",
     instrument="bernina",
-    pgroup=NamespaceComponent(namespace,"config_bernina.pgroup"),
-    channels_JF=NamespaceComponent(namespace,"channels_JF"),
-    channels_BS=NamespaceComponent(namespace,"channels_BS"),
-    channels_BSCAM=NamespaceComponent(namespace,"channels_BSCAM"),
-    channels_CA=NamespaceComponent(namespace,"channels_CA"),
-    config_JFs=NamespaceComponent(namespace,"config_JFs"),
+    pgroup=NamespaceComponent(namespace, "config_bernina.pgroup"),
+    channels_JF=NamespaceComponent(namespace, "channels_JF"),
+    channels_BS=NamespaceComponent(namespace, "channels_BS"),
+    channels_BSCAM=NamespaceComponent(namespace, "channels_BSCAM"),
+    channels_CA=NamespaceComponent(namespace, "channels_CA"),
+    config_JFs=NamespaceComponent(namespace, "config_JFs"),
     # pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
     pulse_id_adj="SARES20-CVME-01-EVR0:RX-PULSEID",
-    event_master=NamespaceComponent(namespace,"event_master"),
+    event_master=NamespaceComponent(namespace, "event_master"),
     detectors_event_code=50,
     rate_multiplicator="auto",
     name="daq",
     namespace=namespace,
     checker=NamespaceComponent(namespace, "checker"),
-    run_table=NamespaceComponent(namespace,"run_table"),
+    run_table=NamespaceComponent(namespace, "run_table"),
     pulse_picker=NamespaceComponent(namespace, "xp"),
-    elog=NamespaceComponent(namespace,"elog"),
+    elog=NamespaceComponent(namespace, "elog"),
     module_name="eco.acquisition.daq_client",
     lazy=True,
 )
@@ -1353,7 +1484,6 @@ namespace.append_obj(
 # )
 
 
-
 # namespace.append_obj(
 #     "PaseShifterAramis",
 #     "SLAAR02-TSPL-EPL",
@@ -1437,6 +1567,8 @@ class VonHamos(Assembly):
             name="detector",
             config_adj=config_jf_adj,
             pgroup_adj=pgroup_adj,
+            event_master=NamespaceComponent(namespace, "event_master"),
+            detectors_event_code=50,
         )
         self._append(
             MotorRecord, "SARES20-XPS1:MOT_1", name="slit_hor", is_setting=True
@@ -1556,184 +1688,6 @@ class N2jet(Assembly):
         )
 
 
-from eco.devices_general.motors import ThorlabsPiezoRecord
-
-
-# # ad hoc incoupling device
-class Incoupling(Assembly):
-    def __init__(self, delaystage_pump=None, name=None):
-        super().__init__(name=name)
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_13", name="thz_par2_x", is_setting=True
-        # )
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_16", name="thz_par2_z", is_setting=True
-        # )
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_14", name="thz_par2_ry", is_setting=True
-        # )
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_15", name="thz_par2_rx", is_setting=True
-        # )
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_11", name="thz_par1_z", is_setting=True
-        # )
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_17", name="thz_par1_ry", is_setting=True
-        # )
-
-        # try:
-        #     self.motor_configuration_thorlabs = {
-        #         "thz_filter": {
-        #             "pvname": "SLAAR21-LMOT-ELL4",
-        #         },
-        #         "thz_crystal": {
-        #             "pvname": "SLAAR21-LMOT-ELL3",
-        #         },
-        #         "thz_waveplate": {
-        #             "pvname": "SLAAR21-LMOT-ELL5",
-        #         },
-        #         "nd_filter": {
-        #             "pvname": "SLAAR21-LMOT-ELL2",
-        #         },
-        #         "polarizer": {
-        #             "pvname": "SLAAR21-LMOT-ELL1",
-        #         },
-        #     }
-        try:
-            self.motor_configuration_thorlabs = {
-                "hwp": {
-                    "pvname": "SLAAR21-LMOT-ELL5",
-                },
-                "fw": {
-                    "pvname": "SLAAR21-LMOT-ELL2",
-                },
-            }
-
-            ### thorlabs piezo motors ###
-            for name, config in self.motor_configuration_thorlabs.items():
-                self._append(
-                    ThorlabsPiezoRecord,
-                    pvname=config["pvname"],
-                    name=name,
-                    is_setting=True,
-                    accuracy=0.5,
-                )
-        except Exception as e:
-            print(e)
-
-        # self._append(
-        #    SmaractRecord, "SARES20-MCS2:MOT_18", name="opa_mirr2_ry", is_setting=True
-        # )
-        # self._append(
-        #     SmaractRecord, "SARES20-MCS2:MOT_10", name="tt_nopa_target", is_setting=True
-        # )
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC07_VOLTS",
-            name="opa_mirr1_ry",
-            is_setting=True,
-        )
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC08_VOLTS",
-            name="opa_mirr1_rx",
-            is_setting=True,
-        )
-
-        self._append(MotorRecord, "SARES20-XPS1:MOT_1", name="lens_z", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_2", name="lens_x", is_setting=True)
-        self._append(MotorRecord, "SARES20-XPS1:MOT_3", name="lens_y", is_setting=True)
-        # self._append(
-        #     MotorRecord, "SARES20-MF1:MOT_13", name="eos_mirr", is_setting=True
-        # )
-
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC06_VOLTS",
-            name="eos_fb_rx",
-            is_setting=True,
-        )
-        self._append(
-            AnalogOutput,
-            "SLAAR21-LDIO-LAS6991:DAC05_VOLTS",
-            name="eos_fb_ry",
-            is_setting=True,
-        )
-
-        self._append(
-            AdjustablePv,
-            pvsetname="SLAAR21-LCAM-C561:FIT2_REQUIRED.PROC",
-            name="eos_fb_setpoint_rq",
-            accuracy=1,
-            is_setting=True,
-        )
-        self._append(
-            AdjustablePv,
-            pvsetname="SLAAR21-LCAM-C561:FIT2_DEFAULT.PROC",
-            name="eos_fb_setpoint_df",
-            accuracy=1,
-            is_setting=True,
-        )
-        self._append(
-            AdjustablePv,
-            pvsetname="SLAAR21-LTIM01-EVR0:CALCW.A",
-            name="eos_fd_enable",
-            accuracy=1,
-            is_setting=True,
-        )
-
-        self._append(
-            AdjustableVirtual,
-            [self.thz_crystal, self.thz_waveplate],
-            lambda c, w: c,
-            lambda angle: [angle, angle / 2],
-            name="thz_polarization",
-            is_setting=False,
-        )
-
-        # self._append(
-        #     AdjustableVirtual,
-        #     [self.thz_par1_z, self.thz_par2_z],
-        #     lambda z1, z2: z2,
-        #     lambda z: [
-        #         self.thz_par1_z.get_current_value()
-        #         + (z - self.thz_par2_z.get_current_value()),
-        #         z,
-        #     ],
-        #     name="thz_focus",
-        #     is_setting=False,
-        #     is_display=False,
-        # )
-
-        # self._append(
-        #     delaystage_pump,
-        #     name="delaystage_pump",
-        #     is_setting=False,
-        #     is_display=False,
-        # )
-
-        # self._append(
-        #     AdjustableVirtual,
-        #     [self.delaystage_pump, self.thz_par2_x],
-        #     lambda d, x: x,
-        #     lambda x: [
-        #         self.delaystage_pump.get_current_value()
-        #         + (x - self.thz_par2_x.get_current_value()) / 2,
-        #         x,
-        #     ],las_inc
-        #     name="thz_par2_x_delaycomp",
-        #     is_setting=False,
-        #     is_display=False,
-        # )
-
-    # def thz_pol_set(self, val):
-    #     return 1.0 * val, 1.0 / 2 * val
-
-    # def thz_pol_get(self, val, val2):
-    #     return 1.0 * val2
-
-
 namespace.append_obj(
     "Incoupling",
     delaystage_pump=NamespaceComponent(namespace, "las.delaystage_pump"),
@@ -1742,6 +1696,14 @@ namespace.append_obj(
     module_name="eco.endstations.bernina_incoupling",
 )
 
+
+namespace.append_obj(
+    "THzWork",
+    # delaystage_pump=NamespaceComponent(namespace, "las.delaystage_pump"),
+    lazy=True,
+    name="thz_dev",
+    module_name="eco.loptics.bernina_laser",
+)
 
 # namespace.append_obj(
 #    "Organic_crystal_breadboard",
@@ -2193,6 +2155,10 @@ namespace.append_obj(
     lazy=True,
     module_name="eco.xoptics.dcm_new",
 )
+namespace.mark_beamline(
+    "mono", types=("fel", "optics"), z_source=98.0, kind="mono",
+    description="Si(111) double-crystal monochromator",
+)
 
 # namespace.append_obj(
 #     "AramisDcmFeedback",
@@ -2636,6 +2602,8 @@ class XrayWaveplate(Assembly):
             "JF01T03V01",
             config_adj=daq.config_JFs,
             pgroup_adj=config_bernina.pgroup,
+            event_master=NamespaceComponent(namespace, "event_master"),
+            detectors_event_code=50,
             name="det_jf",
             is_setting=True,
             is_status=True,
@@ -2692,6 +2660,8 @@ class Tapedrive(Assembly):
             "JF07T32V01",
             config_adj=daq.config_JFs,
             pgroup_adj=config_bernina.pgroup,
+            event_master=NamespaceComponent(namespace, "event_master"),
+            detectors_event_code=50,
             name="det_diff",
             is_setting=True,
             is_status=True,
@@ -2702,6 +2672,8 @@ class Tapedrive(Assembly):
             "JF05T01V01",
             config_adj=daq.config_JFs,
             pgroup_adj=config_bernina.pgroup,
+            event_master=NamespaceComponent(namespace, "event_master"),
+            detectors_event_code=50,
             name="det_spect",
             is_setting=True,
             is_status=True,
@@ -2712,6 +2684,8 @@ class Tapedrive(Assembly):
             "JF03T01V01",
             config_adj=daq.config_JFs,
             pgroup_adj=config_bernina.pgroup,
+            event_master=NamespaceComponent(namespace, "event_master"),
+            detectors_event_code=50,
             name="det_imon",
             is_setting=True,
             is_status=True,

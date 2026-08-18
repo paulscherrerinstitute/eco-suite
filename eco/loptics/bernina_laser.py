@@ -20,6 +20,7 @@ from ..elements.adjustable import (
     AdjustableVirtual,
     AdjustableGetSet,
     AdjustableFS,
+    AdjustableTrigger,
     spec_convenience,
     update_changes,
     value_property,
@@ -83,6 +84,34 @@ class IncouplingCleanBernina(Assembly):
             is_display=True,
         )
 
+class THzWork(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_5",
+            name="delaystage_ftir",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_ftir,
+            name="delay_ftir",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_4",
+            name="dfg_rot",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_3",
+            name="dfg_pos",
+            is_setting=True,
+        )
 
 class MIRVirtualStages(Assembly):
     def __init__(self, name=None, nx=None, nz=None, mx=None, mz=None):
@@ -636,8 +665,25 @@ class FilterWheel(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(AdjustablePvEnum, f"{pvname}.VAL", name="_val", is_setting=True)
-        self._append(AdjustablePvEnum, f"{pvname}.RBV", name="_rb", is_setting=True)
+        # Position get/set: .RBV (readback) and .VAL (setpoint) are separate
+        # PVs whose enum tables aren't guaranteed to line up 1:1 (unverified
+        # here -- PV unreachable from this host at investigation time).
+        # pvname_set reconciles them the same way IonPumpController/dcm_new/
+        # offsetMirrors_new/swissfel/motors do (see AdjustablePvEnum._resolve()),
+        # instead of treating .RBV and .VAL as two independent, unrelated enums.
+        self._append(
+            AdjustablePvEnum, f"{pvname}.RBV", pvname_set=f"{pvname}.VAL",
+            name="_val", is_setting=True,
+        )
+        # Separate, untranslated handle onto raw .VAL indices for the
+        # home/remote/manual controller commands below (native codes 6/7/8):
+        # kept independent of _val's merged/get2set index space, since these
+        # are .VAL-only commands not guaranteed to appear in .RBV's own enum
+        # table at the same index -- translating them through _val could
+        # silently issue the wrong command.
+        self._append(
+            AdjustablePvEnum, f"{pvname}.VAL", name="_val_cmd", is_setting=False
+        )
         self._append(AdjustablePv, f"{pvname}.CMD", name="_cmd", is_setting=False)
         self.set_remote_operation()
         self._append(
@@ -655,22 +701,23 @@ class FilterWheel(Assembly):
             is_setting=False,
             is_status=True,
         )
+        self._append(AdjustableTrigger, self.home, name="home", button_label="Home")
 
     def set_target_value(self, value):
         self._val(value)
 
     def get_current_value(self):
-        return self._rb()
+        return self._val()
 
     def set_remote_operation(self):
-        self._val(7)
+        self._val_cmd(7)
 
     def set_manual_operation(self):
-        self._val(8)
+        self._val_cmd(8)
 
     def home(self):
         self.set_remote_operation()
-        self._val(6)
+        self._val_cmd(6)
 
     def is_moving(self):
         pass
@@ -681,6 +728,7 @@ class FilterWheelAttenuator(Assembly):
         super().__init__(name=name)
         self._append(FilterWheel, pvname=pvname + "IFW_A", name="wheel_1")
         self._append(FilterWheel, pvname=pvname + "IFW_B", name="wheel_2")
+        self._append(AdjustableTrigger, self.home, name="home", button_label="Home")
 
         self.targets_1 = {
             "t": 10 ** -np.array([0.2, 0.3, 0.5, 0.6, 1.0]),
@@ -1326,19 +1374,6 @@ class LaserBernina(Assembly):
         )
         self._append(
             SmaractRecord,
-            "SARES20-MCS2:MOT_16",
-            name="delaystage_tt_opt",
-            is_setting=True,
-        )
-
-        self._append(
-            DelayTime,
-            self.delaystage_tt_opt,
-            name="delay_tt_opt",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
             "SLAAR21-LMTS-SMAR1:MOT_1",
             name="delaystage_twin",
             is_setting=True,
@@ -1350,31 +1385,6 @@ class LaserBernina(Assembly):
             name="delay_twin",
             is_setting=True,
         )
-        self._append(
-            SmaractRecord,
-            "SLAAR21-LMTS-SMAR1:MOT_5",
-            name="delaystage_ftir",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SLAAR21-LMTS-SMAR1:MOT_4",
-            name="dfg_rot",
-            is_setting=True,
-        )
-        self._append(
-            SmaractRecord,
-            "SLAAR21-LMTS-SMAR1:MOT_3",
-            name="dfg_pos",
-            is_setting=True,
-        )
-        self._append(
-            DelayTime,
-            self.delaystage_ftir,
-            name="delay_ftir",
-            is_setting=True,
-        )
-
         self._append(
             DelayTime,
             self.delaystage_pump,

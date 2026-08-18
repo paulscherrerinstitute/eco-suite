@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How code offload to the pipeline server works: eco uploads a small user
+  script; the server hot-reloads it and runs it per message on the stream,
+  close to the source; results come back as a new output stream. Editable.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 380" font-family="Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="880" height="380" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="440" y="32" text-anchor="middle" font-size="18" font-weight="700" fill="#0f2b45">Offloading code to the pipeline server</text>
+
+  <defs>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#0071bc"/>
+    </marker>
+    <marker id="arp" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#6d28d9"/>
+    </marker>
+  </defs>
+
+  <!-- source -->
+  <rect x="30" y="150" width="150" height="70" rx="10" fill="#e9f6ee" stroke="#2e8b57" stroke-width="1.5"/>
+  <text x="105" y="180" text-anchor="middle" font-size="13" font-weight="700" fill="#2e8b57">Source stream</text>
+  <text x="105" y="200" text-anchor="middle" font-size="11" fill="#4a5b6b">BS channels / camera</text>
+
+  <!-- pipeline server -->
+  <rect x="300" y="90" width="280" height="200" rx="12" fill="#f3eefc" stroke="#5b3f8a" stroke-width="2"/>
+  <text x="440" y="118" text-anchor="middle" font-size="14" font-weight="700" fill="#5b3f8a">Pipeline server (cam_server)</text>
+  <!-- instance running user script -->
+  <rect x="330" y="135" width="220" height="120" rx="8" fill="#ffffff" stroke="#8a63c9"/>
+  <text x="440" y="158" text-anchor="middle" font-size="12" font-weight="700" fill="#5b3f8a">pipeline instance</text>
+  <rect x="352" y="172" width="176" height="66" rx="6" fill="#efeafc" stroke="#8a63c9"/>
+  <text x="440" y="192" text-anchor="middle" font-size="11" fill="#1a1a1a">your uploaded script</text>
+  <text x="440" y="210" text-anchor="middle" font-size="11" font-family="monospace" fill="#1a1a1a">process(parameters,</text>
+  <text x="440" y="226" text-anchor="middle" font-size="11" font-family="monospace" fill="#1a1a1a">        init=False)</text>
+
+  <!-- output -->
+  <rect x="700" y="150" width="150" height="70" rx="10" fill="#e8f2fb" stroke="#0071bc" stroke-width="1.5"/>
+  <text x="775" y="180" text-anchor="middle" font-size="13" font-weight="700" fill="#0071bc">Output stream</text>
+  <text x="775" y="200" text-anchor="middle" font-size="11" fill="#4a5b6b">your results, per shot</text>
+
+  <!-- data path -->
+  <path d="M180,185 L300,185" stroke="#0071bc" stroke-width="1.6" marker-end="url(#ar)"/>
+  <path d="M580,185 L700,185" stroke="#0071bc" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- eco client -->
+  <rect x="300" y="315" width="280" height="46" rx="8" fill="#fdf0e6" stroke="#d97706" stroke-width="1.5"/>
+  <text x="440" y="337" text-anchor="middle" font-size="12" font-weight="700" fill="#b5651a">eco  PipelineServer client</text>
+  <text x="440" y="352" text-anchor="middle" font-size="10.5" fill="#7a4a12">upload_script · set_function · reload</text>
+
+  <!-- control path: eco uploads/attaches code -->
+  <path d="M440,315 L440,258" stroke="#6d28d9" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arp)"/>
+  <text x="452" y="292" font-size="10.5" fill="#6d28d9">1. upload + attach code</text>
+
+  <!-- eco reads output -->
+  <path d="M700,205 C640,300 600,320 582,332" stroke="#d97706" stroke-width="1.4" fill="none" marker-end="url(#ar)"/>
+  <text x="600" y="270" font-size="10.5" fill="#b5651a">3. read results</text>
+
+  <text x="200" y="150" font-size="10.5" fill="#4a5b6b">2. server runs it</text>
+  <text x="200" y="164" font-size="10.5" fill="#4a5b6b">per message</text>
+</svg>

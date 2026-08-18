@@ -12,6 +12,7 @@ from ..elements.adjustable import (
     AdjustableFS,
     AdjustableGetSet,
     AdjustableMemory,
+    AdjustableTrigger,
     spec_convenience,
     ValueInRange,
     update_changes,
@@ -34,6 +35,7 @@ from .detectors import DetectorVirtual
 from ..epics.detector import DetectorPvData
 import json
 from .powerbrick import PowerBrickChannelPars
+from .schneider_settings import SchneiderMotorSettings, SETTINGS_SELECTION as SCHNEIDER_SETTINGS_SELECTION
 from time import sleep
 
 if hasattr(global_config, "elog"):
@@ -67,6 +69,62 @@ _status_messages = {
     3: "move-without-wait finished, hard limit violation seen",
     4: "move-without-wait finished, soft limit violation seen",
 }
+
+
+def _wait_for_motion(motor, target, stall_timeout=10.0, poll_interval=0.1):
+    """Wait for an in-progress ``epics.motor.Motor`` move to finish.
+
+    Instead of enforcing a fixed maximum move duration, this only aborts when
+    the readback (``.RBV``) stops progressing for ``stall_timeout`` seconds
+    while the motor record still reports the move as unfinished
+    (``.DMOV == 0``). This lets arbitrarily long -- but progressing -- moves
+    complete, while still catching a motor that is stuck or not responding.
+
+    The move must already have been started (e.g. with ``motor.move(...,
+    wait=False)``). Returns a status code compatible with
+    ``epics.motor.Motor.move`` / ``_status_messages``:
+        0   move finished OK
+       -3   finished, hard limit violation seen
+       -4   finished, soft limit violation seen
+       -7   stalled, but the record now reports done
+       -8   stalled while the record still reports the move unfinished
+    """
+    # distinguish real motion from readback noise using the motor resolution;
+    # fall back to a strict comparison if unavailable.
+    mres = abs(motor.get("MRES") or 0.0)
+    move_threshold = 3 * mres
+    # the record considers itself "at target" within its retry deadband.
+    done_threshold = abs(motor.get("RDBD") or 0.0) or move_threshold
+
+    last_rbv = motor.get("RBV")
+    t_last_progress = time.time()
+    while True:
+        time.sleep(poll_interval)
+        rbv = motor.get("RBV")
+        dmov = motor.get("DMOV")
+        # the move is finished only when the record reports done AND the
+        # readback is at the target. The second condition guards against a
+        # stale DMOV == 1 seen before the move has actually started.
+        if dmov == 1 and rbv is not None and abs(rbv - target) <= done_threshold:
+            if 1 == motor.get("LVIO"):
+                return -4
+            if 1 == motor.get("HLS") or 1 == motor.get("LLS"):
+                return -3
+            return 0
+        # readback is progressing -> reset the inactivity timer.
+        if (
+            rbv is not None
+            and last_rbv is not None
+            and abs(rbv - last_rbv) > move_threshold
+        ):
+            last_rbv = rbv
+            t_last_progress = time.time()
+        # nothing has happened for too long -> give up and stop the motor.
+        if (time.time() - t_last_progress) > stall_timeout:
+            motor.stop()
+            if motor.get("DMOV") == 1:
+                return -7
+            return -8
 
 
 def _keywordChecker(kw_key_list_tups):
@@ -304,18 +362,30 @@ class SmaractStreamdevice(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + ":FRM_BACK.PROC",
-            name="home_backward",
+            name="_pv_home_backward",
             is_setting=False,
             is_status=False,
             is_display=False,
         )
         self._append(
+            AdjustableTrigger,
+            lambda: self._pv_home_backward.set_target_value(1),
+            name="home_backward",
+            button_label="Home Backward",
+        )
+        self._append(
             AdjustablePv,
             self.pvname + ":FRM_FORW.PROC",
-            name="home_forward",
+            name="_pv_home_forward",
             is_setting=False,
             is_status=False,
             is_display=False,
+        )
+        self._append(
+            AdjustableTrigger,
+            lambda: self._pv_home_forward.set_target_value(1),
+            name="home_forward",
+            button_label="Home Forward",
         )
         self._append(
             AdjustablePv, self.pvname + ":GET_HOMED", name="is_homed", is_setting=False
@@ -323,10 +393,16 @@ class SmaractStreamdevice(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + ":CALIBRATE.PROC",
-            name="calibrate_sensor",
+            name="_pv_calibrate_sensor",
             is_setting=False,
             is_status=False,
             is_display=False,
+        )
+        self._append(
+            AdjustableTrigger,
+            lambda: self._pv_calibrate_sensor.set_target_value(1),
+            name="calibrate_sensor",
+            button_label="Calibrate Sensor",
         )
         self._append(
             AdjustablePv,
@@ -444,10 +520,10 @@ class SmaractStreamdevice(Assembly):
         ).wait()
 
     def init_stage(self):
-        self.calibrate_sensor.set_target_value(1)
+        self.calibrate_sensor.trigger()
         time.sleep(3)
         if True:  # not self.is_homed.get_current_value():
-            self.home_forward.set_target_value(1)
+            self.home_forward.trigger()
             homed = 0
             while not homed:
                 homed = self.is_homed.get_current_value()
@@ -459,13 +535,12 @@ class SmaractStreamdevice(Assembly):
             movedone = 0
         return movedone
 
-    def move(self, value, check=True, update_value_time=0.05, timeout=120):
+    def move(self, value, check=True, update_value_time=0.05, stall_timeout=10):
         if check:
             lim_low, lim_high = self.get_limits()
 
             if not ((lim_low < value) and (value < lim_high)):
                 raise AdjustableError("Soft limits violated!")
-        t_start = time.time()
         # waiter = WaitPvConditions(
         #     self.status_channel._pv,
         #     lambda **kwargs: not kwargs["value"] == 0,
@@ -474,15 +549,25 @@ class SmaractStreamdevice(Assembly):
         self._drive.set_target_value(value + self.offset.get_current_value())
         # waiter.wait_until_done(check_interval=update_value_time)
 
+        # time out only on inactivity: abort if the readback has not progressed
+        # by more than `accuracy` for `stall_timeout` seconds, rather than after
+        # a fixed maximum move duration.
+        last_value = self.get_current_value()
+        t_last_progress = time.time()
         while not self.get_close_to(value, self.accuracy):
-            if (time.time() - t_start) > timeout:
+            time.sleep(update_value_time)
+            current = self.get_current_value()
+            if abs(current - last_value) > self.accuracy:
+                last_value = current
+                t_last_progress = time.time()
+            if (time.time() - t_last_progress) > stall_timeout:
                 print(
                     f"Present position: {self.get_current_value()}, target position: {value}, accuracy: {self.accuracy}"
                 )
                 raise AdjustableError(
-                    f"motion timeout reached in smaract {self.name}:{self.pvname}"
+                    f"motion stalled (no readback progress for {stall_timeout} s) "
+                    f"in smaract {self.name}:{self.pvname}"
                 )
-            time.sleep(update_value_time)
 
     def add_value_callback(self, callback, index=None):
         return self._readback._pv.add_callback(callback=callback, index=index)
@@ -680,7 +765,15 @@ class PshellMotor(Assembly):
         )
         self._cb = None
 
-    def move(self, value, check=True, wait=False, update_value_time=0.05, timeout=240):
+    def move(
+        self,
+        value,
+        check=True,
+        wait=False,
+        update_value_time=0.05,
+        stall_timeout=10,
+        progress_threshold=0.5,
+    ):
         if self.robot.info.server_status == "Busy":
             raise AdjustableError(
                 "The server is busy with a recording motion. To abort it, type: rob.abort_record()"
@@ -696,12 +789,21 @@ class PshellMotor(Assembly):
                 raise AdjustableError("Soft limits violated!")
         cid = self.pc.start_eval(f"{self.name_pshell}.moveAsync({float(value)})&")
         if wait:
-            t_start = time.time()
+            # time out only on inactivity: abort if the readback has not
+            # progressed by more than `progress_threshold` for `stall_timeout`
+            # seconds, rather than after a fixed maximum move duration.
+            last_value = self.get_current_value()
+            t_last_progress = time.time()
             time.sleep(update_value_time)
             while not self.get_moveDone(cid, value):
-                if (time.time() - t_start) > timeout:
+                current = self.get_current_value()
+                if abs(current - last_value) > progress_threshold:
+                    last_value = current
+                    t_last_progress = time.time()
+                if (time.time() - t_last_progress) > stall_timeout:
                     raise AdjustableError(
-                        f"motion timeout reached in robot motor {self.name}"
+                        f"motion stalled (no readback progress for {stall_timeout} s) "
+                        f"in robot motor {self.name}"
                     )
                 time.sleep(update_value_time)
 
@@ -1196,18 +1298,30 @@ class ThorlabsPiezoRecord(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + ":FRM_FORW.PROC",
-            name="home_forward",
+            name="_pv_home_forward",
             is_setting=False,
             is_status=False,
             is_display=False,
         )
         self._append(
+            AdjustableTrigger,
+            lambda: self._pv_home_forward.set_target_value(1),
+            name="home_forward",
+            button_label="Home Forward",
+        )
+        self._append(
             AdjustablePv,
             self.pvname + ":FRM_BACK.PROC",
-            name="home_backward",
+            name="_pv_home_backward",
             is_setting=False,
             is_status=False,
             is_display=False,
+        )
+        self._append(
+            AdjustableTrigger,
+            lambda: self._pv_home_backward.set_target_value(1),
+            name="home_backward",
+            button_label="Home Backward",
         )
         self._append(
             AdjustablePv,
@@ -1301,9 +1415,11 @@ class MotorRecord(Assembly):
         resolution_pars=False,
         is_psi_mforce=False,
         schneider_config=None,
+        schneider=None,
         expect_bad_limits=True,
         has_park_pv=False,
         pb_conf=None,
+        motion_stall_timeout=10.0,
         **kwargs,
     ):
         super().__init__(name=name)
@@ -1313,6 +1429,9 @@ class MotorRecord(Assembly):
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
+        # a move is aborted only if the readback stops progressing for this many
+        # seconds (see _wait_for_motion), not after a fixed maximum duration
+        self._motion_stall_timeout = motion_stall_timeout
         self._elog = elog
         for an, af in alias_fields.items():
             self.alias.append(
@@ -1348,6 +1467,13 @@ class MotorRecord(Assembly):
             name="acceleration_time",
             is_setting=False,
             is_display=True,
+        )
+        self._append(
+            AdjustablePv,
+            self.pvname + ".JVEL",
+            name="jog_speed",
+            is_setting=False,
+            is_display=False,
         )
         self._append(
             AdjustablePv,
@@ -1543,6 +1669,41 @@ class MotorRecord(Assembly):
                 name="cnf_pb",
             )
 
+        if schneider:
+            # `schneider=True`: auto (channel parsed from pvname, IOC
+            # host/console resolved lazily via eco.epics.iocinfo on first
+            # use). `schneider={"host": ..., "console_port": ..., "channel":
+            # ...}`: explicit fast path, skips both -- see
+            # SchneiderMotorSettings' docstring. Distinct from the existing
+            # `is_psi_mforce`/`schneider_config` kwargs above (kept as-is).
+            sch_kwargs = {} if schneider is True else dict(schneider)
+            self._append(
+                SchneiderMotorSettings,
+                self.pvname,
+                **sch_kwargs,
+                name="schneider_settings",
+                is_setting=False,
+                is_display=False,
+                # ":recursive" so a `schneider_motor_settings` selection
+                # query at this (MotorRecord) level descends into
+                # schneider_settings' own same-named-tagged items instead
+                # of stopping at this sub-assembly itself -- see
+                # SchneiderMotorSettings.SETTINGS_SELECTION and
+                # eco.elements.memory.SelectionCatalog.
+                setting_groups=f"{SCHNEIDER_SETTINGS_SELECTION}:recursive",
+            )
+            # Fold in the handful of top-level motor-record fields the
+            # original stage-setup cheat-sheet configured alongside the
+            # MCode settings (DESC/EGU/DIR/VELO/ACCL) -- reuses these
+            # already-existing components as-is (no new PVs, no
+            # duplication), just an additional selection tag so a
+            # SelectionCatalog("schneider_motor_settings") entry captures
+            # them together with schneider_settings' own items.
+            for attr_name in ("description", "unit", "direction", "speed", "acceleration_time"):
+                self.status_collection.append(
+                    self.__dict__[attr_name], selection=SCHNEIDER_SETTINGS_SELECTION
+                )
+
     def check_bad_limits(self, abs_set_value=2**53):
         ll, hl = self.get_limits()
         if ll == 0 and hl == 0:
@@ -1558,7 +1719,21 @@ class MotorRecord(Assembly):
                     f"Motor {self.alias.get_full_name()}({self.pvname}) might not or move uncontrolled with status flag {statflag_start.name} .",
                     Warning,
                 )
-            self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
+            # kick off the move without blocking, so we can watch the readback
+            # ourselves and time out on inactivity rather than on a fixed
+            # maximum move duration.
+            self._status = self._motor.move(
+                value, ignore_limits=(not check), wait=False
+            )
+            if self._status < 0 or self._status in (3, 4):
+                # move refused or a limit was hit before it started: nothing to
+                # wait for.
+                self._status_message = _status_messages[self._status]
+                raise AdjustableError(self._status_message)
+            # wait for completion, timing out only if the readback stalls.
+            self._status = _wait_for_motion(
+                self._motor, value, stall_timeout=self._motion_stall_timeout
+            )
             self._status_message = _status_messages[self._status]
             statflag_end = self.status_flag.get_current_value()
             if not statflag_end.value == 0:
@@ -1590,6 +1765,25 @@ class MotorRecord(Assembly):
         except:
             self._motor.stop()
         pass
+
+    def jog(self, direction, start=True):
+        """Start/stop continuous jogging via the motor record's JOGF/JOGR fields.
+
+        direction : 1 (forward) or -1 (reverse)
+        start     : True to start jogging in that direction, False to stop it
+
+        Unlike set_target_value, this is not a bounded move: the motor keeps
+        moving until jog(..., start=False)/jog_stop() is called, a limit
+        switch is hit, or stop() is called. Intended for manual controls
+        (e.g. a joystick) where a button is held to move.
+        """
+        field = "JOGF" if direction > 0 else "JOGR"
+        self._motor.put(field, 1 if start else 0)
+
+    def jog_stop(self):
+        """Stop jogging in either direction."""
+        self._motor.put("JOGF", 0)
+        self._motor.put("JOGR", 0)
 
     def get_current_value(self, posType="user", readback=True):
         """Adjustable convention"""
@@ -2003,6 +2197,9 @@ class SmaractRecord(Assembly):
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
+        # a move is aborted only if the readback stops progressing for this many
+        # seconds (see _wait_for_motion), not after a fixed maximum duration.
+        self._motion_stall_timeout = 10.0
         self._append(
             AdjustableMemory,
             preferred_home_direction,
@@ -2063,6 +2260,21 @@ class SmaractRecord(Assembly):
             is_status=False,
             is_display=False,
         )
+        # home_forward/home_reverse stay public (unlike the equivalent raw
+        # PVs in SmaractStreamdevice/ThorlabsPiezoRecord above): some
+        # callers (e.g. Att_usd.home_smaract_stages) drive them directly
+        # with their own bespoke retry logic instead of going through
+        # home() below. home()/calibrate_sensor() themselves already
+        # orchestrate the right raw PV plus waiting for completion, so
+        # those -- the composite, correct actions -- are what's wired in
+        # as the public triggers (see AdjustableTrigger)
+        self._append(AdjustableTrigger, self.home, name="home", button_label="Home")
+        self._append(
+            AdjustableTrigger,
+            self.calibrate_sensor,
+            name="calibrate_sensor",
+            button_label="Calibrate Sensor",
+        )
 
         self._append(
             DetectorPvData,
@@ -2099,7 +2311,7 @@ class SmaractRecord(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + "_CAL",
-            name="_calibrate_sensor",
+            name="_pv_calibrate_sensor",
             is_setting=True,
             is_status=False,
             is_display=False,
@@ -2154,7 +2366,7 @@ class SmaractRecord(Assembly):
             time.sleep(0.1)
 
     def calibrate_sensor(self):
-        self._calibrate_sensor(1)
+        self._pv_calibrate_sensor(1)
         time.sleep(0.1)
         while not self.flags.motion_complete.get_current_value():
             time.sleep(0.1)
@@ -2163,7 +2375,17 @@ class SmaractRecord(Assembly):
         """Adjustable convention"""
 
         def changer(value):
-            self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
+            # kick off the move without blocking, then watch the readback and
+            # time out on inactivity rather than on a fixed maximum duration.
+            self._status = self._motor.move(
+                value, ignore_limits=(not check), wait=False
+            )
+            if self._status < 0 or self._status in (3, 4):
+                self._status_message = _status_messages[self._status]
+                raise AdjustableError(self._status_message)
+            self._status = _wait_for_motion(
+                self._motor, value, stall_timeout=self._motion_stall_timeout
+            )
             self._status_message = _status_messages[self._status]
             if self._status < 0:
                 raise AdjustableError(self._status_message)
@@ -2391,6 +2613,9 @@ class SmaractRecord_old(Assembly):
 
         self.pvname = pvname
         self._motor = _Motor(pvname)
+        # a move is aborted only if the readback stops progressing for this many
+        # seconds (see _wait_for_motion), not after a fixed maximum duration.
+        self._motion_stall_timeout = 10.0
         self._elog = elog
         for an, af in alias_fields.items():
             self.alias.append(
@@ -2461,6 +2686,17 @@ class SmaractRecord_old(Assembly):
             is_status=False,
             is_display=False,
         )
+        # home()/calibrate_sensor() (defined below) already orchestrate the
+        # right raw PV plus waiting for completion -- wired in as the
+        # public triggers instead of the raw PVs individually, so a button
+        # always does the full, correct action (see AdjustableTrigger)
+        self._append(AdjustableTrigger, self.home, name="home", button_label="Home")
+        self._append(
+            AdjustableTrigger,
+            self.calibrate_sensor,
+            name="calibrate_sensor",
+            button_label="Calibrate Sensor",
+        )
 
         self._append(
             DetectorPvData,
@@ -2497,7 +2733,7 @@ class SmaractRecord_old(Assembly):
         self._append(
             AdjustablePv,
             self.pvname + "_CAL_CMD",
-            name="_calibrate_sensor",
+            name="_pv_calibrate_sensor",
             is_setting=True,
             is_status=False,
             is_display=False,
@@ -2542,7 +2778,7 @@ class SmaractRecord_old(Assembly):
             time.sleep(0.1)
 
     def calibrate_sensor(self):
-        self._calibrate_sensor(1)
+        self._pv_calibrate_sensor(1)
         time.sleep(0.1)
         while not self.flags.motion_complete.get_current_value():
             time.sleep(0.1)
@@ -2551,7 +2787,17 @@ class SmaractRecord_old(Assembly):
         """Adjustable convention"""
 
         def changer(value):
-            self._status = self._motor.move(value, ignore_limits=(not check), wait=True)
+            # kick off the move without blocking, then watch the readback and
+            # time out on inactivity rather than on a fixed maximum duration.
+            self._status = self._motor.move(
+                value, ignore_limits=(not check), wait=False
+            )
+            if self._status < 0 or self._status in (3, 4):
+                self._status_message = _status_messages[self._status]
+                raise AdjustableError(self._status_message)
+            self._status = _wait_for_motion(
+                self._motor, value, stall_timeout=self._motion_stall_timeout
+            )
             self._status_message = _status_messages[self._status]
             if self._status < 0:
                 raise AdjustableError(self._status_message)

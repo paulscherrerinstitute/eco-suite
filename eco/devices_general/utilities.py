@@ -2,8 +2,31 @@ from threading import Thread
 from ..utilities import PropagatingThread
 
 
+def _access_gate(parent):
+    """Central write-access guardrail for eco. Every adjustable write builds a
+    Changer with ``parent`` set to the adjustable, so this is the single
+    chokepoint that covers (almost) all writes at once - see
+    ``eco.elements.access``. It is OFF by default (access.enforce is False), so
+    normal usability is unchanged; it only ever raises once a beamline opts in.
+
+    An access-layer problem must never break device motion, so anything other
+    than an actual AccessDenied is swallowed.
+    """
+    try:
+        from eco.elements.access import check_write
+    except Exception:
+        return
+    try:
+        check_write(parent)
+    except PermissionError:
+        raise
+    except Exception:
+        pass
+
+
 class Changer:
     def __init__(self, target=None, parent=None, changer=None, hold=True, stopper=None):
+        _access_gate(parent)
         self.target = target
         self._changer = changer
         self._stopper = stopper

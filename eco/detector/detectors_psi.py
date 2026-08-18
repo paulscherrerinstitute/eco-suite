@@ -7,7 +7,13 @@ from epics.pv import PV
 #     from bsread.bsavail import pollStream
 # except:
 #     from bsread.unused.bsavail import pollStream
-from bsread import dispatcher, source
+import requests
+from bsread import dispatcher, source, DEFAULT_DISPATCHER_URL
+
+# base url of the dispatcher REST api used to query the data policy / retention
+# (ttl) of a bs channel via GET <base>/data/policy/<channel>, e.g.
+#   https://dispatcher-api.psi.ch/sf-databuffer/data/policy/SINBC01-DBPM030:Q1
+DISPATCHER_API_URL = DEFAULT_DISPATCHER_URL
 from ..epics import get_from_archive
 from escape import stream
 from time import time, sleep
@@ -38,6 +44,112 @@ class DetectorBsStream:
         return self.bs_channel in [
             tmp["name"] for tmp in dispatcher.get_current_channels()
         ]
+
+    def get_live_info(self):
+        """Return the dispatcher metadata for this channel if it is currently
+        being streamed live (source, type, shape, modulo, ...), else None."""
+        for ch in dispatcher.get_current_channels():
+            if ch["name"] == self.bs_channel:
+                return ch
+        return None
+
+    def get_databuffer_policy(self, base_url=DISPATCHER_API_URL):
+        """Query the dispatcher data policy for this channel.
+
+        Corresponds to the REST call
+            GET <base_url>/data/policy/<channel>
+        e.g. https://dispatcher-api.psi.ch/sf/data/policy/SINBC01-DBPM030:Q1
+
+        Returns the parsed policy dict. The interesting fields are:
+          - ``pattern``: the channel-name pattern this policy matched. A specific
+            pattern means a dedicated policy is defined; ``"."`` is the catch-all
+            default policy.
+          - ``data_reduction``: retention/reduction stages, each with ``ttl``
+            (seconds the data is kept) and ``modulo`` (1 = every pulse stored,
+            n = every n-th pulse kept for that stage).
+          - ``data_layout``: the storage backends (e.g. ``sf-databuffer``) and the
+            data types written to each.
+        """
+        response = requests.get(f"{base_url}/data/policy/{self.bs_channel}")
+        if not response.ok:
+            raise Exception(
+                f"Unable to retrieve data policy for {self.bs_channel} - {response.text}"
+            )
+        return response.json()
+
+    def get_retention(self, base_url=DISPATCHER_API_URL):
+        """Return the retention (ttl) stages of the databuffer policy as a list of
+        dicts with ``ttl_s`` (seconds), ``ttl_days`` and ``modulo`` (data
+        reduction factor), sorted from full-rate to most-reduced."""
+        policy = self.get_databuffer_policy(base_url=base_url)
+        stages = []
+        for reduction in policy.get("data_reduction", {}).values():
+            for stage in reduction:
+                ttl = stage.get("ttl")
+                stages.append(
+                    {
+                        "ttl_s": ttl,
+                        "ttl_days": None if ttl is None else round(ttl / 86400, 2),
+                        "modulo": stage.get("modulo"),
+                    }
+                )
+        stages.sort(key=lambda s: (s["modulo"] is None, s["modulo"]))
+        return stages
+
+    def get_stream_properties(self, printit=True, base_url=DISPATCHER_API_URL):
+        """Collect the properties of this bs channel: whether it is currently
+        streamed live by the dispatcher, whether it is stored in a data buffer
+        and with which retention policy (ttl).
+
+        Returns a dict with the collected information. If ``printit`` a short
+        human-readable summary is printed as well."""
+        live_info = self.get_live_info()
+        policy = self.get_databuffer_policy(base_url=base_url)
+        retention = self.get_retention(base_url=base_url)
+        backends = sorted(
+            {layout.get("backend") for layout in policy.get("data_layout", [])}
+        )
+        # a specific (non catch-all) pattern means a dedicated policy is defined
+        pattern = policy.get("pattern")
+        dedicated_policy = bool(pattern) and pattern != "."
+
+        info = {
+            "channel": self.bs_channel,
+            "live": live_info is not None,
+            "live_info": live_info,
+            "stored": bool(backends),
+            "backends": backends,
+            "policy_pattern": pattern,
+            "dedicated_policy": dedicated_policy,
+            "retention": retention,
+            "policy": policy,
+        }
+
+        if printit:
+            print(f"Bs channel: {self.bs_channel}")
+            if live_info is not None:
+                print(
+                    "  live streaming : yes "
+                    f"(type={live_info.get('type')}, shape={live_info.get('shape')}, "
+                    f"source={live_info.get('source')})"
+                )
+            else:
+                print("  live streaming : no (not in dispatcher live channels)")
+            if backends:
+                print(f"  stored in      : {', '.join(backends)}")
+            else:
+                print("  stored in      : no storage backend in policy")
+            print(
+                f"  policy pattern : {pattern}"
+                f"{'' if dedicated_policy else '  (catch-all default policy)'}"
+            )
+            print("  retention (ttl):")
+            for stage in retention:
+                print(
+                    f"    - {stage['ttl_days']:>7} days "
+                    f"({stage['ttl_s']} s), keeping every {stage['modulo']} pulse(s)"
+                )
+        return info
 
     def get_current_value(self, force_bsstream=False):
         if not force_bsstream:

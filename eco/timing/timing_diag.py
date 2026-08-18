@@ -313,10 +313,14 @@ class TimetoolBerninaUSD(Assembly):
         seconds=5,
         scan_range=0.8e-12,
         scan_steps=20,
+        scan_array=None,
         reverse_direction=False,
     ):
         t0 = self.delay()
-        x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
+        if scan_array is None:
+            x = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
+        else:
+            x = scan_array
         if reverse_direction:
             x = x[::-1]
         try:
@@ -347,7 +351,7 @@ class TimetoolBerninaUSD(Assembly):
     ):
         retrieving = True
         i = 1
-        source = dh.Daqbuf()
+        source = dh.DataBuffer()
         table = dh.Table()
         source.add_listener(table)
         while retrieving:
@@ -373,7 +377,7 @@ class TimetoolBerninaUSD(Assembly):
             ]
             lens = [sum(~np.isnan(a)) for a in y]
             print(f"Shots per Step: {lens}")
-            retrieving = np.any([l < 0.5 * len(df) / len(y) for l in lens])
+            retrieving = np.any([l < 0.5 * np.max(lens) for l in lens])
         return y, df
 
     def fit_calibration_data(self, x, y, filter_outliers=True):
@@ -396,36 +400,40 @@ class TimetoolBerninaUSD(Assembly):
         y,
         ymed,
         yerr,
-        pl=None,
-        filepath="",
+        p_last_calib=None,
+        filepath_last_calib="",
         to_elog=True,
         path_figure="",
         filepath_data="",
     ):
-
-        binmin = np.min([np.min(step) for step in y])
-        binmax = np.max([np.max(step) for step in y])
+        xu = np.unique(x)
+        yu = [
+            np.hstack([y_step for x_step, y_step in zip(x, y) if x_step == xu_step])
+            for xu_step in xu
+        ]
+        binmin = np.min([np.min(step) for step in yu])
+        binmax = np.max([np.max(step) for step in yu])
         bins = np.arange(binmin, binmax, 1)
         bins_center = bins[:-1] + 0.5
-        hists = np.array([np.histogram(step, bins=bins)[0] for step in y]).T
+        hists = np.array([np.histogram(step, bins=bins)[0] for step in yu]).T
         plt.close("tt_calib")
         fig = plt.figure("tt_calib", figsize=(13, 6))
         gs = plt.GridSpec(1, 6, figure=fig)
         ax0 = fig.add_subplot(gs[0, 0])
         ax1 = fig.add_subplot(gs[0, 1:4], sharey=ax0)
         ax2 = fig.add_subplot(gs[0, 4:])
-        ax1.pcolor(1e15 * x, bins_center, hists)
+        ax1.pcolor(1e15 * xu, bins_center, hists)
         line = ax1.errorbar(
             1e15 * np.asarray(x), ymed, yerr, color="red", marker=".", linestyle=""
         )
         fit = ax1.plot(
             1e15 * np.polyval(p, ymed), ymed, label="poly fit", color="yellow"
         )
-        if pl is not None:
+        if p_last_calib is not None:
             fitl = ax1.plot(
-                1e15 * np.polyval(pl, ymed),
+                1e15 * np.polyval(p_last_calib, ymed),
                 ymed,
-                label=f"poly fit last calibration\n{filepath.stem}",
+                label=f"poly fit last calibration\n{filepath_last_calib.stem}",
                 color="orange",
             )
         ax0.axvline(0, linestyle="--", color="k")
@@ -453,14 +461,15 @@ class TimetoolBerninaUSD(Assembly):
             )
             plx = np.arange(np.min(d[1]), np.max(d[1]), 0.1)
             ax2.plot(plx, self.gauss(plx, *parsopt), color="k")
-        except:
-            print("Fitting of arrival time histogram failed")
+        except Exception as e:
+            print("Fitting of arrival time histogram failed with:")
+            print(e)
             parsopt = [0.0, 0.0, 0.0]
             pass
         ax0.set_title("Residual")
         ax1.set_title("Scan")
         ax2.set_title(f"Jitter {parsopt[0]:.3} fs fwhm")
-        ax1.legend()
+        ax1.legend(loc="upper right")
         ax2.set_xlabel("arrival time (fs)")
         ax0.set_xlabel("$\Delta$t (fs)")
         ax0.set_ylabel("edge position (px)")
@@ -503,23 +512,24 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Elog posting failed with:\n {e}")
 
     def load_last_calib(self, datapath):
-        files = sorted(Path(datapath).glob("*_calib.pkl"))
-        if not files:
-            raise FileNotFoundError(f"No previous calibration files found in {datapath}")
-        with open(files[-1], "rb") as file:
+        files = [file for file in Path(datapath).glob("*.pkl")]
+        files.sort()
+        filename = files[-1]
+        with open(filename, "rb") as file:
             lc = pickle.load(file)
-        return lc["p"], files[-1]
+        return lc["p"], filename
 
     def save_calibration(self, p, x, y, ymed, yerr, dpath_calib):
-        lc = {
-            "p": p,
-            "tt_kb.delay": x,
-            "tt_kb.edge_position_px": y,
-            "ymed": ymed,
-            "yerr": yerr,
-        }
-        with open(dpath_calib, "wb") as file:
-            pickle.dump(lc, file)
+        df = DataFrame(
+            {
+                "p": p,
+                "tt_kb.delay": x,
+                "tt_kb.edge_position_px": y,
+                "ymed": ymed,
+                "yerr": yerr,
+            }
+        )
+        df.to_pickle(dpath_calib)
 
     def calibrate(
         self,
@@ -527,12 +537,12 @@ class TimetoolBerninaUSD(Assembly):
         scan_range=1e-12,
         scan_steps=20,
         plot=True,
-        pipeline=True,
         to_elog=True,
         filter_outliers=True,
         reverse_direction=False,
-        bidirectional=False,
+        bidirectional=True,
         update_pipeline_config=False,
+        save=True,
         additional_channels=["SARES20-CAMS142-M5.roi_signal_x_profile"],
     ):
         from datetime import datetime
@@ -561,11 +571,19 @@ class TimetoolBerninaUSD(Assembly):
             self.feedback_enabled(0)
             print("Turned feedback off")
 
+        #######  bidirectional  ########
+        if bidirectional:
+            x_f = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
+            x = np.hstack([x_f, x_f[::-1]])
+        else:
+            x = None
+
         ##########    scan    ##########
         x, pids_start, pids_stop = self.scan_calibration(
             seconds=seconds,
             scan_range=scan_range,
             scan_steps=scan_steps,
+            scan_array=x,
             reverse_direction=reverse_direction,
         )
 
@@ -577,69 +595,34 @@ class TimetoolBerninaUSD(Assembly):
         )
 
         ########## save data ##########
-        self.dataframe_to_escape_dataset(
-            x, df, pids_start, pids_stop, filepath=path_data + ".esc.h5"
-        )
-
-        ########## scan backwards ##########
-        if bidirectional:
-            xb, pids_start, pids_stop = self.scan_calibration(
-                seconds=seconds,
-                scan_range=scan_range,
-                scan_steps=scan_steps,
-                reverse_direction=not reverse_direction,
-            )
-
-            yb, dfb = self.retrieve_calibration_data(
-                pids_start=pids_start,
-                pids_stop=pids_stop,
-                additional_channels=additional_channels,
-            )
+        if save:
             self.dataframe_to_escape_dataset(
-                xb, dfb, pids_start, pids_stop, filepath=path_data + ".esc.h5"
+                x, df, pids_start, pids_stop, filepath=path_data + ".esc.h5"
             )
-            x = np.concatenate([x, xb])
-            y = y + yb
 
         ##########  fit data ##########
         p, x, y, ymed, yerr = self.fit_calibration_data(
             x, y, filter_outliers=filter_outliers
         )
 
-        ####### load last calib (before saving the new one!) ######
-        pl = None
-        filepath = None
-        edgel = None
+        ####### save calibration ######
+        if save:
+            self.save_calibration(p, x, y, ymed, yerr, Path(f"{path_data}_calib.pkl"))
+
+        ####### Load last calib ######
         try:
-            pl, filepath = self.load_last_calib(basepath + "data/")
+            p_last_calib, filepath_last_calib = self.load_last_calib(basepath + "data/")
             print(f"Compare new calibration to last calibration taken: \n{filepath}")
             for root in np.roots(pl):
-                if np.isreal(root) and 0 < root.real < 2000:
-                    edgel = root.real
+                edge_last_calib = root
+                if 0 < root and root < 2000:
                     break
         except Exception as e:
             print("Failed to load last calibration")
             print(e)
-
-        # User question: keep pixel of previous calib
-        if edgel is not None:
-            ans = ""
-            while not any([a in ans for a in ["y", "n"]]):
-                try:
-                    ans = input(
-                        f"Do you wish to shift the calibration to keep the edge at the same pixel ({edgel:.5}) as in the previous calibration (y/n)?"
-                    )
-                except:
-                    continue
-                if ans == "y":
-                    p[-1] = -(p[0] * edgel**2 + p[1] * edgel)
-                    print(f"Shifted calibration curve to preserve edge position: {p}")
-                elif ans == "n":
-                    continue
-
-        ####### save calibration ######
-        dpath_calib = Path(f"{path_data}_calib.pkl")
-        self.save_calibration(p, x, y, ymed, yerr, dpath_calib)
+            p_last_calib = None
+            edge_last_calib = None
+            filepath_last_calib = ""
 
         ########## plot data ##########
         if plot:
@@ -649,17 +632,34 @@ class TimetoolBerninaUSD(Assembly):
                 y,
                 ymed,
                 yerr,
-                pl,
-                filepath,
+                p_last_calib=p_last_calib,
+                filepath_last_calib=filepath_last_calib,
                 to_elog=to_elog,
                 path_figure=path_figure,
-                filepath_data=dpath_calib,
+                filepath_data=Path(f"{path_data}_calib.pkl"),
             )
 
         if update_pipeline_config:
-            self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
+            self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
+
+        # User question: keep pixel of previous calib
+        if edge_last_calib is not None:
+            ans = ""
+            while not any([a in ans for a in ["y", "n"]]):
+                try:
+                    ans = input(
+                        f"Do you wish to shift the calibration to keep the edge at the same pixel ({edgel:.5}) as in the previous calibration (y/n)?"
+                    )
+                except:
+                    continue
+                if ans == "y":
+                    p[-1] = -(p[0] * edge_last_calib**2 + p[1] * edge_last_calib)
+                    print(f"Shifted calibration curve to preserve edge position: {p}")
+                elif ans == "n":
+                    continue
+
+        # User question: apply calib
         else:
-            # User question: apply calib
             ans = ""
             while not any([a in ans for a in ["y", "n"]]):
                 try:
@@ -667,7 +667,7 @@ class TimetoolBerninaUSD(Assembly):
                 except:
                     continue
                 if ans == "y":
-                    self.set_calibration_values(p, pipeline=pipeline, to_elog=to_elog)
+                    self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
                 elif ans == "n":
                     continue
 

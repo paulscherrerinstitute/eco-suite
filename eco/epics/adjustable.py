@@ -1,3 +1,4 @@
+import threading
 import time
 from enum import IntEnum
 
@@ -11,9 +12,51 @@ from eco.elements.adjustable import (
     spec_convenience,
     value_property,
 )
+from eco.elements.protocols import enum_repr
 from . import get_from_archive
 from eco.devices_general.utilities import Changer
 from ..elements.assembly import Assembly
+from .utilities_epics import CallbackEpics
+
+
+# Opt-in switch for the deferred/lazy enum-resolution speedup in
+# AdjustablePvEnum (this module) and DetectorPvEnum (eco.epics.detector,
+# eco.bs.detector -- both read this same flag via the module object, not a
+# copied `from ... import`, so flipping it here takes effect everywhere).
+# Default False: enum resolution happens eagerly in __init__, exactly like
+# before this speedup existed, so a construction-time failure is caught by
+# Assembly._append(optional=True) as it always was. Found (2026-08-16) to
+# cause broader real-namespace init failures than expected when on by
+# default -- flip to True only to deliberately study/benchmark the lazy
+# path; see eco/epics/adjustable.py AdjustablePvEnum's docstring and
+# project_vacuum_and_aramis_vacuum.md memory for the full story.
+LAZY_ENUM_RESOLUTION = False
+
+
+def wait_for_enum_strs(pv, retries=10, delay=0.05):
+    """Wait until `pv` (already connected, or connecting) reports its
+    CTRL_ENUM metadata (`enum_strs`), retrying a few times rather than
+    trusting a single read.
+
+    A connected channel does not guarantee `enum_strs` is populated yet on
+    this control system -- observed historically as "gateway slowness" (see
+    the retry hack this replaces, previously commented out in
+    `AdjustablePvEnum`) where a channel connects but its enum metadata lags
+    behind by a beat. An unconditional single read of `enum_strs` right after
+    connecting can then get `None`, which fails downstream (`enumerate(None)`)
+    with a confusing `TypeError` instead of a clear message -- since that read
+    happens inside `Assembly._append(optional=True)`, the failure is silently
+    swallowed there rather than raised, so a device can end up with a quietly
+    missing component with no obvious cause. Bounded (default: at most 0.5 s
+    extra, only when actually needed) so a PV that simply isn't an enum record
+    at all doesn't hang -- it just returns `None`/empty as before, so callers
+    still get the same clear failure they would have gotten anyway.
+    """
+    for _ in range(retries):
+        if pv.enum_strs:
+            return pv.enum_strs
+        time.sleep(delay)
+    return pv.enum_strs
 
 
 # Work in progress! TODO
@@ -194,6 +237,17 @@ class AdjustablePv:
             currval = self._pv.get()
         return currval
 
+    def get_severity(self):
+        """EPICS alarm severity of the last readback `.get()`: 0=NO_ALARM,
+        1=MINOR, 2=MAJOR, 3=INVALID -- or None if it couldn't be read. A plain
+        `.get()` is enough to populate it (pyepics requests it as part of the
+        normal get), no special ctrlvars call needed."""
+        try:
+            self._pvreadback.get()
+            return self._pvreadback.severity
+        except Exception:
+            return None
+
     def get_change_done(self):
         """Adjustable convention"""
         """ 0: moving 1: move done"""
@@ -267,55 +321,154 @@ class AdjustablePv:
     def __repr__(self):
         return "%s is at: %s" % (self.Id, self.get_current_value())
 
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        """Monitor the readback PV (same channel get_current_value() reads
+        by default)."""
+        return CallbackEpics(
+            self._pvreadback,
+            func=func,
+            run_once=run_once,
+            print_output=print_output,
+            **kwargs,
+        )
 
+
+@enum_repr
 @spec_convenience
 @get_from_archive
 @value_property
 class AdjustablePvEnum:
+    """Enum-valued PV Adjustable.
+
+    Connecting and resolving the enum choice list (`enum_strs`/`PvEnum`) is
+    deferred from `__init__` to first real use (or an explicit
+    `_wait_for_initialisation()` call) -- see `_resolve()`. This is the
+    difference between initializing a component with many sibling
+    `AdjustablePvEnum`/`DetectorPvEnum` fields (e.g. `EvrPulser`, with several
+    enum fields per pulser, times dozens of pulsers per EVR) taking seconds
+    (each one fully connects+queries before the next is even created) versus
+    a small fraction of that (all of them start connecting -- pyepics/CA
+    connects in its own background thread regardless of Python -- during the
+    now-trivially-fast `__init__` calls, so by the time anything actually
+    *waits* on one, most are already connected). Measured on real EVR PVs:
+    ~30x for construction-then-batch-wait with no threading at all, vs. the
+    old eager-in-__init__ pattern; seconds, not hundreds of milliseconds, for
+    a busy EVR. See `Assembly._wait_for_initialisation` for the (optional,
+    also-parallel) batch-wait side of this.
+    """
+
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
         self._pv = PV(pvname, connection_timeout=0.05 * 2, auto_monitor=False)
         self.name = name
-        self._pv.wait_for_connection()
-        self.enum_strs = self._pv.enum_strs
-        # while not self.enum_strs:  ### HACK to understand gateway slowness
-        #     print(f'could not find enum strs for {self.pvname}')
-        #     time.sleep(.1)
-        #     self.enum_strs = self._pv.enum_strs
-
-        if pvname_set:
-            self._pv_set = PV(pvname_set, connection_timeout=0.05 * 2)
-            tstrs = self._pv_set.enum_strs
-            if not all([tstr in self.enum_strs for tstr in tstrs]):
-                raise Exception("pv enum setter strings are not all a readback option!")
-
-            self.get2set = {}
-            for nset, tstr in enumerate(tstrs):
-                self.get2set[self.enum_strs.index(tstr)] = nset
-
-        else:
-            self._pv_set = None
-
-        if name:
-            enumname = self.name
-        else:
-            enumname = self.Id
-        self.PvEnum = IntEnum(
-            enumname, {tstr: n for n, tstr in enumerate(self.enum_strs)}
-        )
+        self._pv_set = PV(pvname_set, connection_timeout=0.05 * 2) if pvname_set else None
         self.alias = Alias(name, channel=self.Id, channeltype="CA")
+        self._resolve_lock = threading.Lock()
+        self._resolved = False
+        self._enum_strs = None
+        self._pv_enum = None
+        self._get2set = None
+        if not LAZY_ENUM_RESOLUTION:
+            # default: resolve now, like before this speedup existed, so a
+            # bad PV fails construction here and is caught by
+            # Assembly._append(optional=True) as always -- see
+            # LAZY_ENUM_RESOLUTION's module-level docstring.
+            self._resolve()
+
+    def _resolve(self):
+        """Connect and read enum metadata, once (idempotent, thread-safe --
+        see class docstring for why this is deferred out of `__init__`).
+
+        Never raises for an unreachable/non-enum PV: `enum_strs` (and
+        `pvname_set`'s, if any) fall back to `()` rather than the `None`
+        `wait_for_enum_strs` returns on failure, so `self._pv_enum` still
+        ends up a real (zero-member) `IntEnum` instead of crashing on
+        `enumerate(None)`. That matters specifically because -- unlike the
+        old eager-in-`__init__` version, whose *construction*-time failure
+        was caught by `Assembly._append(optional=True)` and turned into a
+        contained `FailedComponent` -- this now runs *after* construction
+        (lazily, or via `_wait_for_initialisation()`), somewhere `_append`'s
+        safety net no longer applies. A disconnected PV should still fail
+        (clearly, e.g. `KeyError`/`ValueError` out of `validate()`) the
+        moment someone genuinely tries to read/set a value through it -- just
+        not out of merely constructing or waiting on it.
+        """
+        if self._resolved:
+            return
+        with self._resolve_lock:
+            if self._resolved:  # lost the race to another thread; already done
+                return
+            self._pv.wait_for_connection()
+            enum_strs = wait_for_enum_strs(self._pv) or ()
+
+            get2set = None
+            if self._pv_set is not None:
+                # must wait before reading enum_strs -- without it this races
+                # the PV's (async) connection and can read None/stale strings,
+                # depending on how fast the IOC/gateway responds.
+                self._pv_set.wait_for_connection()
+                tstrs = wait_for_enum_strs(self._pv_set) or ()
+                # Combine readback + setter enum strings into one enum,
+                # instead of requiring the setter's strings to be a strict
+                # subset of the readback's: controllers commonly show more
+                # states on readback than they accept as a command (e.g.
+                # "opening"/"closing" transients), but occasionally a setter
+                # also accepts a state the readback never actually settles on
+                # -- that used to be a hard construction failure; now it just
+                # extends the enum. Readback strings keep their original (raw
+                # PV value) order and index, so get_current_value()'s raw int
+                # from the readback PV is unaffected; any setter-only strings
+                # are appended after.
+                enum_strs = tuple(enum_strs) + tuple(
+                    tstr for tstr in tstrs if tstr not in enum_strs
+                )
+                get2set = {}
+                for nset, tstr in enumerate(tstrs):
+                    get2set[enum_strs.index(tstr)] = nset
+
+            enumname = self.name if self.name else self.Id
+            self._enum_strs = enum_strs
+            self._pv_enum = IntEnum(enumname, {tstr: n for n, tstr in enumerate(enum_strs)})
+            self._get2set = get2set
+            self._resolved = True
 
     def _wait_for_initialisation(self):
-        self._pv.wait_for_connection()
-        if hasattr(self, "_pv_set") and self._pv_set:
-            self._pv_set.wait_for_connection()
+        # best-effort, like PV.wait_for_connection() itself: a component that
+        # can't be resolved (disconnected/non-enum PV) must not turn into a
+        # hard failure of the *entire* containing assembly just because
+        # someone did a "is everything ready" pass over it -- see _resolve()
+        # and this class's docstring. Genuine use (get_current_value/
+        # validate/set_target_value) still raises clearly when it can't
+        # complete; only this readiness *check* stays silent on failure.
+        try:
+            self._resolve()
+        except Exception:
+            pass
+
+    @property
+    def enum_strs(self):
+        self._resolve()
+        return self._enum_strs
+
+    @property
+    def PvEnum(self):
+        self._resolve()
+        return self._pv_enum
+
+    @property
+    def get2set(self):
+        self._resolve()
+        return self._get2set
 
     def validate(self, value):
+        self._resolve()
         if type(value) is str:
-            return self.PvEnum.__members__[value]
+            return self._pv_enum.__members__[value]
         else:
-            return self.PvEnum(value)
+            return self._pv_enum(value)
 
     def get_current_value(self):
         return self.validate(self._pv.get())
@@ -325,8 +478,8 @@ class AdjustablePvEnum:
         value = self.validate(value)
         if self._pv_set:
             tpv = self._pv_set
-            if hasattr(self, "get2set"):
-                value = self.get2set[value]
+            if self._get2set is not None:
+                value = self._get2set[value]
         else:
             tpv = self._pv
         changer = lambda value: tpv.put(value, wait=True)
@@ -334,22 +487,16 @@ class AdjustablePvEnum:
             target=value, parent=self, changer=changer, hold=hold, stopper=None
         )
 
-    def __repr__(self):
-        if not self.name:
-            name = self.Id
-        else:
-            name = self.name
-        cv = self.get_current_value()
-        s = f"{name} (enum) at value: {cv}" + "\n"
-        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
-        # s+= '_'*40+'\n'
-        for name, val in self.PvEnum.__members__.items():
-            if val == cv:
-                sel = "x"
-            else:
-                sel = " "
-            s += "{:>4}   {}  {}\n".format(val, sel, name)
-        return s
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        return CallbackEpics(
+            self._pv,
+            func=func,
+            run_once=run_once,
+            print_output=print_output,
+            **kwargs,
+        )
 
 
 class AdjustablePvString:
@@ -377,3 +524,14 @@ class AdjustablePvString:
             self.set_target_value(string)
         else:
             return self.get_current_value()
+
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        return CallbackEpics(
+            self._pv,
+            func=func,
+            run_once=run_once,
+            print_output=print_output,
+            **kwargs,
+        )

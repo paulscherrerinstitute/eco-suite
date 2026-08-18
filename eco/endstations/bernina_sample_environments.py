@@ -24,7 +24,7 @@ import escape.parse.swissfel as sf
 import pylab as plt
 import escape
 from pathlib import Path
-from ..elements.adjustable import AdjustableVirtual, AdjustableFS
+from ..elements.adjustable import AdjustableVirtual, AdjustableFS, AdjustableTrigger
 from ..elements.assembly import Assembly
 from ..loptics.bernina_laser import DelayTime
 from mpl_toolkits import mplot3d
@@ -343,6 +343,12 @@ class High_field_thz_chamber(Assembly):
 
             self.home_smaract_stages_cube = home_smaract_stages_cube
             self.set_stage_config_cube = set_stage_config_cube
+            self._append(
+                AdjustableTrigger,
+                self.home_smaract_stages_cube,
+                name="home_smaract_stages_cube",
+                button_label="Home Cube Stages",
+            )
 
             ### Virtual stages ###
             self._append(
@@ -441,6 +447,18 @@ class High_field_thz_chamber(Assembly):
                 is_display=True,
                 is_setting=False,
             )
+
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
+        self._append(AdjustableTrigger, self.movein, name="movein", button_label="Move In")
+        # moveout() is deliberately NOT wired in as a trigger -- it prompts
+        # interactively via input() first, which would silently hang if
+        # fired from a widget button's background thread (no terminal
+        # attached to answer the prompt)
 
     def moveout(self):
         change_in_pos = str(
@@ -740,6 +758,12 @@ class Organic_crystal_breadboard(Assembly):
             is_setting=False,
             name="thz_polarization",
         )
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
 
     def _thz_pol_set(self, val):
         return 1.0 * val, 1.0 / 2 * val
@@ -969,6 +993,12 @@ class Electro_optic_sampling(Assembly):
                 name=name,
                 is_setting=True,
             )
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
 
     def set_stage_config(self, cfg=None):
         if cfg is None:
@@ -1265,6 +1295,12 @@ class Electro_optic_sampling_new(Assembly):
                 name=name,
                 is_setting=True,
             )
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
 
     def set_stage_config(self, cfg=None):
         if cfg is None:
@@ -1633,7 +1669,7 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
         self.motor_configuration = {
             "beam_block": {
                 "id": "SARES20-MCS3:MOT_18",
-                "pv_descr": "6:3 LSD Chamber Beam Block",
+                "pv_descr": "6:3 GIC Chamber Beam Block",
                 "direction": 0,
                 "sensor": 1,
                 "speed": 200,
@@ -1642,7 +1678,7 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
             },
             "interferrometer_paddle": {
                 "id": "SARES20-MCS3:MOT_16",
-                "pv_descr": "6:1 LSD Interferrometer Paddle",
+                "pv_descr": "6:1 GIC Interferrometer Paddle",
                 "direction": 0,
                 "sensor": 1,
                 "speed": 200,
@@ -1653,12 +1689,12 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
         self.motor_configuration_openloop = {
             "interferrometer_ver": {
                 "id": "SARES20-MCS3:asyn",
-                "pv_descr": "5:1 LSD interferrometer hor",
+                "pv_descr": "5:1 GIC interferrometer hor",
                 "channel": 13,
             },
             "interferrometer_hor": {
                 "id": "SARES20-MCS3:asyn",
-                "pv_descr": "5:2 LSD interferrometer ver",
+                "pv_descr": "5:2 GIC interferrometer ver",
                 "channel": 14,
             },
         }
@@ -1783,7 +1819,14 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
                 is_setting=False,
             )
 
-    def beam_block_in(self, target=7):
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
+
+    def beam_block_in(self, target=6):
         self.beam_block.set_target_value(target)
 
     def beam_block_out(self, target=2):

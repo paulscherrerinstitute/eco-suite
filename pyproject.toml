@@ -1,0 +1,167 @@
+# Modern packaging config for eco (replaces the old setup.py).
+# Modelled on the sibling project escape-fel: setuptools + setuptools-scm,
+# PEP 621 metadata, package discovery restricted to the `eco` namespace.
+#
+# Dependency tiers (see the review notes):
+#   * [project.dependencies]  -> "safe" + "normal" deps: pure-python or
+#     compiled packages that have first-class wheels on PyPI AND conda-forge.
+#   * [project.optional-dependencies] -> everything "complicated":
+#       - gui      : desktop / notebook widget stacks
+#       - sheets   : Google-sheets / spreadsheet export helpers
+#       - hardware : Raspberry-Pi / serial hardware (import-guarded in code)
+#       - psi      : git-only PSI/lab packages (no PyPI release)
+#       - docs     : Sphinx doc build
+#       - dev      : test / lint tooling
+#
+# NOT declared here at all (installed via the conda environment instead):
+#   cam-server (cam_server), psi-bsread (bsread), mflow, jungfrau_utils,
+#   py-elog (elog), psi-datahub (datahub), xrayutilities, xraylib,
+#   data_api, cta_lib, detector_integration_api, bufferutils, bernina_urdf.
+# These are PSI-internal / conda-channel-only; putting them in `dependencies`
+# would make `pip install eco` fail on any clean machine.
+
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eco"
+description = "Experiment control and orchestration framework for the SwissFEL Bernina endstation"
+readme = "Readme.md"
+requires-python = ">=3.8"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Paul Scherrer Institute" }]
+maintainers = [{ name = "Bernina beamline" }]
+keywords = ["swissfel", "beamline", "epics", "controls", "bernina", "psi"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dynamic = ["version"]
+
+# --- "safe" + "normal" tiers: available on PyPI and conda-forge ------------
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "matplotlib",
+    "h5py",
+    "pyepics",
+    "pyzmq",
+    "requests",
+    "urllib3",
+    "colorama",
+    "rich",
+    "textual",
+    "tqdm",
+    "tabulate",
+    "wcwidth",
+    "pint",
+    "python-dateutil",
+    "six",
+    "markdown",
+    "ansi2html",
+    "ascii_graph",
+    "inputimeout",
+    "simple-pid",
+    "simple-term-menu",
+    "cachebox",
+    "lazy-object-proxy",
+    "numpy-stl",
+    "diffcalc-core",
+    "IPython",
+]
+
+[project.optional-dependencies]
+gui = [
+    "ipywidgets",
+    "ipyevents",
+    "qtpy",
+    "dash",
+    "flask",
+    "timg",
+    "pyttsx3",
+    "pillow",
+    "av",
+]
+sheets = [
+    "gspread",
+    "gspread-dataframe",
+    "gspread-formatting",
+    "oauth2client",
+    "openpyxl",
+    "xlwt",
+]
+hardware = [
+    "pyserial",
+    "gpiozero",
+    "adafruit-blinka",
+    "adafruit-circuitpython-ads1x15",
+]
+# Optional front-ends for `eco --ui lab` / `eco --ui voila`. Not required for
+# the default IPython shell; install on demand.
+lab = ["jupyterlab"]
+voila = ["voila"]
+# git-only PSI/lab packages, no PyPI release. Installable with
+#   pip install "eco[psi] @ ."   (needs network + git)
+psi = [
+    "scilog @ git+https://github.com/paulscherrerinstitute/scilog#subdirectory=sdk/python",
+    "escape-fel @ git+https://github.com/htlemke/escape-fel",
+]
+docs = [
+    "sphinx>=7,<9",
+    "furo>=2024.1.29",
+    "myst-parser>=2",
+    "sphinx-copybutton>=0.5",
+    "sphinx-design>=0.5",
+]
+dev = [
+    "pytest",
+    "eco[docs]",
+]
+
+# The `eco` command re-execs IPython (a core dependency) with the eco profile
+# and runs the packaged startup script. Defaults come from an .ecorc file.
+# The launcher lives in the top-level module `eco_cli` (NOT inside the eco
+# package) so that starting it does not import eco/__init__.py.
+[project.scripts]
+eco = "eco_cli:main"
+
+[project.urls]
+Homepage = "https://gitea.psi.ch/Bernina/eco"
+Repository = "https://gitea.psi.ch/Bernina/eco"
+
+# --- Package discovery ----------------------------------------------------
+# Only ship the `eco` package tree. The nested vendored project under
+# "eco/elements/textual test/" and the top-level tests/ are excluded (their
+# dir names are not importable identifiers, but we exclude explicitly too).
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["eco*"]
+exclude = ["tests*", "eco.elements.textual*", "*.tests*"]
+
+# The standalone launcher module (top-level, not part of the eco package).
+# include-package-data=false keeps wheel contents deterministic: only the
+# discovered .py modules plus the explicit package-data below are shipped
+# (otherwise setuptools sweeps in stray files like the vendored
+# "eco/elements/textual test/" project tree).
+[tool.setuptools]
+py-modules = ["eco_cli"]
+include-package-data = false
+
+# Ship the Voila/JupyterLab dashboard notebook as package data.
+[tool.setuptools.package-data]
+eco = ["voila_app.ipynb"]
+
+# setuptools-scm's file-finder otherwise sweeps every git-tracked file under a
+# package dir into the wheel. Keep the stray vendored experiment and *bak
+# scratch files out.
+[tool.setuptools.exclude-package-data]
+"eco.elements" = ["textual test/*", "textual test/**", "*bak*.py"]
+
+[tool.setuptools_scm]
+# Version is derived from git tags (e.g. 0.0.2). A local venv build without
+# git metadata falls back to this value.
+fallback_version = "0.0.2"

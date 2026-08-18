@@ -946,47 +946,21 @@ class Scans(Assembly):
         end1_pos,
         N_intervals,
         N_pulses,
-        file_name="",
-        counters=[],
-        start_immediately=True,
-        step_info=None,
-        checker="default",
-        return_at_end="question",
-        repetitions=1,
         **kwargs_callbacks,
     ):
-        positions0 = np.linspace(start0_pos, end0_pos, N_intervals + 1)
-        positions1 = np.linspace(start1_pos, end1_pos, N_intervals + 1)
-        values = [[tp0, tp1] for tp0, tp1 in zip(positions0, positions1)]
-        if not counters:
-            counters = self.default_counters.get_current_value()
-        if checker == "default":
-            checker = self.checker
-        s = StepScan(
-            [adjustable0, adjustable1],
-            values,
-            self.counters,
-            file_name,
-            Npulses=N_pulses,
-            basepath=self.data_base_dir,
-            scan_info_dir=self.scan_info_dir,
-            checker=checker,
-            scan_directories=self._scan_directories,
-            callbacks_start_scan=self.callbacks_start_scan,
-            callbacks_start_step=self.callbacks_start_step,
-            callbacks_end_step=self.callbacks_end_step,
-            callbacks_end_scan=self.callbacks_end_scan,
-            run_table=self._run_table,
-            # elog=self._elog,
-            return_at_end=return_at_end,
-            repetitions=repetitions,
-            name="acquiring_scan",
+        """Two adjustables moved simultaneously over the same number of steps.
+
+        Thin wrapper around the general ``scan`` using a single simultaneous
+        (a2scan-like) axis.
+        """
+        return self.scan(
+            [
+                (adjustable0, start0_pos, end0_pos, N_intervals),
+                (adjustable1, start1_pos, end1_pos, N_intervals),
+            ],
+            N_pulses=N_pulses,
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
-        if start_immediately:
-            s.scan_all(step_info=step_info)
-        return s
 
     def meshscan(
         self,
@@ -1072,74 +1046,77 @@ class Scans(Assembly):
         return_at_end="timeout",
         settling_time=0,
         step_info=None,
+        repetitions=1,
         **kwargs_callbacks,
     ):
         """
         Most general scan, i.e. a scan of multiple adjustable in multiple dimensions, where the last adjustable is moved first.
         The scanning order can be changed by setting the `scanning_order` parameter.
+
+        Each positional ``adj_spec`` is one grid dimension; the cartesian product runs
+        across dimensions (mesh). A dimension is either
+
+        - single (mesh) axis: ``(adjustable, *step_spec)`` where ``adj_spec[0]`` is an
+          Adjustable, or
+        - simultaneous (a2scan-like) axis: a nested list of specs
+          ``[(adjA, *step_specA), (adjB, *step_specB), ...]`` whose adjustables move
+          together and must share the same number of steps.
+
+        ``*step_spec`` is anything understood by ``interpret_step_specification``.
         """
         adjustables = []
         positions = []
         for adj_spec in adj_specs:
-            # simultaneous scan
-            if all([isinstance(ts[0], Adjustable) for ts in adj_spec]):
+            # simultaneous (a2scan-like) axis: nested list of specs, one per co-moving adjustable
+            if not isinstance(adj_spec[0], Adjustable):
                 s_adjustables = [ts[0] for ts in adj_spec]
                 s_positions = [interpret_step_specification(ts[1:]) for ts in adj_spec]
-                if not len(set(map(len, s_positions))) == 1:
+                if len(set(map(len, s_positions))) != 1:
                     raise Exception(
                         "Simultaneous scan adjustables must have the same number of step positions!"
                     )
-
                 adjustables.append(s_adjustables)
-                positions.append(np.asarray(s_positions).T)
+                positions.append(np.asarray(s_positions).T)  # shape (Nsteps, Nadj)
 
-            # mesh scan
+            # single mesh axis
             else:
-                adj = adj_spec[0]
-                spec = adj_spec[1:]
-                if isinstance(adj, Adjustable):
-                    adjustables.append(adj)
-                    positions.append(interpret_step_specification(spec))
+                adjustables.append(adj_spec[0])
+                positions.append(interpret_step_specification(adj_spec[1:]))
 
         shape = [len(tp) for tp in positions]
 
         if scanning_order == "last_fastest":
             index_plan = list(product(*[range(n) for n in shape]))
-        elif scanning_order == "fist_fastst":
+        elif scanning_order == "first_fastest":
             index_plan = [tc[::-1] for tc in product(*[range(n) for n in shape][::-1])]
 
+        # StepScan is flat: one inner list per step, holding one target per flat
+        # adjustable. A simultaneous axis contributes several values to each step.
         values = []
         for ixs in index_plan:
+            step_values = []
             for ti, tp in zip(ixs, positions):
                 tpos = tp[ti]
-                if np.iterable(tpos) and len(tpos) > 1:
-                    for ttpos in tpos:
-                        values.append(ttpos)
-
+                if np.iterable(tpos):  # simultaneous vector
+                    step_values.extend(np.asarray(tpos).tolist())
                 else:
-                    values.append(tpos)
+                    step_values.append(tpos)
+            values.append(step_values)
 
-        adjustables_names = []
-        for ta in adjustables:
-            if isinstance(ta, list):
-                tas = []
-                for tta in ta:
-                    tas.append(
-                        tta.alias.get_full_name() if hasattr(tta, "alias") else tta.name
-                    )
-                adjustables_names.append(tas)
-            else:
-                adjustables_names.append(
-                    ta.alias.get_full_name() if hasattr(tta, "alias") else tta.name
-                )
+        # per-dimension names, nested where a dimension holds co-moving adjustables
+        grid_dimension_names = [
+            [get_eco_name(a) for a in ta] if isinstance(ta, list) else get_eco_name(ta)
+            for ta in adjustables
+        ]
 
         gridspecs = {
             "shape": shape,
             "positions": positions,
             "index_plan": index_plan,
-            "adjustables": adjustables_names,
+            "grid_dimension_names": grid_dimension_names,
         }
 
+        # flat adjustable list matching the per-step value order
         adjustables_flat = []
         for ta in adjustables:
             if isinstance(ta, list):
@@ -1164,6 +1141,7 @@ class Scans(Assembly):
             callbacks_end_scan=self.callbacks_end_scan,
             # elog=self._elog,
             gridspecs=gridspecs,
+            repetitions=repetitions,
             name="acquiring_scan",
             **kwargs_callbacks,
         )

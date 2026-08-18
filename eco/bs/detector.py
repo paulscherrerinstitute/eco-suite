@@ -1,3 +1,4 @@
+import threading
 from enum import IntEnum
 from time import time, sleep
 
@@ -7,8 +8,10 @@ from epics import PV
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
 from eco.elements.assembly import Assembly
-from eco.epics.adjustable import AdjustablePvString
+from eco.epics.adjustable import AdjustablePvString, wait_for_enum_strs
+from eco.epics import adjustable as _adjustable_module
 from eco.epics import get_from_archive
+from eco.elements.protocols import enum_repr
 
 
 @get_from_archive
@@ -32,43 +35,68 @@ class DetectorBsData(Assembly):
         return self.get_current_value()
 
 
+@enum_repr
 @get_from_archive
 class DetectorPvEnum(Assembly):
+    """See eco.epics.detector.DetectorPvEnum's docstring -- same class,
+    duplicated here; enum resolution is likewise deferred to first use."""
+
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
         self._pv = PV(pvname, connection_timeout=0.05)
         self.name = name
-        self.enum_strs = self._pv.enum_strs
-
-        self.PvEnum = IntEnum(name, {tstr: n for n, tstr in enumerate(self.enum_strs)})
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
+        self._resolve_lock = threading.Lock()
+        self._resolved = False
+        self._enum_strs = None
+        self._pv_enum = None
+        if not _adjustable_module.LAZY_ENUM_RESOLUTION:
+            # default: resolve now, like before this speedup existed -- see
+            # eco.epics.adjustable.LAZY_ENUM_RESOLUTION's docstring.
+            self._resolve()
+
+    def _resolve(self):
+        # never raises for an unreachable/non-enum PV -- see
+        # eco.epics.adjustable.AdjustablePvEnum._resolve()'s docstring
+        if self._resolved:
+            return
+        with self._resolve_lock:
+            if self._resolved:
+                return
+            self._pv.wait_for_connection()
+            self._enum_strs = wait_for_enum_strs(self._pv) or ()
+            self._pv_enum = IntEnum(
+                self.name, {tstr: n for n, tstr in enumerate(self._enum_strs)}
+            )
+            self._resolved = True
+
+    @property
+    def enum_strs(self):
+        self._resolve()
+        return self._enum_strs
+
+    @property
+    def PvEnum(self):
+        self._resolve()
+        return self._pv_enum
+
+    def _wait_for_initialisation(self):
+        # best-effort -- see eco.epics.adjustable.AdjustablePvEnum
+        try:
+            self._resolve()
+        except Exception:
+            pass
 
     def validate(self, value):
+        self._resolve()
         if type(value) is str:
-            return self.PvEnum.__members__[value]
+            return self._pv_enum.__members__[value]
         else:
-            return self.PvEnum(value)
+            return self._pv_enum(value)
 
     def get_current_value(self):
         return self.validate(self._pv.get())
-
-    def __repr__(self):
-        if not self.name:
-            name = self.Id
-        else:
-            name = self.name
-        cv = self.get_current_value()
-        s = f"{name} (enum) at value: {cv}" + "\n"
-        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
-        # s+= '_'*40+'\n'
-        for name, val in self.PvEnum.__members__.items():
-            if val == cv:
-                sel = "x"
-            else:
-                sel = " "
-            s += "{:>4}   {}  {}\n".format(val, sel, name)
-        return s
 
     def __call__(self):
         return self.get_current_value()

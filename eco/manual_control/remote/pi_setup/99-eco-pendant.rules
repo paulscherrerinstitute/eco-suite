@@ -1,0 +1,9 @@
+# PC-side udev rule (optional): auto-start the server when the pendant's
+# USB-gadget serial appears. Install to /etc/udev/rules.d/ then:
+#   sudo udevadm control --reload
+#
+# Adjust the match: run `udevadm info -q property -n /dev/ttyACM0` while the
+# pendant is plugged in and pick a stable attribute (ID_USB_DRIVER, or the
+# gadget's ID_VENDOR_ID/ID_MODEL_ID).
+ACTION=="add", SUBSYSTEM=="tty", ENV{ID_USB_DRIVER}=="cdc_acm", TAG+="systemd", ENV{SYSTEMD_WANTS}+="eco-pendant-serve@%k.service"
+ACTION=="remove", SUBSYSTEM=="tty", ENV{ID_USB_DRIVER}=="cdc_acm", RUN+="/bin/systemctl stop eco-pendant-serve@%k.service"

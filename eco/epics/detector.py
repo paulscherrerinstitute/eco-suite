@@ -1,3 +1,4 @@
+import threading
 from enum import IntEnum
 from time import time, sleep
 
@@ -12,8 +13,11 @@ from eco.aliases import Alias
 from eco.elements.adjustable import AdjustableMemory
 from eco.elements.assembly import Assembly
 from eco.elements.detector import call_convenience, value_property
-from eco.epics.adjustable import AdjustablePvString, AdjustablePv
+from eco.elements.protocols import enum_repr
+from eco.epics.adjustable import AdjustablePvString, AdjustablePv, wait_for_enum_strs
+from eco.epics import adjustable as _adjustable_module
 from eco.epics import get_from_archive
+from eco.epics.utilities_epics import CallbackEpics
 
 from eco.acquisition.decorators import scannable
 
@@ -58,6 +62,17 @@ class DetectorPvData(Assembly):
         else:
             return self.readback.get_current_value()
 
+    def get_severity(self):
+        """EPICS alarm severity of the underlying PV: 0=NO_ALARM, 1=MINOR,
+        2=MAJOR, 3=INVALID -- or None if it couldn't be read."""
+        try:
+            if hasattr(self, "_pv"):
+                self._pv.get()
+                return self._pv.severity
+            return self.readback.get_severity()
+        except Exception:
+            return None
+
     def set_current_value_callback(
         self, func="accumulate", run_once=True, print_output=False, **kwargs
     ):
@@ -78,49 +93,89 @@ class DetectorPvData(Assembly):
 
 # @call_convenience
 # @value_property
+@enum_repr
 @get_from_archive
 class DetectorPvEnum(Assembly):
+    """Enum-valued PV Detector. Connecting and resolving the enum choice list
+    is deferred to first use / an explicit `_wait_for_initialisation()` call
+    -- see `AdjustablePvEnum`'s class docstring (`eco.epics.adjustable`) for
+    why: it's what lets many sibling enum fields constructed back-to-back
+    (e.g. a Valve's several readbacks, an EVR's many pulsers) connect
+    concurrently in pyepics's own CA background thread instead of each fully
+    blocking before the next is even created."""
+
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
         self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
         self.name = name
-        self.enum_strs = self._pv.enum_strs
-
-        self.PvEnum = IntEnum(name, {tstr: n for n, tstr in enumerate(self.enum_strs)})
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
+        self._resolve_lock = threading.Lock()
+        self._resolved = False
+        self._enum_strs = None
+        self._pv_enum = None
+        if not _adjustable_module.LAZY_ENUM_RESOLUTION:
+            # default: resolve now, like before this speedup existed -- see
+            # eco.epics.adjustable.LAZY_ENUM_RESOLUTION's docstring.
+            self._resolve()
+
+    def _resolve(self):
+        # never raises for an unreachable/non-enum PV -- see AdjustablePvEnum
+        # ._resolve()'s docstring for why (enumerate(None) used to crash this
+        # after construction, somewhere Assembly._append's safety net no
+        # longer applies).
+        if self._resolved:
+            return
+        with self._resolve_lock:
+            if self._resolved:
+                return
+            self._pv.wait_for_connection()
+            self._enum_strs = wait_for_enum_strs(self._pv) or ()
+            self._pv_enum = IntEnum(
+                self.name, {tstr: n for n, tstr in enumerate(self._enum_strs)}
+            )
+            self._resolved = True
+
+    def _wait_for_initialisation(self):
+        # best-effort -- see AdjustablePvEnum._wait_for_initialisation
+        try:
+            self._resolve()
+        except Exception:
+            pass
+
+    @property
+    def enum_strs(self):
+        self._resolve()
+        return self._enum_strs
+
+    @property
+    def PvEnum(self):
+        self._resolve()
+        return self._pv_enum
 
     def validate(self, value):
+        self._resolve()
         if type(value) is str:
-            return self.PvEnum.__members__[value]
+            return self._pv_enum.__members__[value]
         else:
-            return self.PvEnum(value)
+            return self._pv_enum(value)
 
     def get_current_value(self):
         return self.validate(self._pv.get())
 
-    def __repr__(self):
-        if not self.name:
-            name = self.Id
-        else:
-            name = self.name
-        cv = self.get_current_value()
-        s = f"{name} (enum) at value: {cv}" + "\n"
-        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
-        # s+= '_'*40+'\n'
-        for name, val in self.PvEnum.__members__.items():
-            if val == cv:
-                sel = "x"
-            else:
-                sel = " "
-            s += "{:>4}   {}  {}\n".format(val, sel, name)
-        return s
-
     def __call__(self):
         return self.get_current_value()
 
-    def _wait_for_initialisation(self):
-        self._pv.wait_for_connection()
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        return CallbackEpics(
+            self._pv,
+            func=func,
+            run_once=run_once,
+            print_output=print_output,
+            **kwargs,
+        )
 
 
 # @call_convenience
@@ -144,6 +199,17 @@ class DetectorPvString:
             self.set_target_value(string)
         else:
             return self.get_current_value()
+
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        return CallbackEpics(
+            self._pv,
+            func=func,
+            run_once=run_once,
+            print_output=print_output,
+            **kwargs,
+        )
 
 
 # @call_convenience
@@ -285,72 +351,3 @@ class DetectorPvDataStream(Assembly):
 
     def get_current_value(self, **kwargs):
         return self._pv.get(**kwargs)
-
-
-class CallbackEpics:
-    def __init__(
-        self,
-        pv,
-        func="accumulate",
-        collector=None,
-        run_once=True,
-        print_output=False,
-    ):
-        self.pv = pv
-        # self.data = collector
-        if func == "accumulate":
-            func = self.accumulate_values
-            if collector is None:
-                collector = {"timestamps": [], "values": [], "timestamps_ioc": []}
-            self.data = (
-                collector  # {"timestamps": [], "values": [], "timestamps_ioc": []}
-            )
-        self.foo = func
-        self.run_once = run_once
-        self.print = print_output
-
-    def start(self, add_current_value=True):
-        if add_current_value:
-            ts_local = time()
-            self.data["timestamps"].append(ts_local)
-            self.data["values"].append(self.pv.get())
-            self.data["timestamps_ioc"].append(self.pv.timestamp)
-        self.cb_index = self.pv.add_callback(
-            self.foo,
-            run_once=True,
-        )
-        self.auto_monitor_state = self.pv.auto_monitor
-        self.pv.auto_monitor = True
-
-    def is_running(self):
-        return hasattr(self, "cb_index") and self.cb_index in self.pv.callbacks.keys()
-
-    def stop(self):
-        if self.is_running():
-            self.pv.remove_callback(self.cb_index)
-            self.pv.auto_monitor = self.auto_monitor_state
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
-
-    def accumulate_values(self, pvname=None, value=None, timestamp=None, **kwargs):
-        # if not self.data:
-        #     self.data = []
-        ts_local = time()
-        assert (
-            len(self.data["timestamps"])
-            == len(self.data["values"])
-            == len(self.data["timestamps_ioc"])
-        )
-        self.data["timestamps"].append(ts_local)
-        self.data["values"].append(value)
-        self.data["timestamps_ioc"].append(timestamp)
-
-        if self.print:
-            print(
-                f"{pvname}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
-            )

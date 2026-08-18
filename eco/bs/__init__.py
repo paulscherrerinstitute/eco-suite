@@ -13,5 +13,12 @@ def get_from_archive(Obj, attribute_name="pvname"):
             **kwargs,
         )
 
+    def strip_plot(self, **kwargs):
+        """Open a live, rolling strip plot of this object's channel, streamed
+        from the dispatcher. Returns a handle whose `.stop()` ends it."""
+        channelname = self.__dict__[attribute_name]
+        return ecocnf.archiver.strip_plot(channels=[channelname], **kwargs)
+
     Obj.get_archiver_time_range = get_archiver_time_range
+    Obj.strip_plot = strip_plot
     return Obj

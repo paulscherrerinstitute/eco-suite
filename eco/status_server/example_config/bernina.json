@@ -1,0 +1,9 @@
+{
+  "namespace": "bernina",
+  "channel_file": "/sf/bernina/code/gac-bernina/eco/eco/aliases/namespaces/bernina.json",
+  "instrument": "bernina",
+  "channeltypes": ["CA"],
+  "host": "0.0.0.0",
+  "port": 8090,
+  "connection_timeout": 5.0
+}

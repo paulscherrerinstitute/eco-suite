@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The following-error thresholds on one axis, from tightest to widest, and what
+  each one triggers. Ordering and effects per the Power PMAC Software Reference
+  Manual (O015): Motor[x].InPosBand, Servo.OutDbOn/OutDbOff, WarnFeLimit,
+  FatalFeLimit. Example numbers are the bernina H2O configs.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 300" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="tharrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#1a1a1a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="300" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="28" y="34" font-size="15" font-weight="700" fill="#1a1a1a">Following-error thresholds: what each one triggers</text>
+
+  <!-- axis -->
+  <line x1="60" y1="150" x2="900" y2="150" stroke="#1a1a1a" stroke-width="1.8" marker-end="url(#tharrow)"/>
+  <text x="60" y="176" text-anchor="start" font-size="12" fill="#1a1a1a">0</text>
+  <text x="898" y="176" text-anchor="end" font-size="12" fill="#1a1a1a">| following error |  &#8594;  (motor units)</text>
+
+  <!-- InPosBand -->
+  <line x1="200" y1="120" x2="200" y2="150" stroke="#4e7a21" stroke-width="2"/>
+  <circle cx="200" cy="150" r="4" fill="#4e7a21"/>
+  <text x="200" y="110" text-anchor="middle" font-size="12" font-weight="700" fill="#4e7a21">InPosBand</text>
+  <text x="200" y="196" text-anchor="middle" font-size="11" fill="#4e7a21">&#8220;in position&#8221;</text>
+  <text x="200" y="210" text-anchor="middle" font-size="11" fill="#4e7a21">move reported done</text>
+
+  <!-- OutDbOn / OutDbOff (deadband pair) -->
+  <line x1="350" y1="120" x2="350" y2="150" stroke="#0071bc" stroke-width="2"/>
+  <line x1="430" y1="120" x2="430" y2="150" stroke="#0071bc" stroke-width="2"/>
+  <rect x="350" y="150" width="80" height="14" fill="#0071bc" opacity="0.15"/>
+  <circle cx="350" cy="150" r="4" fill="#0071bc"/>
+  <circle cx="430" cy="150" r="4" fill="#0071bc"/>
+  <text x="390" y="110" text-anchor="middle" font-size="12" font-weight="700" fill="#0071bc">OutDbOn &#8594; OutDbOff</text>
+  <text x="390" y="228" text-anchor="middle" font-size="11" fill="#0071bc">output deadband</text>
+  <text x="390" y="242" text-anchor="middle" font-size="11" fill="#0071bc">(freeze &#8594; resume, 2:1)</text>
+
+  <!-- WarnFeLimit -->
+  <line x1="620" y1="120" x2="620" y2="150" stroke="#b45309" stroke-width="2"/>
+  <circle cx="620" cy="150" r="4" fill="#b45309"/>
+  <text x="620" y="110" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">WarnFeLimit</text>
+  <text x="620" y="196" text-anchor="middle" font-size="11" fill="#b45309">warning status bit</text>
+  <text x="620" y="210" text-anchor="middle" font-size="11" fill="#b45309">(no action) &#183; e.g. 200</text>
+
+  <!-- FatalFeLimit -->
+  <line x1="820" y1="120" x2="820" y2="150" stroke="#8a1a1a" stroke-width="2.4"/>
+  <circle cx="820" cy="150" r="4.5" fill="#8a1a1a"/>
+  <text x="820" y="110" text-anchor="middle" font-size="12" font-weight="700" fill="#8a1a1a">FatalFeLimit</text>
+  <text x="820" y="196" text-anchor="middle" font-size="11" fill="#8a1a1a">motor killed</text>
+  <text x="820" y="210" text-anchor="middle" font-size="11" fill="#8a1a1a">(amp disabled) &#183; e.g. 400</text>
+
+  <!-- ratio bracket Warn->Fatal -->
+  <path d="M620,262 L620,272 L820,272 L820,262" fill="none" stroke="#6b7280" stroke-width="1.2"/>
+  <text x="720" y="288" text-anchor="middle" font-size="10" fill="#6b7280">FatalFeLimit = 2 &#215; WarnFeLimit</text>
+</svg>

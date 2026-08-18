@@ -5,3 +5,8 @@ __pycache__/
 \.DS_Store
 .DS_Store
 .idea
+
+docs/_build/
+*.egg-info/
+build/
+dist/

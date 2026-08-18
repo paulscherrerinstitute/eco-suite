@@ -1,7 +1,7 @@
 from ..elements.assembly import Assembly
 from ..devices_general.cameras_swissfel import CameraBasler
 from ..devices_general.motors import MotorRecord
-from ..elements.adjustable import spec_convenience, AdjustableVirtual
+from ..elements.adjustable import spec_convenience, AdjustableVirtual, AdjustableTrigger
 from ..epics.adjustable import AdjustablePv
 from epics import PV
 import numpy as np
@@ -149,6 +149,7 @@ class OptoSigmaZoom(Assembly):
             name="zoom",
             is_setting=False,
         )
+        self._append(AdjustableTrigger, self.home, name="home", button_label="Home")
 
     def home(self):
         self.command_pv.put("H:1")

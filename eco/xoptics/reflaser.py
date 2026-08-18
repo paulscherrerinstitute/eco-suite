@@ -1,5 +1,5 @@
 from enum import Enum
-from eco.elements.adjustable import AdjustableGetSet, AdjustableFS
+from eco.elements.adjustable import AdjustableGetSet, AdjustableFS, AdjustableTrigger
 from eco.epics.adjustable import AdjustablePvEnum
 from ..devices_general.motors import MotorRecord, SmaractRecord
 from epics import PV
@@ -34,6 +34,10 @@ class RefLaser_BerninaUSD(Assembly):
             self._append(AdjustableFS, outpos_adjfs_path, name="last_out_position")
         else:
             self.last_out_position = None
+        self._append(AdjustableTrigger, self.movein, name="movein", button_label="Move In")
+        self._append(
+            AdjustableTrigger, self.moveout, name="moveout", button_label="Move Out"
+        )
 
     def movein(self, wait=False):
         if (not self.isin()) and self.last_out_position:
@@ -145,6 +149,10 @@ class RefLaser_Aramis(Assembly):
         # self._append(MotorRecord, pv_lir1 + ":MOTOR_MX", name="x_ap2", is_setting=True)
         # self._append(MotorRecord, pv_lir1 + ":MOTOR_MY", name="y_ap2", is_setting=True)
         self.mirror.set_limits(-20, 0)
+        self._append(AdjustableTrigger, self.movein, name="movein", button_label="Move In")
+        self._append(
+            AdjustableTrigger, self.moveout, name="moveout", button_label="Move Out"
+        )
 
     def __call__(self, *args, **kwargs):
         self.set(*args, **kwargs)

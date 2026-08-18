@@ -17,6 +17,7 @@ from ..elements.adjustable import (
     value_property,
     AdjustableFS,
     AdjustableGetSet,
+    AdjustableTrigger,
 )
 from ..elements.detector import DetectorGet
 from eco.devices_general.utilities import Changer
@@ -68,6 +69,12 @@ class Att_usd(Assembly):
         )
         self._append(
             DetectorGet, self.get_current_value, name="readback", is_display=True
+        )
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
         )
         self.motor_configuration = {
             "transl_2": {

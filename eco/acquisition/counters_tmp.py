@@ -51,7 +51,10 @@ class CounterStatusInitNamespaceToDAQ:
     def append_start_status_to_scan(self,scan=None, append_status_info=True):
         if not append_status_info:
             return
-        namespace_status = self.namespace.get_status(base=None)
+        # raise_on_incomplete=False: best-effort namespace-wide status
+        # snapshot -- an unrelated incomplete component elsewhere must not
+        # abort this.
+        namespace_status = self.namespace.get_status(base=None, raise_on_incomplete=False)
         stat = {"status_run_start": namespace_status}
         scan.namespace_status = stat
 
@@ -68,7 +71,10 @@ class CounterStatusInitNamespaceToDAQ:
         if not len(scan.values_done)>0:
             return
         
-        namespace_status = self.namespace.get_status(base=None)
+        # raise_on_incomplete=False: best-effort namespace-wide status
+        # snapshot -- an unrelated incomplete component elsewhere must not
+        # abort this.
+        namespace_status = self.namespace.get_status(base=None, raise_on_incomplete=False)
         scan.namespace_status["status_run_end"] = namespace_status
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number
@@ -477,7 +483,10 @@ def end_scan_monitors(scan, daq=daq, **kwargs):
 def _init_all(scan, append_status_info=True, **kwargs):
     if not append_status_info:
         return
-    namespace.init_all(silent=False)
+    # background=False: called at scan start, must block until init
+    # actually finishes before the scan proceeds (background=True, now
+    # init_all()'s default, would return immediately instead).
+    namespace.init_all(background=False, silent=False)
 
 
 callbacks_start_scan = []

@@ -459,6 +459,8 @@ class GPS(Assembly):
         helium_control_valve=None,
         illumination_mpod=None,
         thc_config=[],
+        event_master=None,
+        detectors_event_code=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
@@ -473,6 +475,8 @@ class GPS(Assembly):
                 jf_id,
                 pgroup_adj=pgroup_adj,
                 config_adj=jf_config,
+                event_master=event_master,
+                detectors_event_code=detectors_event_code,
                 name=jf_name,
             )
 
@@ -641,9 +645,14 @@ class XRDYou(Assembly):
         invert_kappa_ellbow=True,
         pgroup_adj=None,
         jf_config=None,
+        xp=None,
+        helium_control_valve=None,
+        illumination_mpod=None,
         fina_hex_angle_offset=None,
         recspace_conv="escape.swissfel.recspace_conv:SixCircleBernina",
         recspace_conv_JFID="JF01T03V01",
+        event_master=None,
+        detectors_event_code=None,
     ):
         """X-ray diffractometer platform in SiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
@@ -672,9 +681,19 @@ class XRDYou(Assembly):
                 jf_id,
                 pgroup_adj=pgroup_adj,
                 config_adj=jf_config,
+                event_master=event_master,
+                detectors_event_code=detectors_event_code,
                 name=jf_name,
             )
-
+        if configuration.gic():
+            self._append(
+                GrazingIncidenceLowTemperatureChamber,
+                name="gic",
+                xp=xp,
+                helium_control_valve=helium_control_valve,
+                is_setting=False,
+                is_display=True,
+            )
         if recspace_conv is not None:
             module_name, Conv_name = recspace_conv.split(":")
             Conv = getattr(import_module(module_name), Conv_name)
@@ -1035,7 +1054,15 @@ class XRD(Assembly):
                 pvreadbackname="SARES20-HEX_PI:POSI-W",
                 name="whex",
             )
-
+        if configuration.gic():
+            self._append(
+                GrazingIncidenceLowTemperatureChamber,
+                name="gic",
+                xp=xp,
+                helium_control_valve=helium_control_valve,
+                is_setting=False,
+                is_display=True,
+            )
         if "kappa" in self.configuration:
             self._append(
                 MotorRecord, "SARES21-XRD:MOT_KAP_KRX", name="eta", is_setting=True

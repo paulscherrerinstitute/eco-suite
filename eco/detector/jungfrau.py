@@ -38,10 +38,14 @@ class Jungfrau(Assembly):
         pgroup_adj=None,
         config_adj=None,
         chiller_thermotek="SARES20-CHIL",
+        event_master=None,
+        detectors_event_code=None,
         name=None,
     ):
         super().__init__(name=name)
         # self.alias = Alias(name, channel=jf_id, channeltype="JF")
+        self._event_master = event_master
+        self._detectors_event_code = detectors_event_code
         self.pgroup = pgroup_adj
         self.jf_id = jf_id
         self.broker_address = broker_address
@@ -141,6 +145,32 @@ class Jungfrau(Assembly):
             name="settings_dap",
         )
 
+        # Hardware settings (delay/detector_mode/exptime/gain_mode) served by
+        # sf_daq_broker's "slow" broker, at broker_address_aux -- same
+        # request/caching pattern as _dap_settings above.
+        self._last_detector_settings_req_time = 0
+        self._append(
+            AdjustableFS,
+            f"/sf/bernina/code/gac-bernina/eco_cnf_bernina/reference_values/detector_settings_{self.jf_id:s}.json",
+            name="_detector_settings_storage",
+            is_display=False,
+            is_setting=False,
+        )
+        self._append(
+            AdjustableGetSet,
+            self.get_detector_settings,
+            self.set_detector_settings,
+            name="_detector_settings",
+            is_display=False,
+            is_setting=False,
+        )
+        self._append(
+            AdjustableObject,
+            self._detector_settings,
+            is_setting_children=True,
+            name="settings_detector",
+        )
+
         if config_adj:
             self._append(
                 JungfrauDaqConfig,
@@ -235,7 +265,27 @@ class Jungfrau(Assembly):
             return f"aux/{dest.name}"
 
     def get_dap_settings(self, force=False):
+        """
+        Read this detector's DAP (online analysis pipeline) parameters.
 
+        REST: GET {broker_address_aux}/get_dap_settings. broker_address_aux
+        is sf_daq_broker's "slow" broker (DEFAULT_BROKER_SLOW_REST_PORT,
+        served by broker_slow.py) despite the "aux" name used in eco --
+        confirmed against sf_daq_broker/config.py, where both
+        eco.acquisition.daq_client.Daq.broker_address_aux and this class's
+        broker_address_aux default to port 10003, matching
+        DEFAULT_BROKER_SLOW_REST_PORT exactly. It reads
+        pipeline_parameters.{detector_name}.json off GPFS server-side.
+
+        force=False (default) returns the last cached value from
+        _dap_settings_storage without touching the network. force=True
+        re-queries the broker, throttled to once per 5 s via
+        _last_dap_req_time -- because the slow broker is single-threaded
+        (bottle's default wsgiref server handles one HTTP request at a time,
+        broker process-wide), so hammering this stalls every other client of
+        broker_address_aux for as long as each call takes. get_detector_settings
+        below follows the same pattern for the same reason.
+        """
         if force:
             if 5 < (time.time() - self._last_dap_req_time):
                 self._last_dap_message = requests.get(
@@ -256,8 +306,14 @@ class Jungfrau(Assembly):
             return val
 
     def set_dap_settings(self, dap_setting_dict):
-        # print("Setting not implmented yet!")
-        # return
+        """
+        Change this detector's DAP parameters.
+
+        REST: POST {broker_address_aux}/set_dap_settings, body
+        {"detector_name": jf_id, "parameters": dap_setting_dict}. The
+        broker diffs against the current file, keeps a timestamped backup,
+        and rolls back automatically if the write fails.
+        """
         m = requests.post(
             f"{self.broker_address_aux}/set_dap_settings",
             json={"detector_name": self.jf_id, "parameters": dap_setting_dict},
@@ -265,6 +321,114 @@ class Jungfrau(Assembly):
         if m["status"] == "ok":
             self._dap_settings_storage.set_target_value(dap_setting_dict).wait()
             return m
+
+    def get_detector_settings(self, force=False):
+        """
+        Read this detector's live hardware settings (delay, detector_mode,
+        exptime, gain_mode).
+
+        REST: GET {broker_address_aux}/get_detector_settings -- same slow
+        broker as get_dap_settings above, same caching/throttling pattern
+        and the same reasoning: force=False (default) returns the cached
+        value from _detector_settings_storage; force=True re-queries the
+        broker, throttled to once per 5 s via _last_detector_settings_req_time.
+        """
+        if force:
+            if 5 < (time.time() - self._last_detector_settings_req_time):
+                self._last_detector_settings_message = requests.get(
+                    f"{self.broker_address_aux}/get_detector_settings",
+                    json={"detector_name": self.jf_id},
+                ).json()
+                self._last_detector_settings_req_time = time.time()
+
+            if self._last_detector_settings_message["status"] == "ok":
+                self._detector_settings_storage.set_target_value(
+                    self._last_detector_settings_message["parameters"]
+                ).wait()
+                return self._last_detector_settings_message["parameters"]
+        else:
+            val = self._detector_settings_storage.get_current_value()
+            if not val:
+                val = self.get_detector_settings(force=True)
+            return val
+
+    def set_detector_settings(self, detector_setting_dict):
+        """
+        Change this detector's live hardware settings.
+
+        REST: POST {broker_address_aux}/set_detector_settings, body
+        {"detector_name": jf_id, "parameters": detector_setting_dict}. Only
+        delay, detector_mode, exptime and gain_mode are recognised
+        server-side; anything else in the dict is ignored. The broker stops
+        the trigger, applies changes via setattr on its Detector object,
+        then restarts the trigger -- i.e. this briefly interrupts triggering
+        for this detector. Do not call it mid-acquisition.
+        """
+        m = requests.post(
+            f"{self.broker_address_aux}/set_detector_settings",
+            json={"detector_name": self.jf_id, "parameters": detector_setting_dict},
+        ).json()
+        if m["status"] == "ok":
+            self._detector_settings_storage.set_target_value(
+                detector_setting_dict
+            ).wait()
+            return m
+
+    def get_status(self):
+        """
+        REST: GET {broker_address_aux}/get_detector_status -> the broker's
+        Detector.get_status() dict. Single round trip, not cached (unlike
+        get_detector_settings/get_dap_settings above).
+        """
+        return requests.get(
+            f"{self.broker_address_aux}/get_detector_status",
+            json={"detector_name": self.jf_id},
+        ).json()["detector_status"]
+
+    def get_pings(self):
+        """
+        Per-module network reachability for this detector.
+
+        REST: GET {broker_address_aux}/get_detector_pings ->
+        {"responding": [module_numbers], "unreachable": [module_numbers]}.
+        Unlike the other diagnostics calls here, this one actually pings
+        hardware over the network server-side and can take noticeably
+        longer if a module is down -- and because the slow broker handles
+        one request at a time (see get_dap_settings docstring), that stalls
+        every other client of broker_address_aux for as long as this call
+        takes. Don't call it from inside a scan loop.
+        """
+        return requests.get(
+            f"{self.broker_address_aux}/get_detector_pings",
+            json={"detector_name": self.jf_id},
+        ).json()["pings"]
+
+    def get_temperatures(self):
+        """REST: GET {broker_address_aux}/get_detector_temperatures."""
+        return requests.get(
+            f"{self.broker_address_aux}/get_detector_temperatures",
+            json={"detector_name": self.jf_id},
+        ).json()["temperatures"]
+
+    def get_stats(self):
+        """
+        Combined health check: is this detector actually alive and writing.
+
+        REST: GET {broker_address_aux}/get_jfstats (note: the request key is
+        "det", not "detector_name", unlike every other slow-broker
+        endpoint here) -> {"parameters" (jfctrl monitor), "temperatures",
+        "writing": bool}. "writing" reflects whether the detector's buffer
+        file on the server was modified within the last 30 s -- of
+        everything sf-daq exposes, this is the closest to a direct "is data
+        actually flowing right now" signal, as opposed to get_isrunning()
+        below, which only checks whether this jf_id is in the broker's
+        *configured* running-detectors list, not whether it is actually
+        producing data.
+        """
+        return requests.get(
+            f"{self.broker_address_aux}/get_jfstats",
+            json={"det": self.jf_id},
+        ).json()
 
     def get_detector_frequency(self):
         return self._event_master.event_codes[

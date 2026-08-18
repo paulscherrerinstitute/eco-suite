@@ -1,68 +1,74 @@
-[![Build Status](https://travis-ci.org/paulscherrerinstitute/eco.svg?branch=master)](https://travis-ci.org/paulscherrerinstitute/eco)
-                                                             
-                          ___ _______
-                         / -_) __/ _ \ 
-    Experiment Control   \__/\__/\___/
+# eco — Experiment Control
 
-# Experiment Control
-eco is a python based control environment for experiments, developed and used at SwissFEL, PSI.
-It is supposed to be used as 
-- library of experimental devices for higher level python applications or GUIs
-- interactive command line interface from e.g. ipython/jupyter shell or notebook.
+```
+                       ___ _______
+                      / -_) __/ _ \
+ Experiment Control   \__/\__/\___/
+```
 
-Eco follows an object oriented approach to represent devices which can be passed around as a compatibility layer in python, This should facilitate to combine devices in general control and acquisition routines as well as to develop experimental routines which take advantage of the constantly growing landscape of scientific python libraries.
-Examples for such object representation will follow in the documantation, for object-oriented programing in python also checkout online documentation like this [short introduction]{https://realpython.com/python3-object-oriented-programming/}.
+**eco** is a Python-based control environment for experiments, developed and
+used at SwissFEL, PSI. It is used both as:
 
-## eco Elements
-Eco consists in general terms of
-1. conventions and examples for the behavior of general objects that allow to use them for different purposes.
-2. library modules for broadly used devices using protocols (_e.g._ epics).
-3. library modules for more specific, facility-dependent devices or logical assemblies of devices.
-4. scopes of specific configurations of devices and scope-specific code, usable e.g. in interactive mode.
+- a **library** of experimental devices for higher-level Python applications
+  or GUIs, and
+- an **interactive command-line interface**, e.g. from an IPython/Jupyter
+  shell or notebook.
 
-## Package Structure
-eco consists of a hierachy of mutiple python modules.
+eco follows an object-oriented approach: every device is represented as a
+Python object with a small, predictable interface, so devices can be freely
+combined in generic control/acquisition routines and analysed with the
+scientific Python ecosystem. For a general introduction to object-oriented
+Python, see e.g. this [short introduction](https://realpython.com/python3-object-oriented-programming/).
 
-At top level should be found:
-- utilities (basic and convention helpers)
-- basic devices
-- examples
--- convention checkers
--- utilities
+## Documentation
 
-- specific types of devices
--- general definition of potentially recurring devices
-- configurations of multiple devices into instruments
+The full documentation — installation, core concepts, and worked examples
+(listening monitors, archiver data and strip charts, pipeline offload, motor
+configuration) — lives in [docs/](docs/) and is built with
+[Sphinx](https://www.sphinx-doc.org), configured to build on
+[Read the Docs](https://readthedocs.org) via [.readthedocs.yaml](.readthedocs.yaml).
 
+Build it locally:
 
-[Device representation.pdf](https://github.com/paulscherrerinstitute/eco/files/2453401/Device.representation.pdf)
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -b html docs docs/_build/html
+```
 
-# Installation
-
-## Anaconda
-
-The eco package is available on [anaconda.org](https://anaconda.org/paulscherrerinstitute/eco) and can be installed as follows:
+## Installation
 
 ```bash
 conda install -c paulscherrerinstitute eco
 ```
-# HowTos
 
-Please find in the following some general procedures when adding components in eco according to present conventions. This section can and should be dynamic, and may include outdated hint if not updated for longer. 
+or, for development, in editable mode from a checkout:
 
-## create new object ind eco
+```bash
+git clone https://github.com/paulscherrerinstitute/eco.git
+cd eco
+pip install -e .
+```
 
-In order to help with naming, aliases, shell representation, new objects should be implemented as derived from `elements.Assembly` and call the parent init function with the name variable.
+See [Installation](docs/installation.md) for beamline-specific setup (the
+`eco` launcher, `.ecorc` defaults) and the full dependency picture.
+
+## Creating a new device
+
+New devices are implemented as a subclass of `Assembly`, which provides
+naming, aliasing, and shell representation:
+
 ```python
-from elements.assembly import Assembly
-class Myobject(Assembly):
-    def __init__(self,name=None):
+from eco.elements.assembly import Assembly
+
+class MyDevice(Assembly):
+    def __init__(self, name=None):
         super().__init__(name=name)
+        self._append(MySubObject, name="my_sub_object", is_setting=True, is_status=True)
 ```
-The `Assembly` object has different methods that help to assemble different other eco objects together.
-```python
-# in 
-self._append(MySubObject,*args, **kwargs, name='mysubobjname', is_setting=True, is_display=True)
-```
-The `is_setting` flag requires that the appended object is an adjustable (can be set afterwards) or has adjustable settings in case it is itself an assembly.
-The `is_status` flag independently determines if the subobject should be used to describe the status of the new assembly, e.g. show up in its representation. In case the subobject is no adjustable itself but has adjustable settings that should be shown in the object status, please use `is_display='recursive'`. 
+
+`is_setting=True` marks the child as a *setting* of the assembly (shown by
+`.settings()` and captured when settings are saved); `is_status=True` marks it
+as contributing to the assembly's `.status()`. See
+[Representing real devices — the Assembly](docs/concepts.md) in the full docs
+for the rest of the model (Adjustable, Detector, Namespace) and a
+from-scratch, runnable example of each.

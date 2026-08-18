@@ -1,8 +1,37 @@
 #!/usr/bin/env python
+"""Interactive eco startup script.
+
+This is executed *inside* an IPython session (via ``%run``) so that the
+pylab / numpy star-imports and the scope namespace land in the interactive
+user namespace. It is normally launched through the ``eco`` console command
+(see :mod:`eco.cli`), which is equivalent to::
+
+    ipython --profile=eco --no-banner -i -c "run <this file> -l -s bernina"
+"""
+
+import os
+os.environ["EPICS_CA_MAX_ARRAY_BYTES"] = "120000000"
+
+## pylab activity >>>>
+import numpy
+import matplotlib
+from matplotlib import pylab, mlab, pyplot
+
+np = numpy
+plt = pyplot
+
+from IPython.core.pylabtools import figsize, getfigs
+
+from pylab import *
+from numpy import *
+
+plt.ion()
+## pylab activity <<<<
+
 
 from eco import ecocnf
 from eco.utilities.config import Terminal
-
+import sys
 
 import argparse
 
@@ -44,7 +73,6 @@ if arguments.scopes_available:
             " {:<14s} {:<14s} {:<14s}".format(ts["module"], ts["name"], ts["facility"])
         )
 
-    return
 
 print(
     "                       ___ _______\n                      / -_) __/ _ \ \n Experiment Control   \__/\__/\___/ \n\n"
@@ -53,23 +81,13 @@ print(
 term = Terminal(scope=scope)
 
 if scope:
-    # import importlib
-    # eco = importlib.import_module('eco')
-    # mdl = importlib.import_module(scope,package=eco)
-    # mdl = importlib.import_module('eco.bernina')
     if arguments.lazy:
         ecocnf.startup_lazy = True
     exec(f"import eco.{scope} as {scope}")
-    # exec(f'{scope}.init(lazy=ecocnf.startup_lazy)')
     exec(f"from eco.{scope} import *")
-    # is there an __all__?  if so respect it
-    # if "__all__" in mdl.__dict__:
-    #    names = mdl.__dict__["__all__"]
-    # else:
-    # otherwise we import all names that don't begin with _
-    #    names = [x for x in mdl.__dict__ if not x.startswith("_")]
-    # now drag them in
-    # globals().update({k: getattr(mdl, k) for k in names})
 
 term.set_title()
-print(arguments)
+from IPython import get_ipython
+
+_ipy = get_ipython()
+_ipy.Completer.use_jedi = True

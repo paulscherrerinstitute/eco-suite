@@ -1,0 +1,6 @@
+# Documentation build requirements (used by Read the Docs).
+sphinx>=7,<9
+furo>=2024.1.29
+myst-parser[linkify]>=2
+sphinx-copybutton>=0.5
+sphinx-design>=0.5

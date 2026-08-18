@@ -1,0 +1,27 @@
+[Unit]
+Description=eco status/monitor server (registry mode) for namespace %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Needs pgroup-write / chown rights on /sf/<instrument>/data/<pgroup>/... -
+# use the same service account already used for comparable daq-side
+# services (e.g. sf_daq_broker), not a personal account.
+User=daq-bernina
+Group=daq-bernina
+
+# %i is the instance name, e.g. `systemctl start eco-status-server@bernina`
+# expects /etc/eco-status-server/bernina.json to exist (copy of
+# example_config/bernina.json, adjusted for the target host). This unit
+# is the lightweight "registry" mode (channel_registry.py/server.py) -
+# see eco-status-server-namespace@.service for the namespace-hosted mode.
+ExecStart=/sf/bernina/applications/mm/envs/default/bin/python -m eco.status_server --mode registry --config /etc/eco-status-server/%i.json
+
+Restart=on-failure
+RestartSec=5
+# CA monitor callbacks + Flask's dev server are fine for internal traffic
+# at this scale; revisit if this needs to survive higher concurrency.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,32 +1,66 @@
 package:
-    name: eco
-    version: 0.0.2
-#source:
-#    git_tag: 0.0.14
-#    git_url: git@git.psi.ch:sf_daq/bsread_python.git
+  name: eco
+  # Kept in sync with git tags / setuptools-scm. Bump on release.
+  version: "0.0.2"
+
 source:
-    path: ..
+  path: ..
 
 build:
-    number: 1
+  number: 0
+  script: {{ PYTHON }} -m pip install . --no-deps -vv
+  # The `eco` console command is declared in pyproject.toml ([project.scripts]
+  # -> eco_cli:main) and is created automatically by the pip install above.
+  # The old `startup:main` target was broken: startup.py was never part of the
+  # installed package, so it could not be imported.
+  noarch: python
 
 requirements:
-    build:
-        - python
-        - setuptools
-    run:
-        - python
-        - elog
-        - pyepics
-        - bsread
-        - jungfrau_utils
-        - xrayutilities
-        - xraylib
+  host:
+    - python >=3.8
+    - pip
+    - setuptools >=64
+    - setuptools-scm >=8
+  run:
+    - python >=3.8
+    # --- safe + normal tier (conda-forge) ---
+    - numpy
+    - scipy
+    - pandas
+    - matplotlib-base
+    - h5py
+    - pyepics
+    - pyzmq
+    - requests
+    - urllib3
+    - colorama
+    - rich
+    - textual
+    - tqdm
+    - tabulate
+    - wcwidth
+    - pint
+    - python-dateutil
+    - six
+    - markdown
+    - ipython
+    # --- PSI / lab channel packages ---
+    - psi-bsread
+    - cam-server
+    - mflow
+    - jungfrau_utils
+    - py-elog
+    - psi-datahub
+    - xrayutilities
+    - xraylib
 
-build:
-  entry_points:
-    - eco = startup:main
+test:
+  imports:
+    - eco
+    - eco.elements
+    - eco.widgets
 
 about:
-#    home: git@git.psi.ch:sf_daq/bsread_python.git
-    summary: "Eco ..."
+  home: https://gitea.psi.ch/Bernina/eco
+  summary: "Experiment control and orchestration framework for the SwissFEL Bernina endstation"
+  license: GPL-3.0-or-later

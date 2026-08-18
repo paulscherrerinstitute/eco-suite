@@ -28,7 +28,11 @@ class Hexapod_PI:
 
 class HexapodPI(Assembly):
     def __init__(self, pvname, name=None, fina_angle_offset=None):
-        super().__init__(name=name)
+        # memory_change_serially=True: this controller does not reliably
+        # take over several near-simultaneous SET-POSI-* axis writes (known
+        # issue -- concurrent recall of x/y/z/rx/ry/rz drops some of them);
+        # recall() applies them one at a time, waiting for each, instead.
+        super().__init__(name=name, memory_change_serially=True)
         self.pvname = pvname
         self._append(
             AdjustablePiHex,

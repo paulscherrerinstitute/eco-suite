@@ -3,11 +3,23 @@ from copy import copy
 from time import sleep, time
 
 
+def _wait_for_enum_strs(pv, retries=10, delay=0.05):
+    """Same fix/rationale as `eco.epics.adjustable.wait_for_enum_strs` --
+    duplicated locally (not imported) to avoid a circular import, since
+    `eco.epics.adjustable` itself imports from this module."""
+    for _ in range(retries):
+        if pv.enum_strs:
+            return pv.enum_strs
+        sleep(delay)
+    return pv.enum_strs
+
+
 class EnumWrapper:
     def __init__(self, pvname, elog=None):
         self._elog = elog
         self._pv = PV(pvname)
-        self.names = self._pv.enum_strs
+        self._pv.wait_for_connection()
+        self.names = _wait_for_enum_strs(self._pv)
         # print(self.names)
         # if self.names:
         self.setters = Positioner([(nam, lambda: self.set(nam)) for nam in self.names])
@@ -55,6 +67,100 @@ class MonitorAccumulator:
         self.values = []
         self.accumulate()
         return d
+
+
+class CallbackEpics:
+    """set_current_value_callback() implementation for a single PV, shared
+    by every PV-backed Detector/Adjustable class (eco.epics.detector,
+    eco.epics.adjustable, eco.detector.detectors_psi). Moved here from
+    eco.epics.detector (still importable from there) so eco.epics.adjustable
+    can use it too without a circular import (eco.epics.detector already
+    imports from eco.epics.adjustable)."""
+
+    def __init__(
+        self,
+        pv,
+        func="accumulate",
+        collector=None,
+        run_once=True,
+        print_output=False,
+    ):
+        self.pv = pv
+        # self.data = collector
+        if func == "accumulate":
+            func = self.accumulate_values
+            if collector is None:
+                collector = {"timestamps": [], "values": [], "timestamps_ioc": []}
+            self.data = (
+                collector  # {"timestamps": [], "values": [], "timestamps_ioc": []}
+            )
+        elif func == "latest":
+            # Unlike "accumulate", keeps only the most recent value instead
+            # of an ever-growing list - for monitoring that's meant to run
+            # indefinitely (e.g. a long-lived status cache) rather than for
+            # the duration of one scan, where "accumulate" would otherwise
+            # grow without bound.
+            func = self.set_latest_value
+            if collector is None:
+                collector = {"value": None, "timestamp": None, "timestamp_local": None}
+            self.data = collector
+        self.foo = func
+        self.run_once = run_once
+        self.print = print_output
+
+    def start(self, add_current_value=True):
+        if add_current_value:
+            self.foo(pvname=self.pv.pvname, value=self.pv.get(), timestamp=self.pv.timestamp)
+        self.cb_index = self.pv.add_callback(
+            self.foo,
+            run_once=True,
+        )
+        self.auto_monitor_state = self.pv.auto_monitor
+        self.pv.auto_monitor = True
+
+    def is_running(self):
+        return hasattr(self, "cb_index") and self.cb_index in self.pv.callbacks.keys()
+
+    def stop(self):
+        if self.is_running():
+            self.pv.remove_callback(self.cb_index)
+            self.pv.auto_monitor = self.auto_monitor_state
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
+
+    def accumulate_values(self, pvname=None, value=None, timestamp=None, **kwargs):
+        # if not self.data:
+        #     self.data = []
+        ts_local = time()
+        assert (
+            len(self.data["timestamps"])
+            == len(self.data["values"])
+            == len(self.data["timestamps_ioc"])
+        )
+        self.data["timestamps"].append(ts_local)
+        self.data["values"].append(value)
+        self.data["timestamps_ioc"].append(timestamp)
+
+        if self.print:
+            print(
+                f"{pvname}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
+            )
+
+    def set_latest_value(self, pvname=None, value=None, timestamp=None, **kwargs):
+        ts_local = time()
+        self.data["value"] = value
+        self.data["timestamp"] = timestamp
+        self.data["timestamp_local"] = ts_local
+
+        if self.print:
+            print(
+                f"{pvname}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
+            )
 
 
 class Monitor:

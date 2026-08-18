@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Output-deadband hysteresis (Motor[x].Servo.OutDbOn / OutDbOff).
+  The servo output is frozen once the following error falls below OutDbOn, and
+  resumes only once it climbs back above OutDbOff. OutDbOff > OutDbOn is the
+  hysteresis that stops the loop chattering. Values shown are the bernina
+  convention OutDbOff = 2 x OutDbOn (H2O configs: 0.5 / 1.0). See the Power PMAC
+  Software Reference Manual (O015), Motor[x].Servo.OutDbOn / OutDbOff.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 360" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="dbarrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#1a1a1a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="820" height="360" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="28" y="34" font-size="15" font-weight="700" fill="#1a1a1a">Output deadband hysteresis &#8212; quiet at rest</text>
+
+  <!-- error axis -->
+  <line x1="70" y1="300" x2="770" y2="300" stroke="#1a1a1a" stroke-width="1.6" marker-end="url(#dbarrow)"/>
+  <text x="770" y="326" text-anchor="end" font-size="12" fill="#1a1a1a">| following error |  &#8594;</text>
+  <text x="70" y="326" text-anchor="start" font-size="12" fill="#1a1a1a">0</text>
+
+  <!-- threshold guides -->
+  <line x1="300" y1="90" x2="300" y2="300" stroke="#0071bc" stroke-width="1.3" stroke-dasharray="5 4"/>
+  <line x1="470" y1="90" x2="470" y2="300" stroke="#0071bc" stroke-width="1.3" stroke-dasharray="5 4"/>
+  <text x="300" y="318" text-anchor="middle" font-size="12" font-weight="700" fill="#0071bc">OutDbOn</text>
+  <text x="470" y="318" text-anchor="middle" font-size="12" font-weight="700" fill="#0071bc">OutDbOff</text>
+  <text x="300" y="86" text-anchor="middle" font-size="10" fill="#6b7280">e.g. 0.5</text>
+  <text x="470" y="86" text-anchor="middle" font-size="10" fill="#6b7280">e.g. 1.0</text>
+
+  <!-- HELD region -->
+  <rect x="70" y="120" width="230" height="150" rx="10" fill="#eef7ee" stroke="#4e7a21" stroke-width="1.5"/>
+  <text x="185" y="180" text-anchor="middle" font-size="14" font-weight="700" fill="#4e7a21">Servo HELD</text>
+  <text x="185" y="202" text-anchor="middle" font-size="11" fill="#4e7a21">output frozen</text>
+  <text x="185" y="218" text-anchor="middle" font-size="11" fill="#4e7a21">no hunting / buzz</text>
+
+  <!-- ACTIVE region -->
+  <rect x="470" y="120" width="290" height="150" rx="10" fill="#fbeaea" stroke="#8a1a1a" stroke-width="1.5"/>
+  <text x="615" y="180" text-anchor="middle" font-size="14" font-weight="700" fill="#8a1a1a">Servo ACTIVE</text>
+  <text x="615" y="202" text-anchor="middle" font-size="11" fill="#8a1a1a">loop corrects the error</text>
+
+  <!-- hysteresis band between the two thresholds -->
+  <rect x="300" y="120" width="170" height="150" fill="#f4f6f8" stroke="none"/>
+  <text x="385" y="150" text-anchor="middle" font-size="10" fill="#6b7280">hysteresis</text>
+  <text x="385" y="164" text-anchor="middle" font-size="10" fill="#6b7280">band</text>
+
+  <!-- transition arrows -->
+  <path d="M470,110 C420,70 350,70 300,108" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#dbarrow)"/>
+  <text x="385" y="60" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a1a">error &lt; OutDbOn &#8594; freeze</text>
+
+  <path d="M300,282 C360,320 420,320 470,286" fill="none" stroke="#1a1a1a" stroke-width="1.5" marker-end="url(#dbarrow)"/>
+  <text x="385" y="352" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a1a">error &gt; OutDbOff &#8594; resume</text>
+</svg>

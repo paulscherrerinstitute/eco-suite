@@ -23,7 +23,6 @@ class Alias:
         if subalias.parent is None:
             subalias.parent = self
         else:
-            print(subalias.parent)
             logger.warning(
                 f"parent of alias {subalias.alias} has been defined already {subalias.parent.alias}."
             )

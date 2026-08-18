@@ -638,7 +638,10 @@ class Run_Table_DataFrame(DataFrame):
                         dat[name]=v
         else:
             if len(d)==0:
-                st = namespace.get_status(base=None)
+                # raise_on_incomplete=False: best-effort namespace-wide
+                # snapshot for the run table -- an unrelated incomplete
+                # component elsewhere must not break this.
+                st = namespace.get_status(base=None, raise_on_incomplete=False)
                 d = st["status"]
                 d.update(st["settings"])
             if multiindex:

@@ -1,0 +1,20 @@
+# PC-side systemd template (optional), paired with 99-eco-pendant.rules.
+# %i is the tty (e.g. ttyACM0). Install to /etc/systemd/system/.
+#
+# NOTE: --bernina spawns a fresh eco import (~25 s) per plug-in. For real
+# use you will usually instead run the server from inside your existing eco
+# session (no cold import):
+#     from eco.manual_control.remote.serve import RemoteControlServer
+#     from eco.manual_control.remote.transport import SerialLineTransport
+#     RemoteControlServer(bernina.namespace, SerialLineTransport("/dev/ttyACM0"),
+#                         root_name="bernina").start()
+# This template is handy for --fake testing / kiosks.
+[Unit]
+Description=eco manual-control server on /dev/%i
+
+[Service]
+Type=simple
+User=CHANGE_ME
+Environment=PYTHONPATH=/sf/bernina/code/gac-bernina/eco
+ExecStart=/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python3.12 -m eco.manual_control.remote.serve --fake --serial /dev/%i
+Restart=on-failure

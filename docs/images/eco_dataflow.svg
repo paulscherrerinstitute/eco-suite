@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  How DataHub (eco.dbase.archiver) routes channels: historical vs live sources
+  on the left, DataHub in the middle, outputs on the right. Edit freely.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 380" font-family="Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="860" height="380" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="430" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#0f2b45">DataHub: history and live data</text>
+
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#0071bc"/>
+    </marker>
+  </defs>
+
+  <!-- sources -->
+  <text x="150" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#4a5b6b">SOURCES</text>
+  <g>
+    <rect x="40" y="86" width="220" height="46" rx="8" fill="#e9f6ee" stroke="#2e8b57" stroke-width="2"/>
+    <text x="56" y="106" font-size="13" font-weight="700" fill="#2e8b57">BS · DataBuffer (history)</text>
+    <text x="56" y="124" font-size="11" fill="#4a5b6b">sf-databuffer · beam-synchronous</text>
+  </g>
+  <g>
+    <rect x="40" y="140" width="220" height="46" rx="8" fill="#e9f6ee" stroke="#2e8b57" stroke-width="2"/>
+    <text x="56" y="160" font-size="13" font-weight="700" fill="#2e8b57">CA · Archiver (history)</text>
+    <text x="56" y="178" font-size="11" fill="#4a5b6b">sf-archiver · EPICS, event-driven</text>
+  </g>
+  <g>
+    <rect x="40" y="206" width="220" height="46" rx="8" fill="#fdf0e6" stroke="#d97706" stroke-width="2"/>
+    <text x="56" y="226" font-size="13" font-weight="700" fill="#d97706">BS · Dispatcher (live)</text>
+    <text x="56" y="244" font-size="11" fill="#4a5b6b">bsread stream</text>
+  </g>
+  <g>
+    <rect x="40" y="260" width="220" height="46" rx="8" fill="#fdf0e6" stroke="#d97706" stroke-width="2"/>
+    <text x="56" y="280" font-size="13" font-weight="700" fill="#d97706">CA · EPICS (live)</text>
+    <text x="56" y="298" font-size="11" fill="#4a5b6b">channel access</text>
+  </g>
+
+  <!-- DataHub -->
+  <g>
+    <rect x="330" y="150" width="180" height="92" rx="10" fill="#e8f2fb" stroke="#0071bc" stroke-width="2.5"/>
+    <text x="420" y="185" text-anchor="middle" font-size="17" font-weight="700" fill="#0071bc">DataHub</text>
+    <text x="420" y="207" text-anchor="middle" font-size="11" fill="#4a5b6b">eco.dbase.archiver</text>
+    <text x="420" y="225" text-anchor="middle" font-size="11" fill="#4a5b6b">routes by channel type</text>
+  </g>
+
+  <!-- outputs -->
+  <text x="710" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="#4a5b6b">OUTPUTS</text>
+  <g>
+    <rect x="600" y="86" width="220" height="44" rx="8" fill="#efeafc" stroke="#6d28d9" stroke-width="2"/>
+    <text x="616" y="106" font-size="13" font-weight="700" fill="#6d28d9">get_data_time_range()</text>
+    <text x="616" y="123" font-size="11" fill="#4a5b6b">pandas DataFrame</text>
+  </g>
+  <g>
+    <rect x="600" y="138" width="220" height="44" rx="8" fill="#efeafc" stroke="#6d28d9" stroke-width="2"/>
+    <text x="616" y="158" font-size="13" font-weight="700" fill="#6d28d9">get_data_pulse_id_range()</text>
+    <text x="616" y="175" font-size="11" fill="#4a5b6b">DataFrame by pulse id</text>
+  </g>
+  <g>
+    <rect x="600" y="190" width="220" height="44" rx="8" fill="#efeafc" stroke="#6d28d9" stroke-width="2"/>
+    <text x="616" y="210" font-size="13" font-weight="700" fill="#6d28d9">get_data_time_range(plot=True)</text>
+    <text x="616" y="227" font-size="11" fill="#4a5b6b">static matplotlib figure</text>
+  </g>
+  <g>
+    <rect x="600" y="242" width="220" height="44" rx="8" fill="#fdf0e6" stroke="#d97706" stroke-width="2"/>
+    <text x="616" y="262" font-size="13" font-weight="700" fill="#d97706">strip_chart()</text>
+    <text x="616" y="279" font-size="11" fill="#4a5b6b">live updating window</text>
+  </g>
+
+  <!-- arrows sources -> hub -->
+  <g stroke="#0071bc" stroke-width="1.6" fill="none">
+    <path d="M260,109 C300,110 300,180 328,182" marker-end="url(#arr)"/>
+    <path d="M260,163 C300,164 300,190 328,192" marker-end="url(#arr)"/>
+    <path d="M260,229 C300,228 300,200 328,200" marker-end="url(#arr)"/>
+    <path d="M260,283 C300,282 300,214 328,210" marker-end="url(#arr)"/>
+  </g>
+  <!-- arrows hub -> outputs -->
+  <g stroke="#0071bc" stroke-width="1.6" fill="none">
+    <path d="M510,182 C560,150 560,110 598,108" marker-end="url(#arr)"/>
+    <path d="M510,190 C560,175 560,160 598,160" marker-end="url(#arr)"/>
+    <path d="M510,200 C560,205 560,210 598,212" marker-end="url(#arr)"/>
+    <path d="M510,210 C560,245 560,262 598,264" marker-end="url(#arr)"/>
+  </g>
+</svg>

@@ -1,0 +1,24 @@
+# Read the Docs build configuration for eco.
+# https://docs.readthedocs.io/en/stable/config-file/v2.html
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.10"
+
+sphinx:
+  configuration: docs/conf.py
+  # Do not fail the whole build on the first warning while the docs are young.
+  fail_on_warning: false
+
+python:
+  install:
+    - requirements: docs/requirements.txt
+    # Installing eco itself lets autodoc import the package and render the
+    # docstrings. The heavy hardware/beamline dependencies that cannot be
+    # installed on the docs builder are mocked out in docs/conf.py
+    # (see `autodoc_mock_imports`). If autodoc starts failing on a newly
+    # imported third-party module, add it to that list rather than here.
+    - method: pip
+      path: .

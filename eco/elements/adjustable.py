@@ -14,6 +14,7 @@ import eco
 from eco.acquisition.scan_data import run_status_convenience
 from eco.aliases import Alias
 from eco.devices_general.utilities import Changer
+from eco.elements.protocols import MonitorableValueUpdate, enum_repr
 
 
 from eco.elements import memory
@@ -56,6 +57,76 @@ def tweak_option(Obj):
         self._tweak_instance.single_adjustable_tweak()
 
     Obj.tweak = tweak
+    return Obj
+
+
+def jog_option(Obj):
+    """Class decorator giving an Adjustable a hold-to-move ``jog()``.
+
+    The jog analogue of :func:`tweak_option`: where ``tweak_option`` adds an
+    interactive ``.tweak()``, ``jog_option`` adds ``jog(direction,
+    start=True)`` and ``jog_stop()`` so the adjustable can be driven
+    continuously ("hold a button/joystick to move") - see
+    ``eco.manual_control`` - without any external wrapper.
+
+    - The signature matches the native ``MotorRecord.jog`` so a decorated
+      adjustable is picked up as "natively joggable" by
+      ``eco.manual_control.Jogger`` / ``ManualControlBox`` (which duck-type
+      on the presence of a callable ``jog``), and its software jog is used
+      instead of the Jogger's own generic fallback.
+    - If ``Obj`` already defines ``jog`` (e.g. ``MotorRecord``, which jogs
+      via the motor record's JOGF/JOGR fields on the IOC), that hardware
+      implementation is left untouched - the decorator never shadows a real
+      jog with the software one - and only ``jog_stop`` is supplied if it is
+      missing.
+    - Otherwise it installs a software jog: a background thread that nudges
+      ``set_target_value()`` by ``jog_step_size`` (class default 1.0,
+      overridable per instance or per call) and accelerates the longer it is
+      held, reusing the ``_HeldAction`` mechanism from ``tweak_action``.
+    """
+    if callable(getattr(Obj, "jog", None)):
+        # Native jog (e.g. MotorRecord); only fill in jog_stop if absent.
+        if not callable(getattr(Obj, "jog_stop", None)):
+
+            def jog_stop(self):
+                self.jog(1, start=False)
+                self.jog(-1, start=False)
+
+            Obj.jog_stop = jog_stop
+        return Obj
+
+    def jog(self, direction, start=True, step_size=None):
+        """Continuously jog in `direction` (+1/-1) while held: `start=True`
+        begins, `jog(..., start=False)` or `jog_stop()` ends it. Unlike
+        set_target_value this is unbounded - it keeps stepping until stopped
+        (or a limit/error). `step_size` overrides `self.jog_step_size` for
+        this jog only."""
+        if not start:
+            self.jog_stop()
+            return
+        if self.__dict__.get("_jog_action") is not None:
+            return  # already jogging; jog_stop() first
+        direction = 1 if direction > 0 else -1
+        step = self.jog_step_size if step_size is None else step_size
+
+        def _step():
+            self.set_target_value(self.get_current_value() + direction * step)
+
+        from eco.manual_control.tweak_action import _HeldAction
+
+        action = _HeldAction(_step, interval=0.12, growth=0.85, min_interval=0.03)
+        self.__dict__["_jog_action"] = action
+        action.start()
+
+    def jog_stop(self):
+        action = self.__dict__.pop("_jog_action", None)
+        if action is not None:
+            action.stop()
+
+    Obj.jog = jog
+    Obj.jog_stop = jog_stop
+    if not hasattr(Obj, "jog_step_size"):
+        Obj.jog_step_size = 1.0
     return Obj
 
 
@@ -609,6 +680,33 @@ class AdjustableVirtual:
     ):
         self.name = name
         self.alias = Alias(name)
+        # A virtual adjustable is only as real as its controlling adjustables.
+        # Validate them up front so that, if any parent does not exist (None,
+        # or not an adjustable, or an unresolved/failed lazy proxy), this
+        # virtual fails to build and shows up as a failed item instead of
+        # silently "working" on non-existent parents.
+        _invalid = []
+        for i, adj in enumerate(adjustables):
+            if adj is None:
+                _invalid.append(f"index {i}: None")
+                continue
+            try:
+                getval = getattr(adj, "get_current_value", None)
+                setval = getattr(adj, "set_target_value", None)
+            except Exception as e:
+                # e.g. a lazy proxy whose target failed to initialize
+                _invalid.append(f"index {i}: unresolved ({type(e).__name__}: {e})")
+                continue
+            if not (callable(getval) and callable(setval)):
+                _invalid.append(
+                    f"index {i}: {type(adj).__name__} is not an adjustable "
+                    f"(missing get_current_value/set_target_value)"
+                )
+        if _invalid:
+            raise ValueError(
+                f"AdjustableVirtual '{name}' cannot be built: controlling "
+                f"adjustable(s) missing or invalid: " + "; ".join(_invalid)
+            )
         if append_aliases:
             for adj in adjustables:
                 try:
@@ -686,6 +784,29 @@ class AdjustableVirtual:
             *[adj.get_current_value() for adj in self._adjustables]
         )
 
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        """Only possible if every parent adjustable is itself a
+        MonitorableValueUpdate (e.g. a PV-backed Adjustable, or another
+        AdjustableVirtual whose own parents all are) - in that case the
+        combined value can be kept up to date by recomputing
+        get_current_value() whenever any parent reports an update, with no
+        polling."""
+        non_monitorable = [
+            adj for adj in self._adjustables if not isinstance(adj, MonitorableValueUpdate)
+        ]
+        if non_monitorable:
+            names = [getattr(adj, "name", repr(adj)) for adj in non_monitorable]
+            raise NotImplementedError(
+                f"Cannot monitor virtual adjustable '{self.name}': parent(s) "
+                f"{names} do not implement MonitorableValueUpdate "
+                f"(set_current_value_callback)."
+            )
+        return CallbackComposedValue(
+            self, func=func, run_once=run_once, print_output=print_output, **kwargs
+        )
+
     def check_target_value_within_limits(self, value):
         in_lims = [True]
         values = self._foo_set_target_value_current_value(value)
@@ -707,6 +828,88 @@ class AdjustableVirtual:
             vals = self._foo_set_target_value_current_value(value)
             for adj, val in zip(self._adjustables, vals):
                 adj.reset_current_value_to(val)
+
+
+class CallbackComposedValue:
+    """set_current_value_callback() implementation for AdjustableVirtual.
+
+    Subscribes to every parent adjustable's own set_current_value_callback()
+    and recomputes the virtual's get_current_value() whenever any parent
+    reports an update - so a derived/calculated value can be monitored with
+    the same push-based, no-polling contract as a plain PV-backed value.
+    Mirrors eco.epics.utilities_epics.CallbackEpics (same .data shape,
+    .start()/.stop(), context-manager support), and forwards the same
+    `func`/`run_once` convention to each parent, so this also works when a
+    parent is itself another AdjustableVirtual (nested composition).
+    """
+
+    def __init__(self, virtual, func="accumulate", run_once=True, print_output=False):
+        self.virtual = virtual
+        self.print = print_output
+        if func == "accumulate":
+            func = self._accumulate
+            self.data = {"timestamps": [], "values": [], "timestamps_ioc": []}
+        elif func == "latest":
+            # Keeps only the most recent value instead of an ever-growing
+            # list - for monitoring meant to run indefinitely (e.g. a
+            # long-lived status cache) rather than for the duration of one
+            # scan. See eco.epics.utilities_epics.CallbackEpics.
+            func = self._set_latest
+            self.data = {"value": None, "timestamp": None, "timestamp_local": None}
+        self.foo = func
+        self.run_once = run_once
+        self._child_monitors = []
+
+    def _accumulate(self, pvname=None, value=None, timestamp=None, **kwargs):
+        ts_local = time.time()
+        self.data["timestamps"].append(ts_local)
+        self.data["values"].append(value)
+        self.data["timestamps_ioc"].append(timestamp)
+        if self.print:
+            print(
+                f"{self.virtual.name}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
+            )
+
+    def _set_latest(self, pvname=None, value=None, timestamp=None, **kwargs):
+        ts_local = time.time()
+        self.data["value"] = value
+        self.data["timestamp"] = timestamp
+        self.data["timestamp_local"] = ts_local
+        if self.print:
+            print(
+                f"{self.virtual.name}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
+            )
+
+    def _on_parent_update(self, pvname=None, value=None, timestamp=None, **kwargs):
+        # Ignore the individual parent's own value/pvname - recompute the
+        # combined value from every parent's current value instead.
+        new_value = self.virtual.get_current_value()
+        self.foo(pvname=self.virtual.name, value=new_value, timestamp=timestamp)
+
+    def start(self, add_current_value=True):
+        for adj in self.virtual._adjustables:
+            mon = adj.set_current_value_callback(
+                func=self._on_parent_update, run_once=self.run_once
+            )
+            mon.start(add_current_value=False)
+            self._child_monitors.append(mon)
+        if add_current_value:
+            self._on_parent_update(timestamp=time.time())
+
+    def is_running(self):
+        return len(self._child_monitors) > 0
+
+    def stop(self):
+        for mon in self._child_monitors:
+            mon.stop()
+        self._child_monitors = []
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
 
 
 class AdjustableInterpolate(AdjustableVirtual):
@@ -834,6 +1037,60 @@ class AdjustableGetSet:
         return value
 
 
+class AdjustableTrigger:
+    """A stateless one-shot action (e.g. "go home", "clear a fault") with
+    no value to read or set. Appended the same way as any other element::
+
+        self._append(AdjustableTrigger, self.home, name="home")
+
+    It shows up as a plain push button in the interactive widgets
+    (eco.widgets.display_qt/display_widget) and in the terminal display
+    table (Assembly.get_display_str()/repr()), but -- since it has no
+    get_current_value() -- is automatically excluded from
+    Assembly.get_status()'s status reporting (which only polls items
+    satisfying the Detector protocol) and never shows up in the
+    "settings" selection (there's nothing to set).
+
+    `action` is any zero-argument callable (bind args with functools.
+    partial/a lambda first if it needs them); calling the AdjustableTrigger
+    itself, or .trigger(), fires it -- from a widget button this runs on a
+    background thread so a blocking hardware call never freezes the GUI.
+    `button_label` (optional) overrides the generic "Trigger" button
+    caption, e.g. button_label="Home". `doc` (optional, defaults to
+    `action.__doc__`) is shown as a tooltip.
+
+    trigger()/__call__ silently accept (and ignore) any positional/keyword
+    arguments rather than raising -- converting an existing momentary-PV
+    "command" pattern (e.g. `mot.home_forward(1)`, the `1` just a
+    conventional "do it" value the .PROC write itself already hardcodes)
+    into an AdjustableTrigger this way is common; this keeps every such
+    existing call site working unchanged instead of requiring a sweep to
+    drop the now-meaningless argument everywhere it's still called."""
+
+    def __init__(self, action, name=None, button_label=None, doc=None):
+        self.name = name
+        self.alias = Alias(name)
+        self._action = action
+        self.button_label = button_label
+        self.doc = doc if doc is not None else getattr(action, "__doc__", None)
+
+    def trigger(self, *args, **kwargs):
+        return self._action()
+
+    def __call__(self, *args, **kwargs):
+        return self.trigger(*args, **kwargs)
+
+    def mv(self, *args, **kwargs):
+        """Alias for trigger(), for existing call sites converted from a
+        real Adjustable's spec_convenience `.mv()` sugar."""
+        return self.trigger(*args, **kwargs)
+
+    def __repr__(self):
+        extra = f" -- {self.doc}" if self.doc else ""
+        return f"{self.name} (trigger){extra}"
+
+
+@enum_repr
 @spec_convenience
 class AdjustableEnum:
     def __init__(self, adjustable_instance, enum_strs_ordered, name=None):
@@ -858,21 +1115,6 @@ class AdjustableEnum:
     def set_target_value(self, value, hold=False):
         value = self.validate(value)
         return self._base.set_target_value(value, hold=hold)
-
-    def __repr__(self):
-        name = self.name
-        cv = self.get_current_value()
-        s = f"{name} (enum) at value: {cv}" + "\n"
-        s += "{:<5}{:<5}{:<}\n".format("Num.", "Sel.", "Name")
-        # s+= '_'*40+'\n'
-        for name, val in self.value_enum.__members__.items():
-            if val == cv:
-                sel = "x"
-            else:
-                sel = " "
-            s += "{:>4}   {}  {}\n".format(val, sel, name)
-        return s
-
 
 class Tweak:
     def __init__(self, *args):

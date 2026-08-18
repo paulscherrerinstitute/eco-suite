@@ -266,8 +266,19 @@ _qt_windows = []  # keep strong refs to open SVG windows (+ their bridge/channel
 
 
 def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
-                      blocking=False):
+                      blocking=False, refresh=None, refresh_interval_ms=2000):
     """Opens a native, resizable window rendering the SVG via Qt's QWebEngineView.
+
+    refresh (see `launch_svg_viewer`): if given, a `QTimer` re-calls it every
+    `refresh_interval_ms` and swaps its result into the *already-open*
+    window by replacing the live DOM's `<svg>` element (`page().
+    runJavaScript(...)`, string-escaped via `json.dumps`) rather than
+    reloading the whole page with `setHtml()` again -- cheaper, and avoids
+    visibly flashing/resetting scroll or zoom on every tick. The click
+    handler is attached to `document`, not the `<svg>` element itself, so it
+    keeps working on the replacement DOM without being re-attached. The
+    timer is parented to the window and stopped in `closeEvent` so it can't
+    keep firing (and erroring on a dead page) after the window closes.
 
     QWebEngineView embeds Chromium (the same class of engine as
     WebKitGTK/Safari) - it is NOT Qt's QtSvg module, which only implements a
@@ -300,7 +311,9 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     former WebKitGTK backend), and JS-to-Python communication goes through a
     QWebChannel bridge rather than WebKitGTK's script-message-handler API.
     """
-    from qtpy.QtCore import Qt, QObject, QUrl, Slot
+    import json
+
+    from qtpy.QtCore import Qt, QObject, QUrl, Slot, QTimer
     from qtpy.QtWidgets import QApplication
     from qtpy.QtWebChannel import QWebChannel
     from qtpy.QtWebEngineWidgets import QWebEngineView
@@ -369,6 +382,9 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         def closeEvent(self, event):
             if self in _qt_windows:
                 _qt_windows.remove(self)
+            timer = getattr(self, "_refresh_timer", None)
+            if timer is not None:
+                timer.stop()
             super().closeEvent(event)
 
     global _qt_app_ref
@@ -395,6 +411,25 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     view.setHtml(html_content, base_url)
     view.setWindowTitle("Interactive SVG Viewer")
     view.resize(max(int(width), 200), max(int(height), 150))
+
+    if refresh is not None:
+        def _do_refresh():
+            try:
+                new_path = refresh()
+                with open(new_path, "r", encoding="utf-8") as f:
+                    new_svg = f.read()
+            except Exception as e:
+                print(f"eco SVG viewer: live refresh failed: {e}")
+                return
+            view.page().runJavaScript(
+                f"document.querySelector('svg').outerHTML = {json.dumps(new_svg)};"
+            )
+
+        timer = QTimer(view)
+        timer.timeout.connect(_do_refresh)
+        timer.start(refresh_interval_ms)
+        view._refresh_timer = timer  # keep alive alongside the window
+
     view.show()
     _qt_windows.append(view)
 
@@ -406,8 +441,17 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         app.exec()
 
 
-def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_group_ids=None):
+def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_group_ids=None,
+                       refresh=None, refresh_interval_ms=2000):
     """Spawns an isolated background service for the SVG interface.
+
+    refresh: optional no-arg callable returning a *path* to a freshly-built
+    SVG (e.g. an Assembly's `lambda: self._svg(live=True)`); if given, the
+    native window (in_window=True only -- not yet wired up for the Jupyter/
+    Dash viewer) re-calls it and swaps the result in every
+    `refresh_interval_ms` for as long as the window stays open, instead of
+    only ever showing the state `svg_path` had at open time. See
+    `_build_qt_window`.
 
     in_window defaults to None, which auto-selects based on the calling
     context: a terminal IPython session opens a native window (in_window=
@@ -486,7 +530,8 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
             )
             blocking = True
 
-        _build_qt_window(svg_path, ip, namespace_prefix, exclude_group_ids, blocking=blocking)
+        _build_qt_window(svg_path, ip, namespace_prefix, exclude_group_ids, blocking=blocking,
+                          refresh=refresh, refresh_interval_ms=refresh_interval_ms)
         if not blocking:
             print("Interactive SVG window launched.")
         return

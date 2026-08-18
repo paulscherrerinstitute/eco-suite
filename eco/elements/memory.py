@@ -4,7 +4,7 @@ from datetime import datetime
 import weakref
 from .adjustable import AdjustableFS
 from ..utilities.keypress import KeyPress
-from ..utilities.tables import format_table
+from ..utilities.tables import format_table, section_row_styles
 import sys, colorama
 
 try:
@@ -19,6 +19,32 @@ from simple_term_menu import TerminalMenu
 conv = Ansi2HTMLConverter()
 
 global_memory_dir = None
+
+
+def _menu_supports_preview_callable():
+    """Whether the installed simple-term-menu accepts a Python callable (not
+    just a shell-command string) for `TerminalMenu(preview_command=...)`
+    (added in 1.4.0). Checked once, defensively -- an unknown/unparseable
+    version is treated as unsupported so the picker never risks breaking."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        parts = _pkg_version("simple-term-menu").split(".")
+        return (int(parts[0]), int(parts[1])) >= (1, 4)
+    except Exception:
+        return False
+
+
+_MENU_SUPPORTS_PREVIEW = _menu_supports_preview_callable()
+
+# top-level keys of a *per-entry* memory dict (as returned by
+# `Memory.get_memory()`, i.e. one `<timestamp>.json` file's contents) that
+# are bookkeeping, never a `status_collection` selection name -- every other
+# top-level key has always been exactly one captured selection's data, for
+# every entry ever written (see `Memory.entry_selection_names`). Distinct
+# from the *index* (`_memories.json`/`Memory.memories()`), whose per-key
+# records use "message"/"categories"/"date" and are unaffected by this.
+_RESERVED_ENTRY_KEYS = {"status", "memorized_attributes", "date"}
 
 
 def set_global_memory_dir(dirpath, mode="w"):
@@ -36,9 +62,20 @@ class Memory:
         obj,
         memory_dir=global_memory_dir,
         categories={"recall": ["settings"], "track": ["display"]},
+        change_serially=False,
     ):
         self.obj_parent = weakref.ref(obj)
         self.categories = categories
+        # per-instance default for recall()'s own `change_serially` -- see
+        # recall()'s docstring. `False` here matches recall()'s original
+        # hardcoded default, so any Memory that doesn't opt in (the vast
+        # majority) behaves exactly as before this existed. Devices whose
+        # underlying comms can't handle several near-simultaneous writes
+        # (e.g. an HTTP PTZ camera juggling one connection per axis, or a
+        # hexapod controller that drops overlapping axis setpoints) set this
+        # via `Assembly(..., memory_change_serially=True)` instead of every
+        # caller having to remember `recall(change_serially=True)`.
+        self.change_serially = change_serially
         if not memory_dir:
             memory_dir = global_memory_dir
         self.base_dir = Path(memory_dir)
@@ -115,28 +152,121 @@ class Memory:
 
         return format_table(a, headers=["Index", "Time", "Message"])
 
-    def __call__(self, index=None, **kwargs):
-        # print(self.get_memory_difference_str(index))
+    def __call__(self, index=None, include_parents=False, **kwargs):
+        """Interactive terminal picker over stored memories -- recalls
+        whichever one is picked (or `index` directly, non-interactively,
+        same as before `include_parents` existed).
 
+        include_parents (bool, optional): also list memories saved on an
+            ancestor Assembly that happen to cover this object's own
+            components (see `ancestor_memories`/`get_ancestor_recall_dict`),
+            prefixed with the ancestor's name -- the terminal equivalent of
+            the memory widget's "show parent memories too" toggle. Picking
+            one of those recalls just this object's own slice of it,
+            through this object's own `.memory` (never the ancestor's),
+            going through the normal interactive per-row review/confirm
+            just like any other recall. Defaults to False, so existing
+            callers see no change.
+        """
         if index is None:
             self.setup_path()
             mem = self._memories()
+            keys = list(mem.keys())
             a = []
+            # entries[i] resolves row i: None for one of this object's own
+            # stored memories (index into `keys`), or (ancestor,
+            # ancestor_key) for a parent-sourced one (only ever populated
+            # when include_parents=True).
+            entries = [None] * len(keys)
             for n, (key, content) in enumerate(mem.items()):
-                row = ""
                 t = datetime.fromisoformat(key)
-                row += t.strftime("%Y-%m-%d: %a %H:%M")
-                row += "   "
-                row += content["message"]
+                row = t.strftime("%Y-%m-%d: %a %H:%M") + "   " + content["message"]
                 a.append(row)
+
+            if include_parents:
+                from .assembly import iter_ancestor_assemblies
+
+                for ancestor in iter_ancestor_assemblies(self.obj_parent()):
+                    ancestor_memory = getattr(ancestor, "memory", None)
+                    if ancestor_memory is None:
+                        continue
+                    ancestor_memory.setup_path()
+                    for anc_key, anc_content in ancestor_memory._memories().items():
+                        try:
+                            anc_entry = ancestor_memory.get_memory(key=anc_key)
+                            sliced = self.get_ancestor_recall_dict(ancestor, anc_entry)
+                        except Exception:
+                            continue
+                        if not sliced:
+                            continue
+                        t = datetime.fromisoformat(anc_key)
+                        row = (
+                            f"[{ancestor.alias.get_full_name()}] "
+                            + t.strftime("%Y-%m-%d: %a %H:%M")
+                            + "   " + anc_content.get("message", "")
+                        )
+                        a.append(row)
+                        entries.append((ancestor, anc_key))
+
             ind_cancel = len(a)
             a.append("--> do nothing")
-            menu = TerminalMenu(a, cursor_index=ind_cancel)
+
+            def _preview(entry, rows=a, sources=entries, keys=keys):
+                # best-effort diff-against-live-values preview for the
+                # highlighted entry; never raises into the menu's render loop
+                try:
+                    idx = rows.index(entry)
+                    if idx >= len(sources):
+                        return ""
+                    source = sources[idx]
+                    if source is None:
+                        tmem = self.get_memory(key=keys[idx])
+                        rec = self.get_recall_dict(tmem)
+                    else:
+                        ancestor, anc_key = source
+                        anc_entry = ancestor.memory.get_memory(key=anc_key)
+                        rec = self.get_ancestor_recall_dict(ancestor, anc_entry)
+                    return self.get_memory_difference_str(
+                        rec, show_changes_only=True, tablefmt="plain"
+                    )
+                except Exception as e:
+                    return f"(preview unavailable: {e})"
+
+            extra_kwargs = {"show_search_hint": True}
+            if _MENU_SUPPORTS_PREVIEW:
+                extra_kwargs["preview_command"] = _preview
+            try:
+                menu = TerminalMenu(a, cursor_index=ind_cancel, **extra_kwargs)
+            except TypeError:
+                # installed simple-term-menu doesn't like one of the new
+                # kwargs despite the version check above -- fall back to
+                # exactly the picker that worked before this existed.
+                menu = TerminalMenu(a, cursor_index=ind_cancel)
             print("Select memory to recall")
-            index = menu.show()
-            if index == ind_cancel:
+            picked = menu.show()
+            if picked is None or picked == ind_cancel:
                 return
+            source = entries[picked] if picked < len(entries) else None
+            if source is not None:
+                ancestor, anc_key = source
+                anc_entry = ancestor.memory.get_memory(key=anc_key)
+                sliced = self.get_ancestor_recall_dict(ancestor, anc_entry)
+                self.recall(input_obj={"settings": sliced}, selection="settings", **kwargs)
+                return
+            index = picked
         self.recall(memory_index=index, **kwargs)
+
+    def widget(self, parent=None):
+        """Open the memory browser GUI for this object -- Qt/ipywidgets/Tk,
+        picked the same way `<assembly>.widget()` picks its own backend
+        (see `eco.widgets.memory_widget.make_memory_browser`). Equivalent
+        to (and reachable from) the "memories" button on the assembly
+        display widget, but callable directly, e.g. from a terminal
+        session: `my_assembly.memory.widget()`.
+        """
+        from eco.widgets.memory_widget import make_memory_browser
+
+        return make_memory_browser(self.obj_parent(), parent=parent)
 
     def _get_elog(self):
         if hasattr(self, "_elog") and self._elog:
@@ -148,6 +278,88 @@ class Memory:
         else:
             return None
 
+    def _resolve_capture_selection(self, selection):
+        """Resolve `memorize`'s `selection=` argument, when explicitly given
+        (see `memorize`'s own docstring for the `None` default, which never
+        reaches here), into the concrete list of `status_collection`
+        selection names to capture.
+
+        `"all"` discovers every selection currently registered on the
+        parent object *live*, via `status_collection.get_selections_names()`
+        -- nothing needs to be pre-declared in `self.categories` for this to
+        work, so a brand new selection tagged only moments ago via
+        `Assembly._append(..., setting_groups=...)` is picked up immediately.
+        """
+        if selection == "all":
+            return list(self.obj_parent().status_collection.get_selections_names())
+        if isinstance(selection, str):
+            return [selection]
+        return list(selection)
+
+    def entry_selection_names(self, mem):
+        """Which `status_collection` selection names a *per-entry* memory
+        dict `mem` (as returned by `get_memory()`, i.e. the contents of one
+        `<timestamp>.json` file) actually captured.
+
+        Every such file, for every entry ever written (old or new), has
+        always had exactly one top-level key per captured selection, plus a
+        handful of fixed bookkeeping keys (`_RESERVED_ENTRY_KEYS`) -- so this
+        needs no format-specific fallback chain and works identically on the
+        oldest stored memory and the newest: just the entry's own top-level
+        keys, minus the reserved ones. Never touches the file on disk --
+        purely a read-side derivation.
+        """
+        return [k for k in mem if k not in _RESERVED_ENTRY_KEYS]
+
+    def ancestor_memories(self):
+        """[(ancestor, ancestor.memory), ...] nearest-first for every
+        ancestor Assembly of this object (see
+        `eco.elements.assembly.iter_ancestor_assemblies`) that itself has a
+        `.memory`. An object can have more than one direct parent (the same
+        component appended into more than one Assembly), so this can surface
+        ancestors from more than one branch. Used to find memories saved
+        *for a parent* that happen to also cover (some of) this object's own
+        components -- see `get_ancestor_recall_dict`.
+        """
+        obj = self.obj_parent()
+        if obj is None:
+            return []
+        from .assembly import iter_ancestor_assemblies
+
+        out = []
+        for ancestor in iter_ancestor_assemblies(obj):
+            ancestor_memory = getattr(ancestor, "memory", None)
+            if ancestor_memory is not None:
+                out.append((ancestor, ancestor_memory))
+        return out
+
+    def get_ancestor_recall_dict(self, ancestor, ancestor_mem, selection=None):
+        """The slice of an ancestor assembly's own stored, per-entry memory
+        dict `ancestor_mem` (as returned by `ancestor.memory.get_memory()`)
+        that belongs to *this* object -- every key of
+        `ancestor.memory.get_recall_dict(ancestor_mem, selection=selection)`
+        that is prefixed by this object's dotted path under `ancestor`
+        (`self.obj_parent().alias.get_full_name(base=ancestor)`), re-keyed
+        relative to this object the same way this object's own recall dicts
+        already are keyed -- so the result is usable exactly like a normal
+        recall dict: previewable with `get_memory_difference_str`, or
+        recalled through *this* object's own `recall(input_obj={"settings":
+        result})`, never through the ancestor's `Memory` (the whole point is
+        applying it only to this object's own components).
+
+        Empty (not raising) if `ancestor_mem` doesn't cover this object at
+        all -- callers use that to skip listing an ancestor's memory that's
+        irrelevant to this object.
+        """
+        obj = self.obj_parent()
+        prefix = obj.alias.get_full_name(base=ancestor) + "."
+        full = ancestor.memory.get_recall_dict(ancestor_mem, selection=selection)
+        return {
+            key[len(prefix) :]: val
+            for key, val in full.items()
+            if key.startswith(prefix)
+        }
+
     def memorize(
         self,
         message=None,
@@ -155,15 +367,38 @@ class Memory:
         force_message=True,
         preset_varname=None,
         to_elog=True,
+        selection=None,
     ):
+        """Save the current state of this object's memorizable components as
+        a new, timestamped memory entry (message/attributes/force_message/
+        preset_varname/to_elog: unchanged from before `selection` existed).
+
+        selection (str, "all", iterable of str, or None, optional): which
+            `status_collection` selection(s) to capture into this memory.
+            `None` (the default) preserves this method's original,
+            unconditional behavior -- capture every group in
+            `self.categories` (both "recall" and "track") -- so any existing
+            caller that never passes this writes a byte-identical entry to
+            before this parameter existed. Pass an explicit tag (e.g.
+            "motor_settings"), `"all"` (every selection currently registered
+            on the parent object, discovered live), or a list to opt into a
+            more surgical, single-purpose memory instead.
+        """
         self.setup_path()
-        cats = list(itertools.chain.from_iterable(self.categories.values()))
+        if selection is None:
+            # unchanged legacy default: capture every configured group,
+            # exactly as before `selection` existed.
+            resolved = list(itertools.chain.from_iterable(self.categories.values()))
+            categories_field = self.categories
+        else:
+            resolved = self._resolve_capture_selection(selection)
+            categories_field = {"recall": resolved, "track": []}
         stat_now = {}
-        allstat = self.obj_parent().get_status(base=self.obj_parent(), selections=cats)
+        allstat = self.obj_parent().get_status(
+            base=self.obj_parent(), selections=resolved
+        )
         stat_now["status"] = allstat["status"]
-        for trec in self.categories["recall"]:
-            stat_now[trec] = allstat["selections"][trec]
-        for trec in self.categories["track"]:
+        for trec in resolved:
             stat_now[trec] = allstat["selections"][trec]
 
         stat_now["memorized_attributes"] = attributes
@@ -177,7 +412,7 @@ class Memory:
                 )
         mem[key] = {
             "message": message,
-            "categories": self.categories,
+            "categories": categories_field,
             "date": key,
         }
         if preset_varname:
@@ -235,6 +470,40 @@ class Memory:
         mem.pop(key)
         self._memories.set_target_value(mem).wait()
 
+    def get_recall_dict(self, mem, selection=None):
+        """Merge the selection(s) of a stored, per-entry memory dict `mem`
+        (as returned by `get_memory`) into one flat {name: value} dict.
+
+        `selection`:
+            - `None` (the default -- and, before `selection` existed, the
+              only behavior `recall()` had): merge every group in
+              `self.categories["recall"]`.
+            - `"all"`: merge every selection this *specific* entry actually
+              captured (see `entry_selection_names`) -- can be a superset of
+              `self.categories["recall"]`, e.g. for a memory saved with
+              `memorize(selection="all")`.
+            - a string or iterable of strings: merge just that name/those
+              names.
+
+        Only groups actually present on `mem` are used: an older memory may
+        predate a group added later, or use a since-renamed group name (e.g.
+        real stored memories from before this codebase's "display" group was
+        named that use "status_indicators" instead) -- such groups are
+        silently skipped rather than raising.
+        """
+        if selection is None:
+            names = self.categories["recall"]
+        elif selection == "all":
+            names = self.entry_selection_names(mem)
+        elif isinstance(selection, str):
+            names = [selection]
+        else:
+            names = list(selection)
+        rec = {}
+        for name in names:
+            rec.update(mem.get(name, {}))
+        return rec
+
     def recall(
         self,
         memory_index=None,
@@ -244,8 +513,9 @@ class Memory:
         show_changes_only=True,
         set_changes_only=True,
         check_limits=True,
-        change_serially=False,
+        change_serially=None,
         force=False,
+        selection=None,
     ):
         """Recall a memory_index, from an index in the default meory list, from a
         dictionary containing the memory information, or from a path to a file containing the memory.
@@ -258,21 +528,66 @@ class Memory:
             show_changes_only (bool, optional): in rpreview show only changes that are different to present setting. Defaults to True.
             set_changes_only (bool, optional): setting only the changes that changed. Defaults to True.
             check_limits (bool, optional): check limits before changing. Defaults to True.
-            change_serially (bool, optional): change and wait each change after each other, not simultaneously. Defaults to False.
+            change_serially (bool or None, optional): change and wait each change
+                after each other, not simultaneously. `None` (the default) falls
+                back to this `Memory`'s own instance default (`self.change_serially`,
+                itself `False` unless the assembly was built with
+                `memory_change_serially=True` -- see `Assembly.__init__`), so any
+                existing caller that never passes this recalls exactly as it
+                always has. Passing `True`/`False` explicitly always overrides the
+                instance default for that one call, same as before this existed.
             force (bool, optional): force the change without previous preview. Defaults to False.
+            selection (str, "all", iterable of str, or None, optional): which
+                `status_collection` selection(s) to recall (see
+                `get_recall_dict`). `None` (default) preserves this method's
+                original behavior -- merge every group in
+                `self.categories["recall"]` -- so any existing caller that
+                never passes this recalls exactly what it always has. `"all"`
+                recalls every selection this *specific* stored memory
+                actually captured (which can be a superset of
+                `self.categories["recall"]`, e.g. for a memory saved with
+                `memorize(selection="all")`). A string or list recalls just
+                that name/those names.
 
         Returns:
             _type_: _description_
         """
+        if change_serially is None:
+            change_serially = self.change_serially
         # if input_obj:
         mem = self.get_memory(
             index=memory_index,
             key=key,
             input_obj=input_obj,
         )
-        rec = {}
-        for trec in self.categories["recall"]:
-            rec.update(mem[trec])
+
+        # a memory with more than one recall-eligible selection and no
+        # explicit `selection=` from the caller gets an extra "which one?"
+        # prompt here, so a terminal recall can target e.g. just
+        # "motor_settings" instead of always merging every recall group.
+        # With today's default config (a single "settings" group) there is
+        # never more than one available selection, so this never fires
+        # unless an assembly actually opts into extra groups via
+        # `memory_categories`/`setting_groups`.
+        if selection is None and not force:
+            available = [
+                g for g in self.categories["recall"]
+                if g in self.entry_selection_names(mem)
+            ]
+            if len(available) > 1:
+                entries = list(available) + ["(all groups)"]
+                group_menu = TerminalMenu(
+                    entries,
+                    cursor_index=len(entries) - 1,
+                    title="Select which selection to recall:",
+                )
+                gidx = group_menu.show()
+                if gidx is None:
+                    return
+                if gidx < len(available):
+                    selection = available[gidx]
+
+        rec = self.get_recall_dict(mem, selection=selection)
 
         if force:
             select = [True] * len(rec.items())
@@ -321,6 +636,12 @@ class Memory:
         if not select:
             select = [True] * len(recall_dict)
         table = []
+        # top-level sub-component each row belongs to (same grouping key
+        # `Assembly.get_display_str()` uses), so a multi-component recall's
+        # rows visually group by section like the assembly display already
+        # does -- built only from rows that actually end up in `table`
+        # (post `show_changes_only` filtering), same as get_display_str.
+        group_keys = []
         for n, (tsel, (key, recall_value)) in enumerate(
             zip(select, recall_dict.items())
         ):
@@ -367,6 +688,7 @@ class Memory:
                 continue
 
             table.append([n, tselstr, key, present_value, comp_indicator, recall_value])
+            group_keys.append(key.split(".", 1)[0])
 
         if len(table) == 0:
             return "No changes compared to memory!"
@@ -382,6 +704,7 @@ class Memory:
             ],
             colalign=("decimal", "center", "left", "decimal", "center", "decimal"),
             tablefmt=tablefmt,
+            row_styles=section_row_styles(group_keys),
         )
 
     def select_from_memory(self, recall_dict, show_changes_only=True):
@@ -556,3 +879,187 @@ def name2obj(obj_parent, name, delimiter="."):
             obj = obj.__dict__[tn]
 
     return obj
+
+
+class SelectionCatalog:
+    """A named catalog of reusable presets for one `status_collection`
+    ``selection`` tag (e.g. ``"schneider_motor_settings"``), independent of
+    any single device instance -- unlike :class:`Memory`, which is bound to
+    (and its storage path keyed by) one specific object's own namespace
+    path.
+
+    Where a `Memory` entry answers "what did *this* device look like at
+    time T", a `SelectionCatalog` entry answers "what values should *any*
+    object exposing this selection have" -- a reusable template/preset
+    library, not a per-device history. Both read exactly the same
+    `status_collection` selection machinery (`Assembly._append(...,
+    setting_groups=...)`, `get_status(selections=[...])`), and both persist
+    via :class:`~eco.elements.adjustable.AdjustableFS` JSON files -- same
+    mechanism, different key.
+
+    Each stored entry is a flat ``{relative_dotted_name: value}`` dict, in
+    the same shape `Memory` already uses for one selection group -- paths
+    relative to whatever *target* object you `apply()` it to (e.g.
+    ``"schneider_settings.microstep_resolution"``, not tied to any one
+    motor's full alias path) -- so a preset captured from one
+    `MotorRecord(schneider=True)` instance applies cleanly to any other one
+    that exposes the same selection with the same relative attribute names.
+
+    Storage: one JSON file per catalog, ``<catalog_dir>/<selection_name>.json``.
+
+    Usage manual (worked example: ``"schneider_motor_settings"``, seeded from
+    ``eco.devices_general.schneider_mcode_presets.STAGE_PRESETS`` via
+    ``seed_schneider_motor_settings_catalog`` -- see that module)
+    ---------------------------------------------------------------------
+    Prerequisite: the target object must actually expose the selection --
+    e.g. a motor built with ``schneider=True``/``schneider={...}``
+    (``eco.devices_general.motors.MotorRecord``)::
+
+        from eco.devices_general.motors import MotorRecord
+        m = MotorRecord("SARES20-MF1:MOT_14", name="my_zoom", schneider=True)
+
+    1. Open the catalog (``catalog_dir=None`` resolves to
+       ``<global_memory_dir>/_selections`` once
+       ``set_global_memory_dir(...)`` has been called for the session, e.g.
+       already done in production via ``bernina.py``'s ``path_memory``)::
+
+           from eco.elements.memory import SelectionCatalog
+           cat = SelectionCatalog("schneider_motor_settings")
+
+    2. Browse what's available::
+
+           cat.names()                              # ['qioptic_fusion_zoom', ...]
+           print(cat)                                # table: preset / date / message
+           cat.get_values("qioptic_fusion_zoom")      # the raw {name: value} dict
+
+    3. Apply a preset to your motor::
+
+           cat.apply(m, "qioptic_fusion_zoom")
+
+       Writes every stored value (``description``, ``unit``, ``direction``,
+       ``schneider_settings.run_current``, ``schneider_settings.
+       microstep_resolution``, ...) onto ``m``, resolving each dotted name
+       against ``m`` itself -- works on *any* compatible instance, not just
+       the one it was captured from. ``set_changes_only=True`` (default)
+       skips anything already matching, so re-applying is a safe no-op;
+       ``wait=False`` returns without blocking for completion. A name that
+       doesn't resolve on ``m`` (e.g. applying a schneider-flavoured preset
+       to a plain motor) raises `KeyError` rather than partially applying.
+
+    4. Save your own preset from a live object::
+
+           cat.capture(m, "my_new_stage_name", message="what/why")
+
+       Snapshots every item currently tagged with this selection on ``m``
+       (both its own top-level fields and any tagged sub-assembly's, e.g.
+       ``m.schneider_settings``) into a new named entry. Raises if the name
+       already exists -- pass ``overwrite=True`` to replace.
+
+    5. Register a preset without live hardware (what the seeding helper
+       above uses internally)::
+
+           cat.register("bench_test", {"schneider_settings.run_current": 20,
+                                        "description": "bench"}, message="...")
+    """
+
+    def __init__(self, selection_name, catalog_dir=None):
+        self.selection_name = selection_name
+        if catalog_dir is None:
+            if global_memory_dir is None:
+                raise ValueError(
+                    "no catalog_dir given and no global_memory_dir set "
+                    "(eco.elements.memory.set_global_memory_dir)"
+                )
+            catalog_dir = Path(global_memory_dir) / "_selections"
+        self.catalog_dir = Path(catalog_dir).expanduser()
+        self.catalog_dir.mkdir(exist_ok=True, parents=True)
+        try:
+            self.catalog_dir.chmod(0o775)
+        except Exception:
+            pass
+        self._file = AdjustableFS(
+            self.catalog_dir / f"{selection_name}.json", default_value={}
+        )
+
+    def names(self):
+        """Preset names currently stored in this catalog."""
+        return list(self._file().keys())
+
+    def get(self, name):
+        """Raw stored entry for `name`: `{"values": {...}, "message":
+        ..., "date": ...}`."""
+        return self._file()[name]
+
+    def get_values(self, name):
+        """Just the `{relative_dotted_name: value}` dict for preset
+        `name`."""
+        return self.get(name)["values"]
+
+    def register(self, name, values, message=None, overwrite=False):
+        """Register a preset directly from a plain `{relative_dotted_name:
+        value}` dict, without needing a live target object -- e.g. to seed
+        a catalog from a hand-written reference table (see
+        `eco.devices_general.schneider_mcode_presets.STAGE_PRESETS` for the
+        source this was built to hold).
+        """
+        data = self._file()
+        if name in data and not overwrite:
+            raise ValueError(
+                f"preset {name!r} already exists in catalog "
+                f"{self.selection_name!r} (overwrite=True to replace)"
+            )
+        data[name] = {
+            "values": dict(values),
+            "message": message,
+            "date": datetime.now().isoformat(),
+        }
+        self._file(data)
+
+    def capture(self, target_obj, name, message=None, overwrite=False):
+        """Capture `target_obj`'s *current live values* for this catalog's
+        selection into a new named preset -- the live-object counterpart to
+        `register()`. `target_obj` must have a `get_status()`
+        (any `Assembly`) exposing `self.selection_name`.
+        """
+        allstat = target_obj.get_status(base=target_obj, selections=[self.selection_name])
+        self.register(
+            name,
+            allstat["selections"][self.selection_name],
+            message=message,
+            overwrite=overwrite,
+        )
+
+    def apply(self, target_obj, name, wait=True, set_changes_only=True):
+        """Apply preset `name`'s stored values onto `target_obj`, which
+        must expose the same relative attribute names as whatever this
+        selection was captured from (e.g. any `MotorRecord(schneider=True)`
+        instance, once `motors.py`'s `schneider=` tagging is in place).
+        Unresolvable names raise `KeyError` (via `name2obj`) rather than
+        being silently skipped, so a preset built for the wrong kind of
+        target fails loudly instead of partially applying.
+        """
+        values = self.get_values(name)
+        changes = []
+        for key, val in values.items():
+            to = name2obj(target_obj, key)
+            if set_changes_only and to.get_current_value() == val:
+                continue
+            changes.append(to.set_target_value(val))
+        if wait:
+            for change in changes:
+                change.wait()
+        return changes
+
+    def remove(self, name):
+        data = self._file()
+        data.pop(name)
+        self._file(data)
+
+    def __str__(self):
+        table = []
+        for name, entry in self._file().items():
+            table.append([name, entry.get("date", ""), entry.get("message", "") or ""])
+        return format_table(table, headers=["Preset", "Date", "Message"])
+
+    def __repr__(self):
+        return self.__str__()

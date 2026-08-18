@@ -3,7 +3,7 @@ from ..devices_general.motors import MotorRecord, SmaractStreamdevice, SmaractRe
 from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 from ..aliases import Alias
-from ..elements.adjustable import AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual, AdjustableTrigger
 from ..epics.adjustable import AdjustablePvEnum
 from ..elements.assembly import Assembly
 
@@ -51,6 +51,10 @@ class Pprm(Assembly):
                 cachannel=None,
                 is_setting=False,
             )
+        self._append(AdjustableTrigger, self.movein, name="movein", button_label="Move In")
+        self._append(
+            AdjustableTrigger, self.moveout, name="moveout", button_label="Move Out"
+        )
 
     def movein(self, target=None):
         if target == None:
@@ -151,6 +155,22 @@ class ProfKbBernina(Assembly):
             MotorRecord, pvname_zoom, name="zoom", is_setting=True, is_display=True
         )
         self.zoom.status_collection.remove(self.zoom.offset, selection="settings")
+        self._append(AdjustableTrigger, self.movein, name="movein", button_label="Move In")
+        self._append(
+            AdjustableTrigger, self.moveout, name="moveout", button_label="Move Out"
+        )
+        self._append(
+            AdjustableTrigger,
+            self.movein_keep_target,
+            name="movein_keep_target",
+            button_label="Move In (Keep Target)",
+        )
+        self._append(
+            AdjustableTrigger,
+            self.moveout_keep_target,
+            name="moveout_keep_target",
+            button_label="Move Out (Keep Target)",
+        )
 
     def movein_keep_target(self, wait=False):
         ch = self.mirror_in.set_target_value(1)
@@ -205,6 +225,10 @@ class Pprm_dsd(Assembly):
         )
         self._append(
             AdjustablePvEnum, self.pvname + ":PROBE_SP", name="target", is_setting=True
+        )
+        self._append(AdjustableTrigger, self.movein, name="movein", button_label="Move In")
+        self._append(
+            AdjustableTrigger, self.moveout, name="moveout", button_label="Move Out"
         )
 
     def movein(self, target=1):

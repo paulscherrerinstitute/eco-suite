@@ -12,7 +12,7 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 
 # from diffcalc.ub import calc calc import UBCalculation, Crystal
-from eco.elements.assembly import Assembly
+from eco.elements.assembly import Assembly, FailedComponent
 from eco.elements.adjustable import (
     AdjustableMemory,
     AdjustableFS,
@@ -459,21 +459,35 @@ class DiffGeometryYou(Assembly):
         self._diff_adjs = {}
         self._diff_adjs_constrained = {}
         for adj in adjs:
-            if adj in adjustables_dict.keys():
-                if adjustables_dict[adj].__class__ is not DetectorVirtual:
-                    self._diff_adjs[adj] = adjustables_dict[adj]
+            real = adjustables_dict.get(adj)
+            is_failed = isinstance(real, FailedComponent)
+            if adj in adjustables_dict.keys() and not is_failed:
+                if real.__class__ is not DetectorVirtual:
+                    self._diff_adjs[adj] = real
                 else:
                     self._diff_adjs_constrained[adj] = self.constraints.__dict__[adj]
             else:
+                # the angle is either genuinely absent (virtual in this
+                # geometry) or its real motor failed to initialize.
                 self._diff_adjs_constrained[adj] = self.constraints.__dict__[adj]
-                self.diffractometer._append(
-                    DetectorVirtual,
-                    [self.constraints.__dict__[adj]],
-                    lambda a: a,
-                    name=adj,
-                    is_setting=False,
-                    is_display=True,
-                )
+                if is_failed:
+                    # attempted and failed: keep it visibly FAILED on the
+                    # diffractometer (do not mask it with a virtual placeholder),
+                    # while diffcalc still uses the constraint above.
+                    print(
+                        f"WARNING: diffractometer angle '{adj}' failed to "
+                        f"initialize; leaving it as a failed component instead of "
+                        f"a virtual placeholder."
+                    )
+                else:
+                    self.diffractometer._append(
+                        DetectorVirtual,
+                        [self.constraints.__dict__[adj]],
+                        lambda a: a,
+                        name=adj,
+                        is_setting=False,
+                        is_display=True,
+                    )
 
         def get_h(*args, **kwargs):
             return self.calc_hkl()[0]

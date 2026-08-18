@@ -1,6 +1,6 @@
 from time import sleep
 from ..devices_general.motors import MotorRecord
-from ..elements.adjustable import AdjustableVirtual
+from ..elements.adjustable import AdjustableVirtual, AdjustableTrigger
 from ..aliases import Alias, append_object_to_object
 from functools import partial
 from ..elements.assembly import Assembly
@@ -954,6 +954,12 @@ class SlitBladesGeneral(Assembly):
             setvpos,
             reset_current_value_to=True,
             name="vpos",
+        )
+        self._append(
+            AdjustableTrigger,
+            self.home_all_blades,
+            name="home_all_blades",
+            button_label="Home All Blades",
         )
 
     def _apply_on_all_blades(self, method_name, *args, **kwargs):
