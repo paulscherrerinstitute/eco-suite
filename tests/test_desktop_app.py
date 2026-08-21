@@ -331,15 +331,93 @@ def test_live_refresh_picks_up_a_change_made_outside_the_launcher():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(lazy=["spectrometer"])
     launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
-    assert launcher._list.item(0, launcher._COL_NAME).text().endswith(" spectrometer")
-    assert "⏳" in launcher._list.item(0, launcher._COL_NAME).text()
+    # lazy, not actively loading -- plain name, no icon (grayed out via
+    # colour alone; see _label_for -- the hourglass is reserved for
+    # self._loading, i.e. actually initializing right now)
+    assert launcher._list.item(0, launcher._COL_NAME).text() == "spectrometer"
 
     # simulate an external initialization (not via this launcher)
     ns.lazy_names.discard("spectrometer")
     ns.initialized_names.add("spectrometer")
 
     launcher._refresh()  # what the timer's own tick would trigger
-    assert "⏳" not in launcher._list.item(0, launcher._COL_NAME).text()
+    # now initialized -- gets a real kind icon prefix
+    text = launcher._list.item(0, launcher._COL_NAME).text()
+    assert text.endswith(" spectrometer")
+    assert text != "spectrometer"
+
+
+# -- Required column (checkable items, not QCheckBox cell widgets) --
+#
+# Regression coverage for a real reported bug: the live-refresh timer (every
+# 2s) rebuilds every row, and a QCheckBox+QWidget+QHBoxLayout cell widget per
+# row (the original implementation) meant constructing/destroying ~120 real
+# Qt widgets twice a second at bernina's scale -- visible GUI-thread lag,
+# reported after `eco desktop` testing. Checkable QTableWidgetItems carry the
+# same state far more cheaply (see _refresh's comment).
+
+
+def test_required_column_is_a_checkable_item_not_a_cell_widget():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    ns.required_names(["cam_west"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+
+    assert launcher._list.cellWidget(0, launcher._COL_REQUIRED) is None
+    item = launcher._list.item(0, launcher._COL_REQUIRED)
+    assert item.flags() & QtCore.Qt.ItemIsUserCheckable
+    assert item.checkState() == QtCore.Qt.Checked
+
+
+def test_toggling_required_checkbox_updates_namespace_required_names():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    item = launcher._list.item(0, launcher._COL_REQUIRED)
+    assert item.checkState() == QtCore.Qt.Unchecked
+
+    item.setCheckState(QtCore.Qt.Checked)
+    assert ns.required_names() == ["cam_west"]
+
+    item.setCheckState(QtCore.Qt.Unchecked)
+    assert ns.required_names() == []
+
+
+def test_clicking_required_checkbox_does_not_open_or_init():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    launcher._on_item_clicked(launcher._list.item(0, launcher._COL_REQUIRED))
+
+    assert opened == []
+
+
+def test_refresh_does_not_spuriously_rewrite_required_names():
+    """The point of blockSignals() around the rebuild loop: setCheckState()
+    during a routine (every-2s) refresh must not itself look like a user
+    edit and trigger a required_names() write -- that would mean writing
+    to Namespace.required_names()'s backing file on every tick, whether or
+    not anything actually changed."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    ns.required_names(["cam_west"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+
+    write_calls = []
+    real_required_names = ns.required_names
+
+    def spying_required_names(value=None):
+        if value is not None:
+            write_calls.append(value)
+        return real_required_names(value)
+
+    ns.required_names = spying_required_names
+    launcher._refresh()
+    launcher._refresh()
+
+    assert write_calls == []
 
 
 # -- link_terminal --
@@ -398,7 +476,7 @@ class _FakeConsoleWidget:
         self.banner = ""
         self.executed = []
 
-    def execute(self, code):
+    def execute(self, code, hidden=False):
         self.executed.append(code)
 
 
@@ -447,7 +525,10 @@ def test_build_console_uses_inprocess_kernel_when_safe(monkeypatch):
     assert calls["push_vars"] == {"mono": "fake-mono-value", "namespace": "the-namespace"}
     assert calls["shared_user_ns"] is None
     assert "linked to the calling terminal" not in app._console.banner
-    assert app._console.executed == []  # in-process: namespace is pushed directly, no startup code to run
+    # in-process: namespace is pushed directly, no startup code to run --
+    # only the jedi-disable call every console gets (see
+    # console_kernel.build_console_widget's docstring)
+    assert app._console.executed == ["get_ipython().Completer.use_jedi = False"]
 
 
 def test_build_console_shares_terminal_namespace_when_available(monkeypatch):
@@ -503,8 +584,11 @@ def test_build_console_falls_back_to_subprocess_kernel_when_shell_conflict(monke
     # own two lines (import eco.<scope> as <scope>; from eco.<scope> import
     # *) so bare names (mono, att, ...) are available here too, not just a
     # `namespace` variable -- see build_namespace_vars's docstring.
-    assert len(app._console.executed) == 1
-    assert app._console.executed[0] == (
+    # index 0 is every console's hidden jedi-disable call (see
+    # console_kernel.build_console_widget's docstring); index 1 is this
+    # subprocess kernel's own scope-loading startup code.
+    assert len(app._console.executed) == 2
+    assert app._console.executed[1] == (
         "from eco import ecocnf\n"
         "ecocnf.startup_lazy = True\n"
         "import eco.bernina as bernina\n"
@@ -527,7 +611,9 @@ def test_build_console_subprocess_banner_when_link_terminal_false(monkeypatch):
     app._build_console()
 
     assert "an independent kernel, running in its own process" in app._console.banner
-    assert len(app._console.executed) == 1
+    # index 0: every console's hidden jedi-disable call; index 1: this
+    # subprocess kernel's own scope-loading startup code
+    assert len(app._console.executed) == 2
 
 
 def test_open_widget_calls_widget_directly_not_through_the_console():
@@ -920,3 +1006,123 @@ def test_new_workspace_action_clears_opened_names():
         assert gui._opened_names == []
     finally:
         gui.stop()
+
+
+# -- Save Startup Script -------------------------------------------------
+#
+# New feature: a standalone .sh (paired with a .json workspace file) that
+# relaunches `eco desktop` with just this session's open widgets reopened,
+# for a fast, minimal "dashboard" -- lazy loading means nothing else in the
+# namespace gets touched.
+
+
+def test_save_startup_script_writes_executable_sh_and_companion_json(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    gui = EcoDesktopApp(namespace=ns, scope="bernina", lazy=True, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("cam_west")
+        sh_path = gui.save_startup_script(tmp_path / "my_dashboard.sh")
+
+        assert sh_path == tmp_path / "my_dashboard.sh"
+        assert sh_path.exists()
+        assert sh_path.stat().st_mode & 0o111  # executable
+
+        json_path = tmp_path / "my_dashboard.json"
+        assert json_path.exists()
+        import json as _json
+
+        data = _json.loads(json_path.read_text())
+        assert data["opened_names"] == ["cam_west"]
+
+        script = sh_path.read_text()
+        assert "eco desktop -s bernina -l --workspace" in script
+        assert str(json_path) in script
+    finally:
+        gui.stop()
+
+
+def test_save_startup_script_adds_sh_suffix_if_missing(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+    try:
+        sh_path = gui.save_startup_script(tmp_path / "no_extension")
+        assert sh_path == tmp_path / "no_extension.sh"
+        assert sh_path.exists()
+    finally:
+        gui.stop()
+
+
+def test_save_startup_script_omits_scope_flag_when_no_scope(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, scope=None, auto_start=False)
+    gui._build_window()
+    try:
+        sh_path = gui.save_startup_script(tmp_path / "console_only.sh")
+        script = sh_path.read_text()
+        assert "-s " not in script
+        assert "eco desktop -l --workspace" in script
+    finally:
+        gui.stop()
+
+
+def test_save_startup_script_respects_no_lazy(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, scope="bernina", lazy=False, auto_start=False)
+    gui._build_window()
+    try:
+        sh_path = gui.save_startup_script(tmp_path / "eager_dashboard.sh")
+        script = sh_path.read_text()
+        assert "--no-lazy" in script
+    finally:
+        gui.stop()
+
+
+def test_save_startup_script_returns_none_with_no_window():
+    gui = EcoDesktopApp.__new__(EcoDesktopApp)
+    gui.window = None
+    assert gui.save_startup_script("/tmp/whatever.sh") is None
+
+
+# -- dark theme default ---------------------------------------------------
+
+
+def test_desktop_app_defaults_to_dark_theme():
+    import inspect
+
+    assert inspect.signature(EcoDesktopApp.__init__).parameters["theme"].default == "dark"
+
+
+def test_main_theme_defaults_to_dark(monkeypatch):
+    """--theme's argparse default, and that 'none' maps back to Python
+    None (native style) -- see _main()'s `theme = None if args.theme ==
+    'none' else args.theme` translation."""
+
+    class _StubApp:
+        def _build_window(self):
+            pass
+
+        def load_workspace(self, path):
+            pass
+
+        def run(self):
+            pass
+
+    captured = {}
+
+    def fake_desktop_app(namespace, theme, **kwargs):
+        captured["theme"] = theme
+        return _StubApp()
+
+    monkeypatch.setattr(desktop_app, "EcoDesktopApp", fake_desktop_app)
+    monkeypatch.setattr(desktop_app, "build_namespace", lambda **kw: None)
+    desktop_app._main([])
+    assert captured["theme"] == "dark"
+
+    desktop_app._main(["--theme", "none"])
+    assert captured["theme"] is None
+
+    desktop_app._main(["--theme", "light"])
+    assert captured["theme"] == "light"

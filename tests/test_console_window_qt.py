@@ -26,7 +26,7 @@ class _FakeConsoleWidget(QtWidgets.QWidget):
         self.banner = ""
         self.executed = []
 
-    def execute(self, code):
+    def execute(self, code, hidden=False):
         self.executed.append(code)
 
 
@@ -53,9 +53,12 @@ def test_console_window_qt_builds_a_subprocess_kernel_with_scope_startup_code(_p
         assert _patch_kernel_build["kind"] == "console"
         assert _patch_kernel_build["label"] == "bernina"
         # startup code is run through the finished console widget's own
-        # .execute(), not passed to build_subprocess_kernel
-        assert len(win._console.executed) == 1
-        assert "build_namespace(scope='bernina', lazy=True)" in win._console.executed[0]
+        # .execute(), not passed to build_subprocess_kernel. index 0 is
+        # every console's hidden jedi-disable call (see
+        # console_kernel.build_console_widget's docstring); index 1 is
+        # this console's own scope-loading startup code.
+        assert len(win._console.executed) == 2
+        assert "build_namespace(scope='bernina', lazy=True)" in win._console.executed[1]
         assert win.window is not None
         assert "eco console: bernina" in win.window.windowTitle()
     finally:

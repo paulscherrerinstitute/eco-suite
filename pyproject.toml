@@ -79,6 +79,7 @@ gui = [
     "ipywidgets",
     "ipyevents",
     "qtpy",
+    "qt-material",
     "dash",
     "flask",
     "timg",

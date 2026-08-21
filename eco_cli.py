@@ -177,6 +177,8 @@ def _run_desktop(args):
         cmd += ["--no-console"]
     if args.theme:
         cmd += ["--theme", args.theme]
+    if args.workspace:
+        cmd += ["--workspace", args.workspace]
     _exec(
         cmd,
         "The desktop UI needs qtconsole and a Qt binding (qtpy + PyQt5/PySide6) "
@@ -482,8 +484,14 @@ def main(argv=None):
         help_off="skip the embedded console (Namespace launcher panel only, if -s is given)",
     )
     p_desktop.add_argument(
-        "--theme", choices=["dark", "light"], default=None,
-        help="modern skin (default: none/native)",
+        "--theme", choices=["dark", "light", "none"], default=None,
+        help="modern skin, or 'none' for native OS style (default: dark)",
+    )
+    p_desktop.add_argument(
+        "--workspace", default=None, metavar="PATH",
+        help="load this workspace file on startup (dock layout + which "
+             "namespace entries to reopen) -- see the desktop window's "
+             "Workspace menu, 'Save Startup Script...'",
     )
 
     p_webapp = subparsers.add_parser("webapp", help="Voila dashboard (read-only widgets).")

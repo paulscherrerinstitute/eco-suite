@@ -160,11 +160,25 @@ def build_console_widget(kernel_manager, kernel_client, session, banner="", star
     subscribed -- run `startup_code` through the widget's own .execute()
     (not the bare kernel_client) so its output/errors are guaranteed to
     display, and get logged the same way anything else typed into this
-    console would (see LoggingJupyterWidget)."""
+    console would (see LoggingJupyterWidget).
+
+    Also disables Jedi-based tab-completion (hidden, before startup_code):
+    Jedi builds its completion menu by asking every candidate for
+    introspection data, which for eco's lazy device proxies (see
+    eco.utilities.config.Proxy) can mean fully resolving -- constructing,
+    with real EPICS calls -- one just from it being a completion
+    candidate while typing. Confirmed for real: over a minute for one
+    complex device, purely from tab-completion touching it, before ever
+    being used. The classic (non-jedi) completer only resolves an object
+    for *dotted* attribute completion (`name.<TAB>`), not for matching
+    plain top-level names -- and was also measured faster and more
+    correct here regardless (matches found vs none, from Jedi silently
+    failing on this dynamic a namespace)."""
     console = LoggingJupyterWidget(session=session)
     console.kernel_manager = kernel_manager
     console.kernel_client = kernel_client
     console.banner = banner
+    console.execute("get_ipython().Completer.use_jedi = False", hidden=True)
     if startup_code:
         console.execute(startup_code)
     return console

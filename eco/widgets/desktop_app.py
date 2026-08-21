@@ -266,11 +266,8 @@ class _NamespaceLauncher(QtWidgets.QWidget):
         )
         self._list.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self._list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        # Only the Name column (_COL_NAME) uses real QTableWidgetItems --
-        # the Required column is a QCheckBox cell widget (see _refresh),
-        # which itemClicked doesn't fire for, so this only ever reacts to
-        # a name click, never a checkbox click.
         self._list.itemClicked.connect(self._on_item_clicked)
+        self._list.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._list)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -313,47 +310,64 @@ class _NamespaceLauncher(QtWidgets.QWidget):
             return set()
 
     def _refresh(self):
-        query = self._filter_edit.text().strip().lower()
-        self._list.setRowCount(0)
-        lazy_count = 0
-        required = self._required_names()
-        for name, state in sorted_namespace_entries(self.namespace):
-            if state == "lazy":
-                lazy_count += 1
-            if query and query not in name.lower():
-                continue
-            row = self._list.rowCount()
-            self._list.insertRow(row)
+        # Runs every LIVE_REFRESH_INTERVAL_MS (2s) on the GUI thread, and
+        # for bernina rebuilds ~120 rows -- BLOCK signals for the duration
+        # so setItem()/setCheckState() below don't fire itemChanged (which
+        # would otherwise call _on_required_toggled -- a real write to
+        # Namespace.required_names()'s backing file -- for every row, on
+        # every tick, whether or not anything actually changed).
+        self._list.blockSignals(True)
+        try:
+            query = self._filter_edit.text().strip().lower()
+            self._list.setRowCount(0)
+            lazy_count = 0
+            required = self._required_names()
+            for name, state in sorted_namespace_entries(self.namespace):
+                if state == "lazy":
+                    lazy_count += 1
+                if query and query not in name.lower():
+                    continue
+                row = self._list.rowCount()
+                self._list.insertRow(row)
 
-            name_item = QtWidgets.QTableWidgetItem(self._label_for(name, state))
-            name_item.setData(QtCore.Qt.UserRole, name)
-            name_item.setFlags(name_item.flags() & ~QtCore.Qt.ItemIsEditable)
-            if name in self._loading:
-                name_item.setForeground(QtGui.QColor(0, 191, 165))
-            elif state == "lazy":
-                name_item.setForeground(QtGui.QColor(140, 140, 140))
-            elif state == "failed":
-                name_item.setForeground(QtGui.QColor(220, 80, 80))
-            self._list.setItem(row, self._COL_NAME, name_item)
+                name_item = QtWidgets.QTableWidgetItem(self._label_for(name, state))
+                name_item.setData(QtCore.Qt.UserRole, name)
+                name_item.setFlags(name_item.flags() & ~QtCore.Qt.ItemIsEditable)
+                if name in self._loading:
+                    name_item.setForeground(QtGui.QColor(0, 191, 165))
+                elif state == "lazy":
+                    name_item.setForeground(QtGui.QColor(140, 140, 140))
+                elif state == "failed":
+                    name_item.setForeground(QtGui.QColor(220, 80, 80))
+                self._list.setItem(row, self._COL_NAME, name_item)
 
-            checkbox = QtWidgets.QCheckBox()
-            checkbox.setChecked(name in required)
-            checkbox.setToolTip(
-                "Whether init_all(required_only=True) needs this built to "
-                "consider the namespace ready (Namespace.required_names())"
-            )
-            checkbox.toggled.connect(
-                lambda checked, name=name: self._on_required_toggled(name, checked)
-            )
-            cell = QtWidgets.QWidget()
-            cell_layout = QtWidgets.QHBoxLayout(cell)
-            cell_layout.setContentsMargins(0, 0, 0, 0)
-            cell_layout.setAlignment(QtCore.Qt.AlignCenter)
-            cell_layout.addWidget(checkbox)
-            self._list.setCellWidget(row, self._COL_REQUIRED, cell)
-        self._init_all_btn.setEnabled(lazy_count > 0)
+                # A checkable QTableWidgetItem, not a QCheckBox cell widget:
+                # this timer rebuilds every row every tick (see above), and
+                # constructing/destroying a real QCheckBox+QWidget+QHBoxLayout
+                # per row, twice a second times the row count, is real,
+                # visible GUI-thread cost at bernina's scale (~120 entries) --
+                # a lightweight item carries the same checked/unchecked state
+                # without any of that.
+                required_item = QtWidgets.QTableWidgetItem()
+                required_item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+                required_item.setCheckState(
+                    QtCore.Qt.Checked if name in required else QtCore.Qt.Unchecked
+                )
+                required_item.setData(QtCore.Qt.UserRole, name)
+                required_item.setToolTip(
+                    "Whether init_all(required_only=True) needs this built to "
+                    "consider the namespace ready (Namespace.required_names())"
+                )
+                self._list.setItem(row, self._COL_REQUIRED, required_item)
+            self._init_all_btn.setEnabled(lazy_count > 0)
+        finally:
+            self._list.blockSignals(False)
 
-    def _on_required_toggled(self, name, checked):
+    def _on_item_changed(self, item):
+        if item.column() != self._COL_REQUIRED:
+            return
+        name = item.data(QtCore.Qt.UserRole)
+        checked = item.checkState() == QtCore.Qt.Checked
         try:
             current = set(self.namespace.required_names())
             if checked:
@@ -367,6 +381,11 @@ class _NamespaceLauncher(QtWidgets.QWidget):
     def _label_for(self, name, state):
         if name in self._loading:
             return f"{_SPINNER_FRAMES[self._spinner_frame % len(_SPINNER_FRAMES)]}  {name}"
+        if state == "lazy":
+            # No icon -- the gray text colour (see _refresh) already says
+            # "not built yet"; the animated spinner above is reserved for
+            # "actually initializing right now", not just "could be".
+            return name
         return f"{self._kind_icon(name, state)} {name}"
 
     def _kind_icon(self, name, state):
@@ -395,6 +414,8 @@ class _NamespaceLauncher(QtWidgets.QWidget):
         self._refresh()
 
     def _on_item_clicked(self, item):
+        if item.column() != self._COL_NAME:
+            return  # a Required-column click toggles its checkbox, not open/init
         self.open_by_name(item.data(QtCore.Qt.UserRole))
 
     def open_by_name(self, name):
@@ -554,7 +575,7 @@ class EcoDesktopApp:
     def __init__(
         self,
         namespace=None,
-        theme=None,
+        theme="dark",
         link_terminal=True,
         auto_start=True,
         scope="bernina",
@@ -676,6 +697,20 @@ class EcoDesktopApp:
             "Also happens automatically when this window closes -- this is for saving mid-session"
         )
         save_action.triggered.connect(lambda: self.save_workspace())
+
+        menu.addSeparator()
+        script_action = menu.addAction("Save Startup Script...")
+        script_action.setToolTip(
+            "Write a standalone .sh that relaunches eco desktop with just this "
+            "session's open widgets -- lazy loading keeps everything else "
+            "untouched, for a fast, minimal dashboard"
+        )
+        script_action.triggered.connect(self._on_save_startup_script)
+
+    def _on_save_startup_script(self):
+        path = self.save_startup_script()
+        if path is not None:
+            print(f"eco desktop: wrote startup script {path} (and {path.with_suffix('.json')})")
 
     def _on_new_workspace(self):
         self._opened_names = []
@@ -946,6 +981,57 @@ class EcoDesktopApp:
                 self._launcher.open_by_name(name)
         return True
 
+    def save_startup_script(self, sh_path=None):
+        """Write a standalone, executable shell script that relaunches
+        `eco desktop` with only THIS session's currently-open namespace
+        entries reopened -- everything else in the namespace stays
+        untouched/lazy (see -l below), so the result is a fast, minimal
+        "dashboard" for just those components instead of the full
+        namespace. Prompts for where to save (a file dialog) if `sh_path`
+        isn't given, same as any other "Save As" action. Writes a
+        companion <name>.json workspace file next to the script (the same
+        format/mechanism as save_workspace) and points the script at it
+        via --workspace. Returns the script's path if written, None if
+        the save dialog was cancelled or there's no window yet to save
+        from."""
+        if self.window is None:
+            return None
+        if sh_path is None:
+            path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self.window,
+                "Save Startup Script",
+                str(Path.home() / "eco_dashboard.sh"),
+                "Shell scripts (*.sh)",
+            )
+            if not path_str:
+                return None
+            sh_path = Path(path_str)
+        else:
+            sh_path = Path(sh_path)
+        if sh_path.suffix != ".sh":
+            sh_path = sh_path.with_suffix(".sh")
+
+        workspace_path = sh_path.with_suffix(".json")
+        self.save_workspace(workspace_path)
+
+        scope_arg = "-s {} ".format(self.scope) if self.scope else ""
+        lazy_flag = "-l" if self.lazy else "--no-lazy"
+        script = (
+            "#!/bin/bash\n"
+            "# Auto-generated by eco desktop's Workspace menu (Save Startup\n"
+            "# Script...). Relaunches only the components that were open here --\n"
+            "# lazy loading (see -l/--no-lazy below) means nothing else in the\n"
+            "# namespace gets touched, so this is a fast, minimal dashboard rather\n"
+            "# than the full namespace. Edit freely; re-running the menu action\n"
+            "# overwrites both this file and its companion .json workspace file.\n"
+            'exec eco desktop {}{} --workspace "{}" "$@"\n'.format(
+                scope_arg, lazy_flag, workspace_path
+            )
+        )
+        sh_path.write_text(script)
+        sh_path.chmod(sh_path.stat().st_mode | 0o111)  # +x, keeping existing r/w bits
+        return sh_path
+
     def _autosave_workspace(self):
         self.save_workspace()
 
@@ -1076,25 +1162,45 @@ def _main(argv=None):
     console_grp.add_argument("--no-console", dest="with_console", action="store_false")
     parser.add_argument(
         "--theme",
-        choices=["dark", "light"],
+        choices=["dark", "light", "none"],
+        default="dark",
+        help="modern skin, or 'none' for native OS style (default: %(default)s) "
+             "-- see eco.widgets.qt_theme",
+    )
+    parser.add_argument(
+        "--workspace",
         default=None,
-        help="modern skin (default: none/native) -- see eco.widgets.qt_theme",
+        metavar="PATH",
+        help="load this workspace file on startup (dock layout + which "
+             "namespace entries to reopen) -- see the Workspace menu's "
+             "'Save Startup Script...', which generates a command exactly "
+             "like this one pointed at its own saved workspace file",
     )
     args = parser.parse_args(argv)
+    theme = None if args.theme == "none" else args.theme
 
     namespace = build_namespace(scope=args.scope, lazy=args.lazy) if args.scope else None
     # a fresh top-level process (no calling terminal to link to --
     # link_terminal would no-op here anyway since get_ipython() is None,
-    # but False is the honest/explicit statement of intent)
-    EcoDesktopApp(
+    # but False is the honest/explicit statement of intent). auto_start=False
+    # here (unlike a plain `python -c "EcoDesktopApp(...)"` one-liner) since
+    # --workspace has to be loaded *between* building the window and
+    # entering run()'s blocking event loop -- start()/auto_start=True would
+    # go straight from construction into that blocking call, with no chance
+    # to run load_workspace() first.
+    app = EcoDesktopApp(
         namespace,
-        theme=args.theme,
+        theme=theme,
         link_terminal=False,
-        auto_start=True,
+        auto_start=False,
         scope=args.scope,
         lazy=args.lazy,
         with_console=args.with_console,
     )
+    app._build_window()
+    if args.workspace:
+        app.load_workspace(args.workspace)
+    app.run()
 
 
 if __name__ == "__main__":

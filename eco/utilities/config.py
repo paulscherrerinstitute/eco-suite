@@ -1793,6 +1793,22 @@ class Proxy(Proxy_orig):
             return type(object.__getattribute__(self, "__wrapped__"))
         return LazyComponent
 
+    def __dir__(self):
+        """Same "stay shy to introspection" rule as __class__ above, for
+        the same reason: dir() is NOT one of the operations
+        lazy_object_proxy.Proxy special-cases, so an unresolved proxy
+        would otherwise forward it straight to __wrapped__ -- resolving
+        (fully constructing, real EPICS calls and all) the device.
+        Confirmed for real: any code path that calls dir() on a
+        still-lazy proxy -- IPython/Jedi's own tab-completion very much
+        included, since building a completion menu means asking every
+        candidate for its attributes -- took over a minute for a complex
+        device, purely from being listed as a completion candidate, never
+        mind actually being used."""
+        if object.__getattribute__(self, "__resolved__"):
+            return dir(object.__getattribute__(self, "__wrapped__"))
+        return dir(LazyComponent)
+
     def __repr__(self, __getattr__=object.__getattribute__):
         try:
             target = __getattr__(self, "__target__")
