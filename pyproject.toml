@@ -151,9 +151,17 @@ exclude = ["tests*", "eco.elements.textual*", "*.tests*"]
 py-modules = ["eco_cli"]
 include-package-data = false
 
-# Ship the Voila/JupyterLab dashboard notebook as package data.
+# Ship runtime data files that live inside the eco package tree but aren't
+# .py source: the Voila/JupyterLab dashboard notebook, the namespace alias
+# JSON files NamespaceCollection globs for (eco.aliases.aliases), and the
+# beamline synoptic SVG that Namespace._show_svg points at (eco.bernina.bernina).
+# include-package-data=false (below) means setuptools does NOT auto-sweep
+# these in, so anything loaded from disk at runtime must be listed here
+# explicitly or it silently goes missing from every install.
 [tool.setuptools.package-data]
 eco = ["voila_app.ipynb"]
+"eco.aliases" = ["namespaces/*.json"]
+"eco.bernina" = ["beamline_interact.svg"]
 
 # setuptools-scm's file-finder otherwise sweeps every git-tracked file under a
 # package dir into the wheel. Keep the stray vendored experiment and *bak
