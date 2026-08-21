@@ -770,6 +770,58 @@ def test_native_close_still_autosaves_the_workspace(tmp_path, monkeypatch):
     assert (tmp_path / "ws.json").exists()
 
 
+def test_native_close_quits_the_app_when_run_owns_the_event_loop(monkeypatch):
+    """Regression test for a real bug found via manual testing: `eco
+    desktop` (run() building its own blocking QApplication and calling
+    exec_()) hung forever -- terminal included -- after the window was
+    closed via its native X button. WA_QuitOnClose=False on the window
+    (set in _build_window, needed so closing it from *inside* an existing
+    IPython session via start()'s non-blocking path doesn't kill that
+    session) also disables Qt's usual "last window closed -> auto quit"
+    behaviour, so nothing ever called QApplication.quit() to end exec_().
+    run() now sets self._owns_event_loop = True right before exec_(), and
+    _on_window_closing() must call quit() itself when that's set."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+    gui._owns_event_loop = True  # what run() sets right before exec_()
+
+    real_quit = app.quit
+    quit_calls = []
+
+    def spying_quit():
+        quit_calls.append(True)
+        real_quit()
+
+    monkeypatch.setattr(app, "quit", spying_quit)
+    # Safety net so a regression here fails the test instead of hanging
+    # the whole run: calls the *real* quit directly, bypassing the spy.
+    QtCore.QTimer.singleShot(5000, real_quit)
+    QtCore.QTimer.singleShot(50, gui.window.close)
+
+    app.exec_()
+
+    assert quit_calls == [True], "closing the window must call QApplication.quit()"
+
+
+def test_native_close_does_not_quit_the_app_when_embedded(monkeypatch):
+    """The other half of the same fix: when this window was opened
+    non-blockingly inside an existing IPython/Qt session (start()'s path,
+    self._owns_event_loop left False), closing it must NOT quit the whole
+    application -- that would kill the calling session's terminal too."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+    assert gui._owns_event_loop is False
+
+    quit_calls = []
+    monkeypatch.setattr(app, "quit", lambda: quit_calls.append(True))
+
+    gui.window.close()
+
+    assert quit_calls == []
+
+
 # -- workspace persistence --
 
 

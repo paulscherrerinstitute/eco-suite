@@ -588,6 +588,11 @@ class EcoDesktopApp:
         # nothing.
         self.with_console = with_console
         self.window = None
+        # True only when run() created its own blocking QApplication.exec_()
+        # loop (the plain-script / `eco desktop` CLI case) -- see run()'s
+        # comment and _on_window_closing() for why this determines whether
+        # closing the window should also end the process.
+        self._owns_event_loop = False
         self._console = None
         self._kernel_manager = None
         self._kernel_client = None
@@ -954,6 +959,17 @@ class EcoDesktopApp:
         if self.window is None:
             self._build_window()
         if created_app:
+            # This call blocks in app.exec_() below until something quits
+            # the app -- but WA_QuitOnClose is set False in _build_window
+            # (needed so closing the window from *inside* an existing
+            # IPython session, via start()'s non-blocking path, doesn't
+            # kill that whole session), which also disables Qt's normal
+            # "last window closed -> auto quit" behaviour. Without this
+            # flag, _on_window_closing() has no way to know it's safe (and
+            # necessary) to quit here: closing the window via its native X
+            # button would leave app.exec_() blocked forever with no
+            # visible window, hanging the whole process/terminal.
+            self._owns_event_loop = True
             app.exec_()
 
     def start(self):
@@ -1007,7 +1023,15 @@ class EcoDesktopApp:
         with it still attached), and this window's own console kernel.
         Every step here is idempotent (empty-list iteration, None-safe
         stop_kernel/close), so this being reachable from both a native
-        close and stop() calling it doesn't risk double-teardown issues."""
+        close and stop() calling it doesn't risk double-teardown issues.
+
+        Finally, if run() started its own blocking QApplication.exec_()
+        loop for this window (self._owns_event_loop), quit it -- otherwise
+        WA_QuitOnClose=False (set in _build_window, needed for the
+        embedded-in-an-existing-IPython-session case) means Qt's usual
+        "last window closed -> quit" never fires, so exec_() -- and the
+        whole `eco desktop` process/terminal -- would hang forever with no
+        window left to close it from."""
         self._autosave_workspace()
         for dock in list(self._widget_docks):
             try:
@@ -1022,6 +1046,11 @@ class EcoDesktopApp:
         self._kernel_manager = None
         self._kernel_client = None
         self._kernel_session = None
+
+        if self._owns_event_loop:
+            app = QtWidgets.QApplication.instance()
+            if app is not None:
+                app.quit()
 
     def stop(self):
         self._on_window_closing()
