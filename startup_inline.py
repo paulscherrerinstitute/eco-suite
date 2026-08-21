@@ -1,9 +1,27 @@
 #!/usr/bin/env python
 
+import os
+os.environ["EPICS_CA_MAX_ARRAY_BYTES"] = "120000000"
+
+## pylab activity >>>>
+import numpy
+import matplotlib
+from matplotlib import pylab, mlab, pyplot
+
+np = numpy
+plt = pyplot
+
+from IPython.core.pylabtools import figsize, getfigs
+
+from pylab import *
+from numpy import *
+
+plt.ion()
+## pylab activity <<<<
+
 from eco import ecocnf
 from eco.utilities.config import Terminal
 import sys
-
 
 import argparse
 
@@ -36,7 +54,6 @@ parser.add_argument(
 arguments = parser.parse_args()
 
 scope = arguments.scope
-# scope = 'bernina'
 
 if arguments.scopes_available:
     print("{:<15s}{:<15s}{:<15s}".format("module", "name", "facility"))
@@ -53,30 +70,13 @@ print(
 term = Terminal(scope=scope)
 
 if scope:
-    # import importlib
-    # eco = importlib.import_module('eco')
-    # mdl = importlib.import_module(scope,package=eco)
-    # mdl = importlib.import_module('eco.bernina')
     if arguments.lazy:
         ecocnf.startup_lazy = True
     exec(f"import eco.{scope} as {scope}")
-    exec(f"op = {scope}.init()")
-    for tk, tv in op.items():
-        sys.modules["__main__"].__dict__[tk] = tv
-    # exec(f'{scope}.init(lazy=ecocnf.startup_lazy)')
-    # exec(f"from eco.{scope} import *")
-    # is there an __all__?  if so respect it
-    # if "__all__" in mdl.__dict__:
-    #    names = mdl.__dict__["__all__"]
-    # else:
-    # otherwise we import all names that don't begin with _
-    #    names = [x for x in mdl.__dict__ if not x.startswith("_")]
-    # now drag them in
-    # globals().update({k: getattr(mdl, k) for k in names})
+    exec(f"from eco.{scope} import *")
 
 term.set_title()
 from IPython import get_ipython
 
 _ipy = get_ipython()
-_ipy.Completer.use_jedi = False
-print(arguments)
+_ipy.Completer.use_jedi = True

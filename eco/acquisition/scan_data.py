@@ -227,7 +227,8 @@ class RunStatusView:
     """
 
     def __init__(
-        self, obj, run_number, dic, depth=None, include_hidden=False, compare_live=False
+        self, obj, run_number, dic, depth=None, include_hidden=False, compare_live=False,
+        pgroup="auto", status_type="status_run_start", force_reload=False,
     ):
         self.obj = obj
         self.run_number = run_number
@@ -235,6 +236,14 @@ class RunStatusView:
         self.depth = depth
         self.include_hidden = include_hidden
         self.compare_live = compare_live
+        # kept only so `_build_table` can look up the "settings" par_type
+        # for this same run/pgroup/status_type on demand (see the selector
+        # column below) -- cheap: `RunData.get_run_status` caches the whole
+        # per-run status blob, so this hits that cache rather than
+        # re-fetching, regardless of which par_type the view itself is for.
+        self.pgroup = pgroup
+        self.status_type = status_type
+        self.force_reload = force_reload
 
     def _rows(self):
         obj = self.obj
@@ -250,11 +259,74 @@ class RunStatusView:
         """Raw stored values for this run, as a flat dict (no display formatting)."""
         return dict(self.dic)
 
+    def _settings_names(self):
+        """Names (relative to `self.obj`, same shape as `self.dic`'s keys)
+        that are "settings" for this same run/pgroup/status_type -- used to
+        mark the selector column: `x` for a recallable setting (matches
+        what `apply_run_settings`/`Memory.recall` would actually apply),
+        blank for a status-only value shown for context. Best-effort: `None`
+        if it can't be determined, in which case the selector column is
+        dropped entirely rather than shown always-blank. Cheap even though
+        it's a second `_fetch_run_status_dict` call -- `RunData.
+        get_run_status` caches the whole per-run status blob, so this reads
+        from that cache instead of re-fetching, regardless of which
+        par_type the view itself was built with.
+        """
+        try:
+            settings_stat = self.obj._fetch_run_status_dict(
+                run_number=[self.run_number],
+                par_type="settings",
+                force_reload=self.force_reload,
+                pgroup=self.pgroup,
+                status_type=self.status_type,
+            )
+            return set(settings_stat[self.run_number].keys())
+        except Exception:
+            return None
+
+    def _live_present_values(self, names):
+        """{name: live_current_value} for `names`, read concurrently via
+        `Memory._prefetch_present_values` when `self.obj` has a `.memory`
+        (so a run status with many components doesn't block on one live
+        read at a time -- the same fix applied to the memory picker's own
+        preview); falls back to a plain sequential read if there's no
+        `.memory` to borrow the prefetch helper from. Best-effort: a read
+        that fails is just absent from the returned dict, not raised.
+        """
+        memory = getattr(self.obj, "memory", None)
+        if memory is not None:
+            try:
+                return memory._prefetch_present_values(names)
+            except Exception:
+                pass
+        values = {}
+        items_by_name = dict(self._rows())
+        for name in names:
+            item = items_by_name.get(name)
+            if item is None:
+                continue
+            try:
+                values[name] = item.get_current_value()
+            except Exception:
+                pass
+        return values
+
     def _build_table(self, tablefmt="simple"):
+        settings_names = self._settings_names()
+
+        present_values = {}
+        if self.compare_live:
+            live_names = [
+                name for name, item in self._rows()
+                if item is not None and self.dic.get(name) is not None
+            ]
+            present_values = self._live_present_values(live_names)
+
         tab = []
         for name, item in self._rows():
             value = self.dic.get(name)
-            if value is None:
+            is_placeholder = value is None
+            if is_placeholder:
                 prefix = name + "."
                 if any(k.startswith(prefix) for k in self.dic):
                     value = "\x1b[3mnested - unfold with depth=/include_hidden=\x1b[0m"
@@ -274,15 +346,45 @@ class RunStatusView:
                     description = item.description.get_current_value()
                 except Exception:
                     pass
-                if self.compare_live:
+
+            selector = "x" if (settings_names is not None and name in settings_names) else " "
+
+            if self.compare_live:
+                present = ""
+                diff = ""
+                if not is_placeholder and name in present_values:
+                    present = present_values[name]
                     try:
-                        value = f"{value} (crr: {item.get_current_value()})"
+                        changed = present != value
                     except Exception:
-                        pass
-            tab.append([name, value, unit, typechar, description])
+                        changed = True
+                    if not changed:
+                        diff = "=="
+                    else:
+                        try:
+                            diff = f"{value - present:+g}"
+                        except TypeError:
+                            diff = "changed"
+                row = [selector, name, present, diff, value, unit, typechar, description]
+            else:
+                row = [selector, name, value, unit, typechar, description]
+            tab.append(row)
+
         if not tab:
             return ""
-        return format_table(tab, tablefmt=tablefmt, maxcolwidths=[None, 50, None, None, None])
+        if self.compare_live:
+            headers = ["", "name", "present", "diff", "run value", "unit", "", "description"]
+            maxcolwidths = [None, None, None, None, None, None, None, 50]
+        else:
+            headers = ["", "name", "value", "unit", "", "description"]
+            maxcolwidths = [None, None, None, None, None, 50]
+        if settings_names is None:
+            # couldn't determine settings membership -- drop the column
+            # rather than show it always-blank
+            tab = [row[1:] for row in tab]
+            headers = headers[1:]
+            maxcolwidths = maxcolwidths[1:]
+        return format_table(tab, headers=headers, tablefmt=tablefmt, maxcolwidths=maxcolwidths)
 
     def __getitem__(self, key):
         return self.dic[key]
@@ -291,7 +393,185 @@ class RunStatusView:
         name = self.obj.alias.get_full_name()
         header = f"{name} run {self.run_number} status"
         if self.compare_live:
-            header += "  [value shown as: run value (crr: <live value>)]"
+            header += "  [present vs run value, with difference"
+        else:
+            header += "  ["
+        header += "; 'x' = a recallable setting, others are status only]"
+        return header + "\n" + self._build_table()
+
+    def _repr_html_(self):
+        return self._build_table(tablefmt="html")
+
+
+class MultiRunStatusView:
+    """Several runs' historical status side by side, one value column per
+    run (labelled by run number) -- the multi-run counterpart of
+    `RunStatusView`, e.g. `obj.run_status([-2, -1])`. Optionally also a
+    single "present" column when `compare_live=True` (the live value is
+    the same regardless of which run you're comparing it against, so it
+    only needs one column, with each run's own diff-from-present folded
+    inline into that run's cell as "value (+diff)" rather than spending a
+    whole extra column per run on it), and the same settings-vs-
+    status-only selector column `RunStatusView` has. Not meant to be
+    constructed directly; returned by `RunStatusAccessor.__call__`/
+    `__getitem__` when given more than one run number. For raw,
+    machine-readable multi-run data instead, use `.run_status.dict(
+    run_number=[...], as_dataframe=True)`.
+    """
+
+    def __init__(
+        self, obj, run_numbers, dics, depth=None, include_hidden=False, compare_live=False,
+        pgroup="auto", status_type="status_run_start", force_reload=False,
+    ):
+        self.obj = obj
+        self.run_numbers = list(run_numbers)
+        self.dics = dics  # {run_number: {name: value}}
+        self.depth = depth
+        self.include_hidden = include_hidden
+        self.compare_live = compare_live
+        self.pgroup = pgroup
+        self.status_type = status_type
+        self.force_reload = force_reload
+
+    # _rows/_settings_names/_live_present_values mirror RunStatusView's own
+    # (not shared via a base class -- the two differ in exactly one place
+    # each: no single self.dic to fall back on for _rows()'s "no
+    # status_collection" branch, and only one of the several runs' settings
+    # is needed since "is this a setting" doesn't vary per run for the same
+    # live object).
+
+    def _rows(self):
+        obj = self.obj
+        if not hasattr(obj, "status_collection"):
+            names = set()
+            for dic in self.dics.values():
+                names.update(dic.keys())
+            return [(name, None) for name in sorted(names)]
+        if not self.include_hidden and self.depth is None:
+            items = obj.status_collection.get_list(selection="display")
+            return [(item.alias.get_full_name(base=obj), item) for item in items]
+        return _walk_status_items(obj, obj, self.depth or 1, self.include_hidden, set())
+
+    def _settings_names(self):
+        try:
+            settings_stat = self.obj._fetch_run_status_dict(
+                run_number=[self.run_numbers[0]],
+                par_type="settings",
+                force_reload=self.force_reload,
+                pgroup=self.pgroup,
+                status_type=self.status_type,
+            )
+            return set(settings_stat[self.run_numbers[0]].keys())
+        except Exception:
+            return None
+
+    def _live_present_values(self, names):
+        memory = getattr(self.obj, "memory", None)
+        if memory is not None:
+            try:
+                return memory._prefetch_present_values(names)
+            except Exception:
+                pass
+        values = {}
+        items_by_name = dict(self._rows())
+        for name in names:
+            item = items_by_name.get(name)
+            if item is None:
+                continue
+            try:
+                values[name] = item.get_current_value()
+            except Exception:
+                pass
+        return values
+
+    def to_dict(self):
+        """Raw stored values across these runs, as {run_number: {name: value}}."""
+        return {rn: dict(dic) for rn, dic in self.dics.items()}
+
+    def _build_table(self, tablefmt="simple"):
+        settings_names = self._settings_names()
+
+        present_values = {}
+        if self.compare_live:
+            live_names = [
+                name for name, item in self._rows()
+                if item is not None
+                and any(self.dics.get(rn, {}).get(name) is not None for rn in self.run_numbers)
+            ]
+            present_values = self._live_present_values(live_names)
+
+        tab = []
+        for name, item in self._rows():
+            typechar = ""
+            unit = ""
+            description = ""
+            if item is not None:
+                if hasattr(item, "status_collection"):
+                    typechar = "↳"
+                try:
+                    unit = item.unit.get_current_value()
+                except Exception:
+                    pass
+                try:
+                    description = item.description.get_current_value()
+                except Exception:
+                    pass
+
+            selector = "x" if (settings_names is not None and name in settings_names) else " "
+            row = [selector, name]
+            if self.compare_live:
+                row.append(present_values.get(name, ""))
+
+            for rn in self.run_numbers:
+                dic = self.dics.get(rn, {})
+                value = dic.get(name)
+                if value is None:
+                    prefix = name + "."
+                    if any(k.startswith(prefix) for k in dic):
+                        value = "\x1b[3mnested\x1b[0m"
+                    else:
+                        value = ""
+                elif self.compare_live and name in present_values:
+                    present = present_values[name]
+                    try:
+                        changed = present != value
+                    except Exception:
+                        changed = True
+                    if changed:
+                        try:
+                            diffstr = f"{value - present:+g}"
+                        except TypeError:
+                            diffstr = "changed"
+                        value = f"{value} ({diffstr})"
+                row.append(value)
+
+            row.extend([unit, typechar, description])
+            tab.append(row)
+
+        if not tab:
+            return ""
+        headers = ["", "name"]
+        if self.compare_live:
+            headers.append("present")
+        headers.extend([f"run {rn}" for rn in self.run_numbers])
+        headers.extend(["unit", "", "description"])
+        if settings_names is None:
+            tab = [row[1:] for row in tab]
+            headers = headers[1:]
+        return format_table(tab, headers=headers, tablefmt=tablefmt, maxcolwidths=[None] * (len(headers) - 1) + [50])
+
+    def __getitem__(self, run_number):
+        return dict(self.dics[run_number])
+
+    def __repr__(self):
+        name = self.obj.alias.get_full_name()
+        runs_str = ", ".join(str(rn) for rn in self.run_numbers)
+        header = f"{name} runs {runs_str} status"
+        if self.compare_live:
+            header += "  [present vs each run's value, diff inline per run"
+        else:
+            header += "  ["
+        header += "; 'x' = a recallable setting, others are status only]"
         return header + "\n" + self._build_table()
 
     def _repr_html_(self):
@@ -303,8 +583,11 @@ class RunStatusAccessor:
     as a display view (like its live repr), with options to unfold nested
     (`depth=`) and normally-hidden (`include_hidden=`) components, and to
     compare against the live value (`compare_live=`). Tab-completable in
-    IPython/Jupyter via `obj.run_status[<TAB>]`. Use `.dict(...)` for the
-    original, raw (optionally multi-run) dictionary/DataFrame output.
+    IPython/Jupyter via `obj.run_status[<TAB>]`. Given more than one run
+    number (e.g. `obj.run_status([-2, -1])`), returns one combined table
+    with a value column per run instead (`MultiRunStatusView`). Use
+    `.dict(...)` for the original, raw (optionally multi-run) dictionary/
+    DataFrame output.
     """
 
     def __init__(self, obj):
@@ -365,20 +648,35 @@ class RunStatusAccessor:
             pgroup=pgroup,
             status_type=status_type,
         )
-        views = {
-            runno: RunStatusView(
+        if single:
+            runno, dic = next(iter(stat.items()))
+            return RunStatusView(
                 self._obj,
                 runno,
                 dic,
                 depth=depth,
                 include_hidden=include_hidden,
                 compare_live=compare_live,
+                pgroup=pgroup,
+                status_type=status_type,
+                force_reload=force_reload,
             )
-            for runno, dic in stat.items()
-        }
-        if single:
-            return list(views.values())[0]
-        return views
+        # more than one run number: one combined table, one value column
+        # per run (labelled by run number), rather than a plain dict of
+        # separate per-run views (which never displayed usefully anyway --
+        # `.dict(run_number=[...], as_dataframe=True)` remains the way to
+        # get raw, machine-readable multi-run data if that's what's wanted).
+        return MultiRunStatusView(
+            self._obj,
+            list(stat.keys()),
+            stat,
+            depth=depth,
+            include_hidden=include_hidden,
+            compare_live=compare_live,
+            pgroup=pgroup,
+            status_type=status_type,
+            force_reload=force_reload,
+        )
 
     def __getitem__(self, run_number):
         return self(run_number)
@@ -392,7 +690,8 @@ class RunStatusAccessor:
         return (
             f"<run_status for {self._obj.alias.get_full_name()}: {avail}>\n"
             "Call e.g. .run_status(1234) or .run_status[1234] for a display view "
-            "(depth=, include_hidden=, compare_live=); .run_status.dict(...) for raw values."
+            "(depth=, include_hidden=, compare_live=); .run_status([1234, 1235]) for "
+            "a combined multi-run table; .run_status.dict(...) for raw values."
         )
 
 

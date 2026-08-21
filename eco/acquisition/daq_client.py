@@ -1,6 +1,7 @@
 import json
 import pickle
 import shutil
+from itertools import count
 from threading import Thread, Lock, Event, Timer
 import time
 import traceback
@@ -148,7 +149,11 @@ class Daq(Assembly):
             self._pulse_id_monitor_pv.add_callback(_on_pulse_id_update)
         else:
             self.pulse_id = pulse_id_adj
-        self.running = []
+        # keyed by a monotonic id (not position) so that concurrent scans
+        # starting/stopping acquisitions on this shared Daq instance can't
+        # invalidate each other's in-flight index into this structure
+        self.running = {}
+        self._running_ids = count()
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
         self.name = name
@@ -379,10 +384,11 @@ class Daq(Assembly):
             "start_id": start_id,
         }
         acq_pars.update(kwargs)
-        self.running.append(acq_pars)
+        acq_id = next(self._running_ids)
+        self.running[acq_id] = acq_pars
         if scan:
-            scan.daq_current_acquisition_index = self.running.index(acq_pars)
-        return self.running.index(acq_pars)
+            scan.counter_scratch(self.name)["acquisition_index"] = acq_id
+        return acq_id
 
     def stop(
         self,
@@ -400,9 +406,11 @@ class Daq(Assembly):
             stop_id = int(self.pulse_id.get_current_value())
 
         if scan:
-            acq_ix = scan.daq_current_acquisition_index
-        if not acq_ix:
-            acq_ix = -1
+            acq_ix = scan.counter_scratch(self.name).get("acquisition_index")
+        if acq_ix is None:
+            # no scan/explicit id given: fall back to the most recently
+            # started acquisition (dicts preserve insertion order)
+            acq_ix = next(reversed(self.running))
 
         acq_pars = self.running.pop(acq_ix)
         acq_pars["stop_id"] = stop_id
@@ -978,7 +986,7 @@ class Daq(Assembly):
             base=None, raise_on_incomplete=False
         )
         stat = {"status_run_start": namespace_status}
-        scan.namespace_status = stat
+        scan.counter_scratch(self.name)["namespace_status"] = stat
 
         if True:
             if hasattr(scan, "daq_run_number"):
@@ -1001,7 +1009,7 @@ class Daq(Assembly):
             if not statusfile.exists():
                 with open(statusfile, "w") as f:
                     json.dump(
-                        scan.namespace_status,
+                        stat,
                         f,
                         sort_keys=True,
                         cls=NumpyEncoder,
@@ -1011,7 +1019,7 @@ class Daq(Assembly):
                 with open(statusfile, "r+") as f:
                     f.seek(0)
                     json.dump(
-                        scan.namespace_status,
+                        stat,
                         f,
                         sort_keys=True,
                         cls=NumpyEncoder,
@@ -1072,7 +1080,7 @@ class Daq(Assembly):
             self.run_table.append_run(
                 runno,
                 metadata=metadata,
-                d=scan.namespace_status["status_run_start"],
+                d=scan.counter_scratch(self.name)["namespace_status"]["status_run_start"],
             )
             # self.run_table.update()
         except:
@@ -1172,7 +1180,8 @@ class Daq(Assembly):
         namespace_status = self.namespace.get_status(
             base=None, raise_on_incomplete=False
         )
-        scan.namespace_status["status_run_end"] = namespace_status
+        cs = scan.counter_scratch(self.name)
+        cs["namespace_status"]["status_run_end"] = namespace_status
         if hasattr(scan, "daq_run_number"):
             runno = scan.daq_run_number.get_current_value()
         else:
@@ -1191,13 +1200,13 @@ class Daq(Assembly):
         if not statusfile.exists():
             with open(statusfile, "w") as f:
                 json.dump(
-                    scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                    cs["namespace_status"], f, sort_keys=True, cls=NumpyEncoder, indent=4
                 )
         else:
             with open(statusfile, "r+") as f:
                 f.seek(0)
                 json.dump(
-                    scan.namespace_status, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                    cs["namespace_status"], f, sort_keys=True, cls=NumpyEncoder, indent=4
                 )
                 f.truncate()
                 print("Wrote status with seek truncate!")
@@ -1212,7 +1221,7 @@ class Daq(Assembly):
         # print("####### transfer status #######")
         # print(response.json())
         # print("###############################")
-        scan.scan_info["scan_parameters"]["status"] = "aux/status.json"
+        scan.set_scan_parameter("status", "aux/status.json")
 
     def check_checker_before_step(self, scan, **kwargs):
         # self.
@@ -1296,7 +1305,7 @@ class Daq(Assembly):
             # print("####### transfer aliases started #######")
             # print(response.json())
             # print("################################")
-            scan.scan_info["scan_parameters"]["aliases"] = "aux/aliases.json"
+            scan.set_scan_parameter("aliases", "aux/aliases.json")
 
     def scan_message_to_elog(self, scan=None, **kwargs):
         # def _create_metadata_structure_start_scan(
@@ -1310,7 +1319,7 @@ class Daq(Assembly):
             message_string += f"\n"
         try:
             elog_ids = scan.status_to_elog(text=message_string, auto_title=False)
-            scan._elog_id = elog_ids[1]
+            scan.counter_scratch(self.name)["elog_id"] = elog_ids[1]
 
         # message_string += "`" + metadata["scan_info_file"] + "`\n"
         # try:
@@ -1334,7 +1343,7 @@ class Daq(Assembly):
         custom_monitors={},
         **kwargs,
     ):
-        scan.daq_monitors = {}
+        monitors = scan.counter_scratch(self.name)["monitors"] = {}
         for adj in scan.adjustables:
             try:
                 tname = adj.alias.get_full_name()
@@ -1342,7 +1351,7 @@ class Daq(Assembly):
                 tname = adj.name
                 traceback.print_exc()
             try:
-                scan.daq_monitors[tname] = Monitor(adj.pvname)
+                monitors[tname] = Monitor(adj.pvname)
             except Exception:
                 print(f"Could not add CA monitor for {tname}")
                 # traceback.print_exc()
@@ -1353,7 +1362,7 @@ class Daq(Assembly):
                 # traceback.print_exc()
             try:
                 if hasattr(adj, "readback"):
-                    scan.daq_monitors[rname] = Monitor(adj.readback.pvname)
+                    monitors[rname] = Monitor(adj.readback.pvname)
             except Exception:
                 print(f"Could not add CA readback monitor for {tname}")
                 traceback.print_exc()
@@ -1362,25 +1371,24 @@ class Daq(Assembly):
             try:
                 if type(tobj) is str:
                     tmonpv = tobj
-                scan.daq_monitors[tname] = Monitor(tmonpv)
+                monitors[tname] = Monitor(tmonpv)
                 print(f"Added custom monitor for {tname}")
             except Exception:
                 print(f"Could not add custom monitor for {tname}")
                 traceback.print_exc()
         try:
             tname = self.pulse_id.alias.get_full_name()
-            scan.daq_monitors[tname] = Monitor(self.pulse_id.pvname)
+            monitors[tname] = Monitor(self.pulse_id.pvname)
         except Exception:
             print(f"Could not add daq.pulse_id monitor")
             traceback.print_exc()
 
     def end_scan_monitors(self, scan, pgroup=None, **kwargs):
-        for tmon in scan.daq_monitors:
-            scan.daq_monitors[tmon].stop_callback()
+        monitors = scan.counter_scratch(self.name)["monitors"]
+        for tmon in monitors:
+            monitors[tmon].stop_callback()
 
-        monitor_result = {
-            tmon: scan.daq_monitors[tmon].data for tmon in scan.daq_monitors
-        }
+        monitor_result = {tmon: monitors[tmon].data for tmon in monitors}
 
         # save temprary file and send then to raw
         if hasattr(scan, "daq_run_number"):

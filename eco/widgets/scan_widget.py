@@ -1,10 +1,19 @@
 """
 IPython widget for Scans instances.
 
-- Choose scan method from a dropdown (ascan, dscan, meshscan, acquire, etc).
-- Selecting a method builds a parameter form for positional and keyword args
-  (inspecting the method signature) and includes dynamic callback keywords
-  returned by scans.get_callback_keywords(method_name) when available.
+- Choose scan method from a dropdown (ascan, dscan, meshscan, scan, acquire,
+  etc).
+- For the known Scans methods (see _STRUCTURED_FORM_BUILDERS below),
+  selecting a method builds a structured form: adjustables/counters are
+  picked with the graphical component picker (eco.widgets.
+  component_picker_widget, built on eco.widgets.component_selector_widget)
+  instead of typed by hand, and multi-axis methods (meshscan, scan) get a
+  growable list of axis rows via eco.widgets.scan_builder_widgets.
+  scan()'s axes can each be toggled "single" or "simultaneous (co-moving)",
+  mirroring Scans.scan()'s own nested-list-for-simultaneous /
+  flat-tuple-for-mesh *adj_specs convention. Any other/unrecognized method
+  falls back to the generic reflection-based form (signature -> free-text/
+  JSON fields), same as before.
 - Second tab contains a matplotlib Figure with an empty axis. The widget exposes
   `.fig` and `.ax` for plotting.
 - Pressing "Run" will call a user-provided run_callback(scan_obj, method_name, args, kwargs)
@@ -12,8 +21,10 @@ IPython widget for Scans instances.
 
 Usage:
     from eco.widgets.scan_widget import ScanWidget, make_scan_widget
-    w = make_scan_widget(scans_instance)
+    w = make_scan_widget(scans_instance, root=eco.bernina.bernina)
     display(w)
+    # root is the namespace browsed by the adjustable/detector picker --
+    # pass the actual beamline namespace so there's something to pick from.
     # Access figure: w.fig, w.ax
     # Register custom runner:
     w.run_callback = lambda scans, m, a, k: print("would run", m, a, k)
@@ -28,6 +39,13 @@ import ipywidgets as widgets
 from IPython.display import display, clear_output
 
 import matplotlib.pyplot as plt
+
+from eco.widgets.component_picker_widget import (
+    ComponentPickerWidget,
+    MultiComponentPickerWidget,
+)
+from eco.widgets.component_selector import ComponentBookmarks, RecentComponents
+from eco.widgets.scan_builder_widgets import ScanBuilderWidget
 
 
 # helper to coerce simple string to numeric/bool if possible
@@ -92,21 +110,322 @@ def _make_free_arg_widget(placeholder: str = ""):
     return w, lambda: _coerce_value(w.value)
 
 
+# ---------------------------------------------------------------------------
+# Structured, picker-driven forms for the known Scans.* methods.
+#
+# The generic reflection-based form above (signature -> free-text/JSON
+# fields) works for anything, but for the methods every scan actually uses
+# it makes you type adjustable/detector paths by hand. These builders use
+# the component picker (eco.widgets.component_picker_widget /
+# eco.widgets.scan_builder_widgets) instead, and know each method's real
+# calling convention (which params are positional, which flow through
+# **kwargs_callbacks, snakescan not taking N_pulses at all, etc.) rather
+# than guessing from inspect.signature().
+# ---------------------------------------------------------------------------
+
+_RETURN_AT_END_OPTIONS = [
+    ("timeout (ask, auto-revert after 10s)", "timeout"),
+    ("question (ask, wait for answer)", "question"),
+    ("always revert to initial value", True),
+    ("stay at final value", False),
+]
+
+
+def _build_common_extra_kwargs(
+    root: Any,
+    bookmarks: ComponentBookmarks,
+    recent: RecentComponents,
+    return_at_end_default: Any = "timeout",
+    include_repetitions: bool = True,
+):
+    """The parameter block shared by (almost) every Scans method: description,
+    settling_time, return_at_end, optionally repetitions, and an optional
+    counters override. Returns (widget, read()) where read() -> kwargs dict
+    (only including "counters" if the user actually picked any -- an empty
+    picker list means "use the scan's default counters")."""
+    description_w = widgets.Text(
+        placeholder="description",
+        description="descr.:",
+        layout=widgets.Layout(width="320px"),
+    )
+    settling_w = widgets.FloatText(
+        value=0,
+        description="settling_time:",
+        style={"description_width": "initial"},
+        layout=widgets.Layout(width="200px"),
+    )
+    rae_w = widgets.Dropdown(
+        options=_RETURN_AT_END_OPTIONS,
+        value=return_at_end_default,
+        description="return_at_end:",
+        style={"description_width": "initial"},
+        layout=widgets.Layout(width="320px"),
+    )
+    rep_w = (
+        widgets.IntText(
+            value=1, description="repetitions:", layout=widgets.Layout(width="180px")
+        )
+        if include_repetitions
+        else None
+    )
+    counters_w = MultiComponentPickerWidget(
+        root,
+        kind_filter="Detector",
+        empty_hint="(empty = use scan's default counters)",
+        bookmarks=bookmarks,
+        recent=recent,
+    )
+
+    rows = [description_w, widgets.HBox([settling_w, rae_w] + ([rep_w] if rep_w else []))]
+    rows.append(widgets.VBox([widgets.HTML("<b>Counters (optional)</b>"), counters_w]))
+    box = widgets.VBox(rows)
+
+    def read() -> Dict[str, Any]:
+        kw: Dict[str, Any] = dict(
+            description=description_w.value,
+            settling_time=settling_w.value,
+            return_at_end=rae_w.value,
+        )
+        if rep_w is not None:
+            kw["repetitions"] = rep_w.value
+        counters_val = counters_w.get_value()
+        if counters_val:
+            kw["counters"] = counters_val
+        return kw
+
+    return box, read
+
+
+def _build_acquire_form(scans_obj, root, bookmarks, recent):
+    n_pulses_w = widgets.IntText(
+        value=100, description="N_pulses:", layout=widgets.Layout(width="180px")
+    )
+    n_rep_w = widgets.IntText(
+        value=1, description="N_repetitions:", layout=widgets.Layout(width="200px")
+    )
+    top = widgets.HBox([n_pulses_w, n_rep_w])
+    extra_box, read_extra = _build_common_extra_kwargs(
+        root, bookmarks, recent, return_at_end_default=True, include_repetitions=False
+    )
+    widget = widgets.VBox([top, extra_box])
+
+    def get_call():
+        kwargs = read_extra()
+        kwargs["N_repetitions"] = n_rep_w.value
+        return [n_pulses_w.value], kwargs
+
+    return widget, get_call
+
+
+def _build_ascan_like_form(scans_obj, root, bookmarks, recent):
+    """Shared by ascan and dscan: same shape, only the target method call
+    differs (dscan interprets start/end relative to the current position)."""
+    picker = ComponentPickerWidget(root, kind_filter="Adjustable", bookmarks=bookmarks, recent=recent)
+    start_w = widgets.FloatText(value=0.0, description="start:", layout=widgets.Layout(width="160px"))
+    end_w = widgets.FloatText(value=1.0, description="end:", layout=widgets.Layout(width="160px"))
+    n_w = widgets.IntText(value=10, description="N_intervals:", layout=widgets.Layout(width="160px"))
+    n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="160px"))
+    top = widgets.VBox(
+        [
+            widgets.HTML("<b>Adjustable</b>"),
+            picker,
+            widgets.HBox([start_w, end_w, n_w, n_pulses_w]),
+        ]
+    )
+    extra_box, read_extra = _build_common_extra_kwargs(root, bookmarks, recent)
+    widget = widgets.VBox([top, extra_box])
+
+    def get_call():
+        args = [picker.value, start_w.value, end_w.value, int(n_w.value), n_pulses_w.value]
+        return args, read_extra()
+
+    return widget, get_call
+
+
+def _build_ascan_position_list_form(scans_obj, root, bookmarks, recent):
+    from eco.widgets.scan_builder_widgets import _parse_position_list
+
+    picker = ComponentPickerWidget(root, kind_filter="Adjustable", bookmarks=bookmarks, recent=recent)
+    positions_w = widgets.Text(
+        placeholder="e.g. 0,0.5,1,2,5 or [0,0.5,1,2,5]",
+        description="positions:",
+        layout=widgets.Layout(width="100%"),
+    )
+    n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="160px"))
+    top = widgets.VBox(
+        [widgets.HTML("<b>Adjustable</b>"), picker, positions_w, n_pulses_w]
+    )
+    extra_box, read_extra = _build_common_extra_kwargs(root, bookmarks, recent)
+    widget = widgets.VBox([top, extra_box])
+
+    def get_call():
+        args = [picker.value, _parse_position_list(positions_w.value), n_pulses_w.value]
+        return args, read_extra()
+
+    return widget, get_call
+
+
+def _build_snakescan_form(scans_obj, root, bookmarks, recent):
+    picker_slow = ComponentPickerWidget(root, kind_filter="Adjustable", placeholder="(slow axis)", bookmarks=bookmarks, recent=recent)
+    picker_fast = ComponentPickerWidget(root, kind_filter="Adjustable", placeholder="(fast axis)", bookmarks=bookmarks, recent=recent)
+    step_interval_w = widgets.FloatText(value=1.0, description="step_interval:", style={"description_width": "initial"}, layout=widgets.Layout(width="200px"))
+    nrows_w = widgets.IntText(value=5, description="Nrows:", layout=widgets.Layout(width="140px"))
+    interval_w = widgets.FloatText(value=1.0, description="interval:", layout=widgets.Layout(width="160px"))
+    top = widgets.VBox(
+        [
+            widgets.HTML("<b>Slow adjustable</b>"),
+            picker_slow,
+            step_interval_w,
+            nrows_w,
+            widgets.HTML("<b>Fast adjustable</b>"),
+            picker_fast,
+            interval_w,
+        ]
+    )
+    # snakescan hardcodes Npulses=1 internally -- no N_pulses field here
+    extra_box, read_extra = _build_common_extra_kwargs(root, bookmarks, recent)
+    widget = widgets.VBox([top, extra_box])
+
+    def get_call():
+        args = [
+            picker_slow.value,
+            step_interval_w.value,
+            int(nrows_w.value),
+            picker_fast.value,
+            interval_w.value,
+        ]
+        return args, read_extra()
+
+    return widget, get_call
+
+
+def _build_a2scan_form(scans_obj, root, bookmarks, recent):
+    picker0 = ComponentPickerWidget(root, kind_filter="Adjustable", placeholder="(adjustable 0)", bookmarks=bookmarks, recent=recent)
+    picker1 = ComponentPickerWidget(root, kind_filter="Adjustable", placeholder="(adjustable 1)", bookmarks=bookmarks, recent=recent)
+    start0_w = widgets.FloatText(value=0.0, description="start0:", layout=widgets.Layout(width="150px"))
+    end0_w = widgets.FloatText(value=1.0, description="end0:", layout=widgets.Layout(width="150px"))
+    start1_w = widgets.FloatText(value=0.0, description="start1:", layout=widgets.Layout(width="150px"))
+    end1_w = widgets.FloatText(value=1.0, description="end1:", layout=widgets.Layout(width="150px"))
+    n_w = widgets.IntText(value=10, description="N_intervals:", layout=widgets.Layout(width="160px"))
+    n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="160px"))
+    top = widgets.VBox(
+        [
+            widgets.HTML("<b>Adjustable 0</b>"),
+            picker0,
+            widgets.HBox([start0_w, end0_w]),
+            widgets.HTML("<b>Adjustable 1</b>"),
+            picker1,
+            widgets.HBox([start1_w, end1_w]),
+            widgets.HBox([n_w, n_pulses_w]),
+        ]
+    )
+    extra_box, read_extra = _build_common_extra_kwargs(root, bookmarks, recent)
+    widget = widgets.VBox([top, extra_box])
+
+    def get_call():
+        args = [
+            picker0.value,
+            start0_w.value,
+            end0_w.value,
+            picker1.value,
+            start1_w.value,
+            end1_w.value,
+            int(n_w.value),
+            n_pulses_w.value,
+        ]
+        return args, read_extra()
+
+    return widget, get_call
+
+
+def _build_grid_form(allow_simultaneous: bool):
+    """Shared by meshscan (allow_simultaneous=False) and scan
+    (allow_simultaneous=True): a growable list of grid axes via
+    ScanBuilderWidget, the picker-driven version of *adj_specs. For scan(),
+    each axis can be toggled to "simultaneous" for an a2scan-like co-moving
+    group -- the nested-list-vs-flat-tuple convention scan() itself parses.
+    """
+
+    def build(scans_obj, root, bookmarks, recent):
+        builder = ScanBuilderWidget(
+            root, allow_simultaneous=allow_simultaneous, bookmarks=bookmarks, recent=recent
+        )
+        n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="180px"))
+        order_w = widgets.Dropdown(
+            options=["last_fastest", "first_fastest"],
+            value="last_fastest",
+            description="scanning_order:",
+            style={"description_width": "initial"},
+            layout=widgets.Layout(width="260px"),
+        )
+        top = widgets.HBox([n_pulses_w, order_w])
+        extra_box, read_extra = _build_common_extra_kwargs(root, bookmarks, recent)
+        widget = widgets.VBox([builder, top, extra_box])
+
+        def get_call():
+            kwargs = read_extra()
+            kwargs["N_pulses"] = n_pulses_w.value
+            kwargs["scanning_order"] = order_w.value
+            return builder.get_adj_specs(), kwargs
+
+        return widget, get_call
+
+    return build
+
+
+_STRUCTURED_FORM_BUILDERS: Dict[str, Callable] = {
+    "acquire": _build_acquire_form,
+    "ascan": _build_ascan_like_form,
+    "dscan": _build_ascan_like_form,
+    "ascan_position_list": _build_ascan_position_list_form,
+    "snakescan": _build_snakescan_form,
+    "a2scan": _build_a2scan_form,
+    "meshscan": _build_grid_form(allow_simultaneous=False),
+    "scan": _build_grid_form(allow_simultaneous=True),
+}
+
+
 class ScanWidget(widgets.Tab):
     def __init__(
         self,
         scans_obj: Any,
         methods: Optional[List[str]] = None,
+        root: Any = None,
         auto_build: bool = True,
     ):
         """
         scans_obj: instance providing scan methods and optionally get_callback_keywords(method_name).
         methods: optional list of method names to offer; if None common names will be searched on scans_obj.
+        root: namespace to browse for the adjustable/detector picker on the
+            structured forms (ascan, scan, ...) -- typically the beamline
+            namespace, e.g. eco.bernina.bernina. Defaults to scans_obj itself
+            if not given, which only helps if adjustables are actually
+            reachable from there.
         """
         self.scans = scans_obj
+        self.root = root if root is not None else scans_obj
+        self._bookmarks = ComponentBookmarks(
+            namespace_name=getattr(self.root, "name", None)
+        )
+        self._recent = RecentComponents(
+            namespace_name=getattr(self.root, "name", None)
+        )
+        # set by build_for_method when a structured (picker-driven) form is
+        # used for the selected method; _collect_params() prefers it over
+        # the generic signature-introspection widgets below
+        self._structured_get_call: Optional[Callable[[], Tuple[List[Any], Dict[str, Any]]]] = None
         # find available methods if not provided
         if methods is None:
-            cand = ["ascan", "dscan", "meshscan", "acquire"]
+            cand = [
+                "ascan",
+                "dscan",
+                "ascan_position_list",
+                "snakescan",
+                "a2scan",
+                "meshscan",
+                "scan",
+                "acquire",
+            ]
             methods = [m for m in cand if hasattr(scans_obj, m)]
             # also include any callable attributes that look like scans
             for name in dir(scans_obj):
@@ -193,6 +512,7 @@ class ScanWidget(widgets.Tab):
         """(Re)build parameter widgets for selected method."""
         self._pos_widgets = []
         self._kw_widgets = []
+        self._structured_get_call = None
         self.status_label.value = ""
         self.params_box.children = [
             widgets.Label(f"Building parameter form for {method_name}...")
@@ -201,6 +521,15 @@ class ScanWidget(widgets.Tab):
         method = getattr(self.scans, method_name, None)
         if method is None or not callable(method):
             self.params_box.children = [widgets.Label("Selected method not available")]
+            return
+
+        structured_builder = _STRUCTURED_FORM_BUILDERS.get(method_name)
+        if structured_builder is not None:
+            form_widget, get_call = structured_builder(
+                self.scans, self.root, self._bookmarks, self._recent
+            )
+            self._structured_get_call = get_call
+            self.params_box.children = [form_widget]
             return
 
         sig = None
@@ -331,6 +660,8 @@ class ScanWidget(widgets.Tab):
 
     def _collect_params(self) -> Tuple[List[Any], Dict[str, Any]]:
         """Read widgets and return (args_list, kwargs_dict)."""
+        if self._structured_get_call is not None:
+            return self._structured_get_call()
         args: List[Any] = []
         kwargs: Dict[str, Any] = {}
         # positional widgets
@@ -424,5 +755,9 @@ class ScanWidget(widgets.Tab):
         t.start()
 
 
-def make_scan_widget(scans_obj: Any, methods: Optional[List[str]] = None) -> ScanWidget:
-    return ScanWidget(scans_obj, methods=methods)
+def make_scan_widget(
+    scans_obj: Any, methods: Optional[List[str]] = None, root: Any = None
+) -> ScanWidget:
+    """root: namespace to browse for the adjustable/detector picker, e.g.
+    the beamline namespace (eco.bernina.bernina). See ScanWidget.__init__."""
+    return ScanWidget(scans_obj, methods=methods, root=root)

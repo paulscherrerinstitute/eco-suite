@@ -21,11 +21,18 @@ initialize every device it lists. The one place that can trigger a real
 build is `resolve_path()` (a plain attribute walk from the root) - used
 explicitly when a bookmark is followed or a lazy node is picked - exactly
 like typing `namespace.some.path` yourself.
+
+`RecentComponents` (re-exported here for convenience/back-compat) actually
+lives in `eco.elements.recent`: it's also touched from the central
+adjustable-write chokepoint (`eco.devices_general.utilities.Changer`), not
+just from picker selections, so it lives in `eco.elements` alongside
+`eco.elements.access` rather than under `eco.widgets`.
 """
 from pathlib import Path
 from typing import Any, List, NamedTuple, Optional
 
 from eco.elements.adjustable import AdjustableFS
+from eco.elements.recent import RecentComponents
 
 try:
     from eco.elements.protocols import Adjustable, Detector
@@ -224,11 +231,22 @@ def filter_root(root: ComponentNode, kind: str = "All", search: str = "") -> Com
 
 
 def resolve_path(root, dotted_path: str):
-    """Resolve a dotted path (as produced in `ComponentNode.name`) back to
-    the live object, relative to `root`. Plain attribute access -- so
-    walking through a not-yet-built lazy namespace item builds it, same as
-    typing `root.some.path` by hand. Pass `""`/`None` to mean `root` itself.
+    """Resolve a path back to the live object.
+
+    Two forms: a dotted namespace path (as produced in `ComponentNode.name`)
+    -- plain attribute access relative to `root`, so walking through a not-
+    yet-built lazy namespace item builds it, same as typing `root.some.path`
+    by hand -- or a `"pv:<name>"` path (as produced by
+    `ComponentPickerWidget`'s raw-PV entry field), which rebuilds a bare
+    `AdjustablePv` for that PV name instead of walking `root` at all (there
+    is nothing to walk -- it was never a namespace component). Pass
+    `""`/`None` to mean `root` itself.
     """
+    if dotted_path and dotted_path.startswith("pv:"):
+        from eco.epics.adjustable import AdjustablePv
+
+        pvname = dotted_path[len("pv:") :]
+        return AdjustablePv(pvname, name=pvname)
     obj = root
     if dotted_path:
         for part in dotted_path.split("."):
@@ -275,19 +293,24 @@ class ComponentBookmarks:
             raise ValueError("bookmark name must not be empty")
         d = self.all()
         d[name] = dotted_path
-        self._fs.set_target_value(d).wait()
+        # write_value_direct, not set_target_value: this is app bookkeeping,
+        # not a namespace-component write -- going through Changer would
+        # (wrongly) record it as a "use" of the bookmarks file itself. See
+        # AdjustableFS.write_value_direct / eco.elements.recent.
+        self._fs.write_value_direct(d)
 
     def remove(self, name: str) -> None:
         d = self.all()
         if name in d:
             del d[name]
-            self._fs.set_target_value(d).wait()
+            self._fs.write_value_direct(d)
 
 
 def select_component(
     root,
     kind_filter: str = "All",
     bookmarks: Optional[ComponentBookmarks] = None,
+    recent: Optional["RecentComponents"] = None,
     on_select=None,
     show: bool = True,
 ):
@@ -302,7 +325,11 @@ def select_component(
         from eco.widgets.component_selector_widget import make_component_selector_widget
 
         w = make_component_selector_widget(
-            root, kind_filter=kind_filter, bookmarks=bookmarks, on_select=on_select
+            root,
+            kind_filter=kind_filter,
+            bookmarks=bookmarks,
+            recent=recent,
+            on_select=on_select,
         )
         if show:
             from IPython.display import display
@@ -316,6 +343,7 @@ def select_component(
             root,
             kind_filter=kind_filter,
             bookmarks=bookmarks,
+            recent=recent,
             on_select=on_select,
             auto_start=show,
         )

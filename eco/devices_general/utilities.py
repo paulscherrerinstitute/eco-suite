@@ -24,9 +24,28 @@ def _access_gate(parent):
         pass
 
 
+def _recent_gate(parent):
+    """Record `parent` as a recently-used component (eco.elements.recent),
+    reusing the same write chokepoint as _access_gate -- so the component
+    picker's "Recent" list reflects real usage (e.g. `mono.mv(5)` typed in a
+    shell), not just prior picks made through the picker itself. Cheap
+    (in-memory, debounced disk write) and, like _access_gate, must never be
+    allowed to affect device motion.
+    """
+    try:
+        from eco.elements.recent import touch_from_write
+    except Exception:
+        return
+    try:
+        touch_from_write(parent)
+    except Exception:
+        pass
+
+
 class Changer:
     def __init__(self, target=None, parent=None, changer=None, hold=True, stopper=None):
         _access_gate(parent)
+        _recent_gate(parent)
         self.target = target
         self._changer = changer
         self._stopper = stopper

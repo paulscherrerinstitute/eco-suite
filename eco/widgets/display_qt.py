@@ -279,6 +279,18 @@ class DisplayQt:
             )
         else:
             name_label = QtWidgets.QLabel(name)
+            # right-click a parameter's name for "Add indicator" -- a
+            # zero-visual-footprint way to pull a live gadget (LED/gauge/
+            # strip chart/...) out onto a dashboard; see
+            # eco.widgets.indicator_widgets. Best-effort: never let a
+            # problem here (e.g. the module missing) affect the normal
+            # property-grid view.
+            try:
+                from eco.widgets.indicator_widgets import attach_indicator_menu
+
+                attach_indicator_menu(name_label, item, name)
+            except Exception:
+                pass
         name_label.setFixedWidth(200)
         row.addWidget(name_label)
 
@@ -611,7 +623,15 @@ class DisplayQt:
         bottom_row.addStretch(1)
         outer.addLayout(bottom_row)
 
-        self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
+        # close_calls_stop, not a plain destroyed.connect(setattr(...)):
+        # the poll thread below is a plain threading.Thread, which Qt's
+        # own child-deletion never stops on its own -- closing via the
+        # window's native close (X) button needs to actually run stop()
+        # (which sets _stop_event), not just clear a reference. See
+        # eco.widgets.qt_lifecycle's module docstring for the fuller why.
+        from eco.widgets.qt_lifecycle import close_calls_stop
+
+        close_calls_stop(self.window, self.stop)
 
         # poll off the GUI thread so a slow readback never freezes the window;
         # results are marshalled back to the GUI thread via the bridge signal

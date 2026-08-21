@@ -7,17 +7,21 @@ package import (EPICS, cam_server, ...) is expensive and best done once, inside
 the fresh session that this launcher starts -- not in the parent process that
 only needs to build a command line.
 
-Three front-ends are available via ``--ui`` (default: ``shell``):
+Four front-ends are available via ``--ui`` (default: ``shell``):
 
     shell   Interactive IPython session (the traditional eco startup). Equivalent to
             ipython --profile=eco --no-banner -i -c "run <eco>/startup_inline.py -l -s bernina"
     lab     Open JupyterLab on the packaged eco notebook (eco/voila_app.ipynb).
     voila   Serve that notebook as a Voila dashboard: the chosen namespace's
             widget, with the assembly browser to navigate to more components.
+    desktop A Spyder/MATLAB-like Qt workbench window: an embedded IPython
+            console running the namespace, plus a dockable panel to browse
+            and open device widgets. See eco.widgets.desktop_app.
 
-JupyterLab and Voila are OPTIONAL -- they are not hard dependencies. Install
-them on demand, e.g. ``pip install eco[lab]`` / ``eco[voila]`` or via conda.
-If the command is missing, this launcher prints a hint instead of a traceback.
+JupyterLab, Voila and the desktop UI's qtconsole are OPTIONAL -- they are not
+hard dependencies. Install them on demand, e.g. ``pip install eco[lab]`` /
+``eco[voila]`` or via conda. If the command is missing, this launcher prints a
+hint instead of a traceback.
 
 Defaults can be set in an ``.ecorc`` (INI) file so that a bare ``eco`` just
 works. Lookup order (first match wins):
@@ -53,7 +57,7 @@ _BUILTIN_DEFAULTS = {
     "ui": "shell",
 }
 
-_UI_CHOICES = ("shell", "lab", "voila")
+_UI_CHOICES = ("shell", "lab", "voila", "desktop")
 
 
 def _ecorc_path():
@@ -144,6 +148,21 @@ def _run_notebook(args, tool):
         )
 
 
+def _run_desktop(args):
+    """Launch the Qt desktop workbench (see eco.widgets.desktop_app) as a
+    fresh process -- exec, like _run_shell/_run_notebook above, so this
+    launcher module stays import-eco-free (see the module docstring)."""
+    cmd = [sys.executable, "-m", "eco.widgets.desktop_app"]
+    if args.scope:
+        cmd += ["--scope", args.scope]
+    cmd += ["--lazy"] if args.lazy else ["--no-lazy"]
+    _exec(
+        cmd,
+        "The desktop UI needs qtconsole and a Qt binding (qtpy + PyQt5/PySide6) "
+        "in this environment.",
+    )
+
+
 def main(argv=None):
     defaults, ecorc = _load_defaults()
 
@@ -157,8 +176,8 @@ def main(argv=None):
     )
     parser.add_argument(
         "--ui", choices=_UI_CHOICES, default=defaults["ui"],
-        help="front-end to start: shell (IPython), lab (JupyterLab), or voila "
-             "(widget dashboard). Default: %(default)s",
+        help="front-end to start: shell (IPython), lab (JupyterLab), voila "
+             "(widget dashboard), or desktop (Qt workbench). Default: %(default)s",
     )
     parser.add_argument(
         "--profile", default=defaults["profile"],
@@ -180,6 +199,8 @@ def main(argv=None):
 
     if args.ui == "shell":
         _run_shell(args)
+    elif args.ui == "desktop":
+        _run_desktop(args)
     else:
         _run_notebook(args, args.ui)
 

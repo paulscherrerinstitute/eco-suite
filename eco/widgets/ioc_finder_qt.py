@@ -393,8 +393,19 @@ class IocFinderQtWindow:
         self.window = QtWidgets.QMainWindow()
         self.window.setWindowTitle("IOC finder")
         self.window.setCentralWidget(self.finder)
+        # WA_DeleteOnClose + destroyed: without it, closing via the
+        # window's own native close (X) button just hides it -- it's
+        # never actually destroyed, so .window/.finder would stay stale
+        # non-None references pointing at a closed window. See
+        # eco.widgets.qt_lifecycle's module docstring for the fuller why.
+        self.window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        self.window.destroyed.connect(self._on_window_destroyed)
         self.window.resize(700, 560)
         self.window.show()
+
+    def _on_window_destroyed(self, *args) -> None:
+        self.window = None
+        self.finder = None
 
     def run(self) -> None:
         app = QtWidgets.QApplication.instance()

@@ -1,0 +1,839 @@
+import time
+
+import pytest
+
+pytest.importorskip("qtpy")
+
+from qtpy import QtCore, QtWidgets
+
+import eco.widgets.desktop_app as desktop_app
+from eco.widgets.desktop_app import (
+    EcoDesktopApp,
+    _dock_object_name,
+    _NamespaceLauncher,
+    _qbytearray_to_str,
+    _str_to_qbytearray,
+    sorted_namespace_entries,
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_home_writes(tmp_path, monkeypatch):
+    # autosave-on-close (and save_workspace()/load_workspace() called
+    # with no explicit path) default to ~/.eco/desktop_workspace.json --
+    # redirect that for every test in this file so nothing here ever
+    # touches the real account's home directory
+    monkeypatch.setattr(desktop_app, "DEFAULT_WORKSPACE_FILE", tmp_path / "desktop_workspace.json")
+
+
+class _FakeWidgetWrapper:
+    """Mirrors the .window/.stop() convention every real eco Qt widget
+    wrapper follows (DisplayQt, AxisPTZStreamQt, CamServerStreamQt, ...) --
+    what EcoDesktopApp._dock_widget_object actually looks for."""
+
+    def __init__(self):
+        self.window = QtWidgets.QWidget()
+        self.stop_calls = 0
+
+    def stop(self):
+        self.stop_calls += 1
+
+
+class _FakeItem:
+    """Stands in for a real namespace component -- just enough for
+    EcoDesktopApp._open_widget's getattr(namespace, name).widget() to
+    have something real to call."""
+
+    def __init__(self, name):
+        self.name = name
+        self.widget_calls = 0
+        self.last_widget = None
+
+    def widget(self):
+        self.widget_calls += 1
+        self.last_widget = _FakeWidgetWrapper()
+        return self.last_widget
+
+
+class _FakeNamespace:
+    def __init__(self, initialized=(), lazy=(), failed=(), init_delay=0.0):
+        self.initialized_names = set(initialized)
+        self.lazy_names = set(lazy)
+        self.failed_names = set(failed)
+        self._init_delay = init_delay
+        self.init_calls = []
+        self.init_all_calls = []
+        # a real Namespace exposes every registered name as an attribute
+        # regardless of init state (lazy ones are lazy_object_proxy
+        # placeholders, but still attribute-accessible) -- mirror that so
+        # _open_widget's getattr(namespace, name) has something to find
+        for name in set(initialized) | set(lazy) | set(failed):
+            setattr(self, name, _FakeItem(name))
+
+    def init_name(self, name, raise_errors=False, **kwargs):
+        self.init_calls.append(name)
+        if self._init_delay:
+            time.sleep(self._init_delay)
+        if name in self.lazy_names:
+            self.lazy_names.discard(name)
+            self.initialized_names.add(name)
+
+    def init_all(self, required_only=True, background=True, raise_errors=False, **kwargs):
+        self.init_all_calls.append(
+            {"required_only": required_only, "background": background}
+        )
+        for name in list(self.lazy_names):
+            self.init_name(name, raise_errors=raise_errors)
+
+
+def test_sorted_namespace_entries_labels_and_orders():
+    ns = _FakeNamespace(initialized=["beta", "alpha"], lazy=["zulu"], failed=["gamma"])
+    entries = sorted_namespace_entries(ns)
+    assert entries == [
+        ("alpha", "initialized"),
+        ("beta", "initialized"),
+        ("gamma", "failed"),
+        ("zulu", "lazy"),
+    ]
+
+
+def test_sorted_namespace_entries_empty_namespace():
+    ns = _FakeNamespace()
+    assert sorted_namespace_entries(ns) == []
+
+
+def _pump(app, predicate, timeout=10.0, interval=0.02):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(interval)
+    return False
+
+
+def test_namespace_launcher_opens_initialized_entry_immediately():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    assert launcher._list.count() == 1
+    item = launcher._list.item(0)
+    assert item.text().endswith(" cam_west")  # icon prefix -- see _kind_icon
+    launcher._on_item_clicked(item)
+
+    assert opened == ["cam_west"]
+    assert ns.init_calls == []  # already initialized -- no init needed
+
+
+def test_namespace_launcher_initializes_lazy_entry_then_opens_it():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["spectrometer"], init_delay=0.05)
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    item = launcher._list.item(0)
+    launcher._on_item_clicked(item)
+
+    # while loading, the entry is tracked (spinner shown via _label_for)
+    assert "spectrometer" in launcher._loading
+
+    resolved = _pump(app, lambda: opened == ["spectrometer"], timeout=5.0)
+    assert resolved, "lazy entry should have initialized and then opened"
+    assert ns.init_calls == ["spectrometer"]
+    assert "spectrometer" not in launcher._loading
+
+
+def test_namespace_launcher_lazy_init_thread_attaches_the_shared_ca_context(monkeypatch):
+    """Regression test for a real crash: a background thread that touches
+    Channel Access without first attaching to the process's one shared
+    "initial context" (epics.ca.use_initial_context()) can implicitly
+    create its own separate CA context instead -- a documented segfault/
+    corruption source (see eco.utilities.config.Namespace._init_batch's
+    and eco.status_server.parallel_init's module docstrings) that this
+    session hit for real: eco.start_desktop() from a running terminal,
+    clicking a lazy namespace entry to initialize it, aborted the whole
+    process with a pthread mutex assertion failure."""
+    import epics.ca as ca
+
+    calls = []
+    monkeypatch.setattr(ca, "use_initial_context", lambda: calls.append(True))
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["prepump"], init_delay=0.05)
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+
+    launcher._on_item_clicked(launcher._list.item(0))
+    resolved = _pump(app, lambda: ns.init_calls == ["prepump"], timeout=5.0)
+
+    assert resolved
+    assert calls, "the background init thread must call use_initial_context() before touching CA"
+
+
+def test_namespace_launcher_does_not_open_failed_entry():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(failed=["broken_device"])
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    item = launcher._list.item(0)
+    assert item.text().endswith(" broken_device")
+    assert "⚠" in item.text()  # failed-state icon, see _kind_icon
+    launcher._on_item_clicked(item)
+
+    assert opened == []
+    assert ns.init_calls == []
+
+
+def test_namespace_launcher_filter_hides_non_matching_entries():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west", "cam_east", "slit_1"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+
+    launcher._filter_edit.setText("cam")
+    names = {
+        launcher._list.item(i).data(QtCore.Qt.UserRole) for i in range(launcher._list.count())
+    }
+    assert names == {"cam_west", "cam_east"}
+
+
+def test_namespace_launcher_clicking_already_loading_entry_is_a_no_op():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["slow_device"], init_delay=1.0)
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    item = launcher._list.item(0)
+    launcher._on_item_clicked(item)  # starts loading
+    assert "slow_device" in launcher._loading
+
+    launcher._refresh()
+    item2 = launcher._list.item(0)
+    launcher._on_item_clicked(item2)  # should not start a second init
+
+    time.sleep(0.1)
+    assert ns.init_calls == ["slow_device"]
+
+
+# -- kind icons --
+
+
+class _FakeAdjustableItem:
+    def get_current_value(self):
+        return 0
+
+    def set_target_value(self, value):
+        pass
+
+
+class _FakeDetectorItem:
+    def get_current_value(self):
+        return 0
+
+
+def test_kind_icon_for_lazy_and_failed_states_never_resolves_the_item():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["l"], failed=["f"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._kind_icon("l", "lazy") == "⏳"
+    assert launcher._kind_icon("f", "failed") == "⚠️"
+
+
+def test_kind_icon_classifies_initialized_adjustable_and_detector():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["motor1", "diode1"])
+    ns.motor1 = _FakeAdjustableItem()
+    ns.diode1 = _FakeDetectorItem()
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._kind_icon("motor1", "initialized") == "✏️"
+    assert launcher._kind_icon("diode1", "initialized") == "\U0001f441️"
+
+
+def test_kind_icon_falls_back_to_other_for_a_plain_object():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["thing"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._kind_icon("thing", "initialized") == "•"  # _FakeItem has no get_current_value
+
+
+# -- Init All --
+
+
+def test_init_all_button_disabled_with_nothing_lazy():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._init_all_btn.isEnabled() is False
+
+
+def test_init_all_button_enabled_when_something_is_lazy():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["spectrometer"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._init_all_btn.isEnabled() is True
+
+
+def test_init_all_click_initializes_everything_lazy_without_opening_any():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["a", "b", "c"], init_delay=0.02)
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    launcher._on_init_all_clicked()
+    assert {"a", "b", "c"} <= launcher._loading
+
+    resolved = _pump(app, lambda: not launcher._loading, timeout=5.0)
+    assert resolved
+    assert set(ns.init_calls) == {"a", "b", "c"}
+    assert ns.lazy_names == set()
+    assert ns.initialized_names == {"a", "b", "c"}
+    assert opened == []  # Init All never auto-opens, unlike a single click
+    assert ns.init_all_calls == [{"required_only": False, "background": False}]
+
+
+def test_init_all_click_with_nothing_lazy_is_a_no_op():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    launcher._on_init_all_clicked()
+    assert ns.init_all_calls == []
+    assert launcher._loading == set()
+
+
+# -- live refresh timer --
+
+
+def test_live_refresh_timer_is_running_and_wired_to_refresh():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._live_refresh_timer.isActive()
+    assert launcher._live_refresh_timer.interval() == _NamespaceLauncher.LIVE_REFRESH_INTERVAL_MS
+
+
+def test_live_refresh_picks_up_a_change_made_outside_the_launcher():
+    """The point of the timer: something else (a console, another init_all
+    call, ...) changes namespace state without going through this
+    launcher at all -- the next tick should still reflect it."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["spectrometer"])
+    launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
+    assert launcher._list.item(0).text().endswith(" spectrometer")
+    assert "⏳" in launcher._list.item(0).text()
+
+    # simulate an external initialization (not via this launcher)
+    ns.lazy_names.discard("spectrometer")
+    ns.initialized_names.add("spectrometer")
+
+    launcher._refresh()  # what the timer's own tick would trigger
+    assert "⏳" not in launcher._list.item(0).text()
+
+
+# -- link_terminal --
+
+
+def test_terminal_user_ns_returns_the_dict_when_ipython_session_exists(monkeypatch):
+    terminal_ns = {"foo": 1}
+
+    class FakeIPython:
+        user_ns = terminal_ns
+
+    monkeypatch.setattr("IPython.get_ipython", lambda: FakeIPython())
+
+    app = EcoDesktopApp.__new__(EcoDesktopApp)  # skip __init__/auto_start
+    assert app._terminal_user_ns() is terminal_ns  # literally the same dict, not a copy
+
+
+def test_terminal_user_ns_returns_none_with_no_ipython_session(monkeypatch):
+    monkeypatch.setattr("IPython.get_ipython", lambda: None)
+
+    app = EcoDesktopApp.__new__(EcoDesktopApp)
+    assert app._terminal_user_ns() is None
+
+
+# -- _build_console kernel-flavour branching --
+#
+# Regression coverage for the real bug this replaced: calling
+# eco.start_desktop() from a running `ipython` terminal session used to
+# unconditionally try to build an in-process kernel, which raises
+# ipykernel's MultipleInstanceError the moment a TerminalInteractiveShell
+# (or any other InteractiveShell subclass) already owns this process's
+# IPython singleton -- see eco.widgets.console_kernel's module docstring.
+# _build_console must now check can_use_inprocess_kernel() first and fall
+# back to a real subprocess kernel whenever that's False.
+
+
+class _FakeSession:
+    def log_event(self, *a, **kw):
+        pass
+
+
+class _FakeConsoleWidget:
+    """Standing in for console_kernel.LoggingJupyterWidget in these
+    dispatch-logic tests: constructing a *real* RichJupyterWidget subclass
+    here has been observed to crash the interpreter outright under
+    pytest+offscreen+eco's full heavy scientific-stack imports (the same
+    native-library-interaction fragility noted for QDial construction in
+    tests/test_indicator_widgets.py) -- these tests only need to verify
+    which kernel builder ran and what banner text resulted, not that a
+    real console widget renders."""
+
+    def __init__(self, session=None):
+        self.session = session
+        self.kernel_manager = None
+        self.kernel_client = None
+        self.banner = ""
+        self.executed = []
+
+    def execute(self, code):
+        self.executed.append(code)
+
+
+def _make_app(namespace="the-namespace", link_terminal=True, scope="bernina", lazy=True):
+    app = EcoDesktopApp.__new__(EcoDesktopApp)
+    app.namespace = namespace
+    app.link_terminal = link_terminal
+    app.scope = scope
+    app.lazy = lazy
+    return app
+
+
+def test_build_console_uses_inprocess_kernel_when_safe(monkeypatch):
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    calls = {}
+
+    def fake_build_inprocess(kind, label=None, shared_user_ns=None, push_vars=None):
+        calls["shared_user_ns"] = shared_user_ns
+        calls["push_vars"] = push_vars
+        return "manager", "client", _FakeSession()
+
+    def fake_build_subprocess(*a, **kw):
+        raise AssertionError("should not use a subprocess kernel when in-process is safe")
+
+    monkeypatch.setattr("eco.widgets.console_kernel.can_use_inprocess_kernel", lambda: True)
+    monkeypatch.setattr("eco.widgets.console_kernel.build_inprocess_kernel", fake_build_inprocess)
+    monkeypatch.setattr("eco.widgets.console_kernel.build_subprocess_kernel", fake_build_subprocess)
+    monkeypatch.setattr("eco.widgets.console_kernel.LoggingJupyterWidget", _FakeConsoleWidget)
+    monkeypatch.setattr("IPython.get_ipython", lambda: None)
+
+    app = _make_app()
+    app._build_console()
+
+    assert app._kernel_manager == "manager"
+    assert calls["push_vars"] == {"namespace": "the-namespace"}
+    assert calls["shared_user_ns"] is None
+    assert "linked to the calling terminal" not in app._console.banner
+    assert app._console.executed == []  # in-process: namespace is pushed directly, no startup code to run
+
+
+def test_build_console_shares_terminal_namespace_when_available(monkeypatch):
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    terminal_ns = {}
+
+    class FakeIPython:
+        user_ns = terminal_ns
+
+    calls = {}
+
+    def fake_build_inprocess(kind, label=None, shared_user_ns=None, push_vars=None):
+        calls["shared_user_ns"] = shared_user_ns
+        return "manager", "client", _FakeSession()
+
+    monkeypatch.setattr("eco.widgets.console_kernel.can_use_inprocess_kernel", lambda: True)
+    monkeypatch.setattr("eco.widgets.console_kernel.build_inprocess_kernel", fake_build_inprocess)
+    monkeypatch.setattr("eco.widgets.console_kernel.LoggingJupyterWidget", _FakeConsoleWidget)
+    monkeypatch.setattr("IPython.get_ipython", lambda: FakeIPython())
+
+    app = _make_app()
+    app._build_console()
+
+    assert calls["shared_user_ns"] is terminal_ns
+    assert terminal_ns["namespace"] == "the-namespace"
+    assert "linked to the calling terminal" in app._console.banner
+
+
+def test_build_console_falls_back_to_subprocess_kernel_when_shell_conflict(monkeypatch):
+    """The actual MultipleInstanceError scenario: an incompatible IPython
+    shell (e.g. a running terminal session) already exists -- must not
+    attempt an in-process kernel at all."""
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    def fake_build_subprocess(kind, label=None):
+        return "manager", "client", _FakeSession()
+
+    def fake_build_inprocess(*a, **kw):
+        raise AssertionError("must not build an in-process kernel when a conflicting shell exists")
+
+    monkeypatch.setattr("eco.widgets.console_kernel.can_use_inprocess_kernel", lambda: False)
+    monkeypatch.setattr("eco.widgets.console_kernel.build_subprocess_kernel", fake_build_subprocess)
+    monkeypatch.setattr("eco.widgets.console_kernel.build_inprocess_kernel", fake_build_inprocess)
+    monkeypatch.setattr("eco.widgets.console_kernel.LoggingJupyterWidget", _FakeConsoleWidget)
+
+    app = _make_app(scope="bernina", lazy=True)
+    app._build_console()
+
+    assert app._kernel_manager == "manager"
+    # startup code is run through the finished console widget's own
+    # .execute() (not passed to build_subprocess_kernel) -- see
+    # build_subprocess_kernel's docstring for why
+    assert len(app._console.executed) == 1
+    assert "build_namespace(scope='bernina', lazy=True)" in app._console.executed[0]
+    assert "already has a running IPython shell" in app._console.banner
+
+
+def test_build_console_subprocess_banner_when_link_terminal_false(monkeypatch):
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    def fake_build_subprocess(kind, label=None):
+        return "manager", "client", _FakeSession()
+
+    monkeypatch.setattr("eco.widgets.console_kernel.can_use_inprocess_kernel", lambda: False)
+    monkeypatch.setattr("eco.widgets.console_kernel.build_subprocess_kernel", fake_build_subprocess)
+    monkeypatch.setattr("eco.widgets.console_kernel.LoggingJupyterWidget", _FakeConsoleWidget)
+
+    app = _make_app(link_terminal=False)
+    app._build_console()
+
+    assert "an independent kernel, running in its own process" in app._console.banner
+    assert len(app._console.executed) == 1
+
+
+def test_open_widget_calls_widget_directly_not_through_the_console():
+    """Regression test for two real bugs the console-routing approach had
+    (see the module docstring, "WHY OPENED WIDGETS ARE CALLED DIRECTLY,
+    NOT THROUGH THE CONSOLE"): a bare "<name>.widget()" sent to the
+    console only resolves if the console's namespace also did the
+    equivalent of `from eco.<scope> import *` (true for a console sharing
+    the terminal's own user_ns, not true for an independent subprocess
+    kernel); and routing through any console at all is fragile (a
+    startup-code race could leave `namespace` undefined there). Calling
+    the item's .widget() directly sidesteps both -- is_notebook() (which
+    Assembly.widget() branches on) reports the same "not a notebook"
+    result from the launcher's own thread regardless of what kind of
+    kernel backs the console, since get_ipython() there reflects this
+    process's own IPython state, untouched by either kernel flavour."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        assert ns.prepump.widget_calls == 1
+        assert gui._opened_names == ["prepump"]
+    finally:
+        gui.stop()
+
+
+def test_open_widget_logs_and_survives_a_failing_widget():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["broken"])
+
+    def boom():
+        raise RuntimeError("no display")
+
+    ns.broken.widget = boom
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("broken")  # must not raise
+        assert gui._opened_names == ["broken"]
+    finally:
+        gui.stop()
+
+
+# -- opened widgets dock as tiles instead of staying separate windows --
+
+
+def test_open_widget_docks_the_returned_window_instead_of_leaving_it_standalone():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        wrapper = ns.prepump.last_widget
+        assert len(gui._widget_docks) == 1
+        dock = gui._widget_docks[0]
+        assert dock.widget() is wrapper.window
+        # reparented into the dock -- no longer its own top-level window
+        assert wrapper.window.isWindow() is False
+        assert dock.windowTitle() == "prepump"
+    finally:
+        gui.stop()
+
+
+def test_open_widget_dock_is_movable_closable_and_floatable():
+    """"can still be detached using the ui button there later" --
+    DockWidgetFloatable is what makes that possible; confirm it's set."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        dock = gui._widget_docks[0]
+        features = dock.features()
+        assert features & QtWidgets.QDockWidget.DockWidgetFloatable
+        assert features & QtWidgets.QDockWidget.DockWidgetMovable
+        assert features & QtWidgets.QDockWidget.DockWidgetClosable
+    finally:
+        gui.stop()
+
+
+def test_open_widget_dock_close_stops_the_wrapped_widget():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        wrapper = ns.prepump.last_widget
+        dock = gui._widget_docks[0]
+        dock.close()
+        assert wrapper.stop_calls == 1
+        assert dock not in gui._widget_docks
+    finally:
+        gui.stop()
+
+
+def test_open_widget_multiple_tiles_are_separate_docks_not_tabbed():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump", "env"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        gui._open_widget("env")
+        assert len(gui._widget_docks) == 2
+        dock1, dock2 = gui._widget_docks
+        assert dock1.objectName() != dock2.objectName()
+        # tiled (split), not stacked into the same tab group
+        assert dock2 not in gui.window.tabifiedDockWidgets(dock1)
+    finally:
+        gui.stop()
+
+
+def test_open_widget_reopening_same_name_adds_another_tile():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        gui._open_widget("prepump")
+        assert len(gui._widget_docks) == 2
+        assert gui._widget_docks[0].objectName() != gui._widget_docks[1].objectName()
+    finally:
+        gui.stop()
+
+
+def test_dock_widget_object_ignores_a_returned_object_without_window_attribute():
+    """Graceful no-op (not a crash) for anything that doesn't follow the
+    .window convention -- e.g. a widget() override that returns None or a
+    bare non-Qt object."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["odd"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._dock_widget_object("odd", object())  # no .window at all
+        gui._dock_widget_object("odd", None)
+        assert gui._widget_docks == []
+    finally:
+        gui.stop()
+
+
+def test_dock_object_name_dedup():
+    assert _dock_object_name("widget_prepump", []) == "widget_prepump"
+    assert _dock_object_name("widget_prepump", ["widget_prepump"]) == "widget_prepump_2"
+    assert (
+        _dock_object_name("widget_prepump", ["widget_prepump", "widget_prepump_2"])
+        == "widget_prepump_3"
+    )
+
+
+# -- with_console=False --
+
+
+def test_with_console_false_skips_console_and_kernel():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    try:
+        assert gui._console is None
+        assert gui._kernel_manager is None
+        assert gui._kernel_client is None
+        assert gui._kernel_session is None
+        assert isinstance(gui.window.centralWidget(), QtWidgets.QLabel)
+        assert gui._launcher is not None  # the Namespace dock still works
+    finally:
+        gui.stop()
+
+
+def test_with_console_false_open_widget_still_works():
+    """The whole point: opening a widget from the Namespace panel never
+    needed the console (see _open_widget) -- confirm that still holds
+    with with_console=False, not just that nothing crashes."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        assert ns.prepump.widget_calls == 1
+    finally:
+        gui.stop()
+
+
+def test_with_console_false_stop_is_safe():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    gui.stop()  # must not raise even though there was never a kernel to stop
+    assert gui.window is None
+
+
+def test_native_close_tears_down_docked_widgets_same_as_stop(tmp_path):
+    """Regression test for a real bug: _ManagedDockWidget.closeEvent only
+    runs when a dock is closed individually -- closing the whole desktop
+    window (its own native X button) used to leave every docked device
+    widget's poll thread running, since nothing called dock.close() for
+    the window-level close path."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    gui._open_widget("prepump")
+    wrapper = ns.prepump.last_widget
+    assert len(gui._widget_docks) == 1
+
+    gui.window.close()  # simulates the native X button, not gui.stop()
+
+    # _on_window_closing() (which stops the docked widget) runs
+    # synchronously inside closeEvent, so this is already true; only the
+    # WA_DeleteOnClose-driven destroyed signal (which nulls gui.window)
+    # needs a real event loop turn to actually fire -- see
+    # eco.widgets.qt_lifecycle's module docstring
+    assert wrapper.stop_calls == 1
+    assert gui._widget_docks == []
+    QtCore.QTimer.singleShot(200, app.quit)
+    app.exec_()
+    assert gui.window is None
+
+
+def test_native_close_still_autosaves_the_workspace(tmp_path, monkeypatch):
+    """Ordering matters: autosave reads geometry/state off self.window,
+    so it has to run before that gets closed/nulled, not after."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr(desktop_app, "DEFAULT_WORKSPACE_FILE", tmp_path / "ws.json")
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    gui._open_widget("prepump")
+
+    gui.window.close()
+
+    assert (tmp_path / "ws.json").exists()
+
+
+# -- workspace persistence --
+
+
+def test_qbytearray_str_round_trip():
+    original = QtCore.QByteArray(b"\x00\x01\xffsome binary geometry blob")
+    restored = _str_to_qbytearray(_qbytearray_to_str(original))
+    assert bytes(restored) == bytes(original)
+
+
+def test_save_workspace_writes_geometry_state_and_opened_names(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west", "cam_east"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("cam_west")
+        assert gui._opened_names == ["cam_west"]
+
+        path = tmp_path / "ws.json"
+        assert gui.save_workspace(path) is True
+        assert path.exists()
+
+        import json
+
+        data = json.loads(path.read_text())
+        assert data["opened_names"] == ["cam_west"]
+        assert "geometry" in data and "state" in data
+    finally:
+        gui.stop()
+
+
+def test_save_workspace_with_no_window_is_a_no_op():
+    gui = EcoDesktopApp.__new__(EcoDesktopApp)
+    gui.window = None
+    assert gui.save_workspace() is False
+
+
+def test_load_workspace_reopens_previously_open_entries(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("cam_west")
+        path = tmp_path / "ws.json"
+        gui.save_workspace(path)
+
+        # a *fresh* app/window, as if just started -- nothing open yet
+        gui2 = EcoDesktopApp(namespace=ns, auto_start=False)
+        gui2._build_window()
+        try:
+            assert gui2._opened_names == []
+            loaded = gui2.load_workspace(path)
+            assert loaded is True
+            assert gui2._opened_names == ["cam_west"]  # reopened via the launcher
+        finally:
+            gui2.stop()
+    finally:
+        gui.stop()
+
+
+def test_load_workspace_missing_file_returns_false(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp.__new__(EcoDesktopApp)
+    gui.window = None
+    gui._launcher = None
+    assert gui.load_workspace(tmp_path / "does_not_exist.json") is False
+
+
+def test_autosave_on_window_close_writes_workspace_file(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    gui._open_widget("cam_west")
+
+    # the autouse _no_real_home_writes fixture already redirects
+    # DEFAULT_WORKSPACE_FILE to a tmp_path; point it at this test's own
+    # file specifically so we can assert on it directly
+    path = tmp_path / "autosave.json"
+    desktop_app.DEFAULT_WORKSPACE_FILE = path
+    gui.window.close()  # triggers _DesktopMainWindow.closeEvent -> autosave
+
+    assert path.exists()
+
+
+def test_new_workspace_action_clears_opened_names():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("cam_west")
+        assert gui._opened_names == ["cam_west"]
+        gui._on_new_workspace()
+        assert gui._opened_names == []
+    finally:
+        gui.stop()

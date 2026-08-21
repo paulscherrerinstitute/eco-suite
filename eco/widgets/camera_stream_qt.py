@@ -171,7 +171,20 @@ class AxisPTZStreamQt:
         controls.addWidget(close_btn)
         layout.addLayout(controls)
 
-        self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
+        # close_calls_stop, not a plain destroyed.connect(setattr(...)):
+        # this window's stream-reading thread is a plain threading.Thread,
+        # not something Qt's own child-deletion would ever stop on its
+        # own, so closing via the window's native close (X) button needs
+        # to actually run stop() (which sets _stop_event) -- not just
+        # clear a reference. See eco.widgets.qt_lifecycle's module
+        # docstring for the fuller why (also fixes the .window reference
+        # never going stale on a native close in the first place, which
+        # is what let _open_memories's "already open? raise it" check
+        # silently do nothing after the memory browser was closed the
+        # same way).
+        from eco.widgets.qt_lifecycle import close_calls_stop
+
+        close_calls_stop(self.window, self.stop)
 
         # frames are read off the GUI thread so a stalled camera never
         # freezes the window; results are marshalled back via the bridge
@@ -213,15 +226,29 @@ class AxisPTZStreamQt:
                 self._stop_event.wait(2.0)
 
     def _apply_frame(self, payload):
-        # runs on the GUI thread (queued signal) - safe to touch widgets here
+        # runs on the GUI thread (queued signal) - safe to touch widgets here,
+        # *except* a frame emitted just before stop()/window close can still
+        # be delivered after the window (and self._label's underlying Qt
+        # object) is gone -- both guards below are belt-and-suspenders
+        # against that harmless-but-noisy teardown race
+        if self.window is None:
+            return
         qimage, w, h = payload
         self._frame_size = (w, h)
         pixmap = QtGui.QPixmap.fromImage(qimage)
-        self._label.setPixmap(pixmap)
-        self._label.setFixedSize(pixmap.size())
+        try:
+            self._label.setPixmap(pixmap)
+            self._label.setFixedSize(pixmap.size())
+        except RuntimeError:
+            pass  # label's underlying Qt object was deleted mid-teardown
 
     def _apply_error(self, message):
-        self._label.setText(f"stream error: {message}")
+        if self.window is None:
+            return
+        try:
+            self._label.setText(f"stream error: {message}")
+        except RuntimeError:
+            pass
 
     def _dispatch(self, fn, *args):
         # PTZ commands are blocking HTTP calls -- run them off the GUI thread
@@ -246,9 +273,15 @@ class AxisPTZStreamQt:
         self._dispatch(self.cam.area_zoom, x, y, z, w, h)
 
     def _open_settings(self):
+        # normal=True: this button specifically wants the plain
+        # pan/tilt/zoom/iris/focus property grid -- without it, since
+        # AxisPTZ._default_widget = "viewer", plain .widget() would just
+        # reopen this same live-video viewer instead (see
+        # Assembly.widget()'s normal= docstring for the fuller why)
+        #
         # keep a reference so the window (and its poll thread) isn't
         # garbage-collected as soon as this method returns
-        self._settings_window = self.cam.widget()
+        self._settings_window = self.cam.widget(normal=True)
 
     def _open_memories(self):
         if self._memory_browser is not None and self._memory_browser.window is not None:
@@ -333,9 +366,17 @@ class AxisPTZStreamQt:
         self._build_window()
 
     def stop(self):
-        """Stop the stream and close the window."""
+        """Stop the stream, close the window, and close the "Memories"
+        sub-window too if it's open (mirrors DisplayQt.stop(), which does
+        the same for its own memory browser)."""
         self._stop_event.set()
         self._stream_thread = None
+        if self._memory_browser is not None:
+            try:
+                self._memory_browser.window.close()
+            except Exception:
+                pass
+            self._memory_browser = None
         if self.window is not None:
             try:
                 self.window.close()

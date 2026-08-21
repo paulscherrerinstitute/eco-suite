@@ -645,7 +645,17 @@ class Assembly:
         tablefmt="simple",
         with_base_name=False,
         maxcolwidths=[None, None, None, 50, None],
+        show_triggers=False,
     ):
+        """show_triggers=False (default): AdjustableTrigger rows (the
+        "(trigger)"/▶️ rows -- an action, not a value) are left out of this
+        plain-text/HTML table. They're meant for a clickable panel (Qt or
+        Jupyter widget -- see eco.widgets.display_qt/display_widget, where
+        a trigger really does render as a button), not a quick terminal
+        glance at an assembly's current values, where a row that can't be
+        clicked and has no value to show is just noise. Pass True to
+        include them anyway (e.g. an elog status snapshot documenting what
+        the assembly has, not just its current readings)."""
         main_name = self.name
         stats = self.status_collection.get_list(selection="display")
         # stats_dict = {}
@@ -665,11 +675,14 @@ class Assembly:
 
         group_keys = []
         for to in stats:
+            is_trigger = isinstance(to, AdjustableTrigger)
+            if is_trigger and not show_triggers:
+                continue
+
             name = to.alias.get_full_name(base=self)
 
             is_adjustable = isinstance(to, Adjustable)
             is_detector = isinstance(to, Detector)
-            is_trigger = isinstance(to, AdjustableTrigger)
             typechar = ""
             # colour-emoji glyphs (U+FE0F presentation selector). Our terminals
             # draw these 1 cell wide; _patch_rich_emoji_width() in
@@ -762,7 +775,13 @@ class Assembly:
             if text_encoding == "markdown":
                 message += markdown(text)
         if attach_display:
-            message += self.get_display_str(tablefmt="html")
+            # show_triggers=True: unlike the terminal repr, a status
+            # snapshot going into the logbook is documenting what the
+            # assembly *has*, not just a quick glance at current values --
+            # preserves this call's existing behavior, since
+            # get_display_str's new default (False) is specifically about
+            # the terminal case
+            message += self.get_display_str(tablefmt="html", show_triggers=True)
         if files is None:
             files = []
         if attach_status_file:
@@ -918,7 +937,36 @@ class Assembly:
         else:
             return None
 
-    def widget(self, show_hidden: bool = False):
+    # Subclasses with a purpose-built view (e.g. AxisPTZ's live video
+    # stream, not just its generic property grid) set this to the name of
+    # a zero-arg method on the instance that builds it; widget() below
+    # calls that instead of the generic display_widget/display_qt/
+    # display_tk dispatch. None (the default) means "no override -- use
+    # the generic one". This is the "_default_widget string" hook: keep
+    # the override method itself doing its own is_notebook()-style
+    # dispatch to the right toolkit, same as widget() does here, so
+    # callers get the same "just works in a notebook or a Qt session"
+    # behavior either way.
+    _default_widget = None
+
+    def widget(self, show_hidden: bool = False, normal: bool = False):
+        """normal=True: skip any `_default_widget` override and always
+        return the plain property-grid widget -- for a caller that
+        specifically wants that regardless of what plain `.widget()`
+        would otherwise dispatch to. Needed by e.g. a special-purpose
+        viewer's own "Settings"/normal-view button (see
+        eco.widgets.camera_stream_qt.AxisPTZStreamQt._open_settings):
+        without this, `self.cam.widget()` there would just reopen the
+        same special viewer it was clicked from, since `_default_widget`
+        has no notion of "the widget that's asking already knows about
+        the override and wants the other one" otherwise."""
+        if not normal:
+            override_name = getattr(type(self), "_default_widget", None)
+            if override_name:
+                override = getattr(self, override_name, None)
+                if callable(override):
+                    return override()
+
         from eco.utilities.utilities import is_notebook
 
         if is_notebook():

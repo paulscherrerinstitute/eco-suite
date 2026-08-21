@@ -18,7 +18,16 @@ def scannable(Obj):
         if not hasattr(self, "_scans"):
             self._scans = scan.Scans(default_counters=[self._counter])
         else:
-            self._scans.default_counters = [self._counter]
+            # Scans reads self._default_counters (leading underscore)
+            # everywhere -- this used to set a same-named-minus-underscore
+            # attribute that nothing ever read, so a second+ access to
+            # `.scans` silently kept scanning with the *first* CounterValue
+            # ever built, even though a fresh one is constructed above on
+            # every access.
+            self._scans._default_counters = [self._counter]
+            # keyword docstrings (see Scans._augment_docstrings) are
+            # discovered from default_counters, which just changed above
+            self._scans._augment_docstrings()
         return self._scans
 
     Obj.scans = scans

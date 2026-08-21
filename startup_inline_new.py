@@ -1,103 +1,22 @@
 #!/usr/bin/env python
+# Back-compat alias for startup_inline.py, which is now the one real
+# startup script (this file's content used to differ -- see git history --
+# and eco_cli.py, desktop_app.py and docs/installation.md already assumed
+# startup_inline.py's namespace-based semantics, not this file's old
+# `{scope}.init()` call, which no longer exists on eco.bernina). Kept only
+# because several /sf/bernina/bin wrapper scripts (eco, eco_new, eco-in,
+# eco_from) hardcode this filename by absolute path and aren't editable
+# here (root-owned) -- point any new caller at startup_inline.py directly.
+#
+# exec'd (not run_path'd) so this executes in the caller's own namespace,
+# exactly as if startup_inline.py had been run directly -- matching how
+# IPython's `run <path>` normally populates the interactive namespace.
+from pathlib import Path
 
-import os
-os.environ["EPICS_CA_MAX_ARRAY_BYTES"] = "120000000"
-
-## pylab activity >>>>
-import numpy
-import matplotlib
-from matplotlib import pylab, mlab, pyplot
-
-np = numpy
-plt = pyplot
-
-from IPython.core.pylabtools import figsize, getfigs
-
-from pylab import *
-from numpy import *
-
-plt.ion()
-## pylab activity <<<<
-
-
-from eco import ecocnf
-from eco.utilities.config import Terminal
-import sys
-
-import argparse
-
-parser = argparse.ArgumentParser(description="eco startup utility")
-
-parser.add_argument(
-    "-s",
-    "--scope",
-    type=str,
-    default=None,
-    help="scope name, usually instrument or beamline",
+exec(
+    compile(
+        Path(__file__).with_name("startup_inline.py").read_text(),
+        "startup_inline.py",
+        "exec",
+    )
 )
-parser.add_argument(
-    "-a",
-    "--scopes_available",
-    action="store_true",
-    default=False,
-    help="print available scopes.",
-)
-parser.add_argument(
-    "-l", "--lazy", action="store_true", default=False, help="lazy initialisation"
-)
-parser.add_argument(
-    "--shell", action="store_true", default=False, help="open eco in ipython shell"
-)
-parser.add_argument(
-    "--pylab", type=bool, default=True, help="open ipython shell in pylab mode"
-)
-
-arguments = parser.parse_args()
-
-scope = arguments.scope
-# scope = 'bernina'
-
-if arguments.scopes_available:
-    print("{:<15s}{:<15s}{:<15s}".format("module", "name", "facility"))
-    for ts in ecocnf.scopes:
-        print(
-            " {:<14s} {:<14s} {:<14s}".format(ts["module"], ts["name"], ts["facility"])
-        )
-
-
-print(
-    "                       ___ _______\n                      / -_) __/ _ \ \n Experiment Control   \__/\__/\___/ \n\n"
-)
-
-term = Terminal(scope=scope)
-
-if scope:
-    # import importlib
-    # eco = importlib.import_module('eco')
-    # mdl = importlib.import_module(scope,package=eco)
-    # mdl = importlib.import_module('eco.bernina')
-    if arguments.lazy:
-        ecocnf.startup_lazy = True
-    exec(f"import eco.{scope} as {scope}")
-    exec(f"from eco.{scope} import *")
-    # exec(f"op = {scope}.init()")
-    # for tk, tv in op.items():
-    # sys.modules["__main__"].__dict__[tk] = tv
-    # exec(f'{scope}.init(lazy=ecocnf.startup_lazy)')
-    # exec(f"from eco.{scope} import *")
-    # is there an __all__?  if so respect it
-    # if "__all__" in mdl.__dict__:
-    #    names = mdl.__dict__["__all__"]
-    # else:
-    # otherwise we import all names that don't begin with _
-    #    names = [x for x in mdl.__dict__ if not x.startswith("_")]
-    # now drag them in
-    # globals().update({k: getattr(mdl, k) for k in names})
-
-term.set_title()
-from IPython import get_ipython
-
-_ipy = get_ipython()
-_ipy.Completer.use_jedi = True
-# print(arguments)
-# _ipy.magic("load_ext rich")

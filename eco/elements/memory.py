@@ -3,9 +3,8 @@ from pathlib import Path
 from datetime import datetime
 import weakref
 from .adjustable import AdjustableFS
-from ..utilities.keypress import KeyPress
 from ..utilities.tables import format_table, section_row_styles
-import sys, colorama
+import colorama
 
 try:
     from inspect import getargspec
@@ -178,10 +177,19 @@ class Memory:
             # ancestor_key) for a parent-sourced one (only ever populated
             # when include_parents=True).
             entries = [None] * len(keys)
+            # recall_dicts[i]: that row's recall dict, computed once up
+            # front (cheap -- reads one small JSON file per entry, no live
+            # device I/O) rather than inside `_preview` on every highlight
+            # change -- see the prefetch below for why.
+            recall_dicts = [None] * len(keys)
             for n, (key, content) in enumerate(mem.items()):
                 t = datetime.fromisoformat(key)
                 row = t.strftime("%Y-%m-%d: %a %H:%M") + "   " + content["message"]
                 a.append(row)
+                try:
+                    recall_dicts[n] = self.get_recall_dict(self.get_memory(key=key))
+                except Exception:
+                    recall_dicts[n] = {}
 
             if include_parents:
                 from .assembly import iter_ancestor_assemblies
@@ -207,32 +215,41 @@ class Memory:
                         )
                         a.append(row)
                         entries.append((ancestor, anc_key))
+                        recall_dicts.append(sliced)
 
             ind_cancel = len(a)
             a.append("--> do nothing")
 
-            def _preview(entry, rows=a, sources=entries, keys=keys):
-                # best-effort diff-against-live-values preview for the
-                # highlighted entry; never raises into the menu's render loop
+            # Prefetch every component any listed entry might touch, once,
+            # concurrently, *before* the interactive picker opens -- so
+            # moving the highlight (which redraws the preview on every
+            # keystroke) never re-reads a live device. Without this, each
+            # arrow-key press re-reads every component of the newly
+            # highlighted entry from scratch, which is what makes the
+            # picker feel laggy for a large assembly or many stored
+            # memories -- see `_prefetch_present_values`.
+            all_names = itertools.chain.from_iterable(
+                d.keys() for d in recall_dicts if d
+            )
+            prefetched = self._prefetch_present_values(all_names)
+
+            def _preview(entry, rows=a, recs=recall_dicts, cache=prefetched):
+                # best-effort preview for the highlighted entry, from the
+                # prefetched cache only -- never raises into the menu's
+                # render loop, never touches a live device on its own.
                 try:
                     idx = rows.index(entry)
-                    if idx >= len(sources):
+                    if idx >= len(recs):
                         return ""
-                    source = sources[idx]
-                    if source is None:
-                        tmem = self.get_memory(key=keys[idx])
-                        rec = self.get_recall_dict(tmem)
-                    else:
-                        ancestor, anc_key = source
-                        anc_entry = ancestor.memory.get_memory(key=anc_key)
-                        rec = self.get_ancestor_recall_dict(ancestor, anc_entry)
                     return self.get_memory_difference_str(
-                        rec, show_changes_only=True, tablefmt="plain"
+                        recs[idx], show_changes_only=True, tablefmt="plain",
+                        present_values=cache,
                     )
                 except Exception as e:
                     return f"(preview unavailable: {e})"
 
-            extra_kwargs = {"show_search_hint": True}
+            title_text = "↑/↓ navigate   enter: select   q/esc: quit"
+            extra_kwargs = {"show_search_hint": True, "title": title_text}
             if _MENU_SUPPORTS_PREVIEW:
                 extra_kwargs["preview_command"] = _preview
             try:
@@ -240,8 +257,10 @@ class Memory:
             except TypeError:
                 # installed simple-term-menu doesn't like one of the new
                 # kwargs despite the version check above -- fall back to
-                # exactly the picker that worked before this existed.
-                menu = TerminalMenu(a, cursor_index=ind_cancel)
+                # exactly the picker that worked before this existed, plus
+                # the quit-key hint (`title` is a basic, long-stable param,
+                # safe on any version unlike the ones guarded above).
+                menu = TerminalMenu(a, cursor_index=ind_cancel, title=title_text)
             print("Select memory to recall")
             picked = menu.show()
             if picked is None or picked == ind_cancel:
@@ -310,6 +329,38 @@ class Memory:
         purely a read-side derivation.
         """
         return [k for k in mem if k not in _RESERVED_ENTRY_KEYS]
+
+    def _prefetch_present_values(self, names, max_workers=8):
+        """Read every named component's current value concurrently, once.
+        Returns {name: value_or_None} -- a read that raises is recorded as
+        None rather than propagating, since this is only ever used for
+        best-effort preview display (see `__call__`'s picker), never for an
+        actual recall decision. Mirrors the same prefetch-before-interacting
+        pattern `eco.widgets.display_qt`/`display_widget`'s own
+        `_prefetch_values` already use, for the same reason: without it,
+        each interactive step (there: opening the widget; here: moving the
+        picker's highlight to a new entry) re-reads every live device from
+        scratch, which is what makes a large assembly / many stored
+        memories feel laggy to navigate.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        names = list(dict.fromkeys(names))  # dedupe, keep first-seen order
+        values = {}
+        if not names:
+            return values
+
+        def _read(name):
+            try:
+                return name2obj(self.obj_parent(), name).get_current_value()
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(names))) as ex:
+            futures = {ex.submit(_read, n): n for n in names}
+            for fut, n in futures.items():
+                values[n] = fut.result()
+        return values
 
     def ancestor_memories(self):
         """[(ancestor, ancestor.memory), ...] nearest-first for every
@@ -579,7 +630,7 @@ class Memory:
                 group_menu = TerminalMenu(
                     entries,
                     cursor_index=len(entries) - 1,
-                    title="Select which selection to recall:",
+                    title="Select which selection to recall:   (q/esc: quit)",
                 )
                 gidx = group_menu.show()
                 if gidx is None:
@@ -631,7 +682,19 @@ class Memory:
         ask_select=True,
         show_changes_only=False,
         tablefmt="plain",
+        present_values=None,
     ):
+        """Render a present-vs-recall diff table (recall_dict/select/
+        ask_select/show_changes_only/tablefmt: unchanged from before
+        `present_values` existed).
+
+        present_values (dict, optional): {name: value} to use instead of a
+        fresh `name2obj(...).get_current_value()` live read, for any name
+        present in it -- lets a caller that already prefetched live values
+        (e.g. the terminal picker's preview, see `_prefetch_present_values`)
+        render this table without any further device I/O. `None` (default)
+        always reads live, exactly as before this parameter existed.
+        """
 
         if not select:
             select = [True] * len(recall_dict)
@@ -645,7 +708,10 @@ class Memory:
         for n, (tsel, (key, recall_value)) in enumerate(
             zip(select, recall_dict.items())
         ):
-            present_value = name2obj(self.obj_parent(), key).get_current_value()
+            if present_values is not None and key in present_values:
+                present_value = present_values[key]
+            else:
+                present_value = name2obj(self.obj_parent(), key).get_current_value()
             if tsel:
                 tselstr = "x"
             else:
@@ -708,88 +774,122 @@ class Memory:
         )
 
     def select_from_memory(self, recall_dict, show_changes_only=True):
-        # mem = self.get_memory(input_obj=input_obj, key=key, index=memory_index)
+        """Interactively choose which of `recall_dict`'s entries to
+        actually apply before `recall()` sets anything -- a real terminal
+        checkbox list (arrow keys to move, space to toggle, `a`/`n`/`i` to
+        select all/none/invert, enter to confirm, q/escape to cancel),
+        using `simple_term_menu`'s built-in multi-select mode. Replaces the
+        previous letter-command flow (o/a/e followed by typed,
+        comma-separated row numbers) with the same idea made directly
+        interactive instead of addressed by typing numbers -- the
+        index-number and static "x" columns the old table had are both
+        gone; cursor position and the native "[x]"/"[ ]" prefix take over
+        that job. Every row starts pre-selected, matching the old flow's
+        default (`select = [True] * len`).
 
-        k = KeyPress()
-        # cll = colorama.ansi.clear_line()
+        Returns a list of bools, same length/order as `recall_dict` (True
+        = recall this one), or a falsy value if nothing should be
+        recalled (cancelled, or confirmed with nothing checked) -- same
+        contract as before this rewrite, so `recall()` itself needed no
+        changes. Entries hidden by `show_changes_only` are not shown as
+        rows to toggle, but stay implicitly selected in the result (they
+        are unchanged, so `recall()`'s own `set_changes_only` skip makes
+        their selection state moot either way).
+        """
+        names = list(recall_dict.keys())
+        present_values = self._prefetch_present_values(names)
 
-        help = "Change selection pressing keys followed by numbered seelection \n"
-        help += "  o : Select only (enter comma-separated row numbers)\n"
-        help += "  a : Select additionally (enter comma-separated row numbers)\n"
-        help += "  e : Exclude from selection (enter comma-separated row numbers)\n"
-        help += "  r : recall selected memory\n"
-        help += "  q : quit\n"
+        # rows actually shown, post show_changes_only filtering: (orig
+        # index into `names`, name, present, recall_value, changed,
+        # available)
+        rows = []
+        for i, (name, recall_value) in enumerate(recall_dict.items()):
+            available = name in present_values
+            present_value = present_values.get(name)
+            changed = available and present_value != recall_value
+            if show_changes_only and not changed:
+                continue
+            rows.append((i, name, present_value, recall_value, changed, available))
 
-        class Printer:
-            def __init__(self, o=self):
-                self.o = o
-                self.len = len(recall_dict)
-                self.select = [True] * self.len
+        if not rows:
+            print("No changes compared to memory!")
+            return [True] * len(names)
 
-            def print(self, **kwargs):
-                print(
-                    self.o.get_memory_difference_str(
-                        recall_dict,
-                        select=self.select,
-                        show_changes_only=show_changes_only,
-                    )
-                )
-                print(help)
+        name_w = max(len(r[1]) for r in rows)
+        present_w = max(len(str(r[2])) for r in rows)
 
-            def select_only(self):
-                v = self.get_array()
-                self.select = [False] * self.len
-                for tv in v:
-                    self.select[tv] = True
-
-            def select_additional(self):
-                v = self.get_array()
-                for tv in v:
-                    self.select[tv] = True
-
-            def exclude(self):
-                v = self.get_array()
-                for tv in v:
-                    self.select[tv] = False
-
-            def get_array(self):
-                sys.stdout.flush()
-                v = sys.stdin.readline()
-                try:
-                    v = v.split(",")
-                    v = [int(tv) for tv in v]
-                    print(v)
-                    return v
-                except:
-                    print(
-                        "value cannot be converted to listed integers, please try again!"
-                    )
-                    sys.stdout.flush()
-                    return self.get_array()
-
-        p = Printer()
-        while k.isq() is False:
-            p.print()
-            k.waitkey()
-            if k.iskey("o"):
-                print("Select only: ")
-                p.select_only()
-            elif k.iskey("a"):
-                print("Append to selection: ")
-                p.select_additional()
-            elif k.iskey("e"):
-                print("Exclude from selection: ")
-                p.exclude()
-            elif k.isq():
-                return
-            elif k.iskey("r"):
-                return p.select
+        def _row_text(name, present, recall_value, changed, available):
+            if not available:
+                diff = "?"
+            elif not changed:
+                diff = "=="
             else:
-                # print(help)
-                pass
+                try:
+                    diff = f"{recall_value - present:+g}"
+                except TypeError:
+                    diff = "changed"
+            present_str = str(present) if available else "?"
+            return (
+                f"{name:<{name_w}}  present: {present_str:>{present_w}}  "
+                f"diff: {diff:^9}  memory: {recall_value}"
+            )
 
-        # stat_now = self.obj_parent.get_status()
-        # for mem
+        entries = [_row_text(r[1], r[2], r[3], r[4], r[5]) for r in rows]
+
+        # `simple_term_menu` has no built-in bulk-toggle action, and its
+        # `.show()` is a single blocking call with no hook to intercept
+        # arbitrary keys mid-interaction -- so "select all"/"none"/"invert"
+        # are built by making 'a'/'n'/'i' *additional* accept keys (see
+        # `chosen_accept_key`), applying the requested bulk change to the
+        # preselection, and re-showing a fresh menu with that updated
+        # preselection -- a real "enter" is the only accept key that
+        # actually breaks out of this loop.
+        preselected = list(range(len(entries)))
+        picked = None
+        try:
+            while True:
+                menu = TerminalMenu(
+                    entries,
+                    multi_select=True,
+                    multi_select_select_on_accept=False,
+                    multi_select_empty_ok=True,
+                    show_multi_select_hint=True,
+                    preselected_entries=preselected,
+                    accept_keys=("enter", "a", "n", "i"),
+                    title=(
+                        "space: toggle   a: all   n: none   i: invert   "
+                        "enter: confirm & recall   q/esc: quit"
+                    ),
+                )
+                picked = menu.show()
+                accept_key = menu.chosen_accept_key
+                if accept_key is None:
+                    return None  # quit
+                if accept_key == "enter":
+                    break
+                picked_now = set(picked or ())
+                if accept_key == "a":
+                    preselected = list(range(len(entries)))
+                elif accept_key == "n":
+                    preselected = []
+                elif accept_key == "i":
+                    preselected = [i for i in range(len(entries)) if i not in picked_now]
+        except Exception:
+            # a simple-term-menu too old for multi_select/preselected_entries/
+            # accept_keys/chosen_accept_key (all foundational, long-stable
+            # APIs, so this should be unreachable in practice) -- fail safe
+            # by recalling everything shown, rather than leaving the caller
+            # stuck with no way to choose at all.
+            return [True] * len(names)
+
+        if not picked:
+            return None
+
+        picked_set = set(picked)
+        select = [True] * len(names)
+        for vis_idx, row in enumerate(rows):
+            select[row[0]] = vis_idx in picked_set
+        return select
 
     def __repr__(self):
         return self.__str__()

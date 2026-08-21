@@ -623,6 +623,18 @@ class AdjustableFS:
             stopper=None,
         )
 
+    def write_value_direct(self, value):
+        """Write `value` immediately, bypassing Changer (and therefore the
+        write chokepoints hung off it -- access control, recent-component
+        tracking). For internal app bookkeeping that happens to reuse this
+        class for its fs-persisted-json storage (e.g. eco.elements.recent,
+        eco.widgets.component_selector.ComponentBookmarks) and isn't itself
+        a namespace component -- routing that through Changer's device-write
+        machinery is both wrong (it isn't a device write) and, for
+        self-referential storage like the recent-component cache, a feedback
+        loop (its own write would be recorded as a "use" of itself)."""
+        self._write_value(value)
+
 
 # class AdjustableObject(Assembly):
 #     def __init__(self, adjustable_dict, name=None):
@@ -1044,12 +1056,16 @@ class AdjustableTrigger:
         self._append(AdjustableTrigger, self.home, name="home")
 
     It shows up as a plain push button in the interactive widgets
-    (eco.widgets.display_qt/display_widget) and in the terminal display
-    table (Assembly.get_display_str()/repr()), but -- since it has no
-    get_current_value() -- is automatically excluded from
-    Assembly.get_status()'s status reporting (which only polls items
-    satisfying the Detector protocol) and never shows up in the
-    "settings" selection (there's nothing to set).
+    (eco.widgets.display_qt/display_widget) -- a clickable panel is what
+    it's for. The plain terminal repr/display table
+    (Assembly.get_display_str()/repr()) leaves it out by default instead
+    (nothing to click there, and no value to show); pass
+    get_display_str(show_triggers=True) for the rare case that wants it
+    listed anyway (e.g. an elog status snapshot documenting what the
+    assembly has). Since it has no get_current_value(), it's also
+    automatically excluded from Assembly.get_status()'s status reporting
+    (which only polls items satisfying the Detector protocol) and never
+    shows up in the "settings" selection (there's nothing to set).
 
     `action` is any zero-argument callable (bind args with functools.
     partial/a lambda first if it needs them); calling the AdjustableTrigger

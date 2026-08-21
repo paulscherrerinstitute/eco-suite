@@ -18,6 +18,7 @@ from eco.widgets.component_selector import (
     ComponentBookmarks,
     ComponentNode,
     KIND_ICONS,
+    RecentComponents,
     build_tree,
     classify,
     filter_root,
@@ -31,12 +32,16 @@ class ComponentSelectorWidget(widgets.VBox):
         root: Any,
         kind_filter: str = "All",
         bookmarks: Optional[ComponentBookmarks] = None,
+        recent: Optional[RecentComponents] = None,
         on_select: Optional[Callable[[str, Any], None]] = None,
         max_depth: int = 25,
     ):
         self.root = root
         self.max_depth = max_depth
         self.bookmarks = bookmarks or ComponentBookmarks(
+            namespace_name=getattr(root, "name", None)
+        )
+        self.recent = recent or RecentComponents(
             namespace_name=getattr(root, "name", None)
         )
         self._on_select_cbs: List[Callable[[str, Any], None]] = (
@@ -63,6 +68,14 @@ class ComponentSelectorWidget(widgets.VBox):
         header = widgets.HBox([self.type_filter, self.search_box, self.refresh_btn])
 
         self.selected_label = widgets.HTML(value="<i>nothing selected</i>")
+
+        self.recent_dropdown = widgets.Dropdown(
+            options=[], description="Recent:", layout=widgets.Layout(width="320px")
+        )
+        self.recent_goto_btn = widgets.Button(
+            description="Go", layout=widgets.Layout(width="50px")
+        )
+        recent_row = widgets.HBox([self.recent_dropdown, self.recent_goto_btn])
 
         self.bookmark_dropdown = widgets.Dropdown(
             options=[], description="Bookmarks:", layout=widgets.Layout(width="320px")
@@ -91,11 +104,14 @@ class ComponentSelectorWidget(widgets.VBox):
 
         self.tree_box = widgets.VBox()
 
-        super().__init__([header, self.selected_label, self.tree_box, bookmark_row])
+        super().__init__(
+            [header, recent_row, self.selected_label, self.tree_box, bookmark_row]
+        )
 
         self.type_filter.observe(lambda change: self._render(), "value")
         self.search_box.observe(lambda change: self._render(), "value")
         self.refresh_btn.on_click(lambda _: self.refresh(rebuild=True))
+        self.recent_goto_btn.on_click(lambda _: self._goto_recent())
         self.bookmark_goto_btn.on_click(lambda _: self._goto_bookmark())
         self.bookmark_save_btn.on_click(lambda _: self._save_bookmark())
         self.bookmark_remove_btn.on_click(lambda _: self._remove_bookmark())
@@ -112,6 +128,7 @@ class ComponentSelectorWidget(widgets.VBox):
             self._tree = build_tree(self.root, max_depth=self.max_depth)
         self._render()
         self._refresh_bookmark_options()
+        self._refresh_recent_options()
 
     def _render(self) -> None:
         filtered = filter_root(
@@ -164,6 +181,8 @@ class ComponentSelectorWidget(widgets.VBox):
                 f"<b>Selected:</b> {KIND_ICONS.get(node.kind, '')} {node.name} "
                 f"<i>({node.kind})</i>"
             )
+        self.recent.touch(node.name)
+        self._refresh_recent_options()
         self._notify(node.name, node.obj)
 
     def _notify(self, name: str, obj: Any) -> None:
@@ -209,6 +228,8 @@ class ComponentSelectorWidget(widgets.VBox):
             f"<b>Selected (bookmark '{name}'):</b> {KIND_ICONS.get(kind, '')} "
             f"{path} <i>({kind})</i>"
         )
+        self.recent.touch(path)
+        self._refresh_recent_options()
         self._notify(path, obj)
 
     def _save_bookmark(self) -> None:
@@ -231,11 +252,44 @@ class ComponentSelectorWidget(widgets.VBox):
         self.bookmarks.remove(name)
         self._refresh_bookmark_options()
 
+    # -- recent ------------------------------------------------------------
+
+    def _refresh_recent_options(self) -> None:
+        items = self.recent.all()
+        current = self.recent_dropdown.value
+        self.recent_dropdown.options = items
+        if current in items:
+            self.recent_dropdown.value = current
+
+    def _goto_recent(self) -> None:
+        path = self.recent_dropdown.value
+        if not path:
+            return
+        try:
+            obj = resolve_path(self.root, path)
+        except Exception as e:
+            self.selected_label.value = (
+                f"<span style='color:red'>Could not resolve recent item "
+                f"'{path}': {e}</span>"
+            )
+            return
+        kind = classify(obj)
+        self.selected_name = path
+        self.selected_obj = obj
+        self.selected_label.value = (
+            f"<b>Selected (recent):</b> {KIND_ICONS.get(kind, '')} {path} "
+            f"<i>({kind})</i>"
+        )
+        self.recent.touch(path)
+        self._refresh_recent_options()
+        self._notify(path, obj)
+
 
 def make_component_selector_widget(
     root: Any,
     kind_filter: str = "All",
     bookmarks: Optional[ComponentBookmarks] = None,
+    recent: Optional[RecentComponents] = None,
     on_select: Optional[Callable[[str, Any], None]] = None,
     max_depth: int = 25,
 ) -> ComponentSelectorWidget:
@@ -244,6 +298,7 @@ def make_component_selector_widget(
         root,
         kind_filter=kind_filter,
         bookmarks=bookmarks,
+        recent=recent,
         on_select=on_select,
         max_depth=max_depth,
     )

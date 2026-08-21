@@ -316,6 +316,12 @@ class MemoryBrowserQt:
         )
         if self.parent is None:
             self.window.setAttribute(QtCore.Qt.WA_QuitOnClose, False)
+        # so this.window really is destroyed (not just hidden) when closed
+        # via its own native close (X) button -- otherwise the destroyed
+        # hook below never fires there, and a caller's "already open?
+        # just raise it" check (see AxisPTZStreamQt._open_memories) keeps
+        # seeing a stale, non-None .window that's actually closed
+        self.window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         outer = QtWidgets.QVBoxLayout(self.window)
 
         # --- overview list -------------------------------------------------
@@ -425,6 +431,12 @@ class MemoryBrowserQt:
 
         self._refresh_overview()
         self.window.resize(780, 760)
+        # so a stale, already-deleted window can't be mistaken for a still-
+        # open one (e.g. by a caller's "already open, just raise it" check
+        # -- see eco.widgets.camera_stream_qt.AxisPTZStreamQt._open_memories)
+        # when the user closes this via the window's own native close (X)
+        # button rather than through this class's own Close button/API
+        self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
         self.window.show()
 
     def _set_status(self, text, error=False):

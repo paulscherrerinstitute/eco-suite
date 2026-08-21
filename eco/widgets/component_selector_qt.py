@@ -25,6 +25,7 @@ from eco.widgets.component_selector import (
     ComponentBookmarks,
     ComponentNode,
     KIND_ICONS,
+    RecentComponents,
     build_tree,
     classify,
     filter_root,
@@ -64,6 +65,7 @@ class ComponentSelectorQt(QtWidgets.QWidget):
         root: Any,
         kind_filter: str = "All",
         bookmarks: Optional[ComponentBookmarks] = None,
+        recent: Optional[RecentComponents] = None,
         on_select: Optional[Callable[[str, Any], None]] = None,
         max_depth: int = 25,
         parent=None,
@@ -72,6 +74,9 @@ class ComponentSelectorQt(QtWidgets.QWidget):
         self.root = root
         self.max_depth = max_depth
         self.bookmarks = bookmarks or ComponentBookmarks(
+            namespace_name=getattr(root, "name", None)
+        )
+        self.recent = recent or RecentComponents(
             namespace_name=getattr(root, "name", None)
         )
         self._on_select_cbs: List[Callable[[str, Any], None]] = (
@@ -97,6 +102,14 @@ class ComponentSelectorQt(QtWidgets.QWidget):
         filter_row.addWidget(self.search_box, 1)
         filter_row.addWidget(self.refresh_btn)
         layout.addLayout(filter_row)
+
+        recent_row = QtWidgets.QHBoxLayout()
+        self.recent_dropdown = QtWidgets.QComboBox()
+        self.recent_goto_btn = QtWidgets.QPushButton("Go")
+        recent_row.addWidget(QtWidgets.QLabel("Recent:"))
+        recent_row.addWidget(self.recent_dropdown, 1)
+        recent_row.addWidget(self.recent_goto_btn)
+        layout.addLayout(recent_row)
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setHeaderLabels(["Name", "Type", "Value"])
@@ -125,6 +138,7 @@ class ComponentSelectorQt(QtWidgets.QWidget):
         self.search_box.textChanged.connect(lambda _t: self._render())
         self.refresh_btn.clicked.connect(lambda: self.refresh(rebuild=True))
         self.tree.itemClicked.connect(self._on_item_clicked)
+        self.recent_goto_btn.clicked.connect(self._goto_recent)
         self.bookmark_goto_btn.clicked.connect(self._goto_bookmark)
         self.bookmark_save_btn.clicked.connect(self._save_bookmark)
         self.bookmark_remove_btn.clicked.connect(self._remove_bookmark)
@@ -138,6 +152,7 @@ class ComponentSelectorQt(QtWidgets.QWidget):
             self._tree = build_tree(self.root, max_depth=self.max_depth)
         self._render()
         self._refresh_bookmark_options()
+        self._refresh_recent_options()
 
     def _render(self) -> None:
         self.tree.clear()
@@ -180,6 +195,8 @@ class ComponentSelectorQt(QtWidgets.QWidget):
             )
         else:
             self.selected_label.setText(f"Selected: {KIND_ICONS.get(kind, '')} {path} ({kind})")
+        self.recent.touch(path)
+        self._refresh_recent_options()
         self._notify(path, obj)
 
     def _notify(self, path: str, obj: Any) -> None:
@@ -244,6 +261,33 @@ class ComponentSelectorQt(QtWidgets.QWidget):
         self.bookmarks.remove(name)
         self._refresh_bookmark_options()
 
+    # -- recent ------------------------------------------------------------
+
+    def _refresh_recent_options(self) -> None:
+        items = self.recent.all()
+        current = self.recent_dropdown.currentText()
+        self.recent_dropdown.blockSignals(True)
+        self.recent_dropdown.clear()
+        self.recent_dropdown.addItems(items)
+        if current in items:
+            self.recent_dropdown.setCurrentText(current)
+        self.recent_dropdown.blockSignals(False)
+
+    def _goto_recent(self) -> None:
+        path = self.recent_dropdown.currentText()
+        if not path:
+            return
+        try:
+            obj = resolve_path(self.root, path)
+        except Exception as e:
+            self.selected_label.setText(f"Could not resolve recent item '{path}': {e}")
+            return
+        kind = classify(obj)
+        self._select(path, obj, kind)
+        self.selected_label.setText(
+            f"Selected (recent): {KIND_ICONS.get(kind, '')} {path} ({kind})"
+        )
+
 
 class ComponentSelectorQtWindow:
     """Wraps ComponentSelectorQt in its own top-level window, reusing the
@@ -257,6 +301,7 @@ class ComponentSelectorQtWindow:
         root: Any,
         kind_filter: str = "All",
         bookmarks: Optional[ComponentBookmarks] = None,
+        recent: Optional[RecentComponents] = None,
         on_select: Optional[Callable[[str, Any], None]] = None,
         max_depth: int = 25,
         auto_start: bool = True,
@@ -265,6 +310,7 @@ class ComponentSelectorQtWindow:
             root=root,
             kind_filter=kind_filter,
             bookmarks=bookmarks,
+            recent=recent,
             on_select=on_select,
             max_depth=max_depth,
         )
@@ -285,7 +331,24 @@ class ComponentSelectorQtWindow:
         self.window.setWindowTitle(f"Component selector: {root_name}")
         self.window.setCentralWidget(self.selector)
         self.window.resize(760, 620)
+        # WA_DeleteOnClose: without it, closing via the window's own
+        # native close (X) button just hides it -- it's never actually
+        # destroyed, so the destroyed hook below would never fire there
+        # (only on an explicit stop()/.close() that happens to also get
+        # garbage-collected). See eco.widgets.qt_lifecycle's module
+        # docstring for the fuller why.
+        self.window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        # so closing via the window's own native close (X) button tears
+        # down the same as stop() does -- otherwise get_selected()/
+        # on_select() would keep referencing a selector whose window is
+        # already gone, and a caller checking "is it still open" via
+        # `.window is not None` would get a stale answer
+        self.window.destroyed.connect(self._on_window_destroyed)
         self.window.show()
+
+    def _on_window_destroyed(self, *args) -> None:
+        self.window = None
+        self.selector = None
 
     def run(self) -> None:
         """Build and run the window with a blocking Qt event loop. Use this
@@ -361,6 +424,7 @@ def make_component_selector_qt(
     root: Any,
     kind_filter: str = "All",
     bookmarks: Optional[ComponentBookmarks] = None,
+    recent: Optional[RecentComponents] = None,
     on_select: Optional[Callable[[str, Any], None]] = None,
     max_depth: int = 25,
 ) -> ComponentSelectorQt:
@@ -370,6 +434,7 @@ def make_component_selector_qt(
         root,
         kind_filter=kind_filter,
         bookmarks=bookmarks,
+        recent=recent,
         on_select=on_select,
         max_depth=max_depth,
     )
@@ -379,6 +444,7 @@ def make_component_selector_qt_window(
     root: Any,
     kind_filter: str = "All",
     bookmarks: Optional[ComponentBookmarks] = None,
+    recent: Optional[RecentComponents] = None,
     on_select: Optional[Callable[[str, Any], None]] = None,
     max_depth: int = 25,
     auto_start: bool = True,
@@ -388,6 +454,7 @@ def make_component_selector_qt_window(
         root,
         kind_filter=kind_filter,
         bookmarks=bookmarks,
+        recent=recent,
         on_select=on_select,
         max_depth=max_depth,
         auto_start=auto_start,

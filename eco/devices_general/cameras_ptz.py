@@ -79,6 +79,11 @@ def _is_notebook():
 
 
 class AxisPTZ(Assembly):
+    # widget() (and anything driving it, e.g. the desktop app's namespace
+    # launcher) opens the live-video viewer instead of the generic
+    # property grid -- see Assembly._default_widget/viewer() below.
+    _default_widget = "viewer"
+
     def __init__(
         self,
         camera_address,

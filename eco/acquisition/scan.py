@@ -1,11 +1,13 @@
 import copy
 from datetime import datetime
+import functools
 from itertools import product
 from numbers import Number
 import os
 import json
 import numpy as np
 from time import sleep, time
+import threading
 import traceback
 from pathlib import Path
 import colorama
@@ -20,6 +22,7 @@ from eco.utilities.utilities import (
 from ..elements.adjustable import AdjustableMemory, DummyAdjustable
 from IPython import get_ipython
 from .daq_client import Daq
+from .counter_protocol import Counter
 from eco.elements.assembly import Assembly
 from rich.progress import Progress
 import inputimeout
@@ -46,7 +49,7 @@ class StepScan(Assembly):
         self,
         adjustables,
         values,
-        counters,
+        counters: "list[Counter]",
         description="",
         Npulses=100,
         basepath="",
@@ -91,6 +94,11 @@ class StepScan(Assembly):
 
         self._append(
             DetectorGet, lambda: self._get_names(self.counters), name="counters_names"
+        )
+        self._append(
+            DetectorGet,
+            lambda: self._get_counter_description(),
+            name="counter_description",
         )
 
         self._append(DetectorMemory, len(values), name="number_of_steps")
@@ -172,14 +180,36 @@ class StepScan(Assembly):
         self.timeout_adjustables = timeout_adjustables
         # self._elog = elog
         self.remaining_tasks = []
+        # scratch space for counters to attach their own scan-scoped state
+        # (e.g. Daq's run number/monitors/namespace status) without poking
+        # ad hoc attributes directly onto this scan instance -- namespaced by
+        # counter name so multiple counters (or concurrently running scans
+        # sharing one counter) can't collide. See counter_scratch().
+        self.counter_state = {}
         self.callbacks_start_scan = callbacks_start_scan
         self.callbacks_start_step = callbacks_start_step
         self.callbacks_step_counting = callbacks_step_counting
         self.callbacks_end_step = callbacks_end_step
         self.callbacks_end_scan = callbacks_end_scan
+        # deliberately NOT threaded through Scans.xxx() as a session-level
+        # default like the five lists above -- that's exactly the "three
+        # unranked callback sources" pattern that's already hard to reason
+        # about (see counter_description's docstring). A counter that wants
+        # in (e.g. to keep an elog message in sync, via set_description())
+        # just defines `self.callbacks_description_changed = [...]` on
+        # itself, the same opt-in `hasattr` mechanism as the others.
+        self.callbacks_description_changed = []
         self.callbacks_kwargs = kwargs_callbacks
 
         self._have_run_callbacks_start_scan = False
+
+        # Pause/resume: a checkpoint boundary between steps, reusing the
+        # _values_todo/_values_done split that already exists -- resuming
+        # is just clearing the event; scan_all()'s loop picks up exactly
+        # where it left off with no extra bookkeeping. See pause()/resume().
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+        self._stop_requested = False
 
     def _get_names(self, elements):
         """Get the names of the elements."""
@@ -192,6 +222,31 @@ class StepScan(Assembly):
             else:
                 names.append("unknown")
         return names
+
+    def _get_counter_description(self):
+        """Optional per-counter description(s), so anyone inspecting a
+        running/finished scan can see what each attached counter actually
+        does (`scan.counter_description()`), not just its bare name. A
+        counter may expose `description` as a plain string or a
+        callable/DetectorGet (matching how `description` is exposed on
+        `StepScan`/`Scans` themselves); counters without one are silently
+        skipped -- purely optional, nothing to opt into for existing
+        counters."""
+        parts = []
+        for ctr in self.counters:
+            desc = getattr(ctr, "description", None)
+            if desc is None:
+                continue
+            if callable(desc):
+                try:
+                    desc = desc()
+                except Exception:
+                    continue
+            if not desc:
+                continue
+            name = getattr(ctr, "name", None) or repr(ctr)
+            parts.append(f"{name}: {desc}")
+        return "; ".join(parts)
 
     def run_callbacks_start_scan(self):
         if self.callbacks_start_scan:
@@ -385,6 +440,92 @@ class StepScan(Assembly):
 
         return True
 
+    def counter_scratch(self, counter_name):
+        """Per-counter scratch dict on this scan instance (see
+        ``self.counter_state``): ``scan.counter_scratch(self.name)[...]``
+        instead of ``scan.<ad hoc attribute> = ...``."""
+        return self.counter_state.setdefault(counter_name, {})
+
+    def set_scan_parameter(self, key, value):
+        """Attach one extra entry to ``scan_info["scan_parameters"]``
+        (e.g. a pointer to an uploaded aux file) without reaching into the
+        dict directly."""
+        self.scan_info["scan_parameters"][key] = value
+
+    # -- pause / resume --------------------------------------------------
+    #
+    # A checkpoint sits between steps, not inside one: pausing mid-move or
+    # mid-acquisition would leave hardware/counters in an undefined state,
+    # so pause() only takes effect at the top of the next loop iteration in
+    # scan_all(). Resuming needs no bookkeeping of its own -- _values_todo/
+    # _values_done (populated by do_next_step() on every completed step
+    # already) already say exactly what's left, so "resume" is just
+    # un-blocking the same loop.
+
+    def pause(self):
+        """Pause before the next step. Takes effect at the next checkpoint,
+        not immediately -- a step already in flight always finishes."""
+        self._pause_event.clear()
+
+    def resume(self):
+        """Undo pause(): scan_all()'s loop continues from wherever
+        _values_todo currently starts, nothing is redone."""
+        self._pause_event.set()
+
+    def is_paused(self):
+        return not self._pause_event.is_set()
+
+    def request_stop(self):
+        """Stop before the next step (not mid-step) instead of pausing.
+        Wakes the scan first if it was paused, so a stopped-while-paused
+        scan actually exits rather than hanging forever waiting to resume."""
+        self._stop_requested = True
+        self._pause_event.set()
+
+    def snapshot_remaining(self):
+        """A JSON-serializable description of the *not-yet-done* part of
+        this scan -- enough to reconstruct a StepScan that finishes it
+        elsewhere (see ``eco.acquisition.scan_queue`` store/resume).
+
+        Deliberately does not attempt to capture live counter/adjustable
+        state (open CA monitors, in-flight acquisitions, ...) -- resuming
+        from this re-resolves fresh adjustable/counter objects by name and
+        starts a fresh StepScan for the remaining values, it does not
+        revive the original StepScan's live state.
+        """
+        return {
+            "adjustable_names": self._get_names(self.adjustables),
+            "counter_names": self._get_names(self.counters),
+            "values_remaining": copy.deepcopy(self._values_todo),
+            "pulses_remaining": copy.deepcopy(self.pulses_per_step),
+            "description": self._description,
+            "grid_specs": self.grid_specs.get_current_value(),
+        }
+
+    # -- live description --------------------------------------------------
+
+    def set_description(self, description):
+        """Change the scan's description while it's running (e.g. to add a
+        finding mid-scan). Keeps `scan_info` in sync (it's a snapshot taken
+        at construction otherwise) and runs
+        ``callbacks_description_changed`` on any counter that defines one --
+        e.g. to push the new text into an elog message already posted for
+        this scan, instead of only ever seeing the text as it was when the
+        scan started."""
+        old = self._description
+        self._description = description
+        self.scan_info["scan_description"] = description
+        self.run_callbacks_description_changed(old, description)
+
+    def run_callbacks_description_changed(self, old_description, new_description):
+        for ctr in self.counters:
+            if (
+                hasattr(ctr, "callbacks_description_changed")
+                and ctr.callbacks_description_changed
+            ):
+                for tcb in ctr.callbacks_description_changed:
+                    tcb(self, old_description, new_description, **self.callbacks_kwargs)
+
     def append_scan_info(
         self, values_step, readbacks_step, step_files=None, step_info=None
     ):
@@ -498,6 +639,9 @@ class StepScan(Assembly):
             )
             try:
                 while not done:
+                    self._pause_event.wait()
+                    if self._stop_requested:
+                        break
                     done = not self.do_next_step(step_info=step_info)
                     self._progress.update(pr_task, advance=1)
             except:
@@ -615,6 +759,124 @@ class Scans(Assembly):
         # self.checker = checker
         # self._scan_directories = scan_directories
         # self._elog = elog
+        self._queues_container = None
+        self._augment_docstrings()
+
+    _DOCUMENTED_SCAN_METHODS = (
+        "acquire",
+        "ascan",
+        "ascan_position_list",
+        "dscan",
+        "snakescan",
+        "a2scan",
+        "meshscan",
+        "scan",
+    )
+
+    def _collect_callback_keywords_quiet(self):
+        """Same introspection as get_callback_keywords(), without the
+        print-per-keyword side effect -- get_callback_keywords() is kept
+        as-is (chatty) for its existing interactive use; this is the quiet
+        variant _augment_docstrings() needs so constructing a Scans
+        instance doesn't spam stdout."""
+        kws = set()
+        for cb_list in (
+            self.callbacks_start_scan,
+            self.callbacks_start_step,
+            self.callbacks_step_counting,
+            self.callbacks_end_step,
+            self.callbacks_end_scan,
+        ):
+            for cb in cb_list:
+                k = foo_get_kwargs(cb)
+                if k:
+                    kws.update(k)
+        for ctr in self._default_counters:
+            for attr in (
+                "callbacks_start_scan",
+                "callbacks_start_step",
+                "callbacks_step_counting",
+                "callbacks_end_step",
+                "callbacks_end_scan",
+            ):
+                for cb in getattr(ctr, attr, None) or []:
+                    k = foo_get_kwargs(cb)
+                    if k:
+                        kws.update(k)
+        return kws
+
+    def _augment_docstrings(self):
+        """Best-effort: append the extra keyword arguments this instance's
+        *default* counters' callbacks actually accept to each scan method's
+        docstring -- e.g. ``help(scans.ascan)`` shows them without a
+        separate call to get_callback_keywords(). These are the free-form
+        ``**kwargs_callbacks`` every scan method already accepts and passes
+        through untyped; this doesn't change that, it just makes what a
+        *particular* Scans instance's counters happen to read out of that
+        bag discoverable instead of implicit.
+
+        Re-run this (safe to call again) whenever default_counters changes
+        after construction -- e.g. eco.acquisition.decorators.scannable's
+        ``.scans`` property does, since a fresh CounterValue may accept
+        different keywords than the one before it.
+
+        A no-op when no default counters are set at all -- nothing to
+        discover, and leaving the class's plain method/docstring alone in
+        that case means a Scans instance with no default counters costs
+        nothing extra (no functools.partial shadowing every method).
+        """
+        if not self._default_counters:
+            return
+        try:
+            kws = sorted(self._collect_callback_keywords_quiet())
+        except Exception:
+            return
+        counter_names = ", ".join(self._get_counter_names()) or "none"
+        extra = "\n\nCounter keywords (from default counters: " + counter_names + "):\n"
+        if kws:
+            extra += "\n".join(f"    {k}" for k in kws)
+        else:
+            extra += "    (none discovered)"
+        for method_name in self._DOCUMENTED_SCAN_METHODS:
+            unbound = getattr(type(self), method_name, None)
+            if unbound is None:
+                continue
+            base_doc = getattr(unbound, "__doc__", None) or ""
+            wrapper = functools.partial(unbound, self)
+            wrapper.__doc__ = base_doc + extra
+            wrapper.__name__ = method_name
+            setattr(self, method_name, wrapper)
+
+    @property
+    def queues(self):
+        """This ``Scans`` instance's own, private named queues --
+        ``scans.queues.default``, ``scans.queues.alignment``, etc, each with
+        its own worker thread (so two different lanes, or two different
+        ``Scans`` instances, run concurrently). See
+        ``eco.acquisition.scan_queue.ScanQueueContainer``. Every scan method
+        also accepts ``scan_queue=`` to route a single call through here
+        without touching ``.queues`` directly -- see ``_route_to_queue``."""
+        if self._queues_container is None:
+            from eco.acquisition.scan_queue import ScanQueueContainer
+
+            self._queues_container = ScanQueueContainer()
+        return self._queues_container
+
+    def _route_to_queue(self, scan_queue, method_name, args, kwargs):
+        """Called at the top of every queueable Scans method. Returns a
+        QueueItem (the caller should return it immediately) if `scan_queue`
+        requests queuing, or None if the caller should just run normally.
+
+        `scan_queue`: None -> run normally (today's behaviour, unchanged).
+        True or 1 -> the "default" lane. Any other value -> that named lane
+        (auto-created via .queues)."""
+        if scan_queue is None:
+            return None
+        if scan_queue is True or scan_queue == 1:
+            scan_queue = "default"
+        q = self.queues[scan_queue]
+        method = getattr(self, method_name)
+        return q.submit(method, *args, **kwargs)
 
     def _get_counter_names(self):
         """Get the names of the default counters."""
@@ -692,8 +954,27 @@ class Scans(Assembly):
         settling_time=0,
         return_at_end=True,
         step_info=None,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
+        queued = self._route_to_queue(
+            scan_queue,
+            "acquire",
+            (N_pulses,),
+            dict(
+                N_repetitions=N_repetitions,
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                settling_time=settling_time,
+                return_at_end=return_at_end,
+                step_info=step_info,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
+
         adjustable = DummyAdjustable()
         positions = list(range(N_repetitions))
         values = [[tp] for tp in positions]
@@ -722,7 +1003,7 @@ class Scans(Assembly):
         self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
-        # return s
+        return s
 
     def ascan(
         self,
@@ -738,15 +1019,28 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         repetitions=1,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
+        queued = self._route_to_queue(
+            scan_queue,
+            "ascan",
+            (adjustable, start_pos, end_pos, N_intervals, N_pulses),
+            dict(
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                return_at_end=return_at_end,
+                settling_time=settling_time,
+                step_info=step_info,
+                repetitions=repetitions,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
 
-        if type(N_intervals) is float:
-            print("Interval size defined as float, interpreting as interval size.")
-            positions = np.arange(start_pos, end_pos + N_intervals, N_intervals)
-        elif type(N_intervals) is int:
-            print("Interval size defined as int, interpreting as number of intervals.")
-            positions = np.linspace(start_pos, end_pos, N_intervals + 1)
+        positions = interpret_step_specification((start_pos, end_pos, N_intervals))
 
         values = [[tp] for tp in positions]
         if not counters:
@@ -787,8 +1081,28 @@ class Scans(Assembly):
         return_at_end="timeout",
         name="acquiring_scan",
         repetitions=1,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
+        queued = self._route_to_queue(
+            scan_queue,
+            "ascan_position_list",
+            (adjustable, position_list, N_pulses),
+            dict(
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                settling_time=settling_time,
+                step_info=step_info,
+                return_at_end=return_at_end,
+                name=name,
+                repetitions=repetitions,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
+
         positions = position_list
         values = [[tp] for tp in positions]
 
@@ -831,16 +1145,29 @@ class Scans(Assembly):
         step_info=None,
         return_at_end="timeout",
         repetitions=1,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
         """Differential scan, i.e. the adjustable is moved to the start position and then moved in steps of the interval size."""
+        queued = self._route_to_queue(
+            scan_queue,
+            "dscan",
+            (adjustable, start_pos, end_pos, N_intervals, N_pulses),
+            dict(
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                settling_time=settling_time,
+                step_info=step_info,
+                return_at_end=return_at_end,
+                repetitions=repetitions,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
 
-        if type(N_intervals) is float:
-            print("Interval size defined as float, interpreting as interval size.")
-            positions = np.arange(start_pos, end_pos + N_intervals, N_intervals)
-        elif type(N_intervals) is int:
-            print("Interval size defined as int, interpreting as number of intervals.")
-            positions = np.linspace(start_pos, end_pos, N_intervals + 1)
+        positions = interpret_step_specification((start_pos, end_pos, N_intervals))
         current = adjustable.get_current_value()
         values = [[tp + current] for tp in positions]
 
@@ -885,8 +1212,26 @@ class Scans(Assembly):
         step_info=None,
         return_at_end="timeout",
         repetitions=1,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
+        queued = self._route_to_queue(
+            scan_queue,
+            "snakescan",
+            (adjustable_slow, step_interval, Nrows, adjustable_fast, interval),
+            dict(
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                settling_time=settling_time,
+                step_info=step_info,
+                return_at_end=return_at_end,
+                repetitions=repetitions,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
 
         adj_slow_start = adjustable_slow.get_current_value()
         adj_fast_start = adjustable_fast.get_current_value()
@@ -974,12 +1319,33 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         repetitions=1,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
         """
         Mesh scan, i.e. a scan in multiple dimensions, where the last adjustable is moved first.
         The scanning order can be changed by setting the `scanning_order` parameter.
         """
+        queued = self._route_to_queue(
+            scan_queue,
+            "meshscan",
+            adj_specs,
+            dict(
+                scanning_order=scanning_order,
+                N_pulses=N_pulses,
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                return_at_end=return_at_end,
+                settling_time=settling_time,
+                step_info=step_info,
+                repetitions=repetitions,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
+
         adjustables = []
         positions = []
         for adj_spec in adj_specs:
@@ -1047,6 +1413,7 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         repetitions=1,
+        scan_queue=None,
         **kwargs_callbacks,
     ):
         """
@@ -1063,7 +1430,32 @@ class Scans(Assembly):
           together and must share the same number of steps.
 
         ``*step_spec`` is anything understood by ``interpret_step_specification``.
+
+        ``scan_queue``: None (default) runs synchronously as above and returns the
+        StepScan, unchanged from before. Any other value (True/1 for the "default"
+        lane, or a name) routes this call through ``self.queues`` instead and returns
+        a ``QueueItem`` -- see ``eco.acquisition.scan_queue``.
         """
+        queued = self._route_to_queue(
+            scan_queue,
+            "scan",
+            adj_specs,
+            dict(
+                scanning_order=scanning_order,
+                N_pulses=N_pulses,
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                return_at_end=return_at_end,
+                settling_time=settling_time,
+                step_info=step_info,
+                repetitions=repetitions,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
+
         adjustables = []
         positions = []
         for adj_spec in adj_specs:
@@ -1151,6 +1543,112 @@ class Scans(Assembly):
             s.scan_all(step_info=step_info)
 
         return s
+
+    def flyscan_test(
+        self,
+        adjustable,
+        start_pos,
+        end_pos,
+        counters=[],
+        description="",
+        settling_time=0.1,
+        plot=True,
+    ):
+        """EXPERIMENTAL continuous ("fly") scan -- a proof of concept, not
+        integrated into StepScan (see the field-survey artifact's §4.2/§5
+        and ESRF BLISS's AcquisitionChain, whose continuous-scan support
+        being just a different trigger node in the *same* engine rather
+        than a separate scan-type class is the direction this points
+        towards). Moves `adjustable` to `start_pos`, starts continuous
+        monitoring on one counter, moves once, continuously, to `end_pos`
+        (no step/settle/count loop), stops monitoring, and plots what
+        streamed in during the move.
+
+        Only supports a single ``CounterValue``-shaped counter (one that
+        has ``start_monitoring()``/``stop_monitoring()``, exactly the
+        machinery ``eco.acquisition.counters.CounterValue`` already uses
+        for its own step scans -- confirmed live this session via a
+        `scans.dscan()`'s `scan.monitor_scan_arrays`). Multiple counters
+        would need `start_monitoring`'s scan.monitors bookkeeping to merge
+        instead of overwrite, which it doesn't do today -- left for when
+        this graduates past "test implementation."
+        """
+        if not counters:
+            counters = self._default_counters
+        if not counters:
+            raise ValueError("flyscan_test needs at least one counter")
+        counter = counters[0]
+        if len(counters) > 1:
+            print(
+                f"flyscan_test only supports one counter for now, using {getattr(counter, 'name', counter)!r}"
+            )
+        if not (hasattr(counter, "start_monitoring") and hasattr(counter, "stop_monitoring")):
+            raise TypeError(
+                f"{getattr(counter, 'name', counter)!r} has no start_monitoring()/"
+                "stop_monitoring() -- flyscan_test only supports CounterValue-shaped "
+                "counters today"
+            )
+
+        class _FlyScanContext:
+            pass
+
+        ctx = _FlyScanContext()
+        ctx.adjustables = [adjustable]
+        ctx.timestamp_intervals = []
+        ctx._description = description
+        adj_name = getattr(adjustable, "name", repr(adjustable))
+        ctx.scan_info = {"scan_parameters": {"name": [adj_name]}}
+
+        print(f"flyscan_test: moving {adj_name} to start position {start_pos}")
+        adjustable.set_target_value(start_pos).wait()
+        sleep(settling_time)
+
+        counter.start_monitoring(scan=ctx)
+        t0 = time()
+        print(f"flyscan_test: continuous move {adj_name}: {start_pos} -> {end_pos}")
+        adjustable.set_target_value(end_pos).wait()
+        t1 = time()
+        ctx.timestamp_intervals.append((t0, t1))
+        counter.stop_monitoring(scan=ctx)
+
+        from escape import ArrayTimestamps
+
+        # escape's ArrayTimestamps wants exactly one parameter value per
+        # timestamp_interval -- there's one interval here (the whole
+        # continuous move), so one value, not [start_pos, end_pos]. The
+        # position is continuously varying *within* that interval; using
+        # start_pos as its single nominal value is a placeholder -- per-
+        # pulse interpolated position (from the move's own timing) would
+        # be the real fix, left for when this is more than a test.
+        parameter = {adj_name: {"values": [start_pos]}}
+        ctx.monitor_scan_arrays = {
+            monname: ArrayTimestamps(
+                data=copy.copy(mon.data["values"]),
+                timestamps=mon.data["timestamps"],
+                timestamp_intervals=ctx.timestamp_intervals,
+                parameter=parameter,
+                name=monname,
+            )
+            for monname, mon in ctx.monitors.items()
+        }
+
+        if plot:
+            import matplotlib.pyplot as plt
+
+            plt.close("flyscan_test")
+            names = list(ctx.monitor_scan_arrays.keys())
+            fig, axs = plt.subplots(len(names), 1, sharex=True, num="flyscan_test")
+            if len(names) == 1:
+                axs = [axs]
+            for ax, monname in zip(axs, names):
+                arr = ctx.monitor_scan_arrays[monname]
+                ax.plot(arr.timestamps, arr.data, ".-")
+                ax.set_ylabel(monname)
+            axs[-1].set_xlabel("time (s)")
+            plt.show(block=False)
+            ctx.fig = fig
+
+        return ctx
 
 
 class RunFilenameGenerator:
