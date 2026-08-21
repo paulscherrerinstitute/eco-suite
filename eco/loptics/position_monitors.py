@@ -1,8 +1,8 @@
-from eco.epics.detector import DetectorPvDataStream
+from eco.epics_utils.detector import DetectorPvDataStream
 from eco.detector.detectors_psi import DetectorBsStream
 from eco.devices_general.pipelines_swissfel import Pipeline
 from eco.devices_general.cameras_swissfel import CamserverConfig2
-from eco.epics.adjustable import AdjustablePv
+from eco.epics_utils.adjustable import AdjustablePv
 from eco import Assembly
 
 

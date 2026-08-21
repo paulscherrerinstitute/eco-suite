@@ -30,8 +30,8 @@ from ..devices_general.cameras_swissfel import CameraBasler
 from cam_server import PipelineClient
 from eco.devices_general.utilities import Changer
 from eco.devices_general.pipelines_swissfel import Pipeline
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData, DetectorPvString
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvData, DetectorPvString
 from eco.detector.detectors_psi import DetectorBsStream
 from ..devices_general.detectors import (
     DetectorVirtual,
@@ -1466,7 +1466,7 @@ class LaserBernina(Assembly):
         """
         return energy/(a/2*b/2*np.pi)*1e3/1e4*np.sin(np.deg2rad(alpha))
 
-from eco.epics.adjustable import AdjustablePvString
+from eco.epics_utils.adjustable import AdjustablePvString
 
 
 class CorrectionSumCalculation(Assembly):

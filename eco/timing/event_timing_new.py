@@ -1,8 +1,8 @@
 from epics import PV
 from ..aliases import Alias, append_object_to_object
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvDataStream
-from eco.epics.utilities_epics import EpicsString
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvDataStream
+from eco.epics_utils.utilities_epics import EpicsString
 import logging
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)

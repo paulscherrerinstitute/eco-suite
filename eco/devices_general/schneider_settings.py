@@ -75,7 +75,7 @@ source:
 Host/console info is informational only
 ------------------------------------------
 :meth:`SchneiderMotorSettings.host_info`/:meth:`console_command` resolve the
-owning IOC's host and console port via :func:`eco.epics.iocinfo.find_ioc`,
+owning IOC's host and console port via :func:`eco.epics_utils.iocinfo.find_ioc`,
 for display/telnet-console purposes (see
 :mod:`eco.widgets.ioc_finder_widget`/``_qt``). This class never opens a
 network connection to that host itself.
@@ -89,7 +89,7 @@ import time
 from ..elements.assembly import Assembly
 from ..elements.adjustable import AdjustableGetSet
 from ..elements.detector import DetectorGet
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 from .schneider_mcode_presets import MCODE_PARAMETERS
 
 # MCode variables whose `PR <mnemonic>` reply is a single value/line, and so
@@ -165,7 +165,7 @@ class SchneiderMotorSettings(Assembly):
             ``MOT_<n>`` suffix (matches the convention already used by
             ``MotorRecord(is_psi_mforce=True)``).
         host, console_port:
-            Explicit IOC console address, to skip the `eco.epics.iocinfo`
+            Explicit IOC console address, to skip the `eco.epics_utils.iocinfo`
             network lookup that `host_info()`/`console_command()` would
             otherwise do on first use -- much faster when constructing many
             channels at namespace-init time and you already know the
@@ -353,7 +353,7 @@ class SchneiderMotorSettings(Assembly):
     # -- host / console (informational only, no direct connection) ---------------
     def host_info(self, timeout: float = 10.0):
         """Resolve the owning IOC's host/console via
-        `eco.epics.iocinfo.find_ioc` (network REST lookup, a couple
+        `eco.epics_utils.iocinfo.find_ioc` (network REST lookup, a couple
         seconds -- pass `host=`/`console_port=` at construction to skip
         this). Informational only -- for pointing a human at the right
         console (see `eco.widgets.ioc_finder_widget`/`_qt`), not for
@@ -366,7 +366,7 @@ class SchneiderMotorSettings(Assembly):
         it via the PV records it owns instead. Among any matches, prefers
         one whose device list actually starts with `pv_controller`.
         """
-        from ..epics.iocinfo import find_ioc
+        from ..epics_utils.iocinfo import find_ioc
 
         matches = find_ioc(self.pv_controller, timeout=timeout)
         if not matches:

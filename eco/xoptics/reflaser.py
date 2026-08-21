@@ -1,6 +1,6 @@
 from enum import Enum
 from eco.elements.adjustable import AdjustableGetSet, AdjustableFS, AdjustableTrigger
-from eco.epics.adjustable import AdjustablePvEnum
+from eco.epics_utils.adjustable import AdjustablePvEnum
 from ..devices_general.motors import MotorRecord, SmaractRecord
 from epics import PV
 from ..aliases import Alias, append_object_to_object

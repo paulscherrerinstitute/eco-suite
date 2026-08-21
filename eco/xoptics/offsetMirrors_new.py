@@ -1,5 +1,5 @@
 from ..devices_general.motors import MotorRecord
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 from ..elements.assembly import Assembly
 from ..elements.adjustable import AdjustableVirtual
 import numpy as np

@@ -1,11 +1,11 @@
 from eco.bs.detector import DetectorPvEnum
-from eco.epics.detector import DetectorPvData
+from eco.epics_utils.detector import DetectorPvData
 from ..devices_general.motors import MotorRecord
 from epics import PV
 from time import sleep
 from ..devices_general.utilities import Changer
 from ..aliases import Alias
-from eco.epics.adjustable import AdjustablePvEnum, AdjustablePv
+from eco.epics_utils.adjustable import AdjustablePvEnum, AdjustablePv
 from ..elements.assembly import Assembly
 from ..elements.adjustable import (
     AdjustableError,

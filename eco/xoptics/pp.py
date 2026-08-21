@@ -4,8 +4,8 @@ from eco.elements.detector import DetectorGet, DetectorVirtual
 from epics import PV
 
 from eco.elements.assembly import Assembly
-from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum
-from eco.epics.detector import DetectorPvData
+from eco.epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from eco.epics_utils.detector import DetectorPvData
 from eco.timing.event_timing_new_new import EvrOutput, EvrPulser
 from ..devices_general.utilities import Changer
 from time import sleep

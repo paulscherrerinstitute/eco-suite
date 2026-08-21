@@ -20,7 +20,7 @@ from .utilities_epics import CallbackEpics
 
 
 # Opt-in switch for the deferred/lazy enum-resolution speedup in
-# AdjustablePvEnum (this module) and DetectorPvEnum (eco.epics.detector,
+# AdjustablePvEnum (this module) and DetectorPvEnum (eco.epics_utils.detector,
 # eco.bs.detector -- both read this same flag via the module object, not a
 # copied `from ... import`, so flipping it here takes effect everywhere).
 # Default False: enum resolution happens eagerly in __init__, exactly like

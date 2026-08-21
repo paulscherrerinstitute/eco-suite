@@ -1,7 +1,7 @@
 from eco.elements.assembly import Assembly
 from ..aliases import Alias, append_object_to_object
 from ..devices_general.motors import MotorRecord
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 
 
 class Xspect(Assembly):

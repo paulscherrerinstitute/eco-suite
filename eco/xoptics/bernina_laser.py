@@ -8,8 +8,8 @@ from ..elements.adjustable import (
     AdjustableFS,
     AdjustableTrigger,
 )
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvData
 from ..devices_general.detectors import DetectorVirtual
 from ..timing.lasertiming_edwin import XltEpics, LaserRateControl
 import colorama

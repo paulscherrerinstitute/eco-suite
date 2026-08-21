@@ -5,7 +5,7 @@ from eco.elements.adj_obj import AdjustableObject, DetectorObject
 from eco.elements.detector import DetectorGet
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 from ..elements.assembly import Assembly
 from .motors import MotorRecord
 import sys

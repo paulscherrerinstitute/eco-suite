@@ -6,7 +6,7 @@ from time import sleep
 import numpy as np
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import spec_convenience, default_representation, tweak_option
-from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString
+from ..epics_utils.adjustable import AdjustablePvEnum, AdjustablePvString
 from ..devices_general.utilities import Changer
 from ..elements.assembly import Assembly
 

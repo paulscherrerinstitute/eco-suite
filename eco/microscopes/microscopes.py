@@ -2,7 +2,7 @@ from ..elements.assembly import Assembly
 from ..devices_general.cameras_swissfel import CameraBasler
 from ..devices_general.motors import MotorRecord
 from ..elements.adjustable import spec_convenience, AdjustableVirtual, AdjustableTrigger
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 from epics import PV
 import numpy as np
 

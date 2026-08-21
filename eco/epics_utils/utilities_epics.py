@@ -4,9 +4,9 @@ from time import sleep, time
 
 
 def _wait_for_enum_strs(pv, retries=10, delay=0.05):
-    """Same fix/rationale as `eco.epics.adjustable.wait_for_enum_strs` --
+    """Same fix/rationale as `eco.epics_utils.adjustable.wait_for_enum_strs` --
     duplicated locally (not imported) to avoid a circular import, since
-    `eco.epics.adjustable` itself imports from this module."""
+    `eco.epics_utils.adjustable` itself imports from this module."""
     for _ in range(retries):
         if pv.enum_strs:
             return pv.enum_strs
@@ -71,11 +71,11 @@ class MonitorAccumulator:
 
 class CallbackEpics:
     """set_current_value_callback() implementation for a single PV, shared
-    by every PV-backed Detector/Adjustable class (eco.epics.detector,
-    eco.epics.adjustable, eco.detector.detectors_psi). Moved here from
-    eco.epics.detector (still importable from there) so eco.epics.adjustable
-    can use it too without a circular import (eco.epics.detector already
-    imports from eco.epics.adjustable)."""
+    by every PV-backed Detector/Adjustable class (eco.epics_utils.detector,
+    eco.epics_utils.adjustable, eco.detector.detectors_psi). Moved here from
+    eco.epics_utils.detector (still importable from there) so eco.epics_utils.adjustable
+    can use it too without a circular import (eco.epics_utils.detector already
+    imports from eco.epics_utils.adjustable)."""
 
     def __init__(
         self,

@@ -2,8 +2,8 @@ import time
 from ..elements.assembly import Assembly
 from ..xoptics.dcm import EcolEnergy_new
 from ..elements.adjustable import Changer, spec_convenience, default_representation
-from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
-from ..epics.detector import DetectorPvData, DetectorPvEnum
+from ..epics_utils.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
+from ..epics_utils.detector import DetectorPvData, DetectorPvEnum
 from ..aliases import Alias
 from datetime import datetime
 from time import sleep

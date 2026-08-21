@@ -1,4 +1,4 @@
-from eco.epics.adjustable import AdjustablePV, AdjustablePvEnum
+from eco.epics_utils.adjustable import AdjustablePV, AdjustablePvEnum
 from eco.elements.assembly import Assembly
 
 class LakeshoreController(Assembly):

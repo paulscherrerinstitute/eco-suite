@@ -1,7 +1,7 @@
 from eco.elements.assembly import Assembly
 from eco.elements.detector import DetectorGet
-from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum
-from eco.epics.detector import DetectorPvData
+from eco.epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from eco.epics_utils.detector import DetectorPvData
 
 
 class AttenuatorSafetyBernina(Assembly):

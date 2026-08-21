@@ -2,8 +2,8 @@ import time
 from epics import PV
 import numpy as np
 from ..elements.adjustable import AdjustableFS
-from ..epics.adjustable import AdjustablePv
-from ..epics.detector import DetectorPvDataStream
+from ..epics_utils.adjustable import AdjustablePv
+from ..epics_utils.detector import DetectorPvDataStream
 from ..detector.detectors_psi import DetectorBsStream
 
 from ..elements.assembly import Assembly

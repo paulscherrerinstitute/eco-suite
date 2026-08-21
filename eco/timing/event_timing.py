@@ -1,7 +1,7 @@
 from epics import PV
 from ..aliases import Alias
 from ..utilities.lazy_proxy import Proxy
-from ..epics.adjustable import AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePvEnum
 import logging
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)

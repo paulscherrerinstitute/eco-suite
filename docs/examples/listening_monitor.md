@@ -6,12 +6,12 @@ timestamps, in the background. Unlike a `Detector` (which you *poll* with
 callback, so you capture the channel's history *going forward* without a polling
 loop.
 
-This is implemented by {py:class}`eco.epics.monitor.Monitor`.
+This is implemented by {py:class}`eco.epics_utils.monitor.Monitor`.
 
 ## A single channel
 
 ```python
-from eco.epics.monitor import Monitor
+from eco.epics_utils.monitor import Monitor
 
 # Subscribing starts immediately by default.
 mon = Monitor("SARFE10-PBPG050:HAMP-INTENSITY-CAL")
@@ -50,12 +50,12 @@ plt.ylabel("value")
 
 ## Several channels at once
 
-{py:class}`eco.epics.monitor.MultiMonitor` starts one `Monitor` per channel (in
+{py:class}`eco.epics_utils.monitor.MultiMonitor` starts one `Monitor` per channel (in
 parallel, so subscribing to many channels is fast) and can merge them onto a
 common time base by interpolation:
 
 ```python
-from eco.epics.monitor import MultiMonitor
+from eco.epics_utils.monitor import MultiMonitor
 
 mm = MultiMonitor(
     "SARFE10-PBPG050:HAMP-INTENSITY-CAL",

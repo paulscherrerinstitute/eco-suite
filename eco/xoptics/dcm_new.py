@@ -1,9 +1,9 @@
 from eco.bs.detector import DetectorPvString
-from eco.epics import get_from_archive
+from eco.epics_utils import get_from_archive
 from ..devices_general.motors import MotorRecord  # , DcmConfigAdj
 from eco.elements.adjustable import AdjustableFS, AdjustableVirtual, value_property
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvData
 from epics import PV
 from ..devices_general.utilities import Changer
 from time import sleep

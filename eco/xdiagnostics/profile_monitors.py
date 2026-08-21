@@ -4,7 +4,7 @@ from ..devices_general.detectors import CameraCA, CameraBS
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 from ..aliases import Alias
 from ..elements.adjustable import AdjustableVirtual, AdjustableTrigger
-from ..epics.adjustable import AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePvEnum
 from ..elements.assembly import Assembly
 
 # from ..devices_general.epics_wrappers import EnumSelector

@@ -316,8 +316,8 @@ class Valve(Assembly):
     def __init__(self, pvname_status, name=None, pvname_open_cmd=None, pvname_close_cmd=None):
         super().__init__(name=name)
         self.pvname_status = pvname_status
-        from ..epics.adjustable import AdjustablePvEnum
-        from ..epics.detector import DetectorPvEnum
+        from ..epics_utils.adjustable import AdjustablePvEnum
+        from ..epics_utils.detector import DetectorPvEnum
 
         self._append(DetectorPvEnum, pvname_status, name="is_open", is_setting=False)
         if pvname_open_cmd:
@@ -352,7 +352,7 @@ class Gauge(Assembly):
     def __init__(self, pvname, name=None, unit="mbar"):
         super().__init__(name=name)
         self.pvname = pvname
-        from ..epics.detector import DetectorPvData
+        from ..epics_utils.detector import DetectorPvData
 
         self._append(DetectorPvData, pvname, name="pressure", unit=unit, is_setting=False)
 
@@ -364,8 +364,8 @@ class Pump(Assembly):
     def __init__(self, pvname, name=None, pvname_speed=None):
         super().__init__(name=name)
         self.pvname = pvname
-        from ..epics.adjustable import AdjustablePvEnum
-        from ..epics.detector import DetectorPvData
+        from ..epics_utils.adjustable import AdjustablePvEnum
+        from ..epics_utils.detector import DetectorPvData
 
         self._append(AdjustablePvEnum, pvname, name="state", is_setting=True)
         if pvname_speed:
@@ -383,7 +383,7 @@ class SafetyStopper(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        from ..epics.adjustable import AdjustablePvEnum
+        from ..epics_utils.adjustable import AdjustablePvEnum
         from ..elements.adjustable import AdjustableTrigger
 
         self._append(AdjustablePvEnum, pvname, name="_state", is_setting=True, is_display=False)

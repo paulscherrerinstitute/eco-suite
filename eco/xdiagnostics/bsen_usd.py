@@ -3,7 +3,7 @@ import sys
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, SmaractStreamdevice
 from ..devices_general.smaract import SmarActRecord
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 
 from epics import PV

@@ -14,7 +14,7 @@ import numpy as np
 
 from eco.acquisition.scan_data import run_status_convenience
 from eco.elements.protocols import Detector, InitialisationWaitable
-from eco.epics import get_from_archive
+from eco.epics_utils import get_from_archive
 
 from ..aliases import Alias
 from ..utilities.tables import format_table, section_row_styles

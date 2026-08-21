@@ -1,7 +1,7 @@
 import numpy as np
 from epics import caget
 from epics import PV
-from eco.epics.utilities_epics import EnumWrapper
+from eco.epics_utils.utilities_epics import EnumWrapper
 
 from bsread import source, SUB
 import subprocess

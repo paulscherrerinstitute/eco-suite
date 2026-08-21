@@ -134,7 +134,7 @@ per channel; everything to the right never touches EPICS at all.
   *same* `PV` objects (no duplicate subscriptions) while a recording is
   running, appending every update to a list; `stop()` detaches and returns
   the buffers. This mirrors patterns already in the codebase
-  (`eco.epics.utilities_epics.Monitor`, `eco.epics.detector.CallbackEpics`)
+  (`eco.epics_utils.utilities_epics.Monitor`, `eco.epics_utils.detector.CallbackEpics`)
   - same idea, just centralized and kept alive permanently instead of
   per-scan.
 

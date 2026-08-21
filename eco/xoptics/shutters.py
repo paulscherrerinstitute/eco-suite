@@ -1,7 +1,7 @@
 from epics import PV
 from ..aliases import Alias
 from ..elements.assembly import Assembly
-from ..epics.adjustable import AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePvEnum
 
 
 class PhotonShutter(Assembly):

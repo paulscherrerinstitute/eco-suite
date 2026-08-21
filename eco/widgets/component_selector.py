@@ -243,7 +243,7 @@ def resolve_path(root, dotted_path: str):
     `""`/`None` to mean `root` itself.
     """
     if dotted_path and dotted_path.startswith("pv:"):
-        from eco.epics.adjustable import AdjustablePv
+        from eco.epics_utils.adjustable import AdjustablePv
 
         pvname = dotted_path[len("pv:") :]
         return AdjustablePv(pvname, name=pvname)

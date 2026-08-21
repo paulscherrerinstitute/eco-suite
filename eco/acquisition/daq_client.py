@@ -15,8 +15,8 @@ from eco.elements.detector import DetectorMemory
 from eco.utilities import NumpyEncoder
 from eco.elements.protocols import Adjustable
 from eco.utilities.utilities import foo_get_kwargs
-from ..epics.detector import DetectorPvDataStream
-from ..epics.utilities_epics import Monitor
+from ..epics_utils.detector import DetectorPvDataStream
+from ..epics_utils.utilities_epics import Monitor
 from epics import PV
 from ..acquisition.utilities import Acquisition
 from ..elements.assembly import Assembly

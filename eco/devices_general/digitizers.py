@@ -1,7 +1,7 @@
 from ..detector.detectors_psi import DetectorBsStream
 from eco.elements.assembly import Assembly
-from eco.epics.detector import DetectorPvDataStream
-from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum
+from eco.epics_utils.detector import DetectorPvDataStream
+from eco.epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 
 
 class DigitizerKeysightBoxcarChannel(Assembly):

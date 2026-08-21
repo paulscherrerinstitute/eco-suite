@@ -1,12 +1,12 @@
 from cam_server import CamClient, PipelineClient
 from matplotlib.backend_bases import MouseButton
 from eco.devices_general.utilities import Changer
-from eco.epics.detector import DetectorPvData, DetectorPvEnum
+from eco.epics_utils.detector import DetectorPvData, DetectorPvEnum
 
 from ..aliases import Alias, append_object_to_object
 from ..elements.adjustable import AdjustableVirtual, AdjustableGetSet, value_property
 from eco.elements.detector import DetectorGet
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 from eco.elements.adj_obj import AdjustableObject, DetectorObject
 from .pipelines_swissfel import Pipeline
 from ..elements.assembly import Assembly

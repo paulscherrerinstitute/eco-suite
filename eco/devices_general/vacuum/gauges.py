@@ -15,8 +15,8 @@ Minimal use::
 """
 
 from eco import Assembly
-from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
-from eco.epics.detector import DetectorPvData, DetectorPvEnum, DetectorPvString
+from eco.epics_utils.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
+from eco.epics_utils.detector import DetectorPvData, DetectorPvEnum, DetectorPvString
 
 
 class VacuumGauge(Assembly):

@@ -3,7 +3,7 @@ import numpy as np
 from scipy import constants
 from ..elements.assembly import Assembly
 from ..devices_general.motors import MotorRecord
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 from .kb_mirrors import KbVer, KbHor
 from time import sleep
 from numbers import Number

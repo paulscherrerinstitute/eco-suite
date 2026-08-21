@@ -5,7 +5,7 @@ from eco.microscopes.microscopes import FeturaPlusZoom
 from ..elements.assembly import Assembly
 from ..devices_general.motors import SmaractStreamdevice, MotorRecord, SmaractRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 from ..devices_general.cameras_swissfel import CameraBasler, CameraPCO
 from cam_server import PipelineClient
 import colorama

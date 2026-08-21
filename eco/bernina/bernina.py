@@ -1595,7 +1595,7 @@ namespace.append_obj(
 #     Id="SARES23",
 # )
 
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 
 # class Double_Pulse_Pump(Assembly):
 #     def __init__(self, name=None):

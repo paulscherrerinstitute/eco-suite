@@ -2,8 +2,8 @@ import time
 from epics.ca import element_count
 from epics.pv import PV
 import numpy as np
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvData
 from ..elements.detector import DetectorGet
 from ..elements.assembly import Assembly
 

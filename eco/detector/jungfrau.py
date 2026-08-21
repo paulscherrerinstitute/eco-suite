@@ -7,7 +7,7 @@ from eco.devices_general.therm import ChillerThermotek
 from eco.elements.adj_obj import AdjustableObject
 from eco.elements.detector import DetectorGet
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 from ..elements.assembly import Assembly
 from ..aliases import Alias
 from pathlib import Path

@@ -2,7 +2,7 @@ import numpy as np
 from eco import Assembly
 from eco.devices_general.motors import MotorRecord
 from eco.devices_general.cameras_swissfel import CameraBasler
-from eco.epics.adjustable import AdjustablePv
+from eco.epics_utils.adjustable import AdjustablePv
 from eco.microscopes import MicroscopeMotorRecord
 from eco.devices_general.powersockets import MpodModule, MpodChannel
 from eco.detector import Jungfrau

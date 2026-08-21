@@ -1,7 +1,7 @@
 from ..elements.assembly import Assembly
 from ..devices_general.motors import MotorRecord
 from ..elements.adjustable import AdjustableVirtual
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
 import numpy as np
 from epics import PV
 

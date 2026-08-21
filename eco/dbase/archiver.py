@@ -17,7 +17,7 @@ from datahub import Consumer, Daqbuf, Dispatcher, Enum, Epics, Table, pulse_id_t
 
 from .. import ecocnf
 from ..elements.assembly import Assembly
-from ..epics.detector import DetectorPvDataStream
+from ..epics_utils.detector import DetectorPvDataStream
 
 _logger = logging.getLogger(__name__)
 

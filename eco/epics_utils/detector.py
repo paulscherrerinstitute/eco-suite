@@ -14,10 +14,10 @@ from eco.elements.adjustable import AdjustableMemory
 from eco.elements.assembly import Assembly
 from eco.elements.detector import call_convenience, value_property
 from eco.elements.protocols import enum_repr
-from eco.epics.adjustable import AdjustablePvString, AdjustablePv, wait_for_enum_strs
-from eco.epics import adjustable as _adjustable_module
-from eco.epics import get_from_archive
-from eco.epics.utilities_epics import CallbackEpics
+from eco.epics_utils.adjustable import AdjustablePvString, AdjustablePv, wait_for_enum_strs
+from eco.epics_utils import adjustable as _adjustable_module
+from eco.epics_utils import get_from_archive
+from eco.epics_utils.utilities_epics import CallbackEpics
 
 from eco.acquisition.decorators import scannable
 
@@ -98,7 +98,7 @@ class DetectorPvData(Assembly):
 class DetectorPvEnum(Assembly):
     """Enum-valued PV Detector. Connecting and resolving the enum choice list
     is deferred to first use / an explicit `_wait_for_initialisation()` call
-    -- see `AdjustablePvEnum`'s class docstring (`eco.epics.adjustable`) for
+    -- see `AdjustablePvEnum`'s class docstring (`eco.epics_utils.adjustable`) for
     why: it's what lets many sibling enum fields constructed back-to-back
     (e.g. a Valve's several readbacks, an EVR's many pulsers) connect
     concurrently in pyepics's own CA background thread instead of each fully
@@ -116,7 +116,7 @@ class DetectorPvEnum(Assembly):
         self._pv_enum = None
         if not _adjustable_module.LAZY_ENUM_RESOLUTION:
             # default: resolve now, like before this speedup existed -- see
-            # eco.epics.adjustable.LAZY_ENUM_RESOLUTION's docstring.
+            # eco.epics_utils.adjustable.LAZY_ENUM_RESOLUTION's docstring.
             self._resolve()
 
     def _resolve(self):

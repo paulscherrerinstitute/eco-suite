@@ -1,6 +1,6 @@
 from eco import Assembly
-from eco.epics.adjustable import AdjustablePv, AdjustablePvEnum
-from eco.epics.detector import DetectorPvData, DetectorPvDataStream
+from eco.epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from eco.epics_utils.detector import DetectorPvData, DetectorPvDataStream
 
 
 class LabMaxEnergyMonitor(Assembly):

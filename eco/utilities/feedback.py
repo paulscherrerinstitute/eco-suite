@@ -2,7 +2,7 @@ from pathlib import Path
 from simple_pid import PID
 
 from eco.elements.adjustable import AdjustableMemory
-from ..epics.detector import DetectorPvDataStream
+from ..epics_utils.detector import DetectorPvDataStream
 from ..elements.assembly import Assembly
 from threading import Thread
 from time import sleep

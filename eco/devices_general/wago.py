@@ -1,6 +1,6 @@
 from eco.elements.assembly import Assembly
-from eco.epics.detector import DetectorPvData
-from eco.epics.adjustable import (
+from eco.epics_utils.detector import DetectorPvData
+from eco.epics_utils.adjustable import (
     AdjustablePvString,
     AdjustablePv,
     spec_convenience,

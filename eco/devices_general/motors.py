@@ -21,18 +21,18 @@ from ..elements.adjustable import (
 )
 from ..devices_general.pv_adjustable import PvRecord
 from ..elements.detector import DetectorGet
-from ..epics import get_from_archive
+from ..epics_utils import get_from_archive
 from ..utilities.keypress import KeyPress
 import sys, colorama
 from .. import global_config
 from ..elements.assembly import Assembly
 import time
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
-from ..epics.detector import DetectorPvData
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
+from ..epics_utils.detector import DetectorPvData
 import numpy as np
 from .motor_controller import MforceChannel
 from .detectors import DetectorVirtual
-from ..epics.detector import DetectorPvData
+from ..epics_utils.detector import DetectorPvData
 import json
 from .powerbrick import PowerBrickChannelPars
 from .schneider_settings import SchneiderMotorSettings, SETTINGS_SELECTION as SCHNEIDER_SETTINGS_SELECTION
@@ -1671,7 +1671,7 @@ class MotorRecord(Assembly):
 
         if schneider:
             # `schneider=True`: auto (channel parsed from pvname, IOC
-            # host/console resolved lazily via eco.epics.iocinfo on first
+            # host/console resolved lazily via eco.epics_utils.iocinfo on first
             # use). `schneider={"host": ..., "console_port": ..., "channel":
             # ...}`: explicit fast path, skips both -- see
             # SchneiderMotorSettings' docstring. Distinct from the existing

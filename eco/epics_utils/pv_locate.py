@@ -100,7 +100,7 @@ def _main() -> None:  # pragma: no cover - manual bench utility
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="python -m eco.epics.pv_locate",
+        prog="python -m eco.epics_utils.pv_locate",
         description="Resolve the IOC (CA server host:port) serving one or more PVs.",
     )
     p.add_argument("pvname", nargs="+")

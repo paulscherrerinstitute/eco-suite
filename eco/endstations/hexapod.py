@@ -1,8 +1,8 @@
 import time
 from epics import PV
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvData
 from time import sleep
 from ..aliases import append_object_to_object, Alias
 from scipy.spatial.transform import Rotation

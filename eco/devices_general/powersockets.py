@@ -1,6 +1,6 @@
-from ..epics.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
+from ..epics_utils.adjustable import AdjustablePvEnum, AdjustablePvString, AdjustablePv
 from ..elements.assembly import Assembly
-from ..epics.detector import DetectorPvEnum, DetectorPvData
+from ..epics_utils.detector import DetectorPvEnum, DetectorPvData
 from .detectors import DetectorVirtual
 from functools import partial
 from eco.elements.adjustable import spec_convenience

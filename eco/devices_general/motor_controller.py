@@ -1,5 +1,5 @@
 from ..elements.assembly import Assembly
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 
 
 class MforceChannel(Assembly):

@@ -6,7 +6,7 @@ improving a docstring immediately improves this reference. Only a curated set of
 modules is wired up so far — the ones the concepts and examples build on. Extend
 the ``automodule`` list as more of eco grows proper docstrings.
 
-.. TODO(eco docs): the sections below for eco.elements.assembly, eco.epics.monitor,
+.. TODO(eco docs): the sections below for eco.elements.assembly, eco.epics_utils.monitor,
    eco.dbase.archiver, eco.pipeline.pipeline_server, eco.motion.deltatau_config
    (+ its submodules), and eco.devices_general.newport_xps/schneider_mcode
    currently render empty. The build (see docs/conf.py's autodoc_mock_imports)
@@ -47,7 +47,7 @@ Adjustable elements
 Listening monitor
 -----------------
 
-.. automodule:: eco.epics.monitor
+.. automodule:: eco.epics_utils.monitor
    :members:
 
 Archiver / DataHub

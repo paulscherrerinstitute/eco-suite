@@ -8,9 +8,9 @@ from epics import PV
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
 from eco.elements.assembly import Assembly
-from eco.epics.adjustable import AdjustablePvString, wait_for_enum_strs
-from eco.epics import adjustable as _adjustable_module
-from eco.epics import get_from_archive
+from eco.epics_utils.adjustable import AdjustablePvString, wait_for_enum_strs
+from eco.epics_utils import adjustable as _adjustable_module
+from eco.epics_utils import get_from_archive
 from eco.elements.protocols import enum_repr
 
 
@@ -38,7 +38,7 @@ class DetectorBsData(Assembly):
 @enum_repr
 @get_from_archive
 class DetectorPvEnum(Assembly):
-    """See eco.epics.detector.DetectorPvEnum's docstring -- same class,
+    """See eco.epics_utils.detector.DetectorPvEnum's docstring -- same class,
     duplicated here; enum resolution is likewise deferred to first use."""
 
     def __init__(self, pvname, name=None):
@@ -53,12 +53,12 @@ class DetectorPvEnum(Assembly):
         self._pv_enum = None
         if not _adjustable_module.LAZY_ENUM_RESOLUTION:
             # default: resolve now, like before this speedup existed -- see
-            # eco.epics.adjustable.LAZY_ENUM_RESOLUTION's docstring.
+            # eco.epics_utils.adjustable.LAZY_ENUM_RESOLUTION's docstring.
             self._resolve()
 
     def _resolve(self):
         # never raises for an unreachable/non-enum PV -- see
-        # eco.epics.adjustable.AdjustablePvEnum._resolve()'s docstring
+        # eco.epics_utils.adjustable.AdjustablePvEnum._resolve()'s docstring
         if self._resolved:
             return
         with self._resolve_lock:
@@ -82,7 +82,7 @@ class DetectorPvEnum(Assembly):
         return self._pv_enum
 
     def _wait_for_initialisation(self):
-        # best-effort -- see eco.epics.adjustable.AdjustablePvEnum
+        # best-effort -- see eco.epics_utils.adjustable.AdjustablePvEnum
         try:
             self._resolve()
         except Exception:

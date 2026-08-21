@@ -3,8 +3,8 @@ from eco.devices_general.motors import MotorRecord, SmaractRecord, ThorlabsPiezo
 from eco.devices_general.wago import AnalogOutput
 from eco.elements.adjustable import AdjustableInterpolate, AdjustableVirtual
 from eco.elements.assembly import Assembly
-from eco.epics.adjustable import AdjustablePv
-from eco.epics.detector import DetectorPvData
+from eco.epics_utils.adjustable import AdjustablePv
+from eco.epics_utils.detector import DetectorPvData
 
 
 class Incoupling(Assembly):

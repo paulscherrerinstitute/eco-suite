@@ -14,12 +14,12 @@ from bsread import dispatcher, source, DEFAULT_DISPATCHER_URL
 # (ttl) of a bs channel via GET <base>/data/policy/<channel>, e.g.
 #   https://dispatcher-api.psi.ch/sf-databuffer/data/policy/SINBC01-DBPM030:Q1
 DISPATCHER_API_URL = DEFAULT_DISPATCHER_URL
-from ..epics import get_from_archive
+from ..epics_utils import get_from_archive
 from escape import stream
 from time import time, sleep
 from eco.acquisition.utilities import Acquisition
 from eco.acquisition.decorators import scannable
-from eco.epics.detector import CallbackEpics
+from eco.epics_utils.detector import CallbackEpics
 
 
 @get_from_archive

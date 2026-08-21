@@ -76,7 +76,7 @@ class ComponentPickerWidget(widgets.VBox):
         if not pvname:
             return
         try:
-            from eco.epics.adjustable import AdjustablePv
+            from eco.epics_utils.adjustable import AdjustablePv
 
             adj = AdjustablePv(pvname, name=pvname)
         except Exception as e:

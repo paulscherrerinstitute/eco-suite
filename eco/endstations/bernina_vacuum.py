@@ -9,7 +9,7 @@ from), so there is one source of truth for the inventory.
 """
 
 from eco import Assembly
-from eco.epics.adjustable import AdjustablePvEnum
+from eco.epics_utils.adjustable import AdjustablePvEnum
 
 
 class BerninaVacuum(Assembly):

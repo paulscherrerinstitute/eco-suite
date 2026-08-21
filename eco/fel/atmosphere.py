@@ -1,4 +1,4 @@
-from ..epics.detector import DetectorPvDataStream
+from ..epics_utils.detector import DetectorPvDataStream
 
 from ..elements.assembly import Assembly
 

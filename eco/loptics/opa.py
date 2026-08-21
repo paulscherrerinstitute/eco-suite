@@ -1,7 +1,7 @@
 from eco import Assembly
 
-from eco.epics.detector import DetectorPvData
-from eco.epics.adjustable import AdjustablePv
+from eco.epics_utils.detector import DetectorPvData
+from eco.epics_utils.adjustable import AdjustablePv
 from eco.elements.adjustable import AdjustableGetSet
 from epics import PV
 

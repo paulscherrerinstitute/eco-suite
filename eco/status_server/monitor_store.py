@@ -27,7 +27,7 @@ process. Two things build on top of that single subscription:
   subscription per channel.
 
 This mirrors the monitor/callback patterns already used elsewhere in eco
-(eco.epics.utilities_epics.Monitor, eco.epics.detector.CallbackEpics) -
+(eco.epics_utils.utilities_epics.Monitor, eco.epics_utils.detector.CallbackEpics) -
 same idea (attach/detach an add_callback on a live PV), just centralised
 and made permanent instead of per-scan.
 """

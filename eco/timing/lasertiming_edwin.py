@@ -13,8 +13,8 @@ from ..elements.adjustable import (
     tweak_option,
     value_property,
 )
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum
-from ..epics.detector import DetectorPvData, DetectorPvEnum
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum
+from ..epics_utils.detector import DetectorPvData, DetectorPvEnum
 from ..aliases import append_object_to_object, Alias
 from ..elements.assembly import Assembly
 

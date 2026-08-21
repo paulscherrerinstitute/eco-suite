@@ -1,4 +1,4 @@
-"""Qt frontend for eco.epics.iocinfo (scripts/desktop use).
+"""Qt frontend for eco.epics_utils.iocinfo (scripts/desktop use).
 
 Uses qtpy so it works with whichever Qt binding is installed (PyQt5/PyQt6/
 PySide2/PySide6) -- same convention as eco.widgets.component_selector_qt.
@@ -15,7 +15,7 @@ Usage (standalone window):
     gui.stop()
 
 Search is a fuzzy substring match by default (see
-`eco.epics.iocinfo._fuzzify`) and commonly returns matches across several
+`eco.epics_utils.iocinfo._fuzzify`) and commonly returns matches across several
 facilities -- the "Facility:" dropdown filters to one, and "Sort by IOC
 name" replaces the API's relevance-ish ordering with a simple alphabetical
 one.
@@ -24,14 +24,14 @@ Searching and "Check status" only do HTTP lookups and a connect-and-close
 TCP probe -- nothing is ever sent. "Show console output" connects and reads
 passively (also nothing sent). "Restart IOC" sends Ctrl-X (procServ's
 restart-child hotkey) after a QMessageBox confirmation dialog -- see
-eco.epics.iocinfo's module docstring for what that hotkey has and hasn't
+eco.epics_utils.iocinfo's module docstring for what that hotkey has and hasn't
 been verified against.
 """
 from typing import Optional
 
 from qtpy import QtCore, QtWidgets
 
-from eco.epics.iocinfo import (
+from eco.epics_utils.iocinfo import (
     IocMatch,
     check_console_reachable,
     find_ioc,

@@ -1,10 +1,10 @@
 from epics import caget_many
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..elements.detector import DetectorVirtual
-from ..epics.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
-from ..epics.detector import DetectorPvData, DetectorPvDataStream
+from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
+from ..epics_utils.detector import DetectorPvData, DetectorPvDataStream
 from ..detector.detectors_psi import DetectorBsStream
-from eco.epics.utilities_epics import EpicsString
+from eco.epics_utils.utilities_epics import EpicsString
 import logging
 from ..elements.assembly import Assembly
 from ..utilities.tables import format_table

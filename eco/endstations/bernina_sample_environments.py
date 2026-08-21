@@ -3,7 +3,7 @@ from scipy import constants
 from eco.devices_general.powersockets import MpodChannel
 from eco.devices_general.wago import AnalogOutput
 from eco.devices_general.cameras_swissfel import CameraBasler
-from eco.epics.detector import DetectorPvDataStream
+from eco.epics_utils.detector import DetectorPvDataStream
 import sys
 
 from eco.elements.detector import DetectorVirtual
@@ -15,7 +15,7 @@ from ..devices_general.motors import (
     ThorlabsPiezoRecord,
     SmarActOpenLoopRecordMCS2,
 )
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 import numpy as np
 from epics import PV
 from ..aliases import Alias, append_object_to_object
@@ -29,7 +29,7 @@ from ..elements.assembly import Assembly
 from ..loptics.bernina_laser import DelayTime
 from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
-from eco.epics.detector import DetectorPvData
+from eco.epics_utils.detector import DetectorPvData
 
 import numpy as np
 from scipy.spatial.transform import Rotation

@@ -123,7 +123,7 @@ def _run_shell(args):
     # subpackage literally named eco/epics/, so that directory shadows the
     # real third-party `epics` (pyepics) package the moment it's on
     # sys.path -- `import epics.pv` elsewhere in eco then resolves to
-    # eco.epics (which has no `pv` submodule) instead of pyepics, raising
+    # eco.epics_utils (which has no `pv` submodule) instead of pyepics, raising
     # `ModuleNotFoundError: No module named 'epics.pv'`. Module-mode resolves
     # eco.startup_inline through the normal import system instead, so it
     # never adds that extra directory.
@@ -173,12 +173,74 @@ def _run_desktop(args):
     )
 
 
+_EPILOG = """\
+UI front-ends (--ui):
+  shell    Interactive IPython session (default). The traditional eco
+           startup: an IPython shell with the chosen scope's devices
+           loaded into its namespace, ready to use interactively.
+  lab      Open JupyterLab on the packaged eco notebook
+           (eco/voila_app.ipynb), for notebook-based work.
+  voila    Serve that notebook as a read-only Voila dashboard: widgets
+           for the chosen namespace, with an assembly browser to
+           navigate to more components. No code editing, just the UI.
+  desktop  A Spyder/MATLAB-like Qt workbench window: an embedded
+           IPython console running the namespace, plus a dockable
+           panel to browse and open device widgets. Needs qtconsole
+           and a Qt binding (qtpy + PyQt5/PySide6) in this environment;
+           see eco.widgets.desktop_app.
+
+Configuring defaults with .ecorc:
+  A bare `eco` reads its defaults (scope/profile/lazy/ui) from an .ecorc
+  (INI) file, so you don't have to repeat flags every time. Lookup order,
+  first match wins: $ECORC, ./.ecorc, ~/.ecorc. Example file:
+
+      [eco]
+      scope = bernina
+      profile = eco
+      lazy = true
+      ui = shell
+
+  Anything in it can still be overridden on the command line, e.g.
+  `eco -s alvra` or `eco --ui voila`.
+
+  --set-rcfile [PATH] writes -s/--profile/-l/--ui exactly as given on
+  THIS command line into such a file, instead of launching anything:
+
+      eco -s alvra --ui voila --set-rcfile     # writes ~/.ecorc
+      eco -s alvra --set-rcfile ./.ecorc       # writes a project-local one
+
+  so a later bare `eco` (from that directory, or anywhere if ~/.ecorc)
+  picks these settings up automatically.
+"""
+
+
+def _write_rcfile(args):
+    """Write the resolved scope/profile/lazy/ui from this invocation into an
+    .ecorc file at ``args.set_rcfile`` (see --set-rcfile)."""
+    cfg = configparser.ConfigParser()
+    cfg["eco"] = {
+        "scope": args.scope or "",
+        "profile": args.profile,
+        "lazy": "true" if args.lazy else "false",
+        "ui": args.ui,
+    }
+    path = Path(args.set_rcfile)
+    with path.open("w") as fp:
+        cfg.write(fp)
+    print("eco: wrote {}".format(path), file=sys.stderr)
+    for key, value in cfg["eco"].items():
+        print("  {} = {}".format(key, value), file=sys.stderr)
+
+
 def main(argv=None):
     defaults, ecorc = _load_defaults()
 
     parser = argparse.ArgumentParser(
         prog="eco",
-        description="Launch eco in an IPython shell, JupyterLab, or a Voila dashboard.",
+        description="Launch eco in an IPython shell, JupyterLab, a Voila "
+                     "dashboard, or a Qt desktop workbench.",
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "-s", "--scope", default=defaults["scope"],
@@ -187,7 +249,8 @@ def main(argv=None):
     parser.add_argument(
         "--ui", choices=_UI_CHOICES, default=defaults["ui"],
         help="front-end to start: shell (IPython), lab (JupyterLab), voila "
-             "(widget dashboard), or desktop (Qt workbench). Default: %(default)s",
+             "(widget dashboard), or desktop (Qt workbench, see below). "
+             "Default: %(default)s",
     )
     parser.add_argument(
         "--profile", default=defaults["profile"],
@@ -196,13 +259,26 @@ def main(argv=None):
     lazy_grp = parser.add_mutually_exclusive_group()
     lazy_grp.add_argument(
         "-l", "--lazy", dest="lazy", action="store_true", default=defaults["lazy"],
-        help="lazy initialisation of the scope (defer device instantiation)",
+        help="lazy initialisation of the scope (defer device instantiation)"
+             + (" [default]" if defaults["lazy"] else ""),
     )
     lazy_grp.add_argument(
         "--no-lazy", dest="lazy", action="store_false",
-        help="disable lazy initialisation (build all devices at startup)",
+        help="disable lazy initialisation (build all devices at startup)"
+             + ("" if defaults["lazy"] else " [default]"),
+    )
+    parser.add_argument(
+        "--set-rcfile", nargs="?", const=str(Path.home() / ".ecorc"), default=None,
+        metavar="PATH",
+        help="write -s/--profile/-l/--ui from this invocation into an .ecorc "
+             "file (PATH, default: ~/.ecorc) and exit instead of launching. "
+             "See 'Configuring defaults with .ecorc' below.",
     )
     args = parser.parse_args(argv)
+
+    if args.set_rcfile is not None:
+        _write_rcfile(args)
+        return
 
     if ecorc is not None:
         print("eco: using defaults from {}".format(ecorc), file=sys.stderr)

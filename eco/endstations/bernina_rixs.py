@@ -3,7 +3,7 @@ import sys
 sys.path.append("..")
 from ..devices_general.motors import MotorRecord, MotorRecord
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
-from ..epics.adjustable import AdjustablePv
+from ..epics_utils.adjustable import AdjustablePv
 
 from epics import PV
 from ..aliases import Alias, append_object_to_object

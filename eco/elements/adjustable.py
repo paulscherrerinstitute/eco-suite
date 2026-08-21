@@ -849,7 +849,7 @@ class CallbackComposedValue:
     and recomputes the virtual's get_current_value() whenever any parent
     reports an update - so a derived/calculated value can be monitored with
     the same push-based, no-polling contract as a plain PV-backed value.
-    Mirrors eco.epics.utilities_epics.CallbackEpics (same .data shape,
+    Mirrors eco.epics_utils.utilities_epics.CallbackEpics (same .data shape,
     .start()/.stop(), context-manager support), and forwards the same
     `func`/`run_once` convention to each parent, so this also works when a
     parent is itself another AdjustableVirtual (nested composition).
@@ -865,7 +865,7 @@ class CallbackComposedValue:
             # Keeps only the most recent value instead of an ever-growing
             # list - for monitoring meant to run indefinitely (e.g. a
             # long-lived status cache) rather than for the duration of one
-            # scan. See eco.epics.utilities_epics.CallbackEpics.
+            # scan. See eco.epics_utils.utilities_epics.CallbackEpics.
             func = self._set_latest
             self.data = {"value": None, "timestamp": None, "timestamp_local": None}
         self.foo = func

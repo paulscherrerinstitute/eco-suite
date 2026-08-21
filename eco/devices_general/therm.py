@@ -3,7 +3,7 @@
 from functools import partial
 from eco import Assembly
 from eco.elements.detector import DetectorVirtual
-from eco.epics.detector import DetectorPvData
+from eco.epics_utils.detector import DetectorPvData
 
 
 class ChillerThermotek(Assembly):

@@ -1,4 +1,4 @@
-from ..epics.adjustable import AdjustablePvEnum
+from ..epics_utils.adjustable import AdjustablePvEnum
 
 
 class AramisMode:
