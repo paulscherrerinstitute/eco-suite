@@ -1065,6 +1065,93 @@ def test_new_workspace_action_clears_opened_names():
         gui.stop()
 
 
+# -- Tools menu: Log Viewer -----------------------------------------------
+
+
+def test_tools_menu_present():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+    try:
+        assert any(a.text() == "&Tools" for a in gui.window.menuBar().actions())
+    finally:
+        gui.stop()
+
+
+def test_open_log_viewer_opens_and_stores_a_reference(monkeypatch):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+
+    class _FakeLogViewer:
+        stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+
+    fake = _FakeLogViewer()
+    monkeypatch.setattr("eco.logs.widget", lambda prefer: fake)
+
+    try:
+        gui._open_log_viewer()
+        assert gui._log_viewer is fake
+    finally:
+        gui.stop()
+
+
+def test_open_log_viewer_again_replaces_not_piles_up(monkeypatch):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+
+    class _FakeLogViewer:
+        def __init__(self):
+            self.stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+
+    made = []
+
+    def fake_widget(prefer):
+        v = _FakeLogViewer()
+        made.append(v)
+        return v
+
+    monkeypatch.setattr("eco.logs.widget", fake_widget)
+
+    try:
+        gui._open_log_viewer()
+        first = gui._log_viewer
+        gui._open_log_viewer()
+        assert gui._log_viewer is made[1]
+        assert gui._log_viewer is not first
+        assert first.stop_calls == 1  # the previous one was torn down, not left running
+    finally:
+        gui.stop()
+
+
+def test_log_viewer_stopped_on_window_close(monkeypatch):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+
+    class _FakeLogViewer:
+        stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+
+    fake = _FakeLogViewer()
+    monkeypatch.setattr("eco.logs.widget", lambda prefer: fake)
+    gui._open_log_viewer()
+
+    gui.stop()
+
+    assert fake.stop_calls == 1
+    assert gui._log_viewer is None
+
+
 # -- Save Startup Script -------------------------------------------------
 #
 # New feature: a standalone .sh (paired with a .json workspace file) that

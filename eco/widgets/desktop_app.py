@@ -620,6 +620,11 @@ class EcoDesktopApp:
         self._kernel_session = None
         self._launcher_dock = None
         self._launcher = None
+        # eco.logs.widget(prefer="qt")'s return value (a LogTimelineQtWindow)
+        # -- kept referenced (see _open_log_viewer) so it isn't
+        # garbage-collected and closed out from under the user; stopped
+        # alongside everything else in _on_window_closing.
+        self._log_viewer = None
         # names opened via the launcher this session, in open order,
         # de-duplicated -- what "Reload Last Workspace" reopens; see
         # save_workspace/load_workspace. A fresh window always starts
@@ -676,6 +681,7 @@ class EcoDesktopApp:
             self._launcher = launcher
 
         self._build_workspace_menu()
+        self._build_tools_menu()
 
         self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
         self.window.resize(1200, 800)
@@ -720,6 +726,32 @@ class EcoDesktopApp:
             "for a fully default layout). Use 'Save Workspace Now' if you want "
             "this empty state to be what 'Reload Last Workspace' brings back."
         )
+
+    def _build_tools_menu(self):
+        menu = self.window.menuBar().addMenu("&Tools")
+
+        log_action = menu.addAction("Log Viewer")
+        log_action.setToolTip(
+            "Browse kernel console history across sessions on a timeline "
+            "(eco.logs.widget) -- reopening replaces the previous viewer"
+        )
+        log_action.triggered.connect(self._open_log_viewer)
+
+    def _open_log_viewer(self):
+        """eco.logs.widget(prefer="qt") -- see that module for what it
+        shows (kernel console history merged across sessions, on a
+        timeline). Kept referenced on self._log_viewer, both so it isn't
+        garbage-collected out from under the user and so a second click
+        replaces (rather than piles up alongside) the previous one."""
+        if self._log_viewer is not None:
+            try:
+                self._log_viewer.stop()
+            except Exception:
+                logger.exception("closing the previous log viewer failed")
+            self._log_viewer = None
+        import eco.logs
+
+        self._log_viewer = eco.logs.widget(prefer="qt")
 
     def _build_no_console_placeholder(self):
         """Central widget used instead of a console when with_console=False
@@ -1139,6 +1171,13 @@ class EcoDesktopApp:
             except Exception:
                 logger.exception("closing dock %r failed", dock.windowTitle())
         self._widget_docks = []
+
+        if self._log_viewer is not None:
+            try:
+                self._log_viewer.stop()
+            except Exception:
+                logger.exception("closing the log viewer failed")
+            self._log_viewer = None
 
         from eco.widgets.console_kernel import stop_kernel
 
