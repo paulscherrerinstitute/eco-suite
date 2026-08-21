@@ -1037,13 +1037,27 @@ class EcoDesktopApp:
 
     # -- lifecycle (mirrors CamServerPanelQt/CamServerStreamQt) -----------
 
-    def run(self):
+    def run(self, workspace=None):
+        """Build the window (if not already built) and block in
+        QApplication.exec_() until something quits the app. `workspace`,
+        if given, is loaded (see load_workspace) right after the window
+        exists but before exec_() -- callers that need this (the CLI's
+        --workspace) must go through here rather than calling
+        _build_window() themselves first: doing that separately creates
+        the QApplication as a side effect, so by the time run() got to
+        its own "did I create the app" check below it would already be
+        False, and the exec_() call -- along with everything past it --
+        would be skipped entirely. Confirmed for real: `eco desktop`
+        opened its window and then exited immediately, before the CLI's
+        --workspace support restructured this into two separate calls."""
         app = QtWidgets.QApplication.instance()
         created_app = app is None
         if created_app:
             app = QtWidgets.QApplication([])
         if self.window is None:
             self._build_window()
+        if workspace:
+            self.load_workspace(workspace)
         if created_app:
             # This call blocks in app.exec_() below until something quits
             # the app -- but WA_QuitOnClose is set False in _build_window
@@ -1183,11 +1197,11 @@ def _main(argv=None):
     # a fresh top-level process (no calling terminal to link to --
     # link_terminal would no-op here anyway since get_ipython() is None,
     # but False is the honest/explicit statement of intent). auto_start=False
-    # here (unlike a plain `python -c "EcoDesktopApp(...)"` one-liner) since
-    # --workspace has to be loaded *between* building the window and
-    # entering run()'s blocking event loop -- start()/auto_start=True would
-    # go straight from construction into that blocking call, with no chance
-    # to run load_workspace() first.
+    # since start() would go straight from construction into run()'s
+    # blocking exec_() with no way to pass --workspace through -- run()
+    # itself takes it instead (see run()'s docstring for why building the
+    # window and entering exec_() must stay in that one call, not split
+    # across two).
     app = EcoDesktopApp(
         namespace,
         theme=theme,
@@ -1197,10 +1211,7 @@ def _main(argv=None):
         lazy=args.lazy,
         with_console=args.with_console,
     )
-    app._build_window()
-    if args.workspace:
-        app.load_workspace(args.workspace)
-    app.run()
+    app.run(workspace=args.workspace)
 
 
 if __name__ == "__main__":

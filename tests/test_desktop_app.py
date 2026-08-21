@@ -908,6 +908,44 @@ def test_native_close_does_not_quit_the_app_when_embedded(monkeypatch):
     assert quit_calls == []
 
 
+def test_run_actually_enters_the_blocking_event_loop(monkeypatch):
+    """Regression test for a real bug found via manual testing: `eco
+    desktop` opened its window and exited immediately, before the CLI's
+    --workspace support restructured run() into `app._build_window();
+    app.load_workspace(...); app.run()`. run()'s own `created_app = app
+    is None` check must run BEFORE anything else creates the
+    QApplication as a side effect -- _build_window() does exactly that,
+    so calling it separately first meant that by the time run() ran its
+    check, created_app was already False, and the app.exec_() call (and
+    everything gated on it) was skipped entirely: run() just returned.
+    See run()'s docstring for why --workspace now goes through run()
+    itself (`run(workspace=...)`) instead."""
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+
+    entered_exec = []
+    monkeypatch.setattr(QtWidgets.QApplication, "exec_", lambda self: entered_exec.append(True))
+
+    gui.run(workspace=None)
+
+    assert entered_exec == [True]
+    assert gui._owns_event_loop is True
+
+
+def test_run_loads_workspace_before_entering_the_event_loop(tmp_path, monkeypatch):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui.save_workspace(tmp_path / "ws.json")  # empty, just to have a real file
+    import json
+
+    (tmp_path / "ws.json").write_text(json.dumps({"opened_names": ["cam_west"]}))
+
+    monkeypatch.setattr(QtWidgets.QApplication, "exec_", lambda self: None)
+    gui.run(workspace=tmp_path / "ws.json")
+
+    assert gui._opened_names == ["cam_west"]
+
+
 # -- workspace persistence --
 
 
