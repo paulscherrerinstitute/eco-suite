@@ -7,16 +7,27 @@ package import (EPICS, cam_server, ...) is expensive and best done once, inside
 the fresh session that this launcher starts -- not in the parent process that
 only needs to build a command line.
 
-Four front-ends are available via ``--ui`` (default: ``shell``):
+Four subcommands (``eco console`` is the default -- a bare ``eco`` is exactly
+``eco console``):
 
-    shell   Interactive IPython session (the traditional eco startup). Equivalent to
-            ipython --profile=eco --no-banner -i -c "run <eco>/startup_inline.py -l -s bernina"
-    lab     Open JupyterLab on the packaged eco notebook (eco/voila_app.ipynb).
-    voila   Serve that notebook as a Voila dashboard: the chosen namespace's
-            widget, with the assembly browser to navigate to more components.
-    desktop A Spyder/MATLAB-like Qt workbench window: an embedded IPython
-            console running the namespace, plus a dockable panel to browse
-            and open device widgets. See eco.widgets.desktop_app.
+    console    Interactive IPython session (the traditional eco startup).
+               Equivalent to ipython --profile=eco --no-banner -i
+               -c "run -m eco.startup_inline -l -s bernina"
+    desktop    A Spyder/MATLAB-like Qt workbench window: an embedded IPython
+               console (on by default; --no-console to skip it), plus --
+               only if -s/--scope is given -- a dockable "Namespace" panel
+               to browse and open device widgets. Without -s, this is just
+               a plain Qt console, no namespace attached. See
+               eco.widgets.desktop_app.
+    webapp     Serve the packaged eco notebook (eco/voila_app.ipynb) as a
+               read-only Voila dashboard: the chosen namespace's widget,
+               with the assembly browser to navigate to more components.
+    jupyterlab Open JupyterLab on that same notebook. If -s/--scope is
+               given, this also registers (and makes the default) a Jupyter
+               kernel that preloads eco.<scope> -- see _run_jupyterlab --
+               so any *new* console or notebook you open from JupyterLab's
+               own launcher starts with the namespace already loaded too,
+               not just the one pre-opened notebook.
 
 JupyterLab, Voila and the desktop UI's qtconsole are OPTIONAL -- they are not
 hard dependencies. Install them on demand, e.g. ``pip install eco[lab]`` /
@@ -33,13 +44,13 @@ works. Lookup order (first match wins):
 Example ``.ecorc``::
 
     [eco]
+    command = console
     scope = bernina
     profile = eco
     lazy = true
-    ui = shell
 
 Any of these can be overridden on the command line, e.g. ``eco -s alvra`` or
-``eco --ui voila``.
+``eco jupyterlab -s alvra``.
 """
 
 import argparse
@@ -51,13 +62,13 @@ from pathlib import Path
 
 # Built-in defaults, overridden by .ecorc, overridden again by CLI flags.
 _BUILTIN_DEFAULTS = {
+    "command": "console",
     "scope": "bernina",
     "profile": "eco",
     "lazy": True,
-    "ui": "shell",
 }
 
-_UI_CHOICES = ("shell", "lab", "voila", "desktop")
+_COMMANDS = ("console", "desktop", "webapp", "jupyterlab")
 
 
 def _ecorc_path():
@@ -83,15 +94,29 @@ def _load_defaults():
         cfg.read(path)
         if cfg.has_section("eco"):
             sec = cfg["eco"]
+            if "command" in sec:
+                defaults["command"] = sec.get("command")
             if "scope" in sec:
                 defaults["scope"] = sec.get("scope") or None
             if "profile" in sec:
                 defaults["profile"] = sec.get("profile")
             if "lazy" in sec:
                 defaults["lazy"] = sec.getboolean("lazy")
-            if "ui" in sec:
-                defaults["ui"] = sec.get("ui")
     return defaults, path
+
+
+def _normalize_argv(argv, default_command):
+    """Insert the default subcommand when none was given, so a bare `eco`
+    (or `eco -s alvra`, `eco --no-lazy`, ...) works without spelling out
+    `eco console` every time. Left alone if the first token already is a
+    known subcommand, or is -h/--help (so `eco --help` shows the top-level
+    help/subcommand list, not `console`'s)."""
+    argv = list(argv)
+    if not argv:
+        return [default_command]
+    if argv[0] in ("-h", "--help") or argv[0] in _COMMANDS:
+        return argv
+    return [default_command] + argv
 
 
 def _package_file(filename):
@@ -115,7 +140,7 @@ def _exec(cmd, missing_hint):
         sys.exit("eco: '{}' not found. {}".format(cmd[0], missing_hint))
 
 
-def _run_shell(args):
+def _run_console(args):
     # Module-mode (`-m eco.startup_inline`), not a bare file path: IPython's
     # %run inserts the *run script's own directory* onto sys.path (mirroring
     # `python script.py`), which for a file path resolving inside the eco
@@ -138,34 +163,20 @@ def _run_shell(args):
     )
 
 
-def _run_notebook(args, tool):
-    """Launch JupyterLab (tool='lab') or Voila (tool='voila') on the packaged
-    notebook, passing the scope/lazy choice through the environment.
-    """
-    notebook = _package_file("voila_app.ipynb")
-    # The notebook reads these to know which namespace to open.
-    os.environ["ECO_SCOPE"] = args.scope or ""
-    os.environ["ECO_LAZY"] = "1" if args.lazy else "0"
-    if tool == "lab":
-        _exec(
-            ["jupyter", "lab", notebook],
-            "Install it with e.g. `pip install eco[lab]` or `conda install jupyterlab`.",
-        )
-    else:  # voila
-        _exec(
-            ["voila", notebook],
-            "Install it with e.g. `pip install eco[voila]` or `conda install voila`.",
-        )
-
-
 def _run_desktop(args):
     """Launch the Qt desktop workbench (see eco.widgets.desktop_app) as a
-    fresh process -- exec, like _run_shell/_run_notebook above, so this
-    launcher module stays import-eco-free (see the module docstring)."""
+    fresh process -- exec, like the other _run_* functions, so this
+    launcher module stays import-eco-free (see the module docstring).
+    Without -s/--scope, this is a plain embedded Qt console with no
+    namespace/launcher panel (see eco.widgets.desktop_app.EcoDesktopApp)."""
     cmd = [sys.executable, "-m", "eco.widgets.desktop_app"]
     if args.scope:
         cmd += ["--scope", args.scope]
     cmd += ["--lazy"] if args.lazy else ["--no-lazy"]
+    if not args.console:
+        cmd += ["--no-console"]
+    if args.theme:
+        cmd += ["--theme", args.theme]
     _exec(
         cmd,
         "The desktop UI needs qtconsole and a Qt binding (qtpy + PyQt5/PySide6) "
@@ -173,40 +184,210 @@ def _run_desktop(args):
     )
 
 
+def _run_webapp(args):
+    """Serve the packaged notebook (eco/voila_app.ipynb) as a read-only
+    Voila dashboard, passing the scope/lazy choice through the environment
+    (the notebook itself reads these -- see its first cell)."""
+    notebook = _package_file("voila_app.ipynb")
+    os.environ["ECO_SCOPE"] = args.scope or ""
+    os.environ["ECO_LAZY"] = "1" if args.lazy else "0"
+    _exec(
+        ["voila", notebook],
+        "Install it with e.g. `pip install eco[voila]` or `conda install voila`.",
+    )
+
+
+def _ipython_profile_dir(profile_name):
+    """Where IPython keeps a profile's config/startup files -- same
+    resolution IPython itself uses (~/.ipython, or $IPYTHONDIR if set)."""
+    base = os.environ.get("IPYTHONDIR") or str(Path.home() / ".ipython")
+    return Path(base) / "profile_{}".format(profile_name)
+
+
+def _jupyter_kernel_dir(kernel_name):
+    """Where a user-level Jupyter kernelspec lives -- same resolution
+    `jupyter kernelspec install --user` uses (~/.local/share/jupyter/kernels
+    on Linux, which is what this sandbox and every real beamline account
+    both are)."""
+    base = os.environ.get("JUPYTER_DATA_DIR") or str(
+        Path.home() / ".local" / "share" / "jupyter"
+    )
+    return Path(base) / "kernels" / kernel_name
+
+
+def _register_eco_kernel(scope, lazy):
+    """Write (idempotently -- safe to call every launch) an IPython profile
+    startup file that preloads eco.<scope> exactly like `eco console` does
+    (import eco.<scope> as <scope>; from eco.<scope> import *), plus a
+    Jupyter kernelspec that uses that profile. Returns the kernel's name.
+
+    WHY a whole profile+kernelspec, not just opening one pre-built
+    notebook: IPython/ipykernel run a profile's startup/*.py on every
+    kernel launch under `--profile=<name>` -- not just this one process,
+    every future one too. So once this kernel is registered, ANY new
+    console or notebook opened from JupyterLab's own launcher (not just a
+    notebook eco_cli.py happens to point jupyter at) starts with the
+    namespace already loaded, matching eco desktop's console -- see
+    eco.widgets.desktop_app's build_namespace_vars docstring for why a
+    plain `namespace` variable alone wouldn't be enough.
+    """
+    kernel_name = "eco-{}".format(scope)
+
+    profile_dir = _ipython_profile_dir(kernel_name)
+    startup_dir = profile_dir / "startup"
+    startup_dir.mkdir(parents=True, exist_ok=True)
+    lazy_line = "ecocnf.startup_lazy = True\n" if lazy else ""
+    (startup_dir / "00-eco-scope.py").write_text(
+        "# Auto-generated by eco jupyterlab -- safe to delete, regenerated\n"
+        "# every launch from the -s/-l flags given then.\n"
+        "from eco import ecocnf\n"
+        + lazy_line
+        + "import eco.{scope} as {scope}\n"
+        "from eco.{scope} import *\n".format(scope=scope)
+    )
+
+    kernel_dir = _jupyter_kernel_dir(kernel_name)
+    kernel_dir.mkdir(parents=True, exist_ok=True)
+    import json
+
+    (kernel_dir / "kernel.json").write_text(
+        json.dumps(
+            {
+                "argv": [
+                    sys.executable,
+                    "-m",
+                    "ipykernel_launcher",
+                    "-f",
+                    "{connection_file}",
+                    "--profile={}".format(kernel_name),
+                ],
+                "display_name": "eco ({})".format(scope),
+                "language": "python",
+            }
+        )
+    )
+    return kernel_name
+
+
+def _run_jupyterlab(args):
+    """Open JupyterLab on the packaged notebook (background process -- see
+    below for why this can't be the usual _exec). If -s/--scope is given,
+    also registers an eco-<scope> kernel (see _register_eco_kernel) and
+    makes it JupyterLab's default, so a fresh Console or Notebook opened
+    from its own launcher also comes preloaded -- not just the one
+    pre-opened dashboard notebook. Then, unless --no-console, also opens a
+    real `jupyter console` on that same kernel in *this* terminal --
+    mirroring `eco desktop`'s "console on by default, --no-console to skip
+    it" -- so you get an actual interactive prompt with eco.<scope>
+    preloaded (bare names, exactly like `eco console`), not just a kernel
+    sitting there available for JupyterLab's own launcher to pick.
+    """
+    import subprocess
+
+    notebook = _package_file("voila_app.ipynb")
+    os.environ["ECO_SCOPE"] = args.scope or ""
+    os.environ["ECO_LAZY"] = "1" if args.lazy else "0"
+    lab_cmd = ["jupyter", "lab", notebook]
+    kernel_name = None
+    if args.scope:
+        kernel_name = _register_eco_kernel(args.scope, args.lazy)
+        lab_cmd.append("--MappingKernelManager.default_kernel_name={}".format(kernel_name))
+        print(
+            "eco: registered Jupyter kernel '{}' (preloads eco.{}) as the "
+            "default for new consoles/notebooks in this session.".format(
+                kernel_name, args.scope
+            ),
+            file=sys.stderr,
+        )
+
+    if not args.console:
+        _exec(
+            lab_cmd,
+            "Install it with e.g. `pip install eco[lab]` or `conda install jupyterlab`.",
+        )
+        return  # _exec only returns on a missing executable (already sys.exit'd)
+
+    if not args.scope:
+        print(
+            "eco: --console needs -s/--scope to know what to preload -- "
+            "no scope given, so only opening the plain JupyterLab tab "
+            "(use --no-console to silence this).",
+            file=sys.stderr,
+        )
+        _exec(
+            lab_cmd,
+            "Install it with e.g. `pip install eco[lab]` or `conda install jupyterlab`.",
+        )
+        return
+
+    # jupyter lab runs as a genuine background server (its own long-lived
+    # process, not something this launcher waits on); the console below
+    # becomes THIS process's interactive surface, same as `eco console` --
+    # so it has to be a real subprocess, not the usual os.execvp _exec
+    # (which would replace this process and never reach the console at
+    # all).
+    try:
+        subprocess.Popen(lab_cmd)
+    except FileNotFoundError:
+        sys.exit(
+            "eco: 'jupyter' not found. Install it with e.g. "
+            "`pip install eco[lab]` or `conda install jupyterlab`."
+        )
+    print(
+        "eco: also opening a Jupyter console on kernel '{}' (eco.{} "
+        "preloaded) -- Ctrl-D exits just the console, JupyterLab keeps "
+        "running.".format(kernel_name, args.scope),
+        file=sys.stderr,
+    )
+    _exec(
+        ["jupyter", "console", "--kernel", kernel_name],
+        "Install it with e.g. `pip install eco[lab]` or `conda install jupyterlab`.",
+    )
+
+
 _EPILOG = """\
-UI front-ends (--ui):
-  shell    Interactive IPython session (default). The traditional eco
-           startup: an IPython shell with the chosen scope's devices
-           loaded into its namespace, ready to use interactively.
-  lab      Open JupyterLab on the packaged eco notebook
-           (eco/voila_app.ipynb), for notebook-based work.
-  voila    Serve that notebook as a read-only Voila dashboard: widgets
-           for the chosen namespace, with an assembly browser to
-           navigate to more components. No code editing, just the UI.
-  desktop  A Spyder/MATLAB-like Qt workbench window: an embedded
-           IPython console running the namespace, plus a dockable
-           panel to browse and open device widgets. Needs qtconsole
-           and a Qt binding (qtpy + PyQt5/PySide6) in this environment;
-           see eco.widgets.desktop_app.
+Subcommands:
+  console     Interactive IPython session (default). The traditional eco
+              startup: an IPython shell with the chosen scope's devices
+              loaded into its namespace, ready to use interactively.
+  desktop     A Spyder/MATLAB-like Qt workbench window: an embedded
+              IPython console (on by default; --no-console to skip it)
+              plus, only if -s/--scope is given, a dockable "Namespace"
+              panel to browse and open device widgets. Without -s, it's
+              just a plain Qt console -- no namespace attached. Needs
+              qtconsole and a Qt binding (qtpy + PyQt5/PySide6) in this
+              environment; see eco.widgets.desktop_app.
+  webapp      Serve the packaged notebook as a read-only Voila dashboard:
+              widgets for the chosen namespace, with an assembly browser
+              to navigate to more components. No code editing, just the UI.
+  jupyterlab  Open JupyterLab on that same notebook. With -s/--scope, also
+              registers an eco-<scope> Jupyter kernel and makes it the
+              default, so a fresh Console/Notebook you open from
+              JupyterLab's own launcher starts with eco.<scope> already
+              loaded too -- not just the one pre-opened notebook. Also
+              opens a real `jupyter console` on that kernel right in this
+              terminal (on by default, matching desktop; --no-console to
+              skip it) -- an actual interactive prompt with eco.<scope>
+              preloaded, not just a kernel sitting there for later.
 
 Configuring defaults with .ecorc:
-  A bare `eco` reads its defaults (scope/profile/lazy/ui) from an .ecorc
-  (INI) file, so you don't have to repeat flags every time. Lookup order,
-  first match wins: $ECORC, ./.ecorc, ~/.ecorc. Example file:
+  A bare `eco` reads its defaults (command/scope/profile/lazy) from an
+  .ecorc (INI) file, so you don't have to repeat flags every time. Lookup
+  order, first match wins: $ECORC, ./.ecorc, ~/.ecorc. Example file:
 
       [eco]
+      command = console
       scope = bernina
       profile = eco
       lazy = true
-      ui = shell
 
   Anything in it can still be overridden on the command line, e.g.
-  `eco -s alvra` or `eco --ui voila`.
+  `eco -s alvra` or `eco jupyterlab -s alvra`.
 
-  --set-rcfile [PATH] writes -s/--profile/-l/--ui exactly as given on
-  THIS command line into such a file, instead of launching anything:
+  --set-rcfile [PATH] writes -s/-l (and --profile, for console) exactly as
+  given on THIS command line into such a file, instead of launching:
 
-      eco -s alvra --ui voila --set-rcfile     # writes ~/.ecorc
+      eco jupyterlab -s alvra --set-rcfile     # writes ~/.ecorc
       eco -s alvra --set-rcfile ./.ecorc       # writes a project-local one
 
   so a later bare `eco` (from that directory, or anywhere if ~/.ecorc)
@@ -215,15 +396,17 @@ Configuring defaults with .ecorc:
 
 
 def _write_rcfile(args):
-    """Write the resolved scope/profile/lazy/ui from this invocation into an
-    .ecorc file at ``args.set_rcfile`` (see --set-rcfile)."""
+    """Write the resolved command/scope/(profile)/lazy from this invocation
+    into an .ecorc file at ``args.set_rcfile`` (see --set-rcfile)."""
     cfg = configparser.ConfigParser()
-    cfg["eco"] = {
+    section = {
+        "command": args.command,
         "scope": args.scope or "",
-        "profile": args.profile,
         "lazy": "true" if args.lazy else "false",
-        "ui": args.ui,
     }
+    if hasattr(args, "profile"):
+        section["profile"] = args.profile
+    cfg["eco"] = section
     path = Path(args.set_rcfile)
     with path.open("w") as fp:
         cfg.write(fp)
@@ -232,29 +415,10 @@ def _write_rcfile(args):
         print("  {} = {}".format(key, value), file=sys.stderr)
 
 
-def main(argv=None):
-    defaults, ecorc = _load_defaults()
-
-    parser = argparse.ArgumentParser(
-        prog="eco",
-        description="Launch eco in an IPython shell, JupyterLab, a Voila "
-                     "dashboard, or a Qt desktop workbench.",
-        epilog=_EPILOG,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+def _add_common_args(parser, defaults, scope_default):
     parser.add_argument(
-        "-s", "--scope", default=defaults["scope"],
+        "-s", "--scope", default=scope_default,
         help="scope name (instrument/beamline), e.g. bernina",
-    )
-    parser.add_argument(
-        "--ui", choices=_UI_CHOICES, default=defaults["ui"],
-        help="front-end to start: shell (IPython), lab (JupyterLab), voila "
-             "(widget dashboard), or desktop (Qt workbench, see below). "
-             "Default: %(default)s",
-    )
-    parser.add_argument(
-        "--profile", default=defaults["profile"],
-        help="IPython profile for the shell UI (default: %(default)s)",
     )
     lazy_grp = parser.add_mutually_exclusive_group()
     lazy_grp.add_argument(
@@ -270,10 +434,69 @@ def main(argv=None):
     parser.add_argument(
         "--set-rcfile", nargs="?", const=str(Path.home() / ".ecorc"), default=None,
         metavar="PATH",
-        help="write -s/--profile/-l/--ui from this invocation into an .ecorc "
-             "file (PATH, default: ~/.ecorc) and exit instead of launching. "
-             "See 'Configuring defaults with .ecorc' below.",
+        help="write this invocation's settings into an .ecorc file (PATH, "
+             "default: ~/.ecorc) and exit instead of launching. See "
+             "'Configuring defaults with .ecorc' below.",
     )
+
+
+def _add_console_flag(parser, help_on, help_off):
+    grp = parser.add_mutually_exclusive_group()
+    grp.add_argument(
+        "--console", dest="console", action="store_true", default=True,
+        help=help_on + " [default]",
+    )
+    grp.add_argument("--no-console", dest="console", action="store_false", help=help_off)
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    defaults, ecorc = _load_defaults()
+    argv = _normalize_argv(argv, defaults["command"])
+
+    parser = argparse.ArgumentParser(
+        prog="eco",
+        description="Launch eco in an IPython console, a Qt desktop "
+                     "workbench, a Voila dashboard, or JupyterLab.",
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    p_console = subparsers.add_parser("console", help="Interactive IPython session (default).")
+    _add_common_args(p_console, defaults, scope_default=defaults["scope"])
+    p_console.add_argument(
+        "--profile", default=defaults["profile"],
+        help="IPython profile for the console (default: %(default)s)",
+    )
+
+    p_desktop = subparsers.add_parser("desktop", help="Qt desktop workbench.")
+    # No forced default scope: omitting -s gives a plain console with no
+    # Namespace launcher panel (see eco.widgets.desktop_app) instead of
+    # silently defaulting to bernina.
+    _add_common_args(p_desktop, defaults, scope_default=None)
+    _add_console_flag(
+        p_desktop,
+        help_on="embedded IPython console",
+        help_off="skip the embedded console (Namespace launcher panel only, if -s is given)",
+    )
+    p_desktop.add_argument(
+        "--theme", choices=["dark", "light"], default=None,
+        help="modern skin (default: none/native)",
+    )
+
+    p_webapp = subparsers.add_parser("webapp", help="Voila dashboard (read-only widgets).")
+    _add_common_args(p_webapp, defaults, scope_default=defaults["scope"])
+
+    p_jupyterlab = subparsers.add_parser("jupyterlab", help="JupyterLab, with a preloaded console/kernel.")
+    _add_common_args(p_jupyterlab, defaults, scope_default=defaults["scope"])
+    _add_console_flag(
+        p_jupyterlab,
+        help_on="also open a real `jupyter console` on the preloaded eco-<scope> kernel",
+        help_off="just open JupyterLab, no separate console (the eco-<scope> kernel is still registered/default if -s is given)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.set_rcfile is not None:
@@ -283,12 +506,14 @@ def main(argv=None):
     if ecorc is not None:
         print("eco: using defaults from {}".format(ecorc), file=sys.stderr)
 
-    if args.ui == "shell":
-        _run_shell(args)
-    elif args.ui == "desktop":
+    if args.command == "console":
+        _run_console(args)
+    elif args.command == "desktop":
         _run_desktop(args)
-    else:
-        _run_notebook(args, args.ui)
+    elif args.command == "webapp":
+        _run_webapp(args)
+    elif args.command == "jupyterlab":
+        _run_jupyterlab(args)
 
 
 if __name__ == "__main__":

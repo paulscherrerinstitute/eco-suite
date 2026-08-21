@@ -63,12 +63,23 @@ class _FakeNamespace:
         self._init_delay = init_delay
         self.init_calls = []
         self.init_all_calls = []
-        # a real Namespace exposes every registered name as an attribute
-        # regardless of init state (lazy ones are lazy_object_proxy
-        # placeholders, but still attribute-accessible) -- mirror that so
-        # _open_widget's getattr(namespace, name) has something to find
+        self._required = set()
+        # a real Namespace resolves a name via resolve_item (lazy_items-or-
+        # failed_items-or-initialized_items -- see Namespace.resolve_item's
+        # docstring for why NOT a bare attribute); mirror that with one
+        # flat dict here rather than three, since this fake never needs to
+        # tell "which dict" apart from the *_names sets above.
+        self._items = {}
         for name in set(initialized) | set(lazy) | set(failed):
-            setattr(self, name, _FakeItem(name))
+            self._items[name] = _FakeItem(name)
+
+    def resolve_item(self, name):
+        return self._items.get(name)
+
+    def required_names(self, value=None):
+        if value is None:
+            return sorted(self._required)
+        self._required = set(value)
 
     def init_name(self, name, raise_errors=False, **kwargs):
         self.init_calls.append(name)
@@ -118,8 +129,8 @@ def test_namespace_launcher_opens_initialized_entry_immediately():
     opened = []
     launcher = _NamespaceLauncher(ns, on_open=opened.append)
 
-    assert launcher._list.count() == 1
-    item = launcher._list.item(0)
+    assert launcher._list.rowCount() == 1
+    item = launcher._list.item(0, launcher._COL_NAME)
     assert item.text().endswith(" cam_west")  # icon prefix -- see _kind_icon
     launcher._on_item_clicked(item)
 
@@ -133,7 +144,7 @@ def test_namespace_launcher_initializes_lazy_entry_then_opens_it():
     opened = []
     launcher = _NamespaceLauncher(ns, on_open=opened.append)
 
-    item = launcher._list.item(0)
+    item = launcher._list.item(0, launcher._COL_NAME)
     launcher._on_item_clicked(item)
 
     # while loading, the entry is tracked (spinner shown via _label_for)
@@ -164,7 +175,7 @@ def test_namespace_launcher_lazy_init_thread_attaches_the_shared_ca_context(monk
     ns = _FakeNamespace(lazy=["prepump"], init_delay=0.05)
     launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
 
-    launcher._on_item_clicked(launcher._list.item(0))
+    launcher._on_item_clicked(launcher._list.item(0, launcher._COL_NAME))
     resolved = _pump(app, lambda: ns.init_calls == ["prepump"], timeout=5.0)
 
     assert resolved
@@ -177,7 +188,7 @@ def test_namespace_launcher_does_not_open_failed_entry():
     opened = []
     launcher = _NamespaceLauncher(ns, on_open=opened.append)
 
-    item = launcher._list.item(0)
+    item = launcher._list.item(0, launcher._COL_NAME)
     assert item.text().endswith(" broken_device")
     assert "⚠" in item.text()  # failed-state icon, see _kind_icon
     launcher._on_item_clicked(item)
@@ -193,7 +204,8 @@ def test_namespace_launcher_filter_hides_non_matching_entries():
 
     launcher._filter_edit.setText("cam")
     names = {
-        launcher._list.item(i).data(QtCore.Qt.UserRole) for i in range(launcher._list.count())
+        launcher._list.item(i, launcher._COL_NAME).data(QtCore.Qt.UserRole)
+        for i in range(launcher._list.rowCount())
     }
     assert names == {"cam_west", "cam_east"}
 
@@ -204,12 +216,12 @@ def test_namespace_launcher_clicking_already_loading_entry_is_a_no_op():
     opened = []
     launcher = _NamespaceLauncher(ns, on_open=opened.append)
 
-    item = launcher._list.item(0)
+    item = launcher._list.item(0, launcher._COL_NAME)
     launcher._on_item_clicked(item)  # starts loading
     assert "slow_device" in launcher._loading
 
     launcher._refresh()
-    item2 = launcher._list.item(0)
+    item2 = launcher._list.item(0, launcher._COL_NAME)
     launcher._on_item_clicked(item2)  # should not start a second init
 
     time.sleep(0.1)
@@ -243,8 +255,8 @@ def test_kind_icon_for_lazy_and_failed_states_never_resolves_the_item():
 def test_kind_icon_classifies_initialized_adjustable_and_detector():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(initialized=["motor1", "diode1"])
-    ns.motor1 = _FakeAdjustableItem()
-    ns.diode1 = _FakeDetectorItem()
+    ns._items["motor1"] = _FakeAdjustableItem()
+    ns._items["diode1"] = _FakeDetectorItem()
     launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
     assert launcher._kind_icon("motor1", "initialized") == "✏️"
     assert launcher._kind_icon("diode1", "initialized") == "\U0001f441️"
@@ -319,15 +331,15 @@ def test_live_refresh_picks_up_a_change_made_outside_the_launcher():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(lazy=["spectrometer"])
     launcher = _NamespaceLauncher(ns, on_open=lambda name: None)
-    assert launcher._list.item(0).text().endswith(" spectrometer")
-    assert "⏳" in launcher._list.item(0).text()
+    assert launcher._list.item(0, launcher._COL_NAME).text().endswith(" spectrometer")
+    assert "⏳" in launcher._list.item(0, launcher._COL_NAME).text()
 
     # simulate an external initialization (not via this launcher)
     ns.lazy_names.discard("spectrometer")
     ns.initialized_names.add("spectrometer")
 
     launcher._refresh()  # what the timer's own tick would trigger
-    assert "⏳" not in launcher._list.item(0).text()
+    assert "⏳" not in launcher._list.item(0, launcher._COL_NAME).text()
 
 
 # -- link_terminal --
@@ -416,12 +428,23 @@ def test_build_console_uses_inprocess_kernel_when_safe(monkeypatch):
     monkeypatch.setattr("eco.widgets.console_kernel.build_subprocess_kernel", fake_build_subprocess)
     monkeypatch.setattr("eco.widgets.console_kernel.LoggingJupyterWidget", _FakeConsoleWidget)
     monkeypatch.setattr("IPython.get_ipython", lambda: None)
+    # build_namespace_vars does a real `importlib.import_module(f"eco.{scope}")`
+    # -- fine in production (EcoDesktopApp.namespace was already built from
+    # that same import, so it's cached; see build_namespace_vars's
+    # docstring), but this test's `app.namespace` is just the bare string
+    # "the-namespace", never built via a real import at all -- fake it out
+    # so this test stays instant instead of doing a real, first-time
+    # eco.bernina import.
+    monkeypatch.setattr(
+        "eco.widgets.desktop_app.build_namespace_vars",
+        lambda scope, lazy: {"mono": "fake-mono-value"},
+    )
 
     app = _make_app()
     app._build_console()
 
     assert app._kernel_manager == "manager"
-    assert calls["push_vars"] == {"namespace": "the-namespace"}
+    assert calls["push_vars"] == {"mono": "fake-mono-value", "namespace": "the-namespace"}
     assert calls["shared_user_ns"] is None
     assert "linked to the calling terminal" not in app._console.banner
     assert app._console.executed == []  # in-process: namespace is pushed directly, no startup code to run
@@ -476,9 +499,17 @@ def test_build_console_falls_back_to_subprocess_kernel_when_shell_conflict(monke
     assert app._kernel_manager == "manager"
     # startup code is run through the finished console widget's own
     # .execute() (not passed to build_subprocess_kernel) -- see
-    # build_subprocess_kernel's docstring for why
+    # build_subprocess_kernel's docstring for why. Mirrors startup_inline.py's
+    # own two lines (import eco.<scope> as <scope>; from eco.<scope> import
+    # *) so bare names (mono, att, ...) are available here too, not just a
+    # `namespace` variable -- see build_namespace_vars's docstring.
     assert len(app._console.executed) == 1
-    assert "build_namespace(scope='bernina', lazy=True)" in app._console.executed[0]
+    assert app._console.executed[0] == (
+        "from eco import ecocnf\n"
+        "ecocnf.startup_lazy = True\n"
+        "import eco.bernina as bernina\n"
+        "from eco.bernina import *\n"
+    )
     assert "already has a running IPython shell" in app._console.banner
 
 
@@ -519,7 +550,7 @@ def test_open_widget_calls_widget_directly_not_through_the_console():
     gui._build_window()
     try:
         gui._open_widget("prepump")
-        assert ns.prepump.widget_calls == 1
+        assert ns._items["prepump"].widget_calls == 1
         assert gui._opened_names == ["prepump"]
     finally:
         gui.stop()
@@ -532,7 +563,7 @@ def test_open_widget_logs_and_survives_a_failing_widget():
     def boom():
         raise RuntimeError("no display")
 
-    ns.broken.widget = boom
+    ns._items["broken"].widget = boom
     gui = EcoDesktopApp(namespace=ns, auto_start=False)
     gui._build_window()
     try:
@@ -552,7 +583,7 @@ def test_open_widget_docks_the_returned_window_instead_of_leaving_it_standalone(
     gui._build_window()
     try:
         gui._open_widget("prepump")
-        wrapper = ns.prepump.last_widget
+        wrapper = ns._items["prepump"].last_widget
         assert len(gui._widget_docks) == 1
         dock = gui._widget_docks[0]
         assert dock.widget() is wrapper.window
@@ -588,7 +619,7 @@ def test_open_widget_dock_close_stops_the_wrapped_widget():
     gui._build_window()
     try:
         gui._open_widget("prepump")
-        wrapper = ns.prepump.last_widget
+        wrapper = ns._items["prepump"].last_widget
         dock = gui._widget_docks[0]
         dock.close()
         assert wrapper.stop_calls == 1
@@ -682,7 +713,7 @@ def test_with_console_false_open_widget_still_works():
     gui._build_window()
     try:
         gui._open_widget("prepump")
-        assert ns.prepump.widget_calls == 1
+        assert ns._items["prepump"].widget_calls == 1
     finally:
         gui.stop()
 
@@ -707,7 +738,7 @@ def test_native_close_tears_down_docked_widgets_same_as_stop(tmp_path):
     gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
     gui._build_window()
     gui._open_widget("prepump")
-    wrapper = ns.prepump.last_widget
+    wrapper = ns._items["prepump"].last_widget
     assert len(gui._widget_docks) == 1
 
     gui.window.close()  # simulates the native X button, not gui.stop()

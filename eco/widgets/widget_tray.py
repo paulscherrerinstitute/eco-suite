@@ -101,26 +101,6 @@ def _build_view(obj: Any) -> widgets.Widget:
     return widgets.HTML(value=f"<pre>{obj!r}</pre>")
 
 
-def _openable_members(namespace: Any) -> List[Tuple[str, Any]]:
-    """Return (label, obj) for sub-components of ``namespace`` that can be
-    opened as their own widget (i.e. expose a ``.widget()``)."""
-    out: List[Tuple[str, Any]] = []
-    seen = set()
-    sc = getattr(namespace, "status_collection", None)
-    members: List[Any] = []
-    if sc is not None:
-        try:
-            members = list(sc.get_list())
-        except Exception:
-            members = []
-    for m in members:
-        if callable(getattr(m, "widget", None)) and id(m) not in seen:
-            seen.add(id(m))
-            out.append((_label_of(m), m))
-    out.sort(key=lambda t: t[0].lower())
-    return out
-
-
 _X = "✕"       # close
 _DOWN = "▾"    # expanded marker
 _RIGHT = "▸"   # collapsed marker
@@ -303,31 +283,198 @@ class WidgetTray:
 
 
 # --------------------------------------------------------------------------- #
+# namespace launcher (Name / Required table -- ipywidgets analog of
+# eco.widgets.desktop_app._NamespaceLauncher)
+# --------------------------------------------------------------------------- #
+def _sorted_namespace_entries(namespace: Any) -> List[Tuple[str, str]]:
+    """(name, state) pairs for every name registered on `namespace`, state
+    one of "initialized" | "lazy" | "failed", sorted alphabetically.
+    Duplicated from eco.widgets.desktop_app's identical pure function
+    (kept import-eco-widgets-free of Qt here) -- see that module's
+    docstring for why Namespace tracks these as name -> state bookkeeping
+    separately from where the actual objects live."""
+    entries = []
+    for name in getattr(namespace, "initialized_names", set()):
+        entries.append((name, "initialized"))
+    for name in getattr(namespace, "lazy_names", set()):
+        entries.append((name, "lazy"))
+    for name in getattr(namespace, "failed_names", set()):
+        entries.append((name, "failed"))
+    entries.sort(key=lambda t: t[0].lower())
+    return entries
+
+
+def _resolve_namespace_item(namespace: Any, name: str) -> Any:
+    """The actual object registered as `name` on `namespace` -- see
+    eco.utilities.config.Namespace.resolve_item's docstring for why a bare
+    `getattr(namespace, name)` doesn't work (append_obj writes it onto the
+    scope's root module, not the Namespace instance). Delegates to
+    Namespace.resolve_item; falls back to the same dict chain directly for
+    anything namespace-shaped that has the dicts but not the method."""
+    resolve = getattr(namespace, "resolve_item", None)
+    if callable(resolve):
+        return resolve(name)
+    return (
+        getattr(namespace, "lazy_items", {}).get(name)
+        or getattr(namespace, "failed_items", {}).get(name)
+        or getattr(namespace, "initialized_items", {}).get(name)
+    )
+
+
+def _required_names(namespace: Any) -> set:
+    try:
+        return set(namespace.required_names())
+    except Exception:
+        return set()
+
+
+def _set_required(namespace: Any, name: str, checked: bool) -> None:
+    try:
+        current = set(namespace.required_names())
+        if checked:
+            current.add(name)
+        else:
+            current.discard(name)
+        namespace.required_names(sorted(current))
+    except Exception:
+        pass
+
+
+class NamespaceLauncherWidget(widgets.VBox):
+    """ipywidgets analog of eco.widgets.desktop_app._NamespaceLauncher: one
+    row per registered namespace name, filterable, two columns (Name,
+    Required). Initialized entries open immediately on click; lazy
+    entries initialize (blocking -- see the note below) then open on
+    click; failed entries are shown but not retried automatically, same
+    as the desktop launcher. Required is a checkbox mirroring/editing
+    Namespace.required_names(), same semantics as the desktop launcher's
+    Required column.
+
+    Unlike the desktop launcher, initializing a lazy entry here blocks
+    this kernel for the duration (no background thread) -- Jupyter/Voila
+    already shows a busy kernel indicator during that, and adding real
+    threading would mean marshalling ipywidgets updates back onto the
+    kernel's own execution thread for comparatively little benefit here.
+    Also unlike the desktop launcher, there is no live-refresh timer --
+    click Refresh after something else changes state (e.g. an
+    initialization triggered from a separate console on the same
+    namespace).
+    """
+
+    def __init__(self, namespace: Any, tray: "WidgetTray", on_status=None):
+        self.namespace = namespace
+        self.tray = tray
+        self._on_status = on_status or (lambda msg: None)
+
+        self._filter = widgets.Text(placeholder="Filter...",
+                                    layout=widgets.Layout(flex="1 1 auto"))
+        self._filter.observe(
+            lambda ch: self._render() if ch["name"] == "value" else None, "value"
+        )
+        refresh_btn = widgets.Button(description="Refresh",
+                                     layout=widgets.Layout(width="auto"))
+        refresh_btn.on_click(lambda _b: self._render())
+        toolbar = widgets.HBox([self._filter, refresh_btn])
+
+        self._grid = widgets.GridBox(
+            layout=widgets.Layout(
+                grid_template_columns="1fr 90px",
+                grid_gap="2px 8px",
+                align_items="center",
+            )
+        )
+
+        super().__init__([toolbar, self._grid])
+        self._render()
+
+    def _render(self) -> None:
+        query = self._filter.value.strip().lower()
+        required = _required_names(self.namespace)
+        children: List[widgets.Widget] = [
+            widgets.HTML("<b>Name</b>"),
+            widgets.HTML("<b>Required</b>"),
+        ]
+        for name, state in _sorted_namespace_entries(self.namespace):
+            if query and query not in name.lower():
+                continue
+            children.append(self._name_button(name, state))
+            children.append(self._required_checkbox(name, required))
+        self._grid.children = tuple(children)
+
+    def _name_button(self, name: str, state: str) -> widgets.Button:
+        style = {"lazy": "info", "failed": "danger"}.get(state, "")
+        btn = widgets.Button(
+            description=f"{self._icon(name, state)} {name}",
+            button_style=style,
+            tooltip="failed -- not retried automatically" if state == "failed" else "",
+            layout=widgets.Layout(width="auto"),
+        )
+        btn.on_click(lambda _b, name=name, state=state: self._on_click(name, state))
+        return btn
+
+    def _icon(self, name: str, state: str) -> str:
+        from eco.widgets.component_selector import KIND_ICONS, classify
+
+        if state in ("lazy", "failed"):
+            return KIND_ICONS[state]
+        try:
+            obj = _resolve_namespace_item(self.namespace, name)
+        except Exception:
+            return KIND_ICONS["other"]
+        return KIND_ICONS.get(classify(obj), KIND_ICONS["other"])
+
+    def _required_checkbox(self, name: str, required: set) -> widgets.Checkbox:
+        cb = widgets.Checkbox(
+            value=name in required, indent=False,
+            layout=widgets.Layout(width="auto"),
+        )
+        cb.observe(
+            lambda ch, name=name: (
+                _set_required(self.namespace, name, ch["new"])
+                if ch["name"] == "value" else None
+            ),
+            "value",
+        )
+        return cb
+
+    def _on_click(self, name: str, state: str) -> None:
+        if state == "failed":
+            self._on_status(f"{name}: previously failed, not retried automatically.")
+            return
+        if state == "lazy":
+            self._on_status(f"Initializing {name}...")
+            try:
+                self.namespace.init_name(name, raise_errors=False)
+            except Exception:
+                pass
+            self._render()
+            new_state = dict(_sorted_namespace_entries(self.namespace)).get(name)
+            if new_state != "initialized":
+                self._on_status(f"{name} failed to initialize.")
+                return
+        obj = _resolve_namespace_item(self.namespace, name)
+        if obj is None:
+            self._on_status(f"{name}: nothing to open.")
+            return
+        self.tray.open(obj, label=name)
+        self._on_status("")
+
+
+# --------------------------------------------------------------------------- #
 # dashboard
 # --------------------------------------------------------------------------- #
 def make_namespace_dashboard(namespace: Any, mode: str = "panels",
                              cap: int = 6) -> widgets.VBox:
-    """Build the full Voila dashboard for a namespace.
+    """Build the full Voila/JupyterLab dashboard for a namespace.
 
-    Header: a member dropdown + Open button (open a sub-component's widget) and
-    a layout toggle (panels / detail). Body: the WidgetTray.
+    Header: a NamespaceLauncherWidget (Name/Required table -- browse every
+    registered name including still-lazy or failed ones, same as the
+    desktop UI's launcher panel) and a layout toggle (panels / detail).
+    Body: the WidgetTray.
     """
-    members = _openable_members(namespace)
     tray = WidgetTray(mode=mode, cap=cap)
-
-    if members:
-        selector = widgets.Dropdown(
-            options=members, description="Component:",
-            layout=widgets.Layout(flex="1 1 auto"),
-        )
-        open_btn = widgets.Button(description="Open", button_style="primary",
-                                  layout=widgets.Layout(width="auto"))
-        open_btn.on_click(lambda _b: tray.open(selector.value, label=selector.label))
-        picker = widgets.HBox([selector, open_btn])
-    else:
-        picker = widgets.HTML(
-            "<i>No openable sub-components found on this namespace.</i>"
-        )
+    status = widgets.HTML()
+    launcher = NamespaceLauncherWidget(namespace, tray, on_status=lambda msg: setattr(status, "value", msg))
 
     layout_toggle = widgets.ToggleButtons(
         options=[("Panels", "panels"), ("Master-detail", "detail")],
@@ -341,5 +488,5 @@ def make_namespace_dashboard(namespace: Any, mode: str = "panels",
         lambda ch: tray.set_mode(ch["new"]) if ch["name"] == "value" else None, "value"
     )
 
-    header = widgets.VBox([picker, layout_toggle])
+    header = widgets.VBox([launcher, status, layout_toggle])
     return widgets.VBox([header, tray.box])

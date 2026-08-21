@@ -16,29 +16,37 @@ This opens an IPython session with the scope imported and `pylab`-style
 plotting ready to go — equivalent to
 `ipython --profile=eco --no-banner -i -c "run <eco>/startup_inline.py -l -s bernina"`.
 
-Defaults — scope, IPython profile, lazy initialisation — do not need to be
-typed every time. They can be set once in an `.ecorc` file, which is looked up
-as `$ECORC`, then `./.ecorc`, then `~/.ecorc`; any setting it provides can
-still be overridden on the command line, e.g. `eco -s alvra` or
-`eco --no-lazy`. With an `.ecorc` in place, a bare `eco` just works:
+Defaults — scope, IPython profile, lazy initialisation, which subcommand runs
+by default — do not need to be typed every time. They can be set once in an
+`.ecorc` file, which is looked up as `$ECORC`, then `./.ecorc`, then
+`~/.ecorc`; any setting it provides can still be overridden on the command
+line, e.g. `eco -s alvra` or `eco --no-lazy`. With an `.ecorc` in place, a bare
+`eco` just works:
 
 ```ini
 [eco]
+command = console
 scope = bernina
 profile = eco
 lazy = true
 ```
 
-Besides the default IPython shell, `--ui` can start a browser-based front end
-instead:
+`--set-rcfile [PATH]` writes exactly what you typed on that command line into
+such a file (`~/.ecorc` by default) and exits instead of launching, e.g.
+`eco -s alvra --set-rcfile`.
+
+Besides the default `console` subcommand (the IPython shell), three others
+start a different front end:
 
 ```bash
-eco --ui lab -s bernina     # open the eco dashboard notebook in JupyterLab
-eco --ui voila -s bernina   # serve it as a live Voila widget dashboard
+eco desktop -s bernina      # Qt workbench: embedded console + a device browser panel
+eco jupyterlab -s bernina   # JupyterLab, plus a real jupyter console with the scope preloaded
+eco webapp -s bernina       # serve the eco dashboard notebook as a read-only Voila page
 ```
 
-`lab`/`voila` are optional — they are not required to use eco, only installed
-on demand (e.g. `conda install jupyterlab` / `voila`).
+`desktop`/`jupyterlab`/`webapp` are optional — they are not required to use
+eco, only installed on demand (e.g. `conda install jupyterlab` / `voila`, or
+`pip install eco[gui]` for the desktop UI's Qt console).
 
 **Optional — manual import.** If you are working from an uninstalled source
 checkout (see *From source* below), or want to import eco directly inside a
@@ -53,7 +61,7 @@ from eco.bernina import *
 
 <!-- TODO(eco docs): confirm whether a beamline-specific launcher script
 (e.g. one opening JupyterLab directly in the default environment) still
-exists / is the recommended entry point alongside `eco --ui lab`, and
+exists / is the recommended entry point alongside `eco jupyterlab`, and
 document it here if so. -->
 
 `bernina` is the instrument object (a lazy {doc}`Namespace <concepts>` — its

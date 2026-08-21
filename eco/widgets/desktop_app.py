@@ -49,11 +49,13 @@ touch this process's IPython state at all) changes what ``get_ipython()``
 returns here. So it's exactly the same as calling ``.widget()`` from the
 calling terminal's own prompt: ``is_notebook()`` correctly says False,
 ``.widget()`` returns (and self-shows) a real QWidget. Calling it directly
-also sidesteps a real bug the console route had: a subprocess console only
-ever gets ``namespace`` bound, not each top-level component as a bare
-name, and (separately) a startup-code race could leave ``namespace``
-undefined there at all -- neither applies here, since nothing routes
-through any console. Calling it directly also enables real QDockWidget
+also sidesteps a startup-code race that could leave a subprocess console's
+``namespace`` undefined at all -- doesn't apply here, since nothing routes
+through any console. (Separately: fetching the object itself has to go
+through ``_resolve_namespace_item``, not a bare ``getattr(namespace,
+name)`` -- see ``build_namespace``'s docstring for why. Both the launcher
+panel and any console get this right now; see ``build_namespace_vars``.)
+Calling it directly also enables real QDockWidget
 embedding (see _dock_widget_object): opened from the Namespace panel, a
 widget is reparented into a tiled dock in this window instead of staying
 its own separate window -- still poppable back out at any time via the
@@ -115,12 +117,21 @@ def _str_to_qbytearray(s):
 
 
 def build_namespace(scope="bernina", lazy=True):
-    """Build (or fetch, if already built) the same `namespace` object
-    startup_inline.py's ``import eco.<scope> as <scope>; from eco.<scope>
-    import *`` produces -- without needing IPython to run it. Sets
-    ``eco.ecocnf.startup_lazy`` first if `lazy`, exactly like
+    """Build (or fetch, if already built) the same `namespace` *tracking*
+    object startup_inline.py's ``import eco.<scope> as <scope>; from
+    eco.<scope> import *`` produces -- without needing IPython to run it.
+    Sets ``eco.ecocnf.startup_lazy`` first if `lazy`, exactly like
     startup_inline.py does, so lazy-registered components
-    (``append_obj(..., lazy=True)``) actually defer instantiation."""
+    (``append_obj(..., lazy=True)``) actually defer instantiation.
+
+    NOTE: this ``namespace`` object only tracks name -> state bookkeeping
+    (initialized_names/lazy_names/failed_names, init_name(), init_all()).
+    It does NOT hold the actual device objects as attributes --
+    Namespace.append_obj writes those onto the scope's root module
+    (sys.modules[namespace.root_module]) instead, which is what makes
+    `from eco.<scope> import *` expose bare names like `mono`/`att` in the
+    first place. Use build_namespace_vars (or _resolve_namespace_item) to
+    actually fetch a device by name -- see their docstrings."""
     import importlib
 
     from eco import ecocnf
@@ -129,6 +140,42 @@ def build_namespace(scope="bernina", lazy=True):
         ecocnf.startup_lazy = True
     module = importlib.import_module(f"eco.{scope}")
     return getattr(module, "namespace")
+
+
+def build_namespace_vars(scope="bernina", lazy=True):
+    """Like build_namespace, but returns a dict mirroring exactly what
+    `from eco.<scope> import *` binds in eco's shell UI (startup_inline.py)
+    -- every public top-level name on the scope module, including each
+    device (see build_namespace's note on why they live on the module, not
+    the Namespace instance) plus `namespace` itself. Used to seed a
+    console's namespace so it matches the shell UI 1:1, e.g.
+    ``console.execute`` targets or a kernel's ``push()``/``user_ns``."""
+    import importlib
+
+    from eco import ecocnf
+
+    if lazy:
+        ecocnf.startup_lazy = True
+    module = importlib.import_module(f"eco.{scope}")
+    return {k: v for k, v in vars(module).items() if not k.startswith("_")}
+
+
+def _resolve_namespace_item(namespace, name):
+    """The actual object registered as `name` on `namespace` -- see
+    build_namespace's docstring for why `getattr(namespace, name)` doesn't
+    work. Delegates to Namespace.resolve_item (the canonical
+    implementation, shared with eco.widgets.widget_tray); falls back to
+    the same lazy/failed/initialized dict chain directly for a fake
+    namespace stand-in that has the dicts but not the method (see
+    tests/test_desktop_app.py)."""
+    resolve = getattr(namespace, "resolve_item", None)
+    if callable(resolve):
+        return resolve(name)
+    return (
+        getattr(namespace, "lazy_items", {}).get(name)
+        or getattr(namespace, "failed_items", {}).get(name)
+        or getattr(namespace, "initialized_items", {}).get(name)
+    )
 
 
 def sorted_namespace_entries(namespace):
@@ -165,23 +212,30 @@ class _InitDoneBridge(QtCore.QObject):
 
 
 class _NamespaceLauncher(QtWidgets.QWidget):
-    """Dockable panel: one row per registered namespace name, filterable.
-    Initialized entries are opened immediately on click; lazy entries are
-    shown grayed out and, on click, trigger initialization (with a
-    spinner on that row) before opening; failed entries are shown
-    struck-through/red and are not retried automatically (a real retry
-    action is a reasonable follow-up, not attempted here). "Init All"
-    initializes every currently-lazy entry in the background, same
-    spinner treatment, without auto-opening any of them (unlike a single
-    click) -- opening a dozen widgets at once from one button would be
-    more surprising than helpful. Each row's icon shows what *kind* of
-    thing it is (adjustable/detector/assembly/...), reusing
-    eco.widgets.component_selector's KIND_ICONS convention; a live-refresh
-    timer keeps that (and load state generally) current even for changes
-    this panel didn't itself trigger -- e.g. something initialized
-    directly from a console."""
+    """Dockable panel: one row per registered namespace name, filterable,
+    two columns (Name, Required). Initialized entries are opened
+    immediately on click; lazy entries are shown grayed out and, on click,
+    trigger initialization (with a spinner on that row) before opening;
+    failed entries are shown struck-through/red and are not retried
+    automatically (a real retry action is a reasonable follow-up, not
+    attempted here). "Init All" initializes every currently-lazy entry in
+    the background, same spinner treatment, without auto-opening any of
+    them (unlike a single click) -- opening a dozen widgets at once from
+    one button would be more surprising than helpful. Each row's icon
+    shows what *kind* of thing it is (adjustable/detector/assembly/...),
+    reusing eco.widgets.component_selector's KIND_ICONS convention. The
+    Required column is a checkbox mirroring/editing
+    Namespace.required_names() -- eco's own "which of these must be
+    successfully built for init_all(required_only=True) to consider the
+    namespace ready" list (see eco.utilities.config.Namespace) -- toggling
+    it here calls required_names() the same way any other code would. A
+    live-refresh timer keeps all of this current even for changes this
+    panel didn't itself trigger -- e.g. something initialized directly
+    from a console."""
 
     LIVE_REFRESH_INTERVAL_MS = 2000
+    _COL_NAME = 0
+    _COL_REQUIRED = 1
 
     def __init__(self, namespace, on_open, parent=None):
         super().__init__(parent)
@@ -201,7 +255,21 @@ class _NamespaceLauncher(QtWidgets.QWidget):
         self._filter_edit.textChanged.connect(self._refresh)
         layout.addWidget(self._filter_edit)
 
-        self._list = QtWidgets.QListWidget()
+        self._list = QtWidgets.QTableWidget(0, 2)
+        self._list.setHorizontalHeaderLabels(["Name", "Required"])
+        self._list.verticalHeader().setVisible(False)
+        self._list.horizontalHeader().setSectionResizeMode(
+            self._COL_NAME, QtWidgets.QHeaderView.Stretch
+        )
+        self._list.horizontalHeader().setSectionResizeMode(
+            self._COL_REQUIRED, QtWidgets.QHeaderView.ResizeToContents
+        )
+        self._list.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self._list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        # Only the Name column (_COL_NAME) uses real QTableWidgetItems --
+        # the Required column is a QCheckBox cell widget (see _refresh),
+        # which itemClicked doesn't fire for, so this only ever reacts to
+        # a name click, never a checkbox click.
         self._list.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self._list)
 
@@ -235,25 +303,66 @@ class _NamespaceLauncher(QtWidgets.QWidget):
     def _current_states(self):
         return dict(sorted_namespace_entries(self.namespace))
 
+    def _required_names(self):
+        """set() of names currently in Namespace.required_names() -- empty
+        (not an error) if this namespace has none set, or doesn't support
+        the concept at all (e.g. a fake namespace in a test)."""
+        try:
+            return set(self.namespace.required_names())
+        except Exception:
+            return set()
+
     def _refresh(self):
         query = self._filter_edit.text().strip().lower()
-        self._list.clear()
+        self._list.setRowCount(0)
         lazy_count = 0
+        required = self._required_names()
         for name, state in sorted_namespace_entries(self.namespace):
             if state == "lazy":
                 lazy_count += 1
             if query and query not in name.lower():
                 continue
-            item = QtWidgets.QListWidgetItem(self._label_for(name, state))
-            item.setData(QtCore.Qt.UserRole, name)
+            row = self._list.rowCount()
+            self._list.insertRow(row)
+
+            name_item = QtWidgets.QTableWidgetItem(self._label_for(name, state))
+            name_item.setData(QtCore.Qt.UserRole, name)
+            name_item.setFlags(name_item.flags() & ~QtCore.Qt.ItemIsEditable)
             if name in self._loading:
-                item.setForeground(QtGui.QColor(0, 191, 165))
+                name_item.setForeground(QtGui.QColor(0, 191, 165))
             elif state == "lazy":
-                item.setForeground(QtGui.QColor(140, 140, 140))
+                name_item.setForeground(QtGui.QColor(140, 140, 140))
             elif state == "failed":
-                item.setForeground(QtGui.QColor(220, 80, 80))
-            self._list.addItem(item)
+                name_item.setForeground(QtGui.QColor(220, 80, 80))
+            self._list.setItem(row, self._COL_NAME, name_item)
+
+            checkbox = QtWidgets.QCheckBox()
+            checkbox.setChecked(name in required)
+            checkbox.setToolTip(
+                "Whether init_all(required_only=True) needs this built to "
+                "consider the namespace ready (Namespace.required_names())"
+            )
+            checkbox.toggled.connect(
+                lambda checked, name=name: self._on_required_toggled(name, checked)
+            )
+            cell = QtWidgets.QWidget()
+            cell_layout = QtWidgets.QHBoxLayout(cell)
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setAlignment(QtCore.Qt.AlignCenter)
+            cell_layout.addWidget(checkbox)
+            self._list.setCellWidget(row, self._COL_REQUIRED, cell)
         self._init_all_btn.setEnabled(lazy_count > 0)
+
+    def _on_required_toggled(self, name, checked):
+        try:
+            current = set(self.namespace.required_names())
+            if checked:
+                current.add(name)
+            else:
+                current.discard(name)
+            self.namespace.required_names(sorted(current))
+        except Exception:
+            logger.exception("updating required_names for %r failed", name)
 
     def _label_for(self, name, state):
         if name in self._loading:
@@ -273,7 +382,7 @@ class _NamespaceLauncher(QtWidgets.QWidget):
         if state in ("lazy", "failed"):
             return KIND_ICONS[state]
         try:
-            obj = getattr(self.namespace, name)
+            obj = _resolve_namespace_item(self.namespace, name)
         except Exception:
             return KIND_ICONS["other"]
         return KIND_ICONS.get(classify(obj), KIND_ICONS["other"])
@@ -610,7 +719,14 @@ class EcoDesktopApp:
                 if self.namespace is not None and "namespace" not in shared_user_ns:
                     shared_user_ns["namespace"] = self.namespace
             elif self.namespace is not None:
-                push_vars = {"namespace": self.namespace}
+                # Every bare top-level name eco's shell UI would give you
+                # (mono, att, ... -- see build_namespace_vars's docstring
+                # for why a bare `namespace` variable alone isn't enough),
+                # plus `namespace` itself pinned to *this* app's own
+                # namespace object (normally the same object anyway, but
+                # explicit in case a caller passed a different one in).
+                push_vars = build_namespace_vars(scope=self.scope, lazy=self.lazy)
+                push_vars["namespace"] = self.namespace
             self._kernel_manager, self._kernel_client, self._kernel_session = build_inprocess_kernel(
                 kind="desktop", label=self.scope, shared_user_ns=shared_user_ns, push_vars=push_vars
             )
@@ -631,10 +747,22 @@ class EcoDesktopApp:
             # through the console widget itself, below, once its channels
             # are actually subscribed -- not here (see
             # build_subprocess_kernel's docstring for why).
-            startup_code = (
-                "from eco.widgets.desktop_app import build_namespace\n"
-                f"namespace = build_namespace(scope={self.scope!r}, lazy={self.lazy!r})"
-            )
+            # Mirrors startup_inline.py's own two lines exactly (import
+            # eco.<scope> as <scope>; from eco.<scope> import *) so a
+            # subprocess console's namespace matches the shell UI 1:1 --
+            # bare names (mono, att, ...) included, not just a `namespace`
+            # variable (see build_namespace_vars's docstring for why the
+            # latter alone isn't enough).
+            if self.scope:
+                lazy_line = "ecocnf.startup_lazy = True\n" if self.lazy else ""
+                startup_code = (
+                    "from eco import ecocnf\n"
+                    + lazy_line
+                    + f"import eco.{self.scope} as {self.scope}\n"
+                    f"from eco.{self.scope} import *\n"
+                )
+            # else: no scope given -- plain console, nothing to preload
+            # (startup_code stays None, set above)
             self._kernel_manager, self._kernel_client, self._kernel_session = build_subprocess_kernel(
                 kind="desktop", label=self.scope
             )
@@ -695,7 +823,7 @@ class EcoDesktopApp:
         if name not in self._opened_names:
             self._opened_names.append(name)
         try:
-            item = getattr(self.namespace, name)
+            item = _resolve_namespace_item(self.namespace, name)
             widget_obj = item.widget()
         except Exception:
             logger.exception("opening %r's widget failed", name)
@@ -907,10 +1035,16 @@ class EcoDesktopApp:
 
 def _main(argv=None):
     parser = argparse.ArgumentParser(description="eco desktop workbench")
-    parser.add_argument("--scope", default="bernina", help="scope name (default: %(default)s)")
+    # No default: omitting --scope gives a plain console with no Namespace
+    # launcher panel (see EcoDesktopApp/_build_window) instead of silently
+    # defaulting to bernina -- mirrors eco_cli.py's `eco desktop` subcommand.
+    parser.add_argument("--scope", default=None, help="scope name, e.g. bernina (default: none)")
     lazy_grp = parser.add_mutually_exclusive_group()
     lazy_grp.add_argument("--lazy", dest="lazy", action="store_true", default=True)
     lazy_grp.add_argument("--no-lazy", dest="lazy", action="store_false")
+    console_grp = parser.add_mutually_exclusive_group()
+    console_grp.add_argument("--console", dest="with_console", action="store_true", default=True)
+    console_grp.add_argument("--no-console", dest="with_console", action="store_false")
     parser.add_argument(
         "--theme",
         choices=["dark", "light"],
@@ -919,7 +1053,7 @@ def _main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    namespace = build_namespace(scope=args.scope, lazy=args.lazy)
+    namespace = build_namespace(scope=args.scope, lazy=args.lazy) if args.scope else None
     # a fresh top-level process (no calling terminal to link to --
     # link_terminal would no-op here anyway since get_ipython() is None,
     # but False is the honest/explicit statement of intent)
@@ -930,6 +1064,7 @@ def _main(argv=None):
         auto_start=True,
         scope=args.scope,
         lazy=args.lazy,
+        with_console=args.with_console,
     )
 
 

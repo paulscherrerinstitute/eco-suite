@@ -668,6 +668,23 @@ class Namespace(Assembly):
     def all_names(self):
         return self.initialized_names | self.lazy_names | self.failed_names
 
+    def resolve_item(self, name):
+        """The actual object registered as `name` on this namespace -- a
+        lazy proxy, a failed-but-still-accessible item, or a fully
+        initialized object. NOT a bare attribute on this Namespace
+        instance itself -- append_obj instead writes it onto
+        sys.modules[self.root_module] (so that `from eco.<scope> import *`
+        exposes it as a bare name); this is the supported way to look one
+        up by name from the Namespace object directly, e.g. for a UI
+        browsing this namespace's registered names. Same
+        lazy-or-failed-or-initialized resolution reinitialize() itself
+        uses internally."""
+        return (
+            self.lazy_items.get(name)
+            or self.failed_items.get(name)
+            or self.initialized_items.get(name)
+        )
+
     def _timeout_error(self, name, init_timeout, factory_desc=""):
         """Build a helpful exception for the lazy-init waiting/timeout path.
 
