@@ -361,9 +361,14 @@ class NamespaceLauncherWidget(widgets.VBox):
     namespace).
     """
 
-    def __init__(self, namespace: Any, tray: "WidgetTray", on_status=None):
+    def __init__(self, namespace: Any, on_open, on_status=None):
+        """`on_open(obj, label)` is called with the resolved object to
+        open and its display name -- e.g. ``lambda obj, label:
+        tray.open(obj, label=label)`` for a WidgetTray (make_namespace_
+        dashboard, Voila), or ``eco.widgets.jupyter_sidecar.open_in_
+        sidecar`` for a real JupyterLab Sidecar panel."""
         self.namespace = namespace
-        self.tray = tray
+        self.on_open = on_open
         self._on_status = on_status or (lambda msg: None)
 
         self._filter = widgets.Text(placeholder="Filter...",
@@ -456,7 +461,7 @@ class NamespaceLauncherWidget(widgets.VBox):
         if obj is None:
             self._on_status(f"{name}: nothing to open.")
             return
-        self.tray.open(obj, label=name)
+        self.on_open(obj, name)
         self._on_status("")
 
 
@@ -465,16 +470,23 @@ class NamespaceLauncherWidget(widgets.VBox):
 # --------------------------------------------------------------------------- #
 def make_namespace_dashboard(namespace: Any, mode: str = "panels",
                              cap: int = 6) -> widgets.VBox:
-    """Build the full Voila/JupyterLab dashboard for a namespace.
+    """Build the full Voila dashboard for a namespace -- NOT for JupyterLab,
+    which has a real Lumino shell to dock into instead (see
+    eco.widgets.jupyter_sidecar.open_namespace_dashboard).
 
     Header: a NamespaceLauncherWidget (Name/Required table -- browse every
     registered name including still-lazy or failed ones, same as the
     desktop UI's launcher panel) and a layout toggle (panels / detail).
-    Body: the WidgetTray.
+    Body: the WidgetTray, everything rendered inline on one flat page --
+    Voila has no docking shell to put a launcher/opened-widgets split into.
     """
     tray = WidgetTray(mode=mode, cap=cap)
     status = widgets.HTML()
-    launcher = NamespaceLauncherWidget(namespace, tray, on_status=lambda msg: setattr(status, "value", msg))
+    launcher = NamespaceLauncherWidget(
+        namespace,
+        on_open=lambda obj, label: tray.open(obj, label=label),
+        on_status=lambda msg: setattr(status, "value", msg),
+    )
 
     layout_toggle = widgets.ToggleButtons(
         options=[("Panels", "panels"), ("Master-detail", "detail")],

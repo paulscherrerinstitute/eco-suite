@@ -271,29 +271,61 @@ def _register_eco_kernel(scope, lazy):
     return kernel_name
 
 
+def _write_jupyterlab_notebook(kernel_name, scope):
+    """Copy the packaged eco/jupyterlab_app.ipynb to a writable, scope-
+    specific path with its kernelspec pointed at `kernel_name` -- regenerated
+    (idempotent) every launch, like _register_eco_kernel's own files.
+
+    WHY a copy, not just opening the packaged file directly: opening an
+    *existing* notebook makes JupyterLab use the kernel named in that
+    file's own kernelspec metadata, not whatever --MappingKernelManager.
+    default_kernel_name says (that only applies to a brand-new console/
+    notebook created from the Launcher) -- so without this, the notebook
+    would run on a plain, un-preloaded "python3" kernel regardless of the
+    kernel _register_eco_kernel just registered.
+    """
+    import json
+
+    src = _package_file("jupyterlab_app.ipynb")
+    data = json.loads(Path(src).read_text())
+    data["metadata"]["kernelspec"] = {
+        "display_name": "eco ({})".format(scope),
+        "language": "python",
+        "name": kernel_name,
+    }
+    dest_dir = Path.home() / ".eco"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "jupyterlab_app_{}.ipynb".format(scope)
+    dest.write_text(json.dumps(data, indent=1))
+    return str(dest)
+
+
 def _run_jupyterlab(args):
-    """Open JupyterLab on the packaged notebook (background process -- see
-    below for why this can't be the usual _exec). If -s/--scope is given,
-    also registers an eco-<scope> kernel (see _register_eco_kernel) and
-    makes it JupyterLab's default, so a fresh Console or Notebook opened
-    from its own launcher also comes preloaded -- not just the one
-    pre-opened dashboard notebook. Then, unless --no-console, also opens a
-    real `jupyter console` on that same kernel in *this* terminal --
-    mirroring `eco desktop`'s "console on by default, --no-console to skip
-    it" -- so you get an actual interactive prompt with eco.<scope>
+    """Open JupyterLab on the packaged eco/jupyterlab_app.ipynb (background
+    process -- see below for why this can't be the usual _exec) -- its
+    Namespace panel and each opened device are real Sidecar dock panels,
+    not webapp's single inline page (see eco.widgets.jupyter_sidecar; that
+    notebook's own top cell has the details). If -s/--scope is given, also
+    registers an eco-<scope> kernel (see _register_eco_kernel), regenerates
+    a copy of that notebook pointed at it (see _write_jupyterlab_notebook
+    -- opening an *existing* notebook always uses the kernel named in its
+    own file, not JupyterLab's server-wide default), and makes that kernel
+    JupyterLab's default too, so a fresh Console or Notebook opened from
+    its own launcher also comes preloaded. Then, unless --no-console, also
+    opens a real `jupyter console` on that same kernel in *this* terminal
+    -- mirroring `eco desktop`'s "console on by default, --no-console to
+    skip it" -- so you get an actual interactive prompt with eco.<scope>
     preloaded (bare names, exactly like `eco console`), not just a kernel
     sitting there available for JupyterLab's own launcher to pick.
     """
     import subprocess
 
-    notebook = _package_file("voila_app.ipynb")
     os.environ["ECO_SCOPE"] = args.scope or ""
     os.environ["ECO_LAZY"] = "1" if args.lazy else "0"
-    lab_cmd = ["jupyter", "lab", notebook]
     kernel_name = None
     if args.scope:
         kernel_name = _register_eco_kernel(args.scope, args.lazy)
-        lab_cmd.append("--MappingKernelManager.default_kernel_name={}".format(kernel_name))
+        notebook = _write_jupyterlab_notebook(kernel_name, args.scope)
         print(
             "eco: registered Jupyter kernel '{}' (preloads eco.{}) as the "
             "default for new consoles/notebooks in this session.".format(
@@ -301,6 +333,11 @@ def _run_jupyterlab(args):
             ),
             file=sys.stderr,
         )
+    else:
+        notebook = _package_file("jupyterlab_app.ipynb")
+    lab_cmd = ["jupyter", "lab", notebook]
+    if kernel_name:
+        lab_cmd.append("--MappingKernelManager.default_kernel_name={}".format(kernel_name))
 
     if not args.console:
         _exec(
@@ -362,11 +399,14 @@ Subcommands:
   webapp      Serve the packaged notebook as a read-only Voila dashboard:
               widgets for the chosen namespace, with an assembly browser
               to navigate to more components. No code editing, just the UI.
-  jupyterlab  Open JupyterLab on that same notebook. With -s/--scope, also
-              registers an eco-<scope> Jupyter kernel and makes it the
-              default, so a fresh Console/Notebook you open from
-              JupyterLab's own launcher starts with eco.<scope> already
-              loaded too -- not just the one pre-opened notebook. Also
+  jupyterlab  Open JupyterLab on a small notebook whose Namespace panel
+              and each opened device are real Sidecar dock panels (see
+              eco.widgets.jupyter_sidecar) -- the closest browser-side
+              analogue to eco desktop's dockable Namespace panel, not
+              webapp's single inline page. With -s/--scope, also registers
+              an eco-<scope> Jupyter kernel and makes it the default, so a
+              fresh Console/Notebook you open from JupyterLab's own
+              launcher starts with eco.<scope> already loaded too. Also
               opens a real `jupyter console` on that kernel right in this
               terminal (on by default, matching desktop; --no-console to
               skip it) -- an actual interactive prompt with eco.<scope>

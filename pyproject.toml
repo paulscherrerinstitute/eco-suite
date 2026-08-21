@@ -160,7 +160,7 @@ include-package-data = false
 # these in, so anything loaded from disk at runtime must be listed here
 # explicitly or it silently goes missing from every install.
 [tool.setuptools.package-data]
-eco = ["voila_app.ipynb"]
+eco = ["voila_app.ipynb", "jupyterlab_app.ipynb"]
 "eco.aliases" = ["namespaces/*.json"]
 "eco.bernina" = ["beamline_interact.svg"]
 

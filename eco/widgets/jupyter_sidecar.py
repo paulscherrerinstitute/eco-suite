@@ -61,6 +61,79 @@ def open_in_sidecar(obj, title=None, anchor="split-right"):
     return sc
 
 
+class NamespaceDashboard:
+    """Return value of open_namespace_dashboard() -- the JupyterLab
+    counterpart to eco.widgets.desktop_app.EcoDesktopApp: a Namespace
+    launcher panel (browse every registered name, initialize lazy ones on
+    click, Required checkboxes -- same eco.widgets.widget_tray.
+    NamespaceLauncherWidget table the Voila dashboard uses) docked in its
+    own Sidecar panel, with each opened device routed into its own
+    Sidecar panel too. Keeps every Sidecar it creates referenced (this is
+    what actually keeps them from being garbage-collected/closed) --
+    call .close() to tear the whole dashboard down at once."""
+
+    def __init__(self, namespace, anchor_launcher, anchor_widgets):
+        from IPython.display import display
+
+        from eco.widgets.widget_tray import NamespaceLauncherWidget
+        from sidecar import Sidecar
+
+        self._anchor_widgets = anchor_widgets
+        self._opened = {}  # name -> Sidecar
+
+        self.launcher = NamespaceLauncherWidget(namespace, on_open=self._on_open)
+        self.launcher_sidecar = Sidecar(title="Namespace", anchor=anchor_launcher)
+        with self.launcher_sidecar:
+            display(self.launcher)
+
+    def _on_open(self, obj, label):
+        existing = self._opened.get(label)
+        if existing is not None:
+            return  # already open -- Sidecar has no "bring to front"; leave it be
+        self._opened[label] = open_in_sidecar(obj, title=label, anchor=self._anchor_widgets)
+
+    def close(self):
+        """Close every Sidecar panel this dashboard opened, including the
+        launcher itself."""
+        for sc in self._opened.values():
+            try:
+                sc.close()
+            except Exception:
+                logger.exception("closing a sidecar panel failed")
+        self._opened.clear()
+        try:
+            self.launcher_sidecar.close()
+        except Exception:
+            logger.exception("closing the launcher sidecar failed")
+
+
+def open_namespace_dashboard(namespace, anchor_launcher="split-left", anchor_widgets="split-right"):
+    """JupyterLab-only: open eco's Namespace launcher (the same Name/
+    Required table eco desktop's dockable panel and the Voila dashboard
+    both use) in its own narrow Sidecar panel, and route each device you
+    open from it into its own Sidecar panel too -- the closest browser-
+    side analogue to eco desktop's dockable Namespace panel plus tiled
+    device docks, instead of eco.widgets.widget_tray.make_namespace_
+    dashboard's single flat inline page (built for Voila, which has no
+    docking shell for this to make sense in). Keep the returned object
+    referenced (e.g. a session-level variable) -- once every reference to
+    it (and the Sidecars it holds) is gone, the panels close.
+
+        from eco.widgets.jupyter_sidecar import open_namespace_dashboard
+        dashboard = open_namespace_dashboard(bernina.namespace)
+    """
+    try:
+        import sidecar  # noqa: F401 -- see the ImportError message below
+    except ImportError as exc:
+        raise RuntimeError(
+            "eco.widgets.jupyter_sidecar needs the 'sidecar' package "
+            "(pip install sidecar) and a JupyterLab session -- it does not "
+            "work in classic Notebook or Voila (see eco.widgets.widget_tray "
+            "for those instead)."
+        ) from exc
+    return NamespaceDashboard(namespace, anchor_launcher, anchor_widgets)
+
+
 def save_workspace(path=None):
     """Export the current JupyterLab workspace (dock layout, including
     any Sidecar panels) via `jupyter lab workspaces export` -- the

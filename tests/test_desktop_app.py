@@ -908,7 +908,7 @@ def test_native_close_does_not_quit_the_app_when_embedded(monkeypatch):
     assert quit_calls == []
 
 
-def test_run_actually_enters_the_blocking_event_loop(monkeypatch):
+def test_run_checks_app_existence_before_build_window_can_create_one(monkeypatch):
     """Regression test for a real bug found via manual testing: `eco
     desktop` opened its window and exited immediately, before the CLI's
     --workspace support restructured run() into `app._build_window();
@@ -919,16 +919,35 @@ def test_run_actually_enters_the_blocking_event_loop(monkeypatch):
     check, created_app was already False, and the app.exec_() call (and
     everything gated on it) was skipped entirely: run() just returned.
     See run()'s docstring for why --workspace now goes through run()
-    itself (`run(workspace=...)`) instead."""
+    itself (`run(workspace=...)`) instead.
+
+    Can't assert on created_app's actual *value* here -- this whole test
+    file shares one QApplication across every test (a real one always
+    exists by the time this runs), so it's always False regardless of
+    this fix. What the fix actually guarantees, and what's checked here,
+    is the *order*: the instance() check has to be evaluated before
+    _build_window() runs, not after."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     gui = EcoDesktopApp(namespace=None, auto_start=False)
 
-    entered_exec = []
-    monkeypatch.setattr(QtWidgets.QApplication, "exec_", lambda self: entered_exec.append(True))
+    call_order = []
+    real_instance = QtWidgets.QApplication.instance
+
+    def spy_instance():
+        call_order.append("instance_check")
+        return real_instance()
+
+    def spy_build_window():
+        call_order.append("build_window")
+        gui.window = object()  # anything non-None -- skip the real Qt build
+
+    monkeypatch.setattr(QtWidgets.QApplication, "instance", staticmethod(spy_instance))
+    monkeypatch.setattr(QtWidgets.QApplication, "exec_", lambda self: None)
+    gui._build_window = spy_build_window
 
     gui.run(workspace=None)
 
-    assert entered_exec == [True]
-    assert gui._owns_event_loop is True
+    assert call_order.index("instance_check") < call_order.index("build_window")
 
 
 def test_run_loads_workspace_before_entering_the_event_loop(tmp_path, monkeypatch):
@@ -1139,13 +1158,7 @@ def test_main_theme_defaults_to_dark(monkeypatch):
     'none' else args.theme` translation."""
 
     class _StubApp:
-        def _build_window(self):
-            pass
-
-        def load_workspace(self, path):
-            pass
-
-        def run(self):
+        def run(self, workspace=None):
             pass
 
     captured = {}
