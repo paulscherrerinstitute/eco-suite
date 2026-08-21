@@ -116,8 +116,18 @@ def _exec(cmd, missing_hint):
 
 
 def _run_shell(args):
-    script = _package_file("startup_inline.py")
-    run_cmd = "run {}".format(script)
+    # Module-mode (`-m eco.startup_inline`), not a bare file path: IPython's
+    # %run inserts the *run script's own directory* onto sys.path (mirroring
+    # `python script.py`), which for a file path resolving inside the eco
+    # package means eco's own install directory gets prepended. eco ships a
+    # subpackage literally named eco/epics/, so that directory shadows the
+    # real third-party `epics` (pyepics) package the moment it's on
+    # sys.path -- `import epics.pv` elsewhere in eco then resolves to
+    # eco.epics (which has no `pv` submodule) instead of pyepics, raising
+    # `ModuleNotFoundError: No module named 'epics.pv'`. Module-mode resolves
+    # eco.startup_inline through the normal import system instead, so it
+    # never adds that extra directory.
+    run_cmd = "run -m eco.startup_inline"
     if args.lazy:
         run_cmd += " -l"
     if args.scope:
