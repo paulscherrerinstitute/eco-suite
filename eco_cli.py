@@ -460,7 +460,7 @@ def _write_rcfile(args):
 def _add_common_args(parser, defaults, scope_default):
     parser.add_argument(
         "-s", "--scope", default=scope_default,
-        help="scope name (instrument/beamline), e.g. bernina",
+        help="scope name (instrument/beamline), e.g. bernina (default: %(default)s)",
     )
     lazy_grp = parser.add_mutually_exclusive_group()
     lazy_grp.add_argument(
@@ -514,10 +514,14 @@ def main(argv=None):
     )
 
     p_desktop = subparsers.add_parser("desktop", help="Qt desktop workbench.")
-    # No forced default scope: omitting -s gives a plain console with no
-    # Namespace launcher panel (see eco.widgets.desktop_app) instead of
-    # silently defaulting to bernina.
-    _add_common_args(p_desktop, defaults, scope_default=None)
+    # Same scope default as every other subcommand (.ecorc's scope=, or
+    # the builtin "bernina") -- .ecorc's choice must apply here too, even
+    # when .ecorc's own `command=` isn't "desktop" (e.g. bare `eco`
+    # defaults to console, but `eco desktop` should still pick up .ecorc's
+    # scope). Explicitly pass -s "" (or set `scope =` blank in .ecorc) for
+    # a plain console with no Namespace launcher panel (see
+    # eco.widgets.desktop_app) instead of a scope.
+    _add_common_args(p_desktop, defaults, scope_default=defaults["scope"])
     _add_console_flag(
         p_desktop,
         help_on="embedded IPython console",
