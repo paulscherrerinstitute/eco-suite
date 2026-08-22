@@ -119,6 +119,60 @@ def register(session):
     return session
 
 
+def install_shell_logger(kind, label=None, log_dir=None):
+    """Register IPython's pre_run_cell/post_run_cell events on the
+    *current* shell (get_ipython()) so every command run there gets the
+    same KernelSession/JSONL activity log eco.widgets.console_kernel's
+    Qt-hosted consoles already have -- but via a mechanism that works for
+    ANY real InteractiveShell (a plain terminal `eco console` session's
+    TerminalInteractiveShell, a JupyterLab-native kernel's
+    ZMQInteractiveShell launched from eco_cli.py's generated kernelspec,
+    Voila's kernel, ...), not just qtconsole's ZMQ iopub messages, which
+    only exist for a real kernel with an iopub channel to intercept -- a
+    plain terminal shell has none.
+
+    Deliberately narrower than console_kernel.py's approach: only input
+    and the resulting value/error are captured (pre_run_cell/
+    post_run_cell give us those directly); raw stdout/stderr streaming
+    output is NOT (that needs redirecting sys.stdout or a kernel's own
+    iopub stream, both real intrusions this shared, "works anywhere"
+    mechanism deliberately avoids -- eco desktop's embedded console
+    still gets full stream capture via the existing qtconsole-message
+    route in console_kernel.py, unaffected by this).
+
+    Idempotent: calling this again on the same shell (e.g. a startup
+    script that runs more than once) returns the existing session instead
+    of double-logging every cell.
+    """
+    from IPython import get_ipython
+
+    ip = get_ipython()
+    if ip is None:
+        return None
+    existing = getattr(ip, "_eco_shell_logger_session", None)
+    if existing is not None:
+        return existing
+
+    session = register(KernelSession(kind=kind, label=label, log_dir=log_dir))
+
+    def _pre_run_cell(info):
+        code = (getattr(info, "raw_cell", "") or "").strip()
+        if code:
+            session.log_input(code)
+
+    def _post_run_cell(result):
+        error = getattr(result, "error_in_exec", None) or getattr(result, "error_before_exec", None)
+        if error is not None:
+            session.log_output("error", ename=type(error).__name__, evalue=str(error))
+        elif getattr(result, "result", None) is not None:
+            session.log_output("result", text=repr(result.result))
+
+    ip.events.register("pre_run_cell", _pre_run_cell)
+    ip.events.register("post_run_cell", _post_run_cell)
+    ip._eco_shell_logger_session = session
+    return session
+
+
 def unregister(session):
     """Drop `session` from the registry (its log file is left in place --
     only the in-memory listing shrinks) -- called when a console/kernel is

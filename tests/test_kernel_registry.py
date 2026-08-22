@@ -71,6 +71,128 @@ def test_tail_on_nonexistent_log_returns_empty(tmp_path):
     assert session.tail() == []
 
 
+# -- install_shell_logger ------------------------------------------------
+#
+# Works for ANY real IPython InteractiveShell (a plain terminal `eco
+# console` session, a JupyterLab-native kernel, Voila's kernel -- see the
+# function's own docstring for why this needs a different mechanism than
+# eco.widgets.console_kernel's ZMQ-message-based one). A fake shell with
+# just enough of the real API (get_ipython(), .events.register(name, cb))
+# is all that's needed to verify the wiring without a real IPython session.
+
+
+class _FakeEvents:
+    def __init__(self):
+        self.registered = {}
+
+    def register(self, name, callback):
+        self.registered.setdefault(name, []).append(callback)
+
+    def fire(self, name, *args):
+        for cb in self.registered.get(name, []):
+            cb(*args)
+
+
+class _FakeShell:
+    def __init__(self):
+        self.events = _FakeEvents()
+
+
+class _FakeCellInfo:
+    def __init__(self, raw_cell):
+        self.raw_cell = raw_cell
+
+
+class _FakeExecutionResult:
+    def __init__(self, result=None, error_in_exec=None, error_before_exec=None):
+        self.result = result
+        self.error_in_exec = error_in_exec
+        self.error_before_exec = error_before_exec
+
+
+def test_install_shell_logger_returns_none_with_no_ipython_session(monkeypatch):
+    monkeypatch.setattr("IPython.get_ipython", lambda: None)
+    assert kernel_registry.install_shell_logger("console") is None
+
+
+def test_install_shell_logger_registers_pre_and_post_run_cell(monkeypatch, tmp_path):
+    shell = _FakeShell()
+    monkeypatch.setattr("IPython.get_ipython", lambda: shell)
+
+    session = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+
+    assert "pre_run_cell" in shell.events.registered
+    assert "post_run_cell" in shell.events.registered
+    assert shell._eco_shell_logger_session is session
+
+
+def test_install_shell_logger_is_idempotent(monkeypatch, tmp_path):
+    """Calling it again on the same shell (e.g. a startup script that runs
+    more than once) must not double-register hooks or create a second
+    session."""
+    shell = _FakeShell()
+    monkeypatch.setattr("IPython.get_ipython", lambda: shell)
+
+    first = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+    second = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+
+    assert first is second
+    assert len(shell.events.registered["pre_run_cell"]) == 1
+    assert len(shell.events.registered["post_run_cell"]) == 1
+
+
+def test_install_shell_logger_logs_input_and_result(monkeypatch, tmp_path):
+    shell = _FakeShell()
+    monkeypatch.setattr("IPython.get_ipython", lambda: shell)
+    session = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+
+    shell.events.fire("pre_run_cell", _FakeCellInfo("2 + 2"))
+    shell.events.fire("post_run_cell", _FakeExecutionResult(result=4))
+
+    lines = [json.loads(l) for l in session.log_path.read_text().splitlines()]
+    assert lines[1] == {"t": lines[1]["t"], "event": "input", "code": "2 + 2"}
+    assert lines[2] == {"t": lines[2]["t"], "event": "result", "text": "4"}
+
+
+def test_install_shell_logger_does_not_log_a_result_for_a_bare_statement(monkeypatch, tmp_path):
+    """print(...)/assignments don't produce a result.result -- must not
+    log a spurious empty "result" entry for those."""
+    shell = _FakeShell()
+    monkeypatch.setattr("IPython.get_ipython", lambda: shell)
+    session = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+
+    shell.events.fire("pre_run_cell", _FakeCellInfo('print("hi")'))
+    shell.events.fire("post_run_cell", _FakeExecutionResult(result=None))
+
+    lines = [json.loads(l) for l in session.log_path.read_text().splitlines()]
+    assert [l["event"] for l in lines] == ["session_start", "input"]
+
+
+def test_install_shell_logger_logs_errors(monkeypatch, tmp_path):
+    shell = _FakeShell()
+    monkeypatch.setattr("IPython.get_ipython", lambda: shell)
+    session = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+
+    shell.events.fire("pre_run_cell", _FakeCellInfo("1 / 0"))
+    shell.events.fire("post_run_cell", _FakeExecutionResult(error_in_exec=ZeroDivisionError("division by zero")))
+
+    lines = [json.loads(l) for l in session.log_path.read_text().splitlines()]
+    assert lines[2] == {
+        "t": lines[2]["t"], "event": "error", "ename": "ZeroDivisionError", "evalue": "division by zero",
+    }
+
+
+def test_install_shell_logger_ignores_blank_cells(monkeypatch, tmp_path):
+    shell = _FakeShell()
+    monkeypatch.setattr("IPython.get_ipython", lambda: shell)
+    session = kernel_registry.install_shell_logger("console", label="bernina", log_dir=tmp_path)
+
+    shell.events.fire("pre_run_cell", _FakeCellInfo("   \n  "))
+
+    lines = session.log_path.read_text().splitlines()
+    assert len(lines) == 1  # just session_start -- no spurious blank input logged
+
+
 def test_register_and_unregister_control_all_sessions(tmp_path):
     s1 = _make_session(tmp_path, kind="desktop")
     s2 = _make_session(tmp_path, kind="console")

@@ -284,6 +284,7 @@ class LogTimelineQt(QtWidgets.QWidget):
         self.entries = sorted(entries, key=lambda e: e.t)
         self.on_open = on_open
         self._kind_checkboxes = {}  # kind -> QCheckBox, see _build_filter_row
+        self._session_checkboxes = {}  # entry.session -> QCheckBox, see _build_session_row
         self.matches = []
         self.match_idx = -1
 
@@ -335,6 +336,9 @@ class LogTimelineQt(QtWidgets.QWidget):
         root.addLayout(findbar)
 
         root.addLayout(self._build_filter_row())
+        session_row = self._build_session_row()
+        if session_row is not None:
+            root.addLayout(session_row)
         root.addLayout(self._build_script_row())
 
         split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -397,6 +401,31 @@ class LogTimelineQt(QtWidgets.QWidget):
         row.addStretch(1)
         return row
 
+    def _build_session_row(self):
+        """One checkbox per distinct stream (entry.session -- e.g.
+        "desktop:bernina", "console:bernina"; see eco.logs._kernel_
+        entries) present in self.entries. Multiple streams are merged
+        into one timeline by default (all checked) but stay separable by
+        unticking the ones you don't want, same mechanism as the Kind
+        row above -- AND-combined in _apply_filters (a row shows only if
+        both its kind and its stream are checked). Returns None (nothing
+        to add) for a source with no per-entry session at all, e.g. a
+        pure scilog timeline."""
+        sessions = sorted({e.session for e in self.entries if e.session})
+        if not sessions:
+            return None
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(10, 4, 10, 4)
+        row.addWidget(QtWidgets.QLabel("Stream:"))
+        for session in sessions:
+            cb = QtWidgets.QCheckBox(session)
+            cb.setChecked(True)
+            cb.toggled.connect(self._apply_filters)
+            self._session_checkboxes[session] = cb
+            row.addWidget(cb)
+        row.addStretch(1)
+        return row
+
     def _build_script_row(self):
         """"Copy Selected as Script": input/widget_control entries in the
         current selection (see ExtendedSelection above) become script
@@ -425,13 +454,18 @@ class LogTimelineQt(QtWidgets.QWidget):
         return row
 
     def _apply_filters(self):
-        active = {k for k, cb in self._kind_checkboxes.items() if cb.isChecked()}
+        active_kinds = {k for k, cb in self._kind_checkboxes.items() if cb.isChecked()}
+        active_sessions = {s for s, cb in self._session_checkboxes.items() if cb.isChecked()}
         for i in range(self.list.count()):
             item = self.list.item(i)
             e = item.data(QtCore.Qt.UserRole)
             if e is None:
                 continue  # day-header row -- always visible
-            item.setHidden(e.kind not in active)
+            kind_ok = e.kind in active_kinds
+            # no Stream row at all (single-stream source, e.g. scilog) ->
+            # session filtering is a no-op, kind alone decides visibility
+            session_ok = (not self._session_checkboxes) or (e.session in active_sessions)
+            item.setHidden(not (kind_ok and session_ok))
         self._reposition_sticky()
         self._sync_visible_range()
 

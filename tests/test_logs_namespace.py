@@ -154,6 +154,43 @@ def test_kernel_entries_reads_and_sorts_across_sessions(tmp_path):
     assert entries == sorted(entries, key=lambda e: e.t)
 
 
+def test_kernel_entries_tags_every_entry_with_its_stream():
+    """Multiple streams (different entry points, or repeat sessions of the
+    same one) merge into one timeline by default -- eco.logs.widget()
+    already reads every session's log -- but must stay separable via
+    entry.session (see LogTimelineQt's Stream row)."""
+    entries = [
+        _kernel_record_to_entry({"t": 1.0, "event": "input", "code": "x"}, "desktop:bernina"),
+        _kernel_record_to_entry({"t": 2.0, "event": "input", "code": "y"}, "console:bernina"),
+    ]
+    assert entries[0].session == "desktop:bernina"
+    assert entries[1].session == "console:bernina"
+
+
+def test_kernel_entries_uses_distinct_human_readable_session_labels(tmp_path):
+    """Same kind+label (e.g. two desktop:bernina sessions on the same day)
+    must still produce two DIFFERENT session labels -- otherwise
+    unchecking one Stream checkbox in LogTimelineQt would hide both."""
+    desktop1 = kernel_registry.KernelSession(kind="desktop", label="bernina", log_dir=tmp_path)
+    desktop1.log_input("first session")
+    desktop2 = kernel_registry.KernelSession(kind="desktop", label="bernina", log_dir=tmp_path)
+    desktop2.log_input("second session")
+
+    entries = logs._kernel_entries(log_dir=tmp_path)
+    sessions = {e.session for e in entries if e.kind == "input"}
+    assert len(sessions) == 2
+    assert all(s.startswith("desktop:bernina") for s in sessions)
+
+
+def test_kernel_entries_falls_back_to_filename_stem_without_a_parseable_session_start(tmp_path):
+    log_dir = tmp_path
+    path = log_dir / "not_a_real_session.jsonl"
+    path.write_text('{"t": 1.0, "event": "input", "code": "x"}\n')
+
+    entries = logs._kernel_entries(log_dir=log_dir)
+    assert entries[0].session == "not_a_real_session"
+
+
 def test_kernel_entries_single_session_only(tmp_path):
     s1 = kernel_registry.KernelSession(kind="console", label="a", log_dir=tmp_path)
     s1.log_input("only this one")

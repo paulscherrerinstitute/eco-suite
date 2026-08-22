@@ -245,7 +245,24 @@ def _register_eco_kernel(scope, lazy):
         "from eco import ecocnf\n"
         + lazy_line
         + "import eco.{scope} as {scope}\n"
-        "from eco.{scope} import *\n".format(scope=scope)
+        "from eco.{scope} import *\n"
+        # Same reasoning as eco console/eco desktop's console: Jedi can
+        # fully resolve a still-lazy device proxy just from it being a
+        # completion candidate, and was independently measured slower and
+        # less correct here regardless (see console_kernel.
+        # build_console_widget's docstring).
+        "get_ipython().Completer.use_jedi = False\n"
+        # Every console/notebook run against this kernel (not just this
+        # one, and not just this launch -- profile startup files run on
+        # every future kernel launch under --profile=eco-{scope} too) gets
+        # the same activity log eco desktop's console already has -- see
+        # kernel_registry.install_shell_logger's docstring for why this
+        # needs a different mechanism than that (ZMQ-message-based)
+        # approach.
+        "from eco.widgets import kernel_registry\n"
+        "kernel_registry.install_shell_logger(kind='jupyterlab', label={scope!r})\n".format(
+            scope=scope
+        )
     )
 
     kernel_dir = _jupyter_kernel_dir(kernel_name)

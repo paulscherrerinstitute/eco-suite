@@ -90,4 +90,18 @@ term.set_title()
 from IPython import get_ipython
 
 _ipy = get_ipython()
-_ipy.Completer.use_jedi = True
+# Jedi-based completion asks every candidate for introspection data to
+# build its menu -- for eco's lazy device proxies (eco.utilities.config.
+# Proxy) that used to mean fully resolving one (real EPICS calls) just
+# from typing its name (see console_kernel.build_console_widget's
+# docstring, which disables this the same way for eco desktop's console,
+# for the fuller measurement: 62.7s for one complex device). Proxy.__dir__
+# fixes the worst of that regardless of this setting now, but Jedi was
+# also independently measured slower (5.8s vs 0.001s) and less correct
+# (0 matches vs 63) than the classic completer for this dynamic a
+# namespace -- so still off here too.
+_ipy.Completer.use_jedi = False
+
+from eco.widgets import kernel_registry
+
+kernel_registry.install_shell_logger(kind="console", label=scope or "console")

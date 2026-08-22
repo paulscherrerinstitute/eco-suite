@@ -62,6 +62,54 @@ def test_unchecking_a_kind_hides_only_its_rows():
     assert _visible_kinds(viewer) == {"input", "widget_control", "error"}
 
 
+def test_session_row_absent_without_any_per_entry_session():
+    """A pure scilog timeline has no entry.session at all -- nothing to
+    filter by, so the Stream row shouldn't be built."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    viewer = LogTimelineQt(_entries(), title="test")
+    assert viewer._session_checkboxes == {}
+
+
+def _multi_stream_entries():
+    return [
+        TimelineEntry(t=1000.0, kind="input", text="mono.get_current_value()", session="desktop:bernina"),
+        TimelineEntry(t=1000.2, kind="result", text="12000.0", session="desktop:bernina"),
+        TimelineEntry(t=1010.0, kind="input", text="att.set_target_value(0.5)", session="console:bernina"),
+        TimelineEntry(t=1010.1, kind="stream", text="[stdout] moving...", session="console:bernina"),
+    ]
+
+
+def test_session_row_covers_every_distinct_stream():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    viewer = LogTimelineQt(_multi_stream_entries(), title="test")
+    assert set(viewer._session_checkboxes.keys()) == {"desktop:bernina", "console:bernina"}
+    assert all(cb.isChecked() for cb in viewer._session_checkboxes.values())
+
+
+def test_unchecking_a_stream_hides_only_its_rows_and_combines_with_kind_filter():
+    """Kind and Stream filters are AND-combined -- separable but still
+    mergeable by default (both rows start fully checked)."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    viewer = LogTimelineQt(_multi_stream_entries(), title="test")
+
+    viewer._session_checkboxes["desktop:bernina"].setChecked(False)
+    visible_sessions = {
+        viewer.list.item(i).data(QtCore.Qt.UserRole).session
+        for i in range(viewer.list.count())
+        if viewer.list.item(i).data(QtCore.Qt.UserRole) is not None and not viewer.list.item(i).isHidden()
+    }
+    assert visible_sessions == {"console:bernina"}
+    # console:bernina has both "input" and "stream" entries -- both kinds
+    # still checked, so both are still visible once the desktop stream is
+    # filtered out.
+    assert _visible_kinds(viewer) == {"input", "stream"}
+
+    # AND-combine: also uncheck the "stream" kind -- only console's
+    # "input" row should remain visible.
+    viewer._kind_checkboxes["stream"].setChecked(False)
+    assert _visible_kinds(viewer) == {"input"}
+
+
 def test_rechecking_shows_rows_again():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_entries(), title="test")

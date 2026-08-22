@@ -39,6 +39,38 @@ def sessions():
     return kernel_registry.find_all_logs()
 
 
+def _session_label_for_file(path, lines):
+    """Human-readable, still-per-file-unique stream label for a kernel log
+    -- "kind:label · HHMMSS" (e.g. "desktop:bernina · 084826") derived
+    from the file's own session_start record, falling back to the raw
+    filename stem if that's missing/unparseable. Keeping the timestamp
+    suffix (not just "kind:label") is what keeps two same-day desktop
+    sessions separable rather than colliding into one filter checkbox --
+    but the timestamp alone is only 1-second resolution, so two sessions
+    of the same kind+label started within the same second (rare for a
+    human typing, real for scripted/test session creation) would still
+    collide; the trailing 4 hex chars of the filename's id fragment are
+    appended in that case to keep them distinct too."""
+    for line in lines[:1]:
+        try:
+            rec = json.loads(line)
+        except Exception:
+            break
+        if rec.get("event") in ("session_start", "session_start_subprocess"):
+            kind, label = rec.get("kind"), rec.get("label")
+            if kind:
+                # KernelSession.log_path is f"{stamp}_{kind}_{id}.jsonl",
+                # stamp = strftime("%Y%m%d_%H%M%S") -- always 15 chars.
+                stem = path.stem
+                stamp = stem[:15]
+                hhmmss = stamp[9:] if len(stamp) == 15 else stamp
+                tail = stem[16:]  # "{kind}_{id}", or "" if stamp didn't parse
+                id_suffix = tail.rsplit("_", 1)[-1][-4:] if "_" in tail else ""
+                tag = hhmmss + (f"-{id_suffix}" if id_suffix else "")
+                return f"{kind}:{label}" + (f" · {tag}" if tag else "")
+    return path.stem
+
+
 def _kernel_entries(session=None, log_dir=None):
     paths = [Path(session)] if session is not None else kernel_registry.find_all_logs(log_dir)
     entries = []
@@ -46,12 +78,14 @@ def _kernel_entries(session=None, log_dir=None):
         path = Path(path)
         if not path.exists():
             continue
-        for line in path.read_text().splitlines():
+        lines = path.read_text().splitlines()
+        session_label = _session_label_for_file(path, lines)
+        for line in lines:
             try:
                 rec = json.loads(line)
             except Exception:
                 continue
-            entry = _kernel_record_to_entry(rec, path.stem)
+            entry = _kernel_record_to_entry(rec, session_label)
             if entry is not None:
                 entries.append(entry)
     entries.sort(key=lambda e: e.t)
@@ -178,7 +212,9 @@ def _kernel_record_to_entry(rec, session_label):
     else:
         kind = event
         text = json.dumps({k: v for k, v in rec.items() if k not in ("t", "event")})
-    return TimelineEntry(t=float(t), kind=kind, text=text.rstrip("\n"), is_error=(kind == "error"))
+    return TimelineEntry(
+        t=float(t), kind=kind, text=text.rstrip("\n"), is_error=(kind == "error"), session=session_label
+    )
 
 
 def _snippet_to_entry(snip):

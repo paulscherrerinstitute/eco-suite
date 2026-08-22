@@ -27,6 +27,14 @@ class TimelineEntry:
     tags: Sequence[str] = field(default_factory=tuple)
     ref: Optional[str] = None
     is_error: bool = False
+    #: which stream this entry came from -- a kernel log's "kind:label"
+    #: (e.g. "desktop:bernina", "console:bernina"; see eco.logs.
+    #: _kernel_entries) or "" for a source (like scilog) with only one
+    #: stream. Multiple streams are merged into one timeline by default
+    #: (eco.logs.widget() already reads every session's log) but stay
+    #: separable via this field -- see LogTimelineQt's Stream filter row,
+    #: the same checkbox-based show/hide the Kind row already uses.
+    session: str = ""
 
 
 def bucket_density(entries, t0, t1, n_buckets=140):
