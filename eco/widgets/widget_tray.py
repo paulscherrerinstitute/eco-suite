@@ -500,5 +500,22 @@ def make_namespace_dashboard(namespace: Any, mode: str = "panels",
         lambda ch: tray.set_mode(ch["new"]) if ch["name"] == "value" else None, "value"
     )
 
-    header = widgets.VBox([launcher, status, layout_toggle])
+    # eco.logs.widget(prefer="jupyter") -- the Voila counterpart to eco
+    # desktop's Tools -> Log Viewer menu action / JupyterLab's Log Viewer
+    # button (see eco.widgets.jupyter_sidecar.NamespaceDashboard). Routed
+    # into a dedicated Output so clicking again replaces the previous
+    # render instead of stacking another copy below it.
+    log_output = widgets.Output()
+    log_btn = widgets.Button(description="Log Viewer", layout=widgets.Layout(width="auto"))
+
+    def _open_log_viewer(_b):
+        import eco.logs
+
+        log_output.clear_output()
+        with log_output:
+            eco.logs.widget(prefer="jupyter")
+
+    log_btn.on_click(_open_log_viewer)
+
+    header = widgets.VBox([launcher, status, widgets.HBox([layout_toggle, log_btn]), log_output])
     return widgets.VBox([header, tray.box])

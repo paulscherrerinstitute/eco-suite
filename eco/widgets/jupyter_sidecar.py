@@ -61,6 +61,29 @@ def open_in_sidecar(obj, title=None, anchor="split-right"):
     return sc
 
 
+def open_html_in_sidecar(html, title=None, anchor="split-right"):
+    """Display raw HTML in a JupyterLab Sidecar panel -- what
+    eco.logs.widget(prefer="sidecar") uses for the log timeline (see
+    eco/logs.py), also usable directly for any other pre-rendered HTML.
+    Same "keep the return value referenced" rule as open_in_sidecar."""
+    try:
+        from sidecar import Sidecar
+    except ImportError as exc:
+        raise RuntimeError(
+            "eco.widgets.jupyter_sidecar needs the 'sidecar' package "
+            "(pip install sidecar) and a JupyterLab session -- it does not "
+            "work in classic Notebook or Voila (see eco.widgets.widget_tray "
+            "for those instead)."
+        ) from exc
+
+    from IPython.display import HTML, display
+
+    sc = Sidecar(title=str(title or "eco"), anchor=anchor)
+    with sc:
+        display(HTML(html))
+    return sc
+
+
 class NamespaceDashboard:
     """Return value of open_namespace_dashboard() -- the JupyterLab
     counterpart to eco.widgets.desktop_app.EcoDesktopApp: a Namespace
@@ -73,6 +96,7 @@ class NamespaceDashboard:
     call .close() to tear the whole dashboard down at once."""
 
     def __init__(self, namespace, anchor_launcher, anchor_widgets):
+        import ipywidgets as widgets
         from IPython.display import display
 
         from eco.widgets.widget_tray import NamespaceLauncherWidget
@@ -80,17 +104,35 @@ class NamespaceDashboard:
 
         self._anchor_widgets = anchor_widgets
         self._opened = {}  # name -> Sidecar
+        self._log_viewer = None  # Sidecar -- see _open_log_viewer
+
+        log_btn = widgets.Button(description="Log Viewer", layout=widgets.Layout(width="auto"))
+        log_btn.on_click(lambda _b: self._open_log_viewer())
 
         self.launcher = NamespaceLauncherWidget(namespace, on_open=self._on_open)
         self.launcher_sidecar = Sidecar(title="Namespace", anchor=anchor_launcher)
         with self.launcher_sidecar:
-            display(self.launcher)
+            display(widgets.VBox([log_btn, self.launcher]))
 
     def _on_open(self, obj, label):
         existing = self._opened.get(label)
         if existing is not None:
             return  # already open -- Sidecar has no "bring to front"; leave it be
         self._opened[label] = open_in_sidecar(obj, title=label, anchor=self._anchor_widgets)
+
+    def _open_log_viewer(self):
+        """eco.logs.widget(prefer="sidecar") -- the JupyterLab counterpart
+        to eco desktop's Tools -> Log Viewer menu action. Reopening
+        replaces (closes) the previous one rather than piling up."""
+        if self._log_viewer is not None:
+            try:
+                self._log_viewer.close()
+            except Exception:
+                logger.exception("closing the previous log viewer failed")
+            self._log_viewer = None
+        import eco.logs
+
+        self._log_viewer = eco.logs.widget(prefer="sidecar")
 
     def close(self):
         """Close every Sidecar panel this dashboard opened, including the
@@ -101,6 +143,12 @@ class NamespaceDashboard:
             except Exception:
                 logger.exception("closing a sidecar panel failed")
         self._opened.clear()
+        if self._log_viewer is not None:
+            try:
+                self._log_viewer.close()
+            except Exception:
+                logger.exception("closing the log viewer failed")
+            self._log_viewer = None
         try:
             self.launcher_sidecar.close()
         except Exception:

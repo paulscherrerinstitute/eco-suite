@@ -200,8 +200,16 @@ def _in_jupyter():
 
 
 def _open_timeline(entries, title, subtitle, prefer="auto", on_open=None):
-    if prefer not in ("auto", "qt", "html", "jupyter", "webapp"):
-        raise ValueError(f"prefer must be one of auto/qt/html/jupyter/webapp, got {prefer!r}")
+    if prefer not in ("auto", "qt", "html", "jupyter", "webapp", "sidecar"):
+        raise ValueError(
+            f"prefer must be one of auto/qt/html/jupyter/webapp/sidecar, got {prefer!r}"
+        )
+
+    if prefer == "sidecar":
+        from eco.widgets.jupyter_sidecar import open_html_in_sidecar
+        from eco.widgets.log_timeline_html import render_html
+
+        return open_html_in_sidecar(render_html(entries, title=title, subtitle=subtitle), title=title)
 
     if prefer in ("html", "jupyter") or (prefer == "auto" and _in_jupyter()):
         from eco.widgets.log_timeline_html import show
