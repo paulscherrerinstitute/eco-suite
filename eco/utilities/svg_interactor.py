@@ -265,9 +265,40 @@ _qt_app_ref = None  # keep a strong reference to any QApplication we create ours
 _qt_windows = []  # keep strong refs to open SVG windows (+ their bridge/channel) so they aren't GC'd
 
 
+class _SvgViewerHandle:
+    """`.window`/`.stop()` wrapper around an already-built SvgWindow, for
+    the eco desktop dock convention `EcoDesktopApp._dock_widget_object`
+    expects (same shape as DisplayQt/AxisPTZStreamQt/CamServerStreamQt --
+    see desktop_app.py's module docstring). `.window` is the SvgWindow
+    itself (a QWebEngineView, so it dock/undocks/floats like any other
+    QWidget); `.stop()` stops the live-refresh QTimer, if any, so nothing
+    keeps polling EPICS after the dock is closed."""
+
+    def __init__(self, view):
+        self.window = view
+
+    def stop(self):
+        timer = getattr(self.window, "_refresh_timer", None)
+        if timer is not None:
+            timer.stop()
+
+
 def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
-                      blocking=False, refresh=None, refresh_interval_ms=2000):
+                      blocking=False, refresh=None, refresh_interval_ms=2000,
+                      dock_in=None, dock_name=None):
     """Opens a native, resizable window rendering the SVG via Qt's QWebEngineView.
+
+    dock_in (see `launch_svg_viewer`): an EcoDesktopApp instance (or
+    anything with the same `_dock_widget_object(name, widget_obj)` method)
+    to embed the viewer into as a tiled dock instead of opening it as a
+    separate top-level window -- same convention any other eco Qt widget
+    docks with (see desktop_app.py's module docstring). When given, this
+    builds the SvgWindow but does NOT call `.show()`/register it in
+    `_qt_windows` itself; `dock_in._dock_widget_object` takes over showing
+    it (reparented into the dock) instead. Still poppable back out to a
+    free-floating window at any time via the dock's own float button.
+
+    refresh (see `launch_svg_viewer`): if given, a `QTimer` re-calls it every
 
     refresh (see `launch_svg_viewer`): if given, a `QTimer` re-calls it every
     `refresh_interval_ms` and swaps its result into the *already-open*
@@ -430,6 +461,15 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         timer.start(refresh_interval_ms)
         view._refresh_timer = timer  # keep alive alongside the window
 
+    if dock_in is not None:
+        # dock_in takes over showing the window (reparented into a tile) --
+        # calling view.show() first would flash it as a top-level window
+        # for one frame before _dock_widget_object hides/reparents it, so
+        # leave that to it (same "hide before it can flash" note in
+        # _dock_widget_object's own docstring).
+        dock_in._dock_widget_object(dock_name or "svg viewer", _SvgViewerHandle(view))
+        return
+
     view.show()
     _qt_windows.append(view)
 
@@ -442,7 +482,8 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
 
 
 def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_group_ids=None,
-                       refresh=None, refresh_interval_ms=2000):
+                       refresh=None, refresh_interval_ms=2000, dock_in=None, dock_name=None,
+                       sidecar_anchor=None):
     """Spawns an isolated background service for the SVG interface.
 
     refresh: optional no-arg callable returning a *path* to a freshly-built
@@ -467,6 +508,23 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
     support - e.g. PyQt5+PyQtWebEngine or PySide6+qt6-webengine) - no browser tab
     needed, but still real browser-engine (Chromium) rendering fidelity. With
     in_window=False, this launches a browser-based Dash server instead.
+
+    dock_in: an EcoDesktopApp instance (in_window=True only) -- embeds the
+    viewer as a tiled QDockWidget in that window instead of opening it as
+    a separate top-level one, via the same `_dock_widget_object` mechanism
+    the Namespace launcher's "Open" action uses for every other eco Qt
+    widget (see `_build_qt_window`'s docstring). `dock_name` sets the
+    dock's title (default: "svg viewer").
+
+    sidecar_anchor: (in_window=False / notebook only) e.g. "split-right" --
+    opens the viewer in its own JupyterLab Sidecar panel (a real Lumino
+    dock widget, see eco.widgets.jupyter_sidecar) instead of displaying
+    inline in the current cell's output. Needs the `sidecar` package and a
+    JupyterLab session, same caveat as eco.widgets.jupyter_sidecar (not
+    classic Notebook, not Voila -- raises a clear RuntimeError there
+    instead of silently doing nothing). Returns the Sidecar instance in
+    that case -- keep it referenced (same rule as
+    eco.widgets.jupyter_sidecar.open_in_sidecar) or the panel closes.
 
     Clickable commands can come from (checked in this order): an
     onclick="// eco: <command>" attribute (Inkscape's Object Properties >
@@ -513,26 +571,35 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
         # same pattern as eco.widgets.display_qt.DisplayQt.start() - so the
         # window is pumped on the main thread between prompts.
         blocking = False
-        active = getattr(ip, "active_eventloop", None)
-        if active is None:
-            try:
-                ip.enable_gui("qt")
-            except Exception:
-                pass
-        elif active not in ("qt", "qt4", "qt5", "qt6"):
-            print(
-                f"eco SVG viewer: a different GUI event loop ('{active}') is already "
-                "active in this IPython session, so the window can't be pumped "
-                "non-blockingly alongside it. Showing it in blocking mode instead "
-                "(closing the window returns control) - re-run after '%gui' "
-                "(no arguments) to disable the current loop if you want the "
-                "non-blocking window."
-            )
-            blocking = True
+        if dock_in is not None:
+            # dock_in._dock_widget_object reparents into a window whose
+            # QApplication.exec() is already running (EcoDesktopApp owns
+            # the event loop, unlike a bare terminal session) -- no gui
+            # integration to arrange here, and no separate top-level
+            # window that could need blocking-mode fallback either.
+            pass
+        else:
+            active = getattr(ip, "active_eventloop", None)
+            if active is None:
+                try:
+                    ip.enable_gui("qt")
+                except Exception:
+                    pass
+            elif active not in ("qt", "qt4", "qt5", "qt6"):
+                print(
+                    f"eco SVG viewer: a different GUI event loop ('{active}') is already "
+                    "active in this IPython session, so the window can't be pumped "
+                    "non-blockingly alongside it. Showing it in blocking mode instead "
+                    "(closing the window returns control) - re-run after '%gui' "
+                    "(no arguments) to disable the current loop if you want the "
+                    "non-blocking window."
+                )
+                blocking = True
 
         _build_qt_window(svg_path, ip, namespace_prefix, exclude_group_ids, blocking=blocking,
-                          refresh=refresh, refresh_interval_ms=refresh_interval_ms)
-        if not blocking:
+                          refresh=refresh, refresh_interval_ms=refresh_interval_ms,
+                          dock_in=dock_in, dock_name=dock_name)
+        if not blocking and dock_in is None:
             print("Interactive SVG window launched.")
         return
 
@@ -548,7 +615,23 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
 
         with open(svg_path, "r", encoding="utf-8") as f:
             _, height = _peek_svg_dimensions(f.read())
-        display(IFrame(src=url, width="100%", height=int(height) + 20))
+        iframe = IFrame(src=url, width="100%", height=int(height) + 20)
+
+        if sidecar_anchor is not None:
+            try:
+                from sidecar import Sidecar
+            except ImportError as exc:
+                raise RuntimeError(
+                    "sidecar_anchor needs the 'sidecar' package (pip install sidecar) "
+                    "and a JupyterLab session -- it does not work in classic Notebook "
+                    "or Voila (see eco.widgets.jupyter_sidecar)."
+                ) from exc
+            sc = Sidecar(title=dock_name or "svg viewer", anchor=sidecar_anchor)
+            with sc:
+                display(iframe)
+            return sc
+
+        display(iframe)
     else:
         print("Interactive SVG application initialized successfully!")
         print(f"--> Open your web browser and navigate to: {url}")

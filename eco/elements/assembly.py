@@ -1096,7 +1096,7 @@ class Assembly:
                 print(f"Could not build widget for {self.alias.get_full_name()}: {e}")
         print(repr(self))
 
-    def show(self, in_window=False, exclude_group_ids=None, live=False):
+    def show(self, in_window=False, exclude_group_ids=None, live=False, dock_in=None, sidecar_anchor=None):
         """Opens the interactive SVG viewer for this assembly.
 
         Two ways an assembly can have something to show, both ending up in
@@ -1137,6 +1137,14 @@ class Assembly:
         for green/red valve+gauge state, `namespace.beamline.svg_panel(live=True,
         kinds={"valve", "gauge"})` for a filtered, live-coloured beamline panel.
 
+        dock_in (in_window=True only): an EcoDesktopApp instance -- embeds
+        the viewer as a tiled dock in that window instead of a separate
+        top-level one, e.g. `namespace.show(in_window=True, dock_in=app)`.
+        sidecar_anchor (notebook only, e.g. "split-right"): opens the
+        viewer in its own JupyterLab Sidecar panel instead of displaying
+        inline in the current cell. See `eco.utilities.svg_interactor.
+        launch_svg_viewer`'s docstring for both.
+
         With `live=True` and a `_svg()` hook, an already-open native window
         (`in_window=True`) also keeps redrawing every couple of seconds for
         as long as it stays open, by calling `_svg(live=True)` again each
@@ -1157,12 +1165,15 @@ class Assembly:
 
         from eco.utilities.svg_interactor import launch_svg_viewer
 
-        launch_svg_viewer(
+        return launch_svg_viewer(
             svg_path,
             in_window=in_window,
             namespace_prefix=self.alias.get_full_name(),
             exclude_group_ids=exclude_group_ids,
             refresh=(lambda: build_svg(live=True)) if (live and callable(build_svg)) else None,
+            dock_in=dock_in,
+            dock_name=self.alias.get_full_name(),
+            sidecar_anchor=sidecar_anchor,
         )
 
 
