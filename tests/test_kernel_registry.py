@@ -48,6 +48,14 @@ def test_log_input_and_log_output_append_jsonl_entries(tmp_path):
     assert lines[3]["name"] == "stdout"
 
 
+def test_log_widget_control_appends_jsonl_entry(tmp_path):
+    session = _make_session(tmp_path, kind="desktop")
+    session.log_widget_control("cam_west.widget()")
+
+    lines = [json.loads(l) for l in session.log_path.read_text().splitlines()]
+    assert lines[1] == {"t": lines[1]["t"], "event": "widget_control", "code": "cam_west.widget()"}
+
+
 def test_tail_returns_last_n_entries_oldest_first(tmp_path):
     session = _make_session(tmp_path, kind="desktop")
     for i in range(5):

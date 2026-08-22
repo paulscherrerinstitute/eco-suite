@@ -163,6 +163,12 @@ def _kernel_record_to_entry(rec, session_label):
         text = f"{event} — {rec.get('kind', '')}:{rec.get('label', session_label)} (pid {rec.get('pid')})"
     elif event == "input":
         kind, text = "input", rec.get("code", "")
+    elif event == "widget_control":
+        # Same code-is-the-text contract as "input" (see
+        # KernelSession.log_widget_control's docstring) -- both kinds are
+        # directly usable as script lines in log_timeline_qt's "copy
+        # selected as script".
+        kind, text = "widget_control", rec.get("code", "")
     elif event == "error":
         kind, text = "error", f"{rec.get('ename', '')}: {rec.get('evalue', '')}"
     elif event == "result":

@@ -900,6 +900,16 @@ class EcoDesktopApp:
         except Exception:
             logger.exception("opening %r's widget failed", name)
             return
+        # Record it as a timeline entry alongside console input/output --
+        # a bare name, not `namespace.<name>` (which, per build_namespace's
+        # own docstring, doesn't actually resolve -- Namespace.append_obj
+        # writes devices onto the scope module, not the Namespace
+        # instance): `<name>.widget()` is exactly what build_namespace_vars
+        # already made available as a bare name in this console, so it's
+        # directly runnable if copy-pasted or included via "copy selected
+        # as script" (see eco.widgets.log_timeline_qt).
+        if self._kernel_session is not None:
+            self._kernel_session.log_widget_control(f"{name}.widget()")
         self._dock_widget_object(name, widget_obj)
 
     def _dock_widget_object(self, name, widget_obj):

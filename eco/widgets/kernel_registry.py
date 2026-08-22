@@ -60,6 +60,19 @@ class KernelSession:
         programmatically via `.execute()`), whichever widget it came from."""
         self._record("input", {"code": code})
 
+    def log_widget_control(self, code):
+        """A GUI action that changed something without going through the
+        console at all -- e.g. clicking "Open" on a device in the
+        Namespace launcher (see eco.widgets.desktop_app._open_widget /
+        eco.widgets.jupyter_sidecar's equivalent). `code` is the actual
+        Python that reproduces the action (e.g. "namespace.cam_west.
+        widget()"), not just a description -- so this timeline entry is
+        directly usable in eco.widgets.log_timeline_qt's "copy selected as
+        script" (see eco.logs._kernel_record_to_entry for how "widget_
+        control" events map to a TimelineEntry -- same code-is-the-text
+        contract as log_input)."""
+        self._record("widget_control", {"code": code})
+
     def log_output(self, event, **fields):
         """A message received back from this session's kernel -- `event` is
         one of "result" | "stream" | "error" (matching the qtconsole/

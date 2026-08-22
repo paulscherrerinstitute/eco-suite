@@ -642,6 +642,50 @@ def test_open_widget_calls_widget_directly_not_through_the_console():
         gui.stop()
 
 
+def test_open_widget_records_a_widget_control_timeline_entry():
+    """So opening a device from the Namespace launcher shows up in
+    eco.logs.widget() alongside console input/output -- and, since the
+    logged code is a bare name (`<name>.widget()`, exactly what
+    build_namespace_vars already made available in this console, not
+    `namespace.<name>` which doesn't resolve -- see that docstring), it's
+    directly usable via log_timeline_qt's "copy selected as script"."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    import json
+
+    try:
+        gui._open_widget("prepump")
+        lines = gui._kernel_session.log_path.read_text().splitlines()
+        events = [json.loads(l) for l in lines]
+        widget_control = [e for e in events if e["event"] == "widget_control"]
+        assert widget_control == [{"t": widget_control[0]["t"], "event": "widget_control", "code": "prepump.widget()"}]
+    finally:
+        gui.stop()
+
+
+def test_open_widget_failure_does_not_log_a_widget_control_entry():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["broken"])
+
+    def boom():
+        raise RuntimeError("no display")
+
+    ns._items["broken"].widget = boom
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    import json
+
+    try:
+        gui._open_widget("broken")
+        lines = gui._kernel_session.log_path.read_text().splitlines()
+        events = [json.loads(l)["event"] for l in lines]
+        assert "widget_control" not in events
+    finally:
+        gui.stop()
+
+
 def test_open_widget_logs_and_survives_a_failing_widget():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(initialized=["broken"])

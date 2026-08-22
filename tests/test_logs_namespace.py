@@ -15,6 +15,19 @@ def test_kernel_record_input():
     assert e.is_error is False
 
 
+def test_kernel_record_widget_control():
+    """Same code-is-the-text contract as "input" (see
+    KernelSession.log_widget_control's docstring) -- both kinds must be
+    directly usable as script lines in log_timeline_qt's "copy selected
+    as script"."""
+    e = _kernel_record_to_entry(
+        {"t": 1.0, "event": "widget_control", "code": "cam_west.widget()"}, "sess"
+    )
+    assert e.kind == "widget_control"
+    assert e.text == "cam_west.widget()"
+    assert e.is_error is False
+
+
 def test_kernel_record_error_sets_is_error():
     e = _kernel_record_to_entry(
         {"t": 1.0, "event": "error", "ename": "ValueError", "evalue": "bad"}, "sess"
@@ -278,6 +291,28 @@ def test_open_timeline_qt_forced_raises_instead_of_falling_back(monkeypatch):
 
     with pytest.raises(RuntimeError):
         logs._open_timeline([], title="t", subtitle="s", prefer="qt")
+
+
+def test_open_timeline_sidecar_renders_html_into_a_sidecar_panel(monkeypatch):
+    """JupyterLab's Log Viewer button (eco.widgets.jupyter_sidecar.
+    NamespaceDashboard) goes through prefer="sidecar" -- must render the
+    same HTML the html/jupyter path would, into a real dockable panel
+    (eco.widgets.jupyter_sidecar.open_html_in_sidecar), not some
+    parallel, duplicated rendering path."""
+    calls = []
+    monkeypatch.setattr(
+        "eco.widgets.log_timeline_html.render_html",
+        lambda entries, **kw: "<b>rendered</b>",
+    )
+    monkeypatch.setattr(
+        "eco.widgets.jupyter_sidecar.open_html_in_sidecar",
+        lambda html, **kw: calls.append((html, kw)) or "sidecar-handle",
+    )
+
+    result = logs._open_timeline([], title="t", subtitle="s", prefer="sidecar")
+
+    assert result == "sidecar-handle"
+    assert calls == [("<b>rendered</b>", {"title": "t"})]
 
 
 def test_open_timeline_rejects_unknown_prefer():

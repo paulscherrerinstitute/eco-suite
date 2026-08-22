@@ -22,9 +22,14 @@ _MIN_SPAN = 180.0  # seconds
 
 _KIND_COLORS = {
     "input": "#1E7772",
+    "widget_control": "#3D5EA8",
     "error": "#AE3A2E",
     "session": "#B85E19",
 }
+#: kinds whose .text is directly runnable Python -- see
+#: LogTimelineQt._copy_selected_as_script and KernelSession.log_input /
+#: log_widget_control's matching "code-is-the-text" contract.
+_CODE_KINDS = ("input", "widget_control")
 _MATCH_COLOR = "#7A4FB0"
 
 
@@ -278,6 +283,7 @@ class LogTimelineQt(QtWidgets.QWidget):
         super().__init__(parent)
         self.entries = sorted(entries, key=lambda e: e.t)
         self.on_open = on_open
+        self._kind_checkboxes = {}  # kind -> QCheckBox, see _build_filter_row
         self.matches = []
         self.match_idx = -1
 
@@ -328,6 +334,9 @@ class LogTimelineQt(QtWidgets.QWidget):
         findbar.addWidget(next_btn)
         root.addLayout(findbar)
 
+        root.addLayout(self._build_filter_row())
+        root.addLayout(self._build_script_row())
+
         split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
 
         top = QtWidgets.QWidget()
@@ -337,6 +346,10 @@ class LogTimelineQt(QtWidgets.QWidget):
 
         self.list = QtWidgets.QListWidget()
         self.list.setUniformItemSizes(True)
+        # click+drag / Shift+click / Ctrl+click ranges and multi-select --
+        # what "select entries to copy as a script" needs; Qt's own
+        # built-in behaviour once this is set, nothing else to wire up.
+        self.list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.list.itemActivated.connect(self._open_entry)
         self.list.itemDoubleClicked.connect(self._open_entry)
         self.list.verticalScrollBar().valueChanged.connect(self._on_scroll)
@@ -364,6 +377,96 @@ class LogTimelineQt(QtWidgets.QWidget):
         split.setStretchFactor(1, 2)
 
         root.addWidget(split, 1)
+
+    def _build_filter_row(self):
+        """One checkbox per distinct `kind` present in self.entries (e.g.
+        input/widget_control/result/stream/error/session) -- unticking one
+        hides its rows via _apply_filters, same list, no rebuild. All on
+        by default."""
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(10, 4, 10, 4)
+        row.addWidget(QtWidgets.QLabel("Show:"))
+        for kind in sorted({e.kind for e in self.entries}):
+            cb = QtWidgets.QCheckBox(kind)
+            cb.setChecked(True)
+            if kind in _KIND_COLORS:
+                cb.setStyleSheet(f"color: {_KIND_COLORS[kind]};")
+            cb.toggled.connect(self._apply_filters)
+            self._kind_checkboxes[kind] = cb
+            row.addWidget(cb)
+        row.addStretch(1)
+        return row
+
+    def _build_script_row(self):
+        """"Copy Selected as Script": input/widget_control entries in the
+        current selection (see ExtendedSelection above) become script
+        lines verbatim (both kinds' .text is already runnable Python --
+        see KernelSession.log_input/log_widget_control); anything else
+        selected is kept as a `# [kind] ...` comment, for context, not
+        executed. "Replicate timing" optionally inserts time.sleep(dt)
+        between consecutive lines, dt being the real gap (in seconds)
+        between those two entries' timestamps -- so replaying the script
+        reproduces the original pacing, not just the sequence."""
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(10, 4, 10, 4)
+        copy_btn = QtWidgets.QPushButton("Copy Selected as Script")
+        copy_btn.setToolTip(
+            "Select entries above (click, Shift+click for a range, Ctrl+click "
+            "to add) then click this to copy them as Python to the clipboard"
+        )
+        copy_btn.clicked.connect(self._copy_selected_as_script)
+        row.addWidget(copy_btn)
+        self.timing_checkbox = QtWidgets.QCheckBox("Replicate timing (sleep calls)")
+        row.addWidget(self.timing_checkbox)
+        self.script_status = QtWidgets.QLabel()
+        self.script_status.setStyleSheet("color: palette(mid);")
+        row.addWidget(self.script_status)
+        row.addStretch(1)
+        return row
+
+    def _apply_filters(self):
+        active = {k for k, cb in self._kind_checkboxes.items() if cb.isChecked()}
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            e = item.data(QtCore.Qt.UserRole)
+            if e is None:
+                continue  # day-header row -- always visible
+            item.setHidden(e.kind not in active)
+        self._reposition_sticky()
+        self._sync_visible_range()
+
+    def _copy_selected_as_script(self):
+        selected = []
+        for item in self.list.selectedItems():
+            if item.isHidden():
+                continue  # filtered out -- selection can include hidden rows
+            e = item.data(QtCore.Qt.UserRole)
+            if e is not None:
+                selected.append(e)
+        selected.sort(key=lambda e: e.t)
+        if not selected:
+            self.script_status.setText("nothing selected")
+            return
+
+        include_timing = self.timing_checkbox.isChecked()
+        lines = []
+        prev_t = None
+        for e in selected:
+            if include_timing and prev_t is not None:
+                dt = e.t - prev_t
+                if dt > 0.05:  # skip negligible/near-zero gaps
+                    lines.append(f"time.sleep({dt:.3f})")
+            if e.kind in _CODE_KINDS:
+                lines.append(e.text)
+            else:
+                comment = e.text.replace("\n", "\n# ")
+                lines.append(f"# [{e.kind}] {comment}")
+            prev_t = e.t
+
+        header = "import time\n\n" if include_timing else ""
+        script = header + "\n".join(lines) + "\n"
+        QtWidgets.QApplication.clipboard().setText(script)
+        self.script_status.setText(f"copied {len(selected)} entries ({len(lines)} lines)")
 
     def _populate(self):
         self.list.clear()
