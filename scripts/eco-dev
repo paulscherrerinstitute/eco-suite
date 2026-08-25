@@ -6,20 +6,25 @@
 #   eco-dev -s bernina -l --ui desktop
 #   eco-dev -s bernina -l --ui shell
 #
-# Always runs the checkout at /sf/bernina/code/gac-bernina/eco -- for
-# testing against that specific working tree, not whatever is "installed",
-# even now that a real `eco` package is also installed in this same
-# environment (bpy312). Running eco_cli.py by path only prioritises the
-# checkout for *that* process; once it execs into ipython/jupyter/voila,
-# sys.path doesn't carry over -- PYTHONPATH does, since env vars survive
-# exec() while sys.path doesn't. So we set both, defensively: prepending
-# PYTHONPATH makes every subsequent process (including nested ones
-# eco_cli.py itself execs into) resolve `import eco` to this checkout
-# first, ahead of the real install sitting in the same environment.
+# Always runs the checkout this script lives in (resolved via its own
+# location, so the same script works from any checkout -- e.g. the
+# gac-bernina checkout or a personal one -- rather than a hardcoded path),
+# for testing against that specific working tree, not whatever is
+# "installed", even now that a real `eco` package is also installed in
+# this same environment (bpy312). Running eco_cli.py by path only
+# prioritises the checkout for *that* process; once it execs into
+# ipython/jupyter/voila, sys.path doesn't carry over -- PYTHONPATH does,
+# since env vars survive exec() while sys.path doesn't. So we set both,
+# defensively: prepending PYTHONPATH makes every subsequent process
+# (including nested ones eco_cli.py itself execs into) resolve `import
+# eco` to this checkout first, ahead of the real install sitting in the
+# same environment.
 # Verified: `python -c "import eco; print(eco.__file__)"` resolves to the
 # real install without this, and to this checkout with it.
 #source bpy-default.sh
 source bpy-env
 
-export PYTHONPATH="/sf/bernina/code/gac-bernina/eco${PYTHONPATH:+:$PYTHONPATH}"
-exec python /sf/bernina/code/gac-bernina/eco/eco_cli.py "$@"
+ECO_CHECKOUT="$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")"
+
+export PYTHONPATH="${ECO_CHECKOUT}${PYTHONPATH:+:$PYTHONPATH}"
+exec python "${ECO_CHECKOUT}/eco_cli.py" "$@"
