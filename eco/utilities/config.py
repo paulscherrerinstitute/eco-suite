@@ -991,10 +991,24 @@ class Namespace(Assembly):
         starttime = time()
         try:
             titem = self.get_obj(name)
+            if isinstance(titem, Proxy):
+                # Proxy.__class__/__dir__ deliberately stay "shy" (report
+                # LazyComponent / dir(LazyComponent)) while unresolved, so
+                # that introspection - dir(), isinstance() against the
+                # eventual wrapped type - can't accidentally trigger a real
+                # device build (see Proxy's docstring). That means this
+                # method can no longer use isinstance(titem,
+                # InitialisationWaitable)/dir(titem) to *deliberately* force
+                # resolution either - both now silently no-op on a still-lazy
+                # proxy instead of building it, which used to leave every
+                # name "successfully" init_name()'d without ever actually
+                # leaving lazy_items (confirmed: init_all() reported success
+                # while initialized_names stayed empty). __wrapped__ isn't
+                # shy-cased, so accessing it forces the factory to run and
+                # returns the real, resolved object.
+                titem = titem.__wrapped__
             if isinstance(titem, InitialisationWaitable):
                 titem._wait_for_initialisation()
-            else:
-                dir(titem)
             self.initialisation_times[name] = time() - starttime
             if verbose and not quiet:
                 print(

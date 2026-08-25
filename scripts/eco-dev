@@ -18,7 +18,8 @@
 # first, ahead of the real install sitting in the same environment.
 # Verified: `python -c "import eco; print(eco.__file__)"` resolves to the
 # real install without this, and to this checkout with it.
-source bpy-default.sh
+#source bpy-default.sh
+source bpy-env
 
 export PYTHONPATH="/sf/bernina/code/gac-bernina/eco${PYTHONPATH:+:$PYTHONPATH}"
 exec python /sf/bernina/code/gac-bernina/eco/eco_cli.py "$@"
