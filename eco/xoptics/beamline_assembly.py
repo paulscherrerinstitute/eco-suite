@@ -1394,16 +1394,13 @@ class Beamline(Assembly):
         component kinds are drawn (e.g. `{"valve","gauge","pump"}` for a
         vacuum-only panel); `live=True` snapshots valve/shutter open state for
         colouring (touches EPICS)."""
-        import os
-        import tempfile
         from .beamline_svg import build_beamline_svg
+        from eco.utilities.tempfiles import user_temp_svg_path
 
         items = self._svg_items(ref=ref, kinds=kinds, live=live)
         svg_text = build_beamline_svg(items, title=self.name or "beamline", ref=ref)
         if path is None:
-            path = os.path.join(
-                tempfile.gettempdir(), f"eco_beamline_{self.name or id(self)}.svg"
-            )
+            path = user_temp_svg_path("eco_beamline", self.name or id(self))
         with open(path, "w") as f:
             f.write(svg_text)
         return path

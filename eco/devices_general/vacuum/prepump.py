@@ -311,12 +311,11 @@ class PrepumpSystem(Assembly):
         state and gauges green/red by live EPICS alarm severity (touches
         EPICS); pass `live=False` for the plain, EPICS-free version. See
         :func:`build_prepump_svg`."""
-        import os
-        import tempfile
+        from eco.utilities.tempfiles import user_temp_svg_path
 
         svg_text = build_prepump_svg(self, live=live)
         if path is None:
-            path = os.path.join(tempfile.gettempdir(), f"eco_prepump_{self.name or id(self)}.svg")
+            path = user_temp_svg_path("eco_prepump", self.name or id(self))
         with open(path, "w") as f:
             f.write(svg_text)
         return path
