@@ -202,9 +202,12 @@ class PrepumpSystem(Assembly):
     def vent(self, line, timeout=300.0, poll=1.0):
         """Vent one channel to atmosphere through the GN2 vent line.
 
-        Close its pump valve, open its vent valve, and wait for its own
-        gauge to reach ``p_vent_target``, then close the vent valve again.
-        Returns ``True`` on success, ``False`` if `timeout` elapses first.
+        Make sure every *other* channel's vent valve is closed (only one
+        channel should ever be feeding atmosphere into the shared vent line
+        at a time), then close this channel's pump valve, open its vent
+        valve, and wait for its own gauge to reach ``p_vent_target``, then
+        close the vent valve again. Returns ``True`` on success, ``False``
+        if `timeout` elapses first.
 
         # planned, once the vent line's flow meter Fv exists: open at full
         # flow first, then throttle down as the channel nears atmosphere
@@ -212,8 +215,12 @@ class PrepumpSystem(Assembly):
         # for now the vent valve is simply open, then closed.
         """
         line = self._get_line(line)
+        others = [l for l in self.lines if l is not line]
 
-        print(f"[prepump] venting '{line.name}'")
+        print(f"[prepump] venting '{line.name}': making sure other channels' vent valves are closed")
+        for other in others:
+            other.valve_vent.close()
+
         line.valve_prevac.close()
         line.valve_vent.open()
 
@@ -468,11 +475,14 @@ def build_prepump_svg(system, live=False):
     if getattr(system, "gp", None) is not None:
         gx = x_end + 30
         gp_label = _fmt_pressure(system.gp_pressure()) if live else "Gp"
+        # connector drawn *before* the gauge symbol, so the symbol's opaque
+        # disc (appended after, i.e. painted on top) hides the line ending
+        # underneath it rather than the line cutting across the disc
+        P.append(f'<line x1="{x_end}" y1="{pump_y}" x2="{gx}" y2="{pump_y}" stroke="{_PUMP_COLOR}" stroke-width="3"/>')
         P.append(f'<g style="cursor:pointer" onclick="// eco: gp"><desc>gp</desc><title>gp (Gp)</title>')
         P.append(_opaque_symbol("gauge", gx, pump_y, 13, "#9467bd", _gauge_ok_state(system.gp) if live else None))
         P.append(f'<text x="{gx}" y="{pump_y-20}" text-anchor="middle" font-size="11" fill="#2e3440">{_esc(gp_label)}</text>')
         P.append('</g>')
-        P.append(f'<line x1="{x_end}" y1="{pump_y}" x2="{gx}" y2="{pump_y}" stroke="{_PUMP_COLOR}" stroke-width="3"/>')
 
     def clickable(cmd, title, inner, cx, label, ly):
         s = [f'<g style="cursor:pointer" onclick="// eco: {_esc(cmd)}"><desc>{_esc(cmd)}</desc><title>{_esc(title)}</title>']
