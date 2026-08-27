@@ -318,11 +318,33 @@ class _NamespaceLauncher(QtWidgets.QWidget):
         # every tick, whether or not anything actually changed).
         self._list.blockSignals(True)
         try:
+            entries = sorted_namespace_entries(self.namespace)
+            # Reconcile against real state before drawing anything: a name
+            # in self._loading (single-click init, or part of an Init All
+            # batch) whose state has actually moved past "lazy" is done,
+            # whether or not the thread that did it has gotten around to
+            # emitting its own completion signal yet. This is what lets
+            # entries stop spinning -- and become clickable again, see
+            # open_by_name's `name in self._loading` guard -- one by one as
+            # Init All works through them, instead of all at once only when
+            # the whole batch finishes (init_all() itself doesn't report
+            # per-item progress, just a single call that blocks until every
+            # name in the batch is done). Only ever removes names, and only
+            # ever from here, not from the individual-click path's own
+            # _on_init_done bridge signal handler -- both discard() the
+            # same set, so whichever notices first wins; harmless either
+            # way since discard() on an absent name is a no-op. Deliberately
+            # does NOT call on_open here (unlike _on_init_done) -- opening a
+            # dozen widgets at once mid-batch would be exactly the
+            # surprise _on_init_all_clicked's docstring says to avoid.
+            states = dict(entries)
+            self._loading -= {name for name in self._loading if states.get(name, "lazy") != "lazy"}
+
             query = self._filter_edit.text().strip().lower()
             self._list.setRowCount(0)
             lazy_count = 0
             required = self._required_names()
-            for name, state in sorted_namespace_entries(self.namespace):
+            for name, state in entries:
                 if state == "lazy":
                     lazy_count += 1
                 if query and query not in name.lower():
@@ -568,14 +590,16 @@ class _DesktopMainWindow(QtWidgets.QMainWindow):
 
 
 class EcoDesktopApp:
-    """The desktop workbench window: an embedded IPython console (central
-    widget) plus a "Namespace" launcher dock. See the module docstring
-    for the overall design and its known v1 simplifications."""
+    """The desktop workbench window: an embedded IPython console dock plus
+    a "Namespace" launcher dock -- both movable/floatable/tabbable, same
+    as any opened device widget's dock (see _dock_widget_object). See the
+    module docstring for the overall design and its known v1
+    simplifications."""
 
     def __init__(
         self,
         namespace=None,
-        theme="dark",
+        theme=None,
         link_terminal=True,
         auto_start=True,
         scope="bernina",
@@ -615,6 +639,7 @@ class EcoDesktopApp:
         # closing the window should also end the process.
         self._owns_event_loop = False
         self._console = None
+        self._console_dock = None
         self._kernel_manager = None
         self._kernel_client = None
         self._kernel_session = None
@@ -662,7 +687,21 @@ class EcoDesktopApp:
 
         if self.with_console:
             self._build_console()
-            self.window.setCentralWidget(self._console)
+            # A QDockWidget, not the central widget -- so it's movable,
+            # floatable, and tabbable with the Namespace panel and any
+            # opened device widget, same as those. (No central widget is
+            # set at all in this branch: with none, QMainWindow gives the
+            # whole client area to the dock layout instead of carving out
+            # a fixed centre region for it, which is what lets the console
+            # dock end up filling that same space by default.)
+            dock = QtWidgets.QDockWidget("Console", self.window)
+            dock.setObjectName("console")
+            dock.setWidget(self._console)
+            dock.setFeatures(
+                QtWidgets.QDockWidget.DockWidgetMovable | QtWidgets.QDockWidget.DockWidgetFloatable
+            )
+            self.window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
+            self._console_dock = dock
         else:
             self.window.setCentralWidget(self._build_no_console_placeholder())
 
@@ -736,6 +775,69 @@ class EcoDesktopApp:
             "(eco.logs.widget) -- reopening replaces the previous viewer"
         )
         log_action.triggered.connect(self._open_log_viewer)
+
+        menu.addSeparator()
+        tabify_action = menu.addAction("Combine Panels into Tabs...")
+        tabify_action.setToolTip(
+            "Stack two or more open panels (Console, Namespace, or any open "
+            "device widget) together as tabs in one spot -- the same thing "
+            "dragging one panel's title bar onto another's does, just "
+            "without needing to land the drop exactly on the target's "
+            "title bar. Drag a tab off the tab bar afterwards to split it "
+            "back out."
+        )
+        tabify_action.triggered.connect(self._on_combine_into_tabs)
+
+    def _open_dock_panels(self):
+        """name -> QDockWidget for every currently open, dockable panel
+        (Console, Namespace launcher, and each opened device widget) --
+        the candidates offered by "Combine Panels into Tabs..."."""
+        panels = {}
+        if self._console_dock is not None:
+            panels["Console"] = self._console_dock
+        if self._launcher_dock is not None:
+            panels["Namespace"] = self._launcher_dock
+        for dock in self._widget_docks:
+            panels[dock.windowTitle()] = dock
+        return panels
+
+    def _on_combine_into_tabs(self):
+        panels = self._open_dock_panels()
+        if len(panels) < 2:
+            QtWidgets.QMessageBox.information(
+                self.window,
+                "Combine Panels into Tabs",
+                "Need at least two open panels (Console, Namespace, or a device "
+                "widget) to combine.",
+            )
+            return
+
+        dialog = QtWidgets.QDialog(self.window)
+        dialog.setWindowTitle("Combine Panels into Tabs")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addWidget(QtWidgets.QLabel("Select two or more panels to stack together as tabs:"))
+        checkboxes = {}
+        for name in panels:
+            checkbox = QtWidgets.QCheckBox(name)
+            layout.addWidget(checkbox)
+            checkboxes[name] = checkbox
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        selected = [panels[name] for name, checkbox in checkboxes.items() if checkbox.isChecked()]
+        if len(selected) < 2:
+            return
+        first, *rest = selected
+        for dock in rest:
+            self.window.tabifyDockWidget(first, dock)
+        first.show()
+        first.raise_()
 
     def _open_log_viewer(self):
         """eco.logs.widget(prefer="qt") -- see that module for what it
@@ -1226,7 +1328,7 @@ def _main(argv=None):
     parser.add_argument(
         "--theme",
         choices=["dark", "light", "none"],
-        default="dark",
+        default="none",
         help="modern skin, or 'none' for native OS style (default: %(default)s) "
              "-- see eco.widgets.qt_theme",
     )

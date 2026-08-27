@@ -305,6 +305,12 @@ class CamserverConfig(Assembly):
 
 
 class CameraBasler(Assembly):
+    # widget() (and anything driving it, e.g. the desktop app's namespace
+    # launcher) opens the live cam_server viewer instead of the generic
+    # property grid -- mirrors eco.devices_general.cameras_ptz.AxisPTZ. See
+    # Assembly._default_widget/viewer() below.
+    _default_widget = "viewer"
+
     def __init__(
         self,
         pvname,
@@ -622,6 +628,30 @@ class CameraBasler(Assembly):
             f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
         )
 
+    def viewer(
+        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True
+    ):
+        """Open the live cam_server "screen panel" viewer for this camera's
+        own default processing pipeline -- the pipeline name is resolved
+        automatically from self.pvname (no need to know or guess a
+        pipeline/instance name), mirroring pshell's own screen panel (see
+        eco.widgets.camserver_stream_qt.resolve_camera_pipeline for the
+        exact "{camera}_sp" naming convention and auto-create-if-missing
+        behavior this reuses). The window's "Camera Settings" button opens
+        widget(normal=True) (the normal property-grid display) -- mirrors
+        eco.devices_general.cameras_ptz.AxisPTZ.viewer()."""
+        from ..widgets.camserver_stream_qt import make_camserver_stream_qt
+
+        return make_camserver_stream_qt(
+            self.pvname,
+            kind="camera_pipeline",
+            pipeline_url=pipeline_url,
+            rate_hz=rate_hz,
+            theme=theme,
+            auto_start=auto_start,
+            cam=self,
+        )
+
 
 # NB: please note this should be moved to microscopes which are using cameras plus zooms,
 class QioptiqMicroscope(CameraBasler):
@@ -634,6 +664,12 @@ class QioptiqMicroscope(CameraBasler):
 
 
 class CameraPCO(Assembly):
+    # widget() (and anything driving it, e.g. the desktop app's namespace
+    # launcher) opens the live cam_server viewer instead of the generic
+    # property grid -- mirrors CameraBasler/eco.devices_general.cameras_ptz.
+    # AxisPTZ. See Assembly._default_widget/viewer() below.
+    _default_widget = "viewer"
+
     def __init__(self, pvname, camserver_alias=None, name=None):
         super().__init__(name=name)
         self.pvname = pvname
@@ -721,6 +757,24 @@ class CameraPCO(Assembly):
     def gui(self):
         self._run_cmd(
             f'caqtdm -macro "NAME={self.pvname},CAMNAME={self.pvname}" /sf/controls/config/qt/Camera/CameraExpert.ui'
+        )
+
+    def viewer(
+        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True
+    ):
+        """Open the live cam_server "screen panel" viewer for this camera's
+        own default processing pipeline -- see CameraBasler.viewer(), which
+        this mirrors."""
+        from ..widgets.camserver_stream_qt import make_camserver_stream_qt
+
+        return make_camserver_stream_qt(
+            self.pvname,
+            kind="camera_pipeline",
+            pipeline_url=pipeline_url,
+            rate_hz=rate_hz,
+            theme=theme,
+            auto_start=auto_start,
+            cam=self,
         )
 
 

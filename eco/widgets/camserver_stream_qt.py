@@ -50,6 +50,19 @@ tests/test_camserver_stream_qt.py). GUI mouse-interaction and the actual
 image widgets are not (no display in CI); they're kept thin wrappers
 around that tested core.
 
+Resolving "the" pipeline for a camera: kind="camera_pipeline" takes a raw
+camera name and auto-resolves it to its own default processing pipeline
+(creating the pipeline config on the fly if needed) rather than either the
+camera's raw stream (kind="camera") or requiring the caller to already know
+a pipeline instance name (kind="pipeline") -- see resolve_camera_pipeline,
+which mirrors decompiled logic from
+ch.psi.pshell.screenpanel.CamServerViewer.setStream's "Cameras" selection
+mode. This is what eco.devices_general.cameras_swissfel.CameraBasler/
+CameraPCO's own .viewer() uses, passing cam=<the camera Assembly> so the
+viewer can add a "Camera Settings" button (opens cam.widget(normal=True),
+the normal property-grid widget) -- mirrors
+eco.widgets.camera_stream_qt.AxisPTZStreamQt's own "Settings" button.
+
 Embedding (for eco.widgets.camserver_panel_qt): with embed=True the
 window is frameless and, once shown, prints "WINID <id>" (its native
 window id) to stdout -- the panel process picks that up and reparents the
@@ -77,21 +90,82 @@ _app_ref = None  # keep a strong reference to any QApplication we create ourselv
 BERNINA_PREFIXES = ("SARES", "SAROP", "SLAAR", "SARFE")
 
 
+# The pipeline-name convention pshell's own screen panel uses to go from a
+# raw camera name to "the" processing pipeline for it -- decompiled from
+# ch.psi.pshell.screenpanel.CamServerViewer's `pipelineNameFormat` field
+# (default "%s_sp", i.e. Python's "{}_sp") and its getPipelineName(camera) =
+# String.format(pipelineNameFormat, camera). See resolve_camera_pipeline.
+DEFAULT_PIPELINE_NAME_FORMAT = "{}_sp"
+
+
+def default_pipeline_name(camera_name, name_format=DEFAULT_PIPELINE_NAME_FORMAT):
+    """The "screenpanel" pipeline name pshell derives from a raw camera name
+    by default -- e.g. "SARES20-PROF141-M1" -> "SARES20-PROF141-M1_sp". See
+    DEFAULT_PIPELINE_NAME_FORMAT."""
+    return name_format.format(camera_name)
+
+
+def resolve_camera_pipeline(
+    camera_name, pipeline_url=None, create=True, name_format=DEFAULT_PIPELINE_NAME_FORMAT
+):
+    """Resolve "the" processing pipeline for a raw camera name -- what a
+    camera's own .viewer() uses so callers never have to know or guess a
+    pipeline instance name themselves.
+
+    This is the piece pshell's screen panel has that eco's own
+    resolve_stream(kind="pipeline") doesn't: given just a camera name, it
+    doesn't merely reuse-or-create a *running instance* of an
+    already-existing same-named pipeline config (what create=True already
+    does below) -- it first works out *which* pipeline config that even is
+    (default_pipeline_name), and if no such config exists yet either, it
+    creates one on the fly. Decompiled from
+    ch.psi.pshell.screenpanel.CamServerViewer.setStream's "Cameras"
+    selection-mode branch:
+        pipelineName = getPipelineName(cameraName)              # "{cam}_sp"
+        if pipelineName not in server.getPipelines():
+            server.savePipelineConfig(pipelineName, {"camera_name": cameraName})
+        server.start(pipelineName, instanceName)                # create/reuse
+
+    Returns (pipeline_name, stream_address).
+    """
+    from cam_server import PipelineClient
+
+    client = PipelineClient(pipeline_url) if pipeline_url else PipelineClient()
+    pipeline_name = default_pipeline_name(camera_name, name_format=name_format)
+    try:
+        return pipeline_name, client.get_instance_stream(pipeline_name)
+    except Exception:
+        if not create:
+            raise
+        if pipeline_name not in client.get_pipelines():
+            client.save_pipeline_config(pipeline_name, {"camera_name": camera_name})
+        _, stream = client.create_instance_from_name(pipeline_name)
+        return pipeline_name, stream
+
+
 def resolve_stream(name, kind="pipeline", pipeline_url=None, camera_url=None, create=True):
     """Resolve a cam_server camera or pipeline instance name to a bsread
     stream address ("tcp://host:port"), via the same REST calls pshell's
     ch.psi.pshell.camserver.PipelineSource/CameraSource use.
 
-    kind: "pipeline" or "camera".
-    create: for a pipeline, start a new instance from the pipeline config
-        of the same name if no running instance is found (mirrors
-        CamServerViewer's own selectCamera->initialize behavior).
+    kind: "pipeline", "camera", or "camera_pipeline" (a raw camera name,
+        auto-resolved to its own default processing pipeline -- see
+        resolve_camera_pipeline -- rather than the camera's own raw,
+        unprocessed stream that kind="camera" gives you).
+    create: for a pipeline (or camera_pipeline), start a new instance from
+        the pipeline config of the same name if no running instance is
+        found (mirrors CamServerViewer's own selectCamera->initialize
+        behavior).
     """
     from cam_server import CamClient, PipelineClient
 
     if kind == "camera":
         client = CamClient(camera_url) if camera_url else CamClient()
         return client.get_instance_stream(name)
+
+    if kind == "camera_pipeline":
+        _, stream = resolve_camera_pipeline(name, pipeline_url=pipeline_url, create=create)
+        return stream
 
     client = PipelineClient(pipeline_url) if pipeline_url else PipelineClient()
     try:
@@ -830,6 +904,7 @@ class CamServerStreamQt:
         rate_hz=10.0,
         theme=None,
         auto_start=True,
+        cam=None,
     ):
         self.name = name
         self.kind = kind
@@ -838,6 +913,13 @@ class CamServerStreamQt:
         self.embed = embed
         self.demo_color = demo_color
         self.theme = theme  # "dark" | "light" | None -- see eco.widgets.qt_theme
+        # the eco Assembly (e.g. CameraBasler/CameraPCO) this viewer was
+        # opened from, if any -- see cam.viewer()/_default_widget = "viewer".
+        # Only used to add a "Camera Settings" button (see _open_settings),
+        # mirroring eco.widgets.camera_stream_qt.AxisPTZStreamQt's own
+        # "Settings" button/cam parameter.
+        self.cam = cam
+        self._settings_window = None
         self.window = None
         self._worker = None
         self._processor = FrameProcessor()
@@ -981,6 +1063,20 @@ class CamServerStreamQt:
         view_bar = QtWidgets.QToolBar("View controls", self.window)
         view_bar.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         view_bar.setMovable(False)
+
+        if self.cam is not None:
+            # only present when this viewer was opened from a real eco
+            # camera Assembly (cam.viewer()), not e.g. the standalone CLI --
+            # named "Camera Settings" rather than plain "Settings" to avoid
+            # clashing with the dock-visibility "Settings" action in
+            # bg_bar below (a different thing: this opens the device's own
+            # plain property-grid widget, mirroring
+            # eco.widgets.camera_stream_qt.AxisPTZStreamQt's "Settings"
+            # button -- see _open_settings)
+            settings_btn = QtWidgets.QAction("Camera Settings", self.window)
+            settings_btn.triggered.connect(self._open_settings)
+            view_bar.addAction(settings_btn)
+            view_bar.addSeparator()
 
         self._pause_btn = QtWidgets.QAction("Pause", self.window)
         self._pause_btn.setCheckable(True)
@@ -1260,6 +1356,19 @@ class CamServerStreamQt:
             self._cal_scale_y = dialog.scale_y
             self._cal_unit = dialog.unit
 
+    def _open_settings(self):
+        # normal=True: this button specifically wants the plain property
+        # grid -- without it, since CameraBasler/CameraPCO set
+        # _default_widget = "viewer", plain self.cam.widget() would just
+        # reopen this same live viewer instead of the settings widget (see
+        # Assembly.widget()'s normal= docstring, and
+        # eco.widgets.camera_stream_qt.AxisPTZStreamQt._open_settings,
+        # which this mirrors)
+        #
+        # keep a reference so the window (and its poll thread) isn't
+        # garbage-collected as soon as this method returns
+        self._settings_window = self.cam.widget(normal=True)
+
     def _on_histogram_levels_changed(self, vmin, vmax):
         # dragging a handle on the histogram/colorscale sidebar implies
         # "I want manual contrast with exactly these bounds" -- switch
@@ -1510,24 +1619,37 @@ class CamServerStreamQt:
 
 
 def make_camserver_stream_qt(
-    name, kind="pipeline", pipeline_url=None, camera_url=None, theme=None, auto_start=True
+    name,
+    kind="pipeline",
+    pipeline_url=None,
+    camera_url=None,
+    rate_hz=10.0,
+    theme=None,
+    auto_start=True,
+    cam=None,
 ):
     """Convenience factory, mirrors make_axisptz_qt_window's signature.
-    theme: "dark" | "light" | None (native) -- see eco.widgets.qt_theme."""
+    theme: "dark" | "light" | None (native) -- see eco.widgets.qt_theme.
+    cam: the eco camera Assembly this viewer belongs to, if any -- adds a
+    "Camera Settings" button (see CamServerStreamQt._open_settings)."""
     return CamServerStreamQt(
         name,
         kind=kind,
         pipeline_url=pipeline_url,
         camera_url=camera_url,
+        rate_hz=rate_hz,
         theme=theme,
         auto_start=auto_start,
+        cam=cam,
     )
 
 
 def _main(argv=None):
     parser = argparse.ArgumentParser(description="cam_server / demo live image viewer")
     parser.add_argument("name", help="camera or pipeline instance name (ignored for --kind demo)")
-    parser.add_argument("--kind", choices=["pipeline", "camera", "demo"], default="pipeline")
+    parser.add_argument(
+        "--kind", choices=["pipeline", "camera", "camera_pipeline", "demo"], default="pipeline"
+    )
     parser.add_argument("--pipeline-url", default=None)
     parser.add_argument("--camera-url", default=None)
     parser.add_argument(

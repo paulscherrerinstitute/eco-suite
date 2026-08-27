@@ -304,6 +304,37 @@ def test_init_all_click_initializes_everything_lazy_without_opening_any():
     assert ns.init_all_calls == [{"required_only": False, "background": False}]
 
 
+def test_init_all_reconciles_and_unblocks_each_entry_as_it_finishes():
+    """Regression: previously every name in an Init All batch stayed in
+    self._loading -- spinner shown, unclickable via open_by_name's `name
+    in self._loading` guard -- until init_all() returned for the whole
+    batch, even though each entry actually finishes independently and
+    earlier. _refresh()'s reconciliation should drop a name out of
+    self._loading (and make it clickable/openable again) as soon as it's
+    no longer lazy, not only once the whole batch ends."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["a", "b", "c"], init_delay=0.1)
+    opened = []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+
+    launcher._on_init_all_clicked()
+    assert launcher._loading == {"a", "b", "c"}
+
+    # "a" finishes well before init_all() as a whole returns (which takes
+    # ~3 * 0.1s here) -- reconciliation should notice on its own, from the
+    # live-refresh/spinner tick, without waiting for the batch to end.
+    resolved = _pump(app, lambda: "a" not in launcher._loading, timeout=5.0)
+    assert resolved, "an entry that's already done should stop being tracked as loading"
+    assert "c" in launcher._loading  # still mid-batch -- not everything is done yet
+
+    # and it's now actually clickable/openable, instead of being blocked
+    # by open_by_name's `name in self._loading` guard
+    launcher.open_by_name("a")
+    assert opened == ["a"]
+
+    assert _pump(app, lambda: not launcher._loading, timeout=5.0)
+
+
 def test_init_all_click_with_nothing_lazy_is_a_no_op():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(initialized=["cam_west"])
@@ -1277,16 +1308,16 @@ def test_save_startup_script_returns_none_with_no_window():
 # -- dark theme default ---------------------------------------------------
 
 
-def test_desktop_app_defaults_to_dark_theme():
+def test_desktop_app_defaults_to_native_theme():
     import inspect
 
-    assert inspect.signature(EcoDesktopApp.__init__).parameters["theme"].default == "dark"
+    assert inspect.signature(EcoDesktopApp.__init__).parameters["theme"].default is None
 
 
-def test_main_theme_defaults_to_dark(monkeypatch):
-    """--theme's argparse default, and that 'none' maps back to Python
-    None (native style) -- see _main()'s `theme = None if args.theme ==
-    'none' else args.theme` translation."""
+def test_main_theme_defaults_to_native(monkeypatch):
+    """--theme's argparse default (native OS style), and that 'none' maps
+    back to Python None too -- see _main()'s `theme = None if args.theme
+    == 'none' else args.theme` translation."""
 
     class _StubApp:
         def run(self, workspace=None):
@@ -1301,10 +1332,76 @@ def test_main_theme_defaults_to_dark(monkeypatch):
     monkeypatch.setattr(desktop_app, "EcoDesktopApp", fake_desktop_app)
     monkeypatch.setattr(desktop_app, "build_namespace", lambda **kw: None)
     desktop_app._main([])
-    assert captured["theme"] == "dark"
+    assert captured["theme"] is None
 
     desktop_app._main(["--theme", "none"])
     assert captured["theme"] is None
 
+    desktop_app._main(["--theme", "dark"])
+    assert captured["theme"] == "dark"
+
     desktop_app._main(["--theme", "light"])
     assert captured["theme"] == "light"
+
+
+# -- console dock + "Combine Panels into Tabs..." --
+
+
+def test_console_is_a_movable_floatable_dock_not_the_central_widget():
+    """The console used to be window.setCentralWidget()'d, which a
+    QMainWindow never lets the user drag/float/tab -- it's now a
+    QDockWidget like the Namespace panel and any opened device widget,
+    so it can be rearranged the same way they can."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        assert isinstance(gui._console_dock, QtWidgets.QDockWidget)
+        assert gui._console_dock.widget() is gui._console
+        assert gui._console_dock.features() & QtWidgets.QDockWidget.DockWidgetMovable
+        assert gui._console_dock.features() & QtWidgets.QDockWidget.DockWidgetFloatable
+        assert gui.window.centralWidget() is None
+    finally:
+        gui.stop()
+
+
+def test_combine_into_tabs_requires_at_least_two_open_panels(monkeypatch):
+    informed = {}
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "information",
+        lambda *a, **k: informed.setdefault("shown", True),
+    )
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    try:
+        gui._on_combine_into_tabs()
+        assert informed.get("shown") is True
+    finally:
+        gui.stop()
+
+
+def test_combine_into_tabs_tabifies_the_selected_panels(monkeypatch):
+    """Simulates the dialog's checkboxes all being ticked and OK pressed
+    -- the resulting layout should have the Console and Namespace docks
+    tabified together, the same outcome as dragging one onto the other."""
+
+    def fake_exec(self):
+        for checkbox in self.findChildren(QtWidgets.QCheckBox):
+            checkbox.setChecked(True)
+        return QtWidgets.QDialog.Accepted
+
+    monkeypatch.setattr(QtWidgets.QDialog, "exec_", fake_exec)
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        assert gui._launcher_dock not in gui.window.tabifiedDockWidgets(gui._console_dock)
+        gui._on_combine_into_tabs()
+        assert gui._launcher_dock in gui.window.tabifiedDockWidgets(gui._console_dock)
+    finally:
+        gui.stop()

@@ -220,48 +220,43 @@ namespace.mark_beamline(
 
 # Consolidated prepump/venting system (see eco.devices_general.vacuum.prepump
 # for the model + spec this implements). One structured config dict holds
-# every line's valve/gauge/turbo PV names, so the whole system can be edited
-# here as a single literal. All PVs below are still None placeholders -- fill
-# them in once known; a line with all-None PVs still builds (just empty).
-# Line *kinds* are a guess (the source spec's "usage scenarios for permanent
-# lines 1-2" was truncated) -- adjust once confirmed. Lazy, so nothing here
-# touches EPICS until `prepump` is accessed.
+# every channel's valve/gauge PV names, so the whole system can be edited
+# here as a single literal. A channel with all-None PVs still builds (just
+# empty). Lazy, so nothing here touches EPICS until `prepump` is accessed.
+# Turbo pumps are not modelled here -- they're served by the prepump system
+# but not part of it (see the module docstring).
 _prepump_config = {
     "gp": "SARES21-VMCP142-620",  # common prevac-line gauge Gp base
     "roots_pump": "SARES21-VPFO140-750",  # Roots pump base
     "p_target": 1e-3,  # "pumped" threshold [mbar]
+    "p_vent_target": 500.0,  # "vented" threshold [mbar]
     "lines": {
-        # permanent dual-access chambers (guess: prepump_access) -------------
         "line1_usd": {
-            "kind": "turbo",
             "gauge": "SARES21-VMFR140-510",  # G1 gauge base
-            "turbo": "SARES21-VPTM140-700",  # turbo pump base
-            "valve_prevac": "SARES21-VVPP140-300",  # P2 chamber roughing valve
-            "valve_vent": "SARES21-VVPP142-340",  # V2 chamber vent valve
+            "valve_prevac": "SARES21-VVPP140-300",  # P1 roughing valve
+            "valve_vent": "SARES21-VVPP142-340",  # V1 vent valve
         },
         "line2_lic": {
-            "kind": "turbo",
-            "gauge": "SARES21-VMCP141-531",  # G1 gauge base
-            "turbo": "SARES21-VPTM141-710",  # turbo pump base
-            "valve_prevac": "SARES21-VVPP141-320",  # P2 chamber roughing valve
-            "valve_vent": "SARES21-VVPP142-370",  # V2 chamber vent valve
+            "gauge": "SARES21-VMCP141-531",  # G2 gauge base
+            "valve_prevac": "SARES21-VVPP141-320",  # P2 roughing valve
+            "valve_vent": "SARES21-VVPP142-370",  # V2 vent valve
         },
-        # line 3 : valve_vent : "143-350", valve_prevac 142-330""
-        # line 4 : valve_vent : "142-340", valve_prevac
-        # "line2": {
-        #     "kind": "prepump_access",
-        #     "gauge": None, "turbo": None,
-        #     "valve_prevac": None, "valve_vent": None,
-        #     "valve_turbo_prevac": None, "valve_turbo_access": None,
+        # channels 3-4: valve PVs noted from commissioning, gauges not yet
+        # assigned -- fill in the TODOs below, then uncomment.
+        "line3": {
+            "gauge": "SARES21-VMCP142-570",  # TODO: G3 gauge base
+            "valve_prevac": "SARES21-VVPG142-330",  # TODO: was noted as "...142-330"
+            "valve_vent": "SARES21-VVPG143-350",    # TODO: was noted as "...143-350"
+        },
+        # "line4": {
+        #     "gauge": None,  # TODO: G4 gauge base
+        #     "valve_prevac": None,  # TODO: not yet noted
+        #     "valve_vent": None,    # TODO: was noted as "...142-340" -- looked
+        #                            # identical to line1_usd's, double check
         # },
-        # # classic turbo prepump lines (guess: turbo) -------------------------
-        # "line3": {"kind": "turbo", "gauge": None, "turbo": None,
-        #           "valve_prevac": None, "valve_vent": None},
-        # "line4": {"kind": "turbo", "gauge": None, "turbo": None,
-        #           "valve_prevac": None, "valve_vent": None},
-        # # beam-transport pipe, pre-vacuum only (guess: transport) -----------
-        # "line5": {"kind": "transport", "gauge": None,
-        #           "valve_prevac": None, "valve_vent": None},
+        # two more optional slots, not yet cabled:
+        # "line5": {"gauge": None, "valve_prevac": None, "valve_vent": None},
+        # "line6": {"gauge": None, "valve_prevac": None, "valve_vent": None},
     },
 }
 namespace.append_obj(
