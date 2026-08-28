@@ -228,16 +228,16 @@ namespace.mark_beamline(
 _prepump_config = {
     "gp": "SARES21-VMCP142-620",  # common prevac-line gauge Gp base
     "roots_pump": "SARES21-VPFO140-750",  # Roots pump base
-    "p_target": 1e-3,  # "pumped" threshold [mbar]
-    "p_vent_target": 500.0,  # "vented" threshold [mbar]
+    "p_target": 0.5,  # "pumped" threshold [mbar]
+    "p_vent_target": 1000.0,  # "vented" threshold [mbar]
     "lines": {
         "line1_usd": {
-            "gauge": "SARES21-VMFR140-510",  # G1 gauge base
+            "gauge": "SARES21-VMCP140-600",  # G1 gauge base
             "valve_prevac": "SARES21-VVPP140-300",  # P1 roughing valve
             "valve_vent": "SARES21-VVPP142-340",  # V1 vent valve
         },
         "line2_lic": {
-            "gauge": "SARES21-VMCP141-531",  # G2 gauge base
+            "gauge": "SARES21-VMCP141-610",  # G2 gauge base
             "valve_prevac": "SARES21-VVPP141-320",  # P2 roughing valve
             "valve_vent": "SARES21-VVPP142-370",  # V2 vent valve
         },
