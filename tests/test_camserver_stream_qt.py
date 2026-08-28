@@ -19,7 +19,7 @@ from eco.widgets.camserver_stream_qt import (
 # is the CameraBasler behind eco.xdiagnostics.profile_monitors.ProfKbBernina,
 # SARES20-PROF146-M1 the CameraPCO behind
 # eco.xdiagnostics.profile_monitors.Pprm_dsd (see tests/test_cameras_swissfel.py
-# for the .viewer()-level tests using these same two names)
+# for the ._widget_viewer()-level tests using these same two names)
 BASLER_CAMERA_NAME = "SARES20-PROF141-M1"
 PCO_CAMERA_NAME = "SARES20-PROF146-M1"
 
@@ -395,7 +395,7 @@ def test_stream_worker_pause_stops_new_frames(monkeypatch):
 
 class _FakeCamAssembly:
     """Stand-in for a CameraBasler/CameraPCO: only .widget(normal=...)
-    matters here -- see CameraBasler.viewer()/CamServerStreamQt._open_settings."""
+    matters here -- see CameraBasler._widget_viewer()/CamServerStreamQt._open_settings."""
 
     def __init__(self):
         self.widget_calls = []
@@ -420,7 +420,7 @@ def test_camera_settings_button_present_when_cam_given():
         action = _find_action(gui.window, "Camera Settings")
         action.trigger()
         # normal=True: opens the plain property grid, not this same viewer
-        # again (CameraBasler/CameraPCO set _default_widget = "viewer") --
+        # again (CameraBasler/CameraPCO set _default_widget = "_widget_viewer") --
         # mirrors AxisPTZStreamQt._open_settings
         assert fake_cam.widget_calls == [True]
         assert gui._settings_window == "the settings widget"

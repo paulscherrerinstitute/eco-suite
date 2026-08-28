@@ -5,9 +5,9 @@ def test_widget_uses_default_widget_override_when_set():
     calls = []
 
     class FakeCameraLike(Assembly):
-        _default_widget = "viewer"
+        _default_widget = "_widget_viewer"
 
-        def viewer(self):
+        def _widget_viewer(self):
             calls.append("viewer")
             return "the viewer object"
 
@@ -59,10 +59,43 @@ def test_default_widget_is_none_by_default():
     assert Assembly._default_widget is None
 
 
+def test_widget_assembly_bypasses_the_override(monkeypatch):
+    """_widget_assembly() is the generic property-grid widget directly --
+    widget() itself is just a thin dispatcher on top of it (checks
+    _default_widget, else calls _widget_assembly()). Calling
+    _widget_assembly() straight always gets the plain grid regardless of
+    what widget() itself would dispatch to, which is what
+    eco.widgets.containers.assembly_widget() relies on. Same mocking
+    rationale as test_widget_normal_true_skips_the_override (avoid
+    blocking in a real Qt event loop)."""
+    calls = []
+    monkeypatch.setattr(
+        "eco.utilities.utilities.is_notebook", lambda: True, raising=False
+    )
+    monkeypatch.setattr(
+        "eco.widgets.display_widget.make_assembly_widget",
+        lambda obj, show_hidden=False: "generic widget",
+        raising=False,
+    )
+
+    class FakeCameraLike(Assembly):
+        _default_widget = "_widget_viewer"
+
+        def _widget_viewer(self):
+            calls.append("viewer")
+            return "the viewer object"
+
+    obj = FakeCameraLike(name="fake_cam")
+    result = obj._widget_assembly()
+
+    assert calls == []  # override never called
+    assert result == "generic widget"
+
+
 def test_widget_normal_true_skips_the_override(monkeypatch):
     """Regression test for a real bug: AxisPTZStreamQt's own "Settings"
     button calls cam.widget() wanting the plain property grid, but with
-    _default_widget = "viewer" set, plain .widget() just reopened the same
+    _default_widget = "_widget_viewer" set, plain .widget() just reopened the same
     viewer the button was clicked from. normal=True is the escape hatch.
 
     Mocks the generic dispatch target (same as
@@ -82,9 +115,9 @@ def test_widget_normal_true_skips_the_override(monkeypatch):
     )
 
     class FakeCameraLike(Assembly):
-        _default_widget = "viewer"
+        _default_widget = "_widget_viewer"
 
-        def viewer(self):
+        def _widget_viewer(self):
             calls.append("viewer")
             return "the viewer object"
 
@@ -109,9 +142,9 @@ def test_widget_normal_true_still_dispatches_generically(monkeypatch):
     )
 
     class FakeCameraLike(Assembly):
-        _default_widget = "viewer"
+        _default_widget = "_widget_viewer"
 
-        def viewer(self):
+        def _widget_viewer(self):
             return "the viewer object"
 
     obj = FakeCameraLike(name="fake_cam")

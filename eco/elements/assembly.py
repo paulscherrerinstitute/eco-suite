@@ -939,18 +939,26 @@ class Assembly:
 
     # Subclasses with a purpose-built view (e.g. AxisPTZ's live video
     # stream, not just its generic property grid) set this to the name of
-    # a zero-arg method on the instance that builds it; widget() below
-    # calls that instead of the generic display_widget/display_qt/
-    # display_tk dispatch. None (the default) means "no override -- use
-    # the generic one". This is the "_default_widget string" hook: keep
+    # a zero-arg widget-building method on the instance -- by convention
+    # named `_widget_<something>` (e.g. `_widget_viewer`), so every
+    # widget a device offers is findable by that prefix alone; widget()
+    # below calls the named one instead of the generic _widget_assembly()
+    # dispatch. None (the default) means "no override -- use
+    # _widget_assembly()". This is the "_default_widget string" hook: keep
     # the override method itself doing its own is_notebook()-style
-    # dispatch to the right toolkit, same as widget() does here, so
+    # dispatch to the right toolkit, same as _widget_assembly() does, so
     # callers get the same "just works in a notebook or a Qt session"
     # behavior either way.
     _default_widget = None
 
-    def widget(self, show_hidden: bool = False, normal: bool = False):
-        """normal=True: skip any `_default_widget` override and always
+    def widget(self, show_hidden: bool = False, normal: bool = False, **kwargs):
+        """The widget for this object: `_default_widget`'s override if one
+        is set (and `normal` isn't True), else the generic property grid
+        (`_widget_assembly()`). Any subclass may also override `widget()`
+        itself directly instead of going through `_default_widget` --
+        both are valid ways to change what plain `.widget()` returns.
+
+        normal=True: skip any `_default_widget` override and always
         return the plain property-grid widget -- for a caller that
         specifically wants that regardless of what plain `.widget()`
         would otherwise dispatch to. Needed by e.g. a special-purpose
@@ -967,6 +975,17 @@ class Assembly:
                 if callable(override):
                     return override()
 
+        return self._widget_assembly(show_hidden=show_hidden, **kwargs)
+
+    def _widget_assembly(self, show_hidden: bool = False, **kwargs):
+        """The generic property-grid widget -- what `widget()` falls back
+        to whenever `_default_widget` isn't set (or `normal=True` was
+        asked for). Named to match eco's other underscore-prefixed,
+        `_widget_`-prefixed override hooks (see `widget()`'s own
+        docstring, and `_widget_svg_panel` for the SVG-panel equivalent on
+        `show()`); gives `eco.widgets.containers.assembly_widget()` (and
+        anyone else) a stable way to ask for "the assembly widget, no
+        matter what `widget()` itself currently does"."""
         from eco.utilities.utilities import is_notebook
 
         if is_notebook():
@@ -1107,26 +1126,34 @@ class Assembly:
            the top-level beamline namespace works (see `bernina.py`'s
            `namespace._show_svg = ".../beamline_interact.svg"`). `show()`
            just displays it; there is nothing to build.
-        2. **Dynamic panel**: the assembly instead implements a `_svg(self,
-           live=False, **kwargs)` method that *builds* an SVG on demand
-           (e.g. from its own live component tree) and returns the file path
-           -- see `PrepumpSystem._svg`/`XrayBeamline._svg` for real
-           examples, both P&ID-style schematics generated from the
+        2. **Dynamic panel**: the assembly instead implements a
+           `_widget_svg_panel(self, live=False, **kwargs)` method that
+           *builds* an SVG on demand (e.g. from its own live component
+           tree) and returns the file path -- by convention, every SVG
+           panel (now and in the future) is named `_widget_svg_panel`, the
+           same `_widget_`-prefixed findability convention `widget()`
+           itself uses for `_default_widget` overrides. See
+           `PrepumpSystem._widget_svg_panel`/`XrayBeamline._widget_svg_panel`
+           for real examples, both P&ID-style schematics generated from the
            assembly's own components. If `_show_svg` isn't already set (or
            `live=True` is requested, which always rebuilds so the snapshot
            is current -- building may touch EPICS for live valve/gauge
-           state), `show()` calls `self._svg(live=live)` itself and caches
-           the result in `_show_svg`. This means any assembly with a
-           `_svg()` method works with a plain `.show()`/`.show(live=True)`
-           call, no extra step required.
+           state), `show()` calls `self._widget_svg_panel(live=live)`
+           itself and caches the result in `_show_svg`. This means any
+           assembly with a `_widget_svg_panel()` method works with a plain
+           `.show()`/`.show(live=True)` call, no extra step required.
 
-        Subclasses whose `_svg()` needs more than just `live=` (e.g.
-        `XrayBeamline._svg(ref=, kinds=, live=)` to filter which component
-        kinds are drawn) can still expose a friendlier `svg_panel(...)`
-        wrapper that builds `_show_svg` itself with those extra arguments
-        and then calls `self.show(...)` to actually launch the viewer --
-        `show()`'s own fallback only fires when `_show_svg` is still unset,
-        so it won't clobber a panel a wrapper just custom-built.
+        Subclasses whose `_widget_svg_panel()` needs more than just `live=`
+        (e.g. `XrayBeamline._widget_svg_panel(ref=, kinds=, live=)` to
+        filter which component kinds are drawn) can still expose a
+        friendlier `svg_panel(...)` wrapper that builds `_show_svg` itself
+        with those extra arguments and then calls `self.show(...)` to
+        actually launch the viewer -- `show()`'s own fallback only fires
+        when `_show_svg` is still unset, so it won't clobber a panel a
+        wrapper just custom-built. `show()` itself can also be overridden
+        outright by a subclass (e.g. `PrepumpSystem.show()` defaulting
+        `live=True`) -- same as `widget()`, both the method itself and its
+        `_widget_`-prefixed hook are valid places to customize.
 
         Commands clicked in the SVG run against this assembly's own full
         alias name as namespace prefix, e.g. clicking a device labelled
@@ -1145,16 +1172,21 @@ class Assembly:
         inline in the current cell. See `eco.utilities.svg_interactor.
         launch_svg_viewer`'s docstring for both.
 
-        With `live=True` and a `_svg()` hook, an already-open native window
-        (`in_window=True`) also keeps redrawing every couple of seconds for
-        as long as it stays open, by calling `_svg(live=True)` again each
-        tick and swapping it in -- see `launch_svg_viewer`'s `refresh` -- so
-        valve/gauge colours etc. stay current instead of freezing at
-        whatever they were when the window opened. Not yet wired up for the
-        Jupyter/Dash viewer (`in_window=False`), which still only reflects
-        the state at open time.
+        With `live=True` and a `_widget_svg_panel()` hook, an already-open
+        viewer (either `in_window=True`'s native window or the Jupyter/
+        browser one) keeps redrawing every couple of seconds for as long
+        as it stays open, by calling `_widget_svg_panel(live=True)` again
+        each tick -- see `launch_svg_viewer`'s `refresh` -- so valve/gauge
+        colours etc. stay current instead of
+        freezing at whatever they were when the panel opened. Both viewers
+        share one mechanism for this (a small script running inside the
+        panel's own browser-engine process re-polls and reloads it, entirely
+        independent of whatever the eco Python process' main thread happens
+        to be doing at the time -- e.g. blocked inside a running macro's poll
+        loop), so the panel keeps updating even while a long macro like
+        `PrepumpSystem.pump_down()` is running against it.
         """
-        build_svg = getattr(self, "_svg", None)
+        build_svg = getattr(self, "_widget_svg_panel", None)
         if callable(build_svg) and (not getattr(self, "_show_svg", None) or live):
             self._show_svg = build_svg(live=live)
 

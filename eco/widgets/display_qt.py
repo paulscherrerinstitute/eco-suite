@@ -181,6 +181,341 @@ def _flash_error(widget):
         pass
 
 
+def _build_item_controls_qt(item, value_label, cur):
+    """Build the control area (everything right of name/value) for one
+    item -- the exact branch logic DisplayQt._build_row applies per item
+    in the assembly grid (Detector-read-only / Adjustable-enum /
+    Adjustable-tweakable-or-plain / fallback-with-set_target_value / bare
+    fallback), extracted so it's independently reusable (see
+    eco.widgets.containers.adjustable_control/detector_indicator) as well
+    as from the grid itself -- not a second implementation.
+
+    `value_label` is the QLabel the caller already built for the current
+    value -- writes made from here (tweak/absolute-set/enum-select/reset)
+    update it directly, exactly as before; reading it back (polling) is
+    the caller's job.
+
+    Returns (controls: QWidget, combo: QComboBox|None) -- `controls`
+    wraps everything in one QHBoxLayout (zero margins, so it looks
+    identical to the same widgets living directly in the caller's own row
+    layout); `combo`, if not None, is what a caller polling `item` needs
+    to keep in sync with new readings (see _apply_value_label_update)."""
+    controls = QtWidgets.QWidget()
+    row = QtWidgets.QHBoxLayout(controls)
+    row.setContentsMargins(0, 0, 0, 0)
+    combo = None
+
+    # Detector (non-Adjustable): read-only
+    if isinstance(item, Detector) and not isinstance(item, Adjustable):
+        row.addWidget(QtWidgets.QLabel("read-only (Detector)"))
+
+    # Adjustable: step field + up/down + absolute entry (commits on Enter/focus-out)
+    elif isinstance(item, Adjustable):
+        original_value = cur
+        enum_opts = _enum_options(item, cur)
+        changer_ref = {"changer": None}
+
+        if enum_opts is not None:
+            # ENUM adjustable: dropdown selector, current readback preselected
+            combo = QtWidgets.QComboBox()
+            combo.addItems(enum_opts)
+            cur_label = _format_value(cur)
+            if cur_label in enum_opts:
+                combo.setCurrentText(cur_label)
+            combo.setFixedWidth(140)
+
+            def _enum_set(label):
+                try:
+                    r = item.set_target_value(label)
+                    changer_ref["changer"] = r
+                    try:
+                        if hasattr(r, "wait"):
+                            r.wait(timeout=5)
+                    except Exception:
+                        pass
+                    try:
+                        new_cur = item.get_current_value()
+                    except Exception:
+                        new_cur = None
+                    if new_cur is not None:
+                        lbl = _format_value(new_cur)
+                        value_label.setText(lbl)
+                        idx = combo.findText(lbl)
+                        if idx >= 0:
+                            combo.blockSignals(True)
+                            combo.setCurrentIndex(idx)
+                            combo.blockSignals(False)
+                except Exception:
+                    _flash_error(combo)
+
+            def _on_activated(index=0):
+                _enum_set(combo.currentText())
+
+            def _on_stop(checked=False):
+                changer = changer_ref.get("changer")
+                if changer is not None and hasattr(changer, "stop"):
+                    try:
+                        changer.stop()
+                    except Exception:
+                        pass
+
+            def _on_reset(checked=False):
+                _enum_set(
+                    original_value.name
+                    if isinstance(original_value, enum.Enum)
+                    else original_value
+                )
+
+            combo.activated.connect(_on_activated)
+            stop_btn = QtWidgets.QPushButton("🛑")
+            stop_btn.setFixedWidth(30)
+            stop_btn.setToolTip("Stop the current move")
+            stop_btn.clicked.connect(_on_stop)
+            reset_btn = QtWidgets.QPushButton("↺")
+            reset_btn.setFixedWidth(30)
+            reset_btn.setToolTip("Reset to the value from when this widget was opened")
+            reset_btn.clicked.connect(_on_reset)
+            row.addWidget(combo)
+            # stretch before, not after, Stop/Reset -- absorbs the
+            # leftover width so the two buttons land at a fixed
+            # right-hand column regardless of which branch (enum vs.
+            # tweakable vs. fallback) built the preceding controls
+            row.addStretch(1)
+            row.addWidget(stop_btn)
+            row.addWidget(reset_btn)
+
+        else:
+            is_plain_scalar = not isinstance(cur, (list, dict, bytes, bytearray))
+            tweakable = _is_tweakable(cur)
+
+            if tweakable:
+                step_edit = QtWidgets.QLineEdit(str(_default_step_for(cur)))
+                step_edit.setFixedWidth(60)
+                row.addWidget(step_edit)
+
+            if is_plain_scalar:
+                input_edit = QtWidgets.QLineEdit(str(cur))
+                input_edit.setFixedWidth(100)
+
+                def _apply_absolute(it=item, vl=value_label, ie=input_edit, ref=cur,
+                                     cref=changer_ref):
+                    try:
+                        newval = _coerce_like(ie.text(), ref)
+                        r = it.set_target_value(newval)
+                        cref["changer"] = r
+                        try:
+                            if hasattr(r, "wait"):
+                                r.wait(timeout=5)
+                        except Exception:
+                            pass
+                        new_current = it.get_current_value()
+                        vl.setText(_format_value(new_current))
+                        ie.setText(str(new_current))
+                    except Exception:
+                        _flash_error(ie)
+
+                input_edit.editingFinished.connect(_apply_absolute)
+            else:
+                input_edit = QtWidgets.QLabel("n/a")
+                input_edit.setFixedWidth(100)
+
+            if tweakable:
+                def _make_tweak(sign, it=item, vl=value_label, se=step_edit,
+                                 ie=input_edit, plain=is_plain_scalar, cref=changer_ref):
+                    def _on_click():
+                        try:
+                            step = _coerce_like(se.text(), _default_step_for(cur))
+                            base = it.get_current_value()
+                            newval = base + sign * step
+                            r = it.set_target_value(newval)
+                            cref["changer"] = r
+                            try:
+                                if hasattr(r, "wait"):
+                                    r.wait(timeout=5)
+                            except Exception:
+                                pass
+                            new_current = it.get_current_value()
+                            vl.setText(_format_value(new_current))
+                            if plain:
+                                ie.setText(str(new_current))
+                        except Exception:
+                            _flash_error(ie if isinstance(ie, QtWidgets.QLineEdit) else vl)
+
+                    return _on_click
+
+                up_btn = QtWidgets.QPushButton("▲")
+                up_btn.setFixedWidth(30)
+                up_btn.clicked.connect(_make_tweak(1))
+                down_btn = QtWidgets.QPushButton("▼")
+                down_btn.setFixedWidth(30)
+                down_btn.clicked.connect(_make_tweak(-1))
+                row.addWidget(up_btn)
+                row.addWidget(down_btn)
+
+            row.addWidget(input_edit)
+
+            def _on_stop(checked=False, it=item, cref=changer_ref):
+                changer = cref.get("changer")
+                if changer is not None and hasattr(changer, "stop"):
+                    try:
+                        changer.stop()
+                    except Exception:
+                        pass
+
+            def _on_reset(checked=False, it=item, vl=value_label, ie=input_edit,
+                          plain=is_plain_scalar, ref=original_value, cref=changer_ref):
+                try:
+                    r = it.set_target_value(ref)
+                    cref["changer"] = r
+                    try:
+                        if hasattr(r, "wait"):
+                            r.wait(timeout=5)
+                    except Exception:
+                        pass
+                    new_current = it.get_current_value()
+                    vl.setText(_format_value(new_current))
+                    if plain:
+                        ie.setText(str(new_current))
+                except Exception:
+                    if isinstance(ie, QtWidgets.QLineEdit):
+                        _flash_error(ie)
+
+            stop_btn = QtWidgets.QPushButton("🛑")
+            stop_btn.setFixedWidth(30)
+            stop_btn.setToolTip("Stop the current move")
+            stop_btn.clicked.connect(_on_stop)
+            reset_btn = QtWidgets.QPushButton("↺")
+            reset_btn.setFixedWidth(30)
+            reset_btn.setToolTip("Reset to the value from when this widget was opened")
+            reset_btn.clicked.connect(_on_reset)
+            # see the enum branch above for why the stretch goes here
+            row.addStretch(1)
+            row.addWidget(stop_btn)
+            row.addWidget(reset_btn)
+
+    # Fallback: has set_target_value but not recognized as Adjustable
+    elif hasattr(item, "set_target_value") and callable(
+        getattr(item, "set_target_value")
+    ):
+        input_edit = QtWidgets.QLineEdit(str(cur))
+
+        def _apply(it=item, vl=value_label, ie=input_edit, ref=cur):
+            try:
+                newval = _coerce_like(ie.text(), ref)
+                r = it.set_target_value(newval)
+                try:
+                    if hasattr(r, "wait"):
+                        r.wait(timeout=5)
+                except Exception:
+                    pass
+                new_current = it.get_current_value()
+                vl.setText(str(new_current))
+                ie.setText(str(new_current))
+            except Exception:
+                _flash_error(ie)
+
+        input_edit.editingFinished.connect(_apply)
+        row.addWidget(input_edit)
+
+    else:
+        row.addWidget(QtWidgets.QLabel("—"))
+
+    return controls, combo
+
+
+def _apply_value_label_update(value_label, combo, text):
+    """Refresh `value_label` (and `combo`'s selection, if not None) for a
+    new reading `text` (already formatted, see _format_value) -- the
+    generic part of DisplayQt._apply_update, extracted so a standalone
+    poller (build_adjustable_control_qt) can reuse it outside the
+    assembly grid's own entries/poll-thread bookkeeping."""
+    value_label.setText(text)
+    if combo is not None:
+        # keep the dropdown selection tracking the readback (e.g. a valve
+        # settling from a stale/mismatched selection to its true
+        # OPEN/CLOSED state) -- blockSignals so this doesn't re-fire the
+        # activated handler and issue a spurious write, same pattern the
+        # enum branch's own _enum_set already uses after a real
+        # user-driven set
+        found = combo.findText(text)
+        if found >= 0 and combo.currentIndex() != found:
+            combo.blockSignals(True)
+            combo.setCurrentIndex(found)
+            combo.blockSignals(False)
+
+
+class _StandaloneItemBridge(QtCore.QObject):
+    """Marshals one item's polled value from the background thread to the
+    GUI thread -- same pattern as _PollBridge, just for a single
+    standalone control (see build_adjustable_control_qt) rather than a
+    whole assembly grid's shared poll thread."""
+
+    result = QtCore.Signal(str)
+
+
+def build_adjustable_control_qt(item, poll_interval=1.0, title=None):
+    """Standalone, self-polling version of one DisplayQt row (name/value/
+    controls) -- for use as a eco.widgets.containers.stack() child outside
+    the normal assembly grid, e.g. via
+    eco.widgets.containers.adjustable_control()/detector_indicator() (the
+    same function serves both -- _build_item_controls_qt already renders
+    read-only for a plain, non-Adjustable Detector). Returns an object
+    with `.window` (QWidget) and `.stop()`, matching eco's usual Qt
+    widget-wrapper convention (see EcoDesktopApp._dock_widget_object)."""
+    from eco.widgets.qt_lifecycle import close_calls_stop
+
+    name = title or _label_of(item)
+    window = QtWidgets.QWidget()
+    row = QtWidgets.QHBoxLayout(window)
+
+    name_label = QtWidgets.QLabel(name)
+    name_label.setFixedWidth(200)
+    row.addWidget(name_label)
+
+    try:
+        cur = item.get_current_value()
+    except Exception:
+        cur = "<error>"
+
+    value_label = QtWidgets.QLabel(_format_value(cur))
+    value_label.setFixedWidth(140)
+    row.addWidget(value_label)
+
+    controls, combo = _build_item_controls_qt(item, value_label, cur)
+    row.addWidget(controls)
+
+    bridge = _StandaloneItemBridge()
+    bridge.result.connect(lambda text: _apply_value_label_update(value_label, combo, text))
+
+    stop_event = threading.Event()
+
+    def _poll_loop():
+        while not stop_event.is_set():
+            try:
+                text = _format_value(item.get_current_value())
+            except Exception:
+                text = "<error>"
+            bridge.result.emit(text)
+            stop_event.wait(poll_interval)
+
+    poll_thread = threading.Thread(target=_poll_loop, daemon=True)
+    poll_thread.start()
+
+    class _StandaloneControl:
+        def __init__(self):
+            self.window = window
+
+        def stop(self):
+            stop_event.set()
+            if self.window is not None:
+                self.window.close()
+                self.window = None
+
+    wrapper = _StandaloneControl()
+    close_calls_stop(window, wrapper.stop)
+    return wrapper
+
+
 class DisplayQt:
     def __init__(
         self,
@@ -297,224 +632,16 @@ class DisplayQt:
         value_label = QtWidgets.QLabel(_format_value(cur))
         value_label.setFixedWidth(140)
         row.addWidget(value_label)
-        combo_ref = {"combo": None}  # set below for enum rows; polled by _apply_update
 
-        # Detector (non-Adjustable): read-only
-        if isinstance(item, Detector) and not isinstance(item, Adjustable):
-            row.addWidget(QtWidgets.QLabel("read-only (Detector)"))
+        controls, combo = _build_item_controls_qt(item, value_label, cur)
+        row.addWidget(controls)
 
-        # Adjustable: step field + up/down + absolute entry (commits on Enter/focus-out)
-        elif isinstance(item, Adjustable):
-            original_value = cur
-            enum_opts = _enum_options(item, cur)
-            changer_ref = {"changer": None}
-
-            if enum_opts is not None:
-                # ENUM adjustable: dropdown selector, current readback preselected
-                combo = QtWidgets.QComboBox()
-                combo.addItems(enum_opts)
-                cur_label = _format_value(cur)
-                if cur_label in enum_opts:
-                    combo.setCurrentText(cur_label)
-                combo.setFixedWidth(140)
-                combo_ref["combo"] = combo
-
-                def _enum_set(label):
-                    try:
-                        r = item.set_target_value(label)
-                        changer_ref["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        try:
-                            new_cur = item.get_current_value()
-                        except Exception:
-                            new_cur = None
-                        if new_cur is not None:
-                            lbl = _format_value(new_cur)
-                            value_label.setText(lbl)
-                            idx = combo.findText(lbl)
-                            if idx >= 0:
-                                combo.blockSignals(True)
-                                combo.setCurrentIndex(idx)
-                                combo.blockSignals(False)
-                    except Exception:
-                        _flash_error(combo)
-
-                def _on_activated(index=0):
-                    _enum_set(combo.currentText())
-
-                def _on_stop(checked=False):
-                    changer = changer_ref.get("changer")
-                    if changer is not None and hasattr(changer, "stop"):
-                        try:
-                            changer.stop()
-                        except Exception:
-                            pass
-
-                def _on_reset(checked=False):
-                    _enum_set(
-                        original_value.name
-                        if isinstance(original_value, enum.Enum)
-                        else original_value
-                    )
-
-                combo.activated.connect(_on_activated)
-                stop_btn = QtWidgets.QPushButton("🛑")
-                stop_btn.setFixedWidth(30)
-                stop_btn.setToolTip("Stop the current move")
-                stop_btn.clicked.connect(_on_stop)
-                reset_btn = QtWidgets.QPushButton("↺")
-                reset_btn.setFixedWidth(30)
-                reset_btn.setToolTip("Reset to the value from when this widget was opened")
-                reset_btn.clicked.connect(_on_reset)
-                row.addWidget(combo)
-                row.addWidget(stop_btn)
-                row.addWidget(reset_btn)
-
-            else:
-                is_plain_scalar = not isinstance(cur, (list, dict, bytes, bytearray))
-                tweakable = _is_tweakable(cur)
-
-                if tweakable:
-                    step_edit = QtWidgets.QLineEdit(str(_default_step_for(cur)))
-                    step_edit.setFixedWidth(60)
-                    row.addWidget(step_edit)
-
-                if is_plain_scalar:
-                    input_edit = QtWidgets.QLineEdit(str(cur))
-                    input_edit.setFixedWidth(100)
-
-                    def _apply_absolute(it=item, vl=value_label, ie=input_edit, ref=cur,
-                                         cref=changer_ref):
-                        try:
-                            newval = _coerce_like(ie.text(), ref)
-                            r = it.set_target_value(newval)
-                            cref["changer"] = r
-                            try:
-                                if hasattr(r, "wait"):
-                                    r.wait(timeout=5)
-                            except Exception:
-                                pass
-                            new_current = it.get_current_value()
-                            vl.setText(_format_value(new_current))
-                            ie.setText(str(new_current))
-                        except Exception:
-                            _flash_error(ie)
-
-                    input_edit.editingFinished.connect(_apply_absolute)
-                else:
-                    input_edit = QtWidgets.QLabel("n/a")
-                    input_edit.setFixedWidth(100)
-
-                if tweakable:
-                    def _make_tweak(sign, it=item, vl=value_label, se=step_edit,
-                                     ie=input_edit, plain=is_plain_scalar, cref=changer_ref):
-                        def _on_click():
-                            try:
-                                step = _coerce_like(se.text(), _default_step_for(cur))
-                                base = it.get_current_value()
-                                newval = base + sign * step
-                                r = it.set_target_value(newval)
-                                cref["changer"] = r
-                                try:
-                                    if hasattr(r, "wait"):
-                                        r.wait(timeout=5)
-                                except Exception:
-                                    pass
-                                new_current = it.get_current_value()
-                                vl.setText(_format_value(new_current))
-                                if plain:
-                                    ie.setText(str(new_current))
-                            except Exception:
-                                _flash_error(ie if isinstance(ie, QtWidgets.QLineEdit) else vl)
-
-                        return _on_click
-
-                    up_btn = QtWidgets.QPushButton("▲")
-                    up_btn.setFixedWidth(30)
-                    up_btn.clicked.connect(_make_tweak(1))
-                    down_btn = QtWidgets.QPushButton("▼")
-                    down_btn.setFixedWidth(30)
-                    down_btn.clicked.connect(_make_tweak(-1))
-                    row.addWidget(up_btn)
-                    row.addWidget(down_btn)
-
-                row.addWidget(input_edit)
-
-                def _on_stop(checked=False, it=item, cref=changer_ref):
-                    changer = cref.get("changer")
-                    if changer is not None and hasattr(changer, "stop"):
-                        try:
-                            changer.stop()
-                        except Exception:
-                            pass
-
-                def _on_reset(checked=False, it=item, vl=value_label, ie=input_edit,
-                              plain=is_plain_scalar, ref=original_value, cref=changer_ref):
-                    try:
-                        r = it.set_target_value(ref)
-                        cref["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        new_current = it.get_current_value()
-                        vl.setText(_format_value(new_current))
-                        if plain:
-                            ie.setText(str(new_current))
-                    except Exception:
-                        if isinstance(ie, QtWidgets.QLineEdit):
-                            _flash_error(ie)
-
-                stop_btn = QtWidgets.QPushButton("🛑")
-                stop_btn.setFixedWidth(30)
-                stop_btn.setToolTip("Stop the current move")
-                stop_btn.clicked.connect(_on_stop)
-                reset_btn = QtWidgets.QPushButton("↺")
-                reset_btn.setFixedWidth(30)
-                reset_btn.setToolTip("Reset to the value from when this widget was opened")
-                reset_btn.clicked.connect(_on_reset)
-                row.addWidget(stop_btn)
-                row.addWidget(reset_btn)
-
-        # Fallback: has set_target_value but not recognized as Adjustable
-        elif hasattr(item, "set_target_value") and callable(
-            getattr(item, "set_target_value")
-        ):
-            input_edit = QtWidgets.QLineEdit(str(cur))
-
-            def _apply(it=item, vl=value_label, ie=input_edit, ref=cur):
-                try:
-                    newval = _coerce_like(ie.text(), ref)
-                    r = it.set_target_value(newval)
-                    try:
-                        if hasattr(r, "wait"):
-                            r.wait(timeout=5)
-                    except Exception:
-                        pass
-                    new_current = it.get_current_value()
-                    vl.setText(str(new_current))
-                    ie.setText(str(new_current))
-                except Exception:
-                    _flash_error(ie)
-
-            input_edit.editingFinished.connect(_apply)
-            row.addWidget(input_edit)
-
-        else:
-            row.addWidget(QtWidgets.QLabel("—"))
-
-        row.addStretch(1)
         layout.addLayout(row)
         self._entries.append(
             {
                 "item": item,
                 "value_label": value_label,
-                "combo": combo_ref["combo"],
+                "combo": combo,
                 "active": active,
                 "interval": self.poll_interval,
                 "next_due": 0.0,  # monotonic time; 0 => poll on first pass
@@ -665,6 +792,15 @@ class DisplayQt:
         child._build_window()
         self._child_windows[id(child_assembly)] = child
 
+        # If this widget is itself docked in the desktop app, dock the
+        # child alongside it instead of leaving it as a bare standalone
+        # window -- see EcoDesktopApp._dock_widget_object/host_widget.
+        # Plain terminal/no-desktop case: no _eco_container, unaffected.
+        container = getattr(self, "_eco_container", None)
+        if container is not None and hasattr(container, "host_widget"):
+            name = getattr(getattr(child_assembly, "alias", None), "get_full_name", None)
+            container.host_widget(name() if callable(name) else str(child_assembly), child)
+
     def _open_memory_browser(self, checked=False):
         if self._memory_browser is not None and self._memory_browser.window is not None:
             self._memory_browser.window.raise_()
@@ -678,19 +814,7 @@ class DisplayQt:
         # runs on the GUI thread (queued signal) - safe to touch widgets here
         try:
             entry = self._entries[idx]
-            entry["value_label"].setText(text)
-            combo = entry.get("combo")
-            if combo is not None:
-                # keep the dropdown selection tracking the readback (e.g. a
-                # valve settling from a stale/mismatched selection to its
-                # true OPEN/CLOSED state) -- blockSignals so this doesn't
-                # re-fire _on_activated and issue a spurious write, same
-                # pattern _enum_set already uses after a real user-driven set
-                found = combo.findText(text)
-                if found >= 0 and combo.currentIndex() != found:
-                    combo.blockSignals(True)
-                    combo.setCurrentIndex(found)
-                    combo.blockSignals(False)
+            _apply_value_label_update(entry["value_label"], entry.get("combo"), text)
         except Exception:
             pass
 

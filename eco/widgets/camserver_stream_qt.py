@@ -58,7 +58,7 @@ a pipeline instance name (kind="pipeline") -- see resolve_camera_pipeline,
 which mirrors decompiled logic from
 ch.psi.pshell.screenpanel.CamServerViewer.setStream's "Cameras" selection
 mode. This is what eco.devices_general.cameras_swissfel.CameraBasler/
-CameraPCO's own .viewer() uses, passing cam=<the camera Assembly> so the
+CameraPCO's own ._widget_viewer() uses, passing cam=<the camera Assembly> so the
 viewer can add a "Camera Settings" button (opens cam.widget(normal=True),
 the normal property-grid widget) -- mirrors
 eco.widgets.camera_stream_qt.AxisPTZStreamQt's own "Settings" button.
@@ -109,7 +109,7 @@ def resolve_camera_pipeline(
     camera_name, pipeline_url=None, create=True, name_format=DEFAULT_PIPELINE_NAME_FORMAT
 ):
     """Resolve "the" processing pipeline for a raw camera name -- what a
-    camera's own .viewer() uses so callers never have to know or guess a
+    camera's own ._widget_viewer() uses so callers never have to know or guess a
     pipeline instance name themselves.
 
     This is the piece pshell's screen panel has that eco's own
@@ -914,7 +914,7 @@ class CamServerStreamQt:
         self.demo_color = demo_color
         self.theme = theme  # "dark" | "light" | None -- see eco.widgets.qt_theme
         # the eco Assembly (e.g. CameraBasler/CameraPCO) this viewer was
-        # opened from, if any -- see cam.viewer()/_default_widget = "viewer".
+        # opened from, if any -- see cam._widget_viewer()/_default_widget = "_widget_viewer".
         # Only used to add a "Camera Settings" button (see _open_settings),
         # mirroring eco.widgets.camera_stream_qt.AxisPTZStreamQt's own
         # "Settings" button/cam parameter.
@@ -1066,7 +1066,7 @@ class CamServerStreamQt:
 
         if self.cam is not None:
             # only present when this viewer was opened from a real eco
-            # camera Assembly (cam.viewer()), not e.g. the standalone CLI --
+            # camera Assembly (cam._widget_viewer()), not e.g. the standalone CLI --
             # named "Camera Settings" rather than plain "Settings" to avoid
             # clashing with the dock-visibility "Settings" action in
             # bg_bar below (a different thing: this opens the device's own
@@ -1359,7 +1359,7 @@ class CamServerStreamQt:
     def _open_settings(self):
         # normal=True: this button specifically wants the plain property
         # grid -- without it, since CameraBasler/CameraPCO set
-        # _default_widget = "viewer", plain self.cam.widget() would just
+        # _default_widget = "_widget_viewer", plain self.cam.widget() would just
         # reopen this same live viewer instead of the settings widget (see
         # Assembly.widget()'s normal= docstring, and
         # eco.widgets.camera_stream_qt.AxisPTZStreamQt._open_settings,

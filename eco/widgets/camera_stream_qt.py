@@ -275,13 +275,26 @@ class AxisPTZStreamQt:
     def _open_settings(self):
         # normal=True: this button specifically wants the plain
         # pan/tilt/zoom/iris/focus property grid -- without it, since
-        # AxisPTZ._default_widget = "viewer", plain .widget() would just
+        # AxisPTZ._default_widget = "_widget_viewer", plain .widget() would just
         # reopen this same live-video viewer instead (see
         # Assembly.widget()'s normal= docstring for the fuller why)
         #
         # keep a reference so the window (and its poll thread) isn't
         # garbage-collected as soon as this method returns
         self._settings_window = self.cam.widget(normal=True)
+
+        # If this viewer is itself docked in the desktop app, dock the
+        # settings panel alongside it instead of leaving it as a bare
+        # standalone window -- see EcoDesktopApp._dock_widget_object/
+        # host_widget. Plain terminal/no-desktop case: no _eco_container,
+        # unaffected (settings window just stays standalone, as before).
+        container = getattr(self, "_eco_container", None)
+        if container is not None and hasattr(container, "host_widget"):
+            name = getattr(getattr(self.cam, "alias", None), "get_full_name", None)
+            container.host_widget(
+                (name() if callable(name) else str(self.cam)) + ".settings",
+                self._settings_window,
+            )
 
     def _open_memories(self):
         if self._memory_browser is not None and self._memory_browser.window is not None:

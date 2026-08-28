@@ -81,8 +81,8 @@ def _is_notebook():
 class AxisPTZ(Assembly):
     # widget() (and anything driving it, e.g. the desktop app's namespace
     # launcher) opens the live-video viewer instead of the generic
-    # property grid -- see Assembly._default_widget/viewer() below.
-    _default_widget = "viewer"
+    # property grid -- see Assembly._default_widget/_widget_viewer() below.
+    _default_widget = "_widget_viewer"
 
     def __init__(
         self,
@@ -336,7 +336,7 @@ class AxisPTZ(Assembly):
             WhiteBalance(value).name,
         )
 
-    def viewer(self, codec="mjpeg", resolution=None, compression=50, fps=10, auto_start=True):
+    def _widget_viewer(self, codec="mjpeg", resolution=None, compression=50, fps=10, auto_start=True):
         """Open the live-video viewer, with mouse control mirroring the
         Axis web interface: click to recenter, drag a rectangle to zoom
         in, scroll wheel or right-click to zoom out. Opens as an

@@ -178,6 +178,16 @@ def _row_layout():
     return widgets.Layout(flex_flow="row wrap", align_items="center", width="100%")
 
 
+def _action_group(stop_btn, reset_btn):
+    """Wrap Stop/Reset in their own HBox with a CSS auto left-margin, so
+    they sit flush against the right edge of `control_box` regardless of
+    how many/wide the preceding controls are (dropdown vs. step/up/down/
+    input vs. anything else) -- margin-left: auto on a flex child pushes it
+    to the far end of its flex line, same trick as the Qt side's
+    row.addStretch(1) placed just before these two buttons."""
+    return widgets.HBox([stop_btn, reset_btn], layout=widgets.Layout(margin="0 0 0 auto"))
+
+
 def _prefetch_values(items, max_workers=8):
     """Read all initial values concurrently so building the widget for a large
     assembly is bounded by the slowest single readback rather than their sum.
@@ -273,6 +283,395 @@ def _flash_button_error(btn):
         b.description = o
 
     threading.Thread(target=_reset, daemon=True).start()
+
+
+def _build_item_controls_widget(item, value_w, cur):
+    """Build the control area for one item -- the exact branch logic
+    make_assembly_widget's _build_row applies per item in the assembly
+    grid (Detector-read-only / Adjustable-enum / Adjustable-tweakable-or-
+    plain / fallback-with-set_target_value / bare fallback), extracted so
+    it's independently reusable (see
+    eco.widgets.containers.adjustable_control/detector_indicator) as well
+    as from the grid itself -- not a second implementation. Qt equivalent:
+    eco.widgets.display_qt._build_item_controls_qt.
+
+    `value_w` is the Label the caller already built for the current value
+    -- writes made from here (tweak/absolute-set/enum-select/reset) update
+    it directly, exactly as before; reading it back (polling) is the
+    caller's job, via _apply_item_update below.
+
+    Returns (control_box: widgets.HBox, poll_state: dict) -- `poll_state`
+    bundles whatever _apply_item_update needs beyond item/value_widget
+    (input_widget/enum_opts/dd_suppress, for keeping an enum dropdown in
+    sync with polled readings); merge it into an item_entries-shaped dict
+    alongside "item"/"value_widget" for a poll loop (the grid's shared
+    one, or a standalone one -- see build_adjustable_control_widget) to
+    drive."""
+    control_box = widgets.HBox(layout=_control_layout())
+    input_widget = None
+    reader = None
+    enum_opts = None
+    suppress_dd = None
+
+    # If it's a Detector and NOT Adjustable -> no control widget (readonly)
+    if isinstance(item, Detector) and not isinstance(item, Adjustable):
+        control_box.children = (widgets.Label("read-only (Detector)"),)
+
+    # If it's Adjustable -> show tweak widget (step, up, down) or, for
+    # enum-enabled adjustables, a dropdown of the enum options
+    elif isinstance(item, Adjustable):
+        original_value = cur
+        enum_opts = _enum_options(item, cur)
+
+        stop_btn = widgets.Button(
+            description="🛑", layout=widgets.Layout(width="40px"),
+            tooltip="Stop the current move",
+        )
+        reset_btn = widgets.Button(
+            description="↺", layout=widgets.Layout(width="40px"),
+            tooltip="Reset to the value from when this widget was opened",
+        )
+        last_changer = {"changer": None}
+
+        if enum_opts is not None:
+            # ENUM adjustable: dropdown selector, current readback preselected
+            cur_label = _format_value(cur)
+            dropdown = widgets.Dropdown(
+                options=enum_opts,
+                value=cur_label if cur_label in enum_opts else (enum_opts[0] if enum_opts else None),
+                layout=widgets.Layout(width="150px"),
+            )
+            input_widget = dropdown
+            reader = None
+            suppress_dd = [False]
+
+            def _enum_set(label, b=None):
+                try:
+                    r = item.set_target_value(label)
+                    last_changer["changer"] = r
+                    try:
+                        if hasattr(r, "wait"):
+                            r.wait(timeout=5)
+                    except Exception:
+                        pass
+                    try:
+                        new_cur = item.get_current_value()
+                    except Exception:
+                        new_cur = None
+                    if new_cur is not None:
+                        lbl = _format_value(new_cur)
+                        value_w.value = lbl
+                        if lbl in enum_opts:
+                            suppress_dd[0] = True
+                            try:
+                                dropdown.value = lbl
+                            finally:
+                                suppress_dd[0] = False
+                except Exception:
+                    _flash_button_error(b)
+
+            def _on_dd_change(change):
+                if suppress_dd[0] or change.get("name") != "value":
+                    return
+                _enum_set(change["new"])
+
+            def _on_enum_reset(b=None):
+                orig = original_value
+                _enum_set(orig.name if isinstance(orig, enum.Enum) else orig, b)
+
+            def _on_enum_stop(b=None):
+                changer = last_changer.get("changer")
+                if changer is not None and hasattr(changer, "stop"):
+                    try:
+                        changer.stop()
+                    except Exception:
+                        _flash_button_error(b)
+
+            dropdown.observe(_on_dd_change, names="value")
+            stop_btn.on_click(_on_enum_stop)
+            reset_btn.on_click(_on_enum_reset)
+            control_box.children = (dropdown, _action_group(stop_btn, reset_btn))
+
+        else:
+            tweakable = _is_tweakable(cur)
+
+            # optional direct input to set an absolute value
+            if not isinstance(cur, (list, dict)) and not isinstance(
+                cur, (bytes, bytearray)
+            ):
+                input_widget, reader = _make_input_widget_for_value(cur)
+                input_widget.layout.margin = "0 6px 0 0"
+            else:
+                input_widget = widgets.Label("n/a", layout=widgets.Layout(width="80px"))
+                reader = None
+
+            def make_handlers(it, val_widget, inp_widget, inp_reader, changer_ref):
+                # guards recursive triggering of the input's on-change handler
+                # when we update inp_widget.value ourselves after a move
+                suppress_input_event = [False]
+
+                def _sync_input_widget(value):
+                    if inp_reader is None:
+                        return
+                    suppress_input_event[0] = True
+                    try:
+                        inp_widget.value = value
+                    except Exception:
+                        pass
+                    finally:
+                        suppress_input_event[0] = False
+
+                def _do_set(newval, btn=None):
+                    try:
+                        r = it.set_target_value(newval)
+                        changer_ref["changer"] = r
+                        try:
+                            if hasattr(r, "wait"):
+                                r.wait(timeout=5)
+                        except Exception:
+                            pass
+                        try:
+                            new_current = it.get_current_value()
+                        except Exception:
+                            new_current = newval
+                        try:
+                            val_widget.value = str(new_current)
+                        except Exception:
+                            pass
+                        # always reflect the real current value, so the next
+                        # tweak/move starts from where the device actually is
+                        _sync_input_widget(new_current)
+                    except Exception:
+                        _flash_button_error(btn)
+
+                def _on_input_change(change):
+                    if suppress_input_event[0] or inp_reader is None:
+                        return
+                    if change.get("name") != "value":
+                        return
+                    _do_set(inp_reader(), None)
+
+                def _on_stop(b=None):
+                    changer = changer_ref.get("changer")
+                    if changer is not None and hasattr(changer, "stop"):
+                        try:
+                            changer.stop()
+                        except Exception:
+                            _flash_button_error(b)
+
+                def _on_reset(b=None):
+                    _do_set(original_value, b)
+
+                return _do_set, _on_input_change, _on_stop, _on_reset
+
+            do_set, on_input_change, on_stop, on_reset = make_handlers(
+                item, value_w, input_widget, reader, last_changer
+            )
+            # set the value as soon as a new one is entered (on Enter/blur,
+            # not per keystroke) instead of requiring a separate "Set" button
+            if reader is not None:
+                if hasattr(input_widget, "continuous_update"):
+                    input_widget.continuous_update = False
+                input_widget.observe(on_input_change, names="value")
+            stop_btn.on_click(on_stop)
+            reset_btn.on_click(on_reset)
+
+            control_children = []
+            if tweakable:
+                # only plain numbers support +/- step tweaking (e.g. not strings)
+                step_w, step_reader = _make_step_widget_for_value(cur)
+                up_btn = widgets.Button(
+                    description="▲", layout=widgets.Layout(width="40px")
+                )
+                down_btn = widgets.Button(
+                    description="▼", layout=widgets.Layout(width="40px")
+                )
+
+                def make_tweak(sign, it=item, sr=step_reader, ds=do_set):
+                    def _on_click(b=None):
+                        try:
+                            step = sr()
+                            base = it.get_current_value()
+                            newval = base + sign * step
+                        except Exception:
+                            _flash_button_error(b)
+                            return
+                        ds(newval, b)
+
+                    return _on_click
+
+                up_btn.on_click(make_tweak(1))
+                down_btn.on_click(make_tweak(-1))
+                control_children.extend([step_w, up_btn, down_btn])
+
+            control_children.append(input_widget)
+            control_children.append(_action_group(stop_btn, reset_btn))
+            control_box.children = tuple(control_children)
+
+    # Fallback: if item has set_target_value (callable) but wasn't captured above, allow simple set
+    elif hasattr(item, "set_target_value") and callable(
+        getattr(item, "set_target_value")
+    ):
+        # create input widget based on current value
+        input_widget, reader = _make_input_widget_for_value(cur)
+        input_widget.layout.margin = "0 6px 0 0"
+
+        def make_on_set(it, rw, vw, inp):
+            def _on_set(change):
+                if change.get("name") != "value":
+                    return
+                try:
+                    val = rw()
+                    r = it.set_target_value(val)
+                    try:
+                        if hasattr(r, "wait"):
+                            r.wait(timeout=5)
+                    except Exception:
+                        pass
+                    try:
+                        vw.value = _format_value(it.get_current_value())
+                    except Exception:
+                        pass
+                except Exception:
+                    old_border = inp.layout.border
+                    inp.layout.border = "1px solid red"
+
+                    def _reset(o=old_border):
+                        time.sleep(1.2)
+                        inp.layout.border = o
+
+                    threading.Thread(target=_reset, daemon=True).start()
+
+            return _on_set
+
+        # set the value as soon as a new one is entered (on Enter/blur,
+        # not per keystroke) instead of requiring a separate "Set" button
+        if hasattr(input_widget, "continuous_update"):
+            input_widget.continuous_update = False
+        input_widget.observe(
+            make_on_set(item, reader, value_w, input_widget), names="value"
+        )
+        control_box.children = (input_widget,)
+
+    else:
+        control_box.children = (
+            widgets.Label("—", layout=widgets.Layout(margin="0 0 0 6px")),
+        )
+
+    poll_state = {
+        "input_widget": input_widget,
+        "reader": reader,
+        "enum_opts": enum_opts,
+        "dd_suppress": suppress_dd,
+    }
+    return control_box, poll_state
+
+
+def _apply_item_update(entry):
+    """Read `entry["item"]`'s current value and refresh its row's widgets
+    (value label, enum-dropdown sync, state-class re-colouring) -- the
+    per-entry body _update_loop already runs for every active row each
+    tick, extracted so a standalone control (build_adjustable_control_widget)
+    can reuse the exact same update logic outside the assembly grid's own
+    item_entries/poll-loop bookkeeping.
+
+    Returns the elapsed read duration in seconds -- computed whether or
+    not the read raised, matching the existing scheduler's behaviour of
+    backing off a slow *failing* read the same as a slow successful one
+    (see _update_loop's own adaptive-interval comment)."""
+    t0 = time.monotonic()
+    try:
+        val = entry["item"].get_current_value()
+        text = _format_value(val)
+        entry["value_widget"].value = text
+        # keep the dropdown selection tracking the readback (e.g. a valve
+        # settling from a stale/mismatched selection to its true
+        # OPEN/CLOSED state); dd_suppress (the same flag _enum_set uses
+        # after a real user-driven set) stops this from looping back into
+        # _on_dd_change and issuing a spurious write.
+        enum_opts = entry.get("enum_opts")
+        dd_suppress = entry.get("dd_suppress")
+        if enum_opts and dd_suppress is not None and text in enum_opts:
+            dd = entry["input_widget"]
+            if dd.value != text:
+                dd_suppress[0] = True
+                try:
+                    dd.value = text
+                finally:
+                    dd_suppress[0] = False
+        # live green/red re-colouring -- open/closed and alarm severity can
+        # change between polls, so this must track the value, not just be
+        # set once at build time.
+        new_class = _state_css_class(entry["item"], val)
+        if new_class != entry.get("state_class"):
+            for cls in _STATE_CSS.values():
+                entry["value_widget"].remove_class(cls)
+            if new_class:
+                entry["value_widget"].add_class(new_class)
+            entry["state_class"] = new_class
+    except Exception:
+        pass
+    return time.monotonic() - t0
+
+
+def build_adjustable_control_widget(item, poll_interval=1.0, title=None):
+    """Standalone, self-polling version of one make_assembly_widget row
+    (name/value/controls) -- for use as a eco.widgets.containers.stack()
+    child outside the normal assembly grid, e.g. via
+    eco.widgets.containers.adjustable_control()/detector_indicator() (the
+    same function serves both -- _build_item_controls_widget already
+    renders read-only for a plain, non-Adjustable Detector). Returns a
+    plain ipywidgets.HBox with its own `.stop()` attached directly -- no
+    wrapper object needed, since eco.widgets.widget_tray.teardown_widget
+    already calls `.stop()` if present before closing a widget's
+    subtree."""
+    name = title or (
+        item.alias.get_full_name()
+        if hasattr(item, "alias")
+        else getattr(item, "name", str(item))
+    )
+    try:
+        cur = item.get_current_value()
+    except Exception:
+        cur = "<error>"
+
+    name_w = widgets.Label(str(name), layout=_name_layout())
+    value_w = widgets.Label(_format_value(cur), layout=_value_layout())
+    state_class = _state_css_class(item, cur)
+    if state_class:
+        value_w.add_class(state_class)
+
+    control_box, poll_state = _build_item_controls_widget(item, value_w, cur)
+    row = widgets.HBox([name_w, value_w, control_box], layout=_row_layout())
+
+    entry = {
+        "item": item,
+        "value_widget": value_w,
+        "active": True,
+        "interval": poll_interval,
+        "next_due": 0.0,
+        "state_class": state_class,
+        **poll_state,
+    }
+
+    stop_event = threading.Event()
+
+    def _poll_loop():
+        while not stop_event.is_set():
+            duration = _apply_item_update(entry)
+            interval = min(
+                _POLL_MAX_INTERVAL, max(poll_interval, duration * _POLL_SLOWDOWN_FACTOR)
+            )
+            if stop_event.wait(interval):
+                break
+
+    threading.Thread(target=_poll_loop, daemon=True).start()
+
+    def stop():
+        stop_event.set()
+
+    row.stop = stop
+    return row
 
 
 def make_assembly_widget(
@@ -404,257 +803,7 @@ def make_assembly_widget(
         if state_class:
             value_w.add_class(state_class)
 
-        # control area
-        control_box = widgets.HBox(layout=_control_layout())
-        input_widget = None
-        reader = None
-        enum_opts = None
-        suppress_dd = None
-
-        # If it's a Detector and NOT Adjustable -> no control widget (readonly)
-        if isinstance(item, Detector) and not isinstance(item, Adjustable):
-            control_box.children = (widgets.Label("read-only (Detector)"),)
-
-        # If it's Adjustable -> show tweak widget (step, up, down) or, for
-        # enum-enabled adjustables, a dropdown of the enum options
-        elif isinstance(item, Adjustable):
-            original_value = cur
-            enum_opts = _enum_options(item, cur)
-
-            stop_btn = widgets.Button(
-                description="🛑", layout=widgets.Layout(width="40px"),
-                tooltip="Stop the current move",
-            )
-            reset_btn = widgets.Button(
-                description="↺", layout=widgets.Layout(width="40px"),
-                tooltip="Reset to the value from when this widget was opened",
-            )
-            last_changer = {"changer": None}
-
-            if enum_opts is not None:
-                # ENUM adjustable: dropdown selector, current readback preselected
-                cur_label = _format_value(cur)
-                dropdown = widgets.Dropdown(
-                    options=enum_opts,
-                    value=cur_label if cur_label in enum_opts else (enum_opts[0] if enum_opts else None),
-                    layout=widgets.Layout(width="150px"),
-                )
-                input_widget = dropdown
-                reader = None
-                suppress_dd = [False]
-
-                def _enum_set(label, b=None):
-                    try:
-                        r = item.set_target_value(label)
-                        last_changer["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        try:
-                            new_cur = item.get_current_value()
-                        except Exception:
-                            new_cur = None
-                        if new_cur is not None:
-                            lbl = _format_value(new_cur)
-                            value_w.value = lbl
-                            if lbl in enum_opts:
-                                suppress_dd[0] = True
-                                try:
-                                    dropdown.value = lbl
-                                finally:
-                                    suppress_dd[0] = False
-                    except Exception:
-                        _flash_button_error(b)
-
-                def _on_dd_change(change):
-                    if suppress_dd[0] or change.get("name") != "value":
-                        return
-                    _enum_set(change["new"])
-
-                def _on_enum_reset(b=None):
-                    orig = original_value
-                    _enum_set(orig.name if isinstance(orig, enum.Enum) else orig, b)
-
-                def _on_enum_stop(b=None):
-                    changer = last_changer.get("changer")
-                    if changer is not None and hasattr(changer, "stop"):
-                        try:
-                            changer.stop()
-                        except Exception:
-                            _flash_button_error(b)
-
-                dropdown.observe(_on_dd_change, names="value")
-                stop_btn.on_click(_on_enum_stop)
-                reset_btn.on_click(_on_enum_reset)
-                control_box.children = (dropdown, stop_btn, reset_btn)
-
-            else:
-                tweakable = _is_tweakable(cur)
-
-                # optional direct input to set an absolute value
-                if not isinstance(cur, (list, dict)) and not isinstance(
-                    cur, (bytes, bytearray)
-                ):
-                    input_widget, reader = _make_input_widget_for_value(cur)
-                    input_widget.layout.margin = "0 6px 0 0"
-                else:
-                    input_widget = widgets.Label("n/a", layout=widgets.Layout(width="80px"))
-                    reader = None
-
-                def make_handlers(it, val_widget, inp_widget, inp_reader, changer_ref):
-                    # guards recursive triggering of the input's on-change handler
-                    # when we update inp_widget.value ourselves after a move
-                    suppress_input_event = [False]
-
-                    def _sync_input_widget(value):
-                        if inp_reader is None:
-                            return
-                        suppress_input_event[0] = True
-                        try:
-                            inp_widget.value = value
-                        except Exception:
-                            pass
-                        finally:
-                            suppress_input_event[0] = False
-
-                    def _do_set(newval, btn=None):
-                        try:
-                            r = it.set_target_value(newval)
-                            changer_ref["changer"] = r
-                            try:
-                                if hasattr(r, "wait"):
-                                    r.wait(timeout=5)
-                            except Exception:
-                                pass
-                            try:
-                                new_current = it.get_current_value()
-                            except Exception:
-                                new_current = newval
-                            try:
-                                val_widget.value = str(new_current)
-                            except Exception:
-                                pass
-                            # always reflect the real current value, so the next
-                            # tweak/move starts from where the device actually is
-                            _sync_input_widget(new_current)
-                        except Exception:
-                            _flash_button_error(btn)
-
-                    def _on_input_change(change):
-                        if suppress_input_event[0] or inp_reader is None:
-                            return
-                        if change.get("name") != "value":
-                            return
-                        _do_set(inp_reader(), None)
-
-                    def _on_stop(b=None):
-                        changer = changer_ref.get("changer")
-                        if changer is not None and hasattr(changer, "stop"):
-                            try:
-                                changer.stop()
-                            except Exception:
-                                _flash_button_error(b)
-
-                    def _on_reset(b=None):
-                        _do_set(original_value, b)
-
-                    return _do_set, _on_input_change, _on_stop, _on_reset
-
-                do_set, on_input_change, on_stop, on_reset = make_handlers(
-                    item, value_w, input_widget, reader, last_changer
-                )
-                # set the value as soon as a new one is entered (on Enter/blur,
-                # not per keystroke) instead of requiring a separate "Set" button
-                if reader is not None:
-                    if hasattr(input_widget, "continuous_update"):
-                        input_widget.continuous_update = False
-                    input_widget.observe(on_input_change, names="value")
-                stop_btn.on_click(on_stop)
-                reset_btn.on_click(on_reset)
-
-                control_children = []
-                if tweakable:
-                    # only plain numbers support +/- step tweaking (e.g. not strings)
-                    step_w, step_reader = _make_step_widget_for_value(cur)
-                    up_btn = widgets.Button(
-                        description="▲", layout=widgets.Layout(width="40px")
-                    )
-                    down_btn = widgets.Button(
-                        description="▼", layout=widgets.Layout(width="40px")
-                    )
-
-                    def make_tweak(sign, it=item, sr=step_reader, ds=do_set):
-                        def _on_click(b=None):
-                            try:
-                                step = sr()
-                                base = it.get_current_value()
-                                newval = base + sign * step
-                            except Exception:
-                                _flash_button_error(b)
-                                return
-                            ds(newval, b)
-
-                        return _on_click
-
-                    up_btn.on_click(make_tweak(1))
-                    down_btn.on_click(make_tweak(-1))
-                    control_children.extend([step_w, up_btn, down_btn])
-
-                control_children.append(input_widget)
-                control_children.extend([stop_btn, reset_btn])
-                control_box.children = tuple(control_children)
-
-        # Fallback: if item has set_target_value (callable) but wasn't captured above, allow simple set
-        elif hasattr(item, "set_target_value") and callable(
-            getattr(item, "set_target_value")
-        ):
-            # create input widget based on current value
-            input_widget, reader = _make_input_widget_for_value(cur)
-            input_widget.layout.margin = "0 6px 0 0"
-
-            def make_on_set(it, rw, vw, inp):
-                def _on_set(change):
-                    if change.get("name") != "value":
-                        return
-                    try:
-                        val = rw()
-                        r = it.set_target_value(val)
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        try:
-                            vw.value = _format_value(it.get_current_value())
-                        except Exception:
-                            pass
-                    except Exception:
-                        old_border = inp.layout.border
-                        inp.layout.border = "1px solid red"
-
-                        def _reset(o=old_border):
-                            time.sleep(1.2)
-                            inp.layout.border = o
-
-                        threading.Thread(target=_reset, daemon=True).start()
-
-                return _on_set
-
-            # set the value as soon as a new one is entered (on Enter/blur,
-            # not per keystroke) instead of requiring a separate "Set" button
-            if hasattr(input_widget, "continuous_update"):
-                input_widget.continuous_update = False
-            input_widget.observe(
-                make_on_set(item, reader, value_w, input_widget), names="value"
-            )
-            control_box.children = (input_widget,)
-
-        else:
-            control_box.children = (
-                widgets.Label("—", layout=widgets.Layout(margin="0 0 0 6px")),
-            )
+        control_box, poll_state = _build_item_controls_widget(item, value_w, cur)
 
         row = widgets.HBox([name_w, value_w, control_box], layout=_row_layout())
         if section_class:
@@ -664,14 +813,11 @@ def make_assembly_widget(
             {
                 "item": item,
                 "value_widget": value_w,
-                "input_widget": input_widget,
-                "reader": reader,
                 "active": active,
                 "interval": poll_interval,
                 "next_due": 0.0,  # monotonic time; 0 => poll on first pass
                 "state_class": state_class,  # seeded from the initial build
-                "enum_opts": enum_opts,
-                "dd_suppress": suppress_dd,
+                **poll_state,
             }
         )
 
@@ -805,40 +951,7 @@ def make_assembly_widget(
                 if now < ent["next_due"]:
                     next_wakeup = min(next_wakeup, ent["next_due"])
                     continue
-                t0 = time.monotonic()
-                try:
-                    val = ent["item"].get_current_value()
-                    text = _format_value(val)
-                    ent["value_widget"].value = text
-                    # keep the dropdown selection tracking the readback (e.g.
-                    # a valve settling from a stale/mismatched selection to
-                    # its true OPEN/CLOSED state); suppress_dd (the same flag
-                    # _enum_set uses after a real user-driven set) stops this
-                    # from looping back into _on_dd_change and issuing a
-                    # spurious write.
-                    enum_opts = ent.get("enum_opts")
-                    dd_suppress = ent.get("dd_suppress")
-                    if enum_opts and dd_suppress is not None and text in enum_opts:
-                        dd = ent["input_widget"]
-                        if dd.value != text:
-                            dd_suppress[0] = True
-                            try:
-                                dd.value = text
-                            finally:
-                                dd_suppress[0] = False
-                    # live green/red re-colouring -- open/closed and alarm
-                    # severity can change between polls, so this must track
-                    # the value, not just be set once at build time.
-                    new_class = _state_css_class(ent["item"], val)
-                    if new_class != ent.get("state_class"):
-                        for cls in _STATE_CSS.values():
-                            ent["value_widget"].remove_class(cls)
-                        if new_class:
-                            ent["value_widget"].add_class(new_class)
-                        ent["state_class"] = new_class
-                except Exception:
-                    pass
-                duration = time.monotonic() - t0
+                duration = _apply_item_update(ent)
                 ent["interval"] = min(
                     _POLL_MAX_INTERVAL,
                     max(poll_interval, duration * _POLL_SLOWDOWN_FACTOR),

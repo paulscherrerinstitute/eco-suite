@@ -1027,9 +1027,18 @@ class EcoDesktopApp:
         The dock stays movable/floatable: drag it out, or use its title
         bar's own float button, to pop it back into its own window at any
         time -- standard QDockWidget behaviour, nothing special done here
-        for it. Closing the dock (its title bar's X) stops the underlying
-        widget's polling via _ManagedDockWidget, so nothing keeps running
-        in the background once its tile is gone.
+        for it. Closing the dock -- via its title bar's X, or via the
+        widget's own internal "Close" button (both routed through the same
+        wrapped `widget_obj.stop`, see below) -- stops the underlying
+        widget's polling and tears the dock tile down, so nothing keeps
+        running (or sits as an empty shell) once it's gone.
+
+        Also tags `widget_obj._eco_container = self` once docked, and is
+        reachable under the public alias `host_widget` -- lets anything
+        `widget_obj` spawns internally check `getattr(self, "_eco_container",
+        None)` and dock alongside it here too, instead of always popping a
+        bare standalone window (see DisplayQt._open_child_window,
+        AxisPTZStreamQt._open_settings).
         """
         inner = getattr(widget_obj, "window", None)
         if not isinstance(inner, QtWidgets.QWidget):
@@ -1040,17 +1049,46 @@ class EcoDesktopApp:
         # "shown standalone" and "reparented into a dock"
         inner.hide()
 
-        def _on_close():
-            stop = getattr(widget_obj, "stop", None)
-            if callable(stop):
-                try:
-                    stop()
-                except Exception:
-                    logger.exception("stopping %r's widget failed", name)
+        # Both ways a docked widget can be closed -- the dock's own
+        # title-bar X (via _ManagedDockWidget.closeEvent below) and the
+        # widget's own internal "Close" button (which just calls
+        # widget_obj.stop(), same as DisplayQt.close_btn -- see
+        # display_qt.py) -- need to converge on tearing the *dock* down
+        # too, not just stopping the widget's polling. Wrapping
+        # widget_obj.stop itself is what makes both paths funnel through
+        # one idempotent teardown, since both already call it.
+        original_stop = getattr(widget_obj, "stop", None)
+        removed = {"done": False}
+
+        def _teardown():
+            if removed["done"]:
+                return
+            removed["done"] = True
             if dock in self._widget_docks:
                 self._widget_docks.remove(dock)
+            self.window.removeDockWidget(dock)
+            # removeDockWidget only detaches it from the dock-area layout
+            # and hides it -- per its own docs, it deliberately leaves the
+            # widget's Qt parent alone (so callers can reparent it
+            # elsewhere). Since nothing else wants it, clear the parent
+            # too, so it's actually gone rather than a hidden leftover
+            # child of the main window.
+            dock.setParent(None)
+            dock.deleteLater()
 
-        dock = _ManagedDockWidget(name, _on_close, parent=self.window)
+        def _stop_and_teardown():
+            try:
+                if callable(original_stop):
+                    original_stop()
+            except Exception:
+                logger.exception("stopping %r's widget failed", name)
+            finally:
+                _teardown()
+
+        if callable(original_stop):
+            widget_obj.stop = _stop_and_teardown
+
+        dock = _ManagedDockWidget(name, _stop_and_teardown, parent=self.window)
         dock.setObjectName(
             _dock_object_name(f"widget_{name}", [d.objectName() for d in self._widget_docks])
         )
@@ -1074,6 +1112,20 @@ class EcoDesktopApp:
         inner.show()
         dock.show()
         dock.raise_()
+
+        # Tag the widget with the container that just hosted it, so
+        # anything IT spawns internally (e.g. DisplayQt._open_child_window,
+        # AxisPTZStreamQt._open_settings) can dock alongside it here too
+        # instead of always popping a bare standalone window -- see those
+        # call sites and host_widget below.
+        widget_obj._eco_container = self
+
+    # public alias: nested call sites (e.g. display_qt.py, camera_stream_qt.py)
+    # reach a parent's container via `getattr(parent, "_eco_container", None)`
+    # and then call `.host_widget(name, child)` on it -- same method as
+    # _open_widget's own top-level docking, just under a name that isn't
+    # private to this module.
+    host_widget = _dock_widget_object
 
     # -- workspace persistence --------------------------------------------
 

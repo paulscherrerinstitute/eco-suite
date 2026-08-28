@@ -789,6 +789,34 @@ def test_open_widget_dock_close_stops_the_wrapped_widget():
         gui.stop()
 
 
+def test_widgets_own_close_button_also_tears_down_the_dock():
+    """Regression test for a real bug: a docked widget's own internal
+    "Close" button (DisplayQt.close_btn -> self.stop(), not the dock's
+    title-bar X) used to just stop the widget's polling while leaving an
+    empty dock shell behind in the QMainWindow -- _ManagedDockWidget's
+    closeEvent-based teardown only ever fired from the dock's own X.
+    _dock_widget_object now wraps widget_obj.stop itself so both paths
+    converge on the same teardown."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["prepump"])
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("prepump")
+        wrapper = ns._items["prepump"].last_widget
+        dock = gui._widget_docks[0]
+
+        # simulates the widget's own Close button -- calling .stop()
+        # directly, NOT dock.close()
+        wrapper.stop()
+
+        assert wrapper.stop_calls == 1
+        assert dock not in gui._widget_docks
+        assert gui.window.findChild(QtWidgets.QDockWidget, dock.objectName()) is None
+    finally:
+        gui.stop()
+
+
 def test_open_widget_multiple_tiles_are_separate_docks_not_tabbed():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(initialized=["prepump", "env"])

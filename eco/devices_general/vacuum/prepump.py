@@ -37,7 +37,7 @@ import time
 from eco import Assembly
 
 from .gauges import VacuumGauge
-from .valves import Valve, PrePump
+from .valves import Valve, PrePump, ValveState
 
 
 class PrepumpLine(Assembly):
@@ -120,6 +120,10 @@ class PrepumpSystem(Assembly):
         self.p_target = p_target
         self.p_vent_target = p_vent_target
         self.vent_line_name = vent_line_name
+        #: one-line human-readable status of whatever pump_down()/vent() is
+        #: (or was last) doing -- shown at the top of the SVG panel, see
+        #: build_prepump_svg. None means nothing has run yet this session.
+        self._activity = None
         if roots_pump is not None:
             self._append(PrePump, roots_pump, name="roots_pump", is_status=True)
         if gp is not None:
@@ -162,6 +166,38 @@ class PrepumpSystem(Assembly):
     def _is_vented(self, pressure):
         return pressure is not None and pressure >= self.p_vent_target
 
+    def line_state(self, line):
+        """Classify one channel's current state from its own valve
+        positions and gauge reading (not the common ``Gp``):
+
+        * ``"pumped"``   -- pump valve open, gauge at/below ``p_target``
+          (its normal connected, pumped-down steady state)
+        * ``"pumping"``  -- pump valve open, gauge still above ``p_target``
+          (a pump down is in progress)
+        * ``"venting"``  -- vent valve open (a vent is in progress, or it
+          was simply left open)
+        * ``"vented"``   -- both valves closed, gauge at/above
+          ``p_vent_target`` (sealed off at atmosphere)
+        * ``"isolated"`` -- both valves closed, gauge below
+          ``p_vent_target`` (sealed off, still holding some vacuum)
+        * ``"unknown"``  -- a valve/gauge reading isn't available, or both
+          valves are open at once (should never happen)
+        """
+        line = self._get_line(line)
+        try:
+            prevac_open = line.valve_prevac.get_current_value() == ValveState.OPEN
+            vent_open = line.valve_vent.get_current_value() == ValveState.OPEN
+        except Exception:
+            return "unknown"
+        if prevac_open and vent_open:
+            return "unknown"
+        if vent_open:
+            return "venting"
+        p = line.pressure()
+        if prevac_open:
+            return "pumped" if self._is_pumped(p) else "pumping"
+        return "vented" if self._is_vented(p) else "isolated"
+
     # ---- procedures ------------------------------------------------------
     def pump_down(self, line, timeout=300.0, poll=1.0):
         """Pump down one channel.
@@ -169,34 +205,53 @@ class PrepumpSystem(Assembly):
         Close its vent valve, isolate every *other* channel (close their
         pump valves, so they don't get pumped against the rising ``Gp``),
         then open this channel's pump valve and wait for both ``Gp`` and its
-        own gauge to reach ``p_target``. Reopens the other channels'
-        pump valves again either way (success or timeout). Returns ``True``
-        on success, ``False`` if `timeout` elapses first.
+        own gauge to reach ``p_target``. Afterwards (success or timeout),
+        each *other* channel is restored to what it was actually doing
+        before -- its own :meth:`line_state`, recorded up front -- rather
+        than being blindly reopened: a channel that was ``"vented"`` or
+        already ``"isolated"`` stays exactly that way (its pump valve stays
+        closed), only one that was ``"pumped"``/``"pumping"`` gets its pump
+        valve reopened. Returns ``True`` on success, ``False`` if `timeout`
+        elapses first.
         """
         line = self._get_line(line)
         others = [l for l in self.lines if l is not line]
+        was_pumped = {other.name: self.line_state(other) in ("pumped", "pumping") for other in others}
 
-        print(f"[prepump] pump down '{line.name}': isolating other channels")
+        self._activity = f"pump_down('{line.name}'): isolating other channels"
+        print(f"[prepump] pump down '{line.name}': isolating other channels "
+              f"({', '.join(f'{o.name}={self.line_state(o)}' for o in others)})")
         for other in others:
             other.valve_prevac.close()
 
         line.valve_vent.close()
         line.valve_prevac.open()
 
+        def restore_others():
+            for other in others:
+                if was_pumped[other.name]:
+                    other.valve_prevac.open()
+                else:
+                    print(f"[prepump] '{other.name}' was not pumped/connected before -- leaving it as is")
+
         t0 = time.time()
         while not (self._is_pumped(self.gp_pressure()) and self._is_pumped(line.pressure())):
             if time.time() - t0 > timeout:
+                self._activity = (f"pump_down('{line.name}') FAILED after {timeout:.0f}s "
+                                   f"(Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())})")
                 print(f"[prepump] '{line.name}' pump down FAILED after {timeout}s "
                       f"(Gp={self.gp_pressure()}, G={line.pressure()}) -- isolating")
                 line.valve_prevac.close()
-                for other in others:
-                    other.valve_prevac.open()
+                restore_others()
                 return False
+            self._activity = (f"pump_down('{line.name}') running: "
+                               f"Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())}")
             time.sleep(poll)
 
+        self._activity = (f"pump_down('{line.name}') succeeded "
+                           f"(Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())})")
         print(f"[prepump] '{line.name}' pumped down (Gp={self.gp_pressure()}, G={line.pressure()})")
-        for other in others:
-            other.valve_prevac.open()
+        restore_others()
         return True
 
     def vent(self, line, timeout=300.0, poll=1.0):
@@ -217,7 +272,9 @@ class PrepumpSystem(Assembly):
         line = self._get_line(line)
         others = [l for l in self.lines if l is not line]
 
-        print(f"[prepump] venting '{line.name}': making sure other channels' vent valves are closed")
+        self._activity = f"vent('{line.name}'): closing other channels' vent valves"
+        print(f"[prepump] venting '{line.name}': making sure other channels' vent valves are closed "
+              f"({', '.join(f'{o.name}={self.line_state(o)}' for o in others)})")
         for other in others:
             other.valve_vent.close()
 
@@ -227,11 +284,14 @@ class PrepumpSystem(Assembly):
         t0 = time.time()
         while not self._is_vented(line.pressure()):
             if time.time() - t0 > timeout:
+                self._activity = f"vent('{line.name}') FAILED after {timeout:.0f}s (G={_fmt_pressure(line.pressure())})"
                 print(f"[prepump] '{line.name}' venting FAILED after {timeout}s (G={line.pressure()})")
                 line.valve_vent.close()
                 return False
+            self._activity = f"vent('{line.name}') running: G={_fmt_pressure(line.pressure())}"
             time.sleep(poll)
 
+        self._activity = f"vent('{line.name}') succeeded (G={_fmt_pressure(line.pressure())})"
         print(f"[prepump] '{line.name}' vented (G={line.pressure()})")
         line.valve_vent.close()
         return True
@@ -304,12 +364,14 @@ class PrepumpSystem(Assembly):
         return rows
 
     # ---- clickable schematic panel -------------------------------------
-    # `_svg()` is the dynamic-panel hook `Assembly.show()` looks for -- see
-    # its docstring. Underscore-prefixed (not part of the public namespace
-    # a user tab-completes into) since `.show()`/`.show(live=True)` alone is
-    # now enough to open the panel; `svg_panel()` below just stays around as
-    # a discoverable, explicitly-named alias.
-    def _svg(self, path=None, live=True):
+    # `_widget_svg_panel()` is the dynamic-panel hook `Assembly.show()`
+    # looks for -- see its docstring -- named per eco's `_widget_`-prefixed
+    # findability convention for every widget-building method an object
+    # offers. Underscore-prefixed (not part of the public namespace a user
+    # tab-completes into) since `.show()`/`.show(live=True)` alone is now
+    # enough to open the panel; `svg_panel()` below just stays around as a
+    # discoverable, explicitly-named alias.
+    def _widget_svg_panel(self, path=None, live=True):
         """Build a clickable P&ID-style SVG of the prepump system and return
         its file path (a temp file if ``path`` is None). `live=True` (the
         default -- this system is small enough that reading every valve's
@@ -327,21 +389,27 @@ class PrepumpSystem(Assembly):
             f.write(svg_text)
         return path
 
-    def show(self, in_window=False, exclude_group_ids=None, live=True):
+    def show(self, in_window=False, exclude_group_ids=None, live=True,
+             dock_in=None, sidecar_anchor=None):
         """Same as `Assembly.show`, but defaults to `live=True` here (see
-        `_svg`'s docstring for why this system's live reads are cheap enough
-        to default on)."""
-        return super().show(in_window=in_window, exclude_group_ids=exclude_group_ids, live=live)
+        `_widget_svg_panel`'s docstring for why this system's live reads
+        are cheap enough to default on). `dock_in`/`sidecar_anchor`: see
+        `Assembly.show`."""
+        return super().show(in_window=in_window, exclude_group_ids=exclude_group_ids, live=live,
+                             dock_in=dock_in, sidecar_anchor=sidecar_anchor)
 
-    def svg_panel(self, in_window=False, live=True, exclude_group_ids=None):
+    def svg_panel(self, in_window=False, live=True, exclude_group_ids=None,
+                  dock_in=None, sidecar_anchor=None):
         """Open the clickable prepump schematic in the interactive viewer
         (Jupyter cell, or a native Qt window with ``in_window=True``). Clicking a
         valve/gauge/pump inspects that device; clicking a channel's *pump*/*vent*
         label, or a valve's small green/red open/close dot, runs the
         corresponding action against this system. `live=True` (default)
         colours valves/gauges by their current state (touches EPICS); this is
-        just a clearly-named alias for `show(...)` -- see `Assembly.show`."""
-        return self.show(in_window=in_window, live=live, exclude_group_ids=exclude_group_ids)
+        just a clearly-named alias for `show(...)` -- see `Assembly.show`
+        (also for `dock_in`/`sidecar_anchor`)."""
+        return self.show(in_window=in_window, live=live, exclude_group_ids=exclude_group_ids,
+                          dock_in=dock_in, sidecar_anchor=sidecar_anchor)
 
 
 # --------------------------------------------------------------------------
@@ -360,6 +428,17 @@ def _valve_open_state(valve):
 #: vent line (to the GN2 vent) blue.
 _PUMP_COLOR = "#1a1a1a"
 _VENT_COLOR = "#1f4e8c"
+
+#: colour for each PrepumpSystem.line_state() outcome, shown next to a
+#: channel's name in the live panel.
+_STATE_LABEL_COLOR = {
+    "pumped": "#2e7d32",
+    "vented": "#1f4e8c",
+    "isolated": "#6b7280",
+    "pumping": "#b45309",
+    "venting": "#b45309",
+    "unknown": "#c62828",
+}
 
 
 def _fmt_pressure(p):
@@ -454,6 +533,12 @@ def build_prepump_svg(system, live=False):
         f'<tspan font-size="12" font-weight="normal" fill="#6b7280">(click a device to inspect; '
         f'click pump/vent, or a valve\'s small green/red dot, to run)</tspan></text>'
     )
+    # activity line: what pump_down()/vent() is (or was last) doing --
+    # only meaningful next to live valve/gauge state, so live-gated too
+    activity = getattr(system, "_activity", None) if live else None
+    if activity:
+        P.append(f'<text x="{margin}" y="{margin+22}" font-size="12" font-style="italic" '
+                 f'fill="#b45309">&#9654; {_esc(activity)}</text>')
     # common pump line (black) + vent line (blue)
     x_end = x0 + len(line_names) * col_w
     P.append(f'<line x1="{x0-40}" y1="{pump_y}" x2="{x_end}" y2="{pump_y}" stroke="{_PUMP_COLOR}" stroke-width="3"/>')
@@ -494,8 +579,16 @@ def build_prepump_svg(system, live=False):
     for i, lname in enumerate(line_names):
         line = getattr(system, lname)
         cx = x0 + i * col_w + col_w / 2
-        # channel label at the top -- stands in for the (not modelled) chamber
-        P.append(f'<text x="{cx}" y="{label_y}" text-anchor="middle" font-size="12" font-weight="bold" fill="#2e3440">{_esc(lname)}</text>')
+        # channel label at the top -- stands in for the (not modelled)
+        # chamber; live also appends this channel's line_state() as a small
+        # coloured tag, e.g. "line1_usd [pumped]"
+        if live:
+            state = system.line_state(line)
+            state_color = _STATE_LABEL_COLOR.get(state, "#6b7280")
+            P.append(f'<text x="{cx}" y="{label_y}" text-anchor="middle" font-size="12" font-weight="bold" fill="#2e3440">'
+                     f'{_esc(lname)} <tspan font-size="10" font-weight="normal" fill="{state_color}">[{_esc(state)}]</tspan></text>')
+        else:
+            P.append(f'<text x="{cx}" y="{label_y}" text-anchor="middle" font-size="12" font-weight="bold" fill="#2e3440">{_esc(lname)}</text>')
         # dashed stub above the gauge: this channel connects to its chamber up here
         P.append(f'<line x1="{cx}" y1="{label_y+10}" x2="{cx}" y2="{gauge_y-16}" '
                  f'stroke="#aaa" stroke-width="1.5" stroke-dasharray="3,3"/>')

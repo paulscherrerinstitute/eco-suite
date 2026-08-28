@@ -117,25 +117,68 @@ def _in_notebook(ip):
     return ip.__class__.__name__ == "ZMQInteractiveShell"
 
 
-def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None):
-    """Launches a local webserver hosting the interactive Inkscape SVG."""
+def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
+                      refresh=None, refresh_interval_ms=2000, port_holder=None):
+    """Launches a local webserver hosting the interactive Inkscape SVG.
+
+    refresh (see `launch_svg_viewer`): optional no-arg callable returning the
+    path of a freshly-rebuilt SVG (e.g. an Assembly's `lambda: self._widget_svg_panel(
+    live=True)`). When given, `/svg-content` rebuilds from it on *every*
+    request instead of serving a fixed snapshot, and a small script injected
+    below reloads the embedded SVG object every `refresh_interval_ms` for as
+    long as the page stays open. This is the *one* refresh mechanism shared
+    by both this browser-based viewer and the in-window Qt viewer (see
+    `_build_qt_window`, which for a live panel points its QWebEngineView at
+    this same server instead of embedding a static snapshot): the polling
+    and DOM-swap run entirely inside the browser engine's own JS runtime, in
+    its own process, independent of whatever the eco Python process' main
+    thread happens to be doing at the time (e.g. blocked inside a running
+    `PrepumpSystem.pump_down()` poll loop) -- see CLAUDE.md if this class of
+    "the live panel doesn't update during a running macro" issue comes up
+    again for some other panel.
+
+    port_holder: optional dict with a "port" key and a `threading.Event`
+    under "ready", filled in with the OS-assigned port (and, for `_build_qt_
+    window`'s benefit, the bound `server` object itself, under "server")
+    once actually bound -- since this normally runs on a background thread,
+    the caller can `.wait()` on "ready" to learn the real URL before
+    displaying/loading it. Binding to port 0 (OS-assigned) rather than a
+    fixed one avoids two live panels (e.g. prepump and beamline open at the
+    same time) colliding on the same port.
+    """
     app = Dash(__name__)
 
-    # 1. Read the SVG file content directly in Python
+    # Fail fast (and unblock a waiting caller) if the file isn't even
+    # readable, before spending any time standing up a server for it.
     try:
         with open(svg_path, "r", encoding="utf-8") as f:
-            svg_content = f.read()
+            f.read()
     except Exception as e:
         print(f"Error reading SVG file: {e}")
+        if port_holder is not None:
+            port_holder["ready"].set()
         return
 
     # Serve the SVG from a same-origin Flask route instead of a data: URL.
     # data: URLs get an opaque origin, so the browser blocks the parent page
     # from accessing the <object>'s contentDocument (silently, no error) -
     # the click listener below would never see the SVG's DOM at all.
+    #
+    # Re-reads (and, if `refresh` is given, rebuilds) on *every* request
+    # rather than serving a snapshot captured once at server start -- both
+    # the page's initial load and every subsequent periodic reload (below)
+    # hit this same route, so one code path covers both.
     @app.server.route("/svg-content")
     def serve_svg():
-        return Response(svg_content, mimetype="image/svg+xml")
+        try:
+            path = refresh() if refresh is not None else svg_path
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            print(f"eco SVG viewer: live refresh failed: {e}")
+            with open(svg_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        return Response(content, mimetype="image/svg+xml")
 
     # Dash's html.Script component is mounted through React's client-side
     # renderer, and browsers only auto-execute <script> tags that come from
@@ -206,6 +249,28 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
                     }
                 }
                 setupSvgListener();
+
+                // Live panel only (__LIVE_REFRESH_INTERVAL_MS__ is 0
+                // otherwise, so this is a no-op setInterval that never
+                // fires): periodically reload the embedded SVG object from
+                // /svg-content, which re-runs `refresh()` server-side on
+                // every hit -- see _run_dash_server's docstring. Resetting
+                // .data forces the browser to actually re-fetch (a cache-
+                // busting query param, since GET responses could otherwise
+                // be cached) rather than reuse the existing embedded
+                // document; clearing listenerAttached first lets
+                // setupSvgListener() re-attach the click handler to the new
+                // document once it's ready.
+                var LIVE_REFRESH_INTERVAL_MS = __LIVE_REFRESH_INTERVAL_MS__;
+                if (LIVE_REFRESH_INTERVAL_MS > 0) {
+                    setInterval(function() {
+                        var embedObj = document.getElementById("inkscape-svg-object");
+                        if (!embedObj) return;
+                        embedObj.dataset.listenerAttached = "";
+                        embedObj.data = "/svg-content?t=" + Date.now();
+                        setupSvgListener();
+                    }, LIVE_REFRESH_INTERVAL_MS);
+                }
             </script>
         </body>
     </html>
@@ -215,6 +280,10 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
     # would collide with Python's own {}-based formatting syntax.
     app.index_string = app.index_string.replace(
         "__EXTRACT_COMMAND_JS__", _build_extract_command_js(namespace_prefix, exclude_group_ids)
+    )
+    app.index_string = app.index_string.replace(
+        "__LIVE_REFRESH_INTERVAL_MS__",
+        str(int(refresh_interval_ms)) if refresh is not None else "0",
     )
 
     app.layout = html.Div([
@@ -258,7 +327,25 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
     import logging
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
-    app.run(port=8050, debug=False, use_reloader=False)
+
+    # make_server + serve_forever (not the higher-level app.run()) so we can
+    # bind to an OS-assigned port (port=0) and read back which one it picked
+    # -- app.run() has no way to report that back before it starts blocking.
+    # Needed now that a live panel can spin up one of these per `.show(live=
+    # True)` call (see launch_svg_viewer/_build_qt_window): a fixed port
+    # would make a second simultaneously-open live panel (e.g. prepump and
+    # beamline both open at once) fail to bind at all. The returned server
+    # object also gives callers (see _build_qt_window's closeEvent) a way to
+    # `.shutdown()` this thread when its window closes, instead of it
+    # polling EPICS forever in the background for the rest of the session.
+    from werkzeug.serving import make_server
+
+    server = make_server("127.0.0.1", 0, app.server)
+    if port_holder is not None:
+        port_holder["port"] = server.server_port
+        port_holder["server"] = server
+        port_holder["ready"].set()
+    server.serve_forever()
 
 
 _qt_app_ref = None  # keep a strong reference to any QApplication we create ourselves
@@ -271,16 +358,26 @@ class _SvgViewerHandle:
     expects (same shape as DisplayQt/AxisPTZStreamQt/CamServerStreamQt --
     see desktop_app.py's module docstring). `.window` is the SvgWindow
     itself (a QWebEngineView, so it dock/undocks/floats like any other
-    QWidget); `.stop()` stops the live-refresh QTimer, if any, so nothing
-    keeps polling EPICS after the dock is closed."""
+    QWidget); `.stop()` shuts down the background live-refresh server, if
+    any, so nothing keeps polling EPICS after the dock is closed."""
 
     def __init__(self, view):
         self.window = view
 
     def stop(self):
-        timer = getattr(self.window, "_refresh_timer", None)
-        if timer is not None:
-            timer.stop()
+        _shutdown_dash_server(self.window)
+
+
+def _shutdown_dash_server(view):
+    """Stops the background Dash/Flask server a live SvgWindow started for
+    itself (see `_build_qt_window`), if any -- `server.shutdown()` must be
+    called from a thread other than the one running `serve_forever()`,
+    which is exactly the case here (this runs on the Qt/main thread, the
+    server owns its own background thread), so this is safe to call
+    directly rather than needing yet another thread hop."""
+    server = getattr(view, "_dash_server", None)
+    if server is not None:
+        server.shutdown()
 
 
 def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
@@ -298,18 +395,21 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     it (reparented into the dock) instead. Still poppable back out to a
     free-floating window at any time via the dock's own float button.
 
-    refresh (see `launch_svg_viewer`): if given, a `QTimer` re-calls it every
-
-    refresh (see `launch_svg_viewer`): if given, a `QTimer` re-calls it every
-    `refresh_interval_ms` and swaps its result into the *already-open*
-    window by replacing the live DOM's `<svg>` element (`page().
-    runJavaScript(...)`, string-escaped via `json.dumps`) rather than
-    reloading the whole page with `setHtml()` again -- cheaper, and avoids
-    visibly flashing/resetting scroll or zoom on every tick. The click
-    handler is attached to `document`, not the `<svg>` element itself, so it
-    keeps working on the replacement DOM without being re-attached. The
-    timer is parented to the window and stopped in `closeEvent` so it can't
-    keep firing (and erroring on a dead page) after the window closes.
+    refresh (see `launch_svg_viewer`): if given, this is a *live* panel.
+    Rather than embedding a frozen snapshot and re-pushing new content into
+    it from Python on a `QTimer` (the previous approach here -- removed:
+    Qt's own event loop only gets pumped between IPython prompts, see
+    CLAUDE.md, so that timer would never fire while e.g. a `pump_down()` is
+    running, which is the whole reason this exists), this view is instead
+    pointed at the *same* background Dash server the plain browser viewer
+    uses (`_run_dash_server`, started here for this window specifically).
+    That server's own page polls and reloads itself via a plain JS
+    `setInterval` -- see `_run_dash_server`'s docstring -- which runs
+    entirely inside this QWebEngineView's own Chromium process, independent
+    of whatever the eco Python process' main thread is doing at the time.
+    Click handling then also goes through that same page's existing Dash
+    callback instead of a separate QWebChannel bridge -- one mechanism
+    shared by both viewers instead of two.
 
     QWebEngineView embeds Chromium (the same class of engine as
     WebKitGTK/Safari) - it is NOT Qt's QtSvg module, which only implements a
@@ -338,15 +438,14 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     different, incompatible GUI loop is already active), it runs its own
     exec() and blocks until the window is closed.
 
-    The SVG is embedded directly inline in the loaded HTML (as with the
-    former WebKitGTK backend), and JS-to-Python communication goes through a
-    QWebChannel bridge rather than WebKitGTK's script-message-handler API.
+    For a non-live panel (refresh=None), the SVG is instead embedded
+    directly inline in the loaded HTML (as with the former WebKitGTK
+    backend, no server needed at all), and JS-to-Python communication goes
+    through a QWebChannel bridge rather than WebKitGTK's
+    script-message-handler API.
     """
-    import json
-
-    from qtpy.QtCore import Qt, QObject, QUrl, Slot, QTimer
+    from qtpy.QtCore import Qt, QUrl
     from qtpy.QtWidgets import QApplication
-    from qtpy.QtWebChannel import QWebChannel
     from qtpy.QtWebEngineWidgets import QWebEngineView
 
     with open(svg_path, "r", encoding="utf-8") as f:
@@ -357,65 +456,11 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     # would in a real browser tab.
     width, height = _peek_svg_dimensions(svg_content)
 
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-    <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #f0f0f0; overflow: hidden; }
-        svg { display: block; width: 100%; height: 100vh; }
-    </style>
-    </head>
-    <body>
-    """ + svg_content + """
-    <script>
-    __EXTRACT_COMMAND_JS__
-
-    var pybridge = null;
-    new QWebChannel(qt.webChannelTransport, function(channel) {
-        pybridge = channel.objects.pybridge;
-    });
-
-    document.addEventListener("click", function(e) {
-        let target = e.target;
-        while (target && target !== document) {
-            let commandStr = extractCommand(target);
-            if (commandStr) {
-                if (pybridge) {
-                    pybridge.onCommand(commandStr, e.ctrlKey);
-                }
-                e.preventDefault();
-                break;
-            }
-            target = target.parentNode;
-        }
-    });
-    </script>
-    </body>
-    </html>
-    """
-    html_content = html_content.replace(
-        "__EXTRACT_COMMAND_JS__", _build_extract_command_js(namespace_prefix, exclude_group_ids)
-    )
-
-    class Bridge(QObject):
-        @Slot(str, bool)
-        def onCommand(self, command, ctrl_pressed):
-            if ctrl_pressed:
-                print(f"\n[SVG Paste] -> {command}", end="", flush=True)
-                ip_instance.set_next_input(command, replace=False)
-            else:
-                print(f"\nExecuting from SVG: {command}")
-                ip_instance.run_cell(command)
-
     class SvgWindow(QWebEngineView):
         def closeEvent(self, event):
             if self in _qt_windows:
                 _qt_windows.remove(self)
-            timer = getattr(self, "_refresh_timer", None)
-            if timer is not None:
-                timer.stop()
+            _shutdown_dash_server(self)
             super().closeEvent(event)
 
     global _qt_app_ref
@@ -427,39 +472,94 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         app = QApplication([])
         _qt_app_ref = app
 
-    bridge = Bridge()
-    channel = QWebChannel()
-    channel.registerObject("pybridge", bridge)
-
     view = SvgWindow()
     # Don't let closing this window quit a shared QApplication/event loop
     # (e.g. the one IPython's "qt" gui integration is pumping).
     view.setAttribute(Qt.WA_QuitOnClose, False)
-    view.page().setWebChannel(channel)
-    view._bridge = bridge  # keep alive alongside the window
-    view._channel = channel
-    base_url = QUrl.fromLocalFile(os.path.dirname(os.path.abspath(svg_path)) + "/")
-    view.setHtml(html_content, base_url)
     view.setWindowTitle("Interactive SVG Viewer")
     view.resize(max(int(width), 200), max(int(height), 150))
 
     if refresh is not None:
-        def _do_refresh():
-            try:
-                new_path = refresh()
-                with open(new_path, "r", encoding="utf-8") as f:
-                    new_svg = f.read()
-            except Exception as e:
-                print(f"eco SVG viewer: live refresh failed: {e}")
-                return
-            view.page().runJavaScript(
-                f"document.querySelector('svg').outerHTML = {json.dumps(new_svg)};"
-            )
+        port_holder = {"port": None, "server": None, "ready": threading.Event()}
+        threading.Thread(
+            target=_run_dash_server,
+            args=(svg_path, ip_instance, namespace_prefix, exclude_group_ids),
+            kwargs=dict(refresh=refresh, refresh_interval_ms=refresh_interval_ms,
+                        port_holder=port_holder),
+            daemon=True,
+        ).start()
+        # One-time, bounded startup wait (binding a local port is normally
+        # near-instant) -- this runs on the Qt/main thread, same place any
+        # other one-off setup work here already happens.
+        if not port_holder["ready"].wait(timeout=5.0) or port_holder["port"] is None:
+            print("eco SVG viewer: live panel's background server did not start in time.")
+            return
+        view._dash_server = port_holder["server"]  # keep alive + for closeEvent's shutdown()
+        view.load(QUrl(f"http://127.0.0.1:{port_holder['port']}"))
+    else:
+        from qtpy.QtCore import QObject, Slot
+        from qtpy.QtWebChannel import QWebChannel
 
-        timer = QTimer(view)
-        timer.timeout.connect(_do_refresh)
-        timer.start(refresh_interval_ms)
-        view._refresh_timer = timer  # keep alive alongside the window
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+        <style>
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #f0f0f0; overflow: hidden; }
+            svg { display: block; width: 100%; height: 100vh; }
+        </style>
+        </head>
+        <body>
+        """ + svg_content + """
+        <script>
+        __EXTRACT_COMMAND_JS__
+
+        var pybridge = null;
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            pybridge = channel.objects.pybridge;
+        });
+
+        document.addEventListener("click", function(e) {
+            let target = e.target;
+            while (target && target !== document) {
+                let commandStr = extractCommand(target);
+                if (commandStr) {
+                    if (pybridge) {
+                        pybridge.onCommand(commandStr, e.ctrlKey);
+                    }
+                    e.preventDefault();
+                    break;
+                }
+                target = target.parentNode;
+            }
+        });
+        </script>
+        </body>
+        </html>
+        """
+        html_content = html_content.replace(
+            "__EXTRACT_COMMAND_JS__", _build_extract_command_js(namespace_prefix, exclude_group_ids)
+        )
+
+        class Bridge(QObject):
+            @Slot(str, bool)
+            def onCommand(self, command, ctrl_pressed):
+                if ctrl_pressed:
+                    print(f"\n[SVG Paste] -> {command}", end="", flush=True)
+                    ip_instance.set_next_input(command, replace=False)
+                else:
+                    print(f"\nExecuting from SVG: {command}")
+                    ip_instance.run_cell(command)
+
+        bridge = Bridge()
+        channel = QWebChannel()
+        channel.registerObject("pybridge", bridge)
+        view.page().setWebChannel(channel)
+        view._bridge = bridge  # keep alive alongside the window
+        view._channel = channel
+        base_url = QUrl.fromLocalFile(os.path.dirname(os.path.abspath(svg_path)) + "/")
+        view.setHtml(html_content, base_url)
 
     if dock_in is not None:
         # dock_in takes over showing the window (reparented into a tile) --
@@ -487,12 +587,18 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
     """Spawns an isolated background service for the SVG interface.
 
     refresh: optional no-arg callable returning a *path* to a freshly-built
-    SVG (e.g. an Assembly's `lambda: self._svg(live=True)`); if given, the
-    native window (in_window=True only -- not yet wired up for the Jupyter/
-    Dash viewer) re-calls it and swaps the result in every
-    `refresh_interval_ms` for as long as the window stays open, instead of
-    only ever showing the state `svg_path` had at open time. See
-    `_build_qt_window`.
+    SVG (e.g. an Assembly's `lambda: self._widget_svg_panel(live=True)`); if given, this
+    is a *live* panel: both the native window and the Jupyter/browser one
+    re-call it and reload the displayed SVG every `refresh_interval_ms` for
+    as long as the page/window stays open, instead of only ever showing the
+    state `svg_path` had at open time. Both viewers share the *same*
+    background Dash server and the same client-side JS refresh loop for
+    this (see `_run_dash_server`) -- for the native window, this also means
+    it opens by loading that server's URL rather than an inline HTML
+    snapshot (see `_build_qt_window`), so the refresh runs entirely inside
+    the view's own browser-engine process, independent of whatever the eco
+    Python process' main thread happens to be busy doing at the time (e.g.
+    blocked inside a running macro's poll loop -- see CLAUDE.md).
 
     in_window defaults to None, which auto-selects based on the calling
     context: a terminal IPython session opens a native window (in_window=
@@ -603,13 +709,18 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
             print("Interactive SVG window launched.")
         return
 
+    port_holder = {"port": None, "server": None, "ready": threading.Event()}
     threading.Thread(
         target=_run_dash_server,
         args=(svg_path, ip, namespace_prefix, exclude_group_ids),
+        kwargs=dict(refresh=refresh, refresh_interval_ms=refresh_interval_ms, port_holder=port_holder),
         daemon=True,
     ).start()
+    if not port_holder["ready"].wait(timeout=5.0) or port_holder["port"] is None:
+        print("eco SVG viewer: background server did not start in time.")
+        return
+    url = f"http://127.0.0.1:{port_holder['port']}"
 
-    url = "http://127.0.0.1:8050"
     if _in_notebook(ip):
         from IPython.display import IFrame, display
 

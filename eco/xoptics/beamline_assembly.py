@@ -1382,13 +1382,14 @@ class Beamline(Assembly):
             ))
         return items
 
-    # `_svg()` is the dynamic-panel hook `Assembly.show()` looks for -- see
-    # its docstring. Underscore-prefixed (not part of the public namespace a
-    # user tab-completes into): a plain `.show()`/`.show(live=True)` already
-    # opens the panel via this hook; `svg_panel()` below exists only because
-    # it exposes `ref`/`kinds` filtering that generic `show()` doesn't know
-    # about.
-    def _svg(self, path=None, ref="source", kinds=None, live=False):
+    # `_widget_svg_panel()` is the dynamic-panel hook `Assembly.show()`
+    # looks for -- see its docstring -- named per eco's `_widget_`-prefixed
+    # findability convention. Underscore-prefixed (not part of the public
+    # namespace a user tab-completes into): a plain `.show()`/
+    # `.show(live=True)` already opens the panel via this hook;
+    # `svg_panel()` below exists only because it exposes `ref`/`kinds`
+    # filtering that generic `show()` doesn't know about.
+    def _widget_svg_panel(self, path=None, ref="source", kinds=None, live=False):
         """Build the clickable SVG control panel and write it to `path`
         (a temp file if None); return the file path. `kinds` filters which
         component kinds are drawn (e.g. `{"valve","gauge","pump"}` for a
@@ -1406,16 +1407,18 @@ class Beamline(Assembly):
         return path
 
     def svg_panel(self, in_window=False, ref="source", kinds=None, live=False,
-                  exclude_group_ids=None):
+                  exclude_group_ids=None, dock_in=None, sidecar_anchor=None):
         """Open the clickable SVG control panel of this beamline in the
         interactive viewer (Jupyter cell or, with `in_window=True`, a native Qt
         window -- picked automatically by `eco.utilities.svg_interactor`).
         Clicking a device symbol runs that component against this beamline in
-        the live session. `kinds`/`live`/`ref` as in :meth:`_svg`; builds its
-        own `_show_svg` up front (with those extra filters) so `Assembly.show`'s
+        the live session. `kinds`/`live`/`ref` as in :meth:`_widget_svg_panel`;
+        `dock_in`/`sidecar_anchor` as in `Assembly.show`; builds its own
+        `_show_svg` up front (with those extra filters) so `Assembly.show`'s
         generic fallback -- which only knows `live=` -- doesn't rebuild it."""
-        self._show_svg = self._svg(ref=ref, kinds=kinds, live=live)
-        return self.show(in_window=in_window, exclude_group_ids=exclude_group_ids)
+        self._show_svg = self._widget_svg_panel(ref=ref, kinds=kinds, live=live)
+        return self.show(in_window=in_window, exclude_group_ids=exclude_group_ids,
+                          dock_in=dock_in, sidecar_anchor=sidecar_anchor)
 
     def __repr__(self):
         return self.diagram()

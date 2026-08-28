@@ -933,6 +933,18 @@ namespace.append_obj(
     name="analog_outputs",
     module_name="eco.devices_general.wago",
 )
+# One physical-controller-box view of hardware otherwise only wired up one
+# channel at a time under function-specific names (like analog_inputs/
+# analog_outputs just above) -- additive, nothing above is replaced. See
+# eco/devices_general/controllers/README.md. Deselect this whole branch from
+# a default startup the same way as any other top-level name, via
+# namespace.select_required_names().
+namespace.append_obj(
+    "build_bernina_controllers",
+    lazy=True,
+    name="controllers",
+    module_name="eco.devices_general.controllers",
+)
 
 namespace.append_obj(
     "GudeStrip",

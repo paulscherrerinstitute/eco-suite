@@ -25,6 +25,7 @@ Symbol legend (standardized per ``kind``):
     attenuator             hatched square
     profile/diagnostic     ◇ with cross
     sample                 ☉ target
+    alarm                  ● LED lamp (green/red by AlarmSeverity)
     (other)                small square
 """
 
@@ -35,6 +36,7 @@ KIND_COLORS = {
     "stopper": "#d62728", "valve": "#8c564b", "gauge": "#9467bd", "pump": "#7f7f7f",
     "vacuum": "#8c564b", "profile": "#17becf", "diagnostic": "#17becf",
     "chopper": "#e377c2", "stage": "#7f7f7f", "sample": "#000000", "marker": "#999999",
+    "alarm": "#5c6bc0",
 }
 _DEFAULT_COLOR = "#555555"
 
@@ -104,6 +106,10 @@ def _symbol(kind, cx, cy, r, color, state):
     elif kind == "sample":
         p.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="2"/>')
         p.append(f'<circle cx="{cx}" cy="{cy}" r="{r*0.35:.1f}" fill="{color}"/>')
+    elif kind == "alarm":
+        # LED-style indicator lamp: in-range/EPICS-OK = green, in-alarm = red,
+        # unknown/never-read = the plain neutral kind colour -- see AlarmPanel._widget_svg_panel
+        p.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{glyph_color}" stroke="#2e3440" stroke-width="1"/>')
     else:
         p.append(f'<rect x="{cx-r*0.8:.1f}" y="{cy-r*0.8:.1f}" width="{1.6*r:.1f}" height="{1.6*r:.1f}" rx="2" fill="{color}"/>')
     # open/closed status ring

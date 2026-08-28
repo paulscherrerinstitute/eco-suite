@@ -317,6 +317,141 @@ def _write_jupyterlab_notebook(kernel_name, scope):
     return str(dest)
 
 
+def _notebook_setup_code(notebook_path):
+    """Source of `notebook_path`'s one code cell (see eco/jupyterlab_app.ipynb
+    -- a markdown cell then exactly one code cell that builds the Namespace/
+    Sidecar panels) -- what `_autorun_jupyterlab_setup` below tries to run
+    for the user automatically."""
+    import json
+
+    data = json.loads(Path(notebook_path).read_text())
+    for cell in data.get("cells", []):
+        if cell.get("cell_type") == "code":
+            return "".join(cell.get("source", []))
+    return None
+
+
+def _autorun_jupyterlab_setup(kernel_name, notebook_path):
+    """Best-effort: run notebook_path's setup cell for the user, so the
+    Namespace/Sidecar panels usually appear with no manual step, instead of
+    sitting inert until someone opens the notebook and presses Shift-Enter.
+
+    MUST be run in its own OS process (see call site -- multiprocessing.
+    Process, not a thread): _run_jupyterlab always ends by exec()ing over
+    itself (either straight into `jupyter lab`, or into a companion
+    `jupyter console`), which would kill an in-process thread but leaves an
+    already-forked child process running independently.
+
+    Why this can only ever be best-effort, not a real fix: Jupyter kernels
+    broadcast comm_open/widget-state messages over IOPub to every client
+    already subscribed when they're emitted -- there's no replay for a
+    client (here, the browser tab JupyterLab is about to open) that
+    subscribes later. So this races the browser's own page load: create the
+    session (which is also what makes JupyterLab's own frontend attach to
+    THIS kernel instead of starting a second one for the same notebook path),
+    wait a bit for the tab to load and its kernel websocket to subscribe,
+    then execute the setup cell ourselves over a second client attached to
+    that same kernel. If we win the race, the panels appear untouched by the
+    user; if we lose it (slow browser start, slow network, ...), nothing
+    renders and the fallback is exactly today's behaviour -- open the
+    notebook, Shift-Enter the one code cell. Never lets a failure here
+    propagate -- this must not affect the normal launch path.
+    """
+    import subprocess
+    import time
+    import json
+    import urllib.request
+    import urllib.parse
+
+    try:
+        code = _notebook_setup_code(notebook_path)
+        if not code:
+            return
+
+        # 1. wait for the server to come up, and get its base URL (token
+        # included) -- same "jupyter lab list" this module's sibling
+        # (eco.widgets.app_launchers._find_running_jupyterlab) already
+        # parses, duplicated here rather than imported since this module
+        # deliberately imports nothing from the `eco` package itself.
+        base_url = None
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and base_url is None:
+            try:
+                out = subprocess.check_output(
+                    ["jupyter", "lab", "list"], stderr=subprocess.DEVNULL,
+                    text=True, timeout=5,
+                )
+                for line in out.splitlines():
+                    line = line.strip()
+                    if line.startswith("http"):
+                        base_url = line.split("::")[0].strip()
+                        break
+            except Exception:
+                pass
+            if base_url is None:
+                time.sleep(0.5)
+        if base_url is None:
+            return
+
+        # 2. create a session for this exact notebook on our known kernel --
+        # this is also what makes JupyterLab's own frontend, when it opens
+        # that same notebook path, find and attach to THIS kernel rather
+        # than starting a second one.
+        parsed = urllib.parse.urlsplit(base_url)
+        token = urllib.parse.parse_qs(parsed.query).get("token", [None])[0]
+        api_root = urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "")
+        )
+        req = urllib.request.Request(
+            api_root + "/api/sessions",
+            data=json.dumps({
+                "path": os.path.basename(str(notebook_path)),
+                "type": "notebook",
+                "kernel": {"name": kernel_name},
+            }).encode(),
+            headers={
+                "Content-Type": "application/json",
+                **({"Authorization": "token " + token} if token else {}),
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            session = json.loads(resp.read())
+        kernel_id = session["kernel"]["id"]
+
+        # 3. locate that kernel's local connection file -- same machine, so
+        # readable directly without going through the REST/websocket layer.
+        runtime_dir = subprocess.check_output(
+            ["jupyter", "--runtime-dir"], text=True, timeout=5
+        ).strip()
+        conn_file = Path(runtime_dir) / "kernel-{}.json".format(kernel_id)
+        deadline = time.monotonic() + 10
+        while not conn_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.3)
+        if not conn_file.exists():
+            return
+
+        # 4. give the browser tab (already opened by `jupyter lab` itself)
+        # a moment to load and its kernel websocket to subscribe -- see the
+        # docstring above for why this specific wait is the whole ballgame.
+        time.sleep(4)
+
+        # 5. run the setup cell over a second client attached to the same
+        # kernel -- fire-and-forget, we don't wait for/need the reply.
+        from jupyter_client import BlockingKernelClient
+
+        client = BlockingKernelClient()
+        client.load_connection_file(str(conn_file))
+        client.start_channels()
+        try:
+            client.execute(code)
+            time.sleep(2)  # let the execute_request actually go out over ZMQ
+        finally:
+            client.stop_channels()
+    except Exception:
+        pass
+
+
 def _run_jupyterlab(args):
     """Open JupyterLab on the packaged eco/jupyterlab_app.ipynb (background
     process -- see below for why this can't be the usual _exec) -- its
@@ -355,6 +490,18 @@ def _run_jupyterlab(args):
     lab_cmd = ["jupyter", "lab", notebook]
     if kernel_name:
         lab_cmd.append("--MappingKernelManager.default_kernel_name={}".format(kernel_name))
+
+    if kernel_name:
+        # Best-effort auto-run of the notebook's setup cell -- see
+        # _autorun_jupyterlab_setup's docstring for what this does and why
+        # it's not guaranteed. Spawned as a real child process (not a
+        # thread) *before* the exec() calls below replace this process,
+        # since fork survives that, a thread wouldn't.
+        import multiprocessing
+
+        multiprocessing.Process(
+            target=_autorun_jupyterlab_setup, args=(kernel_name, notebook), daemon=False,
+        ).start()
 
     if not args.console:
         _exec(

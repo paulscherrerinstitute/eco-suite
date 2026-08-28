@@ -71,6 +71,20 @@ scientific Python libraries.
       Talk to Newport XPS and Schneider MCode controllers directly,
       with no EPICS in the loop.
 
+   .. grid-item-card:: :octicon:`device-desktop` Widget views
+      :link: widget_views
+      :link-type: doc
+
+      The default Adjustable/Detector row in Qt vs ipywidgets, and the
+      Qt-only LED/gauge/dial "indicator" gadgets.
+
+   .. grid-item-card:: :octicon:`stack` Widget containers
+      :link: widget_containers
+      :link-type: doc
+
+      Compose a custom panel by stacking assembly/adjustable/detector/
+      viewer widgets, aligned left/center/right, on either front end.
+
 
 .. toctree::
    :maxdepth: 2
@@ -97,6 +111,14 @@ scientific Python libraries.
    :hidden:
 
    deltatau_servo
+
+.. toctree::
+   :maxdepth: 2
+   :caption: UI
+   :hidden:
+
+   widget_views
+   widget_containers
 
 .. toctree::
    :maxdepth: 2
