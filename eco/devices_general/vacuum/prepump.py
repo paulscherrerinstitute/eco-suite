@@ -487,27 +487,30 @@ class PrepumpSystem(Assembly):
             f.write(svg_text)
         return path
 
-    def show(self, in_window=False, exclude_group_ids=None, live=True,
-             dock_in=None, sidecar_anchor=None):
+    def show(self, exclude_group_ids=None, live=True,
+             dock_in=None, sidecar_anchor=None, backend=None):
         """Same as `Assembly.show`, but defaults to `live=True` here (see
         `_widget_svg_panel`'s docstring for why this system's live reads
-        are cheap enough to default on). `dock_in`/`sidecar_anchor`: see
-        `Assembly.show`."""
-        return super().show(in_window=in_window, exclude_group_ids=exclude_group_ids, live=live,
-                             dock_in=dock_in, sidecar_anchor=sidecar_anchor)
+        are cheap enough to default on). `backend` defaults to "auto" --
+        native Qt window in a terminal, inline in a notebook; see
+        `Assembly.show` for the full list (and `dock_in`/`sidecar_anchor`)."""
+        return super().show(exclude_group_ids=exclude_group_ids, live=live,
+                             dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend)
 
-    def svg_panel(self, in_window=False, live=True, exclude_group_ids=None,
-                  dock_in=None, sidecar_anchor=None):
-        """Open the clickable prepump schematic in the interactive viewer
-        (Jupyter cell, or a native Qt window with ``in_window=True``). Clicking a
-        valve/gauge/pump inspects that device; clicking a channel's *pump*/*vent*
-        label, or a valve's small green/red open/close dot, runs the
-        corresponding action against this system. `live=True` (default)
-        colours valves/gauges by their current state (touches EPICS); this is
-        just a clearly-named alias for `show(...)` -- see `Assembly.show`
-        (also for `dock_in`/`sidecar_anchor`)."""
-        return self.show(in_window=in_window, live=live, exclude_group_ids=exclude_group_ids,
-                          dock_in=dock_in, sidecar_anchor=sidecar_anchor)
+    def svg_panel(self, live=True, exclude_group_ids=None,
+                  dock_in=None, sidecar_anchor=None, backend=None):
+        """Open the clickable prepump schematic in the interactive viewer.
+        `backend` defaults to "auto" (native Qt window in a terminal
+        session, inline in a notebook); force one with
+        `backend="window"`/`"inline"`/`"sidecar"`.
+        Clicking a valve/gauge/pump inspects that device; clicking a
+        channel's *pump*/*vent* label, or a valve's small green/red
+        open/close dot, runs the corresponding action against this system.
+        `live=True` (default) colours valves/gauges by their current state
+        (touches EPICS); this is just a clearly-named alias for `show(...)`
+        -- see `Assembly.show` (also for `dock_in`/`sidecar_anchor`)."""
+        return self.show(live=live, exclude_group_ids=exclude_group_ids,
+                          dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend)
 
 
 # --------------------------------------------------------------------------

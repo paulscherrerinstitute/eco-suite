@@ -119,6 +119,74 @@ def _in_notebook(ip):
     return ip.__class__.__name__ == "ZMQInteractiveShell"
 
 
+#: Accepted `backend=` spellings -> the one canonical name each means.
+#: `backend` is *the* "where should this be shown" keyword across eco's SVG
+#: panels and widgets; it replaced an older boolean `in_window=`, which
+#: could express neither "auto" nor "sidecar" and whose `False` default
+#: silently pinned every panel to the browser/inline path.
+_BACKEND_ALIASES = {
+    "auto": "auto",
+    "window": "window", "qt": "window", "native": "window",
+    "inline": "inline", "notebook": "inline", "browser": "inline", "dash": "inline",
+    "sidecar": "sidecar",
+}
+
+#: default JupyterLab Sidecar anchor for backend="sidecar" (see
+#: eco.widgets.jupyter_sidecar / launch_svg_viewer's `sidecar_anchor`).
+_DEFAULT_SIDECAR_ANCHOR = "split-right"
+
+
+def resolve_backend(backend=None, sidecar_anchor=None, ip=None):
+    """Resolve the general `backend=` keyword to the concrete
+    ``(in_window, sidecar_anchor)`` pair this module's viewers take.
+
+    `backend` values (case-insensitive; aliases in brackets):
+
+    ``None`` / ``"auto"``
+        **The default.** Decide from the environment: a native window in a
+        terminal IPython session, inline in a notebook/lab kernel. Same rule
+        the rest of eco's widget layer uses (`eco.utilities.utilities.
+        is_notebook()`, see eco/widgets/containers.py) -- and it is a real
+        constraint, not a preference: a native Qt window opened from a
+        notebook kernel would appear on the *server's* display, not the
+        user's.
+    ``"window"`` [``"qt"``, ``"native"``]
+        Force the native Qt window.
+    ``"inline"`` [``"notebook"``, ``"browser"``, ``"dash"``]
+        Force the browser/Dash view (inline in a notebook cell, a URL in a
+        terminal).
+    ``"sidecar"``
+        A JupyterLab Sidecar panel; defaults `sidecar_anchor` to
+        ``"split-right"`` when one isn't given. JupyterLab only.
+
+    An explicit `sidecar_anchor` on its own also implies the notebook side,
+    so `sidecar_anchor="right"` works without also saying
+    ``backend="sidecar"``.
+    """
+    key = (backend or "auto").lower()
+    if key not in _BACKEND_ALIASES:
+        raise ValueError(
+            f"unknown backend {backend!r}; expected one of "
+            f"{sorted(set(_BACKEND_ALIASES))}"
+        )
+    resolved = _BACKEND_ALIASES[key]
+
+    if resolved == "sidecar" and sidecar_anchor is None:
+        sidecar_anchor = _DEFAULT_SIDECAR_ANCHOR
+    # an explicit sidecar_anchor implies the notebook/browser side
+    if sidecar_anchor is not None and resolved != "window":
+        return False, sidecar_anchor
+
+    if resolved == "window":
+        return True, sidecar_anchor
+    if resolved == "inline":
+        return False, sidecar_anchor
+    # "auto"
+    if ip is None:
+        ip = get_ipython()
+    return (not _in_notebook(ip) if ip is not None else True), sidecar_anchor
+
+
 # --------------------------------------------------------------------------
 # Clicked-command execution
 # --------------------------------------------------------------------------
@@ -695,10 +763,28 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         app.exec()
 
 
-def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_group_ids=None,
+def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
                        refresh=None, refresh_interval_ms=2000, dock_in=None, dock_name=None,
-                       sidecar_anchor=None):
+                       sidecar_anchor=None, backend=None):
     """Spawns an isolated background service for the SVG interface.
+
+    backend: **where to show it. Defaults to "auto"** -- a native Qt window
+    in a terminal IPython session, inline in a notebook/lab kernel. Force
+    one with ``"window"`` (aliases ``"qt"``/``"native"``), ``"inline"``
+    (aliases ``"notebook"``/``"browser"``/``"dash"``) or ``"sidecar"``. See
+    `resolve_backend` for the full table; it is the single keyword for this
+    choice across eco's SVG panels (`Assembly.show`, `svg_panel`, ...),
+    replacing a former boolean `in_window=` that could express neither
+    "auto" nor "sidecar".
+
+    ``"window"`` renders via Qt's QWebEngineView (requires qtpy plus a Qt
+    binding with WebEngine support - e.g. PyQt5+PyQtWebEngine or
+    PySide6+qt6-webengine) - no browser tab needed, but still real
+    browser-engine (Chromium) rendering fidelity. ``"inline"`` serves a
+    browser-based Dash app instead: displayed as an embedded IFrame in a
+    notebook, or as a printed URL in a terminal. Auto never picks a native
+    window from a notebook kernel, since it would open on the *server's*
+    display rather than the user's.
 
     refresh: optional no-arg callable returning a *path* to a freshly-built
     SVG (e.g. an Assembly's `lambda: self._widget_svg_panel(live=True)`); if given, this
@@ -714,29 +800,14 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
     Python process' main thread happens to be busy doing at the time (e.g.
     blocked inside a running macro's poll loop -- see CLAUDE.md).
 
-    in_window defaults to None, which auto-selects based on the calling
-    context: a terminal IPython session opens a native window (in_window=
-    True behavior), while a Jupyter notebook/lab kernel displays inline in
-    the notebook output instead (in_window=False behavior, via an embedded
-    IFrame onto the browser-based Dash server rather than a plain printed
-    URL) - a native window would open on the server's display, not the
-    user's, so it's not a usable option from a notebook. Pass True/False
-    explicitly to override the auto-detection.
+    dock_in: an EcoDesktopApp instance (native-window backends only) --
+    embeds the viewer as a tiled QDockWidget in that window instead of
+    opening it as a separate top-level one, via the same
+    `_dock_widget_object` mechanism the Namespace launcher's "Open" action
+    uses for every other eco Qt widget (see `_build_qt_window`'s
+    docstring). `dock_name` sets the dock's title (default: "svg viewer").
 
-    With in_window=True, this opens a native, resizable window rendered via
-    Qt's QWebEngineView (requires qtpy plus a Qt binding with WebEngine
-    support - e.g. PyQt5+PyQtWebEngine or PySide6+qt6-webengine) - no browser tab
-    needed, but still real browser-engine (Chromium) rendering fidelity. With
-    in_window=False, this launches a browser-based Dash server instead.
-
-    dock_in: an EcoDesktopApp instance (in_window=True only) -- embeds the
-    viewer as a tiled QDockWidget in that window instead of opening it as
-    a separate top-level one, via the same `_dock_widget_object` mechanism
-    the Namespace launcher's "Open" action uses for every other eco Qt
-    widget (see `_build_qt_window`'s docstring). `dock_name` sets the
-    dock's title (default: "svg viewer").
-
-    sidecar_anchor: (in_window=False / notebook only) e.g. "split-right" --
+    sidecar_anchor: (notebook only) e.g. "split-right" --
     opens the viewer in its own JupyterLab Sidecar panel (a real Lumino
     dock widget, see eco.widgets.jupyter_sidecar) instead of displaying
     inline in the current cell's output. Needs the `sidecar` package and a
@@ -771,15 +842,16 @@ def launch_svg_viewer(svg_path, in_window=None, namespace_prefix=None, exclude_g
         print("Error: Must run inside an interactive IPython terminal context.")
         return
 
-    if in_window is None:
-        in_window = not _in_notebook(ip)
+    in_window, sidecar_anchor = resolve_backend(
+        backend=backend, sidecar_anchor=sidecar_anchor, ip=ip
+    )
 
     if in_window:
         try:
             from qtpy.QtWidgets import QApplication  # noqa: F401
             from qtpy.QtWebEngineWidgets import QWebEngineView  # noqa: F401
         except Exception as err:
-            print(f"Error: in_window=True requires qtpy plus a Qt binding with "
+            print(f"Error: the native-window backend requires qtpy plus a Qt binding with "
                   f"WebEngine support (conda-forge: qtpy, pyqt, pyqtwebengine - or "
                   f"qtpy, pyside6, qt6-webengine). Details: {err}")
             return

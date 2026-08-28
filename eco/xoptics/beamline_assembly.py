@@ -1406,19 +1406,21 @@ class Beamline(Assembly):
             f.write(svg_text)
         return path
 
-    def svg_panel(self, in_window=False, ref="source", kinds=None, live=False,
-                  exclude_group_ids=None, dock_in=None, sidecar_anchor=None):
+    def svg_panel(self, ref="source", kinds=None, live=False,
+                  exclude_group_ids=None, dock_in=None, sidecar_anchor=None,
+                  backend=None):
         """Open the clickable SVG control panel of this beamline in the
-        interactive viewer (Jupyter cell or, with `in_window=True`, a native Qt
-        window -- picked automatically by `eco.utilities.svg_interactor`).
+        interactive viewer. `backend` defaults to "auto" (native Qt window
+        in a terminal session, inline in a notebook); force one with
+        `backend="window"`/`"inline"`/`"sidecar"`, see `Assembly.show`.
         Clicking a device symbol runs that component against this beamline in
         the live session. `kinds`/`live`/`ref` as in :meth:`_widget_svg_panel`;
         `dock_in`/`sidecar_anchor` as in `Assembly.show`; builds its own
         `_show_svg` up front (with those extra filters) so `Assembly.show`'s
         generic fallback -- which only knows `live=` -- doesn't rebuild it."""
         self._show_svg = self._widget_svg_panel(ref=ref, kinds=kinds, live=live)
-        return self.show(in_window=in_window, exclude_group_ids=exclude_group_ids,
-                          dock_in=dock_in, sidecar_anchor=sidecar_anchor)
+        return self.show(exclude_group_ids=exclude_group_ids,
+                          dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend)
 
     def __repr__(self):
         return self.diagram()

@@ -3,7 +3,7 @@ alongside the dock_in (embed in eco desktop) / sidecar_anchor (embed in a
 JupyterLab Sidecar panel) options: verifies both actually route to the
 right embedding mechanism, without needing a real Qt WebEngine build or a
 real JupyterLab session (neither is available in this environment -- see
-test_launch_svg_viewer_in_window_reports_missing_webengine_clearly, which
+test_launch_svg_viewer_window_backend_reports_missing_webengine_clearly, which
 documents a real gap found while building this: qtpy in the deployed
 bpy312 env picks PyQt5 by default, which has no QtWebEngineWidgets
 installed, even though PySide6 -- also installed -- does).
@@ -67,10 +67,10 @@ def test_svg_viewer_handle_stop_is_a_no_op_without_a_refresh_timer():
     handle.stop()  # must not raise
 
 
-# -- launch_svg_viewer: in_window / dock_in ------------------------------
+# -- launch_svg_viewer: backend / dock_in --------------------------------
 
 
-def test_launch_svg_viewer_in_window_reports_missing_webengine_clearly(monkeypatch, tmp_path):
+def test_launch_svg_viewer_window_backend_reports_missing_webengine_clearly(monkeypatch, tmp_path):
     """Documents a real environment gap: qtpy's default binding choice can
     have no WebEngine support installed even when a different, also-
     installed binding does (this is exactly what's broken in the deployed
@@ -87,7 +87,7 @@ def test_launch_svg_viewer_in_window_reports_missing_webengine_clearly(monkeypat
     printed = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(" ".join(str(x) for x in a)))
 
-    result = svg_interactor.launch_svg_viewer(str(svg_path), in_window=True)
+    result = svg_interactor.launch_svg_viewer(str(svg_path), backend="window")
 
     assert result is None
     assert any("WebEngine" in line for line in printed)
@@ -124,7 +124,7 @@ def test_launch_svg_viewer_docks_into_desktop_app_instead_of_opening_standalone(
 
     app = _FakeDesktopApp()
     svg_interactor.launch_svg_viewer(
-        str(svg_path), in_window=True, dock_in=app, dock_name="bernina",
+        str(svg_path), backend="window", dock_in=app, dock_name="bernina",
     )
 
     assert calls["dock_in"] is app

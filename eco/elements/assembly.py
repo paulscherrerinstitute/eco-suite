@@ -1115,8 +1115,26 @@ class Assembly:
                 print(f"Could not build widget for {self.alias.get_full_name()}: {e}")
         print(repr(self))
 
-    def show(self, in_window=False, exclude_group_ids=None, live=False, dock_in=None, sidecar_anchor=None):
+    def show(self, exclude_group_ids=None, live=False, dock_in=None,
+             sidecar_anchor=None, backend=None):
         """Opens the interactive SVG viewer for this assembly.
+
+        `backend` -- **where it opens. Defaults to "auto"**, i.e. decided
+        from the environment: a native Qt window in a terminal IPython
+        session, inline in a notebook/lab kernel. This is the same
+        environment-driven choice every other eco widget entry point makes
+        (`Assembly.widget()`, `eco/widgets/containers.py`), just nameable
+        here. To force one:
+
+        * ``backend="window"`` (aliases ``"qt"``, ``"native"``)
+        * ``backend="inline"`` (aliases ``"notebook"``, ``"browser"``, ``"dash"``)
+        * ``backend="sidecar"`` -- a JupyterLab Sidecar panel (JupyterLab only)
+
+        See `eco.utilities.svg_interactor.resolve_backend` for the full
+        table. (`backend` replaced an older boolean `in_window=`: a bool
+        could express neither "auto" nor "sidecar", and its `False` default
+        pinned every panel to the browser/inline path -- so `prepump.show()`
+        in a terminal did not open the native window it should have.)
 
         Two ways an assembly can have something to show, both ending up in
         `self._show_svg` (a filesystem path to the SVG to display):
@@ -1164,17 +1182,18 @@ class Assembly:
         for green/red valve+gauge state, `namespace.beamline.svg_panel(live=True,
         kinds={"valve", "gauge"})` for a filtered, live-coloured beamline panel.
 
-        dock_in (in_window=True only): an EcoDesktopApp instance -- embeds
-        the viewer as a tiled dock in that window instead of a separate
-        top-level one, e.g. `namespace.show(in_window=True, dock_in=app)`.
+        dock_in (native-window backends only): an EcoDesktopApp instance
+        -- embeds the viewer as a tiled dock in that window instead of a
+        separate top-level one, e.g.
+        `namespace.show(backend="window", dock_in=app)`.
         sidecar_anchor (notebook only, e.g. "split-right"): opens the
         viewer in its own JupyterLab Sidecar panel instead of displaying
         inline in the current cell. See `eco.utilities.svg_interactor.
         launch_svg_viewer`'s docstring for both.
 
         With `live=True` and a `_widget_svg_panel()` hook, an already-open
-        viewer (either `in_window=True`'s native window or the Jupyter/
-        browser one) keeps redrawing every couple of seconds for as long
+        viewer (either the native window or the Jupyter/browser one)
+        keeps redrawing every couple of seconds for as long
         as it stays open, by calling `_widget_svg_panel(live=True)` again
         each tick -- see `launch_svg_viewer`'s `refresh` -- so valve/gauge
         colours etc. stay current instead of
@@ -1199,13 +1218,13 @@ class Assembly:
 
         return launch_svg_viewer(
             svg_path,
-            in_window=in_window,
             namespace_prefix=self.alias.get_full_name(),
             exclude_group_ids=exclude_group_ids,
             refresh=(lambda: build_svg(live=True)) if (live and callable(build_svg)) else None,
             dock_in=dock_in,
             dock_name=self.alias.get_full_name(),
             sidecar_anchor=sidecar_anchor,
+            backend=backend,
         )
 
 

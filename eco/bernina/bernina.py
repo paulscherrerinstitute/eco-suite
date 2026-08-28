@@ -49,7 +49,7 @@ namespace._show_svg = str(Path(__file__).parent / "beamline_interact.svg")
 
 
 def show():
-    namespace.show(in_window=True)
+    namespace.show(backend="window")
 
 
 # Adding stuff that might be relevant for stuff configured below (e.g. config)
