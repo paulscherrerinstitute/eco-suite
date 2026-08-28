@@ -87,6 +87,15 @@ autodoc_mock_imports = [
     "pandas",
     "scipy",
     "matplotlib",
+    # escape (SwissFEL's data-analysis package) transitively pulls in
+    # dask -> xarray, whose xarray/core/types.py defines a module-level
+    # `pd.Timestamp | datetime.datetime | ...` type alias evaluated eagerly
+    # at import time -- with `pandas` mocked above, that `|` on a mock
+    # object raises TypeError and takes down autodoc for every module in
+    # eco that imports escape transitively (eco.elements.assembly among
+    # them, via eco.acquisition.scan_data). Mocking escape itself avoids
+    # ever reaching xarray's import at all.
+    "escape",
 ]
 
 # -- MyST (Markdown) ---------------------------------------------------------

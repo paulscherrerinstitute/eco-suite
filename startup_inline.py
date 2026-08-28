@@ -79,4 +79,16 @@ term.set_title()
 from IPython import get_ipython
 
 _ipy = get_ipython()
-_ipy.Completer.use_jedi = True
+# Must stay False, and must match eco/startup_inline.py (which has the long
+# form of this comment) -- this file had drifted to True, which silently
+# breaks tab completion in exactly the session the facility launcher
+# `/sf/bernina/bin/eco` starts (it runs startup_inline_new.py -> this file).
+# Jedi doesn't just make completion slow on eco's dynamic namespace/Assembly
+# objects, it returns *nothing*: measured on an initialized `prepump`,
+# use_jedi=True gave 0 matches where the classic completer gave 33 (the
+# 5.8s vs 0.001s / 0-vs-63 figures in eco/startup_inline.py are the same
+# effect on a bigger object). The classic completer goes through `dir()`,
+# which eco's lazy Proxy.__dir__ answers correctly -- staying "shy" while
+# a component is still unresolved (so completing a shared prefix doesn't
+# initialize every sibling) and forwarding to the real object once it is.
+_ipy.Completer.use_jedi = False

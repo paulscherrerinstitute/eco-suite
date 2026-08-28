@@ -1,6 +1,8 @@
 import os
 import json
+import queue
 import threading
+import traceback
 from dash import Dash, html, dcc
 from dash.dependencies import Input, Output
 from flask import Response
@@ -117,6 +119,62 @@ def _in_notebook(ip):
     return ip.__class__.__name__ == "ZMQInteractiveShell"
 
 
+# --------------------------------------------------------------------------
+# Clicked-command execution
+# --------------------------------------------------------------------------
+# A command clicked in a panel can run for a long time (e.g. clicking "pump"
+# starts a `PrepumpSystem.pump_down()` that polls for minutes). Running it
+# inline in the HTTP request that delivered the click would hold that request
+# open for its whole duration -- so it is handed to a dedicated background
+# worker instead and the request returns immediately.
+#
+# ONE worker, fed by a queue, deliberately: clicked commands then serialise
+# against each other rather than running concurrently, which matters because
+# they drive shared hardware (two vacuum macros interleaving valve writes on
+# the same shared pump/vent line would be a real hazard, not just untidy).
+_command_queue = None
+_command_worker = None
+_command_worker_lock = threading.Lock()
+
+
+def _command_worker_loop():
+    while True:
+        ip_instance, command_str = _command_queue.get()
+        try:
+            # pyepics binds its channel-access context per *thread*; a thread
+            # that never attaches to the process' initial context sees no
+            # connections at all (reads return None / hang), so a macro run
+            # here would silently misbehave without this.
+            try:
+                import epics
+
+                epics.ca.use_initial_context()
+            except Exception:
+                pass
+            print(f"\nExecuting from SVG: {command_str}")
+            ip_instance.run_cell(command_str)
+        except Exception:
+            traceback.print_exc()
+        finally:
+            _command_queue.task_done()
+
+
+def _dispatch_command(ip_instance, command_str):
+    """Queue `command_str` to run on the shared background worker (started
+    lazily on first use, and restarted if it ever died), and return at once."""
+    global _command_queue, _command_worker
+
+    with _command_worker_lock:
+        if _command_queue is None:
+            _command_queue = queue.Queue()
+        if _command_worker is None or not _command_worker.is_alive():
+            _command_worker = threading.Thread(
+                target=_command_worker_loop, daemon=True, name="eco-svg-commands"
+            )
+            _command_worker.start()
+    _command_queue.put((ip_instance, command_str))
+
+
 def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
                       refresh=None, refresh_interval_ms=2000, port_holder=None):
     """Launches a local webserver hosting the interactive Inkscape SVG.
@@ -192,6 +250,17 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
             <title>{%title%}</title>
             {%favicon%}
             {%css%}
+            <style>
+                /* Without this reset, the default body margin plus the
+                   <object>'s inline-replaced-element baseline gap (the same
+                   few extra px an <img>/<object> sized to 100% always
+                   leaves below itself unless it's display:block -- a classic,
+                   easy-to-miss source of an unwanted scrollbar) push the
+                   page's total size just past the viewport, so a scrollbar
+                   appears even though nothing meaningful is actually
+                   scrollable. */
+                html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f0f0f0; }
+            </style>
         </head>
         <body>
             {%app_entry%}
@@ -203,30 +272,38 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
             <script>
                 __EXTRACT_COMMAND_JS__
 
-                // Script tracking click events inside the SVG's internal document DOM tree
-                function attachSvgClickHandler(svgDoc) {
-                    svgDoc.addEventListener("click", function(e) {
-                        let target = e.target;
-                        while (target && target !== svgDoc) {
-                            let commandStr = extractCommand(target);
+                // Script tracking click events inside the SVG's internal document DOM tree.
+                // A stable, named function (not a fresh closure per call) so that
+                // re-attaching it (see the live-refresh block below, which does
+                // so defensively after every refresh) is a safe no-op if it's
+                // already attached -- addEventListener only dedupes when given
+                // the exact same function reference twice.
+                function svgClickHandler(e) {
+                    let svgDoc = e.currentTarget;
+                    let target = e.target;
+                    while (target && target !== svgDoc) {
+                        let commandStr = extractCommand(target);
 
-                            if (commandStr) {
-                                var relay = document.getElementById("click-relay");
-                                if (relay) {
-                                    // React tracks <input> values through its own setter, so
-                                    // assigning relay.value directly and dispatching "input"
-                                    // is invisible to it - go through the native setter instead.
-                                    var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                                    nativeSetter.call(relay, commandStr + "|||" + e.ctrlKey + "|||" + Math.random());
-                                    var event = new Event("input", { bubbles: true });
-                                    relay.dispatchEvent(event);
-                                }
-                                e.preventDefault();
-                                break;
+                        if (commandStr) {
+                            var relay = document.getElementById("click-relay");
+                            if (relay) {
+                                // React tracks <input> values through its own setter, so
+                                // assigning relay.value directly and dispatching "input"
+                                // is invisible to it - go through the native setter instead.
+                                var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeSetter.call(relay, commandStr + "|||" + e.ctrlKey + "|||" + Math.random());
+                                var event = new Event("input", { bubbles: true });
+                                relay.dispatchEvent(event);
                             }
-                            target = target.parentNode;
+                            e.preventDefault();
+                            break;
                         }
-                    });
+                        target = target.parentNode;
+                    }
+                }
+
+                function attachSvgClickHandler(svgDoc) {
+                    svgDoc.addEventListener("click", svgClickHandler);
                 }
 
                 function setupSvgListener() {
@@ -252,23 +329,41 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
 
                 // Live panel only (__LIVE_REFRESH_INTERVAL_MS__ is 0
                 // otherwise, so this is a no-op setInterval that never
-                // fires): periodically reload the embedded SVG object from
-                // /svg-content, which re-runs `refresh()` server-side on
-                // every hit -- see _run_dash_server's docstring. Resetting
-                // .data forces the browser to actually re-fetch (a cache-
-                // busting query param, since GET responses could otherwise
-                // be cached) rather than reuse the existing embedded
-                // document; clearing listenerAttached first lets
-                // setupSvgListener() re-attach the click handler to the new
-                // document once it's ready.
+                // fires): periodically re-fetch /svg-content (re-running
+                // `refresh()` server-side on every hit -- see
+                // _run_dash_server's docstring) and patch it into the
+                // *already-open* embedded document in place, instead of
+                // resetting the <object>'s `.data` to force a full reload.
+                // A full reload is what the first version of this did, and
+                // it visibly blinks/flashes on every tick (the embedded
+                // document briefly unloads) -- distracting and not really
+                // usable at a useful refresh rate. An in-place DOM patch
+                // (same technique the old Qt-only refresh path used:
+                // replacing the live `<svg>` root, not reloading the page
+                // around it) doesn't reload anything, so there's nothing to
+                // flash. The click listener is registered on `svgDoc` itself
+                // (attachSvgClickHandler), not the specific <svg> node being
+                // replaced, so it should keep working across the swap on its
+                // own -- but it's re-attached after every tick anyway
+                // (harmless now that it's a stable function reference, see
+                // svgClickHandler above) as a defensive belt-and-braces
+                // measure, in case some engine-specific quirk of replacing a
+                // same-origin embedded document's root element ever detaches
+                // document-level listeners.
                 var LIVE_REFRESH_INTERVAL_MS = __LIVE_REFRESH_INTERVAL_MS__;
                 if (LIVE_REFRESH_INTERVAL_MS > 0) {
                     setInterval(function() {
                         var embedObj = document.getElementById("inkscape-svg-object");
-                        if (!embedObj) return;
-                        embedObj.dataset.listenerAttached = "";
-                        embedObj.data = "/svg-content?t=" + Date.now();
-                        setupSvgListener();
+                        var svgDoc = embedObj ? embedObj.contentDocument : null;
+                        if (!svgDoc || !svgDoc.documentElement) return;
+                        fetch("/svg-content?t=" + Date.now())
+                            .then(function(r) { return r.text(); })
+                            .then(function(newSvgText) {
+                                var newRoot = new DOMParser().parseFromString(newSvgText, "image/svg+xml").documentElement;
+                                svgDoc.replaceChild(svgDoc.importNode(newRoot, true), svgDoc.documentElement);
+                                attachSvgClickHandler(svgDoc);
+                            })
+                            .catch(function(err) { console.error("eco SVG live refresh failed:", err); });
                     }, LIVE_REFRESH_INTERVAL_MS);
                 }
             </script>
@@ -287,17 +382,26 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
     )
 
     app.layout = html.Div([
-        # 2. Changed from html.Embed to html.ObjectEl, served from a same-origin route
+        # 2. Changed from html.Embed to html.ObjectEl, served from a same-origin route.
+        # width/height 100% (of the now-reset, zero-margin body -- see the
+        # <style> above) rather than 100vw/95vh: vw/vh measure the *viewport*,
+        # which on a page that actually has a scrollbar excludes the
+        # scrollbar's own width, so 100vw ends up wider than the space really
+        # available and helps trigger exactly the scrollbar it's supposed to
+        # fit inside. display:block clears the few extra px of inline-
+        # replaced-element baseline gap <object>/<img>-like elements get by
+        # default, the other classic contributor to an unwanted scrollbar
+        # here.
         html.ObjectEl(
             id="inkscape-svg-object",
             data="/svg-content",
             type="image/svg+xml",
-            style={"width": "100vw", "height": "95vh", "border": "none"}
+            style={"width": "100%", "height": "100%", "display": "block", "border": "none"}
         ),
 
         # Standard input field used as a bridge channel between JS events and Python callbacks
         dcc.Input(id="click-relay", type="text", style={"display": "none"})
-    ], style={"margin": "0", "padding": "0", "backgroundColor": "#f0f0f0"})
+    ], style={"margin": "0", "padding": "0", "width": "100%", "height": "100%", "backgroundColor": "#f0f0f0"})
 
     @app.callback(
         Output("click-relay", "style"),
@@ -316,8 +420,8 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
                 print(f"\n[SVG Paste] -> {command_str}", end="", flush=True)
                 ip_instance.set_next_input(command_str, replace=False)
             else:
-                print(f"\nExecuting from SVG: {command_str}")
-                ip_instance.run_cell(command_str)
+                # Never run it inline here -- see _dispatch_command.
+                _dispatch_command(ip_instance, command_str)
         except Exception as err:
             print(f"\nError processing event layout channel: {err}")
 
@@ -340,7 +444,17 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
     # polling EPICS forever in the background for the rest of the session.
     from werkzeug.serving import make_server
 
-    server = make_server("127.0.0.1", 0, app.server)
+    # threaded=True is ESSENTIAL, not a tuning knob: make_server defaults to
+    # threaded=False, i.e. one request at a time. `app.run()` (what this
+    # replaced) defaults to threaded=True, so switching to make_server for
+    # the port=0 support silently made this server serial -- and a serial
+    # server breaks a live panel completely the moment anything slow runs:
+    # one in-flight request blocks every subsequent /svg-content refresh AND
+    # every subsequent click, so the panel freezes after the first click and
+    # never recovers. (Clicked commands are additionally dispatched off the
+    # request thread entirely, see _dispatch_command, so even a 5-minute
+    # pump_down() doesn't tie up a request thread at all.)
+    server = make_server("127.0.0.1", 0, app.server, threaded=True)
     if port_holder is not None:
         port_holder["port"] = server.server_port
         port_holder["server"] = server

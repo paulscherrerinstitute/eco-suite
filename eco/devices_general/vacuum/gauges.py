@@ -35,8 +35,12 @@ class VacuumGauge(Assembly):
         self._append(
             DetectorPvData, f"{pvbase}:PRESSURE", has_unit=True, name="pressure"
         )
-        # controller status text, e.g. "MEASURE", "SENSOR OFF", "UNDER RANGE"
-        self._append(DetectorPvString, f"{pvbase}:STATUS", name="status")
+        # controller status text, e.g. "MEASURE", "SENSOR OFF", "UNDER RANGE".
+        # Named `status_text`, not `status` -- every Assembly already has a
+        # `.status()` method (the generic hierarchical status table), which
+        # a child actually named "status" would shadow with this plain PV
+        # string instead.
+        self._append(DetectorPvString, f"{pvbase}:STATUS", name="status_text")
         # --- gauge on/off (cold cathodes can be switched) ----------------
         self._append(
             AdjustablePvEnum, f"{pvbase}:ONOFF", name="on", is_setting=True
@@ -58,5 +62,12 @@ class VacuumGauge(Assembly):
         )  # controller unit name (e.g. TPG gauge controller)
 
     def get_current_value(self, *args, **kwargs):
-        """Read like a detector: return the pressure."""
+        """Read like a detector: return the pressure, or ``None`` if the
+        gauge's emission is off (a pressure reading would be stale/
+        meaningless in that state, per :attr:`on_readback`)."""
+        try:
+            if self.on_readback.get_current_value().name != "ON":
+                return None
+        except Exception:
+            pass
         return self.pressure.get_current_value(*args, **kwargs)

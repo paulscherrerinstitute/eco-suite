@@ -51,61 +51,38 @@ steps, or in-flight move stopping.
 ## Indicator / gadget widgets
 
 For a LabVIEW-style live panel — LEDs, gauges, dials — instead of a grid row,
-eco provides small standalone gadgets, one per item: a richer Qt version and a
-first-pass, stock-`ipywidgets` browser version.
+eco provides small standalone gadgets, one per item. The current direction is
+a **matched, as-simple-as-possible pair**, one module per backend, both built
+entirely from each toolkit's own stock controls (no new dependency, no
+custom-painted graphics) and sharing the same function names/signatures so
+either is a drop-in for the other:
 
-### Qt (`eco.widgets.indicator_widgets`)
+- {py:mod}`eco.widgets.indicator_widgets_ipy` — ipywidgets (`lab`/`voila`)
+- `eco.widgets.indicator_widgets_qt_simple` — Qt desktop
 
-`eco.widgets.indicator_widgets` provides gadgets meant to be pulled out of
-the property grid and dropped onto a
-{py:class}`~eco.widgets.dashboard_qt.Dashboard`:
+![The seven stock-ipywidgets gadgets: a green LED-styled Button for shutter_open, a vertical FloatProgress for pressure, a horizontal FloatProgress standing in for the needle gauge on energy, a FloatProgress showing intensity's position within its observed min/max as a strip-chart stand-in, a large HTML number for counts, a row of ToggleButtons for mode's enum choices, and a FloatSlider for position.](images/widget_indicator_gadgets_ipy.png)
 
-![Five indicator gadgets against dummy items: a green LED for a boolean shutter state, a vertical bar gauge for a pressure Detector, a semicircular analog gauge with a needle for an energy readback, a rotary Dial in enum "mode-select" form showing every choice (standby/ready/running/fault) around the ring, and a horizontal Slider with a numeric readout for a position Adjustable.](images/widget_indicator_gadgets_qt.png)
+*ipywidgets — `eco.widgets.indicator_widgets_ipy`*
 
-| Gadget | Read/write | Notes |
-|---|---|---|
-| `LEDIndicator` | writes (click to toggle) if settable | green/red/gray for on/off/unknown; `threshold=` for "value ≥ X" |
-| `BarGauge` | read-only | vertical or horizontal fill against `[vmin, vmax]` |
-| `AnalogGauge` | read-only | semicircular needle gauge |
-| `StripChart` | read-only | rolling line plot of the last N readings |
-| `NumericTile` | read-only | large numeric readout + sparkline (KPI-tile style) |
-| `Dial` | writes if settable | continuous rotary knob for plain numerics; a mode-select ring (every enum choice shown at once) when the item exposes `enum_strs` |
-| `Slider` | writes if settable | horizontal slider with numeric readout |
+![The same seven gadgets on the Qt side, built from plain QWidgets: a green circular QPushButton for shutter_open, a vertical QProgressBar for pressure, a horizontal QProgressBar for energy, a QProgressBar plus a "value [lo .. hi]" label for intensity, a large QLabel for counts, a row of checkable QPushButtons for mode's enum choices, and a QSlider for position.](images/widget_indicator_gadgets_qt_simple.png)
 
-No dropdown, text entry, or hidden menu is needed to read a value at a
-glance — that's the point of these versus the default grid row. Getting one
-onto screen is a right-click away: right-click a parameter's name in the
-normal Qt property grid → **Add indicator** → pick a gadget kind (see
-`eco.widgets.display_qt`'s `_build_row`, wired via
-`eco.widgets.indicator_widgets.attach_indicator_menu`). A gadget is also a
-valid Qt Designer "promoted widget", and round-trips through a saved
-dashboard layout via the item's alias path.
+*Qt — `eco.widgets.indicator_widgets_qt_simple`*
 
-### ipywidgets (`eco.widgets.indicator_widgets_ipy`)
+| Gadget (same name, both modules) | ipywidgets control | Qt control | Notes |
+|---|---|---|---|
+| `led_indicator` | `Button` (`button_style`) | `QPushButton` (stylesheet) | click to toggle if settable; a plain label/HTML can't take a click back |
+| `bar_gauge` | `FloatProgress` | `QProgressBar` | vertical or horizontal fill against `[vmin, vmax]` |
+| `analog_gauge` | `FloatProgress` (horizontal) | `QProgressBar` (horizontal) | **approximation** — no needle; see below |
+| `strip_chart` | `FloatProgress` + label | `QProgressBar` + label | **approximation** — position within the min/max seen so far, not a rolling line; see below |
+| `numeric_tile` | `HTML` | `QLabel` (enlarged font) | large number, no sparkline (same reasoning as `strip_chart`) |
+| `dial` | `ToggleButtons` (enum) / `FloatSlider` (numeric) | checkable `QPushButton` row (enum) / `QSlider` (numeric) | enum case shows every choice at once; dragging a value in a circle isn't idiomatic UX on either toolkit, so the numeric case reuses the slider rather than faking a knob |
+| `slider` | `FloatSlider` | `QSlider` | writes on release if settable |
 
-A first pass at the same seven gadgets for the `lab`/`voila` front ends,
-built **entirely from stock ipywidgets controls** rather than a new
-charting/gauge library — "something that works" now, not a redraw of the Qt
-look:
-
-![The same seven gadgets, built from stock ipywidgets: a green LED-styled Button for shutter_open, a vertical FloatProgress for pressure, a horizontal FloatProgress standing in for the needle gauge on energy, a FloatProgress showing intensity's position within its observed min/max as a strip-chart stand-in, a large HTML number for counts, a row of ToggleButtons for mode's enum choices, and a FloatSlider for position.](images/widget_indicator_gadgets_ipy.png)
-
-| Gadget | Stock control used | Notes |
-|---|---|---|
-| `led_indicator` | `Button` (`button_style`) | a plain `HTML` div can't take a click back from the browser, so this is a styled Button, not a bare circle |
-| `bar_gauge` | `FloatProgress` | vertical or horizontal, exact match to the Qt bar gauge |
-| `analog_gauge` | `FloatProgress` (horizontal) | **approximation** — no needle; see below |
-| `strip_chart` | `FloatProgress` + label | **approximation** — shows position within the min/max seen so far, not a rolling line; see below |
-| `numeric_tile` | `HTML` | large number, no sparkline (same reasoning as `strip_chart`) |
-| `dial` | `ToggleButtons` (enum) or `FloatSlider` (numeric) | enum case matches the Qt "every choice visible" idea, laid out as buttons instead of a ring; dragging a value around a circle isn't idiomatic web UX, so the numeric case reuses the slider rather than faking a knob |
-| `slider` | `FloatSlider` | exact match to the Qt slider |
-
-Five of the seven are exact stock-widget matches. The other two
+Five of the seven are exact stock-widget matches on both sides. The other two
 (`analog_gauge`, `strip_chart`) are deliberately left as plain bar/value
-approximations rather than reaching for a new dependency — see
-`eco.widgets.indicator_widgets_ipy`'s module docstring. If a real needle
-gauge or a real rolling plot is wanted later, the candidates worth reviewing
-first:
+approximations rather than reaching for a new dependency — see either
+module's docstring. If a real needle gauge or a real rolling plot is wanted
+later, the candidates worth reviewing first:
 
 - **Plotly `go.Indicator`** (`mode="gauge+number"` for the needle gauge,
   `mode="number+delta"` for a nicer KPI tile) — its `FigureWidget` is a real
@@ -125,6 +102,25 @@ first:
   widget, if a literal LabVIEW look is ever wanted beyond what the above
   give. Worth knowing about, not needed for anything on this page.
 
-There's no "Add indicator" menu for the ipywidgets side yet (there's no
-natural right-click-a-label hook the way Qt has one) — call the function
-directly, e.g. `eco.widgets.indicator_widgets_ipy.bar_gauge(my_assembly.pressure, vmin=0, vmax=100)`.
+Neither module has a discovery UI yet ("right-click a name → add gadget" on
+Qt, or an equivalent on the notebook side) — call the function directly for
+now, e.g. `eco.widgets.indicator_widgets_ipy.bar_gauge(my_assembly.pressure, vmin=0, vmax=100)`
+or the equivalent `eco.widgets.indicator_widgets_qt_simple.bar_gauge(...)`.
+
+### The older, hand-painted Qt gadgets
+
+`eco.widgets.indicator_widgets` — the original, richer Qt-only module (real
+needle gauge, a radial mode-select dial face, a live rolling strip-chart) —
+still exists and is unrelated to the simple pair above, not superseded by
+it. It's wired into the desktop app's right-click **"Add indicator"** menu
+and a droppable {py:class}`~eco.widgets.dashboard_qt.Dashboard`, and its
+gadgets double as valid Qt Designer "promoted widgets":
+
+![Five hand-painted indicator gadgets against dummy items: a green LED for a boolean shutter state, a vertical bar gauge for a pressure Detector, a semicircular analog gauge with a needle for an energy readback, a rotary Dial in enum "mode-select" form showing every choice (standby/ready/running/fault) around the ring, and a horizontal Slider with a numeric readout for a position Adjustable.](images/widget_indicator_gadgets_qt.png)
+
+See its module docstring for the full gadget list and
+`eco.widgets.indicator_widgets.attach_indicator_menu` for how it's wired
+into `eco.widgets.display_qt`'s property grid. Reach for this one if the
+simple pair's two approximations (no needle, no rolling line) actually
+matter for a given panel; otherwise the matched simple pair above is the
+current default recommendation for new work, on either backend.

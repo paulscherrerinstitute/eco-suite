@@ -76,7 +76,8 @@ scientific Python libraries.
       :link-type: doc
 
       The default Adjustable/Detector row in Qt vs ipywidgets, and the
-      LED/gauge/dial "indicator" gadgets on both.
+      matched, stock-widget-only LED/gauge/dial "indicator" gadgets on
+      both.
 
    .. grid-item-card:: :octicon:`stack` Widget containers
       :link: widget_containers

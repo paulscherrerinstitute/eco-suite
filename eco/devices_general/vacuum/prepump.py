@@ -35,9 +35,16 @@ is just the dumb valve/gauge group for one channel.
 import time
 
 from eco import Assembly
+from eco.elements.detector import DetectorVirtual
 
 from .gauges import VacuumGauge
 from .valves import Valve, PrePump, ValveState
+
+#: Default pressure thresholds [mbar], shared by PrepumpSystem and by any
+#: PrepumpLine that doesn't override them: at/below `P_TARGET` a channel
+#: counts as "pumped", at/above `P_VENT_TARGET` as "vented".
+P_TARGET = 0.5
+P_VENT_TARGET = 1000.0
 
 
 class PrepumpLine(Assembly):
@@ -47,26 +54,106 @@ class PrepumpLine(Assembly):
     Any of ``gauge`` / ``valve_prevac`` / ``valve_vent`` left ``None`` is
     simply not built, so a not-yet-cabled channel still works for the parts
     that exist.
+
+    ``prepump_system``, if given, is the owning :class:`PrepumpSystem` --
+    channels built through :func:`make_prepump_system`/``PrepumpSystem``
+    get it wired up automatically, so it normally doesn't need to be passed
+    explicitly. It's what lets :meth:`pump_down`/:meth:`vent` be called
+    directly on the channel (``line1_usd.pump_down()``) instead of only via
+    the system's string-keyed form (``prepump.pump_down('line1_usd')``,
+    still there and equivalent -- the cross-channel interlock logic lives on
+    the system either way, since it must coordinate all channels).
     """
 
-    def __init__(self, name=None, gauge=None, valve_prevac=None, valve_vent=None):
+    def __init__(self, name=None, gauge=None, valve_prevac=None, valve_vent=None,
+                 prepump_system=None, p_target=None, p_vent_target=None):
         super().__init__(name=name)
+        self.prepump_system = prepump_system
+        self._p_target = p_target
+        self._p_vent_target = p_vent_target
         if gauge is not None:
-            self._append(VacuumGauge, gauge, name="gauge", is_status=True)
+            self._append(VacuumGauge, gauge, name="gauge",
+                         is_display=True, is_status=True)
         if valve_prevac is not None:
-            self._append(Valve, valve_prevac, name="valve_prevac", is_setting=True)
+            self._append(Valve, valve_prevac, name="valve_prevac",
+                         is_display=True, is_setting=True)
         if valve_vent is not None:
-            self._append(Valve, valve_vent, name="valve_vent", is_setting=True)
+            self._append(Valve, valve_vent, name="valve_vent",
+                         is_display=True, is_setting=True)
+        # this channel's state, computed from the components above -- see
+        # `state()`. A plain Detector child so it shows up as one more row in
+        # the display/status table alongside what it is derived from.
+        self._append(DetectorVirtual, [], self.state, name="state",
+                     is_display=True, is_status=True)
+
+    # ---- thresholds ----------------------------------------------------
+    # Resolved per channel: an explicit per-line value wins, else the owning
+    # system's, else the module default. Per-line overrides are meaningful --
+    # channels have different gauges (a Pirani tops out well below ambient,
+    # so "vented" isn't the same number everywhere) and different chambers.
+    @property
+    def p_target(self):
+        if self._p_target is not None:
+            return self._p_target
+        return getattr(self.prepump_system, "p_target", P_TARGET)
+
+    @property
+    def p_vent_target(self):
+        if self._p_vent_target is not None:
+            return self._p_vent_target
+        return getattr(self.prepump_system, "p_vent_target", P_VENT_TARGET)
 
     def pressure(self):
-        """This channel's gauge pressure, or None if no gauge/reading."""
+        """This channel's gauge pressure, or None if no gauge/reading/the
+        gauge is off (see VacuumGauge.get_current_value)."""
         gauge = getattr(self, "gauge", None)
         if gauge is None:
             return None
         try:
-            return gauge.pressure.get_current_value()
+            return gauge.get_current_value()
         except Exception:
             return None
+
+    def is_pumped(self):
+        """True if this channel's own gauge is at/below its `p_target`."""
+        p = self.pressure()
+        return p is not None and p <= self.p_target
+
+    def is_vented(self):
+        """True if this channel's own gauge is at/above its `p_vent_target`."""
+        p = self.pressure()
+        return p is not None and p >= self.p_vent_target
+
+    def state(self):
+        """Classify this channel from its *own* valve positions and gauge
+        (nothing from the rest of the system except the pressure thresholds,
+        which are per-channel overridable -- notably NOT the common ``Gp``):
+
+        * ``"pumped"``   -- pump valve open, gauge at/below ``p_target``
+          (its normal connected, pumped-down steady state)
+        * ``"pumping"``  -- pump valve open, gauge still above ``p_target``
+          (a pump down is in progress)
+        * ``"venting"``  -- vent valve open (a vent is in progress, or it
+          was simply left open)
+        * ``"vented"``   -- both valves closed, gauge at/above
+          ``p_vent_target`` (sealed off at atmosphere)
+        * ``"isolated"`` -- both valves closed, gauge below
+          ``p_vent_target`` (sealed off, still holding some vacuum)
+        * ``"unknown"``  -- a valve/gauge reading isn't available, or both
+          valves are open at once (should never happen)
+        """
+        try:
+            prevac_open = self.valve_prevac.get_current_value() == ValveState.OPEN
+            vent_open = self.valve_vent.get_current_value() == ValveState.OPEN
+        except Exception:
+            return "unknown"
+        if prevac_open and vent_open:
+            return "unknown"
+        if vent_open:
+            return "venting"
+        if prevac_open:
+            return "pumped" if self.is_pumped() else "pumping"
+        return "vented" if self.is_vented() else "isolated"
 
     def isolate(self):
         """Close this channel off from both the pump and vent line (safe state)."""
@@ -74,6 +161,30 @@ class PrepumpLine(Assembly):
             self.valve_prevac.close()
         if getattr(self, "valve_vent", None) is not None:
             self.valve_vent.close()
+
+    def _require_prepump_system(self, method_name):
+        if self.prepump_system is None:
+            raise RuntimeError(
+                f"'{self.name}' has no prepump_system set, so {method_name}() "
+                f"can't run the cross-channel interlock -- call it on the "
+                f"system instead, e.g. prepump.{method_name}('{self.name}')."
+            )
+        return self.prepump_system
+
+    def pump_down(self, timeout=300.0, poll=1.0):
+        """Pump this channel down -- convenience wrapper for
+        ``self.prepump_system.pump_down(self, ...)``, see there for what it
+        actually does (isolating the other channels etc.)."""
+        return self._require_prepump_system("pump_down").pump_down(
+            self, timeout=timeout, poll=poll
+        )
+
+    def vent(self, timeout=300.0, poll=1.0):
+        """Vent this channel -- convenience wrapper for
+        ``self.prepump_system.vent(self, ...)``."""
+        return self._require_prepump_system("vent").vent(
+            self, timeout=timeout, poll=poll
+        )
 
     def get_current_value(self, *args, **kwargs):
         """A compact {valve role: valve state, 'pressure': p} snapshot."""
@@ -115,7 +226,7 @@ class PrepumpSystem(Assembly):
     """
 
     def __init__(self, name=None, gp=None, roots_pump=None, lines=None,
-                 p_target=0.5, p_vent_target=1000.0, vent_line_name="GN2"):
+                 p_target=P_TARGET, p_vent_target=P_VENT_TARGET, vent_line_name="GN2"):
         super().__init__(name=name)
         self.p_target = p_target
         self.p_vent_target = p_vent_target
@@ -133,8 +244,13 @@ class PrepumpSystem(Assembly):
             if isinstance(line, dict):
                 # build a PrepumpLine from a plain kwargs dict (config form);
                 # the dict's own "name" (if any) is overridden by the key.
-                line = PrepumpLine(**{**line, "name": lname})
-            self._append(line, name=lname, is_status=True)
+                line = PrepumpLine(**{**line, "name": lname, "prepump_system": self})
+            else:
+                # a ready-made PrepumpLine passed directly -- wire it up too,
+                # so line1_usd.pump_down() works regardless of which form
+                # built it.
+                line.prepump_system = self
+            self._append(line, name=lname, is_display=True, is_status=True)
             self._line_names.append(lname)
 
     # ---- helpers -------------------------------------------------------
@@ -151,52 +267,29 @@ class PrepumpSystem(Assembly):
         return got
 
     def gp_pressure(self):
-        """Common pump-line pressure (Gp), or None."""
+        """Common pump-line pressure (Gp), or None (see
+        VacuumGauge.get_current_value, incl. the gauge-off case)."""
         gp = getattr(self, "gp", None)
         if gp is None:
             return None
         try:
-            return gp.pressure.get_current_value()
+            return gp.get_current_value()
         except Exception:
             return None
 
     def _is_pumped(self, pressure):
+        """Only used for the *common* line's ``Gp`` now -- a channel's own
+        gauge is judged by `PrepumpLine.is_pumped`/`is_vented` against that
+        channel's (possibly overridden) thresholds."""
         return pressure is not None and pressure <= self.p_target
 
-    def _is_vented(self, pressure):
-        return pressure is not None and pressure >= self.p_vent_target
-
     def line_state(self, line):
-        """Classify one channel's current state from its own valve
-        positions and gauge reading (not the common ``Gp``):
-
-        * ``"pumped"``   -- pump valve open, gauge at/below ``p_target``
-          (its normal connected, pumped-down steady state)
-        * ``"pumping"``  -- pump valve open, gauge still above ``p_target``
-          (a pump down is in progress)
-        * ``"venting"``  -- vent valve open (a vent is in progress, or it
-          was simply left open)
-        * ``"vented"``   -- both valves closed, gauge at/above
-          ``p_vent_target`` (sealed off at atmosphere)
-        * ``"isolated"`` -- both valves closed, gauge below
-          ``p_vent_target`` (sealed off, still holding some vacuum)
-        * ``"unknown"``  -- a valve/gauge reading isn't available, or both
-          valves are open at once (should never happen)
-        """
-        line = self._get_line(line)
-        try:
-            prevac_open = line.valve_prevac.get_current_value() == ValveState.OPEN
-            vent_open = line.valve_vent.get_current_value() == ValveState.OPEN
-        except Exception:
-            return "unknown"
-        if prevac_open and vent_open:
-            return "unknown"
-        if vent_open:
-            return "venting"
-        p = line.pressure()
-        if prevac_open:
-            return "pumped" if self._is_pumped(p) else "pumping"
-        return "vented" if self._is_vented(p) else "isolated"
+        """One channel's current state -- thin delegate to
+        :meth:`PrepumpLine.state`, which is where the classification lives
+        (it needs nothing from the system beyond the pressure thresholds the
+        channel already inherits). Kept because it accepts the string form,
+        e.g. ``prepump.line_state('line1_usd')``."""
+        return self._get_line(line).state()
 
     # ---- procedures ------------------------------------------------------
     def pump_down(self, line, timeout=700.0, poll=1.0):
@@ -236,7 +329,9 @@ class PrepumpSystem(Assembly):
                     print(f"[prepump] '{other.name}' was not pumped/connected before -- leaving it as is")
 
         t0 = time.time()
-        while not (self._is_pumped(self.gp_pressure()) and self._is_pumped(line.pressure())):
+        # Gp against the system threshold, the channel's gauge against its
+        # own (a channel may override it, see PrepumpLine.p_target).
+        while not (self._is_pumped(self.gp_pressure()) and line.is_pumped()):
             if time.time() - t0 > timeout:
                 self._activity = (f"pump_down('{line.name}') FAILED after {timeout:.0f}s "
                                    f"(Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())})")
@@ -284,7 +379,7 @@ class PrepumpSystem(Assembly):
         line.valve_vent.open()
 
         t0 = time.time()
-        while not self._is_vented(line.pressure()):
+        while not line.is_vented():
             if time.time() - t0 > timeout:
                 self._activity = f"vent('{line.name}') FAILED after {timeout:.0f}s (G={_fmt_pressure(line.pressure())})"
                 print(f"[prepump] '{line.name}' venting FAILED after {timeout}s (G={line.pressure()})")
@@ -641,13 +736,16 @@ def make_prepump_system(config, name="prepump"):
         {
           "gp": "<Gp gauge PV>",           # common prevac-line gauge
           "roots_pump": "<roots pump PV>",
-          "p_target": 1e-3,                # optional, mbar (default 1e-3)
-          "p_vent_target": 500.0,          # optional, mbar (default 500.0)
+          "p_target": 0.5,                 # optional, mbar (default P_TARGET)
+          "p_vent_target": 1000.0,         # optional, mbar (default P_VENT_TARGET)
           "lines": {
             "<channel name>": {
               "gauge": "<G PV>",           # this channel's gauge
               "valve_prevac": "<P PV>",    # -> prevac/roots line
               "valve_vent":   "<V PV>",    # -> GN2 vent line
+              # optional per-channel threshold overrides; omitted = inherit
+              # the system's (see PrepumpLine.p_target)
+              # "p_target": 0.5, "p_vent_target": 1000.0,
             },
             ...
           },
@@ -665,8 +763,8 @@ def make_prepump_system(config, name="prepump"):
         gp=cfg.get("gp"),
         roots_pump=cfg.get("roots_pump"),
         lines=cfg.get("lines", {}),
-        p_target=cfg.get("p_target", 1e-3),
-        p_vent_target=cfg.get("p_vent_target", 500.0),
+        p_target=cfg.get("p_target", P_TARGET),
+        p_vent_target=cfg.get("p_vent_target", P_VENT_TARGET),
     )
 
 
@@ -678,8 +776,8 @@ def make_prepump_system(config, name="prepump"):
 BERNINA_PREPUMP_CONFIG = {
     "gp": None,          # common prevac-line gauge Gp base
     "roots_pump": None,  # Roots pump base
-    "p_target": 1e-3,    # "pumped" threshold [mbar]
-    "p_vent_target": 500.0,  # "vented" threshold [mbar]
+    "p_target": P_TARGET,          # "pumped" threshold [mbar]
+    "p_vent_target": P_VENT_TARGET,  # "vented" threshold [mbar]
     "lines": {
         "line1": {"gauge": None, "valve_prevac": None, "valve_vent": None},
         "line2": {"gauge": None, "valve_prevac": None, "valve_vent": None},
