@@ -4,7 +4,8 @@ Raspberry-Pi-style box (draggable joystick + rotary encoder + on-screen
 navigator) in a Tkinter window.
 
 Run with:
-    python -m eco.manual_control.demo
+    python -m eco.manual_control.demo                 # 480x320 panel
+    python -m eco.manual_control.demo --psi-box       # the 7" 800x480 box
 
 The structure is nested (beamline > chamber > motors) so you can exercise
 descending/ascending with both the encoder (rotate to move, OK to
@@ -23,11 +24,14 @@ you descend/arm)::
     ManualControlApp(ManualControlBox(bernina.namespace, root_name="bernina")).mainloop()
 """
 
+import argparse
+
 from eco.elements.adjustable import DummyAdjustable
 from eco.elements.assembly import Assembly
 
 from .box import ManualControlBox
 from .mock_gui import ManualControlApp
+from .remote.pi_app import parse_size
 
 
 class Group(Assembly):
@@ -55,10 +59,33 @@ def build_fake_beamline():
     return Group("beamline", [mono, slit1, chamber, motor("attenuator", 0, 20)])
 
 
+def add_view_args(ap):
+    """Panel-geometry options shared by the two simulator entry points."""
+    ap.add_argument("--psi-box", action="store_true",
+                    help="preview the PSI Motor Control Unit box: 800x480 landscape, touch-sized text")
+    ap.add_argument("--size", type=parse_size, default=None, metavar="WxH",
+                    help="panel size, e.g. 800x480 (default 480x320)")
+    ap.add_argument("--font-scale", type=float, default=1.0, help="scale all text")
+    ap.add_argument("--layout", choices=("landscape", "stacked"), default=None,
+                    help="force a layout (default: landscape for panels >= 640 px wide)")
+    return ap
+
+
+def view_kwargs(args):
+    if args.psi_box:
+        return dict(screen_size=args.size or (800, 480),
+                    font_scale=args.font_scale if args.font_scale != 1.0 else 1.4,
+                    layout=args.layout)
+    return dict(screen_size=args.size, font_scale=args.font_scale, layout=args.layout)
+
+
 def main():
+    args = add_view_args(argparse.ArgumentParser(
+        description="offline manual-control simulator (fake beamline, mock joystick + encoder)"
+    )).parse_args()
     beamline = build_fake_beamline()
     box = ManualControlBox(beamline, root_name="beamline", step_sizes=[0.001, 0.01, 0.1, 1, 10])
-    ManualControlApp(box).mainloop()
+    ManualControlApp(box, **view_kwargs(args)).mainloop()
 
 
 if __name__ == "__main__":

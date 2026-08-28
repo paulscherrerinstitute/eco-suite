@@ -25,11 +25,17 @@ def _safe_value(box):
 
 
 class RemoteControlServer:
-    def __init__(self, root, transport, root_name=None, value_hz=5, **box_kwargs):
+    def __init__(self, root, transport, root_name=None, value_hz=5, token=None, **box_kwargs):
         self.root = root
         self.root_name = root_name
         self.box = ManualControlBox(root, root_name=root_name, **box_kwargs)
         self.tr = transport
+        self.token = token
+        # With a token set, nothing but a matching hello is accepted. On a
+        # facility network this port can drive real motors, so an unknown
+        # peer must not be able to just talk to it (a guardrail against
+        # mistakes/strays, not a security boundary - it is plaintext).
+        self._authenticated = token is None
         self._value_period = 1.0 / value_hz
         self._stop = threading.Event()
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
@@ -38,7 +44,8 @@ class RemoteControlServer:
     def start(self):
         self._reader.start()
         self._ticker.start()
-        self._send_state()
+        if self._authenticated:
+            self._send_state()
         return self
 
     def _read_loop(self):
@@ -48,6 +55,15 @@ class RemoteControlServer:
                 break
             try:
                 t, d = p.decode(line)
+                if not self._authenticated:
+                    if t != p.EV_HELLO or d.get("token") != self.token:
+                        self._safe_write(p.encode(p.MSG_ERROR, error="bad or missing token"))
+                        print("rejected client: bad or missing token")
+                        break
+                    self._authenticated = True
+                    print("client authenticated")
+                    self._send_state()
+                    continue
                 self._dispatch(t, d)
             except Exception as exc:
                 self._safe_write(p.encode(p.MSG_ERROR, error=str(exc)))
@@ -109,7 +125,7 @@ class RemoteControlServer:
 
     def _value_loop(self):
         while not self._stop.wait(self._value_period):
-            if self.box.target is not None:
+            if self._authenticated and self.box.target is not None:
                 self._safe_write(p.encode(p.MSG_VALUE, value=_safe_value(self.box)))
 
     def _safe_write(self, line):

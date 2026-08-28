@@ -845,16 +845,40 @@ def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
     in_window, sidecar_anchor = resolve_backend(
         backend=backend, sidecar_anchor=sidecar_anchor, ip=ip
     )
+    # Was the native window *chosen for* the user, or asked for explicitly?
+    # It decides whether an unusable Qt/WebEngine install is a hard error or
+    # something to quietly route around (below).
+    backend_was_auto = (backend or "auto").lower() == "auto"
 
     if in_window:
         try:
             from qtpy.QtWidgets import QApplication  # noqa: F401
             from qtpy.QtWebEngineWidgets import QWebEngineView  # noqa: F401
         except Exception as err:
-            print(f"Error: the native-window backend requires qtpy plus a Qt binding with "
-                  f"WebEngine support (conda-forge: qtpy, pyqt, pyqtwebengine - or "
-                  f"qtpy, pyside6, qt6-webengine). Details: {err}")
-            return
+            # WebEngine is genuinely fragile here: qtpy binds to whichever Qt
+            # is already imported, and in the deployed bpy312 env a *bare*
+            # process picks PyQt5, which has no PyQtWebEngine installed --
+            # while PySide6 (which does have it) is normally pulled in first
+            # by matplotlib/IPython in a real eco session, making the same
+            # call succeed. So this failing says nothing about the panel
+            # itself, and must not turn `show()` into a dead end: on "auto"
+            # (where nobody asked for a window specifically) fall back to the
+            # browser/inline view, which needs no Qt at all. An explicit
+            # backend="window" still errors, since silently doing something
+            # else would be worse than saying why.
+            if backend_was_auto:
+                print(
+                    "eco SVG viewer: no usable Qt WebEngine binding "
+                    f"({type(err).__name__}), showing the browser/inline view instead. "
+                    'Force the window with backend="window" once WebEngine works '
+                    "(e.g. QT_API=pyside6, or install pyqtwebengine)."
+                )
+                in_window = False
+            else:
+                print(f"Error: the native-window backend requires qtpy plus a Qt binding with "
+                      f"WebEngine support (conda-forge: qtpy, pyqt, pyqtwebengine - or "
+                      f"qtpy, pyside6, qt6-webengine). Details: {err}")
+                return
 
         # Qt's event loop must run on the main thread (unlike the former
         # WebKitGTK backend's Gtk.main(), which tolerated a background

@@ -25,9 +25,10 @@ class ClientEntry:
 
 
 class RemoteControlClient:
-    def __init__(self, transport, on_update=None):
+    def __init__(self, transport, on_update=None, token=None):
         self.tr = transport
         self.on_update = on_update
+        self.token = token
         self.tree = None  # cached full snapshot (from USB or MSG_SNAPSHOT)
         self.path_names = ["…"]
         self._entries = []
@@ -42,6 +43,8 @@ class RemoteControlClient:
 
     def start(self, request_snapshot=True):
         self._reader.start()
+        if self.token is not None:
+            self._send(p.EV_HELLO, token=self.token)
         if request_snapshot:
             self.request_snapshot()
         return self

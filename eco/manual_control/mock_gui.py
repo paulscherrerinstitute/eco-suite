@@ -187,17 +187,22 @@ class MockEncoder(tk.Canvas):
         )
 
 
-# The real device screen (4" SPI panel). The "device area" of the mock is
+# Default device screen (4" SPI panel). The "device area" of the mock is
 # clamped to exactly this, so what you see on a laptop is what fits the Pi.
+# Pass screen_size=(w, h) for a different panel - e.g. (800, 480) for the
+# official 7" touchscreen of the PSI Motor Control Unit box.
 DEVICE_W, DEVICE_H = 480, 320
 
 
 class ManualControlApp(tk.Tk):
-    def __init__(self, box, poll_interval_ms=90, mock=True):
+    def __init__(self, box, poll_interval_ms=90, mock=True, screen_size=None,
+                 font_scale=1.0, layout=None):
         super().__init__()
         self.box = box
         self.poll_interval_ms = poll_interval_ms
         self.mock = mock
+        self.screen_w, self.screen_h = screen_size or (DEVICE_W, DEVICE_H)
+        self.font_scale = float(font_scale)
         self.title("eco manual control" + (" - mock" if mock else ""))
         self.configure(bg=BG)
 
@@ -209,40 +214,44 @@ class ManualControlApp(tk.Tk):
         # ===== device screen: exactly what the 480x320 panel shows =====
         # fixed size + no propagation so it never grows past the real panel
         self.device = tk.Frame(
-            self, width=DEVICE_W, height=DEVICE_H, bg=BG,
+            self, width=self.screen_w, height=self.screen_h, bg=BG,
             highlightthickness=(1 if mock else 0), highlightbackground="#555",
         )
         self.device.pack(side="left")
         self.device.pack_propagate(False)
 
-        # breadcrumb (top)
+        # breadcrumb (top, full width in both layouts)
         self.breadcrumb = tk.Frame(self.device, bg=BG)
         self.breadcrumb.pack(anchor="w", fill="x", padx=6, pady=(4, 2))
 
-        # status strip (bottom): armed name + value, step -/+, mode, disarm
-        status = tk.Frame(self.device, bg=PANEL_BG)
-        status.pack(side="bottom", fill="x")
-        r1 = tk.Frame(status, bg=PANEL_BG)
-        r1.pack(fill="x", padx=6, pady=(4, 0))
-        tk.Label(r1, text="armed", fg=MUTED, bg=PANEL_BG, font=("Helvetica", 9)).pack(side="left")
-        tk.Label(r1, textvariable=self.target_var, fg=ARMED, bg=PANEL_BG, font=("Helvetica", 13, "bold")).pack(side="left", padx=(4, 8))
-        tk.Label(r1, textvariable=self.value_var, fg=TEXT, bg=PANEL_BG, font=("Helvetica", 17, "bold")).pack(side="right")
-        r2 = tk.Frame(status, bg=PANEL_BG)
-        r2.pack(fill="x", padx=6, pady=(0, 5))
-        tk.Button(r2, text="−", width=2, command=self._step_down, takefocus=False).pack(side="left")
-        tk.Label(r2, textvariable=self.step_var, fg=TEXT, bg=PANEL_BG, width=7, font=("Helvetica", 11)).pack(side="left", padx=2)
-        tk.Button(r2, text="+", width=2, command=self._step_up, takefocus=False).pack(side="left")
-        self.disarm_btn = tk.Button(r2, text="Disarm", command=self._disarm, state="disabled", takefocus=False)
-        self.disarm_btn.pack(side="right")
-        tk.Label(r2, textvariable=self.mode_var, fg=ACCENT, bg=PANEL_BG, font=("Helvetica", 9, "bold")).pack(side="right", padx=8)
+        # Layout: on a wide landscape panel (the 7" box, held landscape with
+        # the joystick/encoder to the RIGHT of the screen) the armed target
+        # and its live value belong on the right edge, next to the hand on
+        # the controls; the list gets the rest. On a small panel they stack
+        # (list above, one status strip below).
+        self.landscape = self.screen_w >= 640 if layout is None else (layout == "landscape")
+        body = tk.Frame(self.device, bg=BG)
+        body.pack(fill="both", expand=True)
 
-        # component list (fills the middle)
-        listwrap = tk.Frame(self.device, bg=BG)
-        listwrap.pack(fill="both", expand=True, padx=6, pady=2)
+        if self.landscape:
+            status = tk.Frame(body, bg=PANEL_BG, width=int(self.screen_w * 0.34))
+            status.pack(side="right", fill="y")
+            status.pack_propagate(False)
+            listwrap = tk.Frame(body, bg=BG)
+            listwrap.pack(side="left", fill="both", expand=True, padx=6, pady=2)
+            self._build_status_column(status)
+        else:
+            status = tk.Frame(body, bg=PANEL_BG)
+            status.pack(side="bottom", fill="x")
+            listwrap = tk.Frame(body, bg=BG)
+            listwrap.pack(fill="both", expand=True, padx=6, pady=2)
+            self._build_status_strip(status)
+
+        # component list (fills the rest)
         scroll = tk.Scrollbar(listwrap)
         scroll.pack(side="right", fill="y")
         self.listbox = tk.Listbox(
-            listwrap, bg=PANEL_BG, fg=TEXT, font=("DejaVu Sans Mono", 11),
+            listwrap, bg=PANEL_BG, fg=TEXT, font=self._mono(11),
             highlightthickness=0, selectbackground=ACCENT, selectforeground="#000",
             activestyle="none", yscrollcommand=scroll.set, takefocus=False,
         )
@@ -273,6 +282,53 @@ class ManualControlApp(tk.Tk):
         self.focus_set()
         self._render_nav()
         self._poll()
+
+    def _build_status_strip(self, status):
+        """Compact bottom strip: armed + value, step -/+, mode, disarm."""
+        r1 = tk.Frame(status, bg=PANEL_BG)
+        r1.pack(fill="x", padx=6, pady=(4, 0))
+        tk.Label(r1, text="armed", fg=MUTED, bg=PANEL_BG, font=self._font(9)).pack(side="left")
+        tk.Label(r1, textvariable=self.target_var, fg=ARMED, bg=PANEL_BG, font=self._font(13, "bold")).pack(side="left", padx=(4, 8))
+        tk.Label(r1, textvariable=self.value_var, fg=TEXT, bg=PANEL_BG, font=self._font(17, "bold")).pack(side="right")
+        r2 = tk.Frame(status, bg=PANEL_BG)
+        r2.pack(fill="x", padx=6, pady=(0, 5))
+        tk.Button(r2, text="\u2212", width=2, font=self._font(11), command=self._step_down, takefocus=False).pack(side="left")
+        tk.Label(r2, textvariable=self.step_var, fg=TEXT, bg=PANEL_BG, width=7, font=self._font(11)).pack(side="left", padx=2)
+        tk.Button(r2, text="+", width=2, font=self._font(11), command=self._step_up, takefocus=False).pack(side="left")
+        self.disarm_btn = tk.Button(r2, text="Disarm", font=self._font(10), command=self._disarm, state="disabled", takefocus=False)
+        self.disarm_btn.pack(side="right")
+        tk.Label(r2, textvariable=self.mode_var, fg=ACCENT, bg=PANEL_BG, font=self._font(9, "bold")).pack(side="right", padx=8)
+
+    def _build_status_column(self, status):
+        """Right-hand column for the landscape panel: everything the hand on
+        the physical controls needs to read while jogging, big and close."""
+        tk.Label(status, text="armed", fg=MUTED, bg=PANEL_BG, font=self._font(10)).pack(anchor="w", padx=8, pady=(8, 0))
+        tk.Label(status, textvariable=self.target_var, fg=ARMED, bg=PANEL_BG, font=self._font(15, "bold"),
+                 wraplength=int(self.screen_w * 0.30), justify="left").pack(anchor="w", padx=8)
+        tk.Label(status, textvariable=self.value_var, fg=TEXT, bg=PANEL_BG, font=self._font(26, "bold"),
+                 wraplength=int(self.screen_w * 0.30), justify="left").pack(anchor="w", padx=8, pady=(6, 2))
+        tk.Label(status, textvariable=self.mode_var, fg=ACCENT, bg=PANEL_BG, font=self._font(11, "bold"),
+                 wraplength=int(self.screen_w * 0.30), justify="left").pack(anchor="w", padx=8)
+
+        steprow = tk.Frame(status, bg=PANEL_BG)
+        steprow.pack(anchor="w", fill="x", padx=8, pady=(10, 0))
+        tk.Label(steprow, text="step", fg=MUTED, bg=PANEL_BG, font=self._font(10)).pack(side="left")
+        tk.Label(steprow, textvariable=self.step_var, fg=TEXT, bg=PANEL_BG, font=self._font(13)).pack(side="right")
+        btnrow = tk.Frame(status, bg=PANEL_BG)
+        btnrow.pack(anchor="w", fill="x", padx=8, pady=(2, 0))
+        tk.Button(btnrow, text="\u2212", font=self._font(15), width=3, command=self._step_down, takefocus=False).pack(side="left", expand=True, fill="x")
+        tk.Button(btnrow, text="+", font=self._font(15), width=3, command=self._step_up, takefocus=False).pack(side="right", expand=True, fill="x")
+
+        self.disarm_btn = tk.Button(status, text="Disarm", font=self._font(13), command=self._disarm,
+                                    state="disabled", takefocus=False)
+        self.disarm_btn.pack(side="bottom", fill="x", padx=8, pady=8)
+
+    def _font(self, size, *style):
+        """Font tuple scaled by font_scale (bigger text for finger-touch)."""
+        return ("Helvetica",) + (max(6, int(round(size * self.font_scale))),) + style
+
+    def _mono(self, size):
+        return ("DejaVu Sans Mono", max(6, int(round(size * self.font_scale))))
 
     def _bind_keys(self):
         self.bind_all("<KeyPress-Up>", lambda e: self._key_jog_press(1))
@@ -321,7 +377,7 @@ class ManualControlApp(tk.Tk):
             tk.Button(
                 self.breadcrumb, text=name, relief="flat", bg=BG, fg=ACCENT,
                 activebackground=BG, activeforeground=TEXT, bd=0, padx=2, takefocus=False,
-                font=("Helvetica", 10, "bold" if i == len(self.box.path_names) - 1 else "normal"),
+                font=self._font(10, "bold" if i == len(self.box.path_names) - 1 else "normal"),
                 command=lambda i=i: self._breadcrumb_jump(i),
             ).pack(side="left")
 

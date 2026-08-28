@@ -15,6 +15,7 @@ is --serial (Bluetooth RFCOMM or USB-gadget serial).
 """
 
 import argparse
+import os
 
 from .server import RemoteControlServer
 from .transport import SerialLineTransport, accept_tcp, listen_tcp
@@ -40,24 +41,37 @@ def main():
     src.add_argument("--bernina", action="store_true", help="serve the real bernina namespace")
     src.add_argument("--fake", action="store_true", help="serve the offline fake beamline (default)")
     link = ap.add_mutually_exclusive_group(required=True)
-    link.add_argument("--tcp", type=int, metavar="PORT", help="listen on 127.0.0.1:PORT (dev only)")
+    link.add_argument("--tcp", type=int, metavar="PORT", help="listen on PORT for a networked box")
     link.add_argument("--serial", metavar="DEV", help="serial device, e.g. /dev/rfcomm0 or /dev/ttyACM0")
+    ap.add_argument("--bind", default="127.0.0.1", metavar="HOST",
+                    help="address to listen on with --tcp (default 127.0.0.1; use 0.0.0.0 for a networked box)")
+    ap.add_argument("--token", metavar="STR", help="shared secret the box must send; required for a non-loopback --bind")
+    ap.add_argument("--token-file", metavar="PATH", help="read the shared secret from PATH (first line)")
     args = ap.parse_args()
+
+    token = args.token
+    if args.token_file:
+        with open(os.path.expanduser(args.token_file)) as fh:
+            token = fh.read().strip()
+    if args.tcp and args.bind not in ("127.0.0.1", "localhost") and not token:
+        ap.error("--bind on a network address requires --token or --token-file "
+                 "(this port can drive motors)")
 
     root, name = build_root(args)
 
     if args.serial:
         print(f"serving '{name}' over {args.serial} ...")
-        server = RemoteControlServer(root, SerialLineTransport(args.serial), root_name=name).start()
+        server = RemoteControlServer(root, SerialLineTransport(args.serial), root_name=name, token=token).start()
         server.wait()
         return
 
-    listener = listen_tcp("127.0.0.1", args.tcp)
-    print(f"serving '{name}' on 127.0.0.1:{args.tcp} (Ctrl-C to stop) ...")
+    listener = listen_tcp(args.bind, args.tcp)
+    print(f"serving '{name}' on {args.bind}:{args.tcp}"
+          f"{' (token required)' if token else ''} (Ctrl-C to stop) ...")
     while True:
         tr = accept_tcp(listener)
         print("client connected")
-        server = RemoteControlServer(root, tr, root_name=name).start()
+        server = RemoteControlServer(root, tr, root_name=name, token=token).start()
         server.wait()
         print("client disconnected")
 

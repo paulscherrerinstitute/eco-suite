@@ -12,6 +12,7 @@ use SerialLineTransport("/dev/rfcomm0"). No IP/WiFi involved.
 import os
 import socket
 import threading
+import time
 
 
 class LineTransport:
@@ -62,9 +63,10 @@ def socketpair_transports():
     return SocketLineTransport(a), SocketLineTransport(b)
 
 
-# --- TCP: for local two-process testing only. Production uses serial/BT
-# (WiFi/IP is off the table here); TCP over localhost or a USB-ethernet
-# gadget is fine for development. ---
+# --- TCP: the production link for an Ethernet/PoE-connected box (the PSI
+# Motor Control Unit box is powered and networked over one PoE cable), and
+# the two-process local testing link. Serial (Bluetooth RFCOMM / USB-gadget)
+# remains for battery-powered pendants with no network. ---
 def listen_tcp(host="127.0.0.1", port=0):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -80,6 +82,26 @@ def accept_tcp(listen_sock):
 
 def connect_tcp(host, port):
     return SocketLineTransport(socket.create_connection((host, port)))
+
+
+def connect_tcp_retry(host, port, interval=3.0, attempts=0, log=print):
+    """Connect, retrying until it succeeds (attempts=0 means forever).
+
+    The box autostarts on power-up over PoE, usually before - or between -
+    the eco sessions it talks to, so a one-shot connect would just die at
+    boot. Retrying makes "plug the cable in" the whole startup procedure.
+    """
+    tries = 0
+    while True:
+        tries += 1
+        try:
+            return connect_tcp(host, port)
+        except OSError as exc:
+            if attempts and tries >= attempts:
+                raise
+            if log:
+                log(f"connect to {host}:{port} failed ({exc}); retrying in {interval}s")
+            time.sleep(interval)
 
 
 class SerialLineTransport(LineTransport):

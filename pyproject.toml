@@ -79,6 +79,15 @@ gui = [
     "ipywidgets",
     "ipyevents",
     "qtpy",
+    # qtpy is only a shim over whichever Qt binding is present, so the binding
+    # itself has to be declared too -- and it must be one that ships
+    # QtWebEngine, since the native SVG panel window
+    # (eco.utilities.svg_interactor._build_qt_window) is a QWebEngineView.
+    # PyQt5 without PyQtWebEngine is exactly the broken combination that made
+    # `Assembly.show()` fall back to the browser view (qtpy defaults to PyQt5
+    # in a bare process, so it is not enough that some other binding works).
+    "PyQt5",
+    "PyQtWebEngine",
     "qt-material",
     "dash",
     "flask",

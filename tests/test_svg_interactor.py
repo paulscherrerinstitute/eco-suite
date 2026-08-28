@@ -36,17 +36,22 @@ def _make_shell(class_name, **attrs):
 
 
 class _FakeView:
-    def __init__(self, refresh_timer=None):
-        if refresh_timer is not None:
-            self._refresh_timer = refresh_timer
+    def __init__(self, dash_server=None):
+        if dash_server is not None:
+            self._dash_server = dash_server
 
 
-class _FakeTimer:
+class _FakeDashServer:
+    """Stand-in for the werkzeug server a *live* panel runs in the
+    background (see _run_dash_server): closing/undocking the view must
+    shut it down, or it keeps rebuilding the SVG -- and so keeps polling
+    EPICS -- for the rest of the session."""
+
     def __init__(self):
-        self.stopped = False
+        self.shutdown_called = False
 
-    def stop(self):
-        self.stopped = True
+    def shutdown(self):
+        self.shutdown_called = True
 
 
 def test_svg_viewer_handle_exposes_window():
@@ -55,14 +60,15 @@ def test_svg_viewer_handle_exposes_window():
     assert handle.window is view
 
 
-def test_svg_viewer_handle_stop_stops_the_refresh_timer_if_any():
-    timer = _FakeTimer()
-    handle = svg_interactor._SvgViewerHandle(_FakeView(refresh_timer=timer))
+def test_svg_viewer_handle_stop_shuts_down_the_live_dash_server_if_any():
+    server = _FakeDashServer()
+    handle = svg_interactor._SvgViewerHandle(_FakeView(dash_server=server))
     handle.stop()
-    assert timer.stopped is True
+    assert server.shutdown_called is True
 
 
-def test_svg_viewer_handle_stop_is_a_no_op_without_a_refresh_timer():
+def test_svg_viewer_handle_stop_is_a_no_op_without_a_live_dash_server():
+    # a static (non-live) panel never starts one
     handle = svg_interactor._SvgViewerHandle(_FakeView())
     handle.stop()  # must not raise
 
@@ -255,13 +261,26 @@ class _FakeSidecar:
 
 class _FakeThread:
     """threading.Thread stand-in that never actually starts the Dash
-    server -- these tests only care about the sidecar/display wiring."""
+    server -- these tests only care about the sidecar/display wiring.
 
-    def __init__(self, target=None, args=(), daemon=None):
-        pass
+    It does have to emulate the one side effect `launch_svg_viewer` now
+    waits on before it can display anything: `_run_dash_server` reporting
+    back the port it bound to, via `port_holder` (the port is OS-assigned,
+    so the URL isn't known until then). Without that the viewer correctly
+    gives up on a server that is never coming, and never gets as far as
+    the display/sidecar wiring these tests are about."""
+
+    FAKE_PORT = 8050
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+        self._kwargs = kwargs or {}
 
     def start(self):
-        pass
+        holder = self._kwargs.get("port_holder")
+        if holder is not None:
+            holder["port"] = self.FAKE_PORT
+            holder["server"] = object()
+            holder["ready"].set()
 
 
 @pytest.fixture(autouse=True)

@@ -1,0 +1,82 @@
+#!/bin/bash
+# Provision the PSI "Motor Control Unit" box (Pi 3B + 7" touchscreen +
+# MCP3008 joystick + KY-040 encoder, Ethernet/PoE) as an eco control box.
+#
+# Run ON THE PI, from the directory that contains the copied bundle:
+#     sudo ./manual_control/remote/pi_setup/setup_box.sh <pc-host> [port]
+#
+# It is idempotent - re-run it after copying a newer bundle.
+set -euo pipefail
+
+PC_HOST="${1:-}"
+PC_PORT="${2:-8791}"
+DEST=/opt/eco-control-box
+RUN_USER="${SUDO_USER:-pi}"
+
+if [[ -z "$PC_HOST" ]]; then
+    echo "usage: sudo $0 <pc-host-running-eco> [port]" >&2
+    exit 2
+fi
+if [[ $EUID -ne 0 ]]; then
+    echo "run with sudo" >&2
+    exit 2
+fi
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # .../manual_control/remote/pi_setup
+BUNDLE="$(cd "$HERE/../.." && pwd)"                        # .../manual_control
+if [[ ! -f "$BUNDLE/remote/pi_app.py" ]]; then
+    echo "cannot find the manual_control bundle next to this script" >&2
+    exit 1
+fi
+
+echo "== packages (Python 3 + Tk + SPI + GPIO; no eco, no EPICS) =="
+apt-get update
+apt-get install -y python3-tk python3-spidev python3-gpiozero
+
+echo "== enable SPI (the MCP3008 joystick ADC hangs off SPI0) =="
+if command -v raspi-config >/dev/null; then
+    raspi-config nonint do_spi 0
+else
+    grep -q '^dtparam=spi=on' /boot/firmware/config.txt 2>/dev/null \
+        || echo 'dtparam=spi=on' >> /boot/firmware/config.txt
+fi
+
+echo "== install the bundle to $DEST =="
+mkdir -p "$DEST"
+rm -rf "$DEST/manual_control"
+cp -r "$BUNDLE" "$DEST/manual_control"
+chown -R "$RUN_USER" "$DEST"
+
+echo "== link config =="
+cat > /etc/eco-control-box.env <<ENV
+PC_HOST=$PC_HOST
+PC_PORT=$PC_PORT
+ENV
+if [[ ! -f /etc/eco-control-box.token ]]; then
+    head -c 24 /dev/urandom | base64 | tr -d '/+=' > /etc/eco-control-box.token
+    echo "generated a new shared token"
+fi
+chmod 640 /etc/eco-control-box.token
+chown root:"$(id -gn "$RUN_USER")" /etc/eco-control-box.token
+
+echo "== autostart =="
+sed "s/^User=pi$/User=$RUN_USER/; s#/home/pi/.Xauthority#/home/$RUN_USER/.Xauthority#" \
+    "$HERE/eco-control-box.service" > /etc/systemd/system/eco-control-box.service
+systemctl daemon-reload
+systemctl enable eco-control-box
+
+cat <<DONE
+
+Done. Token (put the SAME string on the PC side):
+
+    $(cat /etc/eco-control-box.token)
+
+On the PC, inside or beside your eco session:
+
+    python -m eco.manual_control.remote.serve --bernina --tcp $PC_PORT \\
+        --bind 0.0.0.0 --token '$(cat /etc/eco-control-box.token)'
+
+Then on the box:  sudo systemctl start eco-control-box
+Logs:             journalctl -u eco-control-box -f
+A reboot is needed once if SPI was just enabled.
+DONE

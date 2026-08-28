@@ -1,19 +1,21 @@
-"""The pendant application: connect to the PC over the (Bluetooth by
-default) serial link, show the touchscreen GUI, wire in the physical
-encoder + joystick, and blank the backlight when idle to save battery.
+"""The control-box application: connect to the eco session on the PC, show
+the touchscreen GUI, wire in the physical encoder + joystick, and blank the
+backlight when idle (battery builds only).
 
-Runs on the Pi (fullscreen on the 4" display) and, unchanged, on a laptop
-for testing (hardware backend + backlight control simply stay inactive and
-you drive it by touch/keyboard).
+Two hardware targets, one program:
 
-    # on the device: Bluetooth link, fullscreen, blank after 60 s idle
-    python3 -m manual_control.remote.pi_app --serial /dev/rfcomm0 --fullscreen --idle-blank 60
+    # PSI "Motor Control Unit" box: Pi 3B, 7" touchscreen (800x480,
+    # landscape, controls on the right), MCP3008 joystick, PoE Ethernet
+    python3 -m manual_control.remote.pi_app --tcp pc-host 8791 \
+        --preset psi-mcu-box --size 800x480 --font-scale 1.4 \
+        --fullscreen --token-file /etc/eco-pendant.token
 
-    # USB-gadget-serial instead of Bluetooth:
-    python3 -m manual_control.remote.pi_app --serial /dev/ttyGS0 --fullscreen
+    # battery pendant (Pi Zero 2 W, 4" SPI panel, Bluetooth RFCOMM)
+    python3 -m manual_control.remote.pi_app --serial /dev/rfcomm0 \
+        --fullscreen --idle-blank 60
 
-    # laptop test against a PC serving over TCP:
-    python3 -m manual_control.remote.pi_app --tcp 127.0.0.1 8791
+    # laptop test against a PC serving over TCP (no hardware needed)
+    python3 -m manual_control.remote.pi_app --tcp 127.0.0.1 8791 --size 800x480
 """
 
 import argparse
@@ -22,32 +24,56 @@ from ..mock_gui import ManualControlApp
 from .client import RemoteControlClient
 from .pi_hardware import HardwareInput
 from .pi_screen import ScreenPower
-from .transport import SerialLineTransport, connect_tcp
+from .transport import SerialLineTransport, connect_tcp_retry
+
+
+def parse_size(text):
+    w, _, h = text.lower().partition("x")
+    return int(w), int(h)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="eco manual-control pendant app (Pi side)")
+    ap = argparse.ArgumentParser(description="eco manual-control box app (Pi side)")
     link = ap.add_mutually_exclusive_group(required=True)
     link.add_argument("--serial", metavar="DEV", help="serial device, e.g. /dev/rfcomm0 or /dev/ttyGS0")
-    link.add_argument("--tcp", nargs=2, metavar=("HOST", "PORT"), help="connect to HOST PORT (testing)")
+    link.add_argument("--tcp", nargs=2, metavar=("HOST", "PORT"), help="connect to HOST PORT (Ethernet/PoE box)")
+    ap.add_argument("--token", metavar="STR", help="shared secret the server requires")
+    ap.add_argument("--token-file", metavar="PATH", help="read the shared secret from PATH (first line)")
+    ap.add_argument("--preset", default=None, help="hardware wiring preset: psi-mcu-box | pendant")
+    ap.add_argument("--size", type=parse_size, default=None, metavar="WxH",
+                    help="panel size, e.g. 800x480 (default 480x320)")
+    ap.add_argument("--font-scale", type=float, default=1.0,
+                    help="scale all text (1.4 is comfortable for finger touch on the 7\" panel)")
+    ap.add_argument("--layout", choices=("landscape", "stacked"), default=None,
+                    help="force a layout (default: landscape for panels >= 640 px wide)")
     ap.add_argument("--fullscreen", action="store_true", help="fullscreen (for the device touchscreen)")
     ap.add_argument("--idle-blank", type=float, default=0, metavar="SEC",
-                    help="blank the backlight after SEC seconds idle (0 = never)")
+                    help="blank the backlight after SEC seconds idle (0 = never; battery builds)")
     args = ap.parse_args()
+
+    token = args.token
+    if args.token_file:
+        with open(args.token_file) as fh:
+            token = fh.read().strip()
 
     if args.serial:
         transport = SerialLineTransport(args.serial)
     else:
         host, port = args.tcp
-        transport = connect_tcp(host, int(port))
+        # Retry forever: the box autostarts on power-up (PoE) and must come
+        # back on its own when the eco session it serves is restarted.
+        transport = connect_tcp_retry(host, int(port))
 
-    client = RemoteControlClient(transport).start()
+    client = RemoteControlClient(transport, token=token).start()
     screen = ScreenPower(timeout=args.idle_blank)
-    hardware = HardwareInput(client, on_activity=screen.wake)
+    hardware = HardwareInput(client, on_activity=screen.wake, preset=args.preset)
 
-    # fullscreen on the real 480x320 panel = device layout (no mock mouse
-    # widgets, physical controls do the input); windowed = mock for laptops.
-    app = ManualControlApp(client, mock=not args.fullscreen)
+    # fullscreen on the real panel = device layout (no mock mouse widgets,
+    # physical controls do the input); windowed = mock for laptops.
+    app = ManualControlApp(
+        client, mock=not args.fullscreen, screen_size=args.size,
+        font_scale=args.font_scale, layout=args.layout,
+    )
     if args.fullscreen:
         app.attributes("-fullscreen", True)
         app.config(cursor="none")

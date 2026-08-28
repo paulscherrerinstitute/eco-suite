@@ -14,7 +14,7 @@ only ever carries the light traffic.
 import json
 
 # --- Pi -> PC : events (each ~30-80 bytes) ---
-EV_HELLO = "hello"
+EV_HELLO = "hello"  # {"token": "..."} when the server requires one
 EV_ROTATE = "rotate"  # {"dir": +1|-1}  encoder detent
 EV_PRESS = "press"  # encoder short press (OK)
 EV_LONG_PRESS = "long_press"  # encoder long press (disarm)

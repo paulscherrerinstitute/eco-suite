@@ -1,10 +1,123 @@
 # Raspberry Pi thin-client setup
 
 The Pi runs only the eco-free thin client (Python 3 + Tkinter). All eco /
-EPICS logic stays on the PC. The two talk over one serial line (Bluetooth
-RFCOMM in the field; TCP only for local testing).
+EPICS logic stays on the PC. The two talk over one line: **TCP over
+Ethernet** for a mains/PoE-powered box, or a serial line (Bluetooth RFCOMM,
+USB-gadget serial) for a battery-powered pendant. Nothing but the transport
+differs between them.
 
-## What goes on the Pi
+Two hardware targets are supported and both run the same code:
+
+| | PSI "Motor Control Unit" box | battery pendant |
+|---|---|---|
+| Board | Pi 3B | Pi Zero 2 W |
+| Screen | official 7", 800x480, landscape | 4" SPI, 480x320 |
+| Joystick ADC | **MCP3008 on SPI0** | ADS1115 on I2C |
+| Link / power | Ethernet + PoE (one cable) | Bluetooth RFCOMM + PiSugar |
+| Preset | `--preset psi-mcu-box` | `--preset pendant` (default) |
+
+---
+
+# A. The PSI "Motor Control Unit" box (Pi 3B, 7", PoE)
+
+Hardware built at PSI in 2018 for a stand-alone EPICS motor GUI; here only
+the **hardware** is reused - none of that original software. Wiring taken
+from its build report / Eagle schematic:
+
+| Signal | Where |
+|---|---|
+| Rotary encoder (KY-040) A / B / push | GPIO 5 / 6 / 13 |
+| Extra momentary button ("Taster") | GPIO 26 -> disarm |
+| Joystick VRX / VRY (analog) | MCP3008 **CH2 / CH1** |
+| Joystick push switch | MCP3008 **CH0** (not a GPIO) |
+| MCP3008 | SPI0: GPIO 7-11, 3V3, GND |
+| 7" touchscreen | DSI ribbon + I2C touch (GPIO 2/3) - leaves SPI0 free |
+
+The encoder pins happen to match the pendant defaults; everything else is
+covered by `--preset psi-mcu-box` (see `remote/pi_hardware.py:PRESETS`).
+
+## Install
+
+1. Flash **Raspberry Pi OS with desktop** (X is needed for the touchscreen
+   GUI) with Raspberry Pi Imager; set hostname, user and SSH in its
+   settings dialog. No Wi-Fi: the box is on Ethernet.
+2. Build the SD-card payload on the PC and copy it to the card's boot
+   partition:
+   ```
+   eco/manual_control/hardware/make_sdcard_payload.sh /media/<card>/bootfs <pc-host> 8791
+   ```
+3. Boot, then either use the one-shot `firstrun_eco.sh` hook (see its
+   header) or just ssh in and run:
+   ```
+   sudo mkdir -p /opt/eco-control-box
+   sudo tar -xzf /boot/firmware/eco_control_box.tar.gz -C /opt/eco-control-box
+   sudo /opt/eco-control-box/manual_control/remote/pi_setup/setup_box.sh <pc-host> 8791
+   ```
+   That installs `python3-tk`/`python3-spidev`/`python3-gpiozero`, enables
+   SPI, generates a shared token and enables `eco-control-box.service`.
+   Reboot once (SPI).
+
+## Run
+
+PC side - from **inside** your eco session (no cold import), or standalone:
+
+```python
+from eco.manual_control.remote.serve import RemoteControlServer   # in-session
+from eco.manual_control.remote.transport import listen_tcp, accept_tcp
+srv = RemoteControlServer(bernina.namespace, accept_tcp(listen_tcp("0.0.0.0", 8791)),
+                          root_name="bernina", token=open("/etc/eco-pendant.token").read().strip())
+srv.start()
+```
+
+```
+python -m eco.manual_control.remote.serve --bernina --tcp 8791     --bind 0.0.0.0 --token-file ~/.eco/pendant_token          # standalone
+```
+
+Box side (the systemd unit already does this):
+
+```
+python3 -m manual_control.remote.pi_app --tcp <pc-host> 8791     --token-file /etc/eco-control-box.token     --preset psi-mcu-box --size 800x480 --font-scale 1.4 --fullscreen
+```
+
+The box **connects out** to the PC and retries forever, so power-up order
+does not matter and it reconnects on its own after an eco restart.
+
+## Network / token
+
+The box needs a registered IP or DNS name on the PSI network, and the PC
+must accept connections on the chosen port. `--bind 0.0.0.0` **requires**
+`--token`/`--token-file`: this port drives real motors, and a plain
+listening socket on a facility network should not be usable by whoever
+finds it. The token is a guardrail against strays and mistakes, not
+encryption - the link is plaintext, like the EPICS traffic underneath it.
+
+## Layout on the 7" panel
+
+Held landscape with the joystick and encoder to the right of the screen,
+so `--size 800x480` selects the landscape layout: component list on the
+left (touch), and the armed target + big live value + step + Disarm in a
+column on the right edge, next to the hand on the controls. `--font-scale
+1.4` sizes the text for finger touch; `--layout stacked` forces the small
+panel layout instead.
+
+## Not used from the original box
+
+The 2018 software (`MotorControlUnitSwissFEL.py`, `EncoderButton.py`,
+PyQt4 + pyepics + `MotorNameFile.txt` on the Pi) is replaced entirely.
+No EPICS build, no pyepics, no motor list on the device: the box is a thin
+client and eco on the PC decides what exists and what may move - so the
+same box drives every Adjustable in the namespace, not just motor records,
+and the access-control gate in `eco/elements/access.py` still applies.
+
+---
+
+# B. Battery pendant (Pi Zero 2 W)
+
+Everything below is the wireless/battery design (4" panel, Bluetooth,
+PiSugar, printable enclosure). Sections B.1-B.2 also cover the generic
+"what goes on the Pi" / "how to update" points that apply to both boxes.
+
+## B.1 What goes on the Pi
 
 Nothing eco. Only:
 - `python3` and `python3-tk` (`sudo apt install python3-tk`)
@@ -63,7 +176,7 @@ sudo systemctl enable --now manual-control-client
 
 ---
 
-# Pi Zero 2 W pendant build (touchscreen + joystick + encoder)
+# B.2 Pi Zero 2 W pendant build (touchscreen + joystick + encoder)
 
 ## Link: Bluetooth (default) — keeps the USB port free to charge
 
