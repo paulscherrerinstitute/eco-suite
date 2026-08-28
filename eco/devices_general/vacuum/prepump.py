@@ -115,7 +115,7 @@ class PrepumpSystem(Assembly):
     """
 
     def __init__(self, name=None, gp=None, roots_pump=None, lines=None,
-                 p_target=1e-3, p_vent_target=500.0, vent_line_name="GN2"):
+                 p_target=0.5, p_vent_target=1000.0, vent_line_name="GN2"):
         super().__init__(name=name)
         self.p_target = p_target
         self.p_vent_target = p_vent_target
@@ -199,7 +199,7 @@ class PrepumpSystem(Assembly):
         return "vented" if self._is_vented(p) else "isolated"
 
     # ---- procedures ------------------------------------------------------
-    def pump_down(self, line, timeout=300.0, poll=1.0):
+    def pump_down(self, line, timeout=700.0, poll=1.0):
         """Pump down one channel.
 
         Close its vent valve, isolate every *other* channel (close their
@@ -225,6 +225,7 @@ class PrepumpSystem(Assembly):
             other.valve_prevac.close()
 
         line.valve_vent.close()
+        time.sleep(1)  # let the vent valve actually close before opening the pump valve
         line.valve_prevac.open()
 
         def restore_others():
@@ -254,7 +255,7 @@ class PrepumpSystem(Assembly):
         restore_others()
         return True
 
-    def vent(self, line, timeout=300.0, poll=1.0):
+    def vent(self, line, timeout=700.0, poll=1.0):
         """Vent one channel to atmosphere through the GN2 vent line.
 
         Make sure every *other* channel's vent valve is closed (only one
@@ -279,6 +280,7 @@ class PrepumpSystem(Assembly):
             other.valve_vent.close()
 
         line.valve_prevac.close()
+        time.sleep(1)  # let the pump valve actually close before opening the vent valve
         line.valve_vent.open()
 
         t0 = time.time()
@@ -290,7 +292,8 @@ class PrepumpSystem(Assembly):
                 return False
             self._activity = f"vent('{line.name}') running: G={_fmt_pressure(line.pressure())}"
             time.sleep(poll)
-
+        print(f"[prepump] '{line.name}' vented (G={line.pressure()}) -- waiting 60s for the channel to stabilize")
+        time.sleep(60)
         self._activity = f"vent('{line.name}') succeeded (G={_fmt_pressure(line.pressure())})"
         print(f"[prepump] '{line.name}' vented (G={line.pressure()})")
         line.valve_vent.close()
