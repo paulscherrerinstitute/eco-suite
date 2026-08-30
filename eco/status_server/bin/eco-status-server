@@ -1,0 +1,183 @@
+#!/bin/bash
+# eco status server (namespace mode) - start/stop/status wrapper.
+#
+# Canonical copy lives in the eco repo at eco/status_server/bin/; the copy in
+# /sf/bernina/bin is installed from there (see install-user-service).
+#
+# Runs in the FOREGROUND by default, which is what systemd's Type=simple
+# wants and what the accompanying user unit calls. Use `-b` to detach for
+# interactive use.
+#
+# Everything is overridable by environment, so the same script serves a
+# personal checkout, the shared checkout and the systemd unit unchanged:
+#
+#   ECO_STATUS_SERVER_CHECKOUT  eco checkout to run (prepended to PYTHONPATH)
+#   ECO_STATUS_SERVER_CONFIG    server config JSON
+#   ECO_STATUS_SERVER_PYTHON    interpreter (needs eco's full dependency set)
+#   ECO_STATUS_SERVER_URL       what `status`/`stop` talk to
+#   ECO_STATUS_SERVER_LOG       log file used by -b
+#
+# A file at /sf/bernina/config/eco_status_server/env (or
+# $ECO_STATUS_SERVER_ENV) is sourced first if it exists, so a site can set
+# those in one place without editing this script.
+set -euo pipefail
+
+ENV_FILE="${ECO_STATUS_SERVER_ENV:-/sf/bernina/config/eco_status_server/env}"
+# shellcheck source=/dev/null
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+
+CHECKOUT="${ECO_STATUS_SERVER_CHECKOUT:-/sf/bernina/code/gac-bernina/eco}"
+CONFIG="${ECO_STATUS_SERVER_CONFIG:-/sf/bernina/config/eco_status_server/bernina_namespace.json}"
+PYTHON="${ECO_STATUS_SERVER_PYTHON:-/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python}"
+URL="${ECO_STATUS_SERVER_URL:-http://$(hostname -s):8091}"
+LOG="${ECO_STATUS_SERVER_LOG:-$HOME/.eco/status_server_$(hostname -s).log}"
+
+# Matches only the running server, never this script or an ssh command line
+# that mentions it (the bracket keeps the pattern from matching itself).
+PGREP_PATTERN='[e]co\.status_server --mode'
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") <command> [options]
+
+  start [-b] [-- <extra args>]  run the server (foreground; -b to detach)
+  stop                          stop the running server on this host
+  restart                       stop, then start detached
+  status                        query $URL/health
+  wait [timeout]                block until the server reports ready
+  logs [-f]                     show the detached-mode log
+  config                        print the resolved configuration
+
+Environment (current values):
+  ECO_STATUS_SERVER_CHECKOUT=$CHECKOUT
+  ECO_STATUS_SERVER_CONFIG=$CONFIG
+  ECO_STATUS_SERVER_PYTHON=$PYTHON
+  ECO_STATUS_SERVER_URL=$URL
+  ECO_STATUS_SERVER_LOG=$LOG
+EOF
+}
+
+die() { echo "$(basename "$0"): $*" >&2; exit 1; }
+
+check_prereqs() {
+    [ -d "$CHECKOUT/eco" ] || die "no eco checkout at $CHECKOUT (set ECO_STATUS_SERVER_CHECKOUT)"
+    # Not fatal, but almost always the explanation when half the namespace
+    # fails to initialize: without the gateway list, Channel Access falls
+    # back to the local broadcast domain. A systemd unit inherits nothing,
+    # so this is the first thing to check there.
+    if [ -z "${EPICS_CA_ADDR_LIST:-}" ]; then
+        echo "$(basename "$0"): warning: EPICS_CA_ADDR_LIST is not set;" >&2
+        echo "  most components will fail to connect. See the EnvironmentFile" >&2
+        echo "  written by eco-status-server-install-user-service." >&2
+    fi
+    [ -r "$CONFIG" ] || die "no server config at $CONFIG (set ECO_STATUS_SERVER_CONFIG)"
+    [ -x "$PYTHON" ] || die "no interpreter at $PYTHON (set ECO_STATUS_SERVER_PYTHON)"
+}
+
+server_pid() { pgrep -f "$PGREP_PATTERN" | head -1; }
+
+cmd_start() {
+    local background=0
+    if [ "${1:-}" = "-b" ] || [ "${1:-}" = "--background" ]; then background=1; shift; fi
+    [ "${1:-}" = "--" ] && shift
+    check_prereqs
+    local pid; pid="$(server_pid || true)"
+    [ -n "$pid" ] && die "already running (pid $pid); use 'restart' or 'stop' first"
+
+    export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
+    if [ "$background" -eq 1 ]; then
+        mkdir -p "$(dirname "$LOG")"
+        # </dev/null matters: several eco components prompt for credentials
+        # on stdin during __init__, and a headless server must get EOF
+        # rather than block forever waiting for an answer nobody will type.
+        nohup "$PYTHON" -u -m eco.status_server --mode namespace \
+            --config "$CONFIG" "$@" </dev/null >>"$LOG" 2>&1 &
+        echo "started pid $! -> $LOG"
+        echo "the namespace init takes minutes; watch it with: $(basename "$0") wait"
+    else
+        exec "$PYTHON" -u -m eco.status_server --mode namespace \
+            --config "$CONFIG" "$@" </dev/null
+    fi
+}
+
+cmd_stop() {
+    local pid; pid="$(server_pid || true)"
+    [ -z "$pid" ] && { echo "not running"; return 0; }
+    kill "$pid"
+    for _ in $(seq 1 30); do
+        sleep 1
+        pgrep -f "$PGREP_PATTERN" >/dev/null || { echo "stopped (was pid $pid)"; return 0; }
+    done
+    die "pid $pid did not exit after 30 s"
+}
+
+cmd_status() {
+    local pid; pid="$(server_pid || true)"
+    if [ -n "$pid" ]; then echo "process: running, pid $pid"; else echo "process: not running on $(hostname -s)"; fi
+    # urllib rather than curl|python: the health formatting is a real
+    # program, and quoting it through a shell pipeline is how it silently
+    # turns into "no answer" the first time someone edits it.
+    # `|| true`: a server that is not up yet is a normal state for this
+    # command, and under `set -e` a non-zero exit here would abort the
+    # `wait` loop that calls it.
+    "$PYTHON" - "$URL" <<'PYEOF' || true
+import json, sys, urllib.request
+
+url = sys.argv[1].rstrip("/") + "/health"
+try:
+    with urllib.request.urlopen(url, timeout=15) as r:
+        h = json.load(r)
+except Exception as exc:
+    print("health:  no answer from %s (%s)" % (url, exc))
+    raise SystemExit(1)
+
+print("state:   {state}  (generation {generation}, up {up:.1f} min)".format(
+    state=h["state"], generation=h["generation"], up=h["uptime_s"] / 60))
+print("init:    {i}/{t} components, {f} failed".format(
+    i=h["n_initialized"], t=h["n_target_names"], f=h["n_failed"]))
+print("serving: {d} status detectors, {m} monitorable".format(
+    d=h["n_direct_read"], m=h.get("n_monitorable")))
+print("process: {r:.0f} MB, {t} threads, {c:.0f} s cpu".format(
+    r=h.get("rss_mb") or 0, t=h.get("n_threads"), c=h.get("cpu_seconds") or 0))
+if h.get("failed_names"):
+    print("failed:  " + ", ".join(h["failed_names"]))
+for rec in h.get("recordings", []):
+    if rec.get("running"):
+        print("recording {id}: {u} updates, {s} stored".format(
+            id=rec["recording_id"], u=rec["n_updates"], s=rec["n_stored"]))
+PYEOF
+}
+
+is_ready() {
+    "$PYTHON" - "$URL" <<'PYEOF' >/dev/null 2>&1
+import json, sys, urllib.request
+with urllib.request.urlopen(sys.argv[1].rstrip("/") + "/health", timeout=15) as r:
+    raise SystemExit(0 if json.load(r).get("ready") else 1)
+PYEOF
+}
+
+cmd_wait() {
+    # split, not `local a=.. b=$((a))`: under `set -u` bash evaluates the
+    # arithmetic before the first assignment is visible, and the command
+    # fails with "timeout: unbound variable".
+    local timeout="${1:-1800}"
+    local end=$((SECONDS + timeout))
+    while [ $SECONDS -lt $end ]; do
+        if is_ready; then cmd_status; return 0; fi
+        cmd_status | sed -n '2p'
+        sleep 15
+    done
+    die "not ready after ${timeout}s"
+}
+
+case "${1:-}" in
+    start)   shift; cmd_start "$@" ;;
+    stop)    cmd_stop ;;
+    restart) cmd_stop; shift; cmd_start -b "$@" ;;
+    status)  cmd_status ;;
+    wait)    shift; cmd_wait "$@" ;;
+    logs)    shift; [ "${1:-}" = "-f" ] && tail -f "$LOG" || tail -n 100 "$LOG" ;;
+    config)  usage ;;
+    ""|-h|--help|help) usage ;;
+    *)       usage; exit 2 ;;
+esac

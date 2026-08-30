@@ -1,69 +1,323 @@
-"""Thin client for the status/monitor server, meant as a drop-in
-alternative to the direct-CA-fanout calls in eco.acquisition.daq_client.
+"""Thin client for the namespace status/monitor server.
 
-This module is not imported anywhere yet - it exists so the REST calls a
-future daq_client integration would make are visible and reviewable as
-actual code, not just prose in DESIGN.md. See DESIGN.md, section
-"Illustrative integration sketch", for how this would replace the body of
-Daq.append_start_status_to_scan / Daq.append_status_to_scan_and_store.
+This is what ``eco.acquisition.daq_client.Daq`` talks to when it is
+constructed with ``status_server="http://<host>:<port>"`` - see
+``Daq.init_namespace`` / ``Daq.append_start_status_to_scan``. It is also
+usable standalone from any eco session to inspect or drive a server:
+
+    from eco.status_server.client import StatusServerClient
+    c = StatusServerClient("http://saresb-cons-04:8091")
+    c.health()
+    c.wait_ready(timeout=900, progress=True)
+    c.get_status()                      # same dict as namespace.get_status()
+    c.reinit(mode="failed", wait=True)  # retry components that failed
 """
 
 from __future__ import annotations
 
+import time
+
 import requests
 
 
-class StatusServerClient:
-    def __init__(self, base_url: str, timeout: float = 5.0):
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+class StatusServerError(RuntimeError):
+    pass
 
-    def health(self) -> dict:
-        r = requests.get(f"{self.base_url}/health", timeout=self.timeout)
+
+class StatusServerNotReady(StatusServerError):
+    def __init__(self, health):
+        self.health = health or {}
+        super().__init__(
+            f"status server is '{self.health.get('state', 'unknown')}': "
+            f"{self.health.get('busy_reason')}"
+        )
+
+
+class StatusServerClient:
+    def __init__(self, base_url: str, timeout: float = 10.0,
+                 snapshot_timeout: float = 180.0):
+        self.base_url = base_url.rstrip("/")
+        # Two timeouts on purpose: /health and the admin routes answer in
+        # milliseconds and a short timeout is what makes "the server is
+        # down" fail fast, while a snapshot is a full get_status() fan-out
+        # over ~14k channels and legitimately takes 10-20 s on bernina. One
+        # shared 10 s timeout made every real snapshot fail.
+        self.timeout = timeout
+        self.snapshot_timeout = snapshot_timeout
+
+    # -- low level ---------------------------------------------------------
+
+    def _get(self, path, timeout=None):
+        r = requests.get(f"{self.base_url}{path}", timeout=timeout or self.timeout)
         r.raise_for_status()
         return r.json()
+
+    def _post(self, path, body=None, timeout=None, ok_codes=(200, 202)):
+        r = requests.post(
+            f"{self.base_url}{path}", json=body or {}, timeout=timeout or self.timeout
+        )
+        if r.status_code == 503:
+            raise StatusServerNotReady(r.json())
+        if r.status_code not in ok_codes:
+            r.raise_for_status()
+        return r.json()
+
+    # -- state -------------------------------------------------------------
+
+    def health(self) -> dict:
+        return self._get("/health")
+
+    def is_ready(self) -> bool:
+        try:
+            return bool(self.health().get("ready"))
+        except requests.RequestException:
+            return False
+
+    def names(self) -> dict:
+        return self._get("/names")
+
+    def failures(self) -> dict:
+        return self._get("/failures")["failures"]
+
+    def wait_ready(self, timeout=1800, poll=2.0, progress=False,
+                   min_generation=None, instance_id_not=None):
+        """Block until the server reports ready.
+
+        Returns the final /health body. Raises TimeoutError if it does not
+        get there in `timeout` seconds.
+
+        min_generation: also require ``generation >= min_generation`` - use
+        after asking for a reinit, so a server that has not *started* the
+        rebuild yet (still reporting the previous ready state) is not
+        mistaken for one that has finished it.
+        instance_id_not: also require a different ``instance_id`` - used
+        after /admin/restart, where the new process starts at generation 0.
+        """
+        deadline = time.time() + timeout
+        last_line = None
+        while True:
+            try:
+                h = self.health()
+            except requests.RequestException as exc:
+                h = None
+                if progress:
+                    line = f"waiting for {self.base_url} ({exc.__class__.__name__})"
+                    if line != last_line:
+                        print(line, flush=True)
+                        last_line = line
+            if h is not None:
+                ok = h.get("ready")
+                if ok and min_generation is not None:
+                    ok = (h.get("generation") or 0) >= min_generation
+                if ok and instance_id_not is not None:
+                    ok = h.get("instance_id") != instance_id_not
+                if ok:
+                    if progress:
+                        print(
+                            f"status server ready: {h.get('n_initialized')}/"
+                            f"{h.get('n_target_names')} components, "
+                            f"{h.get('n_monitored')} monitored, "
+                            f"{h.get('n_failed')} failed",
+                            flush=True,
+                        )
+                    return h
+                if progress:
+                    line = (
+                        f"{h.get('state')}: {h.get('n_initialized')}/"
+                        f"{h.get('n_target_names')} initialized"
+                        f" ({h.get('n_failed')} failed)"
+                    )
+                    if line != last_line:
+                        print(line, flush=True)
+                        last_line = line
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"status server at {self.base_url} not ready after "
+                    f"{timeout} s (last health: {h})"
+                )
+            time.sleep(poll)
+
+    # -- status ------------------------------------------------------------
+
+    def get_status(self, allow_stale=False) -> dict:
+        """Return the same dict shape as ``namespace.get_status(base=None)``."""
+        return self.snapshot(allow_stale=allow_stale)
 
     def snapshot(
         self,
         pgroup: str = None,
         run_number: int = None,
-        aliases: list[str] = None,
         save: bool = False,
         key: str = "status_run_start",
+        allow_stale: bool = False,
+        write_async: bool = False,
+        max_workers: int = None,
+        timeout: float = None,
     ) -> dict:
-        body = {"aliases": aliases, "save": save, "key": key}
+        body = {"save": save, "key": key, "allow_stale": allow_stale,
+                "write_async": write_async}
+        if max_workers:
+            body["max_workers"] = int(max_workers)
         if save:
             body["pgroup"] = pgroup
             body["run_number"] = run_number
-        r = requests.post(
-            f"{self.base_url}/status/snapshot", json=body, timeout=self.timeout
+        return self._post(
+            "/status/snapshot",
+            body,
+            timeout=timeout or self.snapshot_timeout,
+            ok_codes=(200,),
         )
-        r.raise_for_status()
-        return r.json()
 
-    def start_recording(self, recording_id: str, aliases: list[str] = None) -> dict:
+    def write_job(self, job_id: str) -> dict:
+        return self._get(f"/status/job/{job_id}")["job"]
+
+    def wait_write_job(self, job_id: str, timeout=60, poll=0.2) -> dict:
+        deadline = time.time() + timeout
+        while True:
+            job = self.write_job(job_id)
+            if job["state"] != "running":
+                if job["state"] == "error":
+                    raise StatusServerError(
+                        f"server-side status write failed: {job.get('error')}"
+                    )
+                return job
+            if time.time() > deadline:
+                raise TimeoutError(f"status write job {job_id} unfinished after {timeout} s")
+            time.sleep(poll)
+
+    # -- recording ---------------------------------------------------------
+
+    def monitorable_count(self) -> int:
+        return self._get("/recording")["n_monitorable"]
+
+    def start_recording(self, recording_id=None, names=None, mode="all",
+                        min_interval=0.0, sample_interval=0.1,
+                        max_points_per_channel=100_000,
+                        max_value_elements=None,
+                        subscription_mask=None) -> dict:
+        """Start monitoring every monitorable status channel on the server.
+
+        mode:
+          "all"      - store every CA update (truest, unbounded).
+          "throttle" - store at most one point per `min_interval` per
+                       channel. Cuts stored data, not the update rate.
+          "sample"   - keep only the latest value per channel and copy all
+                       of them onto a fixed `sample_interval` grid. Bounded
+                       memory, constant per-update cost, common time base.
+
+        max_value_elements caps how big a single value may be to be stored,
+        which is how you keep waveform channels out: measured on bernina,
+        two 8000-sample digitizer waveforms were 204 MB of a 239 MB
+        three-minute recording, against 8 MB for all 7 677 scalar channels
+        put together.
+
+        subscription_mask="log" additionally subscribes to the IOC's archive
+        deadband stream (DBE_LOG) instead of DBE_VALUE - the only option
+        here that reduces how often the IOC actually sends.
+        """
+        body = {
+            "recording_id": recording_id,
+            "names": list(names) if names is not None else None,
+            "mode": mode,
+            "min_interval": min_interval,
+            "sample_interval": sample_interval,
+            "max_points_per_channel": max_points_per_channel,
+            "max_value_elements": max_value_elements,
+            "subscription_mask": subscription_mask,
+        }
+        return self._post("/recording/start", body, ok_codes=(200, 202))
+
+    def recording(self, recording_id, channels=False) -> dict:
+        suffix = "?channels=1" if channels else ""
+        return self._get(f"/recording/{recording_id}{suffix}")
+
+    def recordings(self) -> list:
+        return self._get("/recording")["recordings"]
+
+    def stop_recording(self, recording_id, pgroup=None, run_number=None,
+                       save=True, filename="monitors.esc.h5",
+                       include_data=False, drop=True, timeout=None) -> dict:
+        """Stop a recording and (by default) have the server write it as one
+        escape ArrayTimestamps per channel into the run's aux directory."""
+        body = {
+            "recording_id": recording_id,
+            "save": save,
+            "filename": filename,
+            "include_data": include_data,
+            "drop": drop,
+        }
+        if save:
+            body["pgroup"] = pgroup
+            body["run_number"] = run_number
+        return self._post(
+            "/recording/stop", body,
+            timeout=timeout or self.snapshot_timeout, ok_codes=(200,),
+        )
+
+    # -- admin -------------------------------------------------------------
+
+    def reinit(self, mode="restart", names=None, reload_modules=False,
+               new_names=None, wait=True, timeout=1800, progress=True,
+               delay=0.5):
+        """Rebuild the server's namespace.
+
+        mode="restart" (the default) re-execs the whole server process: the
+        namespace, every eco module and every CA connection are thrown away
+        and built again from current source. It is the only mode that is
+        unconditionally correct - the in-process modes below cannot unload
+        code that live objects still reference - and it costs a full
+        init_all() (minutes).
+
+        The cheaper in-process modes, when a full restart is not warranted:
+        "failed" (retry only components that failed - the "the IOC is back
+        now" case), "names" (rebuild the given names), "full" (rebuild the
+        whole target set), "init" (only initialize what is still lazy),
+        "reimport" (drop every eco.* module and re-import - see
+        NamespaceMonitorStore.start_reinit for what that can and cannot
+        reclaim).
+
+        Waits for the rebuild to finish by default; pass wait=False to fire
+        and poll yourself.
+        """
+        if mode == "restart":
+            return self.restart(wait=wait, timeout=timeout, progress=progress,
+                                delay=delay)
+        before = self.health()
+        body = {"mode": mode, "reload_modules": reload_modules}
+        if names is not None:
+            body["names"] = list(names)
+        if new_names is not None:
+            body["new_names"] = list(new_names)
         r = requests.post(
-            f"{self.base_url}/recording/start",
-            json={"recording_id": recording_id, "aliases": aliases},
+            f"{self.base_url}/admin/reinit", json=body, timeout=self.timeout
+        )
+        if r.status_code == 409:
+            raise StatusServerNotReady(r.json())
+        r.raise_for_status()
+        started = r.json()
+        if not wait:
+            return started
+        return self.wait_ready(
+            timeout=timeout,
+            progress=progress,
+            min_generation=(before.get("generation") or 0) + 1,
+        )
+
+    def restart(self, wait=False, timeout=1800, progress=False, delay=0.5):
+        """Re-exec the server process - the only way to pick up edits to
+        eco's core or to the namespace's own assembly module."""
+        before = self.health()
+        r = requests.post(
+            f"{self.base_url}/admin/restart", json={"delay": delay},
             timeout=self.timeout,
         )
         r.raise_for_status()
-        return r.json()
-
-    def stop_recording(
-        self,
-        recording_id: str,
-        pgroup: str = None,
-        run_number: int = None,
-        save: bool = True,
-        filename: str = "monitors.esc.h5",
-    ) -> dict:
-        body = {"recording_id": recording_id, "save": save, "filename": filename}
-        if save:
-            body["pgroup"] = pgroup
-            body["run_number"] = run_number
-        r = requests.post(
-            f"{self.base_url}/recording/stop", json=body, timeout=self.timeout
+        if not wait:
+            return r.json()
+        # Give the old process time to actually go away first, otherwise the
+        # very first poll can still be answered by it.
+        time.sleep(max(delay, 0.5) + 0.5)
+        return self.wait_ready(
+            timeout=timeout, progress=progress,
+            instance_id_not=before.get("instance_id"),
         )
-        r.raise_for_status()
-        return r.json()

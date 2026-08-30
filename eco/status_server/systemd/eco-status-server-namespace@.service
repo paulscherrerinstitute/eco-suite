@@ -16,20 +16,29 @@ Group=daq-bernina
 # IMPORTANT: this mode imports the full eco stack (from eco.bernina.bernina
 # import namespace) and calls namespace.init_all() - it needs a Python
 # environment with eco's full dependency set (datahub, escape, bsread, ...),
-# e.g. the sfb312 conda env used while testing this, not the lighter
-# "default" env the registry mode gets by with. Adjust ExecStart below
-# to whichever environment actually has those installed, plus flask
+# e.g. the Bernina pixi environment, not a lighter one. Adjust ExecStart
+# below to whichever environment actually has those installed, plus flask
 # (not part of eco's existing dependencies - see DESIGN.md section 9).
 #
-# Startup can take well over a minute (namespace.init_all() - see
-# DESIGN.md sections 12.3 and 13) - the service is not "up" from
-# systemd's point of view until that finishes; increase TimeoutStartSec
-# if systemd gives up on startup too early.
-ExecStart=/sf/bernina/applications/mm/envs/sfb312/bin/python -m eco.status_server --mode namespace --config /etc/eco-status-server/%i_namespace.json
-TimeoutStartSec=600
+# The port is bound immediately and /health answers from the first second;
+# namespace.init_all() then runs on a background thread (measured on
+# bernina: 4-11 minutes for the ~87 required components, depending on how
+# many need a retry pass). So Type=simple is correct and there is no need
+# for a long TimeoutStartSec: "started" here means "answering /health with
+# state=initializing", and clients wait for state=ready themselves.
+#
+# The account matters twice: it writes status.json into
+# /sf/<instrument>/data/<pgroup>/res/run_data/daq/runNNNN/aux (so it needs
+# pgroup write access), and several bernina components authenticate to
+# auxiliary machines over SSH during __init__ (so its SSH credentials have
+# to be in place, non-interactively).
+ExecStart=/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python -m eco.status_server --mode namespace --config /etc/eco-status-server/%i_namespace.json
 
 Restart=on-failure
 RestartSec=5
+
+# `kill -USR1 <mainpid>` dumps every thread's stack into the journal - the
+# way to find out which component a stuck initialization is sitting in.
 
 [Install]
 WantedBy=multi-user.target

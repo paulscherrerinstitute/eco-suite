@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import importlib
 import importlib.util
 import os
@@ -29,6 +30,8 @@ from inspect import signature
 from simple_term_menu import TerminalMenu
 
 import traceback
+
+logger = logging.getLogger(__name__)
 
 
 def _is_notebook():
@@ -154,6 +157,34 @@ def init_name_obj(obj, args, kwargs, name=None):
         return obj(*args, **kwargs)
 
 
+def _repr_without_initializing(value):
+    """repr() for the manual-instantiation hint, minus the side effects.
+
+    This string is built on *every* component initialization, and its
+    arguments routinely include other namespace components that are still
+    lazy proxies. ``Proxy.__repr__`` resolves - i.e. constructs the real
+    device - so formatting a diagnostic string silently initialized whatever
+    the component was passed. Caught by a SIGUSR1 thread dump on the status
+    server: building ``att`` was stuck inside ``format_manual_instantiation``
+    -> ``Proxy.__repr__`` -> ``init_local``, constructing ``xp``.
+
+    ``Proxy.__class__`` is already shy about this (see :class:`Proxy`), so
+    ``isinstance`` here cannot resolve anything either; ``__resolved__``
+    reports whether the factory has run without triggering it.
+    """
+    try:
+        if isinstance(value, Proxy_orig) and not object.__getattribute__(
+            value, "__resolved__"
+        ):
+            return "<namespace component, not yet initialized>"
+    except Exception:
+        pass
+    try:
+        return repr(value)
+    except Exception as exc:
+        return f"<unreprable {type(value).__name__}: {exc}>"
+
+
 def format_manual_instantiation(
     obj_factory, args, kwargs, name=None, accepts_name=False, module_name=None
 ):
@@ -172,8 +203,9 @@ def format_manual_instantiation(
     if accepts_name:
         call_kwargs["name"] = name
 
-    call_parts = [repr(arg) for arg in args] + [
-        f"{key}={repr(value)}" for key, value in call_kwargs.items()
+    call_parts = [_repr_without_initializing(arg) for arg in args] + [
+        f"{key}={_repr_without_initializing(value)}"
+        for key, value in call_kwargs.items()
     ]
     call_text = f"{obj_name}({', '.join(call_parts)})"
 
@@ -678,12 +710,20 @@ class Namespace(Assembly):
         up by name from the Namespace object directly, e.g. for a UI
         browsing this namespace's registered names. Same
         lazy-or-failed-or-initialized resolution reinitialize() itself
-        uses internally."""
-        return (
-            self.lazy_items.get(name)
-            or self.failed_items.get(name)
-            or self.initialized_items.get(name)
-        )
+        uses internally.
+
+        Deliberately membership tests, not `a.get(n) or b.get(n)`: `or`
+        evaluates truthiness, and truthiness of a still-lazy Proxy resolves
+        it - i.e. builds the real device just to look it up, and re-raises
+        the stored exception for an item that previously failed. (A
+        FailedComponent is falsy too, so the chain would also silently skip
+        past it.) Found the hard way: it made the status server's
+        "reinitialize whatever failed" call raise the very failure it was
+        trying to clear."""
+        for items in (self.lazy_items, self.failed_items, self.initialized_items):
+            if name in items:
+                return items[name]
+        return None
 
     def _timeout_error(self, name, init_timeout, factory_desc=""):
         """Build a helpful exception for the lazy-init waiting/timeout path.
@@ -779,11 +819,10 @@ class Namespace(Assembly):
         results = {}
         reloaded_modules = set()
         for name in names:
-            proxy = (
-                self.lazy_items.get(name)
-                or self.failed_items.get(name)
-                or self.initialized_items.get(name)
-            )
+            # see resolve_item(): membership tests, never `or` - truthiness
+            # of a lazy proxy resolves it and re-raises a stored failure,
+            # which is exactly the case reinitialize() exists to fix.
+            proxy = self.resolve_item(name)
             if proxy is None:
                 raise KeyError(f"'{name}' is not a known namespace item.")
 
@@ -1088,6 +1127,7 @@ class Namespace(Assembly):
         print_summary,
         starttime,
         log,
+        N_cycles=4,
     ):
         """Single concurrent, CA-context-safe pass over `names_to_init`,
         retrying only names that lost a race to initialize a shared
@@ -1100,6 +1140,17 @@ class Namespace(Assembly):
         from background=False): a background thread has no caller left to
         catch it, so a genuinely-failed name there is always just recorded
         via `giveup_failed`, same as when raise_errors=False.
+
+        `N_cycles` caps how many times that retry loop may run. It has to be
+        capped: a name can raise IsInitialisingError on every attempt (it is
+        raised on a `init_timeout` expiry while another thread builds the
+        same name, and a build legitimately slower than `init_timeout` -
+        several bernina components take 20-60 s - hits that every round),
+        and an uncapped loop then never terminates. Observed for real:
+        a status-server init sat at "76 of 87" for over ten minutes,
+        cycling four names forever. Names still pending when the cap is
+        reached are treated like any other failure (`giveup_failed`), i.e.
+        reported rather than retried silently for ever.
         """
         cap = self._make_output_capture(capture_output)
         if cap.enabled:
@@ -1127,10 +1178,12 @@ class Namespace(Assembly):
 
         first_exception = None
         pending = set(names_to_init)
+        cycles_left = max(int(N_cycles), 1)
         with cap, ThreadPoolExecutor(
             max_workers=max_workers, initializer=_thread_initializer
         ) as exc:
-            while pending:
+            while pending and cycles_left:
+                cycles_left -= 1
                 futs = {
                     exc.submit(
                         self.init_name,
@@ -1155,6 +1208,22 @@ class Namespace(Assembly):
                         if first_exception is None:
                             first_exception = exc_
                 pending = retry & (self.all_names - self.initialized_names)
+
+        if pending:
+            # A warning rather than log(): log() is silenced by silent=True,
+            # which is exactly how a long-running service calls this, and
+            # "these components were given up on" is the one thing from that
+            # pass that must not be silent.
+            logger.warning(
+                "Giving up on %d name(s) still reporting an in-progress "
+                "initialization after %d cycles: %s",
+                len(pending), N_cycles, ", ".join(sorted(pending)),
+            )
+            log(
+                f"Giving up on {len(pending)} name(s) still reporting an "
+                f"in-progress initialization after {N_cycles} cycles: "
+                + ", ".join(sorted(pending))
+            )
 
         if giveup_failed:
             failed_names = names_to_init.intersection(self.lazy_names)
@@ -1243,6 +1312,10 @@ class Namespace(Assembly):
         background_max_workers : int
             Worker count used only when `background=True`; `max_workers`
             is used only when `background=False`.
+        N_cycles : int (default 4)
+            Maximum number of retry passes over names that reported an
+            in-progress initialization (IsInitialisingError). Caps what
+            would otherwise be an unbounded loop - see `_run_init_pass`.
         """
 
         def log(*args, **kwargs):
@@ -1275,6 +1348,7 @@ class Namespace(Assembly):
                         print_summary,
                         starttime,
                         log,
+                        N_cycles,
                     )
                 finally:
                     self.silently_initializing = False
@@ -1299,6 +1373,7 @@ class Namespace(Assembly):
                 print_summary,
                 starttime,
                 log,
+                N_cycles,
             )
         finally:
             self.silently_initializing = False

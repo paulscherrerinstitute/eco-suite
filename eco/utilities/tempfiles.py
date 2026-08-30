@@ -24,3 +24,21 @@ def user_temp_svg_path(prefix, name):
     return os.path.join(
         tempfile.gettempdir(), f"{prefix}_{getpass.getuser()}_{name}.svg"
     )
+
+
+def user_temp_path(name):
+    """A stable, per-user temp file path (``<stem>_<user><ext>`` in the OS temp
+    dir) for a fixed-name file several accounts on the same host would
+    otherwise fight over.
+
+    Beyond the ownership problem described in :func:`user_temp_svg_path`,
+    permission bits alone cannot rescue a *shared* fixed name under ``/tmp``:
+    the temp dir is world-writable and sticky, so the kernel's
+    ``fs.protected_regular`` (default on RHEL 9) refuses to open another
+    user's regular file there for writing even when it is group-writable and
+    the caller is in that group. Namespacing by username is the only thing
+    that reliably works in ``/tmp``; a genuinely shared file belongs in a
+    setgid, group-writable directory outside it.
+    """
+    stem, ext = os.path.splitext(name)
+    return os.path.join(tempfile.gettempdir(), f"{stem}_{getpass.getuser()}{ext}")

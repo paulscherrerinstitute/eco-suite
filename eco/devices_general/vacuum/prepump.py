@@ -250,7 +250,7 @@ class PrepumpSystem(Assembly):
                 # so line1_usd.pump_down() works regardless of which form
                 # built it.
                 line.prepump_system = self
-            self._append(line, name=lname, is_display=True, is_status=True)
+            self._append(line, name=lname, is_display='recursive', is_status=True)
             self._line_names.append(lname)
 
     # ---- helpers -------------------------------------------------------

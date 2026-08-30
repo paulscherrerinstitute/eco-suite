@@ -2,6 +2,20 @@
   "module_name": "eco.bernina.bernina",
   "attr_name": "namespace",
   "init_required_only": true,
+  "exclude_names": [
+    "elog",
+    "scilog",
+    "daq",
+    "scans",
+    "opa_he"
+  ],
   "instrument": "bernina",
-  "port": 8091
+  "host": "0.0.0.0",
+  "port": 8091,
+  "init_workers": 8,
+  "init_cycles": 4,
+  "init_retry_passes": 2,
+  "read_workers": 20,
+  "use_monitors": false,
+  "retry_workers": 1
 }

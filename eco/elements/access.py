@@ -36,6 +36,14 @@ layer becomes meaningful again.
 
 The whole mechanism is **off by default** (``enforce = False``): it audits (if
 enabled) but never blocks until a beamline opts in.
+
+Audit trail location
+--------------------
+:data:`AUDIT_PATH` defaults to a *per-user* file in the OS temp dir, because a
+single fixed name under ``/tmp`` is unusable across the accounts that share a
+console - see the comment there. Set ``ECO_ACCESS_AUDIT`` to a path in a
+setgid, group-writable directory on the beamline share for one trail shared by
+everyone.
 """
 
 import getpass
@@ -45,6 +53,8 @@ import os
 import threading
 import time
 from pathlib import Path
+
+from ..utilities.tempfiles import user_temp_path
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +73,27 @@ audit = True
 # What to do when NO acl rule matches a name at all: "allow" or "deny".
 default_policy = "allow"
 
+# Audit-sink state, managed by _log_audit(): the path actually being appended
+# to, the AUDIT_PATH it was derived from (so a reconfigured AUDIT_PATH is
+# picked up), and whether file auditing gave up for this session.
+_audit_path = None
+_audit_source = None
+_audit_disabled = False
+
 # Path to the JSON acl file and the audit log. Overridable by env for testing.
 ACL_PATH = Path(os.environ.get("ECO_ACL_PATH", Path.home() / ".eco_access_acl.json"))
-AUDIT_PATH = Path(os.environ.get("ECO_ACCESS_AUDIT", "/tmp/eco_access_audit.log"))
+# The audit trail defaults to a *per-user* file in the OS temp dir. Several
+# POSIX accounts share the beamline consoles, and one fixed name under /tmp
+# cannot be appended to by a second account at all: /tmp is world-writable and
+# sticky, so fs.protected_regular (on by default on RHEL 9) refuses to open
+# another user's file there for writing no matter how permissive the mode bits
+# are. For one trail shared by all accounts, point ECO_ACCESS_AUDIT at a
+# setgid, group-writable directory outside /tmp (e.g.
+# /sf/bernina/config/eco/log/access_audit.log), where the ownership problem
+# does not arise.
+AUDIT_PATH = Path(
+    os.environ.get("ECO_ACCESS_AUDIT") or user_temp_path("eco_access_audit.log")
+)
 
 
 # --- identity ----------------------------------------------------------------
@@ -227,8 +255,35 @@ def _full_name(adjustable):
         return getattr(adjustable, "name", repr(adjustable))
 
 
+def _append_audit_line(path, line):
+    is_new = not path.exists()
+    with path.open("a") as f:
+        f.write(line)
+    if is_new:
+        try:
+            # umask would otherwise leave this owner-writable only, and a
+            # shared trail is written by several POSIX accounts.
+            path.chmod(0o664)
+        except OSError:
+            # Someone else created it in the meantime; their bits stand.
+            pass
+
+
 def _log_audit(identity, full_name, allowed, reason, blocked):
+    """Append one line to the audit trail, degrading quietly.
+
+    A write gate runs on *every* set_target_value, so an unwritable trail must
+    not warn once per motor move: the first failure falls back to the per-user
+    temp path (warning once), and if that fails too, file auditing switches
+    itself off for the session.
+    """
+    global _audit_path, _audit_source, _audit_disabled
     if not audit:
+        return
+    if AUDIT_PATH != _audit_source:
+        # AUDIT_PATH was (re)configured since the last write - start over.
+        _audit_source, _audit_path, _audit_disabled = AUDIT_PATH, AUDIT_PATH, False
+    if _audit_disabled:
         return
     line = (
         f"{time.strftime('%Y-%m-%dT%H:%M:%S')}\t{identity.name}\t"
@@ -236,15 +291,27 @@ def _log_audit(identity, full_name, allowed, reason, blocked):
         f"{'ALLOW' if allowed else 'DENY'}\tblocked={blocked}\t{reason}\n"
     )
     try:
-        is_new = not AUDIT_PATH.exists()
-        with AUDIT_PATH.open("a") as f:
-            f.write(line)
-        if is_new:
-            # umask would otherwise leave this owner-writable only, and the
-            # beamline consoles switch between several POSIX accounts.
-            AUDIT_PATH.chmod(0o664)
+        _append_audit_line(_audit_path, line)
+        return
     except Exception as e:
-        logger.warning(f"could not write access audit line: {e}")
+        failure = e
+    fallback = Path(user_temp_path("eco_access_audit.log"))
+    if _audit_path != fallback:
+        logger.warning(
+            f"could not write access audit line to {_audit_path} ({failure}); "
+            f"falling back to {fallback}"
+        )
+        _audit_path = fallback
+        try:
+            _append_audit_line(_audit_path, line)
+            return
+        except Exception as e:
+            failure = e
+    _audit_disabled = True
+    logger.warning(
+        f"access audit logging disabled for this session: could not write "
+        f"{_audit_path}: {failure}"
+    )
 
 
 def check_write(adjustable):

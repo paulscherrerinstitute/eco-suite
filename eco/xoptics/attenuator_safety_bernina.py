@@ -16,7 +16,7 @@ class AttenuatorSafetyBernina(Assembly):
             self.xp = None
         else:
             self._append(xp,name='xp',is_display=False)
-        self._append(DetectorGet,self.xp.get_current_value,name='pulse_picker_open')    
+            self._append(DetectorGet,self.xp.get_current_value,name='pulse_picker_open')    
 
     
 

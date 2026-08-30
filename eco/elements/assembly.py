@@ -339,6 +339,31 @@ class Assembly:
                 del old
 
         try:
+            # An eco lazy namespace handle (`eco.utilities.config.Proxy`, e.g.
+            # what a `NamespaceComponent` hands over) reports its `__class__`
+            # as `LazyComponent` while still unresolved, so *every* isinstance
+            # check below is False -- while `callable()` is True, because the
+            # proxy itself defines `__call__`. An already-built component
+            # passed in as an argument would therefore fall through to the
+            # "it's a class, instantiate it" branch and get *called*, which
+            # both resolves it and raises (e.g. `xp=NamespaceComponent(...)`
+            # appended by `AttenuatorSafetyBernina` hit
+            # `spec_convenience.<locals>.call() got an unexpected keyword
+            # argument 'name'`). Resolve such a handle to the real object
+            # first -- inside the try, so a failing factory is still handled
+            # by the `optional=` machinery below. Duck-typed on purpose:
+            # `eco.utilities.config` imports this module, so it can't be
+            # imported here. `__resolved__` is readable without triggering
+            # the factory; reading `__wrapped__` is what runs it.
+            if not isclass(foo_obj_init):
+                try:
+                    object.__getattribute__(foo_obj_init, "__resolved__")
+                except AttributeError:
+                    pass
+                else:
+                    foo_obj_init = object.__getattribute__(
+                        foo_obj_init, "__wrapped__"
+                    )
             if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
                 # adj_copy = copy.copy(foo_obj_init)
                 adj_copy = foo_obj_init
@@ -835,7 +860,10 @@ class Assembly:
                     out[f"{base}.{n}"] = exc
         return out
 
-    def __repr__(self):
+    def _display_text(self):
+        """The plain (non-live) text `__repr__`/`live_status()` both show:
+        an INITIALIZATION INCOMPLETE banner (if any component failed) plus
+        `get_display_str()`."""
         fullname = self.alias.get_full_name()
         label = fullname + " display\n"
         banner = ""
@@ -849,6 +877,27 @@ class Assembly:
                 f"failed component(s): {names}{reset}\n"
             )
         return banner + label + self.get_display_str()
+
+    def __repr__(self):
+        return self._display_text()
+
+    def live_status(self, interval=0.5):
+        """Block, printing a continuously refreshing version of `repr(self)`
+        until you press ``q``, Escape, or Ctrl-C, then return.
+
+        Unlike a live-updating `__repr__` (tried and abandoned -- see git
+        history around `eco.elements.live_repr` for why: a background
+        thread repainting the terminal while IPython's own prompt is
+        simultaneously reading your next keystrokes turned out to be too
+        unreliable, including losing keystrokes outright), this fully owns
+        the terminal for as long as it runs: it's just an ordinary blocking
+        call, so IPython's prompt isn't reading input concurrently at all --
+        no race, no need for a background thread or IPython event hooks.
+        See `eco.elements.live_status.run_live_status` for the mechanism.
+        """
+        from eco.elements.live_status import run_live_status
+
+        run_live_status(self._display_text, interval=interval)
 
     # def _wait_for_initialisation(self, timeout=2):
     #     for ton, to in self.__dict__.items():

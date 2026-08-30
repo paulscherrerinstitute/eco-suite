@@ -108,15 +108,38 @@ class CallbackEpics:
         self.run_once = run_once
         self.print = print_output
 
-    def start(self, add_current_value=True):
+    def start(self, add_current_value=True, with_ctrlvars=True, auto_monitor=True):
+        """Attach the callback and switch the PV to monitoring.
+
+        add_current_value : bool
+            Seed the collector with one live ``pv.get()`` first, so a
+            consumer has a value before the first monitor update arrives.
+            That is a blocking CA round trip - set it False when starting
+            thousands of these at once (a status server monitoring a whole
+            namespace), where the seeding get-storm is exactly what the
+            monitoring is meant to avoid.
+        with_ctrlvars : bool
+            Passed to ``pv.add_callback``. pyepics defaults it to True,
+            which issues a blocking ``get_ctrlvars()`` (units, limits,
+            precision) per already-connected PV. Harmless for one PV,
+            another full get-storm for thousands - pass False there.
+        auto_monitor : bool | int
+            What to set ``pv.auto_monitor`` to. True is pyepics's default
+            subscription mask (DBE_VALUE|DBE_ALARM). An ``epics.dbr.DBE_*``
+            mask can be passed instead - notably ``DBE_LOG``, which
+            subscribes to the IOC's *archive* deadband stream and so is the
+            one way to make a fast channel actually send fewer updates
+            without touching the IOC's record fields.
+        """
         if add_current_value:
             self.foo(pvname=self.pv.pvname, value=self.pv.get(), timestamp=self.pv.timestamp)
         self.cb_index = self.pv.add_callback(
             self.foo,
             run_once=True,
+            with_ctrlvars=with_ctrlvars,
         )
         self.auto_monitor_state = self.pv.auto_monitor
-        self.pv.auto_monitor = True
+        self.pv.auto_monitor = auto_monitor
 
     def is_running(self):
         return hasattr(self, "cb_index") and self.cb_index in self.pv.callbacks.keys()

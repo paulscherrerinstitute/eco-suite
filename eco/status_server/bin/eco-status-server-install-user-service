@@ -1,0 +1,122 @@
+#!/bin/bash
+# Install the eco status server as a *user* systemd service on this host.
+#
+# User-level (`systemctl --user`) rather than system-level on purpose: it
+# needs no root, and the service then runs as the invoking account - which
+# matters twice for this server. It writes status.json into the pgroup's
+# res/ tree, so it needs that account's pgroup membership; and several
+# bernina components authenticate to auxiliary machines over SSH during
+# __init__, so it needs that account's SSH credentials.
+#
+# The unit just calls `eco-status-server start` in the foreground, so the
+# interactive command and the service run exactly the same thing.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LAUNCHER="${ECO_STATUS_SERVER_LAUNCHER:-$SELF_DIR/eco-status-server}"
+UNIT_DIR="$HOME/.config/systemd/user"
+UNIT="$UNIT_DIR/eco-status-server.service"
+ENV_FILE="${ECO_STATUS_SERVER_ENV:-$HOME/.config/eco-status-server.env}"
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") [--launcher PATH] [--env-file PATH] [--force]
+
+Writes:
+  $UNIT
+and, if it does not exist yet, a template environment file at
+  $ENV_FILE
+
+Then prints the systemctl commands to enable and start it.
+EOF
+}
+
+FORCE=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --launcher)  LAUNCHER="$2"; shift 2 ;;
+        --env-file)  ENV_FILE="$2"; shift 2 ;;
+        --force)     FORCE=1; shift ;;
+        -h|--help)   usage; exit 0 ;;
+        *) echo "unknown option: $1" >&2; usage; exit 2 ;;
+    esac
+done
+
+[ -x "$LAUNCHER" ] || { echo "launcher not executable: $LAUNCHER" >&2; exit 1; }
+
+mkdir -p "$UNIT_DIR" "$(dirname "$ENV_FILE")"
+
+if [ ! -e "$ENV_FILE" ]; then
+    {
+        echo "# Environment for the eco status server (systemd EnvironmentFile"
+        echo "# syntax: KEY=value, no export, no shell expansion). Edit to taste."
+        echo "ECO_STATUS_SERVER_CHECKOUT=${ECO_STATUS_SERVER_CHECKOUT:-/sf/bernina/code/gac-bernina/eco}"
+        echo "ECO_STATUS_SERVER_CONFIG=${ECO_STATUS_SERVER_CONFIG:-/sf/bernina/config/eco_status_server/bernina_namespace.json}"
+        echo "ECO_STATUS_SERVER_PYTHON=${ECO_STATUS_SERVER_PYTHON:-/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python}"
+        echo
+        echo "# Channel Access settings, captured from the shell that ran the"
+        echo "# installer. A systemd user service inherits almost nothing, and"
+        echo "# without EPICS_CA_ADDR_LIST the server talks to the local"
+        echo "# broadcast domain instead of the beamline gateway: measured on"
+        echo "# saresb-cons-04, that is the difference between 77 of 87"
+        echo "# components initializing and 49 of 87."
+        env | grep '^EPICS_' | sort || true
+    } > "$ENV_FILE"
+    echo "wrote template $ENV_FILE - check it before starting the service"
+    if ! grep -q '^EPICS_CA_ADDR_LIST=' "$ENV_FILE"; then
+        echo
+        echo "WARNING: EPICS_CA_ADDR_LIST was not set in this shell, so it is" >&2
+        echo "         not in $ENV_FILE either. Re-run this from a shell where" >&2
+        echo "         Channel Access works, or add it by hand - otherwise the" >&2
+        echo "         service will start but most components will not connect." >&2
+    fi
+else
+    echo "keeping existing $ENV_FILE"
+fi
+
+if [ -e "$UNIT" ] && [ "$FORCE" -eq 0 ]; then
+    echo "$UNIT already exists; re-run with --force to overwrite" >&2
+    exit 1
+fi
+
+cat > "$UNIT" <<EOF
+[Unit]
+Description=eco status/monitor server (namespace mode)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+ExecStart=$LAUNCHER start
+# The port is bound immediately and /health answers from the first second;
+# namespace.init_all() then runs on a background thread for several minutes.
+# So "started" here means "answering /health with state=initializing", and
+# clients wait for state=ready themselves - no long TimeoutStartSec needed.
+Restart=on-failure
+RestartSec=10
+# A restart that keeps failing should back off rather than reinitialize the
+# whole namespace in a tight loop.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+echo "wrote $UNIT"
+cat <<EOF
+
+Next steps:
+
+  # let the service keep running when you are not logged in
+  loginctl enable-linger $USER
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now eco-status-server
+  systemctl --user status eco-status-server
+  journalctl --user -u eco-status-server -f
+
+  # kill -USR1 <mainpid> dumps every thread's stack into the journal -
+  # the way to see which component a stuck initialization is sitting in.
+EOF

@@ -1,0 +1,48 @@
+# Bernina Stäubli TX200 robot server.
+#
+# Install (as the account that should own the process -- normally gac-bernina,
+# because the persisted state under adjustables_fs/ belongs to it):
+#
+#   cp eco-bernina-robot-server.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now eco-bernina-robot-server
+#   journalctl --user -u eco-bernina-robot-server -f
+#
+# Run it under ONE account only. Two instances would both open the single TCP
+# connection the VAL3 dispatcher offers and both publish SARES20-ROB: PVs.
+
+[Unit]
+Description=Bernina Staeubli TX200 robot server
+Documentation=file:///sf/bernina/config/personal/lemke_h/eco/eco/bernina_robot_server/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/sf/bernina/config/personal/lemke_h/eco
+Environment=PYTHONPATH=/sf/bernina/config/personal/lemke_h/eco
+Environment=PYTHONUNBUFFERED=1
+# Bind the CA server to the beamline interface explicitly rather than letting
+# it broadcast on every interface the host happens to have.
+#Environment=EPICS_CAS_INTF_ADDR_LIST=129.129.242.0
+ExecStart=/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python \
+          -m eco.bernina_robot_server \
+          --config /sf/bernina/config/src/python/bernina_robot/robot_server.json
+
+# The server survives a controller dropout on its own (it polls, reports
+# Fault, and re-runs setup on reconnect), so a restart here is only for an
+# actual process crash.
+Restart=on-failure
+RestartSec=10
+
+# A clean shutdown closes the controller socket and stops the CA server;
+# SIGTERM is handled, so give it a moment before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bernina-robot-server
+
+[Install]
+WantedBy=default.target

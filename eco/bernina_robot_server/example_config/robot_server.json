@@ -1,0 +1,23 @@
+{
+    "robot_host": "129.129.243.106",
+    "robot_port": 1234,
+    "robot_timeout": 1.0,
+    "robot_retries": 1,
+    "simulated": false,
+
+    "polling_interval": 0.2,
+    "env_polling_interval": 1.0,
+
+    "host": "0.0.0.0",
+    "port": 8080,
+
+    "epics_enabled": true,
+    "epics_prefix": "SARES20-ROB:",
+
+    "adjustables_path": "/sf/bernina/config/src/python/bernina_robot/adjustables_fs/",
+    "override_remote_safety": false,
+    "setup_on_start": true,
+    "command_time_to_live": 600.0,
+    "max_background_commands": 8,
+    "log_ring_size": 500
+}

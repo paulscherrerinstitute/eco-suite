@@ -62,7 +62,37 @@ class NamespaceServerConfig:
     # True (init only the curated "required" subset, matching what a normal
     # interactive session does) is faster/more robust but a snapshot then
     # only covers whatever's been initialized.
-    init_required_only: bool = False
+    init_required_only: bool = True
+    # Explicit list of namespace names to initialize and serve. Takes
+    # precedence over init_required_only, and is the way to pin the server
+    # to a known-good subset: namespace.required_names() for bernina is an
+    # AdjustableFS backed by a file shared with every interactive session,
+    # so the server must never write it just to narrow its own scope.
+    names: list | None = None
+    # Names to drop from whatever the above selects - e.g. components that
+    # block on an interactive credential prompt at __init__ time and would
+    # otherwise hang a headless server (bernina's `scans`/scilog does).
+    exclude_names: list = field(default_factory=list)
+    # False falls back to reading every status channel live on each
+    # snapshot instead of keeping CA monitors - slower per snapshot, but
+    # useful to compare against, and to run without thousands of
+    # subscriptions.
+    use_monitors: bool = True
+    # Worker count for the blocking init_all() pass. >1 is safe now that
+    # Namespace._run_init_pass attaches every worker to the shared CA
+    # context; it was not before (see namespace_store.py's docstring).
+    init_workers: int = 8
+    # Retry cap inside one init_all() pass, and how many extra whole passes
+    # to run for components that only timed out waiting on a concurrent
+    # build (see NamespaceMonitorStore._init_namespace).
+    init_cycles: int = 4
+    init_retry_passes: int = 2
+    # Worker count for those retry passes; 1 by default, since a collision
+    # between workers is what made those names stragglers in the first place.
+    retry_workers: int = 1
+    # max_workers for the get_status() fan-out that answers each snapshot -
+    # the same knob namespace.get_status(max_workers=...) already has.
+    read_workers: int = 20
     instrument: str = "bernina"
     host: str = "0.0.0.0"
     port: int = 8091

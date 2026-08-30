@@ -676,3 +676,361 @@ calls anywhere in the test, only initialization:
 Both are flagged here rather than quietly fixed-and-forgotten so the next
 session (or another contributor) has the context if something related
 comes up.
+
+---
+
+## 14. Implemented and measured end-to-end (supersedes the "prototype" framing above)
+
+Everything from section 12 onwards was written as a proposal against an
+untested prototype. This section records what the namespace-hosted mode
+actually does now, and what was measured running it on `saresb-cons-04`
+against the real `bernina` namespace with a client on `saresb-cons-05`. It
+supersedes earlier statements where they conflict - notably the
+"`max_workers` must be 1" constraint, which no longer holds (see 13:
+`Namespace._run_init_pass` now attaches every worker to the shared CA
+context, and 8 workers were used throughout the measurements below).
+
+For how to run and use it, see `README.md` in this directory - this
+section is the record of what was found, not the manual.
+
+### 14.1 What changed relative to the prototype
+
+- **Startup no longer blocks.** `create_namespace_app()` returns
+  immediately and `init_all()` runs on a background thread. `__main__`
+  binds the port *first*, then starts the store, so a port clash costs a
+  failed bind rather than a wasted multi-minute init nobody can reach.
+- **A real state machine**: `importing` -> `initializing` -> `ready`, plus
+  `reinitializing` and `failed`, with live progress
+  (`n_initialized`/`n_target_names`/`n_failed`) on `/health`, and a
+  `generation` counter that increments on every successful (re)build.
+  `generation` is what makes "wait for my reinit to finish" correct: a
+  reinit request returns while the server is still reporting the previous
+  `ready` state, so polling readiness alone races.
+- **Snapshots are `namespace.get_status(base=None)`**, not a separate CA
+  monitor cache. That was a deliberate narrowing: matching the daq client
+  bit-for-bit matters more than a second value-collection mechanism that
+  can drift from it, and the win being sought is the *initialization*, not
+  the fan-out. The monitor implementation is still there behind
+  `use_monitors: true`, unused by default.
+- **Target-name selection never writes `namespace.required_names()`.**
+  That is an `AdjustableFS` backed by a file shared with every interactive
+  session at the beamline; the server expresses its own scope with
+  `init_all(required_only=False, exclude_names=...)` instead.
+- **Reinit is a real API**: `/admin/reinit` with `mode` =
+  `failed`/`names`/`full`/`init`/`reimport`, plus `/admin/restart`, which
+  re-execs the process. The client's `reinit()` defaults to `restart`
+  because it is the only unconditionally correct one (see 14.4).
+
+### 14.2 Bugs this shook out (all found by running it, not by reading it)
+
+1. **`init_all()`'s retry loop could never terminate.** It retries names
+   that raise `IsInitialisingError`, which is also what a build slower than
+   the 30 s `init_timeout` raises when another worker is already building
+   the same name - so a slow component can raise it every round, forever.
+   Observed directly: a server sat at "76 of 87 initialized" for over ten
+   minutes, cycling four names. `init_all` already had an unused `N_cycles`
+   parameter; it now caps that loop (`Namespace._run_init_pass`), and names
+   still pending at the cap are reported as failures instead of retried
+   silently for ever. This is a latent bug in ordinary interactive use too,
+   where it would show up as a background thread spinning unnoticed.
+2. **Names given up on that way carry no exception.** `giveup_failed`
+   sweeps whatever is still lazy into `failed_items` without one, so
+   "failed" mixed two very different things: a broken device, and a device
+   that was simply never built. The store now distinguishes them and runs
+   extra `init_all()` passes for the latter only. On bernina this is the
+   difference between `att`, `att_usd`, `kb` and `xrd` being present in
+   every snapshot or missing from all of them - which of the two happened
+   was pure scheduling luck between runs.
+3. **numpy values are not JSON-serializable by Flask.** Waveform PVs and
+   image stats return `ndarray`; one such value 500'd the entire snapshot.
+   The app now uses the same numpy handling the status file is written
+   with, plus a `str()` fallback so one odd value degrades one entry.
+4. **`/admin/restart` re-exec'd itself into a dead process, twice.** First
+   because `[sys.executable] + sys.argv` re-runs `__main__.py` *as a
+   script*, which dies on the package's relative imports; then because
+   Flask's `app.run()` goes through `run_simple()`, which does
+   `srv.socket.set_inheritable(True)` for the dev reloader - so the
+   listening socket survived `execv` and the new process could not rebind
+   ("Address already in use"). Fixed by reconstructing the `-m <package>`
+   form and by using `make_server` directly plus an explicit
+   `server_close()` before the exec.
+5. **`Namespace.resolve_item()` built the very thing it was looking up.**
+   It resolved a name with `lazy_items.get(n) or failed_items.get(n) or
+   ...`, and truthiness of a still-lazy `Proxy` *resolves* it - so looking a
+   name up initialized the device, and for a previously-failed name it
+   re-raised the stored exception. `reinitialize()` used the same chain, so
+   the server's `/admin/reinit` with `mode="failed"` - "rebuild whatever
+   failed" - raised the exact failure it was called to clear
+   (`MotorException: SARES20-MF2:MOT_4 is not an Epics Motor`, from
+   `prof_kb`, before it had rebuilt anything). Both now use membership
+   tests. Worth knowing beyond this service: any `or`/`if x:` over a
+   namespace item is a device build waiting to happen.
+6. **One HTTP timeout cannot serve both purposes.** `/health` answers in
+   milliseconds and wants a short timeout so an unreachable server fails
+   fast; a snapshot is a 13.7k-channel fan-out and takes 10-20 s. A single
+   10 s timeout made every real snapshot fail. Client and `Daq` now carry
+   both.
+
+### 14.3 Measured on `saresb-cons-04` (bernina namespace, 8 init workers)
+
+| what | measured |
+| --- | --- |
+| components targeted | 87 (the 92 `required_names` minus `elog`, `scilog`, `daq`, `scans`, `opa_he`) |
+| `init_all()` to `ready` | **143 s** (8 parallel workers, then serial retry passes) |
+| components initialized | 79 of 87; the remaining 8 are partially-initialized assemblies (`las`, `tt_kb`, `rixs`, `xrd`, ...) that still contribute status |
+| status detectors served | 16 528 |
+| one snapshot | 11-18 s server-side, ~0.2 s more over HTTP; 2.8-3.4 MB of JSON |
+| snapshot vs `read_workers` | 20 -> 16.3 s, 64 -> 12.7 s, 128 -> 11.1 s: flat enough that the fan-out is dominated by CA timeouts on disconnected channels, not by concurrency |
+| `status.json` written per run | 9.2 MB (both `status_run_start` and `status_run_end`, ~16 200 entries each) |
+
+Getting to those numbers took two goes. With the retry passes also running 8
+workers, init took **639 s** and still left `att`, `att_usd`, `kb` and `xrd`
+uninitialized on some runs, costing ~2 500 status entries (15 %) versus a
+local `get_status()`. Running only the *first* pass in parallel and the
+retry passes serially fixed both at once - 143 s, and 16 134 entries against
+16 185 from a full local namespace, i.e. coverage parity (the residual 50 are
+`xrd` sub-entries). Which makes sense: workers colliding on a shared
+dependency is what makes a component a straggler in the first place, and one
+worker cannot collide with itself.
+
+The other honest reading: **a single snapshot is not faster than doing it
+locally** - it is the same `get_status()` call, just executed elsewhere.
+The entire win is that the client never pays `init_all()`.
+
+Excluded on purpose: `scilog` blocks on an interactive password prompt in
+`__init__` (a headless server has no stdin to answer it), `elog` depends on
+it, and `daq`/`scans` depend on `elog`; `opa_he` times out. Those five are
+what turned a 3-minute init into an endless retry cycle before the
+`N_cycles` cap existed. None of them contributes status entries, so
+excluding them costs nothing measurable.
+
+### 14.4 Reinitialization: what actually works
+
+`Namespace.reinitialize(reload_modules=True)` deliberately refuses to
+reload the namespace's own assembly module, because reloading `bernina.py`
+means re-running the entire beamline setup script. So for anything beyond
+one device driver, "re-initialize the namespace" has to mean something
+bigger:
+
+- `mode="reimport"` drops every `eco.*` module from `sys.modules` and
+  re-imports. It does re-run `bernina.py`, but it cannot *unload* code that
+  live objects still reference - the next import creates a second, distinct
+  copy of every eco class. That is not theoretical: doing it inside the
+  test suite left a later test unable to recognise `IsInitialisingError`,
+  because the class it caught was no longer the class being raised. The old
+  namespace's CA channels and device threads are not reclaimed either.
+- `mode="restart"` re-execs the process. Everything is genuinely fresh,
+  at the cost of the full init time. Measured round trip, client call to
+  `ready` again: **652 s**. The client watches `instance_id` (not
+  `generation`, which restarts at 0) to know the new process is up.
+
+`restart` is therefore the default for `StatusServerClient.reinit()`. The
+in-process modes are the fast paths for the narrow cases they fit -
+`mode="failed"` in particular is the cheap "that IOC is back up now" retry.
+
+Measured, once the `resolve_item()` bug in 14.2 was fixed:
+`reinit(mode="failed")` over the 8 partially-initialized bernina assemblies
+takes **188-190 s** and bumps `generation` by one each time. Repeated three
+times in a row, the served detector count stayed at 16 616 - i.e.
+`reinitialize()`'s `status_collection.remove()` / `alias.pop_object()`
+teardown really does clean up after itself, and a long-lived server does not
+accumulate stale status entries across rebuilds. (The first rebuild after
+startup did add 88 detectors, from components that had come up incomplete;
+that is a one-off, not growth.)
+
+While a rebuild runs, `/status/snapshot` answers 503 and a second
+`/admin/reinit` answers 409 - both verified against the live server, not
+just in tests. That matters: a reinit tears down and re-registers the very
+`status_collection` a snapshot walks.
+
+### 14.5 Verified against a real DAQ run
+
+`Daq(status_server=...)` was exercised with real `ascan`s over
+`dummy_adjustable` (3 steps x 10 pulses) in `p19641`, from a session on
+`saresb-cons-05` while the server ran on `saresb-cons-04`. The same script
+was run both ways:
+
+| | server (run 331) | local, today's behaviour (run 330) |
+| --- | --- | --- |
+| whole `ascan` call | **75 s** | **982 s** |
+| status entries written | 16 209 / 16 194 | 16 185 / 16 280 |
+| client-side namespace cost | 14 s import + 7 s for the seven items `Daq` itself needs | the same, **plus** `init_all()` inside the scan |
+
+In both cases `append_start_status_to_scan` and
+`append_status_to_scan_and_store` produced
+`/sf/bernina/data/p19641/res/run_data/daq/runNNNN/aux/status.json` with both
+blocks merged into one file, and `append_aux` had the broker copy it to
+`/sf/bernina/data/p19641/raw/runNNNN/aux/status.json` - "copying user
+file(s) finished successfully". The only difference is where the values came
+from.
+
+Note what the 982 s is and is not: `Daq.init_namespace` calls `init_all()`
+with the default `max_workers=1`, i.e. serially, so part of that gap is
+parallelism the local path could have too (the server uses 8). It was left
+alone here deliberately - changing how every scan at the beamline
+initializes its namespace is a separate decision from adding an opt-in
+alternative. But it means "13x" is the measured end-to-end difference
+between the two code paths as they stand today, not a claim about the
+theoretical floor of the local one.
+
+---
+
+## 15. Monitor recording, and whether downthrottling helps (measured)
+
+`/recording/start` attaches a CA monitor to every `MonitorableValueUpdate`
+detector in the namespace, buffers updates, and `/recording/stop` writes them
+as one `escape.ArrayTimestamps` per channel. Measured on `saresb-cons-04`
+against the live bernina namespace, 180 s per run, client on
+`saresb-cons-05`.
+
+Scale of one run: **10 139 monitorable detectors**, of which **7 785 attach**
+(the rest are `MonitorableValueUpdate` implementations whose
+`set_current_value_callback` has no underlying PV to give). Attaching all of
+them takes **3.0 s** — `add_current_value=False` and `with_ctrlvars=False`
+are what keep it there; either default would issue a blocking CA round trip
+per channel, which is the get-storm this whole service exists to avoid.
+
+### 15.1 The four modes, side by side
+
+| mode | updates/s | points stored | file | server CPU | RSS growth |
+| --- | --- | --- | --- | --- | --- |
+| `all` | 5 141 | 993 783 | 267 MB | 0.53 core | +292 MB |
+| `sample`, 0.1 s | 4 972 | 185 134 | 236 MB | 0.56 core | +238 MB |
+| `throttle`, 0.1 s | 5 047 | 170 102 | 200 MB | 0.53 core | **+5 MB** |
+| `all` + `DBE_LOG` | 5 066 | 966 613 | 262 MB | 0.54 core | +35 MB |
+
+The first column is the answer to "can we downthrottle to save work?":
+**no client-side option changed the update rate at all**, `DBE_LOG` included.
+Subscribing to the IOC's archive deadband stream instead of `DBE_VALUE`
+delivered the same ~5 000 updates/s, i.e. ADEL is 0 on these records, so the
+IOC has nothing to decimate by.
+
+And because the rate is unchanged, **the CPU is unchanged** — 0.53 to 0.56 of
+one core in every mode, including the one whose callback does almost nothing
+(`sample`). That is the substantive finding: the cost of an update is the
+fixed crossing from libca's receive thread into Python (GIL acquisition,
+kwargs dict, callback dispatch), not the body of the callback. There is no
+Python-side filter that avoids it, because the filter itself has to run
+inside it.
+
+So, to the question as asked: a downthrottle helps the **data**, not the
+**performance during monitoring**. The only lever on the latter is to reduce
+what the IOC sends (a real MDEL/ADEL deadband on the record — a facility-wide
+change, not this server's to make) or to not monitor the channel at all.
+
+Two things worth knowing about the modes themselves:
+
+- `sample` was, in its first form, *worse than useless*: sampling every
+  channel onto the grid produced **14.8 million points and a 636 MB file**,
+  15x more than recording every update, because 7 440 of the 7 719 channels
+  update slower than 0.1 Hz and were being upsampled. It now stores a channel
+  only when its CA timestamp actually changed; the numbers in the table are
+  after that fix.
+- `throttle` is the only mode whose memory stays flat (+5 MB over 3 minutes,
+  against +292 MB for `all`). For anything longer than a scan, that is the
+  difference that matters — a previous prototype left a single ~100 Hz PV
+  monitored overnight and the OOM killer took out unrelated system processes
+  (see the incident log above). `max_points_per_channel` is the hard backstop.
+
+### 15.2 Where the updates actually come from
+
+Of 7 719 channels with data in a 193 s recording:
+
+| rate | channels | share of all updates |
+| --- | --- | --- |
+| ≥ 50 Hz | **48** | **87 %** |
+| 10–50 Hz | 9 | 3 % |
+| 1–10 Hz | 182 | 9 % |
+| < 1 Hz | 7 480 | 1 % |
+
+48 channels — `event_system.pulse_id`, the eight `digitizer_ioxos_user`
+channels, `las_inc.energymeter_intensity_lraw`, the `mon_mono.signal_*_raw`
+group, `fel.bam_*` — produce seven eighths of the load. Any effective
+reduction has to target those specifically; a blanket throttle spends its
+effort on the 7 480 channels that cost nothing.
+
+### 15.3 Where the file size actually comes from
+
+Not where the updates come from, which is the surprise:
+
+| | channels | storage |
+| --- | --- | --- |
+| 2-D waveform channels | 38 | **208 MB (96 %)** |
+| of which `digitizer_keysight_user.channel_1/2.waveform_slow` | 2 | 204 MB |
+| all scalar channels | 7 677 | 8 MB |
+| HDF5 structure | 7 715 | 15 MB (1.9 KiB/channel) |
+
+Two channels carrying 8000-sample waveforms at ~8 Hz are 85 % of a 239 MB
+file. Every 100 Hz scalar in the namespace put together is 8 MB. So the lever
+on output size is `max_value_elements` (drop oversized values) or an explicit
+channel list — not the sample rate.
+
+The 1.9 KiB/channel of HDF5 structure is itself the result of a fix:
+`write_monitor_recording` now creates the file with `libver="latest"`. With
+HDF5's default backwards-compatible object headers the same file was 267 MB,
+and a synthetic 3 000-channel one-point-each file was **16.5 MB versus 5.9 MB**
+— 2.8x — for identical content. For a file that is thousands of tiny
+datasets, the format version is worth more than the compression would be.
+
+### 15.4 Effect on the server's day job
+
+None measurable. Snapshot latency, idle versus during a full-rate recording:
+
+| | idle | during | after |
+| --- | --- | --- | --- |
+| `all` | 21.0, 20.0 s | 19.5, 20.0 s | 16.9, 18.3 s |
+| `throttle` | 20.0, 22.8 s | 18.5, 19.5 s | 17.7, 20.0 s |
+
+A snapshot is dominated by CA timeouts on disconnected channels, not by CPU,
+so 0.5 core of monitoring in the background does not show up. Thread count is
+also unchanged (89 before and after) — the monitors ride libca's existing
+receive threads rather than adding any.
+
+Writing the file takes **30–37 s** for ~7 700 channels, and reading it back
+with `escape.DataSet.load_from_result_file` takes ~29 s. Both are per-channel
+costs, so both scale with how many channels are recorded, not with duration.
+
+### 15.5 Two bugs this found
+
+1. **`format_manual_instantiation()` was constructing devices.** It reprs
+   every constructor argument to build a "copy/paste this" hint, on *every*
+   initialization — and `Proxy.__repr__` resolves a lazy namespace component,
+   i.e. builds the real device. Found with `kill -USR1`: the server was stuck
+   three frames deep inside a diagnostic string, building `xp` while trying
+   to build `att`. This is what made startup take anywhere from 137 s to over
+   670 s depending on scheduling luck; with the fix (a repr that leaves
+   unresolved proxies alone) it is 84–140 s. Same family as the
+   `resolve_item()` bug in §14.2: in this codebase, introspecting a namespace
+   item is never free.
+2. **`faulthandler.register(SIGUSR1, chain=True)` killed the server.**
+   SIGUSR1's default disposition is Term, so chaining to the previous handler
+   dumped the stacks and then terminated the process — the diagnostic took
+   down what it was diagnosing. `chain=False`.
+
+### 15.6 Recommended defaults
+
+Measured, same server, same 180 s window, `mode="throttle",
+min_interval=0.1, max_value_elements=1024`:
+
+| | `all` | recommended |
+| --- | --- | --- |
+| points stored | 1 003 570 | **173 992** |
+| file | 239 MB | **21.6 MB** |
+| server RSS growth | +292 MB | **+38 MB** |
+| channels with data | 7 715 | 7 713 |
+
+An 11x smaller file and an 8x smaller memory footprint, with two channels'
+worth of coverage lost (the ones that only ever produced an oversized
+waveform). Update rate and CPU are, as above, unchanged - 5 431 updates/s
+either way.
+
+- Record with `mode="throttle", min_interval=0.1` unless you specifically
+  need every transition: 5.8x fewer points, flat memory, no loss on any
+  channel slower than 10 Hz (which is 99.4 % of them).
+- Set `max_value_elements` (e.g. 1024) unless waveforms are the point of the
+  recording.
+- Leave `subscription_mask` alone. `DBE_LOG` measurably did nothing here, and
+  the alternative — pyepics's `PV(monitor_delta=...)` — is a trap: it first
+  tries to `caput` the IOC's `.MDEL` field, changing the record for every
+  client at the facility, and only falls back to a local filter if that write
+  is refused.

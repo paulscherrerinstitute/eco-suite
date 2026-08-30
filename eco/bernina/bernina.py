@@ -945,6 +945,29 @@ namespace.append_obj(
     name="controllers",
     module_name="eco.devices_general.controllers",
 )
+# Alarm-overview panels mirroring the caqtdm "Alarms overview" launcher entry
+# (S_charts.json -> alarms_caqtdm -> alarms.ui) and its two Papamoll pump-laser
+# "Expert" sub-panels. See eco/devices_general/alarms/README.md.
+namespace.append_obj(
+    "BerninaAlarmsOverview",
+    lazy=True,
+    name="alarms",
+    module_name="eco.devices_general.alarms",
+)
+namespace.append_obj(
+    "PapamollAlarms",
+    "26l_dean_1um_35fs",
+    lazy=True,
+    name="papamoll_alarms_35fs",
+    module_name="eco.devices_general.alarms",
+)
+namespace.append_obj(
+    "PapamollAlarms",
+    "26h_orr_510nm_100fs",
+    lazy=True,
+    name="papamoll_alarms_100fs",
+    module_name="eco.devices_general.alarms",
+)
 
 namespace.append_obj(
     "GudeStrip",
@@ -1269,9 +1292,22 @@ namespace.append_obj(
 )
 
 
+# Optional: take run status from a long-running eco.status_server process
+# instead of initializing and reading *this* session's namespace at every
+# scan start (see eco/status_server/README.md). Off unless the environment
+# variable is set, e.g.
+#   ECO_STATUS_SERVER=http://saresb-cons-04:8091 scripts/eco-dev -s bernina
+# An env var rather than a key in the shared bernina config JSON on purpose:
+# which host (if any) runs a status server is a per-session choice, and that
+# file is read by every session at the beamline.
+_status_server = os.environ.get("ECO_STATUS_SERVER") or None
+if _status_server:
+    print(f"daq: taking run status from status server {_status_server}")
+
 namespace.append_obj(
     "Daq",
     instrument="bernina",
+    status_server=_status_server,
     pgroup=NamespaceComponent(namespace, "config_bernina.pgroup"),
     channels_JF=NamespaceComponent(namespace, "channels_JF"),
     channels_BS=NamespaceComponent(namespace, "channels_BS"),

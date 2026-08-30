@@ -83,6 +83,22 @@ class Daq(Assembly):
         request rather than the server being down, so a timeout is not on
         its own reliable evidence of an actual outage (see
         :meth:`check_alive`).
+
+    Run status: local namespace, or a status server
+    ----------------------------------------------
+    By default the three status-related scan callbacks (``init_namespace``,
+    ``append_start_status_to_scan``, ``append_status_to_scan_and_store``)
+    initialize this session's namespace and read every status channel from
+    it -- minutes of ``init_all()`` plus a full CA fan-out, per session.
+    Passing ``status_server="http://<host>:<port>"`` instead takes those
+    values from a long-running ``eco.status_server`` process that already
+    holds an initialized namespace, and has *it* write ``status.json`` into
+    the run's aux directory; this class still uploads that file with
+    :meth:`append_aux`, so the file, its location and its contents are
+    unchanged either way and the two paths are interchangeable per run. If
+    the server is unreachable or still initializing, the callbacks warn and
+    fall back to the local mechanism -- unless ``status_server_strict=True``.
+    See ``eco/status_server/README.md``.
     """
 
     def __init__(
@@ -108,6 +124,11 @@ class Daq(Assembly):
         run_table=None,
         pulse_picker=None,
         elog=None,
+        status_server=None,
+        status_server_timeout=10.0,
+        status_server_snapshot_timeout=180.0,
+        status_server_strict=False,
+        status_server_wait_ready=1800,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -162,6 +183,25 @@ class Daq(Assembly):
         self.run_table = run_table
         self.pulse_picker = pulse_picker
         self._default_file_path = None
+        # Opt-in alternative to doing namespace.init_all() + a full
+        # namespace.get_status() CA fan-out in *this* session: point at a
+        # long-running eco.status_server namespace-mode server (see
+        # eco/status_server/), which already holds an initialized namespace.
+        # A str is a base URL; a StatusServerClient instance is used as-is;
+        # None (default) keeps the existing, unchanged local behaviour.
+        self._status_server = status_server
+        self._status_server_client = None
+        # Short timeout for /health and the admin routes (so an unreachable
+        # server fails fast), long one for a snapshot - a full get_status()
+        # fan-out over ~14k bernina channels takes 10-20 s.
+        self.status_server_timeout = status_server_timeout
+        self.status_server_snapshot_timeout = status_server_snapshot_timeout
+        # strict=False: a status server that is down, unreachable or still
+        # initializing must never abort a run - fall back to the local
+        # mechanism and say so. strict=True turns those into hard errors,
+        # for testing the server path itself.
+        self.status_server_strict = status_server_strict
+        self.status_server_wait_ready = status_server_wait_ready
         if not rate_multiplicator == "auto":
             print(
                 "warning: rate multiplicator automatically determined from event_master!"
@@ -956,6 +996,80 @@ class Daq(Assembly):
     # talk to broker_address_aux (the "slow" broker in sf_daq_broker's own
     # naming) exactly as these old stubs intended.
 
+    # -- status server (optional alternative to the local namespace) --------
+    #
+    # With `status_server=` set, the three status-related scan callbacks
+    # below take their values from a long-running server process that
+    # already holds an initialized namespace, instead of initializing and
+    # reading one in this session. Everything else - where the file lands,
+    # its contents, the append_aux upload attaching it to the run's aux
+    # folder - is unchanged, so the two paths are interchangeable per run.
+
+    @property
+    def status_client(self):
+        """The configured StatusServerClient, or None if not using one."""
+        if self._status_server is None:
+            return None
+        if self._status_server_client is None:
+            from eco.status_server.client import StatusServerClient
+
+            if isinstance(self._status_server, str):
+                self._status_server_client = StatusServerClient(
+                    self._status_server,
+                    timeout=self.status_server_timeout,
+                    snapshot_timeout=self.status_server_snapshot_timeout,
+                )
+            else:
+                self._status_server_client = self._status_server
+        return self._status_server_client
+
+    def _status_server_failed(self, what, exc):
+        """Common handling for a status-server call that did not work:
+        re-raise in strict mode, otherwise warn and let the caller fall back
+        to the local mechanism."""
+        msg = f"status server: {what} failed ({type(exc).__name__}: {exc})"
+        if self.status_server_strict:
+            raise RuntimeError(msg) from exc
+        print(colorama.Fore.RED + "WARNING: " + msg + colorama.Fore.RESET)
+        print("         falling back to the local namespace mechanism.")
+        return None
+
+    def _status_from_server(self, key, runno, pgroup, write_async=False):
+        """Ask the server for a status snapshot AND to write it into the
+        run's aux directory. Returns (status_dict, path) or None on failure.
+
+        The server writes the file itself (same NFS path, same JSON shape as
+        the local path produces); this side only uploads it with append_aux,
+        exactly as before.
+        """
+        client = self.status_client
+        try:
+            resp = client.snapshot(
+                pgroup=pgroup,
+                run_number=runno,
+                save=True,
+                key=key,
+                write_async=write_async,
+            )
+        except Exception as exc:
+            return self._status_server_failed(f"snapshot for {key}", exc)
+        job_id = resp.get("write_job_id")
+        if job_id:
+            try:
+                # append_aux tells the broker to copy a file, so it has to
+                # exist by then - an async write still has to be joined here.
+                client.wait_write_job(
+                    job_id, timeout=self.status_server_snapshot_timeout
+                )
+            except Exception as exc:
+                return self._status_server_failed(f"status write for {key}", exc)
+        status = {
+            k: resp[k]
+            for k in ("status", "status_channels", "status_times", "selections")
+            if k in resp
+        }
+        return status, resp.get("saved_to")
+
     def init_namespace(
         self,
         scan=None,
@@ -963,22 +1077,61 @@ class Daq(Assembly):
         append_status_info=True,
         **kwargs,
     ):
-        if append_status_info:
-            # background=False: this must block until init actually
-            # finishes - the status info appended right after depends on
-            # the namespace being initialized by then (background=True,
-            # now init_all()'s default, would return before that).
-            self.namespace.init_all(
-                background=False,
-                silent=False,
-                required_only=init_required_namespace_components_only,
-            )
+        if not append_status_info:
+            return
+        if self.status_client is not None:
+            try:
+                # The server initializes on its own; this only makes sure it
+                # has got there before the status callbacks start asking it
+                # for values. Normally instant - it is a long-running
+                # process - but after a server restart it is the same wait
+                # the local init_all() would have been.
+                health = self.status_client.wait_ready(
+                    timeout=self.status_server_wait_ready, progress=True
+                )
+                print(
+                    f"Using status server {self.status_client.base_url} "
+                    f"({health.get('n_initialized')}/{health.get('n_target_names')} "
+                    f"components initialized, {health.get('n_failed')} failed) "
+                    "instead of initializing the namespace locally."
+                )
+                return
+            except Exception as exc:
+                self._status_server_failed("waiting for readiness", exc)
+        # background=False: this must block until init actually
+        # finishes - the status info appended right after depends on
+        # the namespace being initialized by then (background=True,
+        # now init_all()'s default, would return before that).
+        self.namespace.init_all(
+            background=False,
+            silent=False,
+            required_only=init_required_namespace_components_only,
+        )
 
     def append_start_status_to_scan(
         self, scan=None, pgroup=None, append_status_info=True, **kwargs
     ):
         if not append_status_info:
             return
+
+        if self.status_client is not None:
+            if hasattr(scan, "daq_run_number"):
+                runno = scan.daq_run_number.get_current_value()
+            else:
+                runno = self.get_last_run_number()
+            if pgroup is None:
+                pgroup = self.pgroup
+            result = self._status_from_server("status_run_start", runno, pgroup)
+            if result is not None:
+                namespace_status, statuspath = result
+                scan.counter_scratch(self.name)["namespace_status"] = {
+                    "status_run_start": namespace_status
+                }
+                if statuspath:
+                    self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
+                return
+            # result is None -> non-strict fallback, continue below.
+
         # raise_on_incomplete=False: this is a best-effort snapshot of the
         # whole namespace at run start -- an unrelated, incomplete component
         # elsewhere must never abort a run just to collect status metadata.
@@ -1174,6 +1327,29 @@ class Daq(Assembly):
 
         if not len(scan.values_done()) > 0:
             return
+
+        if self.status_client is not None:
+            if hasattr(scan, "daq_run_number"):
+                runno = scan.daq_run_number.get_current_value()
+            else:
+                runno = self.get_last_run_number()
+            if pgroup is None:
+                pgroup = self.pgroup
+            result = self._status_from_server("status_run_end", runno, pgroup)
+            if result is not None:
+                namespace_status, statuspath = result
+                # The server merges into the existing status.json, so
+                # status_run_start written at scan start stays put -- the
+                # local path below instead rewrites the whole file from the
+                # copy it kept in counter_scratch.
+                cs = scan.counter_scratch(self.name)
+                cs.setdefault("namespace_status", {})[
+                    "status_run_end"
+                ] = namespace_status
+                if statuspath:
+                    self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
+                scan.set_scan_parameter("status", "aux/status.json")
+                return
 
         # raise_on_incomplete=False: see append_start_status_to_scan above --
         # a best-effort snapshot must not abort the run over unrelated status.
