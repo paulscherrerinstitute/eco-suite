@@ -139,3 +139,181 @@ def test_manual_instantiation_hint_renders_an_unresolved_proxy_as_a_placeholder(
 
     assert "not yet initialized" in text
     assert ns.initialized_names == set(), "building the hint initialized the proxy"
+
+
+class NoisyThing:
+    def __init__(self, name=None):
+        print("noisy device chatter from a worker thread")
+        self.name = name
+
+
+def _incomplete_assembly_factory():
+    """An Assembly whose failure is two levels down, so the summary has to
+    recurse to name the leaf that actually failed rather than the direct
+    child that merely re-recorded it."""
+    from eco.elements.assembly import Assembly
+
+    def boom(name=None):
+        raise RuntimeError("could not connect")
+
+    class Leaf(Assembly):
+        def __init__(self, name=None):
+            super().__init__(name=name)
+            self._append(boom, name="pv_x", optional=True)
+
+    class Mid(Assembly):
+        def __init__(self, name=None):
+            super().__init__(name=name)
+            self._append(Leaf, name="det", optional=True)
+
+    return Mid
+
+
+def test_init_all_summary_prints_even_when_silent(capsys, tmp_path):
+    """print_summary used to go through the `silent`-gated log(), so at the
+    (silent) defaults the summary - the one thing you always want - never
+    appeared at all."""
+    ns = Namespace(name="test")
+    ns.append_obj(NoisyThing, lazy=True, name="good")
+
+    ns.init_all(required_only=False, background=False, silent=str(tmp_path / "i.log"))
+
+    out = capsys.readouterr().out
+    assert "Initialized 1 of 1" in out
+    assert "noisy device chatter" not in out, "worker chatter reached the terminal"
+    assert "noisy device chatter" in (tmp_path / "i.log").read_text()
+    assert ns.last_init_log_path == str(tmp_path / "i.log")
+
+
+def test_init_all_summary_names_the_failed_subcomponent(capsys, tmp_path):
+    """An incomplete item is reported with the *leaf* that failed, and kept
+    apart from items that failed outright."""
+    ns = Namespace(name="test")
+    ns.append_obj(_incomplete_assembly_factory(), lazy=True, name="xrd")
+    ns.append_obj(BadThing, 1, lazy=True, name="scans")
+
+    ns.init_all(required_only=False, background=False, silent=str(tmp_path / "i.log"))
+
+    out = capsys.readouterr().out
+    assert "xrd (det.pv_x)" in out
+    assert "scans (ValueError: boom)" in out
+    assert "1 incomplete, 1 failed" in out
+
+
+def test_init_all_records_a_reason_for_names_it_gives_up_on(tmp_path):
+    """giveup_failed used to move a name into failed_items with no exception
+    at all, leaving both the summary and the "inspect the failure" hint with
+    nothing to show."""
+    from eco.utilities.config import GivenUpInitialisationError, IsInitialisingError
+
+    ns = Namespace(name="test")
+    ns.append_obj(DependencyThing, lazy=True, name="stuck")
+
+    def always_initialising(name, verbose=True, raise_errors=False, quiet=False):
+        raise IsInitialisingError(f"{name} is being initialized elsewhere")
+
+    ns.init_name = always_initialising
+    ns.init_all(
+        required_only=False,
+        background=False,
+        silent=str(tmp_path / "i.log"),
+        N_cycles=2,
+    )
+
+    assert "stuck" in ns.failed_names
+    assert isinstance(
+        ns.failed_items_excpetion["stuck"], GivenUpInitialisationError
+    )
+
+
+def test_init_all_does_not_start_a_second_overlapping_background_pass(tmp_path):
+    ns = Namespace(name="test")
+    ns.append_obj(DependencyThing, lazy=True, name="dependency")
+
+    first = ns.init_all(required_only=False, silent=str(tmp_path / "i.log"))
+    second = ns.init_all(required_only=False, silent=str(tmp_path / "i.log"))
+
+    assert second is first
+    assert ns.wait_for_init(timeout=30)
+    assert ns.init_progress()["initialized"] == 1
+
+
+def test_failed_items_exception_property_is_readable():
+    """The correctly-spelled property used to return a non-existent
+    attribute and raise AttributeError on any access."""
+    ns = Namespace(name="test")
+    exc = ValueError("boom")
+    ns.failed_items_excpetion["x"] = exc
+
+    assert ns.failed_items_exception is ns.failed_items_excpetion
+    assert ns.failed_items_exception["x"] is exc
+
+
+def test_init_all_captures_log_records_from_worker_threads(tmp_path):
+    """A logging.StreamHandler holds the stream *object* it was built with,
+    so swapping sys.stderr never affected it - which is how the bernina
+    import chain's basicConfig handler put every logger.* call (eco's alias
+    warnings, paramiko's SSH handshake at INFO) straight on the terminal
+    during a silent init. The capture has to go through logging's own API.
+    """
+    import io
+    import logging
+
+    from eco.elements.assembly import Assembly
+
+    def boom(name=None):
+        raise RuntimeError("could not connect")
+
+    class Leaf(Assembly):
+        def __init__(self, name=None):
+            super().__init__(name=name)
+            self._append(boom, name="pv_x", optional=True)
+
+    terminal = io.StringIO()
+    handler = logging.StreamHandler(terminal)
+    handler.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    old_level = root.level
+    root.setLevel(logging.INFO)
+    try:
+        ns = Namespace(name="test")
+        ns.append_obj(Leaf, lazy=True, name="xrd")
+        log = tmp_path / "i.log"
+
+        ns.init_all(required_only=False, background=False, silent=str(log))
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(old_level)
+
+    assert "failed to initialize" in log.read_text()
+    assert "failed to initialize" not in terminal.getvalue()
+    # the filter must be removed again, or every later record is swallowed
+    assert handler.filters == []
+    logging.getLogger(__name__).warning("after the pass")
+    assert "after the pass" not in log.read_text()
+
+
+def test_output_capture_survives_a_thread_that_outlives_the_pass():
+    """Threads a device spawns can still be writing after the pass closed the
+    sink (observed live: smaract stage warnings arriving after the summary).
+    That used to raise ValueError inside the device's own thread."""
+    import io
+    import sys
+
+    from eco.utilities.config import _ThreadRoutedOutput
+
+    cap = _ThreadRoutedOutput(enabled=True, name="test")
+    real = io.StringIO()
+    orig_stderr = sys.stderr
+    sys.stderr = real
+    try:
+        with cap:
+            cap._register()
+    finally:
+        sys.stderr = orig_stderr
+
+    # must not raise ValueError: I/O operation on closed file
+    cap._write_sink("late output from a straggler thread")
+
+    assert "late output" in real.getvalue()

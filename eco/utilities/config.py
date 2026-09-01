@@ -457,7 +457,7 @@ class _ThreadRoutedOutput:
     (a temp file), while writes from every other thread - notably the
     interactive main thread - pass through to the real streams untouched.
 
-    Used by ``Namespace.init_all(capture_output=...)`` to collect the noisy
+    Used by ``Namespace.init_all(silent=...)`` to collect the noisy
     per-component initialization chatter produced by the pool worker threads
     into a log file instead of scrolling the user's session, without hiding
     anything the main thread prints.
@@ -485,18 +485,56 @@ class _ThreadRoutedOutput:
     reporting resumes as soon as initialization finishes. Degrades silently
     (Python-level capture only) if epics is unavailable or too old to expose
     the hook.
+
+    ``logging`` caveat and its fix: a ``logging.StreamHandler`` holds the
+    stream *object* it was built with, so swapping ``sys.stderr`` afterwards
+    does not affect it at all - and something in the bernina import chain
+    (``sf_databuffer.bufferutils``) calls ``logging.basicConfig`` at import
+    time, installing exactly such a root handler on the original stderr at
+    level INFO. Every ``logger.*`` call therefore bypassed the stream proxy
+    entirely (eco's own alias warnings, paramiko's SSH handshake at INFO,
+    ...). ``capture_logging=True`` (the default) handles that through
+    logging's own API instead: a handler writing into the same sink is added
+    to the root logger, and a thread-id filter is put on the *existing* root
+    handlers so records emitted from registered threads no longer reach them.
+    Same per-thread principle as the stream proxy, so records logged from the
+    main thread are untouched.
+
+    ``sys.stdout`` caveat that cannot be fixed here: prompt_toolkit's
+    ``patch_stdout`` (which IPython wraps its prompt in) replaces
+    ``sys.stdout``/``sys.stderr`` with a proxy that writes straight to the
+    terminal, for the whole time you sit at the prompt. A ``background=True``
+    pass therefore runs with *its* proxy installed, not ours, and plain
+    ``print()`` from a worker reaches the terminal regardless of what this
+    class does. That is why the noisy call sites in `Assembly._append` /
+    `Namespace.append_obj` were converted to `logger.warning` - the logging
+    route above is immune to it. Bare `print()` in third-party libraries
+    (diffcalc's "Recalculating UB matrix.") still leaks, unavoidably.
     """
 
-    def __init__(self, sink_path=None, enabled=True, name="namespace", capture_ca=True):
+    def __init__(
+        self,
+        sink_path=None,
+        enabled=True,
+        name="namespace",
+        capture_ca=True,
+        capture_logging=True,
+    ):
         self.enabled = enabled
         self.capture_ca = capture_ca
+        self.capture_logging = capture_logging
         self.path = None
         self._sink = None
+        self._closed = False
         self._routed = set()
         self._lock = Lock()
         self._orig_stdout = None
         self._orig_stderr = None
+        self._proxy_stdout = None
+        self._proxy_stderr = None
         self._ca_installed = False
+        self._log_handler = None
+        self._log_filtered = []
         if enabled:
             if sink_path in (True, None):
                 fh = tempfile.NamedTemporaryFile(
@@ -523,8 +561,15 @@ class _ThreadRoutedOutput:
 
     def _write_sink(self, s):
         with self._lock:
-            n = self._sink.write(s)
-        return n
+            if self._closed:
+                # A thread the pass spawned can outlive the pass (observed:
+                # smaract stage warnings arriving after the summary). Writing
+                # to the closed sink would raise ValueError *inside that
+                # device's thread*, so fall back to the real stream instead -
+                # late output on the terminal is the lesser evil.
+                real = self._orig_stderr or sys.__stderr__
+                return real.write(s) if real is not None else len(s)
+            return self._sink.write(s)
 
     def _make_proxy(self, real):
         router = self
@@ -586,14 +631,80 @@ class _ThreadRoutedOutput:
         finally:
             self._ca_installed = False
 
+    def _install_logging_capture(self):
+        """Route log records emitted from registered threads into the sink,
+        instead of to whatever handlers are already installed.
+
+        Two halves, because a handler owns its stream: our own handler is
+        added to the root logger to *write* those records, and a filter is
+        put on the pre-existing root handlers to *stop* them writing the same
+        records to the terminal. Both are keyed on `record.thread`, which is
+        the emitting thread's ident - the same set the stream proxy uses - so
+        anything logged from the main thread is left completely alone.
+
+        Known gaps, all the same shape: a handler added *after* this runs, and
+        a non-root logger with `propagate=False` and its own handler, are not
+        filtered. Best-effort by design - it must never be able to break
+        logging for the session.
+        """
+        router = self
+
+        class _RoutedOnly(logging.Filter):
+            def filter(self, record):
+                return record.thread in router._routed
+
+        class _NotRouted(logging.Filter):
+            def filter(self, record):
+                return record.thread not in router._routed
+
+        class _SinkHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    router._write_sink(self.format(record) + "\n")
+                except Exception:
+                    pass
+
+        try:
+            root = logging.getLogger()
+            handler = _SinkHandler()
+            handler.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
+            handler.addFilter(_RoutedOnly())
+            for existing in list(root.handlers):
+                filt = _NotRouted()
+                existing.addFilter(filt)
+                self._log_filtered.append((existing, filt))
+            root.addHandler(handler)
+            self._log_handler = handler
+        except Exception:
+            self._log_handler = None
+
+    def _restore_logging_capture(self):
+        try:
+            if self._log_handler is not None:
+                logging.getLogger().removeHandler(self._log_handler)
+        except Exception:
+            pass
+        finally:
+            self._log_handler = None
+        for existing, filt in self._log_filtered:
+            try:
+                existing.removeFilter(filt)
+            except Exception:
+                pass
+        self._log_filtered = []
+
     def __enter__(self):
         if self.enabled:
             self._orig_stdout = sys.stdout
             self._orig_stderr = sys.stderr
-            sys.stdout = self._make_proxy(self._orig_stdout)
-            sys.stderr = self._make_proxy(self._orig_stderr)
+            self._proxy_stdout = self._make_proxy(self._orig_stdout)
+            self._proxy_stderr = self._make_proxy(self._orig_stderr)
+            sys.stdout = self._proxy_stdout
+            sys.stderr = self._proxy_stderr
             if self.capture_ca:
                 self._install_ca_capture()
+            if self.capture_logging:
+                self._install_logging_capture()
         return self
 
     def __exit__(self, *exc):
@@ -601,18 +712,107 @@ class _ThreadRoutedOutput:
             # Restore the real streams first, then hand libca back its default
             # handler so replace_printf_handler() rebinds to the real stderr
             # rather than to the proxy we are about to detach.
-            sys.stdout = self._orig_stdout
-            sys.stderr = self._orig_stderr
+            #
+            # Only restore if our proxy is still the installed one: something
+            # else may have swapped the streams while the pass ran (IPython's
+            # prompt does exactly this via prompt_toolkit's patch_stdout, on
+            # every prompt), and blindly assigning _orig_stdout back would
+            # clobber *its* proxy rather than ours.
+            for attr, proxy_attr, orig in (
+                ("stdout", "_proxy_stdout", self._orig_stdout),
+                ("stderr", "_proxy_stderr", self._orig_stderr),
+            ):
+                if getattr(sys, attr, None) is getattr(self, proxy_attr, None):
+                    setattr(sys, attr, orig)
             self._restore_ca_capture()
+            self._restore_logging_capture()
             try:
                 self._sink.flush()
             except Exception:
                 pass
-            try:
-                self._sink.close()
-            except Exception:
-                pass
+            with self._lock:
+                self._closed = True
+                try:
+                    self._sink.close()
+                except Exception:
+                    pass
         return False
+
+
+def _resolved_object(obj):
+    """The real object behind a lazy `Proxy`, or None if it hasn't been built.
+
+    Deliberately never forces a build: reading `__wrapped__` on an unresolved
+    proxy *runs the factory*, which for a summary/reporting path would mean
+    initializing the very components we are reporting as not initialized.
+    `__resolved__` is readable without triggering anything; a non-proxy has no
+    such attribute and is returned as-is.
+    """
+    try:
+        resolved = object.__getattribute__(obj, "__resolved__")
+    except AttributeError:
+        return obj
+    if not resolved:
+        return None
+    return object.__getattribute__(obj, "__wrapped__")
+
+
+def _failed_subcomponents(obj, _prefix="", _depth=0, _max_depth=6):
+    """Dotted paths of the sub-components that failed inside `obj`.
+
+    `Assembly._append` records an optional child's failure in
+    `_failed_appends`, and re-records it one level up as an
+    `IncompleteInitialisationError` for every ancestor, so a top-level
+    namespace component only ever names its *direct* child. Recursing through
+    those re-recorded errors turns `xrd -> det -> pv_x` back into the leaf that
+    actually failed, which is the useful half of the information.
+
+    Returns [] for anything that isn't an assembly with failures, including a
+    still-lazy proxy (see `_resolved_object`).
+    """
+    obj = _resolved_object(obj)
+    if obj is None:
+        return []
+    failed = getattr(obj, "_failed_appends", None)
+    if not failed:
+        return []
+    out = []
+    for child_name, exc in failed.items():
+        path = f"{_prefix}{child_name}"
+        nested = []
+        if isinstance(exc, IncompleteInitialisationError) and _depth < _max_depth:
+            try:
+                child = object.__getattribute__(obj, "__dict__").get(child_name)
+            except AttributeError:
+                child = None
+            if child is not None:
+                nested = _failed_subcomponents(
+                    child, path + ".", _depth + 1, _max_depth
+                )
+        out.extend(nested or [path])
+    return out
+
+
+def _short_exception(exc, maxlen=90):
+    """One-line `TypeError: message` rendering for a summary line.
+
+    Reads `args[0]` rather than `str(exc)`: `append_manual_context` appends
+    the (multi-line, deliberately verbose) manual-instantiation hint as an
+    extra arg, and `str()` on a multi-arg exception renders the whole tuple -
+    which is exactly what you don't want on a one-line summary. The full
+    exception stays available via `failed_items_excpetion`.
+    """
+    if exc is None:
+        return "no error recorded"
+    msg = " ".join(str(exc.args[0] if getattr(exc, "args", None) else exc).split())
+    if len(msg) > maxlen:
+        msg = msg[: maxlen - 1] + "…"
+    return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
+
+
+class GivenUpInitialisationError(Exception):
+    """Recorded for a name that never failed outright but was still reporting
+    an in-progress initialization when init_all() hit its `N_cycles` cap."""
 
 
 class Namespace(Assembly):
@@ -653,6 +853,12 @@ class Namespace(Assembly):
         self._init_events = {}
         self._background_init_thread = None
 
+        # Names the last init_all() pass targeted; used by init_progress().
+        self._init_target_names = set()
+        # Path of the log file the most recent silent init_all() pass routed
+        # the per-component chatter into; None if none was captured yet.
+        self.last_init_log_path = None
+
         self.root_module = root_module
         self.alias_namespace = alias_namespace
         if required_names_directory:
@@ -691,6 +897,13 @@ class Namespace(Assembly):
     @property
     def failed_names(self):
         return set(self.failed_items.keys())
+
+    @property
+    def failed_items_exception(self):
+        """Correctly-spelled alias of `failed_items_excpetion` (which stays
+        the canonical attribute, since it is what everything already writes
+        to and what the user-facing hint messages name)."""
+        return self.failed_items_excpetion
 
     @property
     def failed_items_exception_prop(self):
@@ -1068,13 +1281,39 @@ class Namespace(Assembly):
             if raise_errors:
                 raise expt
 
-    def _make_output_capture(self, capture_output):
+    def _default_init_log_path(self):
+        """`~/.eco/init_logs/<namespace>_<timestamp>.log`, alongside the
+        kernel logs written by eco.widgets.kernel_registry. Preferred over a
+        /tmp temp file: it survives /tmp cleanup, is per-user by construction
+        (so none of the cross-account permission trouble that fixed-name /tmp
+        paths cause here), and stays greppable after the fact. Falls back to
+        the old temp file if the directory can't be created."""
+        from datetime import datetime
+
+        try:
+            d = Path.home() / ".eco" / "init_logs"
+            d.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            return str(d / f"{self.name or 'namespace'}_{stamp}.log")
+        except Exception:
+            return True  # -> _ThreadRoutedOutput picks a NamedTemporaryFile
+
+    def _make_output_capture(self, silent):
         """Build the (possibly disabled) thread-routed output capture used by
-        init_all(capture_output=...). Records the log path on the namespace so
-        it can be read back later with read_init_log()."""
+        init_all(silent=...). Records the log path on the namespace so it can
+        be read back later with read_init_log().
+
+        `silent` is the single knob (there is no separate `capture_output`
+        anymore): truthy means both "no chatter on the terminal" and "route
+        that chatter into a log"; a str/Path chooses where."""
+        if not silent:
+            return _ThreadRoutedOutput(enabled=False)
+        sink_path = silent if isinstance(silent, (str, Path)) else None
+        if sink_path is None:
+            sink_path = self._default_init_log_path()
         cap = _ThreadRoutedOutput(
-            sink_path=capture_output,
-            enabled=bool(capture_output),
+            sink_path=sink_path,
+            enabled=True,
             name=self.name or "namespace",
         )
         if cap.enabled:
@@ -1083,10 +1322,10 @@ class Namespace(Assembly):
 
     def read_init_log(self):
         """Return the captured per-component init log from the most recent
-        init_all(capture_output=...) call, or '' if none was captured."""
+        init_all(silent=...) call, or '' if none was captured."""
         path = getattr(self, "last_init_log_path", None)
         if not path:
-            print("No captured init log (call init_all(capture_output=True) first).")
+            print("No captured init log (a silent=True init_all() writes one).")
             return ""
         try:
             with open(path) as fh:
@@ -1120,11 +1359,11 @@ class Namespace(Assembly):
         names_to_init,
         max_workers,
         verbose,
-        quiet,
-        capture_output,
+        silent,
         raise_errors,
         giveup_failed,
         print_summary,
+        print_times,
         starttime,
         log,
         N_cycles=4,
@@ -1152,9 +1391,14 @@ class Namespace(Assembly):
         reached are treated like any other failure (`giveup_failed`), i.e.
         reported rather than retried silently for ever.
         """
-        cap = self._make_output_capture(capture_output)
-        if cap.enabled:
-            log(f"Capturing per-component init output to {cap.path}")
+        # `silent` drives both halves of being quiet: it suppresses this
+        # pass's own progress/per-item lines (via `log` and init_name(quiet=))
+        # *and* routes the worker threads' chatter into a log file, which is
+        # the only way the device __init__ prints and libca's fd-2 messages
+        # can be kept off the terminal at all. Where that log went is
+        # reported by the summary below, not by log() - log() is silenced by
+        # the very flag that turns the capture on.
+        cap = self._make_output_capture(silent)
 
         import epics.ca as ca
 
@@ -1190,7 +1434,7 @@ class Namespace(Assembly):
                         name,
                         verbose=verbose,
                         raise_errors=True,
-                        quiet=quiet,
+                        quiet=bool(silent),
                     ): name
                     for name in pending
                 }
@@ -1229,18 +1473,100 @@ class Namespace(Assembly):
             failed_names = names_to_init.intersection(self.lazy_names)
             for k in failed_names:
                 self.failed_items[k] = self.lazy_items.pop(k)
+                # Record *why*, if nothing else did. A name given up on after
+                # N_cycles never raised, so without this it lands in
+                # failed_items with an empty failed_items_excpetion entry -
+                # and both the summary below and _timeout_error()'s "inspect
+                # the failure" hint then have nothing at all to show for it.
+                self.failed_items_excpetion.setdefault(
+                    k,
+                    GivenUpInitialisationError(
+                        f"'{k}' was still reporting an in-progress "
+                        f"initialization after {N_cycles} cycles and was "
+                        f"given up on; retry with "
+                        f"<namespace>.reinitialize('{k}')"
+                    ),
+                )
 
         if print_summary:
-            log(
-                f"Initialized {len(self.initialized_names & names_to_init)} of {len(names_to_init)}."
-            )
-            failed = self.failed_names & names_to_init
-            if failed:
-                log("Failed objects: " + ", ".join(failed))
-            log(f"Initialisation took {time()-starttime:.1f} seconds")
+            self._print_init_summary(names_to_init, starttime, cap)
+        if print_times:
+            self._print_init_times(names_to_init)
 
         if raise_errors and first_exception is not None:
             raise first_exception
+
+    def _print_init_summary(self, names_to_init, starttime, cap=None):
+        """The one thing an init_all() pass always reports, silent or not.
+
+        Deliberately printed rather than routed through init_all()'s `log`:
+        `log` is gated on `silent`, and a summary you only get by *not* being
+        silent is a summary nobody ever sees (silent=True is the default and
+        what every long pass uses). Safe to print from here even with the
+        capture installed: only the pool's worker threads are routed into the
+        log file, and this runs on the thread driving the pass.
+
+        Splits the non-OK names into two groups, because they are genuinely
+        different states: *incomplete* items came up and stay usable, they
+        just have failed sub-components (which are named, resolved down to
+        the leaf that actually failed); *failed* items are not there at all.
+        """
+        ok = self.initialized_names & names_to_init
+        incomplete, failed = [], []
+        for name in sorted(self.failed_names & names_to_init):
+            exc = self.failed_items_excpetion.get(name)
+            subs = sorted(_failed_subcomponents(self.resolve_item(name)))
+            if subs:
+                # A badly disconnected assembly can have dozens of failed
+                # PVs; the point of the line is to say *what kind of thing*
+                # is missing, not to be the full list (which is one
+                # `<namespace>.<name>._failed_appends` away).
+                shown = ", ".join(subs[:6])
+                if len(subs) > 6:
+                    shown += f", +{len(subs)-6} more"
+                incomplete.append(f"{name} ({shown})")
+            elif isinstance(exc, IncompleteInitialisationError):
+                # Incomplete, but the object is gone/still lazy so the
+                # sub-component names can only come from the stored message.
+                incomplete.append(name)
+            else:
+                failed.append(f"{name} ({_short_exception(exc)})")
+
+        head = (
+            f"Initialized {len(ok)} of {len(names_to_init)} in namespace "
+            f"{self.name} in {time()-starttime:.1f} s"
+        )
+        if incomplete or failed:
+            head += f" ({len(incomplete)} incomplete, {len(failed)} failed)"
+        print(head)
+        for label, color, group in (
+            ("incomplete", _color.YELLOW, incomplete),
+            ("failed", _color.RED, failed),
+        ):
+            for i, entry in enumerate(group):
+                tag = (label + ":").ljust(12) if i == 0 else " " * 12
+                print(f"  {color}{tag}{_color.RESET}{entry}")
+        if cap is not None and cap.enabled and cap.path:
+            print(f"  {'log:':<12}{cap.path}  (<namespace>.read_init_log())")
+        sys.stdout.flush()
+
+    def _print_init_times(self, names_to_init=None, n=15):
+        """Top-`n` slowest components of the last pass, printed from the pass
+        itself so it works in background mode too (the old ascii_graph block
+        sat in init_all()'s blocking branch and, being gated on `not silent`
+        as well, could not fire at the defaults). Full data stays available
+        as `initialisation_times_sorted`."""
+        times = self.initialisation_times
+        if names_to_init is not None:
+            times = {k: v for k, v in times.items() if k in names_to_init}
+        if not times:
+            return
+        ranked = sorted(times.items(), key=lambda kv: kv[1], reverse=True)[:n]
+        width = max(len(k) for k, _ in ranked)
+        print(f"Slowest {len(ranked)} of {len(times)} initialisations:")
+        for name, dt in ranked:
+            print(f"  {name.ljust(width)}  {dt:7.1f} s")
+        sys.stdout.flush()
 
     def init_all(
         self,
@@ -1248,26 +1574,26 @@ class Namespace(Assembly):
         verbose=False,
         raise_errors=False,
         print_summary=True,
-        print_times=True,
-        max_workers=1,
+        print_times=False,
+        max_workers=8,
         N_cycles=4,
         silent=True,
         giveup_failed=True,
         exclude_names=[],
         background=True,
-        background_max_workers=8,
-        capture_output=False,
     ):
         """Initialize namespace items.
 
         Single shared algorithm underneath (see `_run_init_pass`): a
-        concurrent, CA-context-safe pass with up to `background_max_workers`
-        (if `background=True`) or `max_workers` (if `background=False`)
-        workers, retrying only names that lose a race to initialize a
-        shared dependency (IsInitialisingError) - not a blanket re-run of
-        everything. Always switches this namespace to event-based lazy-init
-        locking (`_responsive_locking`), so a component you access directly
-        while a pass is also touching it (e.g. as someone else's
+        concurrent, CA-context-safe pass with up to `max_workers` workers
+        (the same knob in both execution modes - there used to be a separate
+        `background_max_workers`, but since every worker attaches to the
+        shared CA context there has only ever been one code path and no
+        reason for the split), retrying only names that lose a race to
+        initialize a shared dependency (IsInitialisingError) - not a blanket
+        re-run of everything. Always switches this namespace to event-based
+        lazy-init locking (`_responsive_locking`), so a component you access
+        directly while a pass is also touching it (e.g. as someone else's
         dependency) is handed to you the instant that single build
         completes, instead of on a fixed polling interval.
 
@@ -1284,34 +1610,54 @@ class Namespace(Assembly):
             return. `raise_errors=True` is meaningful in this mode: the
             first genuine failure (not a lazy-init race) is re-raised after
             the pass finishes.
-        silent : bool (default True)
-            Purely output-level now, and the only thing left controlling
-            output (this replaced the old separate `quiet` parameter,
-            which no longer exists - pass everything through `silent`
-            instead). If True, suppresses progress/per-item/summary
-            messages regardless of `verbose`/`print_summary`/`print_times`.
-            Does not affect execution mode - see `background` for that.
-        capture_output : bool | str | pathlib.Path
-            If truthy, the noisy per-component chatter produced by the pool
-            *worker* threads (device ``__init__`` prints, per-item lines) is
-            routed into a log file instead of the terminal, while whatever
-            `silent=False` still prints - the summary - reaches the screen.
-            Pass ``True`` to write to an auto-named temp file, or a path to
-            choose the location. The path is stored on
-            ``self.last_init_log_path``; read it back with
-            ``self.read_init_log()``. EPICS/libca Channel Access messages
-            (which the C library writes straight to fd 2, past the Python
-            proxy) are also diverted into the log for the duration of the
-            init via ``epics.ca.replace_printf_handler``, and the default
-            (messages -> stderr) is restored when init finishes; that hook
-            is process-global while active, so a CA message you trigger
-            yourself during a ``background=True`` init also lands in the
-            log until it completes. Note: threads a device spawns on its
-            own are not routed, so their non-CA ``print`` output can still
-            leak.
-        background_max_workers : int
-            Worker count used only when `background=True`; `max_workers`
-            is used only when `background=False`.
+        silent : bool | str | pathlib.Path (default True)
+            Purely output-level, and the only thing controlling output (it
+            absorbed both the old `quiet` and the old `capture_output`
+            parameters, neither of which exists anymore - pass everything
+            through `silent`). Does not affect execution mode - see
+            `background` for that.
+
+            Truthy means *actually* silent, which takes two halves. It
+            suppresses this call's own progress and per-item lines, and it
+            routes everything the pool's *worker* threads write - the device
+            ``__init__`` chatter, which is the bulk of it, plus the
+            optional-component warnings - into a log file instead of the
+            terminal. EPICS/libca Channel Access messages, which the C
+            library writes straight to fd 2 and past any Python-level
+            stream proxy, are diverted into the same file via
+            ``epics.ca.replace_printf_handler`` for the duration of the
+            pass; the default (messages -> stderr) is restored when it
+            finishes. That hook is process-global while installed, so a CA
+            message you trigger yourself during a ``background=True`` init
+            also lands in the log until it completes. Threads a device
+            spawns on its own are not routed, so their non-CA ``print``
+            output can still leak - that is the one remaining hole.
+
+            The log goes to ``~/.eco/init_logs/<namespace>_<stamp>.log`` by
+            default; pass a str/Path instead of ``True`` to choose the
+            location. Either way the path ends up on
+            ``self.last_init_log_path``, is named in the summary, and is
+            read back with ``self.read_init_log()``.
+
+            `silent` does *not* suppress the summary or the times table -
+            those are gated only by `print_summary` / `print_times`, since
+            a summary you can only get by being non-silent is one nobody
+            ever sees at the (silent) defaults.
+        print_summary : bool (default True)
+            Print the one-block "Initialized N of M ... " report at the end
+            of the pass, listing incomplete items (up and usable, but with
+            failed sub-components - named down to the leaf that actually
+            failed) separately from outright failed ones (with their
+            error). Independent of `silent`.
+        print_times : bool (default False)
+            Print the slowest initialisations of the pass. Independent of
+            `silent`, and works in background mode too. Off by default
+            because it is long; the full data is always available as
+            `initialisation_times_sorted`.
+        max_workers : int (default 8)
+            Pool size, in both execution modes. Safe above 1 because
+            `_run_init_pass` attaches every worker to the one shared CA
+            context.
         N_cycles : int (default 4)
             Maximum number of retry passes over names that reported an
             in-progress initialization (IsInitialisingError). Caps what
@@ -1322,10 +1668,24 @@ class Namespace(Assembly):
             if not silent:
                 print(*args, **kwargs)
 
+        # A second pass started while one is still running would submit an
+        # overlapping name set to a second pool, and every collision on a
+        # shared dependency is exactly the IsInitialisingError the retry loop
+        # exists to work around - i.e. it makes the pass it duplicates slower
+        # and more likely to give up. Hand back the running one instead.
+        running = self._background_init_thread
+        if running is not None and running.is_alive():
+            logger.warning(
+                "init_all(): a background pass is already running on namespace "
+                "%s; returning it instead of starting a second one "
+                "(wait_for_init() to block on it, init_progress() to watch it).",
+                self.name,
+            )
+            return running
+
         starttime = time()
         names_to_init = self._select_names_to_init(required_only, exclude_names, log)
 
-        self.silently_initializing = True
         self._responsive_locking = True
 
         if background:
@@ -1336,64 +1696,83 @@ class Namespace(Assembly):
             )
 
             def worker():
-                try:
-                    self._run_init_pass(
-                        names_to_init,
-                        background_max_workers,
-                        verbose,
-                        silent,
-                        capture_output,
-                        raise_errors,
-                        giveup_failed,
-                        print_summary,
-                        starttime,
-                        log,
-                        N_cycles,
-                    )
-                finally:
-                    self.silently_initializing = False
+                self._run_init_pass(
+                    names_to_init,
+                    max_workers,
+                    verbose,
+                    silent,
+                    raise_errors,
+                    giveup_failed,
+                    print_summary,
+                    print_times,
+                    starttime,
+                    log,
+                    N_cycles,
+                )
 
             thread = Thread(
                 target=worker, name=f"init_all_background[{self.name}]", daemon=True
             )
+            self._init_target_names = set(names_to_init)
             self._background_init_thread = thread
             thread.start()
             return thread
 
         log(f"Initializing {len(names_to_init)} items in namespace {self.name} ...")
-        try:
-            self._run_init_pass(
-                names_to_init,
-                max_workers,
-                verbose,
-                silent,
-                capture_output,
-                raise_errors,
-                giveup_failed,
-                print_summary,
-                starttime,
-                log,
-                N_cycles,
-            )
-        finally:
-            self.silently_initializing = False
-
-        if print_times and not silent:
-            try:
-                from collections import Iterable
-            except:
-                import collections.abc
-
-                collections.Iterable = collections.abc.Iterable
-            from ascii_graph import Pyasciigraph
-
-            gr = Pyasciigraph()
-            for line in gr.graph(
-                "Initialisation times",
-                [(tk, tv) for tk, tv in self.initialisation_times_sorted.items()],
-            ):
-                print(line)
+        self._init_target_names = set(names_to_init)
+        # print_summary/print_times are handled inside _run_init_pass, so they
+        # behave identically here and in the background branch (the times
+        # table used to live out here and therefore never ran at all with the
+        # default background=True).
+        self._run_init_pass(
+            names_to_init,
+            max_workers,
+            verbose,
+            silent,
+            raise_errors,
+            giveup_failed,
+            print_summary,
+            print_times,
+            starttime,
+            log,
+            N_cycles,
+        )
         return None
+
+    def wait_for_init(self, timeout=None):
+        """Block until the background init_all() pass has finished.
+
+        Returns True if no pass is running or it finished within `timeout`,
+        False if it is still going. Without this, a script that follows
+        `init_all()` (background by default now) has to reach into
+        `_background_init_thread` itself to know when the namespace is
+        actually usable.
+        """
+        thread = self._background_init_thread
+        if thread is None:
+            return True
+        thread.join(timeout)
+        return not thread.is_alive()
+
+    def init_progress(self, names=None):
+        """Counts for the pass currently running (or the last one that ran).
+
+        `names` defaults to that pass's target set, falling back to every
+        name in the namespace. Cheap and side-effect free - it only counts
+        dict membership, so it never touches (and so never builds) a
+        component.
+        """
+        if names is None:
+            names = getattr(self, "_init_target_names", None) or self.all_names
+        names = set(names)
+        thread = self._background_init_thread
+        return {
+            "running": bool(thread is not None and thread.is_alive()),
+            "total": len(names),
+            "initialized": len(self.initialized_names & names),
+            "failed": len(self.failed_names & names),
+            "pending": len(self.lazy_names & names),
+        }
 
     def init_all_new(
         self,
@@ -1414,7 +1793,6 @@ class Namespace(Assembly):
                 f"WARNING - previously hard failed items are NOT initialized:\n{self.failed_names} "
             )
         if silent:
-            self.silently_initializing = True
             print(
                 f"Initializing all items in namespace {self.name} silently in background.\n Be aware of unrelated output!"
             )
@@ -1438,7 +1816,6 @@ class Namespace(Assembly):
                     )
                 ]
                 self.exc_init.shutdown(wait=True)
-                self.silently_initializing = False
                 if giveup_failed:
                     failed_names = self.lazy_names
                     for k in failed_names:
@@ -1676,12 +2053,13 @@ class Namespace(Assembly):
                         f"missing component(s): {missing}. "
                         f"Inspect via <namespace>.{name}._failed_appends"
                     )
-                    print(
-                        _color.RED
-                        + f"WARNING: '{name}' initialized incompletely; missing "
-                        + f"component(s): {missing}. Recorded in failed_items "
-                        + f"(still accessible as <namespace>.{name})."
-                        + _color.RESET
+                    logger.warning(
+                        "'%s' initialized incompletely; missing component(s): "
+                        "%s. Recorded in failed_items (still accessible as "
+                        "<namespace>.%s).",
+                        name,
+                        missing,
+                        name,
                     )
                 else:
                     self.initialized_items[name] = popped
@@ -1711,9 +2089,16 @@ class Namespace(Assembly):
                                 ta["alias"], ta["channel"], ta["channeltype"]
                             )
                         except Exception as e:
-                            print(f'could not init alias {ta["alias"]}')
-                            print("error message", e)
-                            # traceback.print_tb(e)
+                            # one record, not two prints: a missing alias
+                            # silently changes what get_status() records, so
+                            # the message and its cause belong together.
+                            logger.warning(
+                                "could not init alias %s for '%s': %s: %s",
+                                ta["alias"],
+                                name,
+                                type(e).__name__,
+                                e,
+                            )
                 else:
                     self.names_without_alias.append(name)
                 return obj_initialized
@@ -1746,12 +2131,13 @@ class Namespace(Assembly):
                     f"missing component(s): {missing}. "
                     f"Inspect via <namespace>.{name}._failed_appends"
                 )
-                print(
-                    _color.RED
-                    + f"WARNING: '{name}' initialized incompletely; missing "
-                    + f"component(s): {missing}. Recorded in failed_items "
-                    + f"(still accessible as <namespace>.{name})."
-                    + _color.RESET
+                logger.warning(
+                    "'%s' initialized incompletely; missing component(s): %s. "
+                    "Recorded in failed_items (still accessible as "
+                    "<namespace>.%s).",
+                    name,
+                    missing,
+                    name,
                 )
             else:
                 self.initialized_items[name] = obj
@@ -1773,8 +2159,13 @@ class Namespace(Assembly):
                             ta["alias"], ta["channel"], ta["channeltype"]
                         )
                     except Exception as e:
-                        print(f'could not init alias {ta["alias"]}')
-                        print("error message", e)
+                        logger.warning(
+                            "could not init alias %s for '%s': %s: %s",
+                            ta["alias"],
+                            name,
+                            type(e).__name__,
+                            e,
+                        )
             else:
                 self.names_without_alias.append(name)
             return obj

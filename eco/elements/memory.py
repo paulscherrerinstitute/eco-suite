@@ -4,6 +4,7 @@ from datetime import datetime
 import weakref
 from .adjustable import AdjustableFS
 from ..utilities.tables import format_table, section_row_styles
+from ..utilities.datafiles import ensure_dir
 import colorama
 
 try:
@@ -84,11 +85,9 @@ class Memory:
         name = self.obj_parent().alias.get_full_name(joiner=None)
         self.dir = Path(self.base_dir) / Path("/".join(reversed(name)))
         try:
-            self.dir.mkdir(exist_ok=True)
-            try:
-                self.dir.chmod(0o775)
-            except:
-                pass
+            # group-writable + setgid, so another pgroup member can store their
+            # own memories/presets for the same device -- eco.utilities.datafiles
+            ensure_dir(self.dir)
         except:
             print("Could not create memory directory")
         self._memories = AdjustableFS(

@@ -308,13 +308,17 @@ class NamespaceMonitorStore:
     def _names_never_really_attempted(namespace):
         """Failed names that carry no genuine error.
 
-        Two shapes, both meaning "this was never actually built", as opposed
+        Three shapes, all meaning "this was never actually built", as opposed
         to "this device is broken":
 
-        * no recorded exception at all - init_all's `giveup_failed` moves
-          whatever is still lazy at the end of the pass into failed_items
-          without an exception, which is where a name lands when the retry
-          loop hit its cycle cap;
+        * a GivenUpInitialisationError - init_all's `giveup_failed` moves
+          whatever is still lazy at the end of the pass into failed_items and
+          records this, which is where a name lands when the retry loop hit
+          its cycle cap;
+        * no recorded exception at all - the same case before init_all
+          started recording a reason for it; kept so a namespace populated by
+          older code (or by anything else writing failed_items directly) is
+          still retried rather than silently written off;
         * an IsInitialisingError - it timed out waiting for another worker
           that was building the same component.
 
@@ -322,12 +326,17 @@ class NamespaceMonitorStore:
         IncompleteInitialisationError, which still leaves a usable partial
         object) is left alone: retrying it just costs time.
         """
-        from eco.utilities.config import IsInitialisingError
+        from eco.utilities.config import (
+            GivenUpInitialisationError,
+            IsInitialisingError,
+        )
 
         out = set()
         for name in set(namespace.failed_names):
             exc = namespace.failed_items_excpetion.get(name)
-            if exc is None or isinstance(exc, IsInitialisingError):
+            if exc is None or isinstance(
+                exc, (IsInitialisingError, GivenUpInitialisationError)
+            ):
                 out.add(name)
         return out
 

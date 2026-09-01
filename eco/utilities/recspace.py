@@ -1,3 +1,4 @@
+import logging
 from importlib import import_module
 from diffcalc.hkl.calc import HklCalculation
 from diffcalc.hkl.constraints import Constraints
@@ -23,6 +24,8 @@ from eco.elements.detector import DetectorVirtual
 
 from eco.elements.adj_obj import AdjustableObject
 from epics import PV
+
+logger = logging.getLogger(__name__)
 
 
 class Diffractometer_Dummy(Assembly):
@@ -474,10 +477,11 @@ class DiffGeometryYou(Assembly):
                     # attempted and failed: keep it visibly FAILED on the
                     # diffractometer (do not mask it with a virtual placeholder),
                     # while diffcalc still uses the constraint above.
-                    print(
-                        f"WARNING: diffractometer angle '{adj}' failed to "
-                        f"initialize; leaving it as a failed component instead of "
-                        f"a virtual placeholder."
+                    logger.warning(
+                        "diffractometer angle '%s' failed to initialize; "
+                        "leaving it as a failed component instead of a virtual "
+                        "placeholder.",
+                        adj,
                     )
                 else:
                     self.diffractometer._append(

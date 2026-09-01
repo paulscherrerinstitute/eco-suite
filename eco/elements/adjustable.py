@@ -19,6 +19,7 @@ from eco.elements.protocols import MonitorableValueUpdate, enum_repr
 
 from eco.elements import memory
 from eco.utilities.keypress import KeyPress
+from eco.utilities.datafiles import ensure_dir, open_group_writable
 
 # from .assembly import Assembly
 from copy import deepcopy
@@ -580,11 +581,7 @@ class AdjustableFS:
         self.file_path = Path(file_path)
         if not self.file_path.exists():
             if not self.file_path.parent.exists():
-                self.file_path.parent.mkdir(parents=True)
-                try:
-                    self.file_path.parent.chmod(0o775)
-                except:
-                    pass
+                ensure_dir(self.file_path.parent)
             self._write_value(default_value)
         self.alias = Alias(name)
         self.max_read_period = max_read_period
@@ -610,8 +607,19 @@ class AdjustableFS:
         return wrapper
 
     def _write_value(self, value):
+        """Rewrite the backing file, leaving it group-writable.
+
+        `open_group_writable` rather than `open`: `open(path, "w")` needs write
+        permission on the *file*, and the writer becomes its owner. On a
+        shared beamline path that means the first account to write a value
+        locks every other account out of it -- the failure mode documented for
+        `bernina_robot/adjustables_fs`, where a write from a personal account
+        took ownership of the robot server's state files and left the real
+        (gac-bernina) server raising PermissionError on every poll. Keeping the
+        group-write bit on means the next account can still rewrite it.
+        """
         self._read_value.cache_clear()
-        with open(self.file_path, "w") as f:
+        with open_group_writable(self.file_path, "w") as f:
             dump({"value": value}, f, indent=4)
 
     def set_target_value(self, value, hold=False):

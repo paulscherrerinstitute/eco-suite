@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import copy
+import logging
 from datetime import datetime
 from inspect import isclass
 import json
@@ -28,6 +29,7 @@ from eco import Adjustable, Detector
 
 import eco
 
+logger = logging.getLogger(__name__)
 
 _initializing_assemblies = []
 
@@ -386,13 +388,17 @@ class Assembly:
                 if not hasattr(self, "_failed_appends_display"):
                     self._failed_appends_display = set()
                 self._failed_appends_display.add(name)
-            print(
-                colorama.Fore.RED
-                + colorama.Style.BRIGHT
-                + f"WARNING: optional component '{name}' of "
-                + f"'{self.alias.get_full_name()}' failed to initialize; kept as a "
-                + f"FailedComponent placeholder:\n    {type(e).__name__}: {e}"
-                + colorama.Style.RESET_ALL
+            # logger, not print: a print() from an init worker thread cannot
+            # be captured while prompt_toolkit owns sys.stdout at the IPython
+            # prompt, so during a silent Namespace.init_all() this would
+            # scroll past regardless. See _ThreadRoutedOutput's docstring.
+            logger.warning(
+                "optional component '%s' of '%s' failed to initialize; kept as "
+                "a FailedComponent placeholder: %s: %s",
+                name,
+                self.alias.get_full_name(),
+                type(e).__name__,
+                e,
             )
             # leave a sentinel in the slot so the component is *present but
             # failed*: attribute/isinstance checks see it, but any real use
@@ -428,13 +434,12 @@ class Assembly:
                 if not hasattr(self, "_failed_appends_display"):
                     self._failed_appends_display = set()
                 self._failed_appends_display.add(name)
-            print(
-                colorama.Fore.RED
-                + colorama.Style.BRIGHT
-                + f"WARNING: component '{name}' of "
-                + f"'{self.alias.get_full_name()}' initialized incompletely; "
-                + f"failed sub-component(s): {missing}"
-                + colorama.Style.RESET_ALL
+            logger.warning(
+                "component '%s' of '%s' initialized incompletely; failed "
+                "sub-component(s): %s",
+                name,
+                self.alias.get_full_name(),
+                missing,
             )
 
         self.__dict__[name] = obj
@@ -918,7 +923,7 @@ class Assembly:
         (an `Assembly` child's own `_wait_for_initialisation` may in turn call
         this same method on its own children), and it is itself commonly
         invoked from inside `Namespace.init_all(background=True)`'s own
-        `ThreadPoolExecutor` (up to `background_max_workers` names in
+        `ThreadPoolExecutor` (up to `max_workers` names in
         parallel, default 8). A thread pool at *every* level of that
         recursion multiplies out fast -- one `EventReceiver` alone has ~47
         pulser/output children, each in turn an `Assembly` with its own ~8

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=eco control box - network info
+Comment=Show the box's MAC/IP on screen until it is registered on the network
+Exec=/usr/bin/python3 /opt/eco-control-box/manual_control/remote/pi_setup/show_netinfo.py
+Terminal=false
+X-GNOME-Autostart-enabled=true

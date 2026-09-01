@@ -6,6 +6,7 @@ from eco.base.adjustable import Adjustable
 from eco.devices_general.therm import ChillerThermotek
 from eco.elements.adj_obj import AdjustableObject
 from eco.elements.detector import DetectorGet
+from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
 from ..epics_utils.adjustable import AdjustablePv
 from ..elements.assembly import Assembly
@@ -219,12 +220,11 @@ class Jungfrau(Assembly):
 
         try:
             if not dest.exists():
-                dest.parent.mkdir(parents=True, exist_ok=True, mode=0o775)
-                try:
-                    dest.parent.chmod(0o775)
-                except:
-                    pass
+                ensure_dir(dest.parent)
                 shutil.copyfile(f, dest)
+                # copyfile creates with the umask (0o644): the copy has to be
+                # rewritable by the rest of the pgroup too.
+                ensure_group_writable(dest)
 
         except PermissionError:
             return "No permissions to res directory!"
@@ -250,12 +250,11 @@ class Jungfrau(Assembly):
         )
         try:
             if not dest.exists():
-                dest.parent.mkdir(parents=True, exist_ok=True, mode=0o775)
-                try:
-                    dest.parent.chmod(0o775)
-                except:
-                    pass
+                ensure_dir(dest.parent)
                 shutil.copyfile(f, dest)
+                # copyfile creates with the umask (0o644): the copy has to be
+                # rewritable by the rest of the pgroup too.
+                ensure_group_writable(dest)
         except PermissionError:
             return "No poermissions to res directory!"
 

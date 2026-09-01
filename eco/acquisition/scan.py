@@ -12,7 +12,8 @@ import traceback
 from pathlib import Path
 import colorama
 
-from eco.elements.protocols import Adjustable
+from eco.elements.protocols import Adjustable, is_adjustable, resolve_lazy
+from eco.utilities.datafiles import open_group_writable
 from eco.utilities.utilities import (
     NumpyEncoder,
     foo_get_kwargs,
@@ -619,10 +620,10 @@ class StepScan(Assembly):
 
     def writeScanInfo(self):
         if not Path(self.scan_info_filename).exists():
-            with open(self.scan_info_filename, "w") as f:
+            with open_group_writable(self.scan_info_filename, "w") as f:
                 json.dump(self.scan_info, f, sort_keys=True, cls=NumpyEncoder)
         else:
-            with open(self.scan_info_filename, "r+") as f:
+            with open_group_writable(self.scan_info_filename, "r+") as f:
                 f.seek(0)
                 json.dump(self.scan_info, f, sort_keys=True, cls=NumpyEncoder)
                 f.truncate()
@@ -1349,7 +1350,11 @@ class Scans(Assembly):
         adjustables = []
         positions = []
         for adj_spec in adj_specs:
-            adj = adj_spec[0]
+            # resolve_lazy: a still-lazy namespace proxy fails a bare
+            # `isinstance(..., Adjustable)` (see
+            # eco.elements.protocols.resolve_lazy), which silently *dropped*
+            # the axis from the scan instead of moving it.
+            adj = resolve_lazy(adj_spec[0])
             spec = adj_spec[1:]
             if isinstance(adj, Adjustable):
                 adjustables.append(adj)
@@ -1460,8 +1465,10 @@ class Scans(Assembly):
         positions = []
         for adj_spec in adj_specs:
             # simultaneous (a2scan-like) axis: nested list of specs, one per co-moving adjustable
-            if not isinstance(adj_spec[0], Adjustable):
-                s_adjustables = [ts[0] for ts in adj_spec]
+            # is_adjustable, not isinstance: an unresolved lazy proxy would
+            # otherwise be misread as a nested simultaneous-axis spec below.
+            if not is_adjustable(adj_spec[0]):
+                s_adjustables = [resolve_lazy(ts[0]) for ts in adj_spec]
                 s_positions = [interpret_step_specification(ts[1:]) for ts in adj_spec]
                 if len(set(map(len, s_positions))) != 1:
                     raise Exception(
@@ -1472,7 +1479,7 @@ class Scans(Assembly):
 
             # single mesh axis
             else:
-                adjustables.append(adj_spec[0])
+                adjustables.append(resolve_lazy(adj_spec[0]))
                 positions.append(interpret_step_specification(adj_spec[1:]))
 
         shape = [len(tp) for tp in positions]

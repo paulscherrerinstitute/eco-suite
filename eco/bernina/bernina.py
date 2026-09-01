@@ -2457,16 +2457,16 @@ namespace.mark_beamline(
 try:
     import sys
     from ..utilities import TimeoutPath
+    from ..utilities.datafiles import ensure_dir
 
     if TimeoutPath(f"/sf/bernina/data/{config_bernina.pgroup()}/res/").exists():
         pgroup_eco_path = TimeoutPath(
             f"/sf/bernina/data/{config_bernina.pgroup()}/res/eco"
         )
-        pgroup_eco_path.mkdir(mode=0o775, exist_ok=True)
-        try:
-            pgroup_eco_path.chmod(mode=0o775)
-        except:
-            pass
+        # ensure_dir, not mkdir(mode=0o775): the mode argument is masked by
+        # the umask (0022 here), so this used to land as 0o755 -- see
+        # eco.utilities.datafiles.
+        ensure_dir(pgroup_eco_path)
 
         sys.path.append(pgroup_eco_path.as_posix())
     else:
@@ -2474,7 +2474,7 @@ try:
             "Could not access experiment folder, could be due to more systematic file system failure!"
         )
 except:
-    print("Did not succeed to append an eco folder in current prgoup")
+    print("Did not succeed to append an eco folder in current pgroup")
 
 
 # class Xspect_EH55(Assembly):

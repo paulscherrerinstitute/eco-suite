@@ -605,7 +605,18 @@ class DataHub(Assembly):
         """
         if not end:
             if hasattr(self, "pulse_id"):
-                end = int(self.pulse_id.get_current_value())
+                # pyepics' PV.get() returns None on a timed-out get instead of
+                # raising, so a plain int() here died with an opaque
+                # "int() argument must be ... not 'NoneType'" whenever channel
+                # access was congested -- same failure that used to end scans
+                # in Daq.stop(); see Daq.get_pulse_id.
+                current = self.pulse_id.get_current_value()
+                if current is None:
+                    raise Exception(
+                        "could not read the current pulse id (channel access "
+                        "timed out); pass an explicit `end` pulse id"
+                    )
+                end = int(current)
             else:
                 raise Exception("no end pulse id provided")
             start = start + end

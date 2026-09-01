@@ -5,6 +5,7 @@ import warnings
 from ..elements.adjustable import AdjustableFS
 from ..elements.memory import Memory
 from subprocess import call
+from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from eco.utilities.config import Proxy
 from eco.bernina import namespace
 
@@ -516,12 +517,12 @@ class Run_Table_DataFrame(DataFrame):
             print(
                 f"Path {data_dir.absolute().as_posix()} does not exist, will create it..."
             )
-            data_dir.mkdir(parents=True)
-            print(f"Tried to create {data_dir.absolute().as_posix()}")
-            data_dir.chmod(0o775)
-            print(f"Tried to change permissions to 775")
+            ensure_dir(data_dir)
         pd.DataFrame(self).to_pickle(self.fname + "tmp")
         call(["mv", self.fname + "tmp", self.fname])
+        # after the mv, not before: `to_pickle` creates the temp file with the
+        # umask's 0o644, and the rename carries those bits to the final name.
+        ensure_group_writable(self.fname)
 
     def load(self):
         if os.path.exists(self.fname):

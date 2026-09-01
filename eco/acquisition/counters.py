@@ -2,7 +2,8 @@ import copy
 import time
 import weakref
 from eco.acquisition.utilities import Acquisition
-from eco.elements.protocols import Detector, MonitorableValueUpdate
+from eco.elements.protocols import Detector, MonitorableValueUpdate, resolve_lazy
+from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from collections import namedtuple
 from escape import ArrayTimestamps
 from matplotlib.animation import FuncAnimation
@@ -43,6 +44,12 @@ class CounterValue:
 
     def append_detectors(self, *detectors):
         for detector in detectors:
+            # A detector taken straight off a namespace (`bernina.some_det`)
+            # can still be an unresolved lazy proxy, which fails every
+            # structural protocol check below and would be rejected as "not a
+            # Detector" -- see eco.elements.protocols.resolve_lazy. Resolve
+            # once here; it is about to be used for real anyway.
+            detector = resolve_lazy(detector)
             if not isinstance(detector, MonitorableValueUpdate) and not isinstance(
                 detector, Detector
             ):
@@ -218,7 +225,9 @@ class CounterValue:
         directory = Path(directory)
         if not directory.exists():
             try:
-                directory.mkdir(parents=True)
+                # group-writable at every level, so the rest of the pgroup can
+                # add to this run's data -- see eco.utilities.datafiles
+                ensure_dir(directory)
             except:
                 print(f"Warning: Could not create directory {directory.resolve()} !")
 
@@ -235,6 +244,9 @@ class CounterValue:
                 d.append(v, name=k)
                 v.store()
             d.results_file.close()
+            # the h5 comes from escape's DataSet, i.e. created with the umask
+            # (0o644); the pgroup has to be able to rewrite it too
+            ensure_group_writable(Path(directory) / Path(filename))
             scan.stored_filename = (
                 (Path(directory) / Path(filename)).resolve().as_posix()
             )
@@ -259,6 +271,7 @@ class CounterValue:
             scan.fig.savefig(
                 plotfilename.as_posix(),
             )
+            ensure_group_writable(plotfilename)  # savefig also uses the umask
             files.append(plotfilename)
             # print(plotfilename, plotfilename.as_posix())
 

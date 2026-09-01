@@ -13,8 +13,9 @@ from time import sleep
 
 from eco.elements.detector import DetectorMemory
 from eco.utilities import NumpyEncoder
-from eco.elements.protocols import Adjustable
+from eco.elements.protocols import Adjustable, is_adjustable, resolve_lazy
 from eco.utilities.utilities import foo_get_kwargs
+from eco.utilities.datafiles import ensure_dir, open_group_writable
 from ..epics_utils.detector import DetectorPvDataStream
 from ..epics_utils.utilities_epics import Monitor
 from epics import PV
@@ -250,15 +251,27 @@ class Daq(Assembly):
 
     @property
     def pgroup(self):
-        if isinstance(self._pgroup, Adjustable):
-            return self._pgroup.get_current_value()
+        """The pgroup *value* (a string), never the adjustable holding it.
+
+        Resolved before the protocol check: `_pgroup` normally
+        arrives as a still-lazy namespace proxy (bernina.py passes
+        `NamespaceComponent(namespace, "config_bernina.pgroup")`, which
+        `replace_NamespaceComponents` turns into a `Proxy`), and a bare
+        protocol check on an unresolved proxy is False -- which used to leak
+        the proxy itself into every `json={"pgroup": ...}` REST call as
+        "Object of type LazyComponent is not JSON serializable". See
+        `eco.elements.protocols.resolve_lazy`.
+        """
+        pgroup = resolve_lazy(self._pgroup)
+        if isinstance(pgroup, Adjustable):
+            return pgroup.get_current_value()
         else:
-            return self._pgroup
+            return pgroup
 
     @pgroup.setter
     def pgroup(self, value):
-        if isinstance(self._pgroup, Adjustable):
-            return self._pgroup.set_target_value().wait()
+        if is_adjustable(self._pgroup):
+            return resolve_lazy(self._pgroup).set_target_value(value).wait()
         self._pgroup = value
 
     def acquire(
@@ -336,6 +349,127 @@ class Daq(Assembly):
             pgroup=pgroup,
         )
 
+    def get_pulse_id(self, newer_than=None, timeout=None):
+        """The current pulse_id as an `int` -- never `None`.
+
+        Every caller used to do ``int(self.pulse_id.get_current_value())``,
+        which is a fresh channel-access get on an ``auto_monitor=False`` PV.
+        pyepics' ``PV.get()`` **returns None on timeout** rather than raising,
+        so under CA congestion -- exactly what a scan step produces, with every
+        detector/adjustable in the namespace issuing its own gets at once --
+        that ``int(...)`` blew up mid-scan with::
+
+            TypeError: int() argument must be a string, a bytes-like object
+            or a real number, not 'NoneType'
+
+        and killed the run. `start()` was hardened against this before, by
+        adding the dedicated ``auto_monitor=True`` PV set up in `__init__` and
+        reading its cache instead of issuing gets; `stop()` was not, and kept
+        the raw get in two places -- including a *polling loop* that fired one
+        CA get every ``wait_cycle_sleep`` (10 ms) for the whole acquisition,
+        which did not just suffer from the congestion but measurably added to
+        it. This method is that same monitor-cache read, factored out so every
+        pulse_id caller shares one hardened implementation.
+
+        Reading the monitor cache costs no CA traffic at all: the IOC pushes
+        updates and the callback in `__init__` stores them. `newer_than`
+        (a `time.time()` stamp) additionally waits for an update at least that
+        recent, for callers that need *now*'s pulse and not merely the last one
+        seen -- `start()` needs that, since a stale start_id would silently
+        widen the acquisition window.
+
+        Raises `TimeoutError` (never returns None) if no acceptable value
+        arrives within `timeout`, defaulting to ``self.timeout``.
+        """
+        if timeout is None:
+            timeout = self.timeout
+        deadline = time.time() + timeout
+
+        if hasattr(self, "_pulse_id_updated"):
+            while True:
+                with self._pulse_id_latest_lock:
+                    ts = self._pulse_id_latest["timestamp"]
+                    val = self._pulse_id_latest["value"]
+                if val is not None and (
+                    newer_than is None or (ts is not None and ts >= newer_than)
+                ):
+                    return int(val)
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"Timeout {timeout} s hit while waiting for a valid"
+                        f"{', up-to-date' if newer_than is not None else ''} "
+                        f"pulse_id from the {self.pulse_id.pvname} monitor. "
+                        f"last value: {val}; last timestamp: {ts}; "
+                        f"required newer than: {newer_than}"
+                    )
+                self._pulse_id_updated.wait(timeout=min(remaining, 0.25))
+                self._pulse_id_updated.clear()
+
+        # Fallback for a pulse_id_adj configured as a pre-built object rather
+        # than a PV name string: no dedicated monitor is set up in that case,
+        # so poll explicitly -- with a per-call timeout and a None check, which
+        # is the part the old inline code in stop() was missing.
+        pv = self.pulse_id._pv
+        tvars = None
+        value = None
+        poll_interval = 0.02
+        max_poll_interval = 0.25
+        per_call_timeout = 1.0  # headroom for a saturated CA processing thread
+        while True:
+            if newer_than is not None:
+                tvars = pv.get_timevars(timeout=per_call_timeout)
+                fresh = tvars is not None and tvars["timestamp"] >= newer_than
+            else:
+                fresh = True
+            if fresh:
+                value = pv.get(use_monitor=False, timeout=per_call_timeout)
+                if value is not None:
+                    return int(value)
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"Timeout {timeout} s hit while waiting for a valid"
+                    f"{', up-to-date' if newer_than is not None else ''} "
+                    f"pulse_id. timevars: {tvars}; value: {value}; "
+                    f"required newer than: {newer_than}"
+                )
+            time.sleep(poll_interval)
+            poll_interval = min(poll_interval * 1.5, max_poll_interval)
+
+    def wait_for_pulse_id(self, pulse_id, poll_interval=0.01, timeout=None):
+        """Block until the machine's pulse_id counter has reached `pulse_id`.
+
+        Event-driven off the same monitor as `get_pulse_id`, so waiting out an
+        acquisition costs zero CA gets where the old ``while
+        int(self.pulse_id.get_current_value()) < stop_id: sleep(0.01)`` issued
+        one per 10 ms.
+
+        `timeout=None` (the default) waits indefinitely, deliberately: the old
+        loop did too, and a scan step that is waiting for beam to come back
+        must not be turned into an exception just because the wait got long.
+        """
+        deadline = None if timeout is None else time.time() + timeout
+        while True:
+            # A get that cannot see a fresh value is not a reason to give up
+            # here -- we only need to know whether we have passed pulse_id yet,
+            # and the next monitor update will tell us.
+            try:
+                current = self.get_pulse_id(timeout=poll_interval)
+            except TimeoutError:
+                current = None
+            if current is not None and current >= pulse_id:
+                return current
+            if deadline is not None and time.time() > deadline:
+                raise TimeoutError(
+                    f"Timeout {timeout} s hit waiting for pulse_id {pulse_id} "
+                    f"(last seen: {current})"
+                )
+            if hasattr(self, "_pulse_id_updated"):
+                self._pulse_id_updated.wait(timeout=poll_interval)
+                self._pulse_id_updated.clear()
+            else:
+                sleep(poll_interval)
+
     def start(self, label=None, scan=None, **kwargs):
         """
         Mark the current pulse_id as the start of an acquisition; the
@@ -373,51 +507,10 @@ class Daq(Assembly):
             "channels_CA", self.channels["channels_CA"].get_current_value()
         )
 
+        # newer_than: the start of the acquisition window must be a pulse seen
+        # *after* this step began, never a stale cached one.
         starttime_local = time.time()
-        start_id = None
-        if hasattr(self, "_pulse_id_updated"):
-            # Wait on the dedicated pulse_id monitor's cache instead of issuing
-            # explicit CA get requests, to avoid adding CA traffic that competes
-            # with itself/other concurrent CA activity right at scan start.
-            while True:
-                with self._pulse_id_latest_lock:
-                    ts = self._pulse_id_latest["timestamp"]
-                    val = self._pulse_id_latest["value"]
-                if ts is not None and val is not None and ts >= starttime_local:
-                    start_id = int(val)
-                    break
-                remaining = self.timeout - (time.time() - starttime_local)
-                if remaining <= 0:
-                    raise TimeoutError(
-                        f"Timeout {self.timeout} s hit while waiting for a valid, "
-                        f"up-to-date pulse_id. last timestamp: {ts}; "
-                        f"starttime of scan step: {starttime_local}"
-                    )
-                self._pulse_id_updated.wait(timeout=min(remaining, 0.25))
-                self._pulse_id_updated.clear()
-        else:
-            # Fallback for a pulse_id_adj configured as a pre-built object rather
-            # than a PV name string: no dedicated monitor is set up in that case,
-            # so fall back to an explicit polling wait.
-            pv = self.pulse_id._pv
-            tvars = None
-            poll_interval = 0.02
-            max_poll_interval = 0.25
-            per_call_timeout = 1.0  # headroom for a saturated CA processing thread
-            while True:
-                tvars = pv.get_timevars(timeout=per_call_timeout)
-                if tvars is not None and tvars["timestamp"] >= starttime_local:
-                    start_id = pv.get(use_monitor=False, timeout=per_call_timeout)
-                    if start_id is not None:
-                        break
-                if time.time() - starttime_local > self.timeout:
-                    raise TimeoutError(
-                        f"Timeout {self.timeout} s hit while waiting for a valid, up-to-date "
-                        f"pulse_id. timevars: {tvars}; start_id: {start_id}; "
-                        f"starttime of scan step: {starttime_local}"
-                    )
-                time.sleep(poll_interval)
-                poll_interval = min(poll_interval * 1.5, max_poll_interval)
+        start_id = self.get_pulse_id(newer_than=starttime_local)
 
         acq_pars = {
             "label": label,
@@ -443,7 +536,11 @@ class Daq(Assembly):
         if pgroup is None:
             pgroup = self.pgroup
         if not stop_id:
-            stop_id = int(self.pulse_id.get_current_value())
+            # No `newer_than` here: the last monitored pulse is at most one
+            # machine period old, and requiring a *newer* one would turn a
+            # stopped beam (where the counter simply stops advancing) into a
+            # TimeoutError, which stopping an acquisition must not do.
+            stop_id = self.get_pulse_id()
 
         if scan:
             acq_ix = scan.counter_scratch(self.name).get("acquisition_index")
@@ -462,8 +559,7 @@ class Daq(Assembly):
         #     tmp['daq_pars'] = acq_pars
         #     scan.info()
         if wait:
-            while int(self.pulse_id.get_current_value()) < stop_id:
-                sleep(wait_cycle_sleep)
+            self.wait_for_pulse_id(stop_id, poll_interval=wait_cycle_sleep)
 
         acq_pars["pgroup"] = pgroup
         response = self.retrieve(**acq_pars)
@@ -1152,15 +1248,11 @@ class Daq(Assembly):
             tmpdir = Path(
                 f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux"
             )
-            tmpdir.mkdir(exist_ok=True, parents=True)
-            try:
-                tmpdir.chmod(0o775)
-            except:
-                pass
+            ensure_dir(tmpdir)
 
             statusfile = tmpdir / Path("status.json")
             if not statusfile.exists():
-                with open(statusfile, "w") as f:
+                with open_group_writable(statusfile, "w") as f:
                     json.dump(
                         stat,
                         f,
@@ -1169,7 +1261,7 @@ class Daq(Assembly):
                         indent=4,
                     )
             else:
-                with open(statusfile, "r+") as f:
+                with open_group_writable(statusfile, "r+") as f:
                     f.seek(0)
                     json.dump(
                         stat,
@@ -1282,17 +1374,13 @@ class Daq(Assembly):
         if pgroup is None:
             pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
-        tmpdir.mkdir(exist_ok=True, parents=True)
-        try:
-            tmpdir.chmod(0o775)
-        except:
-            pass
+        ensure_dir(tmpdir)
         scaninfofile = tmpdir / Path("scan_info_rel.json")
         if not Path(scaninfofile).exists():
-            with open(scaninfofile, "w") as f:
+            with open_group_writable(scaninfofile, "w") as f:
                 json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
         else:
-            with open(scaninfofile, "r+") as f:
+            with open_group_writable(scaninfofile, "r+") as f:
                 f.seek(0)
                 json.dump(si, f, sort_keys=True, cls=NumpyEncoder, indent=4)
                 f.truncate()
@@ -1366,20 +1454,16 @@ class Daq(Assembly):
         if pgroup is None:
             pgroup = self.pgroup
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
-        tmpdir.mkdir(exist_ok=True, parents=True)
-        try:
-            tmpdir.chmod(0o775)
-        except:
-            pass
+        ensure_dir(tmpdir)
 
         statusfile = tmpdir / Path("status.json")
         if not statusfile.exists():
-            with open(statusfile, "w") as f:
+            with open_group_writable(statusfile, "w") as f:
                 json.dump(
                     cs["namespace_status"], f, sort_keys=True, cls=NumpyEncoder, indent=4
                 )
         else:
-            with open(statusfile, "r+") as f:
+            with open_group_writable(statusfile, "r+") as f:
                 f.seek(0)
                 json.dump(
                     cs["namespace_status"], f, sort_keys=True, cls=NumpyEncoder, indent=4
@@ -1440,19 +1524,15 @@ class Daq(Assembly):
             tmpdir = Path(
                 f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux"
             )
-            tmpdir.mkdir(exist_ok=True, parents=True)
-            try:
-                tmpdir.chmod(0o775)
-            except:
-                pass
+            ensure_dir(tmpdir)
             aliasfile = tmpdir / Path("aliases.json")
             if not Path(aliasfile).exists():
-                with open(aliasfile, "w") as f:
+                with open_group_writable(aliasfile, "w") as f:
                     json.dump(
                         namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
                     )
             else:
-                with open(aliasfile, "r+") as f:
+                with open_group_writable(aliasfile, "r+") as f:
                     f.seek(0)
                     json.dump(
                         namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
@@ -1576,14 +1656,10 @@ class Daq(Assembly):
             pgroup = self.pgroup
 
         tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno}/aux")
-        tmpdir.mkdir(exist_ok=True, parents=True)
-        try:
-            tmpdir.chmod(0o775)
-        except:
-            pass
+        ensure_dir(tmpdir)
         scanmonitorfile = tmpdir / Path("scan_monitor.pkl")
         if not Path(scanmonitorfile).exists():
-            with open(scanmonitorfile, "wb") as f:
+            with open_group_writable(scanmonitorfile, "wb") as f:
                 pickle.dump(monitor_result, f)
 
         print(f"Copying monitor file to run {runno} to the raw directory of {pgroup}.")

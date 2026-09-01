@@ -503,6 +503,17 @@ Testing `NamespaceMonitorStore`'s startup path against the real
   that, but only with your explicit go-ahead given it touches production
   hardware, ideally at a time that suits beamline operations.
 
+**Superseded (kept for the record).** The concurrency constraint above no
+longer holds: `Namespace._run_init_pass` now attaches every worker thread
+to one shared CA context (`ca.use_initial_context()`, the fix prototyped
+in `parallel_init.py`), which is exactly what the segfault was about.
+`init_all()`'s default is `max_workers=8` in both execution modes - there
+used to be a separate `background_max_workers`, since removed - and
+`namespace_store.py` configures its own via `init_workers`/`retry_workers`
+rather than hardcoding 1. What stays true is the timing: it is a
+multi-minute operation, which is why the server binds its port first and
+initializes on a background thread.
+
 ### 12.4 REST additions: `/admin/reinit`
 
 `POST /admin/reinit` (`namespace_server.py`), as requested: re-initialize

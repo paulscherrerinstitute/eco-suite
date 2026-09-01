@@ -48,6 +48,48 @@ class DetectorEnum(Protocol):
         ...
 
 
+def resolve_lazy(obj):
+    """The real object behind a lazy namespace `Proxy`, building it if needed.
+
+    `eco.utilities.config.Proxy` is deliberately *shy*: while unresolved it
+    reports `LazyComponent` as its `__class__` and `dir(LazyComponent)` as its
+    attributes, so introspection (tab-completion, a widget deciding how to
+    render a namespace entry) cannot accidentally initialize a device. The
+    cost is that `isinstance(proxy, Adjustable)` is False for a *real*
+    adjustable that simply hasn't been built yet: a runtime_checkable Protocol
+    check reads class-level/static attributes only, which is exactly what the
+    proxy hides. Constructor arguments injected by
+    `config.replace_NamespaceComponents` are such proxies, so this bites any
+    device that type-checks one of its own arguments -- e.g. `Daq.pgroup`,
+    which used to hand the unresolved proxy straight to `json.dumps` and fail
+    with "Object of type LazyComponent is not JSON serializable".
+
+    Use this (or `is_adjustable`/`is_detector` below) wherever the answer is
+    followed by actually *using* the object, so forcing the build costs
+    nothing extra. Do NOT use it in introspection/display paths that walk a
+    whole namespace -- there the shyness is the point.
+
+    `__resolved__` is a boolean the underlying C proxy exposes without
+    triggering the factory; reading `__wrapped__` is what forces the build. A
+    non-proxy has neither and is returned unchanged.
+    """
+    try:
+        object.__getattribute__(obj, "__resolved__")
+    except AttributeError:
+        return obj
+    return object.__getattribute__(obj, "__wrapped__")
+
+
+def is_adjustable(obj):
+    """`isinstance(obj, Adjustable)`, resolving a lazy proxy first."""
+    return isinstance(resolve_lazy(obj), Adjustable)
+
+
+def is_detector(obj):
+    """`isinstance(obj, Detector)`, resolving a lazy proxy first."""
+    return isinstance(resolve_lazy(obj), Detector)
+
+
 def enum_repr(cls):
     """Class decorator: stamps a `__repr__` rendering the enum-enabled
     class's discrete choices as a Num./Sel./Name table, built from nothing
