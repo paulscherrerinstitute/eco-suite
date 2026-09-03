@@ -27,6 +27,15 @@ and colour-coded per ancestor, with a legend, and are otherwise handled
 identically to the object's own memories (loaded, diffed, and recalled the
 same way -- only ever through *this* object's own `.memory`, applying just
 the slice of the parent's snapshot that belongs to this object).
+
+Saving a new memory can optionally be narrowed down to hand-picked items
+instead of capturing everything the chosen selection resolves to -- an
+opt-in "choose items…" checkbox (unchecked by default) next to Save reveals
+a per-item checklist (via `Memory.get_memorize_candidates`), and only the
+checked items are passed on to `Memory.memorize(pick_items=[...])`. Same
+idea as the terminal's own `memorize(pick_items=True)`, just via an inline
+GUI checklist instead of a `simple_term_menu` prompt, since a terminal menu
+can't run inside a GUI event loop.
 """
 import itertools
 import traceback
@@ -399,7 +408,8 @@ class MemoryBrowserQt:
 
         # --- save new memory ---------------------------------------------
         save_box = QtWidgets.QGroupBox("Save current state as a new memory")
-        save_layout = QtWidgets.QHBoxLayout(save_box)
+        save_vbox = QtWidgets.QVBoxLayout(save_box)
+        save_layout = QtWidgets.QHBoxLayout()
         self.message_edit = QtWidgets.QLineEdit()
         self.message_edit.setPlaceholderText("message for this memory…")
         save_layout.addWidget(self.message_edit)
@@ -420,6 +430,35 @@ class MemoryBrowserQt:
         save_btn.clicked.connect(self._on_save)
         save_layout.addWidget(self.elog_cb)
         save_layout.addWidget(save_btn)
+        save_vbox.addLayout(save_layout)
+
+        # opt-in, non-default item picker: unchecked, this row/list stays
+        # hidden and Save captures everything the selection resolves to,
+        # exactly as before this existed.
+        pick_row = QtWidgets.QHBoxLayout()
+        self.pick_items_cb = QtWidgets.QCheckBox("choose items…")
+        self.pick_items_cb.setToolTip(
+            "narrow this save down to hand-picked items instead of "
+            "capturing everything the selection above resolves to"
+        )
+        self.pick_items_cb.stateChanged.connect(self._on_toggle_pick_items)
+        pick_row.addWidget(self.pick_items_cb)
+        refresh_items_btn = QtWidgets.QPushButton("Refresh items")
+        refresh_items_btn.clicked.connect(self._refresh_pick_items)
+        pick_row.addWidget(refresh_items_btn)
+        pick_all_btn = QtWidgets.QPushButton("all")
+        pick_all_btn.clicked.connect(lambda: self._set_all_pick_items(True))
+        pick_row.addWidget(pick_all_btn)
+        pick_none_btn = QtWidgets.QPushButton("none")
+        pick_none_btn.clicked.connect(lambda: self._set_all_pick_items(False))
+        pick_row.addWidget(pick_none_btn)
+        pick_row.addStretch(1)
+        save_vbox.addLayout(pick_row)
+
+        self.pick_items_list = QtWidgets.QListWidget()
+        self.pick_items_list.setMaximumHeight(140)
+        self.pick_items_list.setVisible(False)
+        save_vbox.addWidget(self.pick_items_list)
         outer.addWidget(save_box)
 
         close_btn = QtWidgets.QPushButton("Close")
@@ -685,16 +724,64 @@ class MemoryBrowserQt:
         except Exception as e:
             self._set_status(f"export failed: {e}", error=True)
 
+    def _on_toggle_pick_items(self, _state):
+        self.pick_items_list.setVisible(self.pick_items_cb.isChecked())
+        if self.pick_items_cb.isChecked():
+            self._refresh_pick_items()
+        else:
+            self.pick_items_list.clear()
+
+    def _refresh_pick_items(self):
+        from qtpy import QtWidgets, QtCore
+
+        if not self.pick_items_cb.isChecked():
+            return
+        selection = self.save_selection_combo.currentText().strip() or "settings"
+        try:
+            pairs = self.memory.get_memorize_candidates(selection=selection)
+        except Exception as e:
+            self._set_status(f"could not list items: {e}", error=True)
+            return
+        multi_group = len({p[0] for p in pairs}) > 1
+        self.pick_items_list.clear()
+        for group, name, value in pairs:
+            text = f"[{group}] {name}  =  {value}" if multi_group else f"{name}  =  {value}"
+            item = QtWidgets.QListWidgetItem(text)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Checked)
+            item.setData(QtCore.Qt.UserRole, name)
+            self.pick_items_list.addItem(item)
+
+    def _set_all_pick_items(self, value):
+        from qtpy import QtCore
+
+        state = QtCore.Qt.Checked if value else QtCore.Qt.Unchecked
+        for i in range(self.pick_items_list.count()):
+            self.pick_items_list.item(i).setCheckState(state)
+
     def _on_save(self):
+        from qtpy import QtCore
+
         message = self.message_edit.text().strip()
         if not message:
             self._set_status("enter a message before saving", error=True)
             return
         selection = self.save_selection_combo.currentText().strip() or "settings"
+        kwargs = {}
+        if self.pick_items_cb.isChecked():
+            names = [
+                self.pick_items_list.item(i).data(QtCore.Qt.UserRole)
+                for i in range(self.pick_items_list.count())
+                if self.pick_items_list.item(i).checkState() == QtCore.Qt.Checked
+            ]
+            if not names:
+                self._set_status("no items selected -- uncheck 'choose items' to save everything, or check at least one", error=True)
+                return
+            kwargs["pick_items"] = names
         try:
             self.memory.memorize(
                 message=message, force_message=False, to_elog=self.elog_cb.isChecked(),
-                selection=selection,
+                selection=selection, **kwargs,
             )
             self.message_edit.clear()
             self._set_status("saved new memory")
@@ -780,6 +867,22 @@ def make_memory_browser_ipywidgets(assembly):
     )
     elog_cb = widgets.Checkbox(value=True, description="post to elog")
     save_btn = widgets.Button(description="Save new memory", button_style="success")
+
+    # opt-in, non-default item picker: unchecked, this box stays empty and
+    # Save captures everything the selection resolves to, exactly as
+    # before this existed.
+    pick_items_cb = widgets.Checkbox(
+        value=False, description="choose items…",
+        tooltip=(
+            "narrow this save down to hand-picked items instead of "
+            "capturing everything the selection above resolves to"
+        ),
+    )
+    refresh_items_btn = widgets.Button(description="Refresh items")
+    pick_all_items_btn = widgets.Button(description="all", layout=widgets.Layout(width="50px"))
+    pick_none_items_btn = widgets.Button(description="none", layout=widgets.Layout(width="60px"))
+    items_pick_box = widgets.VBox([])
+    pick_item_checks = {}
 
     group_checks = {}
 
@@ -988,16 +1091,61 @@ def make_memory_browser_ipywidgets(assembly):
         except Exception as e:
             _set_status(f"export failed: {e}", error=True)
 
+    def _make_pick_item_row(group, name, value, multi_group):
+        cb = widgets.Checkbox(value=True, indent=False, layout=widgets.Layout(width="30px"))
+        pick_item_checks[name] = cb
+        prefix = f"[{group}] " if multi_group else ""
+        label = widgets.HTML(f"<span>{prefix}{name}</span> &nbsp; = &nbsp; {_format_value(value)}")
+        return widgets.HBox([cb, label])
+
+    def _refresh_pick_items(_b=None):
+        if not pick_items_cb.value:
+            return
+        selection = save_selection_combo.value.strip() or "settings"
+        try:
+            pairs = memory.get_memorize_candidates(selection=selection)
+        except Exception as e:
+            _set_status(f"could not list items: {e}", error=True)
+            return
+        multi_group = len({p[0] for p in pairs}) > 1
+        pick_item_checks.clear()
+        items_pick_box.children = tuple(
+            _make_pick_item_row(g, n, v, multi_group) for g, n, v in pairs
+        ) or (widgets.Label("(no items)"),)
+
+    def _on_toggle_pick_items(change):
+        if change.get("name") != "value":
+            return
+        if change["new"]:
+            _refresh_pick_items()
+        else:
+            pick_item_checks.clear()
+            items_pick_box.children = ()
+
+    def _set_all_pick_items(value):
+        for cb in pick_item_checks.values():
+            cb.value = value
+
     def _on_save(_b):
         message = message_text.value.strip()
         if not message:
             _set_status("enter a message before saving", error=True)
             return
         selection = save_selection_combo.value.strip() or "settings"
+        kwargs = {}
+        if pick_items_cb.value:
+            names = [name for name, cb in pick_item_checks.items() if cb.value]
+            if not names:
+                _set_status(
+                    "no items selected -- uncheck 'choose items' to save "
+                    "everything, or check at least one", error=True,
+                )
+                return
+            kwargs["pick_items"] = names
         try:
             memory.memorize(
                 message=message, force_message=False, to_elog=elog_cb.value,
-                selection=selection,
+                selection=selection, **kwargs,
             )
             message_text.value = ""
             _set_status("saved new memory")
@@ -1015,6 +1163,10 @@ def make_memory_browser_ipywidgets(assembly):
     recall_btn.on_click(_on_recall)
     export_btn.on_click(_on_export)
     save_btn.on_click(_on_save)
+    pick_items_cb.observe(_on_toggle_pick_items, names="value")
+    refresh_items_btn.on_click(_refresh_pick_items)
+    pick_all_items_btn.on_click(lambda _b: _set_all_pick_items(True))
+    pick_none_items_btn.on_click(lambda _b: _set_all_pick_items(False))
 
     _refresh_overview()
 
@@ -1035,6 +1187,10 @@ def make_memory_browser_ipywidgets(assembly):
             widgets.HBox([recall_btn, export_path_text, export_btn]),
             widgets.HTML("<b>Save current state as a new memory</b>"),
             widgets.HBox([message_text, save_selection_combo, elog_cb, save_btn]),
+            widgets.HBox([
+                pick_items_cb, refresh_items_btn, pick_all_items_btn, pick_none_items_btn,
+            ]),
+            items_pick_box,
             status_html,
         ]
     )

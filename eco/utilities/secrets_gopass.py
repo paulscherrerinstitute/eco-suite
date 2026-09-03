@@ -20,8 +20,10 @@ def get_gopass_password(path, store="bernina", timeout=10):
     try:
         from gopass import GopassStore, GopassError
     except ImportError:
+        print("import error")
         return None
     try:
         return GopassStore(store, timeout=timeout).get_password(path)
     except GopassError:
+        print("gopass error")
         return None

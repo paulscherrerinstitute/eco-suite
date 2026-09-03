@@ -102,6 +102,38 @@ _ipy = get_ipython()
 # namespace -- so still off here too.
 _ipy.Completer.use_jedi = False
 
+# use_jedi=False alone is not enough to complete *into* an already-resolved
+# namespace component (e.g. `prepump.line1_usd.<TAB>` after `prepump` has
+# been used) -- see CLAUDE.md's "Tab completion" section for the full
+# writeup. Short version: IPython's classic completer still evaluates a
+# multi-level dotted expression through `IPython.core.guarded_eval`, which
+# refuses to `getattr()` through any object whose `__getattribute__` isn't
+# the stock one from a small allow-list -- and eco's lazy Proxy necessarily
+# overrides `__getattribute__` to do its forwarding, so it's rejected even
+# once fully resolved. Registering Proxy in the same allow-list slot
+# IPython already uses for pandas' DataFrame/Series (objects with a custom
+# but "safe" __getattr__) fixes it. Best-effort: guarded_eval is an
+# internal, fairly young IPython module, so a future IPython that reshapes
+# it should degrade to today's (partially broken) behaviour, not a startup
+# crash.
+try:
+    import IPython.core.guarded_eval as _guarded_eval
+
+    _guarded_eval.EVALUATION_POLICIES["limited"].allowed_getattr_external.add(
+        ("eco.utilities.config", "Proxy")
+    )
+except Exception:
+    pass
+
+# The guarded_eval fix above has a side effect: completing *into* a still-
+# unresolved component now silently triggers its real initialisation, with
+# no warning, just from pressing Tab -- see CLAUDE.md's "Tab completion"
+# section. This turns that silent resolve into a two-Tab confirmation
+# instead (1st Tab: warn, no completions; 2nd Tab: resolve and complete).
+from eco.utilities.lazy_completion import install_lazy_completion_gate
+
+install_lazy_completion_gate()
+
 from eco.widgets import kernel_registry
 
 kernel_registry.install_shell_logger(kind="console", label=scope or "console")

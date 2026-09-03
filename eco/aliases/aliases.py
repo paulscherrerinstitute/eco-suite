@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import json
 import logging
+from ..utilities.datafiles import open_group_writable
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ class Namespace:
 
     def store(self):
         if self._modified:
-            with self._path.open("w") as fp:
+            with open_group_writable(self._path, "w") as fp:
                 json.dump(self.data, fp)
                 self._modified = False
 

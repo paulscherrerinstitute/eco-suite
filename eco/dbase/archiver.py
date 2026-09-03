@@ -1,6 +1,7 @@
 import datetime
 import dateutil.parser
 import logging
+import multiprocessing
 import re
 import threading
 import time
@@ -228,13 +229,49 @@ def _plot_dataframe(data, channels, labels=None):
     _show_figure(ah.figure)
 
 
+def _build_dataset(recorded, results_file=None, name="strip_recording"):
+    """Assemble raw `{channel: [(timestamp_sec, value), ...]}` samples (as
+    returned by `_StripBuffer.recorded()`) into an escape `DataSet`, one
+    `ArrayTimestamps` per channel (timestamps in nanoseconds). Pass
+    `results_file` (an escape `.esc.h5` path) to also persist it. Split out
+    of `_StripPlot.to_dataset` so `_StripPlotHandle` can build the same thing
+    from raw samples fetched over the strip-plot subprocess's pipe, without
+    needing an escape `DataSet` (which isn't reliably picklable) to cross
+    the process boundary itself."""
+    import numpy as np
+    from escape import ArrayTimestamps, DataSet
+
+    if results_file is not None:
+        dataset = DataSet(results_file=results_file, mode="w", name=name)
+    else:
+        dataset = DataSet(name=name)
+    for channel, samples in recorded.items():
+        if not samples:
+            continue
+        timestamps = np.array(
+            [int(round(s[0] * 1e9)) for s in samples], dtype=np.int64
+        )
+        values = np.asarray([s[1] for s in samples])
+        intervals = np.array([[timestamps[0], timestamps[-1]]])
+        array = ArrayTimestamps(
+            data=values,
+            timestamps=timestamps,
+            timestamp_intervals=intervals,
+            name=channel,
+        )
+        dataset.append(array, name=channel)
+        if results_file is not None:
+            array.store()
+    return dataset
+
+
 class _StripBuffer(Consumer):
     """Thread-safe buffer fed by the live sources' background threads. Always
     keeps the most recent `window` seconds for display; while `recording` is
     on it also accumulates the full, untrimmed history for `to_dataset`."""
 
     def __init__(self, window):
-        super().__init__()
+        super().__init__(timetype="sec")
         self.window = window
         self.recording = False
         self._data = {}
@@ -400,32 +437,7 @@ class _StripPlot:
         """Assemble everything recorded so far into an escape `DataSet`, one
         `ArrayTimestamps` per channel (timestamps in nanoseconds). Pass
         `results_file` (an escape `.esc.h5` path) to also persist it."""
-        import numpy as np
-        from escape import ArrayTimestamps, DataSet
-
-        recorded = self._buffer.recorded()
-        if results_file is not None:
-            dataset = DataSet(results_file=results_file, mode="w", name=name)
-        else:
-            dataset = DataSet(name=name)
-        for channel, samples in recorded.items():
-            if not samples:
-                continue
-            timestamps = np.array(
-                [int(round(s[0] * 1e9)) for s in samples], dtype=np.int64
-            )
-            values = np.asarray([s[1] for s in samples])
-            intervals = np.array([[timestamps[0], timestamps[-1]]])
-            array = ArrayTimestamps(
-                data=values,
-                timestamps=timestamps,
-                timestamp_intervals=intervals,
-                name=channel,
-            )
-            dataset.append(array, name=channel)
-            if results_file is not None:
-                array.store()
-        return dataset
+        return _build_dataset(self._buffer.recorded(), results_file, name)
 
     def is_running(self):
         return any(source.is_running() for source in self._sources)
@@ -449,6 +461,133 @@ class _StripPlot:
             source.join(timeout=5)
             if not source.is_thread_running():
                 source.close()
+
+
+def _strip_plot_ipc_loop(conn, buffer):
+    """Service `_StripPlotHandle` requests (record/is_recording/get_recorded)
+    for as long as `conn` stays open. Runs on its own thread in the strip-plot
+    subprocess so it neither depends on nor blocks the Qt main loop; `buffer`
+    (a `_StripBuffer`) is already internally lock-protected, so calling its
+    methods from here concurrently with the GUI thread (which also reads/
+    drives it, e.g. via the window's own Record button) is safe."""
+    while True:
+        try:
+            if not conn.poll(1):
+                continue
+            cmd = conn.recv()
+        except (EOFError, OSError):
+            return
+        try:
+            if cmd == "record":
+                buffer.start_recording()
+                conn.send(("ok", None))
+            elif cmd == "is_recording":
+                conn.send(("ok", buffer.recording))
+            elif cmd == "get_recorded":
+                conn.send(("ok", buffer.recorded()))
+            elif cmd == "stop_recording":
+                buffer.stop_recording()
+                conn.send(("ok", buffer.recorded()))
+            else:
+                conn.send(("error", f"unknown command {cmd!r}"))
+        except Exception as exc:
+            try:
+                conn.send(("error", str(exc)))
+            except Exception:
+                return
+
+
+def _strip_plot_subprocess_main(
+    channels, force_type, channel_types, window, max_rate, duration, labels, conn
+):
+    """Entry point for the strip-plot subprocess (see `DataHub.strip_plot`).
+    Builds the same sources/buffer/window `DataHub.strip_plot` used to build
+    directly, then blocks until the window is closed.
+
+    Runs in its own process, deliberately: matplotlib's Qt/Tk event loop is
+    only pumped by IPython's GUI-integration hook between prompts, so a plot
+    living in the caller's own process would freeze for the duration of any
+    single blocking statement (e.g. a synchronous motor move) and only catch
+    up once control returned to the prompt. A dedicated process has nothing
+    else to do but run that event loop, so it keeps redrawing regardless of
+    what the launching session is doing.
+
+    `conn` is this end of the pipe back to the `_StripPlotHandle` in the
+    launching process - serviced on its own thread (`_strip_plot_ipc_loop`)
+    so `.record()`/`.to_dataset()` etc. work from there too, alongside the
+    window's own Record/Save buttons.
+    """
+    groups = _group_by_type(channels, force_type, channel_types)
+    buffer = _StripBuffer(window)
+    sources = []
+    for channel_type, group_channels in groups.items():
+        source = LIVE_SOURCES[channel_type](time_type="sec")
+        source.add_listener(buffer)
+        sources.append((source, group_channels))
+    threading.Thread(
+        target=_strip_plot_ipc_loop, args=(conn, buffer), daemon=True
+    ).start()
+    # Held in `plot` (not discarded) so its FuncAnimation isn't
+    # garbage-collected out from under it before plt.show() blocks.
+    plot = _StripPlot(sources, channels, labels, buffer, max_rate, duration)
+    plt.show()  # blocks (across all backends) until the window is closed
+
+
+class _StripPlotHandle:
+    """Parent-side handle for a strip plot running in its own subprocess (see
+    `DataHub.strip_plot`). `.record()`/`.stop_recording()`/`.is_recording()`/
+    `.to_dataset()` talk to the `_StripBuffer` living in that subprocess over
+    a pipe (serviced by `_strip_plot_ipc_loop`); the window's own Record/Save
+    buttons work the same as before, independently. `.stop()` ends the plot
+    and closes the window."""
+
+    def __init__(self, process, conn):
+        self._process = process
+        self._conn = conn
+        self.dataset = None
+
+    def is_running(self):
+        return self._process.is_alive()
+
+    def stop(self):
+        """End the plot and close its window."""
+        if self._process.is_alive():
+            self._process.terminate()
+            self._process.join(timeout=5)
+
+    def _call(self, cmd, timeout=10):
+        if not self._process.is_alive():
+            raise RuntimeError("strip plot subprocess is no longer running")
+        self._conn.send(cmd)
+        if not self._conn.poll(timeout):
+            raise TimeoutError(
+                f"strip plot subprocess did not respond to {cmd!r} within {timeout}s"
+            )
+        status, payload = self._conn.recv()
+        if status == "error":
+            raise RuntimeError(f"strip plot subprocess: {payload}")
+        return payload
+
+    def record(self):
+        """Start accumulating the full history for `to_dataset`/`.dataset`."""
+        self._call("record")
+
+    def is_recording(self):
+        return self._call("is_recording")
+
+    def stop_recording(self, name="strip_recording"):
+        """Stop recording and assemble everything captured into `.dataset`."""
+        recorded = self._call("stop_recording")
+        self.dataset = _build_dataset(recorded, name=name)
+        return self.dataset
+
+    def to_dataset(self, results_file=None, name="strip_recording"):
+        """Assemble everything recorded so far (recording may still be
+        running) into an escape `DataSet`, one `ArrayTimestamps` per channel.
+        Pass `results_file` (an escape `.esc.h5` path) to also persist it."""
+        recorded = self._call("get_recorded")
+        self.dataset = _build_dataset(recorded, results_file, name)
+        return self.dataset
 
 
 class DataHub(Assembly):
@@ -691,23 +830,36 @@ class DataHub(Assembly):
         redraw rate (Hz, independent of the data rate); `duration` is how long
         the underlying stream stays open.
 
-        Returns a handle: `.stop()` ends the plot and its monitors (as does
-        closing the window). The window's "Record" button (or `.record()`)
-        captures the full, untrimmed history; stopping the recording assembles
-        it into an escape `DataSet` on `.dataset`, also reachable via
-        `.to_dataset(results_file=...)`. Keep the handle referenced so the
-        animation is not garbage-collected.
+        Runs in its own subprocess, so the plot keeps redrawing live even
+        while this session is blocked on something else (e.g. a synchronous
+        motor move) - matplotlib's Qt/Tk event loop would otherwise only get
+        pumped between prompts. Returns a handle: `.stop()` ends the plot and
+        closes the window (as does closing it directly); `.record()` /
+        `.stop_recording()` / `.is_recording()` / `.to_dataset()` mirror the
+        window's own "Record"/"Save..." buttons, over a pipe to the
+        subprocess, and populate the handle's `.dataset`.
         """
         if labels is None:
             labels = channels
-        groups = _group_by_type(channels, force_type, channel_types)
-        buffer = _StripBuffer(window)
-        sources = []
-        for channel_type, group_channels in groups.items():
-            source = self._live_source(channel_type)
-            source.add_listener(buffer)
-            sources.append((source, group_channels))
-        return _StripPlot(sources, channels, labels, buffer, max_rate, duration)
+        ctx = multiprocessing.get_context("spawn")
+        parent_conn, child_conn = ctx.Pipe()
+        process = ctx.Process(
+            target=_strip_plot_subprocess_main,
+            args=(
+                channels,
+                force_type,
+                channel_types,
+                window,
+                max_rate,
+                duration,
+                labels,
+                child_conn,
+            ),
+            daemon=True,
+        )
+        process.start()
+        child_conn.close()  # this end now belongs to the subprocess only
+        return _StripPlotHandle(process, parent_conn)
 
     def search(self, searchstring, backend=None):
         """Search channel names using a simple unix glob expression (e.g.

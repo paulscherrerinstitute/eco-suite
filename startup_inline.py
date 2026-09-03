@@ -92,3 +92,27 @@ _ipy = get_ipython()
 # a component is still unresolved (so completing a shared prefix doesn't
 # initialize every sibling) and forwarding to the real object once it is.
 _ipy.Completer.use_jedi = False
+
+# Must also match eco/startup_inline.py's guarded_eval allow-list addition
+# (see CLAUDE.md's "Tab completion" section) -- without it, completing
+# *into* an already-resolved component (`prepump.line1_usd.<TAB>`) still
+# returns nothing even with jedi off, because IPython's classic completer
+# rejects attribute access through eco's lazy Proxy (custom
+# `__getattribute__`) when evaluating the multi-level dotted expression.
+try:
+    import IPython.core.guarded_eval as _guarded_eval
+
+    _guarded_eval.EVALUATION_POLICIES["limited"].allowed_getattr_external.add(
+        ("eco.utilities.config", "Proxy")
+    )
+except Exception:
+    pass
+
+# Must also match eco/startup_inline.py's lazy-completion-gate install: the
+# guarded_eval fix above means completing into a still-unresolved component
+# now silently resolves it (real EPICS init) just from pressing Tab -- this
+# turns that into a two-Tab confirmation instead. See CLAUDE.md's "Tab
+# completion" section.
+from eco.utilities.lazy_completion import install_lazy_completion_gate
+
+install_lazy_completion_gate()

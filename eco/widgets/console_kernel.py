@@ -41,6 +41,37 @@ from eco.widgets import kernel_registry
 
 logger = logging.getLogger(__name__)
 
+# Registers eco's lazy eco.utilities.config.Proxy with IPython's
+# guarded_eval allow-list, so the classic (non-jedi) completer can complete
+# *past* an already-resolved Proxy (`prepump.line1_usd.<TAB>`) instead of
+# silently returning nothing -- see build_console_widget's docstring and
+# CLAUDE.md's "Tab completion" section for the full mechanism. Best-effort
+# (guarded_eval is an internal, fairly young IPython module): a future
+# IPython that reshapes it should degrade to today's behaviour, not an
+# error in the console. Module-level so tests can assert on it by name
+# instead of duplicating the exact source string.
+GUARDED_EVAL_PROXY_PATCH_CODE = (
+    "import contextlib as _contextlib\n"
+    "with _contextlib.suppress(Exception):\n"
+    "    import IPython.core.guarded_eval as _guarded_eval\n"
+    "    _guarded_eval.EVALUATION_POLICIES['limited'].allowed_getattr_external.add(\n"
+    "        ('eco.utilities.config', 'Proxy')\n"
+    "    )"
+)
+
+# The guarded_eval patch above has a side effect: completing *into* a still-
+# unresolved component now silently triggers its real initialisation, with
+# no warning, just from pressing Tab. This installs the two-Tab confirmation
+# gate (see eco.utilities.lazy_completion) that turns that into "1st Tab:
+# warn, no completions; 2nd Tab: resolve and complete" instead -- see
+# CLAUDE.md's "Tab completion" section.
+LAZY_COMPLETION_GATE_CODE = (
+    "import contextlib as _contextlib\n"
+    "with _contextlib.suppress(Exception):\n"
+    "    from eco.utilities.lazy_completion import install_lazy_completion_gate\n"
+    "    install_lazy_completion_gate()"
+)
+
 
 def can_use_inprocess_kernel():
     """False if this process already has a running IPython shell (a
@@ -173,12 +204,27 @@ def build_console_widget(kernel_manager, kernel_client, session, banner="", star
     for *dotted* attribute completion (`name.<TAB>`), not for matching
     plain top-level names -- and was also measured faster and more
     correct here regardless (matches found vs none, from Jedi silently
-    failing on this dynamic a namespace)."""
+    failing on this dynamic a namespace).
+
+    Also registers eco's Proxy with IPython's `guarded_eval` allow-list
+    (see CLAUDE.md's "Tab completion" section, and
+    eco/startup_inline.py's matching comment): with jedi off, the classic
+    completer still refuses to complete *past* an already-resolved Proxy
+    (e.g. `prepump.line1_usd.<TAB>`) unless its `__getattribute__` is on
+    that allow-list, since guarded_eval otherwise treats any object with a
+    non-stock `__getattribute__` as unsafe to evaluate mid-expression.
+
+    Also installs eco's two-Tab completion-confirmation gate (see
+    eco.utilities.lazy_completion): the guarded_eval allow-list entry above
+    means completing into a still-*un*resolved component would otherwise
+    silently trigger its real initialisation just from pressing Tab."""
     console = LoggingJupyterWidget(session=session)
     console.kernel_manager = kernel_manager
     console.kernel_client = kernel_client
     console.banner = banner
     console.execute("get_ipython().Completer.use_jedi = False", hidden=True)
+    console.execute(GUARDED_EVAL_PROXY_PATCH_CODE, hidden=True)
+    console.execute(LAZY_COMPLETION_GATE_CODE, hidden=True)
     if startup_code:
         console.execute(startup_code)
     return console

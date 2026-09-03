@@ -29,6 +29,7 @@ class RemoteControlClient:
         self.tr = transport
         self.on_update = on_update
         self.token = token
+        self.connected = True  # cleared when the link closes (server gone)
         self.tree = None  # cached full snapshot (from USB or MSG_SNAPSHOT)
         self.path_names = ["…"]
         self._entries = []
@@ -52,7 +53,10 @@ class RemoteControlClient:
     # --- incoming ---
     def _read_loop(self):
         while True:
-            line = self.tr.read_line()
+            try:
+                line = self.tr.read_line()
+            except OSError:
+                line = None
             if line is None:
                 break
             try:
@@ -74,6 +78,9 @@ class RemoteControlClient:
                     self.tree = d["tree"]
             if self.on_update:
                 self.on_update()
+        self.connected = False
+        if self.on_update:
+            self.on_update()
 
     # --- read interface used by the GUI ---
     @property

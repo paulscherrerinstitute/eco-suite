@@ -177,3 +177,39 @@ def test_gui_fits_the_panel_exactly(size, expect_landscape):
         assert app.landscape is expect_landscape
     finally:
         app.destroy()
+
+
+def test_namespace_start_eco_control_box_serves_its_own_entries():
+    """bernina.namespace.start_eco_control_box() - one call, both halves."""
+    from eco.elements.adjustable import DummyAdjustable
+    from eco.manual_control.remote.transport import connect_tcp
+    from eco.utilities.config import Namespace
+
+    ns = Namespace(name="ns_under_test")
+    ns.append_obj(DummyAdjustable, name="theta", module_name=None)
+    ns.append_obj(DummyAdjustable, name="energy", module_name=None)
+
+    server = ns.start_eco_control_box(
+        port=8795, bind="127.0.0.1", token=TOKEN, token_file=None,
+        ensure_box_service=False,
+    )
+    try:
+        client = RemoteControlClient(connect_tcp("127.0.0.1", 8795), token=TOKEN).start()
+        assert _wait(lambda: bool(client.entries))
+        assert {e.name for e in client.entries} == {"theta", "energy"}
+        assert client.path_names == ["ns_under_test"]
+        # calling it again must not fail on the busy port
+        assert ns.start_eco_control_box(port=8795, ensure_box_service=False) is server
+    finally:
+        ns.stop_eco_control_box()
+
+
+def test_namespace_control_box_survives_an_unreachable_box_host():
+    from eco.utilities.config import Namespace
+
+    ns = Namespace(name="ns_no_box")
+    try:
+        ns.start_eco_control_box(port=8794, bind="127.0.0.1", token=TOKEN,
+                                 token_file=None, box_host="pi@no-such-box.invalid")
+    finally:
+        ns.stop_eco_control_box()

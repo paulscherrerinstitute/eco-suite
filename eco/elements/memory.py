@@ -37,6 +37,58 @@ def _menu_supports_preview_callable():
 
 _MENU_SUPPORTS_PREVIEW = _menu_supports_preview_callable()
 
+
+def _checklist_menu(entries, preselected=None, title=None):
+    """Interactive multi-select terminal checkbox menu: arrow keys to move,
+    space to toggle, a/n/i to bulk select all/none/invert, enter to
+    confirm, q/escape to cancel. Returns the set of picked indices into
+    `entries`, or None if cancelled. `preselected` defaults to every entry
+    selected.
+
+    Shared by `Memory.select_from_memory` (choosing which recalled values
+    to actually apply) and `Memory._pick_items_interactive` (choosing which
+    items to capture into a new memory) -- same interaction, just over a
+    different list of rows.
+    """
+    if preselected is None:
+        preselected = list(range(len(entries)))
+    else:
+        preselected = list(preselected)
+    try:
+        while True:
+            menu = TerminalMenu(
+                entries,
+                multi_select=True,
+                multi_select_select_on_accept=False,
+                multi_select_empty_ok=True,
+                show_multi_select_hint=True,
+                preselected_entries=preselected,
+                accept_keys=("enter", "a", "n", "i"),
+                title=title
+                or (
+                    "space: toggle   a: all   n: none   i: invert   "
+                    "enter: confirm   q/esc: quit"
+                ),
+            )
+            picked = menu.show()
+            accept_key = menu.chosen_accept_key
+            if accept_key is None:
+                return None  # quit
+            if accept_key == "enter":
+                return set(picked or ())
+            picked_now = set(picked or ())
+            if accept_key == "a":
+                preselected = list(range(len(entries)))
+            elif accept_key == "n":
+                preselected = []
+            elif accept_key == "i":
+                preselected = [i for i in range(len(entries)) if i not in picked_now]
+    except Exception:
+        # a simple-term-menu too old for multi_select/preselected_entries/
+        # accept_keys/chosen_accept_key -- fail safe by selecting everything
+        # rather than leaving the caller stuck with no way to choose at all.
+        return set(range(len(entries)))
+
 # top-level keys of a *per-entry* memory dict (as returned by
 # `Memory.get_memory()`, i.e. one `<timestamp>.json` file's contents) that
 # are bookkeeping, never a `status_collection` selection name -- every other
@@ -410,6 +462,73 @@ class Memory:
             if key.startswith(prefix)
         }
 
+    def get_memorize_candidates(self, selection=None):
+        """Every item `memorize(selection=selection)` would currently
+        capture, as `[(group, name, value), ...]` (name deduplicated across
+        groups, first-seen order) -- a read-only preview of exactly the same
+        `resolved`/`get_status` computation `memorize()` does internally,
+        for a caller (e.g. a GUI memory browser) that wants to offer an
+        item-level pick *before* actually calling `memorize()`. Nothing is
+        written and no message is asked for. `value` is only for display --
+        `memorize()` re-reads live values itself when it actually captures,
+        so a value shown here going stale between this call and the save
+        changes nothing about correctness.
+        """
+        self.setup_path()
+        if selection is None:
+            resolved = list(itertools.chain.from_iterable(self.categories.values()))
+        else:
+            resolved = self._resolve_capture_selection(selection)
+        allstat = self.obj_parent().get_status(
+            base=self.obj_parent(), selections=resolved
+        )
+        pairs = []
+        seen = set()
+        for trec in resolved:
+            for name, value in allstat["selections"][trec].items():
+                if name in seen:
+                    continue
+                seen.add(name)
+                pairs.append((trec, name, value))
+        return pairs
+
+    def _pick_items_interactive(self, stat_now, resolved):
+        """Terminal checklist over every candidate item across `resolved`
+        selection group(s) of an already-computed `stat_now` (see
+        `memorize`) -- returns the set of item names to keep, or None if
+        cancelled. Same checkbox-menu UX as `select_from_memory`'s recall
+        picker (`_checklist_menu`), just without a present/recall diff
+        column since nothing has a "recall value" yet at capture time.
+        """
+        pairs = []
+        seen = set()
+        for trec in resolved:
+            for name, value in stat_now[trec].items():
+                if name in seen:
+                    continue
+                seen.add(name)
+                pairs.append((trec, name, value))
+        if not pairs:
+            return set()
+        multi_group = len(resolved) > 1
+        name_w = max(len(p[1]) for p in pairs)
+
+        def _row_text(group, name, value):
+            prefix = f"[{group}] " if multi_group else ""
+            return f"{prefix}{name:<{name_w}}  =  {value}"
+
+        entries = [_row_text(*p) for p in pairs]
+        picked = _checklist_menu(
+            entries,
+            title=(
+                "space: toggle   a: all   n: none   i: invert   "
+                "enter: confirm & save   q/esc: cancel"
+            ),
+        )
+        if not picked:
+            return None
+        return {pairs[i][1] for i in picked}
+
     def memorize(
         self,
         message=None,
@@ -418,10 +537,12 @@ class Memory:
         preset_varname=None,
         to_elog=True,
         selection=None,
+        pick_items=False,
     ):
         """Save the current state of this object's memorizable components as
         a new, timestamped memory entry (message/attributes/force_message/
-        preset_varname/to_elog: unchanged from before `selection` existed).
+        preset_varname/to_elog: unchanged from before `selection`/
+        `pick_items` existed).
 
         selection (str, "all", iterable of str, or None, optional): which
             `status_collection` selection(s) to capture into this memory.
@@ -433,6 +554,21 @@ class Memory:
             "motor_settings"), `"all"` (every selection currently registered
             on the parent object, discovered live), or a list to opt into a
             more surgical, single-purpose memory instead.
+
+        pick_items (bool or iterable of str, optional): narrow the capture
+            down to individual items instead of every item the resolved
+            selection group(s) expose. `False` (the default) captures
+            everything, exactly as before this parameter existed -- so no
+            existing caller sees any change. `True` opens an interactive
+            terminal checklist (`_pick_items_interactive`) over every
+            candidate item so the choice can be made on the spot; returns
+            without saving (prints a cancellation message) if the checklist
+            is cancelled or confirmed with nothing checked. An explicit
+            iterable of item names restricts the capture to just those
+            names, non-interactively -- what the memory browser widgets
+            (Qt/ipywidgets) pass after their own checklist, since a terminal
+            menu can't run inside a GUI event loop; get the candidate names
+            to offer via `get_memorize_candidates()`.
         """
         self.setup_path()
         if selection is None:
@@ -450,6 +586,19 @@ class Memory:
         stat_now["status"] = allstat["status"]
         for trec in resolved:
             stat_now[trec] = allstat["selections"][trec]
+
+        if pick_items:
+            if pick_items is True:
+                keep = self._pick_items_interactive(stat_now, resolved)
+                if not keep:
+                    print("Memorize cancelled (no items selected).")
+                    return
+            else:
+                keep = set(pick_items)
+            for trec in resolved:
+                stat_now[trec] = {
+                    k: v for k, v in stat_now[trec].items() if k in keep
+                }
 
         stat_now["memorized_attributes"] = attributes
         key = datetime.now().isoformat()
@@ -835,59 +984,19 @@ class Memory:
 
         entries = [_row_text(r[1], r[2], r[3], r[4], r[5]) for r in rows]
 
-        # `simple_term_menu` has no built-in bulk-toggle action, and its
-        # `.show()` is a single blocking call with no hook to intercept
-        # arbitrary keys mid-interaction -- so "select all"/"none"/"invert"
-        # are built by making 'a'/'n'/'i' *additional* accept keys (see
-        # `chosen_accept_key`), applying the requested bulk change to the
-        # preselection, and re-showing a fresh menu with that updated
-        # preselection -- a real "enter" is the only accept key that
-        # actually breaks out of this loop.
-        preselected = list(range(len(entries)))
-        picked = None
-        try:
-            while True:
-                menu = TerminalMenu(
-                    entries,
-                    multi_select=True,
-                    multi_select_select_on_accept=False,
-                    multi_select_empty_ok=True,
-                    show_multi_select_hint=True,
-                    preselected_entries=preselected,
-                    accept_keys=("enter", "a", "n", "i"),
-                    title=(
-                        "space: toggle   a: all   n: none   i: invert   "
-                        "enter: confirm & recall   q/esc: quit"
-                    ),
-                )
-                picked = menu.show()
-                accept_key = menu.chosen_accept_key
-                if accept_key is None:
-                    return None  # quit
-                if accept_key == "enter":
-                    break
-                picked_now = set(picked or ())
-                if accept_key == "a":
-                    preselected = list(range(len(entries)))
-                elif accept_key == "n":
-                    preselected = []
-                elif accept_key == "i":
-                    preselected = [i for i in range(len(entries)) if i not in picked_now]
-        except Exception:
-            # a simple-term-menu too old for multi_select/preselected_entries/
-            # accept_keys/chosen_accept_key (all foundational, long-stable
-            # APIs, so this should be unreachable in practice) -- fail safe
-            # by recalling everything shown, rather than leaving the caller
-            # stuck with no way to choose at all.
-            return [True] * len(names)
-
+        picked = _checklist_menu(
+            entries,
+            title=(
+                "space: toggle   a: all   n: none   i: invert   "
+                "enter: confirm & recall   q/esc: quit"
+            ),
+        )
         if not picked:
             return None
 
-        picked_set = set(picked)
         select = [True] * len(names)
         for vis_idx, row in enumerate(rows):
-            select[row[0]] = vis_idx in picked_set
+            select[row[0]] = vis_idx in picked
         return select
 
     def __repr__(self):

@@ -48,6 +48,92 @@ DEFAULT_SECTION_PALETTE = [
 _PLAIN_ALTERNATION = ("", "on grey30")
 
 
+#: box-drawing pieces used by `tree_name_rows` for the "unfolded sub-assembly
+#: as a tree" name column (same glyphs as `Assembly.get_tree()`'s printout, so
+#: both views of a nested assembly look like the same tree).
+_TREE_BRANCH = "\u251c\u2500\u2500 "
+_TREE_LAST = "\u2514\u2500\u2500 "
+_TREE_PIPE = "\u2502   "
+_TREE_BLANK = "    "
+
+
+def tree_name_rows(names):
+    """Turn an ordered list of dotted names into tree-shaped row labels.
+
+    Status/display tables list a "recursively unfolded" sub-assembly as one
+    flat row per leaf, each repeating the sub-assembly name (``ver.x``,
+    ``ver.y``, ``ver.pitch``, ...). This turns that same list into a tree:
+    each dotted prefix becomes its own header row and its children are
+    indented below it with the redundant prefix dropped::
+
+        ver.x           ver
+        ver.y     ->     |-- x
+        mode             `-- y
+                        mode
+
+    Returns a list of ``(label, index, depth, path)`` tuples in display order,
+    where `index` is the position in `names` of the row this label belongs to,
+    or ``None`` for a synthesized parent row (a prefix that had no row of its
+    own -- the usual case, since a recursively unfolded sub-assembly
+    contributes only its leaves). `depth` is 0 for top-level rows, which are
+    rendered without any connector, so a flat table (no dots in any name)
+    comes back exactly as it went in. `path` is the node's full dotted name,
+    so a caller can look the parent object back up (e.g. to read a value for
+    a synthesized row) from a label that no longer carries its prefix.
+
+    Rows are emitted in tree order rather than input order, so leaves of the
+    same sub-assembly stay together even if the input interleaves them.
+    Duplicate full names are kept as separate rows (never merged away).
+    """
+    root = {}
+
+    def _node(children, key, label, path):
+        node = children.get(key)
+        if node is None:
+            node = {"label": label, "path": path, "children": {}, "index": None}
+            children[key] = node
+        return node
+
+    for i, name in enumerate(names):
+        parts = str(name).split(".")
+        children = root
+        path = []
+        for part in parts[:-1]:
+            path.append(part)
+            children = _node(children, part, part, ".".join(path))["children"]
+        leaf = _node(children, parts[-1], parts[-1], str(name))
+        if leaf["index"] is None:
+            leaf["index"] = i
+        else:
+            # same full name twice (two distinct objects): keep both rows
+            # rather than silently dropping the second one.
+            children[(parts[-1], i)] = {
+                "label": parts[-1],
+                "path": str(name),
+                "children": {},
+                "index": i,
+            }
+
+    out = []
+
+    def _emit(children, prefix, depth):
+        items = list(children.values())
+        for n, node in enumerate(items):
+            last = n == len(items) - 1
+            if depth == 0:
+                label = node["label"]
+                child_prefix = " "
+            else:
+                label = prefix + (_TREE_LAST if last else _TREE_BRANCH) + node["label"]
+                child_prefix = prefix + (_TREE_BLANK if last else _TREE_PIPE)
+            out.append((label, node["index"], depth, node["path"]))
+            if node["children"]:
+                _emit(node["children"], child_prefix, depth + 1)
+
+    _emit(root, "", 0)
+    return out
+
+
 def section_row_styles(section_keys, palette=None):
     """Turn a list of "which group does this row belong to" keys (one per
     row, in row order; e.g. a beamline section name, or the top-level

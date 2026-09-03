@@ -212,7 +212,7 @@ def test_unfixable_directory_warns_once_and_does_not_raise(tmp_path, monkeypatch
 
     out = capsys.readouterr().out
     assert out.count("not group-writable") == 1
-    assert "chmod g+rwXs" in out  # actionable
+    assert "chmod -R g+rwXs" in out  # actionable
     assert str(d) in out
 
 
@@ -309,3 +309,173 @@ def test_missing_getfacl_is_not_an_error(monkeypatch):
 
     monkeypatch.setattr(df.subprocess, "run", boom)
     assert df.acl_grants_group_write("/whatever", "p23415") is False
+
+
+# --------------------------------------------------------------------------
+# group inheritance outside a pgroup tree
+# --------------------------------------------------------------------------
+
+
+def test_target_group_of_path_inherits_the_enclosing_directory_group(tmp_path):
+    """The shared-checkout case: no pgroup in the path, so the group has to
+    come from the parent -- what setgid would have propagated."""
+    parent_gid = os.stat(tmp_path).st_gid
+    assert df.target_group_of_path(tmp_path / "new_device") == df._name_of_gid(
+        parent_gid
+    )
+
+
+def test_target_group_of_path_uses_the_nearest_existing_ancestor(tmp_path):
+    """`ensure_dir` resolves the group before `mkdir -p` has created anything,
+    so the levels about to be created must be skipped over."""
+    assert df.target_group_of_path(tmp_path / "a" / "b" / "c") == df._name_of_gid(
+        os.stat(tmp_path).st_gid
+    )
+
+
+def test_target_group_of_path_ignores_a_group_the_process_is_not_in(
+    tmp_path, monkeypatch
+):
+    """chgrp to a group you are not a member of is EPERM; proposing one would
+    only produce a warning nobody can act on."""
+    monkeypatch.setattr(df, "_process_gids", lambda: frozenset())
+    assert df.target_group_of_path(tmp_path / "x") is None
+
+
+def test_target_group_of_path_prefers_the_pgroup(tmp_path, monkeypatch):
+    monkeypatch.setattr(df, "_gid_of", lambda name: 4242 if name == "p12345" else None)
+    assert df.target_group_of_path(Path("/sf/bernina/data/p12345/res/x")) == "p12345"
+
+
+# --------------------------------------------------------------------------
+# accurate diagnosis
+# --------------------------------------------------------------------------
+
+
+def _refusing(*args, **kwargs):
+    raise PermissionError(1, "Operation not permitted")
+
+
+def _refuse_chmod(monkeypatch):
+    monkeypatch.setattr(df.os, "chmod", _refusing)
+    monkeypatch.setattr(df, "acl_grants_group_write", lambda *a, **k: False)
+
+
+def test_a_bare_missing_setgid_bit_is_not_reported(tmp_path, monkeypatch, capsys):
+    """0775 with the right group blocks nobody -- warning about it would mean a
+    line for every directory in a large tree that simply never had the bit."""
+    d = tmp_path / "no_setgid"
+    d.mkdir()
+    os.chmod(d, 0o775)
+    _refuse_chmod(monkeypatch)
+
+    assert df.ensure_group_writable(d) is False
+    assert capsys.readouterr().out == ""
+
+
+def test_a_wrong_group_reports_the_missing_setgid_as_the_cause(
+    tmp_path, monkeypatch, capsys
+):
+    """The regression this rewrite is about: 0775 *is* group-writable, and
+    saying otherwise sent people looking for the wrong problem -- the group is."""
+    d = tmp_path / "no_setgid"
+    d.mkdir()
+    os.chmod(d, 0o775)
+    _refuse_chmod(monkeypatch)
+    monkeypatch.setattr(df, "target_group_of_path", lambda p: "unx-sf_bernina_bs")
+    monkeypatch.setattr(df, "_gid_of", lambda name: os.stat(d).st_gid + 1)
+    monkeypatch.setattr(df.os, "chown", _refusing)
+
+    assert df.ensure_group_writable(d) is False
+
+    out = capsys.readouterr().out
+    assert "setgid bit missing" in out
+    assert "should be unx-sf_bernina_bs" in out
+    assert "not group-writable (mode" not in out
+
+
+def test_the_warning_names_the_owner_that_has_to_fix_it(tmp_path, monkeypatch, capsys):
+    d = tmp_path / "locked"
+    d.mkdir()
+    os.chmod(d, 0o755)
+    _refuse_chmod(monkeypatch)
+
+    df.ensure_group_writable(d)
+
+    out = capsys.readouterr().out
+    assert df._owner_name(os.stat(d)) in out
+
+
+def test_siblings_with_the_same_problem_warn_once(tmp_path, monkeypatch, capsys):
+    """263 device directories with one broken parent must not print 263 lines."""
+    for name in ("a", "b", "c"):
+        d = tmp_path / name
+        d.mkdir()
+        os.chmod(d, 0o755)
+    _refuse_chmod(monkeypatch)
+
+    for name in ("a", "b", "c"):
+        assert df.ensure_group_writable(tmp_path / name) is False
+
+    assert capsys.readouterr().out.count("cannot make directory") == 1
+
+
+# --------------------------------------------------------------------------
+# replacing a file another account left unwritable
+# --------------------------------------------------------------------------
+
+
+def test_open_group_writable_replaces_a_file_it_cannot_truncate(tmp_path, capsys):
+    f = tmp_path / "presets.json"
+    f.write_text("old")
+    os.chmod(f, 0o444)  # what a 0644 file owned by another account looks like
+
+    with df.open_group_writable(f, "w") as fh:
+        fh.write("new")
+
+    assert f.read_text() == "new"
+    assert mode_of(f) & stat.S_IWGRP
+    assert "Replacing it" in capsys.readouterr().out
+    assert not list(tmp_path.glob(".*eco-tmp"))  # no temporary left behind
+
+
+def test_a_failed_replacement_write_leaves_the_original_alone(tmp_path):
+    f = tmp_path / "presets.json"
+    f.write_text("old")
+    os.chmod(f, 0o444)
+
+    with pytest.raises(ValueError):
+        with df.open_group_writable(f, "w") as fh:
+            fh.write("half")
+            raise ValueError("serialization blew up")
+
+    assert f.read_text() == "old"
+    assert not list(tmp_path.glob(".*eco-tmp"))
+
+
+def test_a_mode_that_needs_the_old_bytes_still_raises(tmp_path):
+    """Replacing is only equivalent to writing for a truncating open."""
+    f = tmp_path / "log"
+    f.write_text("old")
+    os.chmod(f, 0o444)
+
+    with pytest.raises(PermissionError):
+        with df.open_group_writable(f, "a"):
+            pass
+
+
+# --------------------------------------------------------------------------
+# repair_tree
+# --------------------------------------------------------------------------
+
+
+def test_repair_tree_fixes_every_level(tmp_path):
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "memories.json").write_text("{}")
+    os.chmod(tmp_path / "dev", 0o755)
+    os.chmod(tmp_path / "dev" / "memories.json", 0o644)
+
+    assert df.repair_tree(tmp_path) == []
+
+    assert mode_of(tmp_path / "dev") & (stat.S_ISGID | stat.S_IWGRP)
+    assert mode_of(tmp_path / "dev" / "memories.json") & stat.S_IWGRP

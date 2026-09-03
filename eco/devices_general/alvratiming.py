@@ -3,6 +3,7 @@ import os
 import numpy as np
 import time
 from threading import Thread
+from ..utilities.datafiles import open_group_writable
 
 _basefolder = "/sf/alvra/config/lasertiming"
 _posTypes = ["user", "dial", "raw"]
@@ -52,7 +53,7 @@ class Storage(object):
         return value
 
     def store(self, value):
-        with open(self._filename, "w") as f:
+        with open_group_writable(self._filename, "w") as f:
             f.write("# %s\n" % time.asctime())
             f.write("%.15f" % value)
 

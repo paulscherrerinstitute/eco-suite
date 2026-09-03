@@ -34,6 +34,7 @@ trap 'rm -rf "$STAGE"' EXIT
 PYTHONPATH="$REPO:${PYTHONPATH:-}" "$PY" -m eco.manual_control.remote.make_pi_bundle "$STAGE" >/dev/null
 tar -czf "$OUT/eco_control_box.tar.gz" -C "$STAGE" manual_control
 cp "$REPO/eco/manual_control/remote/pi_setup/firstrun_eco.sh" "$OUT/"
+cp "$HERE/arm_firstrun.sh" "$OUT/"
 printf '%s %s\n' "$PC_HOST" "$PC_PORT" > "$OUT/eco_pc_host"
 
 cat > "$OUT/README.txt" <<TXT
@@ -46,9 +47,12 @@ eco control box - SD card payload for $PC_HOST:$PC_PORT
 2. Copy the files next to this README onto the card's boot partition.
 3. Then either:
 
-   a) hands-off: append to the single line of cmdline.txt
-        systemd.run=/boot/firmware/firstrun_eco.sh systemd.run_success_action=reboot systemd.unit=kernel-command-line.target
-      boot the box once; it installs itself and reboots into the app.
+   a) hands-off: arm the first-boot hook with
+        ./arm_firstrun.sh <this-boot-partition>
+      (do NOT edit cmdline.txt by hand: it must stay ONE LF-terminated
+      line, and a stray newline or CRLF drops the Pi into rescue mode with
+      "Failed to load default target". ./arm_firstrun.sh <dir> --disarm
+      undoes it.) Boot the box once; it installs itself and reboots.
 
    b) over the network (simpler to debug): boot, ssh in, then
         sudo mkdir -p /opt/eco-control-box

@@ -182,8 +182,16 @@ def test_build_console_widget_wires_manager_client_and_banner(monkeypatch, qapp)
     assert console.session is session
     # every console gets Jedi disabled (hidden, not logged -- see
     # build_console_widget's docstring for why: it can fully resolve a
-    # lazy device proxy just from being a completion candidate)
-    assert console.executed == ["get_ipython().Completer.use_jedi = False"]
+    # lazy device proxy just from being a completion candidate), plus the
+    # guarded_eval allow-list patch that lets completion work *past* an
+    # already-resolved Proxy, plus the two-Tab confirmation gate for
+    # completing into a still-unresolved one (see
+    # console_kernel.GUARDED_EVAL_PROXY_PATCH_CODE/LAZY_COMPLETION_GATE_CODE)
+    assert console.executed == [
+        "get_ipython().Completer.use_jedi = False",
+        console_kernel.GUARDED_EVAL_PROXY_PATCH_CODE,
+        console_kernel.LAZY_COMPLETION_GATE_CODE,
+    ]
     assert session.logged == []
 
 
@@ -193,7 +201,12 @@ def test_build_console_widget_runs_startup_code_through_the_widget_not_the_clien
     console = console_kernel.build_console_widget(
         "manager", "client", session, startup_code="namespace = 1"
     )
-    assert console.executed == ["get_ipython().Completer.use_jedi = False", "namespace = 1"]
+    assert console.executed == [
+        "get_ipython().Completer.use_jedi = False",
+        console_kernel.GUARDED_EVAL_PROXY_PATCH_CODE,
+        console_kernel.LAZY_COMPLETION_GATE_CODE,
+        "namespace = 1",
+    ]
     # logged via the widget's own execute path, same as anything else typed
     # into the console -- not by build_subprocess_kernel itself. The
     # hidden jedi-disable call isn't logged (see the test above).

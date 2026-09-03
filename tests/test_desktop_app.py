@@ -7,6 +7,7 @@ pytest.importorskip("qtpy")
 from qtpy import QtCore, QtWidgets
 
 import eco.widgets.desktop_app as desktop_app
+from eco.widgets import console_kernel
 from eco.widgets.desktop_app import (
     EcoDesktopApp,
     _dock_object_name,
@@ -557,9 +558,14 @@ def test_build_console_uses_inprocess_kernel_when_safe(monkeypatch):
     assert calls["shared_user_ns"] is None
     assert "linked to the calling terminal" not in app._console.banner
     # in-process: namespace is pushed directly, no startup code to run --
-    # only the jedi-disable call every console gets (see
-    # console_kernel.build_console_widget's docstring)
-    assert app._console.executed == ["get_ipython().Completer.use_jedi = False"]
+    # only the jedi-disable, guarded_eval-allowlist, and lazy-completion-gate
+    # calls every console gets (see console_kernel.build_console_widget's
+    # docstring)
+    assert app._console.executed == [
+        "get_ipython().Completer.use_jedi = False",
+        console_kernel.GUARDED_EVAL_PROXY_PATCH_CODE,
+        console_kernel.LAZY_COMPLETION_GATE_CODE,
+    ]
 
 
 def test_build_console_shares_terminal_namespace_when_available(monkeypatch):
@@ -615,11 +621,14 @@ def test_build_console_falls_back_to_subprocess_kernel_when_shell_conflict(monke
     # own two lines (import eco.<scope> as <scope>; from eco.<scope> import
     # *) so bare names (mono, att, ...) are available here too, not just a
     # `namespace` variable -- see build_namespace_vars's docstring.
-    # index 0 is every console's hidden jedi-disable call (see
-    # console_kernel.build_console_widget's docstring); index 1 is this
-    # subprocess kernel's own scope-loading startup code.
-    assert len(app._console.executed) == 2
-    assert app._console.executed[1] == (
+    # index 0 is every console's hidden jedi-disable call, index 1 the
+    # guarded_eval-allowlist patch, index 2 the lazy-completion-gate install
+    # (see console_kernel.build_console_widget's docstring for all three);
+    # index 3 is this subprocess kernel's own scope-loading startup code.
+    assert len(app._console.executed) == 4
+    assert app._console.executed[1] == console_kernel.GUARDED_EVAL_PROXY_PATCH_CODE
+    assert app._console.executed[2] == console_kernel.LAZY_COMPLETION_GATE_CODE
+    assert app._console.executed[3] == (
         "from eco import ecocnf\n"
         "ecocnf.startup_lazy = True\n"
         "import eco.bernina as bernina\n"
@@ -642,9 +651,11 @@ def test_build_console_subprocess_banner_when_link_terminal_false(monkeypatch):
     app._build_console()
 
     assert "an independent kernel, running in its own process" in app._console.banner
-    # index 0: every console's hidden jedi-disable call; index 1: this
-    # subprocess kernel's own scope-loading startup code
-    assert len(app._console.executed) == 2
+    # index 0: every console's hidden jedi-disable call; index 1: the
+    # guarded_eval-allowlist patch; index 2: the lazy-completion-gate
+    # install; index 3: this subprocess kernel's own scope-loading startup
+    # code
+    assert len(app._console.executed) == 4
 
 
 def test_open_widget_calls_widget_directly_not_through_the_console():

@@ -9,6 +9,7 @@ from pathlib import Path
 from .utilities import Acquisition
 import time
 from ..elements.adjustable import AdjustableFS
+from ..utilities.datafiles import open_group_writable
 from escape import ArrayTimestamps
 
 
@@ -137,10 +138,10 @@ class EpicsDaq:
 
     def write_scan_info(self, scan, **kwargs):
         if not Path(scan.scan_info_filename).exists():
-            with open(scan.scan_info_filename, "w") as f:
+            with open_group_writable(scan.scan_info_filename, "w") as f:
                 json.dump(scan.scan_info, f, sort_keys=True, cls=NumpyEncoder)
         else:
-            with open(self.scan_info_filename, "r+") as f:
+            with open_group_writable(self.scan_info_filename, "r+") as f:
                 f.seek(0)
                 json.dump(self.scan_info, f, sort_keys=True, cls=NumpyEncoder)
                 f.truncate()

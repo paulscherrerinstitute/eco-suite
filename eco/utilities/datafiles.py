@@ -1,15 +1,24 @@
-"""Group-writable creation of experiment result files under ``.../<pgroup>/res``.
+"""Group-writable creation of everything eco writes to a shared beamline tree.
 
-Everything eco writes below ``/sf/<instrument>/data/<pgroup>/res`` (``run_data``
-and everything in it -- per-run ``aux`` json, run tables, scan info, memories,
-pedestal/gainmap copies) is written by whichever account happens to run the
-session: usually the shared ``gac-bernina`` console account, sometimes a
-personal one. Everyone else in the pgroup has to be able to add to and rewrite
-those results afterwards, which needs two things that are *not* the default:
+Two kinds of tree are covered, for the same reason: whichever account happens
+to run the session -- usually the shared ``gac-bernina`` console account,
+sometimes a personal one -- writes files that *every other member of the group*
+has to be able to rewrite afterwards.
+
+* **Results**, below ``/sf/<instrument>/data/<pgroup>/res``: ``run_data`` and
+  everything in it -- per-run ``aux`` json, run tables, scan info, memories,
+  pedestal/gainmap copies. The group here is the **pgroup** (`pgroup_of_path`).
+* **Shared configuration and state**, below ``/sf/<instrument>/code/<account>/``
+  and friends: the ``eco_cnf_bernina`` memory/preset/offset/configuration trees,
+  the namespace alias json inside the checkout itself. There is no pgroup in
+  those paths, so the group is taken from **the enclosing directory**
+  (`target_group_of_path`) -- what setgid would have propagated.
+
+Getting that right needs two things that are *not* the default:
 
 * every directory group-writable **and setgid** (``0o2775``) -- the write bit so
-  another pgroup member can create entries in it, the setgid bit so whatever
-  they create inherits the pgroup rather than their own primary group;
+  another group member can create entries in it, the setgid bit so whatever
+  they create inherits the directory's group rather than their own primary one;
 * every file group-writable (``0o664``).
 
 Neither happens on its own. ``mkdir(mode=0o775)`` is masked by the process
@@ -31,13 +40,29 @@ Hence `DIR_MODE` carries `stat.S_ISGID`, and every chmod here *adds* bits to
 the mode already on disk instead of replacing it -- a directory an admin made
 more permissive stays that way.
 
+The same failure in its other form is what motivated `target_group_of_path`:
+``eco_cnf_bernina/memory`` is ``unx-sf_bernina_bs`` but was never setgid, so
+263 of the 1505 device directories under it -- every one created on a day the
+shared account happened to touch it first -- came out ``unx-nogroup`` with
+``0644`` files, unwritable by anyone else on the beamline. eco could not have
+noticed: outside a pgroup tree it used to skip the group question entirely.
+
 Nothing here fights a site-managed setup: permissions are only touched when
 they are actually missing, and a path this process cannot fix is reported once
-(see `warn_once`) with the command that would fix it, rather than raised --
+(see `warn_once`) **naming the account that owns it** -- on a shared tree that
+account is the only one besides root who can fix it -- rather than raised;
 losing a run because a chmod failed would be far worse than the wrong mode.
-Before warning, POSIX ACLs are consulted (`acl_grants_group_write`), so a tree
-where group write is already granted by an ACL rather than by the mode bits
-stays quiet.
+Reporting deduplicates on the *parent* directory, so a tree of a few hundred
+identically-broken siblings costs one warning, not a few hundred, and the
+suggested command is recursive on that parent for the same reason. Before
+warning, POSIX ACLs are consulted (`acl_grants_group_write`), so a tree where
+group write is already granted by an ACL rather than by the mode bits stays
+quiet, and a bare missing setgid bit on an otherwise correct directory is not
+reported at all -- it blocks nobody, and eco sets the group explicitly on
+everything it creates anyway.
+
+`repair_tree` is the counterpart for the account that *does* own such a tree:
+it fixes everything it can and lists the owner of everything it cannot.
 
 Stdlib-only (no eco/EPICS/GUI imports), so it is safe to import from any code
 path.
@@ -48,6 +73,7 @@ import os
 import re
 import stat
 import subprocess
+import tempfile
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -118,6 +144,59 @@ def pgroup_of_path(path):
     return None
 
 
+@lru_cache(maxsize=None)
+def _process_gids():
+    """Every gid this process could chgrp *to* -- chgrp to a group you are not
+    a member of is EPERM for anyone but root, so a group outside this set is
+    not a target eco can propose."""
+    return frozenset(os.getgroups()) | {os.getgid()}
+
+
+def _current_user():
+    try:
+        import pwd
+
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except (KeyError, OSError, ImportError):
+        return str(os.geteuid())
+
+
+def target_group_of_path(path):
+    """The group `path` should belong to, or None if eco should not pick one.
+
+    Inside a pgroup tree that is the pgroup (see `pgroup_of_path`). Everywhere
+    else -- notably the shared config/checkout trees under
+    ``/sf/<instrument>/code/<account>/`` -- it is **the group of the enclosing
+    directory**, i.e. exactly what the setgid bit would have propagated had it
+    been set. That fallback is the whole reason this exists: the memory tree
+    under ``eco_cnf_bernina/memory`` is ``unx-sf_bernina_bs`` but was never
+    setgid, so every device directory created there by the shared console
+    account came out owned by *that account's primary group*
+    (``unx-nogroup``), with files at ``0644`` -- unwritable by anyone else on
+    the beamline. Before this, eco skipped the group entirely outside a pgroup
+    tree and so never noticed.
+
+    Only the **nearest existing ancestor directory** is consulted, and only if
+    this process is a member of its group: a grandparent's group is not the
+    local convention, and a group we are not in cannot be set anyway.
+    """
+    pgroup = pgroup_of_path(path)
+    if pgroup is not None:
+        return pgroup
+
+    for parent in Path(path).absolute().parents:
+        try:
+            st = os.stat(parent)
+        except OSError:
+            continue  # does not exist yet (mkdir -p is about to create it)
+        if not stat.S_ISDIR(st.st_mode):
+            continue
+        if st.st_gid in _process_gids():
+            return _name_of_gid(st.st_gid)
+        return None
+    return None
+
+
 def acl_grants_group_write(path, group=None):
     """Best-effort "is group write already granted by a POSIX ACL?".
 
@@ -168,9 +247,22 @@ def acl_grants_group_write(path, group=None):
     return False
 
 
+def _owner_name(st):
+    try:
+        import pwd
+
+        return pwd.getpwuid(st.st_uid).pw_name
+    except (KeyError, OSError, ImportError):
+        return str(st.st_uid)
+
+
 def _ensure_bits(path, bits, warn=True):
     """Add `bits` to `path`'s mode if missing. True if the path ends up with
-    them (or already had them), False if it could not be fixed."""
+    them (or already had them), False if it could not be fixed.
+
+    Reporting is left to `ensure_group_writable`, which knows about the group
+    half too and so can say what is wrong in one message instead of two.
+    """
     try:
         st = os.stat(path)
     except OSError as exc:
@@ -186,41 +278,17 @@ def _ensure_bits(path, bits, warn=True):
         # must survive eco tightening nothing it did not intend to.
         os.chmod(path, stat.S_IMODE(st.st_mode) | bits)
         return True
-    except OSError as exc:
-        if not warn:
-            return False
-        pgroup = pgroup_of_path(path)
-        if acl_grants_group_write(path, pgroup):
-            return True  # already handled by an ACL, mode bits are irrelevant
-        kind = "directory" if stat.S_ISDIR(st.st_mode) else "file"
-        fix = "chmod g+rwXs" if stat.S_ISDIR(st.st_mode) else "chmod g+rw"
-        warn_once(
-            ("mode", str(path)),
-            f"{kind} {path} is not group-writable (mode "
-            f"{stat.S_IMODE(st.st_mode):04o}, owner "
-            f"{_owner_name(st)}) and eco could not change it ({exc.strerror}). "
-            f"Other members of {pgroup or 'the group'} will not be able to "
-            f"write there -- fix with: {fix} '{path}'",
-        )
+    except OSError:
         return False
 
 
-def _owner_name(st):
-    try:
-        import pwd
-
-        return pwd.getpwuid(st.st_uid).pw_name
-    except (KeyError, OSError, ImportError):
-        return str(st.st_uid)
-
-
-def _ensure_group(path, pgroup=None, warn=True):
-    """Make `path` belong to its pgroup. True if it does (or the path is not
-    inside a pgroup tree, where eco has no business picking a group)."""
-    pgroup = pgroup or pgroup_of_path(path)
-    if pgroup is None:
+def _ensure_group(path, group=None, warn=True):
+    """Make `path` belong to `group` (default `target_group_of_path`). True if
+    it does, or if there is no group eco should be picking for this path."""
+    group = group or target_group_of_path(path)
+    if group is None:
         return True
-    gid = _gid_of(pgroup)
+    gid = _gid_of(group)
     if gid is None:
         return True
 
@@ -234,32 +302,110 @@ def _ensure_group(path, pgroup=None, warn=True):
     try:
         os.chown(path, -1, gid)
         return True
-    except OSError as exc:
-        if warn:
-            warn_once(
-                ("group", str(path)),
-                f"{path} belongs to group {_name_of_gid(st.st_gid)} instead of "
-                f"{pgroup} and eco could not change it ({exc.strerror}) -- "
-                f"members of {pgroup} may not be able to write it. Fix with: "
-                f"chgrp {pgroup} '{path}'",
-            )
+    except OSError:
         return False
 
 
+def _describe_problems(st, group, is_dir):
+    """``(problems, serious)`` for `st`: what is wrong in human-readable form,
+    and whether any of it actually blocks another account *now*.
+
+    Wrong group comes first because that is the damage. A missing setgid bit is
+    listed but is not on its own serious: it does not stop anyone writing here,
+    it only means entries created inside would get their creator's primary
+    group -- and eco sets the group explicitly on everything it creates anyway.
+    Reporting it alone would mean a warning for every directory in a large,
+    perfectly writable tree that simply never had the bit, which is noise; it
+    is worth saying only alongside the breakage it caused.
+    """
+    problems = []
+    serious = False
+    mode = stat.S_IMODE(st.st_mode)
+    gid = _gid_of(group) if group else None
+    if gid is not None and st.st_gid != gid:
+        problems.append(f"group {_name_of_gid(st.st_gid)} (should be {group})")
+        serious = True
+    bits = _DIR_BITS if is_dir else _FILE_BITS
+    if st.st_mode & _FILE_BITS != _FILE_BITS:
+        problems.append(f"not group-writable (mode {mode:04o})")
+        serious = True
+    elif st.st_mode & bits != bits:
+        problems.append(f"setgid bit missing (mode {mode:04o})")
+    return problems, serious
+
+
+def _warn_unfixable(path, group):
+    """Report, once per (problem, parent, owner), a path eco could not make
+    group-writable -- naming the account that owns it, since on a shared
+    beamline tree that account is the only one (besides root) who can fix it.
+
+    Deduping on the *parent* rather than the path is what keeps a tree of a few
+    hundred sibling directories with the same owner and the same problem from
+    printing a few hundred identical warnings; the suggested command is
+    recursive on that parent for the same reason.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    is_dir = stat.S_ISDIR(st.st_mode)
+
+    if acl_grants_group_write(path, group):
+        return True  # already handled by an ACL, mode bits are irrelevant
+
+    problems, serious = _describe_problems(st, group, is_dir)
+    if not problems:
+        return True
+    if not serious:
+        return False  # latent only (a bare missing setgid) -- not worth a line
+
+    owner = _owner_name(st)
+    me = _current_user()
+    parent = Path(path).parent
+    kind = "directory" if is_dir else "file"
+    for_group = f" for {group}" if group else ""
+    by = (
+        f"it is owned by {owner}, and this session runs as {me}"
+        if owner != me
+        else f"the filesystem refused it even though {me} owns it"
+    )
+    fix_target = parent if is_dir else path
+    fix = f"chmod -R g+rwXs '{fix_target}'"
+    if group:
+        fix = f"chgrp -R {group} '{fix_target}' && " + fix
+
+    warn_once(
+        ("perm", tuple(problems), str(parent), owner),
+        f"cannot make {kind} {path} group-writable{for_group}: "
+        f"{', '.join(problems)} -- {by}.\n"
+        f"  Other members of {group or 'the group'} will not be able to "
+        f"rewrite what eco stores there.\n"
+        f"  {owner} can fix this (and any sibling with the same problem) "
+        f"with: {fix}",
+    )
+    return False
+
+
 def ensure_group_writable(path, pgroup=None, warn=True):
-    """Make one existing file or directory group-writable and pgroup-owned.
+    """Make one existing file or directory group-writable and group-owned.
 
     Returns True if `path` ends up both, False if something could not be fixed
     (already reported via `warn_once` unless ``warn=False``).
     """
     path = Path(path)
+    group = pgroup or target_group_of_path(path)
     try:
         is_dir = path.is_dir()
     except OSError:
         return False
-    ok_group = _ensure_group(path, pgroup=pgroup, warn=warn)
+    ok_group = _ensure_group(path, group=group, warn=warn)
     ok_mode = _ensure_bits(path, _DIR_BITS if is_dir else _FILE_BITS, warn=warn)
-    return ok_group and ok_mode
+    if ok_group and ok_mode:
+        return True
+    if not warn:
+        return False
+    # One message covering both halves, rather than one per failed syscall.
+    return _warn_unfixable(path, group)
 
 
 def _pgroup_root(path, pgroup):
@@ -346,7 +492,7 @@ def _levels_below_pgroup_root(path):
 
 @contextmanager
 def open_group_writable(path, mode="w", pgroup=None, warn=True, **kwargs):
-    """`open()` for a results file, leaving it group-writable and pgroup-owned.
+    """`open()` for a results file, leaving it group-writable and group-owned.
 
     The parent directory is created (via `ensure_dir`) if missing, and the
     permissions are applied on the *open descriptor*, so they land on the file
@@ -355,16 +501,96 @@ def open_group_writable(path, mode="w", pgroup=None, warn=True, **kwargs):
     An existing file that is already group-writable is left alone -- notably it
     is not an error to be unable to chmod a file another account created, as
     long as the group can write it, which is the whole point.
+
+    If the file exists but *is not* group-writable and belongs to another
+    account, a truncating open would simply fail: ``open(path, "w")`` needs
+    write permission on the file itself, which a ``0644`` file owned by the
+    shared console account does not give anyone else. When the directory is
+    writable, the file is replaced instead (write a sibling temporary, then
+    `os.replace`) -- the same thing ``mv`` would do, licensed by the same
+    directory permission -- so a second account can still store its value, and
+    the replacement lands with the right group and mode. Reported once, since
+    silently dropping someone else's file ownership should be visible.
     """
     path = Path(path)
     if not path.parent.exists():
         ensure_dir(path.parent, pgroup=pgroup, warn=warn)
 
-    with open(path, mode, **kwargs) as fh:
+    try:
+        fh = open(path, mode, **kwargs)
+    except PermissionError as exc:
+        tmp_path, fh = _replacement_for(path, mode, exc, warn=warn, **kwargs)
+        if fh is None:
+            raise
+        try:
+            with fh:
+                yield fh
+                _fix_open_file(fh, path, pgroup=pgroup, warn=warn)
+            os.replace(tmp_path, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        return
+
+    with fh:
         try:
             yield fh
         finally:
             _fix_open_file(fh, path, pgroup=pgroup, warn=warn)
+
+
+#: Modes that discard the previous contents outright -- the only ones for which
+#: replacing the file is equivalent to writing it. ``a``/``r+`` need the old
+#: bytes, so a refused open there is a genuine error.
+_TRUNCATING_MODES = {"w", "wb", "wt", "bw", "tw"}
+
+
+def _replacement_for(path, mode, exc, warn=True, **kwargs):
+    """``(tmp_path, handle)`` for rewriting `path` by replacement, or
+    ``(None, None)`` when that is not applicable and the caller should re-raise.
+    """
+    if mode not in _TRUNCATING_MODES or not path.exists():
+        return None, None
+    if not os.access(path.parent, os.W_OK | os.X_OK):
+        return None, None
+
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None, None
+
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f".{path.name}.", suffix=".eco-tmp"
+        )
+    except OSError:
+        return None, None
+
+    try:
+        os.fchmod(fd, FILE_MODE)  # ours, brand new: set it outright
+        fh = os.fdopen(fd, mode, **kwargs)
+    except OSError:
+        os.close(fd)
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        return None, None
+
+    if warn:
+        warn_once(
+            ("replace", str(path.parent), _owner_name(st)),
+            f"{path} (mode {stat.S_IMODE(st.st_mode):04o}, owner "
+            f"{_owner_name(st)}) is not writable by this session "
+            f"({_current_user()}): {exc.strerror}. Replacing it with a "
+            f"group-writable copy so the value can still be stored -- "
+            f"{_owner_name(st)} should run: "
+            f"chmod -R g+rwXs '{path.parent}'",
+        )
+    return tmp_name, fh
 
 
 def _fix_open_file(fh, path, pgroup=None, warn=True):
@@ -375,18 +601,55 @@ def _fix_open_file(fh, path, pgroup=None, warn=True):
     except (OSError, ValueError, AttributeError):
         return
 
-    gid = _gid_of(pgroup or pgroup_of_path(path) or "")
+    group = pgroup or target_group_of_path(path)
+    gid = _gid_of(group) if group else None
     if gid is not None and st.st_gid != gid:
         try:
             os.fchown(fd, -1, gid)
         except OSError:
-            _ensure_group(path, pgroup=pgroup, warn=warn)
+            _ensure_group(path, group=group, warn=warn)
 
     if st.st_mode & _FILE_BITS != _FILE_BITS:
         try:
             os.fchmod(fd, stat.S_IMODE(st.st_mode) | _FILE_BITS)
         except OSError:
-            _ensure_bits(path, _FILE_BITS, warn=warn)
+            if not _ensure_bits(path, _FILE_BITS, warn=warn) and warn:
+                _warn_unfixable(path, group)
+
+
+def repair_tree(path, warn=True):
+    """Make everything at and below `path` group-writable and group-owned.
+
+    The counterpart to the warnings above, for the account that owns the tree:
+    ``eco.utilities.datafiles.repair_tree(
+    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/memory")``. Entries this
+    account cannot fix are returned (and listed, owner first) rather than
+    raising, so a tree with a few stragglers from a third account still gets
+    everything else repaired.
+    """
+    path = Path(path)
+    bad = []
+    entries = [path]
+    for root, dirs, files in os.walk(path):
+        entries.extend(Path(root) / name for name in dirs + files)
+    for entry in entries:
+        if not ensure_group_writable(entry, warn=False):
+            bad.append(entry)
+    if warn and bad:
+        print(
+            f"eco: {len(bad)} of {len(entries)} entries under {path} could not "
+            f"be fixed by {_current_user()}; their owners have to:"
+        )
+        for entry in bad:
+            try:
+                st = os.stat(entry)
+            except OSError:
+                continue
+            print(
+                f"  {stat.filemode(st.st_mode)} {_owner_name(st):>14s} "
+                f"{_name_of_gid(st.st_gid):>18s}  {entry}"
+            )
+    return bad
 
 
 def check_group_writable(path, warn=True):
@@ -399,19 +662,18 @@ def check_group_writable(path, warn=True):
     is well.
     """
     path = Path(path)
-    pgroup = pgroup_of_path(path)
     bad = []
     for level in _levels_below_pgroup_root(path):
         try:
             st = os.stat(level)
         except OSError:
             continue
+        group = target_group_of_path(level)
+        gid = _gid_of(group) if group else None
         bits = _DIR_BITS if stat.S_ISDIR(st.st_mode) else _FILE_BITS
-        if st.st_mode & bits == bits and (
-            pgroup is None or st.st_gid == _gid_of(pgroup)
-        ):
+        if st.st_mode & bits == bits and (gid is None or st.st_gid == gid):
             continue
-        if acl_grants_group_write(level, pgroup):
+        if acl_grants_group_write(level, group):
             continue
         bad.append(level)
         if warn:

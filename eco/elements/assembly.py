@@ -18,7 +18,8 @@ from eco.elements.protocols import Detector, InitialisationWaitable
 from eco.epics_utils import get_from_archive
 
 from ..aliases import Alias
-from ..utilities.tables import format_table, section_row_styles
+from ..utilities.tables import format_table, section_row_styles, tree_name_rows
+import eco.defaults as eco_defaults
 import colorama
 from . import memory
 from enum import Enum
@@ -670,14 +671,84 @@ class Assembly:
         s = format_table([[name, value] for name, value in stat_filt[stat_field].items()])
         return s
 
+    @staticmethod
+    def _display_row_cells(to, is_trigger=False, value_placeholder=True):
+        """The (value, unit, description, typechar) cells one object
+        contributes to `get_display_str`'s table.
+
+        `value_placeholder=False` returns an empty value for an object with
+        no readable `get_current_value()` instead of the italic
+        "(trigger)"/"has lower level items"/"<no value>" note -- used for the
+        tree layout's synthesized parent rows, where the "↳" glyph already
+        says the row is only a heading and the placeholder text would just be
+        noise on every sub-assembly.
+        """
+        is_adjustable = isinstance(to, Adjustable)
+        is_detector = isinstance(to, Detector)
+        typechar = ""
+        # colour-emoji glyphs (U+FE0F presentation selector). Our terminals
+        # draw these 1 cell wide; _patch_rich_emoji_width() in
+        # eco.utilities.tables makes rich measure them the same so columns
+        # stay aligned.
+        if is_trigger:
+            typechar += "▶️"
+        elif is_adjustable:
+            typechar += "✏️"
+        elif is_detector:
+            typechar += "👁️"
+        if hasattr(to, "status_collection"):
+            typechar += " ↳"
+
+        try:
+            value = to.get_current_value()
+        except AttributeError:
+            if not value_placeholder:
+                value = ""
+            elif is_trigger:
+                value = "\x1b[3m(trigger)\x1b[0m"
+            elif hasattr(to, "status_collection"):
+                value = "\x1b[3mhas lower level items\x1b[0m"
+            else:
+                # safety net: anything else lacking get_current_value()
+                # (and not a nested sub-assembly) would otherwise leave
+                # `value` unbound and crash the whole repr() below
+                value = "\x1b[3m<no value>\x1b[0m"
+
+        if isinstance(value, Enum):
+            value = f"{value.value} ({value.name})"
+        try:
+            unit = to.unit.get_current_value()
+        except:
+            unit = ""
+        try:
+            description = to.description.get_current_value()
+        except:
+            description = ""
+
+        if value is None:
+            value = ""
+        return value, unit, description, typechar
+
     def get_display_str(
         self,
         tablefmt="simple",
         with_base_name=False,
         maxcolwidths=[None, None, None, 50, None],
         show_triggers=False,
+        tree=None,
     ):
-        """show_triggers=False (default): AdjustableTrigger rows (the
+        """tree=None (default): take the name-column layout from
+        `self._display_tree` if the object defines one, else from
+        `eco.defaults.DISPLAY_TREE` (False out of the box). False lists a
+        recursively unfolded sub-assembly as one flat row per leaf, each
+        repeating the sub-assembly's name (`ver.x`, `ver.y`, ...); True
+        drops that redundant prefix and renders the sub-section as a tree
+        instead -- a header row for the sub-assembly, its properties
+        indented underneath (see `eco.utilities.tables.tree_name_rows`).
+        Purely cosmetic: same rows, same values, same per-section row
+        colours, only the name column differs.
+
+        show_triggers=False (default): AdjustableTrigger rows (the
         "(trigger)"/▶️ rows -- an action, not a value) are left out of this
         plain-text/HTML table. They're meant for a clickable panel (Qt or
         Jupyter widget -- see eco.widgets.display_qt/display_widget, where
@@ -686,6 +757,11 @@ class Assembly:
         clicked and has no value to show is just noise. Pass True to
         include them anyway (e.g. an elog status snapshot documenting what
         the assembly has, not just its current readings)."""
+        if tree is None:
+            tree = getattr(self, "_display_tree", None)
+        if tree is None:
+            tree = getattr(eco_defaults, "DISPLAY_TREE", False)
+
         main_name = self.name
         stats = self.status_collection.get_list(selection="display")
         # stats_dict = {}
@@ -704,6 +780,12 @@ class Assembly:
         from eco.elements.adjustable import AdjustableTrigger
 
         group_keys = []
+        # plain (unprefixed, uncoloured) name per row, kept alongside `tab`
+        # because the tree layout below has to re-derive each row's label from
+        # its dotted path -- `tab`'s own name cell may already carry the base
+        # name or ANSI colouring.
+        row_names = []
+        row_name_wraps = []
         for to in stats:
             is_trigger = isinstance(to, AdjustableTrigger)
             if is_trigger and not show_triggers:
@@ -711,48 +793,9 @@ class Assembly:
 
             name = to.alias.get_full_name(base=self)
 
-            is_adjustable = isinstance(to, Adjustable)
-            is_detector = isinstance(to, Detector)
-            typechar = ""
-            # colour-emoji glyphs (U+FE0F presentation selector). Our terminals
-            # draw these 1 cell wide; _patch_rich_emoji_width() in
-            # eco.utilities.tables makes rich measure them the same so columns
-            # stay aligned.
-            if is_trigger:
-                typechar += "▶️"
-            elif is_adjustable:
-                typechar += "✏️"
-            elif is_detector:
-                typechar += "👁️"
-            if hasattr(to, "status_collection"):
-                typechar += " ↳"
-
-            try:
-                value = to.get_current_value()
-            except AttributeError:
-                if is_trigger:
-                    value = "\x1b[3m(trigger)\x1b[0m"
-                elif hasattr(to, "status_collection"):
-                    value = "\x1b[3mhas lower level items\x1b[0m"
-                else:
-                    # safety net: anything else lacking get_current_value()
-                    # (and not a nested sub-assembly) would otherwise leave
-                    # `value` unbound and crash the whole repr() below
-                    value = "\x1b[3m<no value>\x1b[0m"
-
-            if isinstance(value, Enum):
-                value = f"{value.value} ({value.name})"
-            try:
-                unit = to.unit.get_current_value()
-            except:
-                unit = ""
-            try:
-                description = to.description.get_current_value()
-            except:
-                description = ""
-
-            if value is None:
-                value = ""
+            value, unit, description, typechar = self._display_row_cells(
+                to, is_trigger=is_trigger
+            )
             if with_base_name:
                 tab.append(
                     [".".join([main_name, name]), value, unit, description, typechar]
@@ -763,6 +806,8 @@ class Assembly:
             # only changes the displayed label, not which sub-component a row
             # unfolds from.
             group_keys.append(name.split(".", 1)[0])
+            row_names.append(name)
+            row_name_wraps.append("{}")
 
         # optional components that failed to initialize (and were marked
         # is_display) are listed in red so the missing device is obvious.
@@ -776,6 +821,17 @@ class Assembly:
                 [f"{_red}{dispname}{_reset}", f"{_red}FAILED{_reset}", "", "", "⚠️ "]
             )
             group_keys.append(fname.split(".", 1)[0])
+            row_names.append(fname)
+            row_name_wraps.append(_red + "{}" + _reset)
+
+        if tree and tab:
+            tab, group_keys = self._as_tree_rows(
+                tab,
+                group_keys,
+                row_names,
+                row_name_wraps,
+                main_name if with_base_name else None,
+            )
         if tab:
             row_styles = section_row_styles(group_keys)
             s = format_table(tab, tablefmt=tablefmt, maxcolwidths=maxcolwidths, row_styles=row_styles)
@@ -783,6 +839,80 @@ class Assembly:
             s = ""
 
         return s
+
+    def _resolve_display_path(self, path):
+        """The object a dotted display-table name refers to, or None.
+
+        Display names come from `alias.get_full_name(base=self)`, which for
+        anything appended via `_append` is also its attribute path -- so a
+        plain walk finds it. Anything that doesn't resolve (a name that isn't
+        an attribute path, an attribute whose lookup raises) simply yields
+        None, since this only ever feeds an extra value on a heading row.
+        """
+        obj = self
+        for part in str(path).split("."):
+            try:
+                obj = getattr(obj, part)
+            except Exception:
+                return None
+            if obj is None:
+                return None
+        return obj
+
+    def _as_tree_rows(self, tab, group_keys, row_names, row_name_wraps, base_name=None):
+        """Re-lay-out `get_display_str`'s rows with a tree-shaped name column
+        (see `tree=` there): synthesized header rows for each dotted prefix,
+        children indented below it without the repeated prefix.
+
+        Returns the new (tab, group_keys) pair -- rows are reordered into tree
+        order and header rows added, so the two must stay in step for
+        `section_row_styles` to keep colouring each sub-section as one block.
+
+        A header row is synthesized for each sub-assembly, which the flat
+        layout has no row for at all (unfolding it recursively contributes
+        only its leaves). If that sub-assembly has a readable
+        `get_current_value()` of its own -- an assembly that is also an
+        Adjustable/Detector, e.g. a device whose "value" is its main axis --
+        the heading shows it, with its unit/description/type glyph, rather
+        than being a bare label; otherwise the row carries just the name and
+        the "↳" has-sub-items marker. Guarded broadly: a heading value is an
+        extra read this table never used to do, and must not be able to break
+        a repr that worked before.
+        """
+        new_tab = []
+        new_keys = []
+        top_key = None
+        for label, index, depth, path in tree_name_rows(row_names):
+            # tree order is depth-first, so the last depth-0 row seen is the
+            # sub-section every deeper row below it belongs to -- keeps a
+            # synthesized header coloured with its own children.
+            if depth == 0:
+                top_key = label if index is None else group_keys[index]
+                if base_name:
+                    label = ".".join([base_name, label])
+            if index is None:
+                new_tab.append([label] + list(self._tree_header_cells(path)))
+            else:
+                row = list(tab[index])
+                row[0] = row_name_wraps[index].format(label)
+                new_tab.append(row)
+            new_keys.append(top_key)
+        return new_tab, new_keys
+
+    def _tree_header_cells(self, path):
+        """(value, unit, description, typechar) for a synthesized tree header
+        row -- the parent object's own reading if it has one, else empty
+        cells with the "↳" marker. See `_as_tree_rows`."""
+        try:
+            obj = self._resolve_display_path(path)
+            if obj is not None:
+                value, unit, description, typechar = self._display_row_cells(
+                    obj, value_placeholder=False
+                )
+                return value, unit, description, typechar or "↳"
+        except Exception:
+            pass
+        return "", "", "", "↳"
 
     def status_to_elog(
         self,
@@ -865,10 +995,12 @@ class Assembly:
                     out[f"{base}.{n}"] = exc
         return out
 
-    def _display_text(self):
+    def _display_text(self, tree=None):
         """The plain (non-live) text `__repr__`/`live_status()` both show:
         an INITIALIZATION INCOMPLETE banner (if any component failed) plus
-        `get_display_str()`."""
+        `get_display_str()`. `tree` is passed straight through to it (see
+        there): None takes the default, True renders nested sub-assemblies
+        as an indented tree instead of repeating their name on every row."""
         fullname = self.alias.get_full_name()
         label = fullname + " display\n"
         banner = ""
@@ -881,12 +1013,12 @@ class Assembly:
                 f"{red}⚠️  {fullname}: INITIALIZATION INCOMPLETE — "
                 f"failed component(s): {names}{reset}\n"
             )
-        return banner + label + self.get_display_str()
+        return banner + label + self.get_display_str(tree=tree)
 
     def __repr__(self):
         return self._display_text()
 
-    def live_status(self, interval=0.5):
+    def live_status(self, interval=0.5, tree=None):
         """Block, printing a continuously refreshing version of `repr(self)`
         until you press ``q``, Escape, or Ctrl-C, then return.
 
@@ -902,7 +1034,9 @@ class Assembly:
         """
         from eco.elements.live_status import run_live_status
 
-        run_live_status(self._display_text, interval=interval)
+        run_live_status(
+            lambda: self._display_text(tree=tree), interval=interval
+        )
 
     # def _wait_for_initialisation(self, timeout=2):
     #     for ton, to in self.__dict__.items():
