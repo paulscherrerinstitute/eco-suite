@@ -51,6 +51,15 @@ class SocketLineTransport(LineTransport):
             self._sock.sendall(line.encode())
 
     def close(self):
+        # shutdown() BEFORE close(): a plain close() on a socket that another
+        # thread is blocked in recv() on does not tear the connection down
+        # (the file description stays open for the duration of that syscall),
+        # so no FIN reaches the peer and the other end never notices the link
+        # died. shutdown() sends it immediately and wakes the blocked reader.
+        try:
+            self._sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         try:
             self._sock.close()
         except OSError:

@@ -213,3 +213,43 @@ def test_namespace_control_box_survives_an_unreachable_box_host():
                                  token_file=None, box_host="pi@no-such-box.invalid")
     finally:
         ns.stop_eco_control_box()
+
+
+def test_client_notices_the_link_dropping():
+    """The box must see the eco session go away, or it shows stale values forever.
+
+    Regression guard for a close() without a preceding shutdown(): on Linux
+    that does not tear the connection down while another thread is blocked in
+    recv(), so no FIN reaches the box and it never learns the link died.
+    """
+    from eco.manual_control.remote.serve import start_box_server
+    from eco.manual_control.remote.transport import connect_tcp
+
+    server = start_box_server(build_fake_beamline(), root_name="beamline", port=8783,
+                              bind="127.0.0.1", token=TOKEN, token_file=None)
+    try:
+        client = RemoteControlClient(connect_tcp("127.0.0.1", 8783), token=TOKEN).start()
+        assert _wait(lambda: bool(client.entries))
+        assert client.connected is True
+        server.stop()
+        assert _wait(lambda: client.connected is False), "dropped link went unnoticed"
+    finally:
+        server.stop()
+
+
+def test_port_is_reusable_after_the_session_ends():
+    """A restarted eco session must be able to bind the same port again."""
+    from eco.manual_control.remote.serve import start_box_server
+    from eco.manual_control.remote.transport import connect_tcp
+
+    first = start_box_server(build_fake_beamline(), root_name="beamline", port=8782,
+                             bind="127.0.0.1", token=TOKEN, token_file=None)
+    RemoteControlClient(connect_tcp("127.0.0.1", 8782), token=TOKEN).start()
+    first.stop()
+    second = start_box_server(build_fake_beamline(), root_name="beamline", port=8782,
+                              bind="127.0.0.1", token=TOKEN, token_file=None)
+    try:
+        client = RemoteControlClient(connect_tcp("127.0.0.1", 8782), token=TOKEN).start()
+        assert _wait(lambda: bool(client.entries))
+    finally:
+        second.stop()
