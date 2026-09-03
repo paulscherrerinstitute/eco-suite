@@ -21,14 +21,14 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
             labels = [f"{self.alias.get_full_name()} ({channel_ids[0]})"]
         return channel_ids, channel_types, labels
 
-    def _select_channels(channel_ids, channel_types, labels, name_selection):
-        """Narrow the channel/type/label lists down to `name_selection`: a
+    def _select_channels(channel_ids, channel_types, labels, select_names):
+        """Narrow the channel/type/label lists down to `select_names`: a
         list of substrings matched case-insensitively against each channel's
         label, or `True` to pick interactively from a terminal checklist.
         Falls back to the full set on an empty/cancelled selection."""
-        if not name_selection:
+        if not select_names:
             return channel_ids, channel_types, labels
-        if name_selection is True:
+        if select_names is True:
             from simple_term_menu import TerminalMenu
 
             terminal_menu = TerminalMenu(
@@ -43,11 +43,11 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
             chosen = [
                 i
                 for i, label in enumerate(labels)
-                if any(n.lower() in label.lower() for n in name_selection)
+                if any(n.lower() in label.lower() for n in select_names)
             ]
         if not chosen:
             _logger.info(
-                "name_selection matched no channels - showing all %d instead",
+                "select_names matched no channels - showing all %d instead",
                 len(labels),
             )
             return channel_ids, channel_types, labels
@@ -94,12 +94,13 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
 
     def strip_plot(
         self,
+        *extra_monitorables,
         force_type=force_type,
         window=60,
         max_rate=5,
         duration=24 * 3600,
         labels=None,
-        name_selection=None,
+        select_names=None,
         **kwargs,
     ):
         """Open a live, rolling strip plot of all this object's channels,
@@ -111,14 +112,54 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
         `duration`: how long (seconds) the underlying live stream stays open.
         `labels`: legend label per channel; defaults to this object's alias
         labels.
-        `name_selection`: show only a subset of this object's channels - a
+        `select_names`: show only a subset of this object's channels - a
         list of substrings matched against each channel's label, or `True`
         to pick interactively from a terminal checklist.
+        `step` (default `True`, via `**kwargs`): draw each channel as a step
+        plot - a sample holds constant until the next one - rather than a
+        plain connect-the-dots line; see `DataHub.strip_plot`. `grid`
+        (default `True`, via `**kwargs`): show axis gridlines.
+
+        Extra monitorables (anything satisfying `eco.elements.protocols.
+        Detector` - has `get_current_value()`; an Adjustable, a Detector, a
+        virtual/derived value, EPICS-backed or not) are added to the *same*
+        plot alongside this object's own channels, polled rather than
+        EPICS-monitored - see `eco.utilities.strip_plot.strip_plot`. Two
+        ways to pass them: positionally (`mirror.strip_plot(vacuum.pressure)`
+        - named from that object's own alias if it has one, else `.name`,
+        else `repr()`), or as a keyword whose value satisfies `Detector`
+        (`mirror.strip_plot(pressure=vacuum.pressure)` - named from the
+        keyword instead). Mix freely.
         """
+        from ..elements.protocols import is_detector
+        from ..utilities.strip_plot import _monitorable_name
+
+        extra_kwargs = {k: v for k, v in kwargs.items() if is_detector(v)}
+        for name in extra_kwargs:
+            del kwargs[name]
+        extra_names = [_monitorable_name(m) for m in extra_monitorables] + list(
+            extra_kwargs
+        )
+        extra_values = list(extra_monitorables) + list(extra_kwargs.values())
         channel_ids, channel_types, alias_labels = _archiver_channels(self)
         channel_ids, channel_types, alias_labels = _select_channels(
-            channel_ids, channel_types, alias_labels, name_selection
+            channel_ids, channel_types, alias_labels, select_names
         )
+        own_labels = labels if labels is not None else alias_labels
+        if extra_values:
+            from ..utilities.strip_plot import strip_plot as _generic_strip_plot
+
+            return _generic_strip_plot(
+                monitorables=extra_values,
+                channels=channel_ids,
+                force_type=force_type,
+                channel_types=None if force_type else channel_types,
+                labels=extra_names + list(own_labels),
+                window=window,
+                max_rate=max_rate,
+                duration=duration,
+                **kwargs,
+            )
         return eco.defaults.ARCHIVER.strip_plot(
             channels=channel_ids,
             force_type=force_type,
@@ -126,7 +167,7 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
             window=window,
             max_rate=max_rate,
             duration=duration,
-            labels=labels if labels is not None else alias_labels,
+            labels=own_labels,
             **kwargs,
         )
 
