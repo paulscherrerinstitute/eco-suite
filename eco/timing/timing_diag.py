@@ -641,20 +641,50 @@ class TimetoolBerninaUSD(Assembly):
         reverse_direction=False,
         bidirectional=True,
         update_pipeline_config=False,
+        ask_apply=True,
         save=True,
         calibration_format="df",
+        output_dir=None,
         additional_channels=["SARES20-CAMS142-M5.roi_signal_x_profile"],
     ):
+        """Run a timetool calibration scan.
+
+        To just measure a calibration without touching the pipeline config
+        and without any interactive question, pass
+        ``update_pipeline_config=False, ask_apply=False`` (the calibration is
+        still scanned, fit, saved and plotted as usual).
+
+        ``update_pipeline_config=True`` applies the new calibration
+        immediately without asking; ``ask_apply`` (default True) controls
+        whether the "apply this calibration?" question is asked when
+        ``update_pipeline_config`` is False -- set it to False to skip the
+        question and simply not apply.
+
+        ``output_dir`` overrides where results (raw data, calibration file,
+        figure) are written; it defaults to the shared
+        ``/sf/bernina/config/src/beamline_devices/tt_kb/`` tree.
+        """
         from datetime import datetime
         from eco.bernina import config_bernina
+        from eco.utilities.datafiles import ensure_dir
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         pgroup = config_bernina.pgroup()
-        basepath = "/sf/bernina/config/src/beamline_devices/tt_kb/"
+        basepath = (
+            str(output_dir)
+            if output_dir is not None
+            else "/sf/bernina/config/src/beamline_devices/tt_kb/"
+        )
+        if not basepath.endswith("/"):
+            basepath += "/"
         path_data = f"{basepath}data/{timestamp}_{pgroup}"
         path_figure = f"{basepath}figures/{timestamp}_{pgroup}"
         calib_ext = "esc.h5" if calibration_format == "esc" else "pkl"
         path_calib = Path(f"{path_data}_calib.{calib_ext}")
+        if save:
+            ensure_dir(Path(path_data).parent)
+        if plot:
+            ensure_dir(Path(path_figure).parent)
 
         feedback = self.feedback_enabled()
         t0 = self.delay()
@@ -673,121 +703,130 @@ class TimetoolBerninaUSD(Assembly):
             self.feedback_enabled(0)
             print("Turned feedback off")
 
-        #######  bidirectional  ########
-        if bidirectional:
-            x_f = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
-            x = np.hstack([x_f, x_f[::-1]])
-        else:
-            x = None
-
-        ##########    scan    ##########
-        x, pids_start, pids_stop = self.scan_calibration(
-            seconds=seconds,
-            scan_range=scan_range,
-            scan_steps=scan_steps,
-            scan_array=x,
-            reverse_direction=reverse_direction,
-        )
-
-        ########## retrieve data ##########
-        y, df = self.retrieve_calibration_data(
-            pids_start=pids_start,
-            pids_stop=pids_stop,
-            additional_channels=additional_channels,
-        )
-
-        ##########  fit data ##########
-        p, x, y, ymed, yerr = self.fit_calibration_data(
-            x, y, filter_outliers=filter_outliers
-        )
-
-        ########## save data (raw per-shot data, plus the small fit summary) ##########
-        if save:
-            self.dataframe_to_escape_dataset(
-                x,
-                df,
-                pids_start,
-                pids_stop,
-                filepath=path_data + ".esc.h5",
-                calibration_fit={"p": p, "ymed": ymed, "yerr": yerr},
-            )
-
-        ####### Load previous calib (before this run's file becomes "latest") ######
+        # feedback is guaranteed to be restored below even if the scan,
+        # retrieval, fit or saving raises partway through
         try:
-            p_last_calib, filepath_last_calib = self.load_last_calib(basepath + "data/")
-        except Exception as e:
-            print("Failed to load last calibration")
-            print(e)
-            p_last_calib = None
-            filepath_last_calib = ""
+            #######  bidirectional  ########
+            if bidirectional:
+                x_f = np.linspace(t0 - scan_range / 2, t0 + scan_range / 2, scan_steps)
+                x = np.hstack([x_f, x_f[::-1]])
+            else:
+                x = None
 
-        ####### save calibration ######
-        if save:
-            self.save_calibration(
-                p, x, y, ymed, yerr, path_calib, format=calibration_format
+            ##########    scan    ##########
+            x, pids_start, pids_stop = self.scan_calibration(
+                seconds=seconds,
+                scan_range=scan_range,
+                scan_steps=scan_steps,
+                scan_array=x,
+                reverse_direction=reverse_direction,
             )
 
-        edge_last_calib = self._edge_position_from_poly(p_last_calib)
-        edge_new_calib = self._edge_position_from_poly(p)
+            ########## retrieve data ##########
+            y, df = self.retrieve_calibration_data(
+                pids_start=pids_start,
+                pids_stop=pids_stop,
+                additional_channels=additional_channels,
+            )
 
-        ########## plot data ##########
-        if plot:
-            fig = self.plot_calibration(
+            ##########  fit data ##########
+            p, x, y, ymed, yerr = self.fit_calibration_data(
+                x, y, filter_outliers=filter_outliers
+            )
+
+            ########## save data (raw per-shot data, plus the small fit summary) ##########
+            if save:
+                self.dataframe_to_escape_dataset(
+                    x,
+                    df,
+                    pids_start,
+                    pids_stop,
+                    filepath=path_data + ".esc.h5",
+                    calibration_fit={"p": p, "ymed": ymed, "yerr": yerr},
+                )
+
+            ####### Load previous calib (before this run's file becomes "latest") ######
+            try:
+                p_last_calib, filepath_last_calib = self.load_last_calib(
+                    basepath + "data/"
+                )
+            except Exception as e:
+                print("Failed to load last calibration")
+                print(e)
+                p_last_calib = None
+                filepath_last_calib = ""
+
+            ####### save calibration ######
+            if save:
+                self.save_calibration(
+                    p, x, y, ymed, yerr, path_calib, format=calibration_format
+                )
+
+            edge_last_calib = self._edge_position_from_poly(p_last_calib)
+            edge_new_calib = self._edge_position_from_poly(p)
+
+            ########## plot data ##########
+            if plot:
+                fig = self.plot_calibration(
+                    p,
+                    x,
+                    y,
+                    ymed,
+                    yerr,
+                    p_last_calib=p_last_calib,
+                    filepath_last_calib=filepath_last_calib,
+                    to_elog=to_elog,
+                    path_figure=path_figure,
+                    filepath_data=path_calib,
+                )
+
+            ########## print comparison ##########
+            self._print_calibration_comparison(
+                p_last_calib,
+                edge_last_calib,
+                filepath_last_calib,
                 p,
-                x,
-                y,
-                ymed,
-                yerr,
-                p_last_calib=p_last_calib,
-                filepath_last_calib=filepath_last_calib,
-                to_elog=to_elog,
-                path_figure=path_figure,
-                filepath_data=path_calib,
+                edge_new_calib,
+                path_calib,
             )
 
-        ########## print comparison ##########
-        self._print_calibration_comparison(
-            p_last_calib,
-            edge_last_calib,
-            filepath_last_calib,
-            p,
-            edge_new_calib,
-            path_calib,
-        )
-
-        ####### User question: apply this calibration at all ######
-        if update_pipeline_config:
-            apply_calib = True
-        else:
-            ans = ""
-            while not any([a in ans for a in ["y", "n"]]):
-                try:
-                    ans = input("Apply this new calibration to the pipeline config (y/n)? ")
-                except:
-                    continue
-            apply_calib = ans == "y"
-
-        if apply_calib:
-            # User question: keep pixel of previous calib
-            if edge_last_calib is not None:
+            ####### User question: apply this calibration at all ######
+            if update_pipeline_config:
+                apply_calib = True
+            elif not ask_apply:
+                apply_calib = False
+            else:
                 ans = ""
                 while not any([a in ans for a in ["y", "n"]]):
                     try:
                         ans = input(
-                            f"Do you wish to shift the calibration to keep the edge at the same pixel ({edge_last_calib:.5}) as in the previous calibration (y/n)?"
+                            "Apply this new calibration to the pipeline config (y/n)? "
                         )
                     except:
                         continue
-                if ans == "y":
-                    p[-1] = -(p[0] * edge_last_calib**2 + p[1] * edge_last_calib)
-                    print(f"Shifted calibration curve to preserve edge position: {p}")
-            self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
-        else:
-            print("Calibration not applied.")
+                apply_calib = ans == "y"
 
-        if feedback:
-            self.feedback_enabled(1)
-            print("Turned feedback on")
+            if apply_calib:
+                # User question: keep pixel of previous calib
+                if edge_last_calib is not None:
+                    ans = ""
+                    while not any([a in ans for a in ["y", "n"]]):
+                        try:
+                            ans = input(
+                                f"Do you wish to shift the calibration to keep the edge at the same pixel ({edge_last_calib:.5}) as in the previous calibration (y/n)?"
+                            )
+                        except:
+                            continue
+                    if ans == "y":
+                        p[-1] = -(p[0] * edge_last_calib**2 + p[1] * edge_last_calib)
+                        print(f"Shifted calibration curve to preserve edge position: {p}")
+                self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
+            else:
+                print("Calibration not applied.")
+        finally:
+            if feedback:
+                self.feedback_enabled(1)
+                print("Turned feedback on")
 
     def _edge_position_from_poly(self, p):
         if p is None:
