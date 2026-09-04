@@ -84,13 +84,30 @@ def listen_tcp(host="127.0.0.1", port=0):
     return srv
 
 
+def _enable_keepalive(sock, idle=30, interval=10, count=3):
+    """Detect a peer that vanished without closing (box unplugged, crashed,
+    rebooted). Without this the server can sit forever on a connection whose
+    other end no longer exists."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for opt, value in (("TCP_KEEPIDLE", idle), ("TCP_KEEPINTVL", interval),
+                           ("TCP_KEEPCNT", count)):
+            if hasattr(socket, opt):
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, opt), value)
+    except OSError:
+        pass
+
+
 def accept_tcp(listen_sock):
     conn, _ = listen_sock.accept()
+    _enable_keepalive(conn)
     return SocketLineTransport(conn)
 
 
 def connect_tcp(host, port):
-    return SocketLineTransport(socket.create_connection((host, port)))
+    sock = socket.create_connection((host, port))
+    _enable_keepalive(sock)
+    return SocketLineTransport(sock)
 
 
 def connect_tcp_retry(host, port, interval=3.0, attempts=0, log=print):

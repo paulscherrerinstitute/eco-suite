@@ -124,13 +124,28 @@ class BoxServer:
                 break
             if self._stop.is_set():
                 break
+            # Last connection wins. The box is a single device: a new
+            # connection means the previous one is stale (it rebooted, or its
+            # old TCP connection died without a FIN). Waiting for the old one
+            # to end would leave a rebooted box unserved forever, which is
+            # exactly the "box and server cannot find each other" symptom.
+            previous = self.server
+            if previous is not None and not previous._stop.is_set():
+                print("a box reconnected - dropping the previous connection")
+                previous.stop()
             print(f"manual-control box connected on {self.host}:{self.port}")
-            self.server = RemoteControlServer(
+            server = RemoteControlServer(
                 self.root, transport, root_name=self.root_name,
                 token=self.token, **self.box_kwargs
             )
-            self.server.start()
-            self.server.wait()
+            self.server = server
+            server.start()
+            threading.Thread(target=self._watch_disconnect, args=(server,),
+                             daemon=True).start()
+
+    def _watch_disconnect(self, server):
+        server.wait()
+        if server is self.server and not self._stop.is_set():
             print("manual-control box disconnected")
 
     @property
@@ -223,7 +238,11 @@ def main():
         server.wait()
         return
 
-    listener = listen_tcp(args.bind, args.tcp)
+    try:
+        listener = listen_tcp(args.bind, args.tcp)
+    except OSError as exc:
+        ap.error(f"cannot listen on {args.bind}:{args.tcp} ({exc}).\n"
+                 f"{describe_port_holder(args.tcp)}")
     print(f"serving '{name}' on {args.bind}:{args.tcp}"
           f"{' (token required)' if token else ''} (Ctrl-C to stop) ...")
     while True:

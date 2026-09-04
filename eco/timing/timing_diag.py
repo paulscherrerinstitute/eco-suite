@@ -264,14 +264,16 @@ class TimetoolBerninaUSD(Assembly):
         data_f = data[(-sig < score) & (score < sig)]
         return data_f
 
-    def dataframe_to_escape_dataset(self, x, df, pids_start, pids_stop, filepath=""):
+    def dataframe_to_escape_dataset(
+        self, x, df, pids_start, pids_stop, filepath="", calibration_fit=None
+    ):
         from escape.storage import DataSet, Array
         import json
 
         alias_mapping = {
             "SAROP21-ATT01:edge_pos": "tt_kb.edge_pos",
             "SAR-CVME-TIFALL5:EvtSet": "eventset",
-            "SARES20-CAMS142-M5.bsen_signal_x_profile": "tt_kb.spectrum",
+            "SARES20-CAMS142-M5.roi_signal_x_profile": "tt_kb.profile",
         }
 
         dfs = [df.query(f"{a}<index<{b}") for a, b in zip(pids_start, pids_stop)]
@@ -305,6 +307,15 @@ class TimetoolBerninaUSD(Assembly):
             json._default_encoder.encode(self.get_status())
         )
         ds.append(status, name="tt_kb_status")
+
+        # small (one-value-per-step / few-values-total) calibration summary,
+        # kept alongside the per-shot data instead of only in the small pickle
+        if calibration_fit is not None:
+            ds.append(
+                {k: np.asarray(v) for k, v in calibration_fit.items()},
+                name="tt_kb_calibration_fit",
+            )
+
         ds.store_datasets_max_element_size(100000)
         ds.results_file.close()
 
@@ -550,13 +561,13 @@ class TimetoolBerninaUSD(Assembly):
             p = np.asarray(lc.attrs["p"])
         return p, filename
 
-    def save_calibration(self, p, x, y, ymed, yerr, dpath_calib, format="esc"):
+    def save_calibration(self, p, x, y, ymed, yerr, dpath_calib, format="df"):
         """Save a calibration fit result.
 
-        format: "esc" (default) stores p, x, ymed, yerr and the raw
-        (outlier-filtered) per-step edge positions y as escape arrays in an
-        escape DataSet (an .esc.h5 file). "df" stores the same data as a
-        pickled pandas DataFrame instead.
+        format: "df" (default) pickles p, x, ymed, yerr (this is small data,
+        a few values per scan step) as a pandas DataFrame. "esc" instead
+        stores them, plus the raw (outlier-filtered) per-step edge positions
+        y, as escape arrays in an escape DataSet (an .esc.h5 file).
         """
         dpath_calib = Path(dpath_calib)
         if format == "esc":
@@ -631,7 +642,7 @@ class TimetoolBerninaUSD(Assembly):
         bidirectional=True,
         update_pipeline_config=False,
         save=True,
-        calibration_format="esc",
+        calibration_format="df",
         additional_channels=["SARES20-CAMS142-M5.roi_signal_x_profile"],
     ):
         from datetime import datetime
@@ -685,16 +696,30 @@ class TimetoolBerninaUSD(Assembly):
             additional_channels=additional_channels,
         )
 
-        ########## save data ##########
-        if save:
-            self.dataframe_to_escape_dataset(
-                x, df, pids_start, pids_stop, filepath=path_data + ".esc.h5"
-            )
-
         ##########  fit data ##########
         p, x, y, ymed, yerr = self.fit_calibration_data(
             x, y, filter_outliers=filter_outliers
         )
+
+        ########## save data (raw per-shot data, plus the small fit summary) ##########
+        if save:
+            self.dataframe_to_escape_dataset(
+                x,
+                df,
+                pids_start,
+                pids_stop,
+                filepath=path_data + ".esc.h5",
+                calibration_fit={"p": p, "ymed": ymed, "yerr": yerr},
+            )
+
+        ####### Load previous calib (before this run's file becomes "latest") ######
+        try:
+            p_last_calib, filepath_last_calib = self.load_last_calib(basepath + "data/")
+        except Exception as e:
+            print("Failed to load last calibration")
+            print(e)
+            p_last_calib = None
+            filepath_last_calib = ""
 
         ####### save calibration ######
         if save:
@@ -702,20 +727,8 @@ class TimetoolBerninaUSD(Assembly):
                 p, x, y, ymed, yerr, path_calib, format=calibration_format
             )
 
-        ####### Load last calib ######
-        try:
-            p_last_calib, filepath_last_calib = self.load_last_calib(basepath + "data/")
-            print(f"Compare new calibration to last calibration taken: \n{filepath_last_calib}")
-            for root in np.roots(p_last_calib):
-                edge_last_calib = root
-                if 0 < root and root < 2000:
-                    break
-        except Exception as e:
-            print("Failed to load last calibration")
-            print(e)
-            p_last_calib = None
-            edge_last_calib = None
-            filepath_last_calib = ""
+        edge_last_calib = self._edge_position_from_poly(p_last_calib)
+        edge_new_calib = self._edge_position_from_poly(p)
 
         ########## plot data ##########
         if plot:
@@ -732,41 +745,88 @@ class TimetoolBerninaUSD(Assembly):
                 filepath_data=path_calib,
             )
 
+        ########## print comparison ##########
+        self._print_calibration_comparison(
+            p_last_calib,
+            edge_last_calib,
+            filepath_last_calib,
+            p,
+            edge_new_calib,
+            path_calib,
+        )
+
+        ####### User question: apply this calibration at all ######
         if update_pipeline_config:
-            self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
-
-        # User question: keep pixel of previous calib
-        if edge_last_calib is not None:
-            ans = ""
-            while not any([a in ans for a in ["y", "n"]]):
-                try:
-                    ans = input(
-                        f"Do you wish to shift the calibration to keep the edge at the same pixel ({edge_last_calib:.5}) as in the previous calibration (y/n)?"
-                    )
-                except:
-                    continue
-                if ans == "y":
-                    p[-1] = -(p[0] * edge_last_calib**2 + p[1] * edge_last_calib)
-                    print(f"Shifted calibration curve to preserve edge position: {p}")
-                elif ans == "n":
-                    continue
-
-        # User question: apply calib
+            apply_calib = True
         else:
             ans = ""
             while not any([a in ans for a in ["y", "n"]]):
                 try:
-                    ans = input(f"Do you wish to update the pipeline config (y/n)?")
+                    ans = input("Apply this new calibration to the pipeline config (y/n)? ")
                 except:
                     continue
+            apply_calib = ans == "y"
+
+        if apply_calib:
+            # User question: keep pixel of previous calib
+            if edge_last_calib is not None:
+                ans = ""
+                while not any([a in ans for a in ["y", "n"]]):
+                    try:
+                        ans = input(
+                            f"Do you wish to shift the calibration to keep the edge at the same pixel ({edge_last_calib:.5}) as in the previous calibration (y/n)?"
+                        )
+                    except:
+                        continue
                 if ans == "y":
-                    self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
-                elif ans == "n":
-                    continue
+                    p[-1] = -(p[0] * edge_last_calib**2 + p[1] * edge_last_calib)
+                    print(f"Shifted calibration curve to preserve edge position: {p}")
+            self.set_calibration_values(p, pipeline=True, to_elog=to_elog)
+        else:
+            print("Calibration not applied.")
 
         if feedback:
             self.feedback_enabled(1)
             print("Turned feedback on")
+
+    def _edge_position_from_poly(self, p):
+        if p is None:
+            return None
+        for root in np.roots(p):
+            if np.isreal(root) and 0 < root.real < 2000:
+                return float(root.real)
+        return None
+
+    def _print_calibration_comparison(
+        self,
+        p_last_calib,
+        edge_last_calib,
+        filepath_last_calib,
+        p_new,
+        edge_new_calib,
+        filepath_new_calib,
+    ):
+        def fmt_p(p):
+            if p is None:
+                return "n/a"
+            return "  ".join(f"{v: .6e}" for v in p)
+
+        def fmt_edge(edge):
+            return f"{edge:.5g} px" if edge is not None else "n/a"
+
+        width = 78
+        print()
+        print("=" * width)
+        print("Timetool calibration comparison (c0*px^2 + c1*px + c2)")
+        print("-" * width)
+        print(f"previous : {filepath_last_calib or 'none found'}")
+        print(f"  p          = {fmt_p(p_last_calib)}")
+        print(f"  edge pos.  = {fmt_edge(edge_last_calib)}")
+        print(f"new      : {filepath_new_calib}")
+        print(f"  p          = {fmt_p(p_new)}")
+        print(f"  edge pos.  = {fmt_edge(edge_new_calib)}")
+        print("=" * width)
+        print()
 
     ##############  OLD functions  #####################
 

@@ -362,3 +362,29 @@ def test_control_box_manual_covers_the_operational_basics():
                   "waiting screen", "pin factory", "python3-lgpio",
                   "invert_x", "eco-control-box", "--probe"]:
         assert topic in manual, f"manual does not mention {topic!r}"
+
+
+def test_stale_connection_does_not_block_a_reconnecting_box():
+    """A box that vanished without closing must not lock the server forever.
+
+    The box is a single device, so a new connection means the old one is
+    stale (power-cycled box, dead network). Waiting for the old one to end
+    left a rebooted box unserved indefinitely - the server held the port,
+    the box sat waiting, and neither could reach the other.
+    """
+    import socket
+
+    from eco.manual_control.remote.serve import start_box_server
+    from eco.manual_control.remote.transport import connect_tcp
+
+    server = start_box_server(build_fake_beamline(), root_name="beamline", port=8776,
+                              bind="127.0.0.1", token=TOKEN, token_file=None)
+    zombie = socket.create_connection(("127.0.0.1", 8776))
+    try:
+        zombie.sendall(b'{"t": "hello", "token": "%s"}\n' % TOKEN.encode())
+        time.sleep(0.3)  # let the server take it as the current client
+        client = RemoteControlClient(connect_tcp("127.0.0.1", 8776), token=TOKEN).start()
+        assert _wait(lambda: bool(client.entries)), "reconnecting box was not served"
+    finally:
+        zombie.close()
+        server.stop()
