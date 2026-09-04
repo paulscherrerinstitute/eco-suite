@@ -2954,3 +2954,14 @@ def timetool_data_monitor(warning_threshold=1000, loopsleep=5):
             except:
                 pass
         time.sleep(loopsleep)
+
+
+# The physical handheld manual-control box (Raspberry Pi pendant). Lazy: it
+# only opens a listening socket when you actually call .start(). Its class
+# docstring is the full manual - manual_control_box.manual().
+namespace.append_obj(
+    "ControlBox",
+    name="manual_control_box",
+    module_name="eco.manual_control.control_box",
+    lazy=True,
+)

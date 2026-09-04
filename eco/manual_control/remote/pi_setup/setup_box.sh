@@ -38,7 +38,10 @@ if [[ ! -f "$BUNDLE/remote/pi_app.py" ]]; then
     exit 1
 fi
 
-PKGS=(python3-tk python3-spidev python3-gpiozero)
+# python3-lgpio is NOT optional: gpiozero 2.x has no built-in pin factory and
+# dies with "Unable to load any default pin factory!" without one, which kills
+# the encoder and every GPIO button on the box.
+PKGS=(python3-tk python3-spidev python3-gpiozero python3-lgpio)
 
 if [[ "$REHEARSE" != "1" ]]; then
     # The Pi has no RTC. A clock that is days off makes apt reject every
@@ -96,6 +99,15 @@ else
     cp -r "$BUNDLE" "$DEST/manual_control"
 fi
 chown -R "$RUN_USER" "$DEST" || echo "warning: could not chown $DEST to $RUN_USER"
+
+echo "== hardware access for $RUN_USER =="
+# The service runs as this user; without these groups it cannot open
+# /dev/spidev* (joystick) or the GPIO character device (encoder).
+for grp in gpio spi i2c; do
+    getent group "$grp" >/dev/null || continue
+    id -nG "$RUN_USER" | tr ' ' '\n' | grep -qx "$grp" \
+        || usermod -aG "$grp" "$RUN_USER" && echo "  $RUN_USER in group $grp"
+done
 
 echo "== link config =="
 cat > "$ETC/eco-control-box.env" <<ENV

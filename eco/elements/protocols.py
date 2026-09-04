@@ -90,6 +90,21 @@ def is_detector(obj):
     return isinstance(resolve_lazy(obj), Detector)
 
 
+# Attached after the class body (not as a method defined inside it) and after
+# @runtime_checkable has already run: a runtime_checkable Protocol's
+# isinstance check treats every class-body attribute -- methods included,
+# regardless of name or of having a real implementation -- as part of the
+# required structural interface (`__protocol_attrs__`, cached at decoration
+# time). A `resolve_isinstance` method written directly in the class body
+# would silently start requiring every real Adjustable/Detector device class
+# to also define `resolve_isinstance`, breaking `isinstance(real_device,
+# Adjustable)` everywhere. Assigning it here, after that cache is already
+# populated, gives call sites a more discoverable spelling
+# (`Adjustable.resolve_isinstance(x)`) without that side effect.
+Adjustable.resolve_isinstance = staticmethod(is_adjustable)
+Detector.resolve_isinstance = staticmethod(is_detector)
+
+
 def enum_repr(cls):
     """Class decorator: stamps a `__repr__` rendering the enum-enabled
     class's discrete choices as a Num./Sel./Name table, built from nothing

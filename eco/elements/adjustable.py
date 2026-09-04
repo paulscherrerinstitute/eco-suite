@@ -846,8 +846,11 @@ class AdjustableVirtual:
             )
         else:
             vals = self._foo_set_target_value_current_value(value)
+            if not hasattr(vals, "__iter__"):
+                vals = (vals,)
             for adj, val in zip(self._adjustables, vals):
-                adj.reset_current_value_to(val)
+                if val is not None:
+                    adj.reset_current_value_to(val)
 
 
 class CallbackComposedValue:

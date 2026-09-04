@@ -7,6 +7,7 @@ absent (the backend must degrade), and the GUI tests are skipped unless a
 display is available.
 """
 
+import os
 import sys
 import threading
 import time
@@ -111,10 +112,34 @@ def test_mcp3008_scaling(fake_spi):
     assert adc.read_frac(2) == pytest.approx(0.5, abs=0.01)
 
 
-def test_hardware_input_degrades_without_gpio(fake_spi):
-    # gpiozero cannot find a pin factory off-Pi -> GUI-only mode, no crash
+def test_encoder_and_joystick_fail_independently(fake_spi):
+    """A dead ADC must not take the encoder down with it, or vice versa.
+
+    On the real box both were dead at once because a single exception in
+    setup killed every physical control; the two are separate hardware
+    (GPIO vs SPI) and must degrade separately.
+    """
+    # gpiozero finds no pin factory off-Pi, but the (faked) SPI ADC works
     hw = HardwareInput(RemoteControlClient(_serve()), preset="psi-mcu-box")
-    assert hw.available is False
+    try:
+        assert hw.encoder_ok is False
+        assert hw.encoder_error is not None
+        assert hw.joystick_ok is True
+        assert hw.available is True  # half the controls still work
+    finally:
+        hw.close()
+
+
+def test_hardware_input_degrades_when_nothing_is_available():
+    """No gpiozero pin factory and no ADC -> GUI-only mode, no crash."""
+    hw = HardwareInput(RemoteControlClient(_serve()), preset="psi-mcu-box",
+                       config={"adc": "none"})
+    try:
+        assert hw.available is False
+        assert hw.encoder_ok is False and hw.joystick_ok is False
+        assert hw.joystick_error is not None
+    finally:
+        hw.close()
 
 
 def test_joystick_loop_drives_jog_navigate_and_button(fake_spi):
@@ -253,3 +278,87 @@ def test_port_is_reusable_after_the_session_ends():
         assert _wait(lambda: bool(client.entries))
     finally:
         second.stop()
+
+
+def test_port_conflict_names_the_process_holding_it():
+    """The 'address already in use' error must say what to kill."""
+    from eco.manual_control.remote.serve import start_box_server, who_has_port
+
+    first = start_box_server(build_fake_beamline(), port=8781, bind="127.0.0.1",
+                             token=TOKEN, token_file=None)
+    try:
+        holders = who_has_port(8781)
+        assert holders, "listening socket not found"
+        assert holders[0][0] == os.getpid()
+        with pytest.raises(OSError) as err:
+            start_box_server(build_fake_beamline(), port=8781, bind="127.0.0.1",
+                             token=TOKEN, token_file=None)
+        message = str(err.value)
+        assert "already serving the control box" in message
+        assert f"PID {os.getpid()}" in message
+        assert "kill" in message
+    finally:
+        first.stop()
+
+
+def _namespace_with_control_box(name="bernina"):
+    import sys
+    import types
+
+    from eco.utilities.config import Namespace
+
+    mod_name = f"fake_instrument_{name}"
+    mod = types.ModuleType(mod_name)
+    sys.modules[mod_name] = mod
+    ns = Namespace(name=name, root_module=mod_name)
+    ns.append_obj("ControlBox", name="manual_control_box",
+                  module_name="eco.manual_control.control_box", lazy=True)
+    return ns, mod
+
+
+def test_control_box_component_serves_the_namespace_it_lives_in():
+    """bernina.manual_control_box.start() with no arguments serves bernina."""
+    from eco.elements.adjustable import DummyAdjustable
+    from eco.manual_control.remote.transport import connect_tcp
+
+    ns, mod = _namespace_with_control_box()
+    ns.append_obj(DummyAdjustable, name="theta", module_name=None)
+    box = mod.manual_control_box
+    box.port, box.bind = 8778, "127.0.0.1"
+    box.start(token=TOKEN)
+    try:
+        assert box.is_serving
+        client = RemoteControlClient(connect_tcp("127.0.0.1", 8778), token=TOKEN).start()
+        assert _wait(lambda: bool(client.entries))
+        assert client.path_names == ["bernina"]
+        assert "theta" in {e.name for e in client.entries}
+        assert _wait(lambda: box.is_connected)
+        # starting twice returns the running server instead of raising
+        assert box.start() is box.server
+    finally:
+        box.stop()
+        assert not box.is_serving
+
+
+def test_control_box_reports_who_holds_the_port():
+    ns, mod = _namespace_with_control_box(name="ns_competing")
+    box = mod.manual_control_box
+    box.port, box.bind = 8777, "127.0.0.1"
+    assert box.competing(verbose=False) == []
+    box.start(token=TOKEN)
+    try:
+        holders = box.competing(verbose=False)
+        assert holders and holders[0][0] == os.getpid()
+    finally:
+        box.stop()
+
+
+def test_control_box_manual_covers_the_operational_basics():
+    """The docstring is the manual - keep it complete."""
+    from eco.manual_control.control_box import ControlBox
+
+    manual = ControlBox.__doc__
+    for topic in ["ssh gac-bernina@ecobox", "/etc/eco-control-box.token",
+                  "waiting screen", "pin factory", "python3-lgpio",
+                  "invert_x", "eco-control-box", "--probe"]:
+        assert topic in manual, f"manual does not mention {topic!r}"

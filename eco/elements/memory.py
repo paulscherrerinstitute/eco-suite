@@ -61,13 +61,21 @@ def _checklist_menu(entries, preselected=None, title=None):
                 multi_select=True,
                 multi_select_select_on_accept=False,
                 multi_select_empty_ok=True,
-                show_multi_select_hint=True,
+                # simple-term-menu's own built-in hint line (what
+                # `show_multi_select_hint=True` would otherwise add) lumps
+                # all of `accept_keys` together as "... to accept", which
+                # for us is actively misleading: pressing a/n/i does not
+                # finish the menu the way enter does, it bulk-updates the
+                # checkboxes and reopens it. Our own two-line `title` below
+                # says this correctly, so the library's line is switched
+                # off rather than shown alongside it.
+                show_multi_select_hint=False,
                 preselected_entries=preselected,
                 accept_keys=("enter", "a", "n", "i"),
                 title=title
                 or (
-                    "space: toggle   a: all   n: none   i: invert   "
-                    "enter: confirm   q/esc: quit"
+                    "ENTER confirm    Q / ESC cancel\n"
+                    "SPACE toggle row    a select all    n deselect all    i invert selection"
                 ),
             )
             picked = menu.show()
@@ -521,8 +529,8 @@ class Memory:
         picked = _checklist_menu(
             entries,
             title=(
-                "space: toggle   a: all   n: none   i: invert   "
-                "enter: confirm & save   q/esc: cancel"
+                "ENTER confirm & save    Q / ESC cancel\n"
+                "SPACE toggle row    a select all    n deselect all    i invert selection"
             ),
         )
         if not picked:
@@ -987,8 +995,8 @@ class Memory:
         picked = _checklist_menu(
             entries,
             title=(
-                "space: toggle   a: all   n: none   i: invert   "
-                "enter: confirm & recall   q/esc: quit"
+                "ENTER confirm & recall    Q / ESC cancel\n"
+                "SPACE toggle row    a select all    n deselect all    i invert selection"
             ),
         )
         if not picked:

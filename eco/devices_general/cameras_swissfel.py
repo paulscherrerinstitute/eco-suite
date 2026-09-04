@@ -304,6 +304,190 @@ class CamserverConfig(Assembly):
         return s
 
 
+def _spawn_separate_process_viewer(pvname, pipeline_url=None, rate_hz=10.0, theme=None):
+    """Launch eco.widgets.camserver_stream_qt's own CLI as an independent
+    OS process, own QApplication/event loop -- the same subprocess-per-
+    viewer pattern eco.widgets.camserver_panel_qt already uses for each
+    viewer it spawns (see its _child_process_environment/_spawn_viewer;
+    this is a plain subprocess.Popen equivalent of the same idea, not
+    embedded into any panel, so it needs no --embed/window-id handshake).
+
+    Why: Qt's event loop is only pumped between IPython prompts (via the
+    terminal's GUI-integration hook, same as eco.utilities.strip_plot's own
+    module docstring explains for exactly this reason). A viewer built
+    in-process therefore freezes -- both its live image updates and the
+    whole window's responsiveness -- for the duration of any single
+    blocking statement in this session (a synchronous motor move, a long
+    scan, ...). A separate-process viewer has its own independent event
+    loop untouched by that, at the cost of no reference back to this
+    camera object -- no "Camera Settings"/"Elog" buttons in that window;
+    use widget(normal=True)/camera.elog() from the session itself instead.
+    Returns the subprocess.Popen handle."""
+    import os
+    import subprocess
+    import sys
+
+    import eco
+
+    eco_root = os.path.dirname(os.path.dirname(os.path.abspath(eco.__file__)))
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [eco_root, env.get("PYTHONPATH", "")]))
+
+    argv = [
+        sys.executable, "-m", "eco.widgets.camserver_stream_qt",
+        pvname, "--kind", "camera_pipeline", "--rate", str(rate_hz),
+    ]
+    if pipeline_url:
+        argv += ["--pipeline-url", pipeline_url]
+    if theme:
+        argv += ["--theme", theme]
+    return subprocess.Popen(argv, env=env)
+
+
+def get_camera_calibration(camera):
+    """Read a camera's server-side "camera_calibration" config -- the same
+    field pshell's own screen panel reads to draw its reticle correctly
+    positioned and scaled -- as (center_x, center_y, x_um_per_px,
+    y_um_per_px) in raw-frame pixel coordinates/units-per-pixel, or None if
+    no calibration has ever been set. Works for both CameraBasler
+    (CamserverConfig2) and CameraPCO (CamserverConfig) -- both expose the
+    same .cc/.cam_id/set_config_fields() surface (see either class), read
+    here directly rather than through CamserverConfig2's AdjustableObject-
+    style `config.camera_calibration` wrapper so the same code works for
+    both."""
+    config = camera.config_cs.cc.get_camera_config(camera.config_cs.cam_id)
+    calib = config.get("camera_calibration") or {}
+    rm = calib.get("reference_marker")
+    width = calib.get("reference_marker_width")
+    height = calib.get("reference_marker_height")
+    if not rm or not width or not height:
+        return None
+    center_x, center_y = (rm[0] + rm[2]) / 2, (rm[1] + rm[3]) / 2
+    dx, dy = abs(rm[2] - rm[0]), abs(rm[3] - rm[1])
+    x_um_per_px = width / dx if dx else None
+    y_um_per_px = height / dy if dy else None
+    return center_x, center_y, x_um_per_px, y_um_per_px
+
+
+def set_camera_calibration(camera, x, y, x_um_per_px=None, y_um_per_px=None):
+    """Write a camera's server-side "camera_calibration" config: position
+    (x, y -- raw-frame pixel coordinates of the calibration reference
+    point) and scale (x_um_per_px/y_um_per_px -- physical units per raw
+    pixel, in whatever unit the caller is using consistently; despite the
+    "_um_" in the name, pshell's own field doesn't care what physical unit
+    it actually holds). Omitting x_um_per_px/y_um_per_px keeps the
+    *existing* calibration's scale and only moves the position -- "set
+    center position only" in CamServerStreamQt's Calibrate menu.
+
+    Same encoding CameraBasler.set_cross() writes by hand via a blocking
+    matplotlib click-to-pick figure: a 2x2-raw-pixel "reference_marker" box
+    centered on (x, y), with reference_marker_width/height set to that
+    box's *physical* size -- i.e. exactly 2*x_um_per_px/2*y_um_per_px, so
+    the scale falls out again as width/2 (dividing by the box's own fixed
+    2px size) on read (see get_camera_calibration). This is the shared,
+    camera-class-agnostic write path CamServerStreamQt's calibration tools
+    use -- see set_cross()'s docstring for why it's the intended
+    successor.
+
+    Returns the (x_um_per_px, y_um_per_px) actually written (resolved from
+    the existing calibration when either was omitted)."""
+    config = camera.config_cs.cc.get_camera_config(camera.config_cs.cam_id)
+    calib = config.get("camera_calibration") or {}
+    if x_um_per_px is None or y_um_per_px is None:
+        existing = get_camera_calibration(camera)
+        if x_um_per_px is None:
+            x_um_per_px = existing[2] if existing and existing[2] else 1.0
+        if y_um_per_px is None:
+            y_um_per_px = existing[3] if existing and existing[3] else 1.0
+    calib["reference_marker"] = [x - 1, y - 1, x + 1, y + 1]
+    calib["reference_marker_width"] = 2 * x_um_per_px
+    calib["reference_marker_height"] = 2 * y_um_per_px
+    camera.config_cs.set_config_fields({"camera_calibration": calib})
+    return x_um_per_px, y_um_per_px
+
+
+def _camera_elog_post(
+    camera,
+    comment="",
+    tags=None,
+    n_average=1,
+    animate=False,
+    n_frames=8,
+    fps=4.0,
+    contrast_mode="auto",
+    vmin=None,
+    vmax=None,
+    colormap="gray",
+    log_scale=False,
+):
+    """Capture the current image (or, animate=True, a short GIF of
+    n_frames consecutive frames) from `camera`'s own default processing
+    pipeline and post it to the elog/scilog together with the acquisition/
+    display settings that produced it. Shared by CameraBasler.elog()/
+    CameraPCO.elog() -- see eco.widgets.camserver_stream_qt.
+    capture_camera_snapshot, which does the actual headless capture (no
+    viewer window needed), and CamServerStreamQt's own "Elog" toolbar
+    button, which calls camera.elog() the same way so both paths produce
+    identical images for the same settings."""
+    from ..widgets.camserver_stream_qt import capture_camera_snapshot
+
+    elog = camera._get_elog()
+    if elog is None:
+        raise RuntimeError(
+            "no elog configured for this session (eco.defaults.ELOG is not set)"
+        )
+
+    path, stats = capture_camera_snapshot(
+        camera.pvname,
+        kind="camera_pipeline",
+        n_average=n_average,
+        animate=animate,
+        n_frames=n_frames,
+        fps=fps,
+        contrast_mode=contrast_mode,
+        vmin=vmin,
+        vmax=vmax,
+        colormap=colormap,
+        log_scale=log_scale,
+    )
+    try:
+        tname = camera.alias.get_full_name()
+        lines = [f"### {tname} ({camera.pvname})"]
+        if comment:
+            lines.append(comment)
+        for label, attr_name in (
+            ("exposure_time (ms)", "exposure_time"),
+            ("gain", "gain"),
+            ("roi", "roi"),
+        ):
+            # CameraPCO has no "gain" (see its __init__) -- getattr/except
+            # rather than hasattr-then-call so a live PV read glitch on one
+            # setting can't take out the whole message
+            adj = getattr(camera, attr_name, None)
+            if adj is None:
+                continue
+            try:
+                lines.append(f"{label}: {adj.get_current_value()}")
+            except Exception:
+                pass
+        if n_average <= 1:
+            avg_desc = "off"
+        elif animate:
+            avg_desc = f"{n_average} frames per GIF frame (running average)"
+        else:
+            avg_desc = f"{n_average} frames (running average)"
+        lines.append(f"averaging: {avg_desc}")
+        if stats.get("vmin") is not None:
+            lines.append(
+                f"color limits: [{stats['vmin']:.4g}, {stats['vmax']:.4g}] "
+                f"(contrast_mode={contrast_mode}, colormap={colormap})"
+            )
+        message = "\n\n".join(lines)
+        return elog.post(message, path, tags=tags or [])
+    finally:
+        path.unlink(missing_ok=True)
+
+
 class CameraBasler(Assembly):
     # widget() (and anything driving it, e.g. the desktop app's namespace
     # launcher) opens the live cam_server viewer instead of the generic
@@ -321,6 +505,7 @@ class CameraBasler(Assembly):
     ):
         super().__init__(name=name)
         self.pvname = pvname
+        self._screenpanel_ana = None  # lazily built -- see .screenpanel_ana
         if not camserver_alias:
             camserver_alias = self.alias.get_full_name() + f" ({pvname})"
         else:
@@ -560,7 +745,14 @@ class CameraBasler(Assembly):
     def set_cross(
         self, x=None, y=None, x_um_per_px=None, y_um_per_px=None, n_images=10
     ):
-        """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given"""
+        """set x and y position of the refetence marker on a camera  px/um calibration is conserved if no new value is given
+
+        Superseded by CamServerStreamQt's own "Calibrate" menu (see
+        viewer()/_widget_viewer() -- "Set center position only..." does
+        exactly what this method does, minus the blocking matplotlib
+        click-to-pick figure and terminal confirmation prompt; "2-line
+        (ruler)..." additionally sets the scale interactively). Kept here
+        for existing scripts; prefer the viewer for new use."""
 
         def prompt(x, y, x_um_per_px, y_um_per_px):
             x = int(x)
@@ -629,7 +821,8 @@ class CameraBasler(Assembly):
         )
 
     def _widget_viewer(
-        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True
+        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True,
+        separate_process=False,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
         own default processing pipeline -- the pipeline name is resolved
@@ -639,7 +832,20 @@ class CameraBasler(Assembly):
         exact "{camera}_sp" naming convention and auto-create-if-missing
         behavior this reuses). The window's "Camera Settings" button opens
         widget(normal=True) (the normal property-grid display) -- mirrors
-        eco.devices_general.cameras_ptz.AxisPTZ._widget_viewer()."""
+        eco.devices_general.cameras_ptz.AxisPTZ._widget_viewer().
+
+        separate_process=True: run the viewer in its own OS process
+        instead of this one -- immune to this session blocking on
+        something (a synchronous motor move, a long scan, ...), at the
+        cost of the "Camera Settings"/"Elog" buttons (no cam= reference
+        across the process boundary). See _spawn_separate_process_viewer
+        for the why/trade-off in full; returns its subprocess.Popen handle
+        rather than a CamServerStreamQt instance in that case."""
+        if separate_process:
+            return _spawn_separate_process_viewer(
+                self.pvname, pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme
+            )
+
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
 
         return make_camserver_stream_qt(
@@ -651,6 +857,77 @@ class CameraBasler(Assembly):
             auto_start=auto_start,
             cam=self,
         )
+
+    def elog(
+        self,
+        comment="",
+        tags=None,
+        n_average=1,
+        animate=False,
+        n_frames=8,
+        fps=4.0,
+        contrast_mode="auto",
+        vmin=None,
+        vmax=None,
+        colormap="gray",
+        log_scale=False,
+    ):
+        """Post the camera's current image to the elog/scilog, together
+        with exposure_time/gain/roi and the averaging/color-limit settings
+        used to produce it. Works standalone -- no viewer window needs to
+        be open (see eco.widgets.camserver_stream_qt.capture_camera_
+        snapshot, which does the actual capture); the live viewer's own
+        "Elog" toolbar button calls this the same way, using whatever
+        averaging/contrast/colormap it's currently showing.
+
+        n_average>1: average that many frames first (a plain running
+        average, same math as the viewer's own "Running" averaging mode --
+        see FrameProcessor.average_mode -- just computed once rather than
+        continuously).
+        animate=True: post a short animated GIF of n_frames consecutive
+        (each possibly n_average-averaged) frames at fps, instead of one
+        still image -- e.g. to show a fluctuating or misaligned beam
+        changing over a few frames rather than a single snapshot.
+        contrast_mode/vmin/vmax/colormap/log_scale: as in FrameProcessor --
+        "auto" (per-frame min/max, the default) or "manual" (needs vmin/
+        vmax) or "full" (the dtype's own range)."""
+        return _camera_elog_post(
+            self,
+            comment=comment,
+            tags=tags,
+            n_average=n_average,
+            animate=animate,
+            n_frames=n_frames,
+            fps=fps,
+            contrast_mode=contrast_mode,
+            vmin=vmin,
+            vmax=vmax,
+            colormap=colormap,
+            log_scale=log_scale,
+        )
+
+    @property
+    def screenpanel_ana(self):
+        """screenpanel_ana.<field_name> -- a live view of one scalar field
+        this camera's own pipeline publishes alongside "image" (center of
+        mass, intensity, gaussian-fit parameters, ...), e.g.
+        camera.screenpanel_ana.intensity.get_current_value() or
+        eco.utilities.strip_plot.strip_plot(camera.screenpanel_ana.
+        intensity). See eco.widgets.camserver_stream_qt.ScreenpanelAnalysis
+        for the full docstring, in particular the CAVEAT that this only
+        reads whatever the pipeline already publishes -- a plain,
+        non-analysis pipeline (cam_server's own default, what a camera
+        gets until its pipeline is configured otherwise) publishes nothing
+        beyond "image", so field access will simply time out.
+
+        Built lazily (one background stream subscriber per camera, shared
+        across every field read from it -- not one per field, and not
+        reconnected on every read) on first access."""
+        if self._screenpanel_ana is None:
+            from ..widgets.camserver_stream_qt import ScreenpanelAnalysis
+
+            self._screenpanel_ana = ScreenpanelAnalysis(self.pvname)
+        return self._screenpanel_ana
 
 
 # NB: please note this should be moved to microscopes which are using cameras plus zooms,
@@ -673,6 +950,7 @@ class CameraPCO(Assembly):
     def __init__(self, pvname, camserver_alias=None, name=None):
         super().__init__(name=name)
         self.pvname = pvname
+        self._screenpanel_ana = None  # lazily built -- see .screenpanel_ana
         if not camserver_alias:
             camserver_alias = self.alias.get_full_name() + f"({pvname})"
         else:
@@ -760,11 +1038,17 @@ class CameraPCO(Assembly):
         )
 
     def _widget_viewer(
-        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True
+        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True,
+        separate_process=False,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
         own default processing pipeline -- see CameraBasler._widget_viewer(),
-        which this mirrors."""
+        which this mirrors (separate_process included)."""
+        if separate_process:
+            return _spawn_separate_process_viewer(
+                self.pvname, pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme
+            )
+
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
 
         return make_camserver_stream_qt(
@@ -776,6 +1060,49 @@ class CameraPCO(Assembly):
             auto_start=auto_start,
             cam=self,
         )
+
+    def elog(
+        self,
+        comment="",
+        tags=None,
+        n_average=1,
+        animate=False,
+        n_frames=8,
+        fps=4.0,
+        contrast_mode="auto",
+        vmin=None,
+        vmax=None,
+        colormap="gray",
+        log_scale=False,
+    ):
+        """Post the camera's current image to the elog/scilog -- see
+        CameraBasler.elog(), which this mirrors (CameraPCO has no "gain"
+        setting, so that line is simply omitted from the posted message;
+        see _camera_elog_post)."""
+        return _camera_elog_post(
+            self,
+            comment=comment,
+            tags=tags,
+            n_average=n_average,
+            animate=animate,
+            n_frames=n_frames,
+            fps=fps,
+            contrast_mode=contrast_mode,
+            vmin=vmin,
+            vmax=vmax,
+            colormap=colormap,
+            log_scale=log_scale,
+        )
+
+    @property
+    def screenpanel_ana(self):
+        """screenpanel_ana.<field_name> -- see CameraBasler.screenpanel_ana,
+        which this mirrors."""
+        if self._screenpanel_ana is None:
+            from ..widgets.camserver_stream_qt import ScreenpanelAnalysis
+
+            self._screenpanel_ana = ScreenpanelAnalysis(self.pvname)
+        return self._screenpanel_ana
 
 
 # NB: please note this should be moved to microscopes which are using cameras plus zooms,

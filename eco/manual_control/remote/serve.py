@@ -16,6 +16,7 @@ is --serial (Bluetooth RFCOMM or USB-gadget serial).
 
 import argparse
 import os
+import subprocess
 import threading
 
 from .server import RemoteControlServer
@@ -23,6 +24,58 @@ from .transport import SerialLineTransport, accept_tcp, listen_tcp
 
 DEFAULT_PORT = 8791
 DEFAULT_TOKEN_FILE = "~/.eco/pendant_token"
+
+
+def who_has_port(port):
+    """[(pid, user, cmdline)] of the processes listening on `port`.
+
+    Best effort: psutil if available, else `ss -ltnp`. Only processes the
+    caller owns report a pid (kernel restriction), so a port held by another
+    account comes back with pid None - which is itself the answer to "why
+    can't I stop it".
+    """
+    found = []
+    try:
+        import psutil
+
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.status != psutil.CONN_LISTEN or not conn.laddr:
+                continue
+            if conn.laddr.port != port or conn.pid is None:
+                continue
+            try:
+                proc = psutil.Process(conn.pid)
+                found.append((conn.pid, proc.username(), " ".join(proc.cmdline())[:120]))
+            except Exception:
+                found.append((conn.pid, "?", "?"))
+        if found:
+            return found
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True, timeout=5).stdout
+        for line in out.splitlines():
+            if f":{port} " in line or line.rstrip().endswith(f":{port}"):
+                found.append((None, "?", line.strip()[:160]))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return found
+
+
+def describe_port_holder(port):
+    """One-line-per-holder description for an error message."""
+    holders = who_has_port(port)
+    if not holders:
+        return (f"Could not identify the process (it likely belongs to another "
+                f"account): try 'sudo ss -ltnp | grep {port}'.")
+    lines = ["Held by:"]
+    for pid, user, cmd in holders:
+        lines.append(f"  PID {pid} (user {user}): {cmd}" if pid is not None else f"  {cmd}")
+    pids = [pid for pid, _, _ in holders if pid is not None]
+    if pids:
+        lines.append("If that is a stale session of yours, stop it with: "
+                     f"kill {' '.join(str(p) for p in pids)}")
+    return "\n".join(lines)
 
 
 def read_token(token=None, token_file=DEFAULT_TOKEN_FILE):
@@ -114,8 +167,10 @@ def start_box_server(root, root_name=None, port=DEFAULT_PORT, bind="0.0.0.0",
     except OSError as exc:
         raise OSError(
             f"cannot listen on {bind}:{port} ({exc}). Another eco session is "
-            f"probably already serving the control box - only one can. Use that "
-            f"session, stop its server (box.stop()), or pass port=<other>."
+            f"already serving the control box - only one can.\n"
+            f"{describe_port_holder(port)}\n"
+            f"Options: use that session, stop its server there (box.stop()), "
+            f"kill the process, or pass port=<other>."
         ) from exc
     server = BoxServer(root, listener, root_name=str(root_name),
                        token=token, **box_kwargs)

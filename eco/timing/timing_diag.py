@@ -384,9 +384,28 @@ class TimetoolBerninaUSD(Assembly):
         if filter_outliers:
             yf = [self.filter_outliers(a) for a in y]
             y = yf
-        ymed = [np.nanmedian(a) for a in y]
-        yerr = [np.nanstd(a) for a in y]
-        p = np.polyfit(ymed, x, 2, w=1 / np.array(yerr))
+        x = np.asarray(x)
+        ymed = np.array([np.nanmedian(a) for a in y])
+        yerr = np.array([np.nanstd(a) for a in y])
+
+        # mask out steps that ended up with no usable data (nan median/std,
+        # e.g. an empty step after outlier filtering) or a zero error, which
+        # would otherwise blow up the 1/yerr weight or feed a nan straight
+        # into polyfit and crash the whole calibration
+        mask = np.isfinite(x) & np.isfinite(ymed) & np.isfinite(yerr) & (yerr > 0)
+        n_bad = int((~mask).sum())
+        if n_bad:
+            print(
+                f"Excluding {n_bad} of {len(mask)} calibration point(s) "
+                "with nan/inf/zero-error data from the fit"
+            )
+        if mask.sum() < 3:
+            raise RuntimeError(
+                f"Not enough valid calibration points to fit a 2nd order "
+                f"polynomial (only {int(mask.sum())} of {len(mask)} usable)"
+            )
+
+        p = np.polyfit(ymed[mask], x[mask], 2, w=1 / yerr[mask])
         print(f"Fit results c0*px^2 + c1*px + c2:\n{p}")
         return p, x, y, ymed, yerr
 
@@ -512,24 +531,93 @@ class TimetoolBerninaUSD(Assembly):
                 print(f"Elog posting failed with:\n {e}")
 
     def load_last_calib(self, datapath):
-        files = [file for file in Path(datapath).glob("*.pkl")]
-        files.sort()
+        datapath = Path(datapath)
+        files = sorted(
+            list(datapath.glob("*_calib.pkl")) + list(datapath.glob("*_calib.esc.h5"))
+        )
+        if not files:
+            raise FileNotFoundError(f"No previous calibration file found in {datapath}")
         filename = files[-1]
-        with open(filename, "rb") as file:
-            lc = pickle.load(file)
-        return lc["p"], filename
+        if filename.name.endswith(".esc.h5"):
+            from escape.storage import DataSet
 
-    def save_calibration(self, p, x, y, ymed, yerr, dpath_calib):
+            ds = DataSet.load_from_result_file(filename)
+            p = np.asarray(ds.datasets["tt_kb_calibration_fit"]["p"])
+            ds.results_file.close()
+        else:
+            with open(filename, "rb") as file:
+                lc = pickle.load(file)
+            p = np.asarray(lc.attrs["p"])
+        return p, filename
+
+    def save_calibration(self, p, x, y, ymed, yerr, dpath_calib, format="esc"):
+        """Save a calibration fit result.
+
+        format: "esc" (default) stores p, x, ymed, yerr and the raw
+        (outlier-filtered) per-step edge positions y as escape arrays in an
+        escape DataSet (an .esc.h5 file). "df" stores the same data as a
+        pickled pandas DataFrame instead.
+        """
+        dpath_calib = Path(dpath_calib)
+        if format == "esc":
+            self._save_calibration_esc(p, x, y, ymed, yerr, dpath_calib)
+        elif format == "df":
+            self._save_calibration_df(p, x, y, ymed, yerr, dpath_calib)
+        else:
+            raise ValueError(
+                f"Unknown calibration save format {format!r}, expected 'esc' or 'df'"
+            )
+
+    def _save_calibration_df(self, p, x, y, ymed, yerr, dpath_calib):
+        # p (3 fit coefficients) has a different length than x/y/ymed/yerr
+        # (one entry per scan step), so it cannot be a column of the same
+        # DataFrame -- stash it in .attrs instead, which pickling preserves.
         df = DataFrame(
             {
-                "p": p,
-                "tt_kb.delay": x,
-                "tt_kb.edge_position_px": y,
-                "ymed": ymed,
-                "yerr": yerr,
+                "tt_kb.delay": np.asarray(x),
+                "tt_kb.edge_position_px": [np.asarray(a) for a in y],
+                "ymed": np.asarray(ymed),
+                "yerr": np.asarray(yerr),
             }
         )
+        df.attrs["p"] = np.asarray(p)
         df.to_pickle(dpath_calib)
+
+    def _save_calibration_esc(self, p, x, y, ymed, yerr, dpath_calib):
+        from escape.storage import DataSet, Array
+
+        x = np.asarray(x)
+        y = [np.atleast_1d(np.asarray(a)) for a in y]
+        step_lengths = [len(a) for a in y]
+        data = np.concatenate(y) if sum(step_lengths) else np.array([])
+
+        ds = DataSet.create_with_new_result_file(
+            results_filepath=dpath_calib, force_overwrite=True
+        )
+        # single-shot data is what actually benefits from being an escape
+        # Array/Scan (real, possibly unequal step_lengths per delay position)
+        ds.append(
+            Array(
+                data=data,
+                index=np.arange(len(data)),
+                step_lengths=step_lengths,
+                parameter={"tt_kb.delay": {"values": x}},
+            ),
+            name="tt_kb.edge_position_px",
+        )
+        # the fit result and its one-value-per-step inputs are plain arrays,
+        # no per-shot structure to represent -- just stash them as a dict
+        ds.append(
+            {
+                "p": np.asarray(p),
+                "tt_kb.delay": x,
+                "ymed": np.asarray(ymed),
+                "yerr": np.asarray(yerr),
+            },
+            name="tt_kb_calibration_fit",
+        )
+        ds.store_datasets_max_element_size(100000)
+        ds.results_file.close()
 
     def calibrate(
         self,
@@ -543,6 +631,7 @@ class TimetoolBerninaUSD(Assembly):
         bidirectional=True,
         update_pipeline_config=False,
         save=True,
+        calibration_format="esc",
         additional_channels=["SARES20-CAMS142-M5.roi_signal_x_profile"],
     ):
         from datetime import datetime
@@ -553,6 +642,8 @@ class TimetoolBerninaUSD(Assembly):
         basepath = "/sf/bernina/config/src/beamline_devices/tt_kb/"
         path_data = f"{basepath}data/{timestamp}_{pgroup}"
         path_figure = f"{basepath}figures/{timestamp}_{pgroup}"
+        calib_ext = "esc.h5" if calibration_format == "esc" else "pkl"
+        path_calib = Path(f"{path_data}_calib.{calib_ext}")
 
         feedback = self.feedback_enabled()
         t0 = self.delay()
@@ -607,13 +698,15 @@ class TimetoolBerninaUSD(Assembly):
 
         ####### save calibration ######
         if save:
-            self.save_calibration(p, x, y, ymed, yerr, Path(f"{path_data}_calib.pkl"))
+            self.save_calibration(
+                p, x, y, ymed, yerr, path_calib, format=calibration_format
+            )
 
         ####### Load last calib ######
         try:
             p_last_calib, filepath_last_calib = self.load_last_calib(basepath + "data/")
-            print(f"Compare new calibration to last calibration taken: \n{filepath}")
-            for root in np.roots(pl):
+            print(f"Compare new calibration to last calibration taken: \n{filepath_last_calib}")
+            for root in np.roots(p_last_calib):
                 edge_last_calib = root
                 if 0 < root and root < 2000:
                     break
@@ -636,7 +729,7 @@ class TimetoolBerninaUSD(Assembly):
                 filepath_last_calib=filepath_last_calib,
                 to_elog=to_elog,
                 path_figure=path_figure,
-                filepath_data=Path(f"{path_data}_calib.pkl"),
+                filepath_data=path_calib,
             )
 
         if update_pipeline_config:
@@ -648,7 +741,7 @@ class TimetoolBerninaUSD(Assembly):
             while not any([a in ans for a in ["y", "n"]]):
                 try:
                     ans = input(
-                        f"Do you wish to shift the calibration to keep the edge at the same pixel ({edgel:.5}) as in the previous calibration (y/n)?"
+                        f"Do you wish to shift the calibration to keep the edge at the same pixel ({edge_last_calib:.5}) as in the previous calibration (y/n)?"
                     )
                 except:
                     continue

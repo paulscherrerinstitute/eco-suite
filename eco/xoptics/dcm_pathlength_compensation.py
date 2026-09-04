@@ -3,8 +3,8 @@ import numpy as np
 from xrayutilities import materials
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual
 from ..elements.assembly import Assembly
-from eco import Adjustable
 from eco.devices_general.motors import MotorRecord
+from eco.elements.protocols import is_adjustable, resolve_lazy
 
 
 def energy2tthe(energy, hkl=(1, 1, 1), material=materials.Si):
@@ -47,8 +47,8 @@ class MonoTimecompensation(Assembly):
             default_value=True,
             name="laser_delay_inverted",
         )
-        if isinstance(laser_delay_seconds, Adjustable):
-            self._laser_delay = laser_delay_seconds
+        if is_adjustable(laser_delay_seconds):
+            self._laser_delay = resolve_lazy(laser_delay_seconds)
         else:
             raise Exception("issue getting laser delay for mono compensation")
 

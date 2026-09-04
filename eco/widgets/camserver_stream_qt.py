@@ -73,6 +73,7 @@ a normal standalone window.
 import argparse
 import logging
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
@@ -177,6 +178,110 @@ def resolve_stream(name, kind="pipeline", pipeline_url=None, camera_url=None, cr
         return stream
 
 
+def capture_camera_snapshot(
+    name,
+    kind="camera_pipeline",
+    pipeline_url=None,
+    camera_url=None,
+    n_average=1,
+    animate=False,
+    n_frames=8,
+    fps=4.0,
+    contrast_mode="auto",
+    vmin=None,
+    vmax=None,
+    colormap="gray",
+    log_scale=False,
+    image_channel="image",
+    receive_timeout=5.0,
+    out_dir=None,
+):
+    """Grab one or more frames from a camera/pipeline stream, run them
+    through the same FrameProcessor pipeline the live viewer uses
+    (averaging/contrast/colormap), and save the result to a PNG
+    (animate=False, the default) or an animated GIF (animate=True: n_frames
+    consecutive output frames, played back at fps). No QApplication/window
+    needed -- resolves the stream and reads frames directly, the same way
+    _StreamWorker does but connecting just long enough to collect what's
+    needed rather than running forever on a background thread.
+
+    n_average>1: each *output* frame (the one PNG, or each GIF frame) is
+    itself the running average of n_average raw frames (raw_per_output raw
+    frames are pulled from the stream per output frame, not per capture --
+    an animate=True GIF with n_average=5 and n_frames=8 reads 40 raw
+    frames total, each of its 8 output frames a 5-frame average).
+
+    Backs CameraBasler/CameraPCO.elog() (see eco.devices_general.
+    cameras_swissfel) so a snapshot can be posted to the elog/scilog
+    without a viewer window open, and CamServerStreamQt's own "Elog"
+    toolbar button -- both paths call this the same way, so they produce
+    identical images for the same settings.
+
+    Returns (pathlib.Path, stats) -- stats is FrameProcessor.process's own
+    stats dict (see its docstring) for the last frame captured, i.e. the
+    one actually saved for a PNG, or the final frame of the GIF. The file
+    is written under `out_dir` (default: the system temp directory) with a
+    name embedding `name` and a timestamp; the caller owns cleanup (elog()
+    deletes it once posted, since it's just a transient upload).
+    """
+    from pathlib import Path
+
+    from bsread import SUB, Source
+
+    address = resolve_stream(name, kind=kind, pipeline_url=pipeline_url, camera_url=camera_url)
+    host, port = address.replace("tcp://", "").split(":")
+
+    processor = FrameProcessor(average_n=max(1, int(n_average)), average_mode="running")
+    processor.contrast_mode = contrast_mode
+    processor.vmin = vmin
+    processor.vmax = vmax
+    processor.colormap = colormap
+    processor.log_scale = log_scale
+
+    n_needed = max(1, int(n_frames)) if animate else 1
+    raw_per_output = max(1, int(n_average))
+    displays = []
+    stats = None
+    with Source(
+        host=host, port=int(port), mode=SUB, queue_size=10,
+        receive_timeout=int(receive_timeout * 1000),
+    ) as source:
+        while len(displays) < n_needed:
+            # pull raw_per_output *real* frames through the processor for
+            # each output frame -- with average_mode="running" (a sliding
+            # window of size raw_per_output), the display after the last of
+            # them is exactly their mean; a malformed/heartbeat message
+            # (value is None) doesn't count towards that
+            got = 0
+            while got < raw_per_output:
+                message = source.receive()
+                if message is None:
+                    raise TimeoutError(
+                        f"no frame received from {name!r} ({address}) within {receive_timeout}s"
+                    )
+                value = message.data.data.get(image_channel)
+                if value is None or value.value is None:
+                    continue
+                display, stats = processor.process(value.value)
+                got += 1
+            displays.append(display)
+
+    out_dir = Path(out_dir) if out_dir else Path(tempfile.gettempdir())
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
+    if animate:
+        path = out_dir / f"{safe_name}_{timestamp}.gif"
+        frames = [_display_array_to_pil(d) for d in displays]
+        frames[0].save(
+            path, save_all=True, append_images=frames[1:],
+            duration=int(1000 / max(fps, 0.1)), loop=0,
+        )
+    else:
+        path = out_dir / f"{safe_name}_{timestamp}.png"
+        _display_array_to_pil(displays[-1]).save(path)
+    return path, stats
+
+
 def _full_range(dtype):
     """Display range for contrast_mode="full": the dtype's own min/max for
     integer types; (None, None) -- meaning "fall back to auto" -- for
@@ -227,6 +332,23 @@ def array_to_qimage(array):
     if array.ndim == 3 and array.shape[2] == 4:
         h, w, _ = array.shape
         return QtGui.QImage(array.tobytes(), w, h, w * 4, QtGui.QImage.Format_RGBA8888)
+    raise ValueError(f"unsupported array shape for display: {array.shape}")
+
+
+def _display_array_to_pil(array):
+    """uint8 numpy array -> PIL.Image, same shape convention as
+    array_to_qimage (2D grayscale; (H, W, 3) RGB; (H, W, 4) RGBA) --
+    PIL/Pillow rather than QImage specifically so capture_camera_snapshot
+    can save PNGs/GIFs without a QApplication."""
+    from PIL import Image
+
+    array = np.ascontiguousarray(array)
+    if array.ndim == 2:
+        return Image.fromarray(array, mode="L")
+    if array.ndim == 3 and array.shape[2] == 3:
+        return Image.fromarray(array, mode="RGB")
+    if array.ndim == 3 and array.shape[2] == 4:
+        return Image.fromarray(array, mode="RGBA")
     raise ValueError(f"unsupported array shape for display: {array.shape}")
 
 
@@ -315,9 +437,21 @@ class FrameProcessor:
     unit-tested core of the viewer's render path (see
     tests/test_camserver_stream_qt.py)."""
 
-    def __init__(self, average_n=1):
+    def __init__(self, average_n=1, average_mode="running"):
         self.average_n = max(1, int(average_n))
+        # "running" | "single" -- mirrors pshell's own CamServerViewer
+        # averaging (see ImageIntegrator, decompiled from pshell-workbench):
+        # "running" recomputes the mean over the last average_n frames on
+        # every new frame (a continuously-updating sliding window -- what
+        # this class already did before average_mode existed, and pshell's
+        # own behavior for a *negative* integration count); "single"
+        # accumulates average_n frames, emits their mean once, then starts
+        # a fresh batch -- the display only refreshes every average_n raw
+        # frames instead of every frame (pshell's behavior for a
+        # *non-negative* integration count).
+        self.average_mode = average_mode
         self._ring = deque(maxlen=self.average_n)
+        self._single_average_result = None  # frozen output, "single" mode only
         self.background = None
         self.subtract_background = False
         self.roi = None  # (x, y, w, h) in raw-frame pixel coords, or None
@@ -332,6 +466,15 @@ class FrameProcessor:
         if n != self.average_n:
             self.average_n = n
             self._ring = deque(self._ring, maxlen=n)
+            self._single_average_result = None
+
+    def set_average_mode(self, mode):
+        if mode not in ("running", "single"):
+            raise ValueError(f"average_mode must be 'running' or 'single', got {mode!r}")
+        if mode != self.average_mode:
+            self.average_mode = mode
+            self._ring.clear()
+            self._single_average_result = None
 
     @staticmethod
     def is_color(array):
@@ -362,7 +505,17 @@ class FrameProcessor:
         return (bx + x, by + y, w, h)
 
     def _averaged(self, array):
-        self._ring.append(np.asarray(array).astype(np.float32, copy=False))
+        array = np.asarray(array).astype(np.float32, copy=False)
+        if self.average_mode == "single" and self.average_n > 1:
+            self._ring.append(array)
+            if len(self._ring) >= self.average_n:
+                self._single_average_result = np.mean(np.stack(self._ring, axis=0), axis=0)
+                self._ring.clear()
+            # hold the last completed batch's average until the next batch
+            # finishes; before the very first batch completes, there is
+            # nothing to hold yet, so show the raw frame in the meantime
+            return self._single_average_result if self._single_average_result is not None else array
+        self._ring.append(array)
         if len(self._ring) == 1:
             return self._ring[-1]
         return np.mean(np.stack(self._ring, axis=0), axis=0)
@@ -432,6 +585,192 @@ class FrameProcessor:
             "values": arr,
         }
         return display, stats
+
+
+class LivePipelineFields:
+    """Background subscriber caching every *scalar* field a camera's own
+    pipeline stream publishes alongside its image channel -- e.g. the
+    center-of-mass/intensity/gaussian-fit outputs a "roi"/"processing"-type
+    cam_server pipeline can be configured to compute (pshell's own screen
+    panel shows these as its "analysis" readouts). Plain threading, no Qt
+    -- usable with no window/QApplication at all, which is the point: see
+    ScreenpanelAnalysis, which wraps this as camera.screenpanel_ana.<field>
+    for reading directly or handing to eco.utilities.strip_plot.strip_plot.
+
+    get_current_value()/wait_for_field() read the in-memory cache (instant
+    once a field has been seen) rather than making a network call per
+    read -- one connection is shared across every field of one camera,
+    kept open by a single background thread started lazily on first use
+    (see start()/ScreenpanelAnalysis.__getattr__)."""
+
+    def __init__(
+        self, camera_name, kind="camera_pipeline", pipeline_url=None,
+        camera_url=None, image_channel="image",
+    ):
+        self.camera_name = camera_name
+        self.kind = kind
+        self.pipeline_url = pipeline_url
+        self.camera_url = camera_url
+        self.image_channel = image_channel
+        self._values = {}
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._error = None
+
+    def start(self):
+        if self._thread is not None:
+            return
+        self._error = None
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+            self._thread = None
+
+    def _run(self):
+        from bsread import SUB, Source
+
+        try:
+            address = resolve_stream(
+                self.camera_name, kind=self.kind,
+                pipeline_url=self.pipeline_url, camera_url=self.camera_url,
+            )
+        except Exception as exc:
+            self._error = exc
+            return
+        host, port = address.replace("tcp://", "").split(":")
+        try:
+            with Source(
+                host=host, port=int(port), mode=SUB, queue_size=10, receive_timeout=2000
+            ) as source:
+                while not self._stop_event.is_set():
+                    message = source.receive()
+                    if message is None:
+                        continue
+                    with self._lock:
+                        for field_name, value in message.data.data.items():
+                            if field_name == self.image_channel:
+                                continue
+                            if value is None or value.value is None:
+                                continue
+                            self._values[field_name] = value.value
+        except Exception as exc:
+            if not self._stop_event.is_set():
+                self._error = exc
+
+    def field_names(self):
+        """Field names actually seen so far -- empty until the background
+        thread has received at least one message; see the "CAVEAT" in
+        ScreenpanelAnalysis's docstring for why it may stay empty forever
+        for a plain, non-analysis pipeline."""
+        with self._lock:
+            return sorted(self._values)
+
+    def get_current_value(self, field_name):
+        """Instant, no network call -- raises KeyError if field_name
+        hasn't been seen yet (use wait_for_field to block briefly for the
+        first read instead)."""
+        with self._lock:
+            if field_name not in self._values:
+                raise KeyError(
+                    f"{field_name!r} not seen yet from {self.camera_name!r}'s pipeline "
+                    f"stream (known fields so far: {sorted(self._values)})"
+                )
+            return self._values[field_name]
+
+    def wait_for_field(self, field_name, timeout=5.0):
+        deadline = time.time() + timeout
+        while True:
+            with self._lock:
+                if field_name in self._values:
+                    return self._values[field_name]
+            if self._error is not None:
+                raise RuntimeError(
+                    f"pipeline stream for {self.camera_name!r} failed: {self._error}"
+                ) from self._error
+            if time.time() >= deadline:
+                raise TimeoutError(
+                    f"{field_name!r} not seen from {self.camera_name!r}'s pipeline stream "
+                    f"within {timeout}s -- either it hasn't published a message yet, or its "
+                    "pipeline isn't configured to compute this analysis field at all (see "
+                    "ScreenpanelAnalysis's docstring)"
+                )
+            time.sleep(0.05)
+
+
+class _LiveFieldDetector:
+    """Detector-protocol (get_current_value()) view of one field of a
+    LivePipelineFields cache -- what camera.screenpanel_ana.<field_name>
+    returns (see ScreenpanelAnalysis). `.name` is read by e.g.
+    eco.utilities.strip_plot.strip_plot's own _monitorable_name to label
+    the plot trace when no explicit label is given."""
+
+    def __init__(self, fields, field_name, name=None):
+        self._fields = fields
+        self.field_name = field_name
+        self.name = name or f"{fields.camera_name}.{field_name}"
+
+    def get_current_value(self):
+        return self._fields.wait_for_field(self.field_name)
+
+    def __repr__(self):
+        return f"<live pipeline field {self.name!r}>"
+
+
+class ScreenpanelAnalysis:
+    """camera.screenpanel_ana.<field_name> -- a live, Detector-protocol
+    view of one scalar field a camera's own default processing pipeline
+    publishes alongside "image" (center of mass, intensity, gaussian-fit
+    parameters, ...) -- for reading directly
+    (camera.screenpanel_ana.intensity.get_current_value()) or strip-
+    plotting (eco.utilities.strip_plot.strip_plot(camera.screenpanel_ana.
+    intensity)), no viewer window needed. Mirrors pshell's own screen
+    panel, which shows the same kind of pipeline-computed analysis
+    readouts.
+
+    CAVEAT: what fields (if any) exist entirely depends on the *pipeline's
+    own server-side configuration*. The plain default pipeline eco's own
+    resolve_camera_pipeline auto-creates for a camera (cam_server's own
+    default pipeline_type) does no analysis at all and publishes nothing
+    beyond "image" -- accessing e.g. .intensity on such a camera will time
+    out waiting for a field that will never arrive. The camera's own
+    pipeline needs to be configured (via its config_cs.config, or the
+    cam_server web UI/API directly) to a pipeline_type that actually
+    computes what you want (e.g. center-of-mass/background/good-region
+    analysis) before there is anything here to read -- this class only
+    reads whatever the pipeline already happens to publish, it does not
+    request or configure any analysis itself.
+
+    A background thread is started lazily on first attribute access (one
+    per ScreenpanelAnalysis instance, i.e. shared across every field of
+    one camera -- see LivePipelineFields); call stop() to end it."""
+
+    def __init__(self, camera_name, kind="camera_pipeline", pipeline_url=None, camera_url=None):
+        self._live = LivePipelineFields(
+            camera_name, kind=kind, pipeline_url=pipeline_url, camera_url=camera_url
+        )
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        self._live.start()
+        return _LiveFieldDetector(self._live, name)
+
+    def __dir__(self):
+        return sorted(set(super().__dir__()) | set(self._live.field_names()))
+
+    def field_names(self):
+        """Analysis field names actually seen so far -- see class
+        docstring's CAVEAT for why this can stay empty."""
+        return self._live.field_names()
+
+    def stop(self):
+        self._live.stop()
 
 
 class _StreamBridge(QtCore.QObject):
@@ -561,23 +900,37 @@ class _DemoWorker(threading.Thread):
             self._stop_event.wait(interval)
 
 
+_DRAG_RECT_MODES = ("roi", "zoom", "calibrate_line", "measure")
+_CLICK_MODES = ("marker", "calibrate_center")
+
+
 class _ViewLabel(QtWidgets.QLabel):
-    """QLabel with two direct-manipulation tools, chosen via
-    `interaction_mode`: drag a rectangle to select an ROI ("roi"), or
-    click to place the Marker crosshair ("marker"). Mouse positions are
-    read in the label's own (on-screen, possibly zoomed) pixel space and
-    converted to image-array pixel space via `zoom_scale` (kept in sync
-    with whatever scale CamServerStreamQt._render_tick last drew at)
-    before being emitted -- so ROI/marker/hover all stay correct at any
-    zoom level, including "Fit"."""
+    """QLabel with several direct-manipulation tools, chosen via
+    `interaction_mode`: drag a rectangle (live feedback is the same
+    rubber-band rectangle for all of these -- for "calibrate_line"/
+    "measure" only the drag's two diagonal corners end up mattering, as a
+    straight line between them) to select an ROI ("roi"), zoom into it
+    ("zoom"), calibrate one axis against a known real-world distance
+    ("calibrate_line" -- see CamServerStreamQt._on_line_dragged), or
+    measure a distance ("measure" -- same signal, same handler, dispatched
+    on interaction_mode); or click a single point to place the Marker
+    crosshair ("marker") or set the calibration reference position
+    ("calibrate_center"). Mouse positions are read in the label's own
+    (on-screen, possibly zoomed) pixel space and converted to image-array
+    pixel space via `zoom_scale` (kept in sync with whatever scale
+    CamServerStreamQt._render_tick last drew at) before being emitted --
+    so every tool stays correct at any zoom level, including "Fit"."""
 
     roi_dragged = QtCore.Signal(int, int, int, int)  # x0, y0, x1, y1 -- image pixel space
+    zoom_dragged = QtCore.Signal(int, int, int, int)  # x0, y0, x1, y1 -- image pixel space
+    line_dragged = QtCore.Signal(int, int, int, int)  # x0, y0, x1, y1 -- image pixel space
     marker_placed = QtCore.Signal(int, int)  # image pixel space
+    calibrate_center_clicked = QtCore.Signal(int, int)  # image pixel space
     hovered = QtCore.Signal(int, int)  # image pixel space
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.interaction_mode = None  # None | "roi" | "marker"
+        self.interaction_mode = None  # None | "roi" | "zoom" | "marker" | ... -- see class docstring
         self.zoom_scale = 1.0
         self._press_pos = None
         self.setMouseTracking(True)
@@ -588,30 +941,39 @@ class _ViewLabel(QtWidgets.QLabel):
         return int(pos.x() / scale), int(pos.y() / scale)
 
     def mousePressEvent(self, ev):
-        if self.interaction_mode == "roi":
+        if self.interaction_mode in _DRAG_RECT_MODES:
             self._press_pos = ev.pos()
             self._rubber_band.setGeometry(QtCore.QRect(self._press_pos, QtCore.QSize()))
             self._rubber_band.show()
-        elif self.interaction_mode == "marker":
+        elif self.interaction_mode in _CLICK_MODES:
             x, y = self._to_image_coords(ev.pos())
-            self.marker_placed.emit(x, y)
+            if self.interaction_mode == "marker":
+                self.marker_placed.emit(x, y)
+            else:
+                self.calibrate_center_clicked.emit(x, y)
 
     def mouseMoveEvent(self, ev):
         x, y = self._to_image_coords(ev.pos())
         self.hovered.emit(x, y)
-        if self.interaction_mode == "roi" and self._press_pos is not None:
+        if self.interaction_mode in _DRAG_RECT_MODES and self._press_pos is not None:
             # the rubber band itself stays in on-screen widget space so it
             # visually tracks the cursor; only the emitted result is
             # converted to image space (see mouseReleaseEvent)
             self._rubber_band.setGeometry(QtCore.QRect(self._press_pos, ev.pos()).normalized())
 
     def mouseReleaseEvent(self, ev):
-        if self.interaction_mode == "roi" and self._press_pos is not None:
+        if self.interaction_mode in _DRAG_RECT_MODES and self._press_pos is not None:
             self._rubber_band.hide()
             x0, y0 = self._to_image_coords(self._press_pos)
             x1, y1 = self._to_image_coords(ev.pos())
+            mode = self.interaction_mode
             self._press_pos = None
-            self.roi_dragged.emit(x0, y0, x1, y1)
+            if mode == "roi":
+                self.roi_dragged.emit(x0, y0, x1, y1)
+            elif mode == "zoom":
+                self.zoom_dragged.emit(x0, y0, x1, y1)
+            else:
+                self.line_dragged.emit(x0, y0, x1, y1)
 
 
 def value_to_y(value, height, data_min, data_max):
@@ -657,6 +1019,13 @@ class _HistogramColorbar(QtWidgets.QWidget):
     CamServerStreamQt._on_histogram_levels_changed) -- this widget itself
     has no notion of contrast "modes", it just visualizes/edits a range.
 
+    A drag that does *not* start on either handle instead selects a new
+    min/max region in one gesture: press-and-drag anywhere else in the
+    widget, release, and both handles jump to the dragged span (whichever
+    end is numerically lower becomes vmin) -- much faster than dragging
+    each handle from its old position individually when the frame's actual
+    range has moved well away from the current levels.
+
     pyqtgraph itself isn't part of eco's dependency set (not installed in
     the production env this was built against), so this reimplements the
     relevant slice natively in plain Qt rather than adding a dependency;
@@ -680,6 +1049,8 @@ class _HistogramColorbar(QtWidgets.QWidget):
         self._colormap = "gray"
         self._dragging = None  # "min" | "max" | None
         self._hovering = None  # "min" | "max" | None -- for hover highlight/cursor
+        self._region_drag_start = None  # widget-space y, or None -- see class docstring
+        self._region_drag_current = None
 
     def set_data(self, array, vmin, vmax, colormap="gray"):
         """array: the pre-contrast (post average/background/ROI) frame;
@@ -729,6 +1100,12 @@ class _HistogramColorbar(QtWidgets.QWidget):
                 bar_len = int((count / max_count) * hist_w)
                 painter.drawRect(hist_x0, min(y0, y1), bar_len, max(abs(y1 - y0), 1))
 
+        if self._region_drag_start is not None and self._region_drag_current is not None:
+            y0, y1 = sorted((self._region_drag_start, self._region_drag_current))
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QColor(120, 170, 220, 90))
+            painter.drawRect(0, y0, w, max(y1 - y0, 1))
+
         for key, value, color in (
             ("min", self._vmin, QtGui.QColor(230, 60, 60)),
             ("max", self._vmax, QtGui.QColor(60, 200, 90)),
@@ -748,28 +1125,47 @@ class _HistogramColorbar(QtWidgets.QWidget):
 
     def mousePressEvent(self, ev):
         self._dragging = self._handle_at(ev.pos().y())
+        if self._dragging is None:
+            self._region_drag_start = self._region_drag_current = ev.pos().y()
 
     def mouseMoveEvent(self, ev):
-        if self._dragging is None:
-            hovering = self._handle_at(ev.pos().y())
-            if hovering != self._hovering:
-                self._hovering = hovering
-                self.update()
-            self.setCursor(QtCore.Qt.SizeVerCursor if hovering else QtCore.Qt.ArrowCursor)
+        if self._dragging is not None:
+            value = self._value(ev.pos().y())
+            if self._dragging == "min":
+                self._vmin = min(value, self._vmax - 1e-6)
+            else:
+                self._vmax = max(value, self._vmin + 1e-6)
+            self.update()
+            self.levels_changed.emit(self._vmin, self._vmax)
+            QtWidgets.QToolTip.showText(ev.globalPos(), f"{value:.4g}", self)
             return
 
-        value = self._value(ev.pos().y())
-        if self._dragging == "min":
-            self._vmin = min(value, self._vmax - 1e-6)
-        else:
-            self._vmax = max(value, self._vmin + 1e-6)
-        self.update()
-        self.levels_changed.emit(self._vmin, self._vmax)
-        QtWidgets.QToolTip.showText(ev.globalPos(), f"{value:.4g}", self)
+        if self._region_drag_start is not None:
+            self._region_drag_current = ev.pos().y()
+            self.update()
+            QtWidgets.QToolTip.showText(ev.globalPos(), f"{self._value(ev.pos().y()):.4g}", self)
+            return
+
+        hovering = self._handle_at(ev.pos().y())
+        if hovering != self._hovering:
+            self._hovering = hovering
+            self.update()
+        self.setCursor(QtCore.Qt.SizeVerCursor if hovering else QtCore.Qt.ArrowCursor)
 
     def mouseReleaseEvent(self, ev):
-        self._dragging = None
-        self.setCursor(QtCore.Qt.ArrowCursor)
+        if self._dragging is not None:
+            self._dragging = None
+            self.setCursor(QtCore.Qt.ArrowCursor)
+            return
+
+        if self._region_drag_start is not None:
+            y0, y1 = self._region_drag_start, self._region_drag_current
+            self._region_drag_start = self._region_drag_current = None
+            if abs(y1 - y0) >= 3:  # a real drag, not just a stray click
+                v0, v1 = self._value(y0), self._value(y1)
+                self._vmin, self._vmax = min(v0, v1), max(v0, v1, min(v0, v1) + 1e-6)
+                self.levels_changed.emit(self._vmin, self._vmax)
+            self.update()
 
     def leaveEvent(self, event):
         self._hovering = None
@@ -814,6 +1210,26 @@ def _reticle_icon(color=QtGui.QColor(60, 200, 90), size=18):
     painter.drawLine(int(c), size - 5, int(c), size - 1)
     painter.drawLine(1, int(c), 5, int(c))
     painter.drawLine(size - 5, int(c), size - 1, int(c))
+    painter.end()
+    return QtGui.QIcon(pixmap)
+
+
+def _ruler_icon(color=QtGui.QColor(230, 170, 40), size=18):
+    """Small drawn ruler icon (a diagonal bar with tick marks) for the
+    Measure tool -- see _marker_icon."""
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    painter.translate(2, size - 2)
+    painter.rotate(-45)
+    pen = QtGui.QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+    length = size  # in the rotated/translated frame, along the local x axis
+    painter.drawLine(0, 0, length, 0)
+    for x in (0, length // 4, length // 2, 3 * length // 4, length):
+        painter.drawLine(x, 0, x, -4)
     painter.end()
     return QtGui.QIcon(pixmap)
 
@@ -920,6 +1336,10 @@ class CamServerStreamQt:
         # "Settings" button/cam parameter.
         self.cam = cam
         self._settings_window = None
+        # the window's own width the moment the settings dock was last
+        # hidden (i.e. *with* the dock still visible) -- restored when the
+        # dock is shown again, see _on_settings_toggled
+        self._window_width_before_settings_hidden = None
         self.window = None
         self._worker = None
         self._processor = FrameProcessor()
@@ -929,12 +1349,24 @@ class CamServerStreamQt:
         self._last_stats = None  # for the "Fix range" button
         self._marker_pos = None
         self._show_reticle = False
+        # reticle center, in raw-frame pixel coords -- None means "true
+        # image center" (the reticle's old, hardcoded-only behavior). Set
+        # by the "Set center position only..." calibration tool, or loaded
+        # from the camera's own server-side calibration on open (see
+        # _load_camera_calibration) -- see _paint_overlays.
+        self._reticle_center = None
+        self._measurement = None  # (x0, y0, x1, y1) image px, or None -- see _on_line_dragged
+        self._calib_line_stage = None  # None | "x" | "y" -- see _on_line_dragged
+        self._calib_line_x_um_per_px = None  # staged X result while waiting for the Y line
+        self._exclusive_tool_buttons = []  # see _wire_exclusive_tool
+        self._tool_modes = {}
         self._hover_pos = None
         self._frame_count = 0
         self._fps_t0 = time.time()
         self._last_fps = 0.0
         self._rate_hz = rate_hz
-        self._zoom_mode = "fit"  # "fit" | a float ratio (0.25/0.5/1.0/2.0)
+        self._zoom_mode = "fit"  # "fit" | a float ratio (0.25/0.5/1.0/2.0/drag-to-zoom's own)
+        self._pending_zoom_center = None  # (x, y) image coords -- see _on_zoom_dragged
         # calibration: physical units per raw pixel, for status/marker
         # readouts only -- doesn't affect ROI/reticle geometry (see
         # _CalibrationDialog and _update_status)
@@ -976,7 +1408,10 @@ class CamServerStreamQt:
         self._label = _ViewLabel("connecting...")
         self._label.setScaledContents(False)
         self._label.roi_dragged.connect(self._on_roi_dragged)
+        self._label.zoom_dragged.connect(self._on_zoom_dragged)
+        self._label.line_dragged.connect(self._on_line_dragged)
         self._label.marker_placed.connect(self._on_marker_placed)
+        self._label.calibrate_center_clicked.connect(self._on_calibrate_center_clicked)
         self._label.hovered.connect(self._on_hover)
 
         # scrollable viewport: without this, an oversized image (a raw
@@ -1031,6 +1466,7 @@ class CamServerStreamQt:
                 camera_url=self.camera_url,
             )
         self._worker.start()
+        self._load_camera_calibration()
 
         self._render_timer = QtCore.QTimer(self.window)
         self._render_timer.timeout.connect(self._render_tick)
@@ -1050,8 +1486,8 @@ class CamServerStreamQt:
 
     def _add_toolbars(self):
         """The always-visible, one-click/glance controls -- everything
-        more detailed (numeric ranges, colormap choice, calibration) lives
-        in the collapsible "Settings" dock instead (see
+        more detailed (numeric ranges, colormap choice) lives in the
+        collapsible "Settings" dock instead (see
         _build_settings_dock); toggled from here.
 
         Split across two rows via addToolBarBreak() rather than one long
@@ -1076,6 +1512,15 @@ class CamServerStreamQt:
             settings_btn = QtWidgets.QAction("Camera Settings", self.window)
             settings_btn.triggered.connect(self._open_settings)
             view_bar.addAction(settings_btn)
+
+            if hasattr(self.cam, "elog"):
+                elog_btn = QtWidgets.QAction("Elog", self.window)
+                elog_btn.setToolTip(
+                    "Post the current image (with averaging/color-limit settings) to the elog"
+                )
+                elog_btn.triggered.connect(self._open_elog)
+                view_bar.addAction(elog_btn)
+
             view_bar.addSeparator()
 
         self._pause_btn = QtWidgets.QAction("Pause", self.window)
@@ -1095,11 +1540,17 @@ class CamServerStreamQt:
             self._zoom_buttons[action] = mode
             view_bar.addAction(action)
         self._zoom_group.triggered.connect(self._on_zoom_changed)
+
+        self._zoom_drag_btn = QtWidgets.QAction("Zoom", self.window)
+        self._zoom_drag_btn.setCheckable(True)
+        self._zoom_drag_btn.setToolTip("Drag a rectangle on the image to zoom into it")
+        self._wire_exclusive_tool(self._zoom_drag_btn, "zoom")
+        view_bar.addAction(self._zoom_drag_btn)
         view_bar.addSeparator()
 
         self._roi_btn = QtWidgets.QAction("Set ROI", self.window)
         self._roi_btn.setCheckable(True)
-        self._roi_btn.toggled.connect(self._on_roi_tool_toggled)
+        self._wire_exclusive_tool(self._roi_btn, "roi")
         view_bar.addAction(self._roi_btn)
         clear_roi_action = QtWidgets.QAction("Clear ROI", self.window)
         clear_roi_action.triggered.connect(self._on_clear_roi)
@@ -1122,7 +1573,7 @@ class CamServerStreamQt:
 
         self._marker_btn = QtWidgets.QAction(_marker_icon(), "Marker", self.window)
         self._marker_btn.setCheckable(True)
-        self._marker_btn.toggled.connect(self._on_marker_tool_toggled)
+        self._wire_exclusive_tool(self._marker_btn, "marker")
         annotate_bar.addAction(self._marker_btn)
         clear_marker_action = QtWidgets.QAction("Clear marker", self.window)
         clear_marker_action.triggered.connect(self._on_clear_marker)
@@ -1132,6 +1583,53 @@ class CamServerStreamQt:
         self._reticle_btn.setCheckable(True)
         self._reticle_btn.toggled.connect(self._on_reticle_toggled)
         annotate_bar.addAction(self._reticle_btn)
+
+        self._measure_btn = QtWidgets.QAction(_ruler_icon(), "Measure", self.window)
+        self._measure_btn.setCheckable(True)
+        self._measure_btn.setToolTip("Drag between two points to measure the distance between them")
+        self._wire_exclusive_tool(self._measure_btn, "measure")
+        annotate_bar.addAction(self._measure_btn)
+        clear_measure_action = QtWidgets.QAction("Clear measurement", self.window)
+        clear_measure_action.triggered.connect(self._on_clear_measurement)
+        annotate_bar.addAction(clear_measure_action)
+
+        # "Calibrate" as one dropdown rather than 3 more toolbar buttons --
+        # everything here writes/reads the camera's own server-side
+        # camera_calibration config when this viewer has a real camera
+        # (self.cam is not None -- the same field pshell's own screen
+        # panel uses for its reticle, and what
+        # eco.devices_general.cameras_swissfel.CameraBasler.set_cross()
+        # used to write by hand); falls back to a viewer-local-only
+        # calibration (this session only, nothing persisted) otherwise --
+        # see _on_line_dragged/_on_calibrate_center_clicked for exactly
+        # which case applies when.
+        calibrate_menu_btn = QtWidgets.QToolButton(self.window)
+        calibrate_menu_btn.setText("Calibrate")
+        calibrate_menu_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        calibrate_menu_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        calibrate_menu = QtWidgets.QMenu(calibrate_menu_btn)
+
+        numeric_action = calibrate_menu.addAction("Numeric entry...")
+        numeric_action.triggered.connect(self._on_calibrate_numeric)
+
+        self._calibrate_line_btn = calibrate_menu.addAction("2-line (known distances)...")
+        self._calibrate_line_btn.setCheckable(True)
+        self._calibrate_line_btn.setToolTip(
+            "Drag a line along a known X distance, then a line along a known Y "
+            "distance -- sets the scale (position unchanged)"
+        )
+        self._wire_exclusive_tool(self._calibrate_line_btn, "calibrate_line")
+        self._calibrate_line_btn.toggled.connect(self._on_calibrate_line_tool_toggled)
+
+        self._calibrate_center_btn = calibrate_menu.addAction("Set center position only...")
+        self._calibrate_center_btn.setCheckable(True)
+        self._calibrate_center_btn.setToolTip(
+            "Click the new reference position -- keeps the current scale unchanged"
+        )
+        self._wire_exclusive_tool(self._calibrate_center_btn, "calibrate_center")
+
+        calibrate_menu_btn.setMenu(calibrate_menu)
+        annotate_bar.addWidget(calibrate_menu_btn)
 
         self.window.addToolBar(annotate_bar)
         self.window.addToolBarBreak()
@@ -1158,7 +1656,7 @@ class CamServerStreamQt:
         settings_action = QtWidgets.QAction("Settings", self.window)
         settings_action.setCheckable(True)
         settings_action.setChecked(True)
-        settings_action.toggled.connect(lambda checked: self._settings_dock.setVisible(checked))
+        settings_action.toggled.connect(self._on_settings_toggled)
         bg_bar.addAction(settings_action)
         self._settings_action = settings_action
 
@@ -1278,19 +1776,45 @@ class CamServerStreamQt:
         return row
 
     def _build_averaging_row(self):
-        row = QtWidgets.QHBoxLayout()
-        row.addWidget(QtWidgets.QLabel("Average N frames:"))
+        container = QtWidgets.QVBoxLayout()
+        container.setSpacing(4)
+
+        n_row = QtWidgets.QHBoxLayout()
+        n_row.addWidget(QtWidgets.QLabel("Average N frames:"))
         self._average_spin = QtWidgets.QSpinBox()
         self._average_spin.setRange(1, 200)
         self._average_spin.valueChanged.connect(self._on_average_changed)
-        row.addWidget(self._average_spin)
-        row.addStretch(1)
+        n_row.addWidget(self._average_spin)
+        n_row.addStretch(1)
+        container.addLayout(n_row)
 
-        calibrate_btn = QtWidgets.QPushButton("Calibrate...")
-        calibrate_btn.setToolTip("Set physical units per pixel, for the cursor/marker/ROI readouts")
-        calibrate_btn.clicked.connect(self._on_calibrate_clicked)
-        row.addWidget(calibrate_btn)
-        return row
+        # "Running" (default): a continuously-updated sliding window, mean
+        # recomputed on every new frame -- what this viewer already did
+        # before this toggle existed. "Single": accumulate N frames, show
+        # their mean once, then start a fresh batch -- refreshes only every
+        # N raw frames instead of every frame. Mirrors pshell's own
+        # CamServerViewer averaging (see FrameProcessor.average_mode).
+        mode_row = QtWidgets.QHBoxLayout()
+        mode_row.addWidget(QtWidgets.QLabel("Mode:"))
+        self._average_mode_group = QtWidgets.QButtonGroup(self.window)
+        self._running_radio = QtWidgets.QRadioButton("Running")
+        self._single_radio = QtWidgets.QRadioButton("Single")
+        self._running_radio.setChecked(True)
+        self._running_radio.setToolTip(
+            "Continuously-updated rolling average of the last N frames"
+        )
+        self._single_radio.setToolTip(
+            "Accumulate N frames, show their average once, then start a fresh batch "
+            "(display refreshes every N frames instead of every frame)"
+        )
+        for btn in (self._running_radio, self._single_radio):
+            self._average_mode_group.addButton(btn)
+            mode_row.addWidget(btn)
+        self._average_mode_group.buttonClicked.connect(self._on_average_mode_changed)
+        mode_row.addStretch(1)
+        container.addLayout(mode_row)
+
+        return container
 
     # -- control handlers ------------------------------------------------
 
@@ -1347,14 +1871,216 @@ class CamServerStreamQt:
             return compute_fit_scale(viewport.width(), viewport.height(), raw_w, raw_h)
         return float(self._zoom_mode)
 
-    def _on_calibrate_clicked(self):
+    def _apply_pending_zoom_center(self, scale):
+        # runs right after _render_tick has resized the label to the new
+        # scale, so the scroll area's scrollbar ranges already reflect it
+        cx, cy = self._pending_zoom_center
+        self._pending_zoom_center = None
+        viewport = self._scroll_area.viewport().size()
+        hbar, vbar = self._scroll_area.horizontalScrollBar(), self._scroll_area.verticalScrollBar()
+        hbar.setValue(round(cx * scale - viewport.width() / 2))
+        vbar.setValue(round(cy * scale - viewport.height() / 2))
+
+    def _current_reticle_center(self):
+        """The reticle's current center in raw-frame pixel coords -- the
+        explicitly-set one if there is one, else the true center of the
+        last displayed frame (or (0, 0) if no frame has been shown yet)."""
+        if self._reticle_center is not None:
+            return self._reticle_center
+        if self._last_display_array is not None:
+            h, w = self._last_display_array.shape[:2]
+            return w / 2.0, h / 2.0
+        return 0.0, 0.0
+
+    def _persist_calibration_async(self, x, y, x_um_per_px=None, y_um_per_px=None):
+        """Move the reticle to (x, y) and, if given, adopt x_um_per_px/
+        y_um_per_px as the new local scale -- then, if this viewer has a
+        real camera (self.cam is not None), write the same to its server-
+        side camera_calibration config (the field pshell's own screen
+        panel reads -- see eco.devices_general.cameras_swissfel.
+        set_camera_calibration, which does the actual write and keeps
+        whichever of x_um_per_px/y_um_per_px is left None unchanged from
+        the existing calibration -- "set center position only" passes
+        both as None). A viewer with no camera (kind="camera_pipeline"
+        with no cam=, or a standalone kind="camera"/"pipeline"/"demo"
+        viewer) only ever updates the local reticle/scale -- there is
+        nothing to persist to.
+
+        The actual write is real network I/O, so it runs on a background
+        thread (mirrors _open_elog's docstring for exactly why -- freezing
+        this window for the duration would be exactly the kind of freeze
+        eco.utilities.strip_plot's own module docstring calls out)."""
+        self._reticle_center = (x, y)
+        if x_um_per_px is not None:
+            self._cal_scale_x = x_um_per_px
+        if y_um_per_px is not None:
+            self._cal_scale_y = y_um_per_px
+        if self.cam is None:
+            return
+
+        def do_write():
+            from ..devices_general.cameras_swissfel import set_camera_calibration
+
+            try:
+                set_camera_calibration(self.cam, x, y, x_um_per_px, y_um_per_px)
+                self._bridge.status.emit("calibration saved")
+            except Exception as exc:
+                self._bridge.error.emit(f"failed to save calibration: {exc}")
+
+        threading.Thread(target=do_write, daemon=True).start()
+
+    def _load_camera_calibration(self):
+        """Load this viewer's reticle position/scale from the camera's own
+        server-side camera_calibration config, if there is one -- so
+        opening the viewer reflects whatever was last calibrated (e.g. via
+        CameraBasler.set_cross() previously, or this viewer's own
+        Calibrate menu in an earlier session) instead of always starting
+        at "no calibration, dead-center reticle". Runs on a background
+        thread (network I/O -- see _persist_calibration_async); silently
+        leaves the defaults in place on any error or if there simply is no
+        calibration yet."""
+        if self.cam is None:
+            return
+
+        def do_load():
+            from ..devices_general.cameras_swissfel import get_camera_calibration
+
+            try:
+                existing = get_camera_calibration(self.cam)
+            except Exception:
+                return
+            if existing is None:
+                return
+            cx, cy, x_um_per_px, y_um_per_px = existing
+            self._reticle_center = (cx, cy)
+            if x_um_per_px:
+                self._cal_scale_x = x_um_per_px
+            if y_um_per_px:
+                self._cal_scale_y = y_um_per_px
+            if (x_um_per_px or y_um_per_px) and self._cal_unit == "px":
+                # camera_calibration itself carries no unit-name string
+                # (just numeric width/height) -- "um" matches the
+                # x_um_per_px/y_um_per_px naming convention used
+                # throughout eco (e.g. CameraBasler.set_cross()) for this
+                # same field. Only promotes the still-uncalibrated default
+                # -- never overrides a unit name the numeric-entry dialog
+                # already set explicitly (including a deliberate "px" reset).
+                self._cal_unit = "um"
+
+        threading.Thread(target=do_load, daemon=True).start()
+
+    def _on_calibrate_numeric(self):
         dialog = _CalibrationDialog(
             self._cal_scale_x, self._cal_scale_y, self._cal_unit, self.window
         )
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            self._cal_scale_x = dialog.scale_x
-            self._cal_scale_y = dialog.scale_y
             self._cal_unit = dialog.unit
+            x, y = self._current_reticle_center()
+            self._persist_calibration_async(x, y, dialog.scale_x, dialog.scale_y)
+
+    def _on_calibrate_line_tool_toggled(self, checked):
+        if not checked:
+            # covers every way out of the tool: both stages completed,
+            # explicitly cancelled mid-stage (see _on_calibrate_line_dragged),
+            # or switched away to a different tool before finishing (the
+            # exclusive-tool wiring unchecks us the same way) -- always
+            # start clean next time rather than silently resuming a stale
+            # X result from an abandoned earlier attempt
+            self._calib_line_stage = None
+            self._calib_line_x_um_per_px = None
+            return
+        if self._cal_unit == "px":
+            # camera_calibration carries no unit-name string of its own
+            # (just numeric width/height, see get/set_camera_calibration),
+            # and asking "known X distance, in px" would be nonsensical --
+            # get a real unit name once, up front, rather than per line
+            unit, ok = QtWidgets.QInputDialog.getText(
+                self.window, "Calibrate",
+                "Unit name for the known distances you're about to enter:",
+                text="um",
+            )
+            if not ok or not unit.strip():
+                self._calibrate_line_btn.setChecked(False)
+                return
+            self._cal_unit = unit.strip()
+        self._apply_status("calibration: drag a line along a known X distance")
+
+    def _on_line_dragged(self, x0, y0, x1, y1):
+        # shared by "measure" and "calibrate_line" (see _ViewLabel's
+        # docstring) -- interaction_mode is unchanged since the drag
+        # started (a mode switch can't happen mid-gesture), so it still
+        # correctly says which tool this drag belongs to
+        mode = self._label.interaction_mode
+        if mode == "measure":
+            self._on_measure_dragged(x0, y0, x1, y1)
+        elif mode == "calibrate_line":
+            self._on_calibrate_line_dragged(x0, y0, x1, y1)
+
+    def _on_measure_dragged(self, x0, y0, x1, y1):
+        if ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5 < 2:
+            return  # accidental click, not a real drag
+        self._measurement = (x0, y0, x1, y1)
+        # deliberately left checked/active -- unlike ROI/zoom's one-shot
+        # tools, a ruler is normally used for several measurements in a
+        # row; toggle it off yourself (or pick a different tool) when done
+
+    def _on_clear_measurement(self):
+        self._measurement = None
+
+    def _on_calibrate_line_dragged(self, x0, y0, x1, y1):
+        stage = self._calib_line_stage or "x"
+        pixel_length = abs(x1 - x0) if stage == "x" else abs(y1 - y0)
+        if pixel_length < 2:
+            return  # accidental click, not a real drag
+        distance, ok = QtWidgets.QInputDialog.getDouble(
+            self.window,
+            "Calibrate",
+            f"Known {stage.upper()}-axis distance for this line "
+            f"({pixel_length} px, in your calibration unit -- currently "
+            f"{self._cal_unit!r}):",
+            1.0, 1e-9, 1e12, 6,
+        )
+        if not ok:
+            self._calibrate_line_btn.setChecked(False)  # also resets staged state, see toggled handler
+            return
+        um_per_px = distance / pixel_length
+        if stage == "x":
+            self._calib_line_x_um_per_px = um_per_px
+            self._calib_line_stage = "y"
+            self._apply_status("calibration: now drag a line along a known Y distance")
+            return  # tool stays active for the second line
+        x_um_per_px = self._calib_line_x_um_per_px
+        y_um_per_px = um_per_px
+        self._calibrate_line_btn.setChecked(False)
+        cx, cy = self._current_reticle_center()
+        self._persist_calibration_async(cx, cy, x_um_per_px, y_um_per_px)
+
+    def _on_calibrate_center_clicked(self, x, y):
+        self._calibrate_center_btn.setChecked(False)
+        self._persist_calibration_async(x, y)  # x_um_per_px/y_um_per_px default None -- keep existing scale
+
+    def _on_settings_toggled(self, checked):
+        """Show/hide the settings dock -- and, unlike a bare setVisible(),
+        also shrink/grow the window's own width to match: QMainWindow
+        doesn't do this on its own once the window has had an explicit
+        resize() called on it (see the "fixed starting size" comment on
+        the window.resize() call in _build_window -- the same fixed-size
+        behavior that stops it auto-*growing* to fit content also stops it
+        auto-*shrinking* when a dock hides, leaving dead space instead)."""
+        window, dock = self.window, self._settings_dock
+        if checked:
+            dock.setVisible(True)
+            if self._window_width_before_settings_hidden is not None:
+                window.resize(self._window_width_before_settings_hidden, window.height())
+                self._window_width_before_settings_hidden = None
+        else:
+            # capture the *current* (dock-visible) width so re-showing the
+            # dock later restores exactly this size, then shrink back down
+            # by the dock's own width (read before it's hidden -- an
+            # already-hidden dock's width reads back as 0)
+            self._window_width_before_settings_hidden = window.width()
+            window.resize(max(1, window.width() - dock.width()), window.height())
+            dock.setVisible(False)
 
     def _open_settings(self):
         # normal=True: this button specifically wants the plain property
@@ -1368,6 +2094,46 @@ class CamServerStreamQt:
         # keep a reference so the window (and its poll thread) isn't
         # garbage-collected as soon as this method returns
         self._settings_window = self.cam.widget(normal=True)
+
+    def _open_elog(self):
+        """Post the current settings (and a fresh capture at them) to the
+        elog, via self.cam.elog() -- see CameraBasler/CameraPCO.elog() and
+        capture_camera_snapshot, which both this button and cam.elog()
+        called directly (no viewer open) go through, so they produce
+        identical images for the same settings.
+
+        Runs the actual capture+post on a background thread (mirrors
+        AxisPTZStreamQt._dispatch): it opens its own short-lived stream
+        connection and does network I/O to the elog/scilog server, either
+        of which can take a real moment -- doing that on the GUI thread
+        would freeze this window for the duration, the exact kind of
+        freeze eco.utilities.strip_plot's own module docstring calls out
+        for the same reason (blocking work on the thread that owns the Qt/
+        IPython event loop)."""
+        comment, ok = QtWidgets.QInputDialog.getMultiLineText(
+            self.window, "Post to elog", "Comment (optional):"
+        )
+        if not ok:
+            return
+        proc = self._processor
+
+        def do_post():
+            try:
+                self.cam.elog(
+                    comment=comment,
+                    n_average=proc.average_n,
+                    contrast_mode=proc.contrast_mode,
+                    vmin=proc.vmin,
+                    vmax=proc.vmax,
+                    colormap=proc.colormap,
+                    log_scale=proc.log_scale,
+                )
+                self._bridge.status.emit("posted to elog")
+            except Exception as exc:
+                self._bridge.error.emit(f"elog post failed: {exc}")
+
+        self._bridge.status.emit("posting to elog...")
+        threading.Thread(target=do_post, daemon=True).start()
 
     def _on_histogram_levels_changed(self, vmin, vmax):
         # dragging a handle on the histogram/colorscale sidebar implies
@@ -1385,15 +2151,35 @@ class CamServerStreamQt:
         self._processor.vmin = vmin
         self._processor.vmax = vmax
 
-    def _on_roi_tool_toggled(self, checked):
-        self._label.interaction_mode = "roi" if checked else None
-        if checked:
-            self._marker_btn.setChecked(False)
+    def _wire_exclusive_tool(self, button, mode):
+        """Register `button` (a checkable QAction) as one of the mutually-
+        exclusive interaction-mode tools (ROI/zoom/marker/calibrate-line/
+        calibrate-center/measure -- exactly one, or none, active at a
+        time) and connect its toggled signal to _on_tool_toggled. Grew out
+        of hand-writing the same "uncheck my siblings" logic per tool,
+        which got unwieldy (and once genuinely buggy -- see git history)
+        as the tool count grew past two."""
+        self._exclusive_tool_buttons.append(button)
+        self._tool_modes[button] = mode
+        button.toggled.connect(lambda checked, b=button: self._on_tool_toggled(checked, b))
 
-    def _on_marker_tool_toggled(self, checked):
-        self._label.interaction_mode = "marker" if checked else None
+    def _on_tool_toggled(self, checked, button):
+        # uncheck the siblings *before* setting our own interaction_mode:
+        # unchecking whichever sibling is currently active fires *its own*
+        # toggled(False) handler synchronously (a nested call to this same
+        # method), which would otherwise stomp interaction_mode back to
+        # None right after we set it here -- so that cascade has to run
+        # first, and our own mode is the very last write, unconditionally,
+        # once the loop is done. (A single previously-active sibling was
+        # already unchecked and so is a no-op -- toggling off an
+        # already-unchecked QAction fires no signal at all -- but that
+        # stops being reliably true once there are more than two tools,
+        # since *this* call's own uncheck loop is what unchecks it.)
         if checked:
-            self._roi_btn.setChecked(False)
+            for other in self._exclusive_tool_buttons:
+                if other is not button:
+                    other.setChecked(False)
+        self._label.interaction_mode = self._tool_modes[button] if checked else None
 
     def _on_roi_dragged(self, x0, y0, x1, y1):
         rect = compute_roi_from_drag(x0, y0, x1, y1)
@@ -1401,6 +2187,29 @@ class CamServerStreamQt:
         if rect[2] < 2 or rect[3] < 2:
             return  # accidental click, not a real drag
         self._processor.set_roi(self._processor.compose_roi(self._processor.roi, rect))
+
+    def _on_zoom_dragged(self, x0, y0, x1, y1):
+        """Drag-to-zoom: fit the dragged rectangle (in the currently
+        displayed, possibly-ROI-cropped frame's own pixel space) to the
+        viewport and scroll to center it -- a pure *display* zoom on top of
+        the already-resolved frame (unlike AxisPTZStreamQt's drag-to-zoom,
+        which sends an optical zoom command to a real PTZ camera). None of
+        the fixed zoom-factor buttons (Fit/0.25x/...) will match this
+        custom scale, so none stays checked afterwards -- click one of them
+        to go back to a fixed/fit zoom."""
+        self._zoom_drag_btn.setChecked(False)
+        x, y, w, h = compute_roi_from_drag(x0, y0, x1, y1)
+        if w < 2 or h < 2:
+            return  # accidental click, not a real drag
+        viewport = self._scroll_area.viewport().size()
+        self._zoom_mode = compute_fit_scale(viewport.width(), viewport.height(), w, h)
+        self._zoom_group.setExclusive(False)
+        for action in self._zoom_buttons:
+            action.setChecked(False)
+        self._zoom_group.setExclusive(True)
+        # applied once the next _render_tick has resized the pixmap to the
+        # new scale and the scroll area's ranges are up to date
+        self._pending_zoom_center = (x + w / 2.0, y + h / 2.0)
 
     def _on_clear_roi(self):
         self._processor.set_roi(None)
@@ -1417,6 +2226,10 @@ class CamServerStreamQt:
 
     def _on_average_changed(self, n):
         self._processor.set_average_n(n)
+
+    def _on_average_mode_changed(self, _btn):
+        mode = "single" if self._single_radio.isChecked() else "running"
+        self._processor.set_average_mode(mode)
 
     def _on_grab_background(self):
         self._processor.grab_background()
@@ -1459,6 +2272,8 @@ class CamServerStreamQt:
 
             self._label.setPixmap(pixmap)
             self._label.setFixedSize(pixmap.size())
+            if self._pending_zoom_center is not None:
+                self._apply_pending_zoom_center(scale)
             self._last_display_array = display
             self._last_values_array = stats["values"]
             self._last_stats = stats
@@ -1486,7 +2301,16 @@ class CamServerStreamQt:
         if self._show_reticle:
             pen = QtGui.QPen(QtGui.QColor(0, 255, 0))
             painter.setPen(pen)
-            cx, cy = w // 2, h // 2
+            # calibrated position if set (see "Set center position only..."/
+            # "2-line..." in the Calibrate menu, or a calibration loaded
+            # from the camera's own server-side config on open -- see
+            # _load_camera_calibration), else the true image center, same
+            # as this reticle's old, permanently-centered-only behavior
+            if self._reticle_center is not None:
+                cx, cy = self._reticle_center
+                cx, cy = int(round(cx)), int(round(cy))
+            else:
+                cx, cy = w // 2, h // 2
             painter.drawLine(0, cy, w, cy)
             painter.drawLine(cx, 0, cx, h)
             tick = max(1, min(h, w) // 20)
@@ -1506,6 +2330,32 @@ class CamServerStreamQt:
                 painter.setPen(pen)
                 painter.drawLine(0, my, w, my)
                 painter.drawLine(mx, 0, mx, h)
+        if self._measurement is not None:
+            x0, y0, x1, y1 = self._measurement
+            pen = QtGui.QPen(QtGui.QColor(230, 170, 40))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawLine(x0, y0, x1, y1)
+            for x, y in ((x0, y0), (x1, y1)):
+                painter.drawLine(x - 4, y, x + 4, y)
+                painter.drawLine(x, y - 4, x, y + 4)
+            painter.drawText(
+                (x0 + x1) // 2 + 6, (y0 + y1) // 2 - 6, self._measurement_label()
+            )
+
+    def _measurement_label(self):
+        """Distance for the current self._measurement -- physical units
+        if calibrated (self._cal_unit != "px"), raw pixels otherwise. Per-
+        axis scale (not a single hypot-of-pixels-then-convert) so
+        non-square-pixel calibrations still measure correctly."""
+        x0, y0, x1, y1 = self._measurement
+        if self._cal_unit == "px":
+            length = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+            return f"{length:.3g} px"
+        dx = (x1 - x0) * self._cal_scale_x
+        dy = (y1 - y0) * self._cal_scale_y
+        length = (dx**2 + dy**2) ** 0.5
+        return f"{length:.3g} {self._cal_unit}"
 
     def _calibrated(self, px, py):
         """(pixel_x, pixel_y) -> "(cx, cy) unit" if calibrated, "" if not
@@ -1528,6 +2378,8 @@ class CamServerStreamQt:
         if self._marker_pos is not None:
             mx, my = self._marker_pos
             txt += f"  marker=({mx},{my}){self._calibrated(mx, my)}"
+        if self._measurement is not None:
+            txt += f"  measured={self._measurement_label()}"
         # the cursor readout reads _last_values_array (the pre-colormap,
         # physically meaningful values) rather than _last_display_array,
         # which is uint8 and, with a colormap active, RGB -- not a single

@@ -163,43 +163,70 @@ class HardwareInput:
         self._jog_dir = 0  # current joystick-driven jog direction
         self._nav_latch = 0  # current joystick-x navigate latch
         self._joy_sw_down = False  # debounce state of an ADC-read stick button
+        # The encoder (GPIO) and the joystick (ADC) are independent hardware.
+        # They are set up separately so that one failing - a missing pin
+        # factory, SPI not enabled - leaves the other one working, instead of
+        # silently killing every physical control on the box.
+        self.encoder_error = None
+        self.joystick_error = None
+        self._setup_encoder()
+        self._setup_joystick()
+        self.available = self.encoder_ok or self.joystick_ok
+        parts = []
+        parts.append("encoder ok" if self.encoder_ok else f"encoder FAILED ({self.encoder_error})")
+        parts.append(f"joystick ok (adc={self.cfg['adc']})" if self.joystick_ok
+                     else f"joystick FAILED ({self.joystick_error})")
+        print("hardware input: " + ", ".join(parts))
+        if not self.available:
+            print("  -> GUI-only mode (touch works, physical controls do not). "
+                  "Diagnose on the box with:  python3 -m manual_control.remote.pi_hardware --probe")
+
+    def _setup_encoder(self):
+        """Rotary encoder + the plain GPIO buttons (independent of the ADC)."""
+        self.encoder_ok = False
         try:
-            self._setup()
-            self.available = True
-            print(f"hardware input active (encoder + joystick, adc={self.cfg['adc']})")
+            from gpiozero import Button, RotaryEncoder  # Pi only
+
+            enc = RotaryEncoder(self.cfg["enc_a"], self.cfg["enc_b"], max_steps=0)
+            enc.when_rotated_clockwise = lambda: self._rotate(1)
+            enc.when_rotated_counter_clockwise = lambda: self._rotate(-1)
+
+            sw = Button(self.cfg["enc_sw"], hold_time=self.cfg["hold_time"])
+            # short press fires on release only if it was not a hold
+            sw.when_released = self._on_encoder_release
+            sw.when_held = self._on_encoder_hold
+            self._held = False
+            self._buttons = [sw]
+            self._enc = enc
+
+            # Stick button: a GPIO on the pendant, an ADC channel on the PSI
+            # box (that box wires the switch through the MCP3008, not a GPIO).
+            if self.cfg["joy_sw"] is not None:
+                jbtn = Button(self.cfg["joy_sw"])
+                jbtn.when_pressed = self._on_ok
+                self._buttons.append(jbtn)
+
+            if self.cfg["extra_sw"] is not None:
+                action = (self._on_extra_disarm
+                          if self.cfg["extra_sw_action"] == "disarm" else self._on_ok)
+                ebtn = Button(self.cfg["extra_sw"])
+                ebtn.when_pressed = action
+                self._buttons.append(ebtn)
+            self.encoder_ok = True
         except Exception as exc:
-            print(f"hardware input unavailable, GUI-only mode: {exc}")
+            self.encoder_error = exc
 
-    def _setup(self):
-        from gpiozero import Button, RotaryEncoder  # Pi only
-
-        enc = RotaryEncoder(self.cfg["enc_a"], self.cfg["enc_b"], max_steps=0)
-        enc.when_rotated_clockwise = lambda: self._rotate(1)
-        enc.when_rotated_counter_clockwise = lambda: self._rotate(-1)
-
-        sw = Button(self.cfg["enc_sw"], hold_time=self.cfg["hold_time"])
-        # short press fires on release only if it was not a hold
-        sw.when_released = self._on_encoder_release
-        sw.when_held = self._on_encoder_hold
-        self._held = False
-        self._buttons = [sw]
-        self._enc = enc
-
-        # Stick button: a GPIO on the pendant, an ADC channel on the PSI box
-        # (that box wires the switch through the MCP3008, not to a GPIO).
-        if self.cfg["joy_sw"] is not None:
-            jbtn = Button(self.cfg["joy_sw"])
-            jbtn.when_pressed = self._on_ok
-            self._buttons.append(jbtn)
-
-        if self.cfg["extra_sw"] is not None:
-            action = self._on_extra_disarm if self.cfg["extra_sw_action"] == "disarm" else self._on_ok
-            ebtn = Button(self.cfg["extra_sw"])
-            ebtn.when_pressed = action
-            self._buttons.append(ebtn)
-
-        self.adc = make_adc(self.cfg)
-        threading.Thread(target=self._joystick_loop, daemon=True).start()
+    def _setup_joystick(self):
+        """Analog joystick through the ADC (independent of the encoder)."""
+        self.joystick_ok = False
+        try:
+            self.adc = make_adc(self.cfg)
+            if self.adc is None:
+                raise RuntimeError("no ADC configured (adc='none')")
+            threading.Thread(target=self._joystick_loop, daemon=True).start()
+            self.joystick_ok = True
+        except Exception as exc:
+            self.joystick_error = exc
 
     # --- event helpers ---
     def _rotate(self, direction):
@@ -278,3 +305,112 @@ class HardwareInput:
         self._stop.set()
         if self.adc is not None:
             self.adc.close()
+
+
+# --- bring-up diagnostics -------------------------------------------------
+def _probe_environment():
+    """Report everything the physical controls depend on, one line each."""
+    import glob
+    import os
+
+    print("== environment ==")
+    spidevs = sorted(glob.glob("/dev/spidev*"))
+    print(f"SPI devices        : {spidevs or 'NONE - enable SPI (sudo raspi-config nonint do_spi 0) and reboot'}")
+    for dev in spidevs:
+        readable = os.access(dev, os.R_OK | os.W_OK)
+        print(f"  {dev:<18}: {'read/write ok' if readable else 'NO ACCESS (add the user to the spi group)'}")
+    try:
+        import spidev  # noqa: F401
+        print("python3-spidev     : installed")
+    except Exception as exc:
+        print(f"python3-spidev     : MISSING ({exc}) - sudo apt install python3-spidev")
+    try:
+        import gpiozero
+
+        version = getattr(gpiozero, "__version__", None)
+        if version is None:  # gpiozero 2.x dropped the module attribute
+            try:
+                from importlib.metadata import version as _v
+
+                version = _v("gpiozero")
+            except Exception:
+                version = "installed (version unknown)"
+        print(f"gpiozero           : {version}")
+        try:
+            from gpiozero import Device
+            Device.ensure_pin_factory()
+            print(f"  pin factory      : {type(Device.pin_factory).__name__}")
+        except Exception as exc:
+            print(f"  pin factory      : FAILED ({exc})")
+            print("                     on Raspberry Pi OS Trixie install: sudo apt install python3-lgpio")
+    except Exception as exc:
+        print(f"gpiozero           : MISSING ({exc}) - sudo apt install python3-gpiozero")
+    groups = set(os.popen("id -nG").read().split())
+    needed = ["gpio", "spi", "i2c"]
+    print("group membership   : " + ", ".join(
+        f"{g}={'yes' if g in groups else 'NO'}" for g in needed)
+        + ("" if all(g in groups for g in needed)
+           else "   -> sudo usermod -aG gpio,spi,i2c $USER, then log out and back in"))
+
+
+def _probe(preset="psi-mcu-box", seconds=60):
+    """Live view of the raw hardware: move the stick and turn the knob."""
+    cfg = config_for(preset)
+    _probe_environment()
+    print(f"\n== wiring (preset {preset!r}) ==")
+    print(f"encoder A/B/push   : GPIO {cfg['enc_a']}/{cfg['enc_b']}/{cfg['enc_sw']}")
+    print(f"extra button       : GPIO {cfg['extra_sw']}")
+    print(f"joystick X/Y       : ADC CH{cfg['joy_x_chan']}/CH{cfg['joy_y_chan']}"
+          f"   button: CH{cfg['joy_sw_chan']}")
+
+    events = []
+
+    class _Recorder:
+        def encoder_rotate(self, d): events.append(f"encoder {'CW' if d > 0 else 'CCW'}")
+        def encoder_short_press(self): events.append("OK (short press)")
+        def encoder_long_press(self): events.append("DISARM (long press)")
+        def jog_start(self, d): events.append(f"jog start {d:+d}")
+        def jog_stop(self): events.append("jog stop")
+
+    print("\n== live ==  move the joystick, turn and press the knob;  Ctrl-C to stop")
+    hw = HardwareInput(_Recorder(), preset=preset)
+    try:
+        end = time.time() + seconds
+        while time.time() < end:
+            if hw.adc is not None:
+                try:
+                    x = hw.adc.read_frac(cfg["joy_x_chan"])
+                    y = hw.adc.read_frac(cfg["joy_y_chan"])
+                    sw = hw.adc.read_frac(cfg["joy_sw_chan"]) if cfg["joy_sw_chan"] is not None else -1
+                    raw = (f"X {x:5.3f} [{'#' * int(x * 20):<20}]  "
+                           f"Y {y:5.3f} [{'#' * int(y * 20):<20}]  SW {sw:5.3f}")
+                except Exception as exc:
+                    raw = f"ADC read failed: {exc}"
+            else:
+                raw = "no ADC"
+            last = events[-1] if events else "-"
+            print(f"\r{raw}  last event: {last:<22}", end="", flush=True)
+            time.sleep(0.15)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        hw.close()
+        print("\n\n== events seen ==")
+        for e in events[-20:] or ["(none - no encoder turns or stick movement registered)"]:
+            print("  " + e)
+        print("\nCentre position should read X/Y near 0.5; full deflection near 0.0 and 1.0.")
+        print("If X and Y move together, the two analog lines are shorted (a known fault of this box).")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description="control-box hardware probe")
+    ap.add_argument("--probe", action="store_true", help="live raw view of ADC + encoder")
+    ap.add_argument("--preset", default="psi-mcu-box")
+    ap.add_argument("--seconds", type=float, default=60)
+    a = ap.parse_args()
+    if a.probe:
+        _probe(a.preset, a.seconds)
+    else:
+        _probe_environment()
