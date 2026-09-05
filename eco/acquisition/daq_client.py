@@ -91,15 +91,26 @@ class Daq(Assembly):
     ``append_start_status_to_scan``, ``append_status_to_scan_and_store``)
     initialize this session's namespace and read every status channel from
     it -- minutes of ``init_all()`` plus a full CA fan-out, per session.
-    Passing ``status_server="http://<host>:<port>"`` instead takes those
-    values from a long-running ``eco.status_server`` process that already
-    holds an initialized namespace, and has *it* write ``status.json`` into
-    the run's aux directory; this class still uploads that file with
-    :meth:`append_aux`, so the file, its location and its contents are
-    unchanged either way and the two paths are interchangeable per run. If
-    the server is unreachable or still initializing, the callbacks warn and
-    fall back to the local mechanism -- unless ``status_server_strict=True``.
-    See ``eco/status_server/README.md``.
+    Passing ``status_server="http://<host>:<port>"`` instead hands the whole
+    job -- snapshot, write ``status.json``, upload it to the run -- to a
+    long-running ``eco.status_server`` process that already holds an
+    initialized namespace, and returns without waiting for any of it
+    (``status_server_async``, on by default). Measured on bernina: 0.03 s per
+    callback against ~22 s when this class waited. The file, its location and
+    its contents are unchanged either way, so the two paths are
+    interchangeable per run.
+
+    Whether the server is used is decided once per scan, from ``/health``:
+    it has to be reachable, ``ready``, and its namespace has to have been
+    built less than ``status_server_max_age`` (12 h) ago -- a long-lived
+    server drifts, since ``AdjustableMemory``/``AdjustableFS`` values a
+    scientist changes in their own session never reach it. Too old, and
+    ``status_server_stale_action`` decides: ``"ask"`` (default) prompts with
+    a 20 s timeout and restarts the server unless told to use the local
+    namespace instead. Anything unusable -- no server, unreachable, still
+    initializing -- prints why and falls back to initializing and reading
+    this session's namespace, exactly as before, unless
+    ``status_server_strict=True``. See ``eco/status_server/README.md``.
     """
 
     def __init__(
@@ -130,6 +141,10 @@ class Daq(Assembly):
         status_server_snapshot_timeout=180.0,
         status_server_strict=False,
         status_server_wait_ready=1800,
+        status_server_max_age=12 * 3600,
+        status_server_stale_action="ask",
+        status_server_stale_timeout=20.0,
+        status_server_async=True,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -203,6 +218,23 @@ class Daq(Assembly):
         # for testing the server path itself.
         self.status_server_strict = status_server_strict
         self.status_server_wait_ready = status_server_wait_ready
+        # How old the server's namespace may be before this session stops
+        # trusting it and reads its own instead. The server holds one
+        # initialized namespace for as long as it runs, and some of what
+        # get_status() reports is not re-read from hardware on every
+        # snapshot - AdjustableMemory/DetectorMemory values are
+        # process-local, and a component that lost its IOC stays as it was.
+        # None disables the check (always use the server when it answers).
+        self.status_server_max_age = status_server_max_age
+        # What to do when it is too old: "ask" (prompt, with a timeout),
+        # "restart" (refresh it and wait), "local" (use this session's
+        # namespace instead), "use" (trust it anyway).
+        self.status_server_stale_action = status_server_stale_action
+        self.status_server_stale_timeout = status_server_stale_timeout
+        # Have the server take the snapshot, write status.json AND upload it
+        # to the run in the background, instead of making the scan wait for
+        # all three. See Daq.write_status / POST /status/capture.
+        self.status_server_async = status_server_async
         if not rate_multiplicator == "auto":
             print(
                 "warning: rate multiplicator automatically determined from event_master!"
@@ -1130,6 +1162,303 @@ class Daq(Assembly):
         print("         falling back to the local namespace mechanism.")
         return None
 
+    def use_status_server(self, verbose=False):
+        """Whether this session should take status from the server right now.
+
+        Three conditions, all checked live rather than assumed, because a
+        long-running server is exactly the thing that can be up but no longer
+        worth believing:
+
+        1. one is configured at all;
+        2. it answers /health and reports ``ready``;
+        3. its namespace was (re)built less than ``status_server_max_age``
+           ago (12 h by default).
+
+        The age check is the substantive one. The server holds a single
+        initialized namespace for its whole lifetime; a snapshot re-reads
+        every EPICS channel, but `AdjustableMemory`/`DetectorMemory` values
+        are process-local to the server and an `AdjustableFS` setting a
+        scientist changed in their own session is not visible to it. That
+        drift grows with uptime, so past some age this session is better off
+        paying for its own `get_status()` than recording a plausible-looking
+        stale one. Set ``status_server_max_age=None`` to switch the check
+        off.
+
+        Never raises: an unreachable server is a "no", which is the whole
+        point of the fallback.
+        """
+        client = self.status_client
+        if client is None:
+            return False
+        try:
+            health = client.health()
+        except Exception as exc:
+            if verbose:
+                print(f"status server: not reachable ({type(exc).__name__}), "
+                      "using the local namespace.")
+            return False
+        if not health.get("ready"):
+            if verbose:
+                print(f"status server: state '{health.get('state')}', "
+                      "using the local namespace.")
+            return False
+        max_age = self.status_server_max_age
+        if max_age is None:
+            return True
+        built_at = health.get("last_init_finished")
+        if built_at is None:
+            # ready but no build timestamp: nothing to judge staleness by,
+            # so treat it as unusable rather than silently trusting it.
+            if verbose:
+                print("status server: ready but reports no build time, "
+                      "using the local namespace.")
+            return False
+        age = time.time() - built_at
+        if age <= max_age:
+            return True
+        return self._handle_stale_status_server(age, max_age, verbose=verbose)
+
+    def _handle_stale_status_server(self, age, max_age, verbose=True):
+        """The server is up but its namespace is older than we trust.
+
+        Both ways out cost minutes - restarting the server re-runs
+        init_all() there, falling back re-runs it here - so this is a real
+        question rather than something to decide silently. Asked with a
+        timeout, because a scan started from a script has nobody to answer
+        it; the timeout takes the restart, since that is the option that
+        leaves the next run (and every other session's) fast rather than
+        making each one pay locally.
+        """
+        action = self.status_server_stale_action
+        msg = (
+            f"status server: its namespace was built {age/3600:.1f} h ago, "
+            f"older than the {max_age/3600:.1f} h limit."
+        )
+        if action == "use":
+            if verbose:
+                print(msg + " Using it anyway (status_server_stale_action='use').")
+            return True
+        if action == "local":
+            if verbose:
+                print(msg + " Using this session's namespace instead.")
+            return False
+        if action == "ask":
+            timeout = self.status_server_stale_timeout
+            print(colorama.Fore.YELLOW + msg + colorama.Fore.RESET)
+            try:
+                answer = inputimeout.inputimeout(
+                    prompt=(
+                        f"Restart it now and wait (a few minutes), or use this "
+                        f"session's namespace? [R/l] "
+                        f"({timeout:.0f} s -> restart): "
+                    ),
+                    timeout=timeout,
+                )
+            except inputimeout.TimeoutOccurred:
+                answer = ""
+            except Exception:
+                # no tty (a script, a service, a captured pipe): treat it as
+                # nobody there to answer rather than failing the scan.
+                answer = ""
+            if answer.strip().lower().startswith(("l", "n")):
+                print("  -> using this session's namespace.")
+                return False
+        elif action != "restart":
+            print(msg + f" Unknown status_server_stale_action "
+                        f"{action!r}; using this session's namespace.")
+            return False
+
+        print("  -> restarting the status server and waiting for it ...")
+        try:
+            health = self.status_client.reinit(
+                wait=True, progress=True, timeout=self.status_server_wait_ready
+            )
+        except Exception as exc:
+            self._status_server_failed("restarting a stale server", exc)
+            return False
+        print(
+            f"status server refreshed: {health.get('n_initialized')}/"
+            f"{health.get('n_target_names')} components, "
+            f"{health.get('n_failed')} failed."
+        )
+        return True
+
+    def _write_status_locally(self, payload, runno, pgroup):
+        """Write `payload` (the whole `{block: get_status()}` mapping) to the
+        run's aux directory and return the path. Shared by the two scan
+        callbacks and by `write_status`, which all wrote their own copy of
+        this before."""
+        tmpdir = Path(
+            f"/sf/{self.instrument or 'bernina'}/data/{pgroup}"
+            f"/res/run_data/daq/run{runno:04d}/aux"
+        )
+        ensure_dir(tmpdir)
+        statusfile = tmpdir / "status.json"
+        with open_group_writable(statusfile, "w") as f:
+            json.dump(payload, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+        return statusfile
+
+    def write_status(
+        self,
+        pgroup=None,
+        run_number=None,
+        key="status_run_start",
+        use_server=None,
+        upload=True,
+    ):
+        """Capture the namespace status and write it into one run's aux
+        directory, outside of a scan.
+
+        The standalone form of what the scan callbacks do: use it to attach
+        status to a run that was taken without one, to re-capture it after
+        fixing a component, or to record the state of the instrument against
+        an arbitrary run number.
+
+        pgroup / run_number default to this Daq's pgroup and the broker's
+        current run number.
+
+        use_server: None (default) asks :meth:`use_status_server` - the
+        server is used when it is up and its namespace is fresh enough.
+        True forces it (and, with ``status_server_strict``, makes a failure
+        an error rather than a fallback); False always reads the local
+        namespace.
+
+        upload: also hand the file to the broker with :meth:`append_aux`, so
+        it lands in the run's raw aux folder. That is what makes it part of
+        the run rather than just a file in res/.
+
+        Returns the path written.
+        """
+        if pgroup is None:
+            pgroup = self.pgroup
+        if run_number is None:
+            run_number = self.get_last_run_number(pgroup=pgroup)
+        run_number = int(run_number)
+
+        if use_server is None:
+            use_server = self.use_status_server(verbose=True)
+
+        statuspath = None
+        if use_server:
+            if self.status_server_async:
+                job = self._capture_on_server(key, run_number, pgroup)
+                if job is not None:
+                    # a standalone call should land before it returns, unlike
+                    # a scan callback which deliberately does not wait
+                    try:
+                        done = self.status_client.wait_write_job(
+                            job["job_id"],
+                            timeout=self.status_server_snapshot_timeout,
+                        )
+                        return Path(done.get("path") or job["path"])
+                    except Exception as exc:
+                        self._status_server_failed("waiting for the capture", exc)
+            else:
+                result = self._status_from_server(key, run_number, pgroup)
+                if result is not None:
+                    _, statuspath = result
+
+        if statuspath is None:
+            # either no server, or it failed and strict mode let us continue
+            namespace_status = self.namespace.get_status(
+                base=None, raise_on_incomplete=False
+            )
+            payload = {key: namespace_status}
+            existing = Path(
+                f"/sf/{self.instrument or 'bernina'}/data/{pgroup}"
+                f"/res/run_data/daq/run{run_number:04d}/aux/status.json"
+            )
+            if existing.exists():
+                # match the server's merge behaviour: adding status_run_end
+                # must not drop the status_run_start already on disk.
+                try:
+                    prior = json.loads(existing.read_text())
+                    if isinstance(prior, dict):
+                        prior.update(payload)
+                        payload = prior
+                except (ValueError, OSError):
+                    pass
+            statuspath = str(self._write_status_locally(payload, run_number, pgroup))
+
+        if upload and statuspath:
+            self.append_aux(statuspath, pgroup=pgroup, run_number=run_number)
+        return Path(statuspath)
+
+    def _status_server_ok_for_this_scan(self, scan):
+        """Decide once per scan whether the server is used, and remember it.
+
+        The decision involves a /health round trip and possibly a prompt, so
+        it must not be re-taken between the start and end callbacks of the
+        same scan: a run whose start status came from the server and whose
+        end status came from the local namespace would be quietly
+        inconsistent.
+        """
+        if self.status_client is None:
+            return False
+        cache = getattr(scan, "_eco_status_server_ok", None)
+        if cache is None:
+            cache = self.use_status_server(verbose=True)
+            if not cache:
+                print(
+                    "Recording run status from this session's namespace "
+                    "instead (the local, slower path)."
+                )
+            try:
+                scan._eco_status_server_ok = cache
+            except Exception:
+                pass  # a scan object that will not take an attribute
+        return cache
+
+    def _server_status_for_scan(self, scan, key, runno, pgroup):
+        """Ask the server for this run's status block. True if it took care
+        of it, False to fall back to the local path.
+
+        With `status_server_async` (the default) the server also writes and
+        uploads the file, and this returns without waiting for any of it -
+        which is the point: on bernina it turns ~22 s of scan-boundary dead
+        time into one round trip.
+        """
+        cs = scan.counter_scratch(self.name)
+        if self.status_server_async:
+            # keep_status only for the start block: it is the one the run
+            # table fills itself from, and holding the values for a block
+            # nobody collects would just be memory sitting on the server.
+            job = self._capture_on_server(
+                key, runno, pgroup, keep_status=(key == "status_run_start")
+            )
+            if job is None:
+                return False
+            cs.setdefault("namespace_status", {})[key] = {
+                "status": {}, "status_channels": {},
+                "written_by_status_server": job.get("path"),
+                "job_id": job.get("job_id"),
+            }
+            cs.setdefault("status_jobs", {})[key] = job
+            print(f"status: {key} delegated to {self.status_client.base_url} "
+                  f"-> {job.get('path')}")
+            return True
+
+        result = self._status_from_server(key, runno, pgroup)
+        if result is None:
+            return False
+        namespace_status, statuspath = result
+        cs.setdefault("namespace_status", {})[key] = namespace_status
+        if statuspath:
+            self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
+        return True
+
+    def _capture_on_server(self, key, runno, pgroup, keep_status=False):
+        """Fire-and-forget: the server snapshots, writes status.json and
+        uploads it to the run. Returns the job description, or None on
+        failure (so the caller can fall back)."""
+        try:
+            return self.status_client.capture(
+                pgroup=pgroup, run_number=runno, key=key, upload=True,
+                keep_status=keep_status,
+            )
+        except Exception as exc:
+            return self._status_server_failed(f"capture for {key}", exc)
+
     def _status_from_server(self, key, runno, pgroup, write_async=False):
         """Ask the server for a status snapshot AND to write it into the
         run's aux directory. Returns (status_dict, path) or None on failure.
@@ -1210,23 +1539,16 @@ class Daq(Assembly):
         if not append_status_info:
             return
 
-        if self.status_client is not None:
+        if self._status_server_ok_for_this_scan(scan):
             if hasattr(scan, "daq_run_number"):
                 runno = scan.daq_run_number.get_current_value()
             else:
                 runno = self.get_last_run_number()
             if pgroup is None:
                 pgroup = self.pgroup
-            result = self._status_from_server("status_run_start", runno, pgroup)
-            if result is not None:
-                namespace_status, statuspath = result
-                scan.counter_scratch(self.name)["namespace_status"] = {
-                    "status_run_start": namespace_status
-                }
-                if statuspath:
-                    self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
+            if self._server_status_for_scan(scan, "status_run_start", runno, pgroup):
                 return
-            # result is None -> non-strict fallback, continue below.
+            # fell through -> non-strict fallback, continue below.
 
         # raise_on_incomplete=False: this is a best-effort snapshot of the
         # whole namespace at run start -- an unrelated, incomplete component
@@ -1320,17 +1642,72 @@ class Daq(Assembly):
                 "scan_command": scan.scan_command.get_current_value(),
             }
         )
+        cs = scan.counter_scratch(self.name)
+        block = (cs.get("namespace_status") or {}).get("status_run_start") or {}
+        # ["status"], not the whole block: the run table looks names up as
+        # "bernina.<name>" in a flat mapping, so handing it the get_status()
+        # result meant nothing ever matched and it silently read every
+        # adjustable over CA instead. (It tolerates both shapes now, but the
+        # caller should still pass the right one.)
+        values = block.get("status") or {}
+        job = (cs.get("status_jobs") or {}).get("status_run_start")
+
+        if values or job is None:
+            self._append_run_to_runtable(runno, metadata, values)
+            return
+
+        # The status is being taken on the status server right now. Wait for
+        # it in the background rather than either blocking the scan or
+        # letting the run table fall back to its own CA fan-out - which is
+        # the very cost the server exists to remove.
+        def _later():
+            d = {}
+            try:
+                done = self.status_client.wait_write_job(
+                    job["job_id"],
+                    timeout=self.status_server_snapshot_timeout,
+                    include_status=True,
+                )
+                if done.get("state") == "done":
+                    d = done.get("status") or {}
+                    block["status"] = d
+                else:
+                    print(
+                        "WARNING: status server job for run "
+                        f"{runno} ended '{done.get('state')}' "
+                        f"({done.get('error')}); the run table row is filled "
+                        "by reading the adjustables directly."
+                    )
+            except Exception as exc:
+                print(
+                    f"WARNING: could not collect run {runno} status from "
+                    f"{self.status_client.base_url} ({type(exc).__name__}: "
+                    f"{exc}); the run table row is filled by reading the "
+                    "adjustables directly."
+                )
+            # append either way: a run without a run-table row is worse than
+            # one whose row was filled the slow way.
+            self._append_run_to_runtable(runno, metadata, d)
+
+        Thread(
+            target=_later, name=f"runtable-run{runno}", daemon=True
+        ).start()
+        print(
+            f"run_table: run {runno} will be appended once the status server "
+            "has the values (in the background)."
+        )
+
+    def _append_run_to_runtable(self, runno, metadata, d):
         t_start_rt = time.time()
         try:
-            self.run_table.append_run(
-                runno,
-                metadata=metadata,
-                d=scan.counter_scratch(self.name)["namespace_status"]["status_run_start"],
-            )
-            # self.run_table.update()
-        except:
+            self.run_table.append_run(runno, metadata=metadata, d=d)
+        except Exception:
             print("WARNING: issue adding data to run table")
-        print(f"Runtable appending took: {time.time()-t_start_rt:.3f} s")
+            traceback.print_exc()
+        print(
+            f"Runtable appending took: {time.time()-t_start_rt:.3f} s "
+            f"({len(d)} values from status)"
+        )
 
     def copy_scan_info_to_raw(
         self, scan, pgroup=None, debounce_wait=None, **kwargs
@@ -1416,26 +1793,14 @@ class Daq(Assembly):
         if not len(scan.values_done()) > 0:
             return
 
-        if self.status_client is not None:
+        if self._status_server_ok_for_this_scan(scan):
             if hasattr(scan, "daq_run_number"):
                 runno = scan.daq_run_number.get_current_value()
             else:
                 runno = self.get_last_run_number()
             if pgroup is None:
                 pgroup = self.pgroup
-            result = self._status_from_server("status_run_end", runno, pgroup)
-            if result is not None:
-                namespace_status, statuspath = result
-                # The server merges into the existing status.json, so
-                # status_run_start written at scan start stays put -- the
-                # local path below instead rewrites the whole file from the
-                # copy it kept in counter_scratch.
-                cs = scan.counter_scratch(self.name)
-                cs.setdefault("namespace_status", {})[
-                    "status_run_end"
-                ] = namespace_status
-                if statuspath:
-                    self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
+            if self._server_status_for_scan(scan, "status_run_end", runno, pgroup):
                 scan.set_scan_parameter("status", "aux/status.json")
                 return
 

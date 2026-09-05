@@ -18,7 +18,7 @@ from ..epics_utils import get_from_archive
 from escape import stream
 from time import time, sleep
 from eco.acquisition.utilities import Acquisition
-from eco.acquisition.decorators import scannable
+from eco.detector.bs_counter import bs_scannable
 from eco.epics_utils.detector import CallbackEpics
 
 
@@ -62,7 +62,7 @@ def _ensure_bs_event_worker():
 
 
 @get_from_archive
-@scannable
+@bs_scannable
 class DetectorBsStream:
     def __init__(self, bs_channel, cachannel="same", name=None):
         self.name = name
@@ -192,14 +192,32 @@ class DetectorBsStream:
         return info
 
     def get_current_value(self, force_bsstream=False):
+        # NOTE: deliberately does NOT fall back to the bs-stream path when
+        # there is no PV mirror and force_bsstream=False (unlike a first
+        # draft of this change) -- get_current_value() without
+        # force_bsstream is called on every namespace get_status() fan-out
+        # (see eco/bernina/*, xdiagnostics/intensity_monitors.py etc., which
+        # build many DetectorBsStream children with cachannel="none"), and
+        # silently turning that into a first-time live bs subscription (plus
+        # up to `timeout` seconds blocking for a first shot) would be a
+        # surprising, hard-to-diagnose slowdown for existing status/settings
+        # code that never asked for it. force_bsstream=True is opt-in and
+        # safe to route to the real implementation.
         if not force_bsstream:
             if not hasattr(self, "_pv"):
                 return None
             return self._pv.get()
-        else:
-            raise NotImplementedError(
-                "setup of stream for bs channel not implemented yet"
-            )
+        return self._get_bs_current_value()
+
+    def _get_bs_current_value(self):
+        # Lazily built and cached (not per-call) -- it holds a live bs
+        # subscription; see BsStreamCounter/bs_scannable docstrings for why
+        # that must not be rebuilt on every read.
+        if not hasattr(self, "_bs_counter"):
+            from eco.detector.bs_counter import BsStreamCounter
+
+            self._bs_counter = BsStreamCounter(self, name=self.name)
+        return self._bs_counter.get_current_value()
 
     # def get_stream_state(self, timeout=1):
     #     return pollStream(self.bs_channel, timeout=1)

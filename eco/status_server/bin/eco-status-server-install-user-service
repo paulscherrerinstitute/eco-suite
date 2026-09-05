@@ -84,6 +84,12 @@ cat > "$UNIT" <<EOF
 Description=eco status/monitor server (namespace mode)
 After=network-online.target
 Wants=network-online.target
+# Rate limiting lives in [Unit], not [Service] - systemd logs
+# "Unknown key name 'StartLimitIntervalSec' in section 'Service', ignoring"
+# and silently applies no limit at all if these are put with the other
+# Restart= settings, which is where they look like they belong.
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -95,10 +101,6 @@ ExecStart=$LAUNCHER start
 # clients wait for state=ready themselves - no long TimeoutStartSec needed.
 Restart=on-failure
 RestartSec=10
-# A restart that keeps failing should back off rather than reinitialize the
-# whole namespace in a tight loop.
-StartLimitIntervalSec=600
-StartLimitBurst=5
 
 [Install]
 WantedBy=default.target

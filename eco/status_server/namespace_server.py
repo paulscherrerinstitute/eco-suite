@@ -26,7 +26,7 @@ import uuid
 from flask import Flask, jsonify, request
 
 from .config import NamespaceServerConfig
-from .namespace_store import NamespaceMonitorStore, NotReady, ReinitInProgress
+from .namespace_store import READY, NamespaceMonitorStore, NotReady, ReinitInProgress
 from .storage import json_default, write_monitor_recording, write_status_snapshot
 
 logger = logging.getLogger(__name__)
@@ -261,13 +261,134 @@ def create_namespace_app(
 
         return jsonify(response)
 
+    def _append_aux(pgroup, run_number, files):
+        """Hand files to sf_daq_broker's copy_user_files, the same call
+        Daq.append_aux makes - done here so a client does not have to wait
+        for the snapshot just to learn the path it then uploads itself."""
+        import requests as _requests
+
+        r = _requests.post(
+            config.broker_address_aux.rstrip("/") + "/copy_user_files",
+            json={"pgroup": pgroup, "run_number": int(run_number),
+                  "files": [str(f) for f in files]},
+            timeout=60,
+        )
+        try:
+            body = r.json()
+        except ValueError:
+            body = {"status": "unknown", "message": r.text[:200]}
+        return {"http_status": r.status_code, **body}
+
+    @app.post("/status/capture")
+    def status_capture():
+        """Snapshot, write status.json, and upload it to the run - all in the
+        background, answering immediately with a job id.
+
+        This is the endpoint a scan callback should use. /status/snapshot
+        does the same work but makes the caller wait for it and ships the
+        whole status dict back (~3 MB, ~20 s on bernina); at a scan boundary
+        that is 40 s of dead time per run for a result the client mostly
+        does not read. Here the client pays one round trip and the run does
+        not wait for the beamline's own bookkeeping.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            pgroup = body["pgroup"]
+            run_number = int(body["run_number"])
+        except (KeyError, TypeError, ValueError):
+            return (
+                jsonify({"status": "error",
+                         "message": "'pgroup' and 'run_number' are required"}),
+                400,
+            )
+        if store.state != READY:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "message": f"namespace store is '{store.state}'"}),
+                503,
+            )
+
+        key = body.get("key", "status_run_start")
+        upload = bool(body.get("upload", True))
+        # Keep the status values in the job so the caller can collect them
+        # afterwards without a second fan-out and without reading the file
+        # back over NFS (where they are not visible for some seconds after
+        # the write - the run table needs them, and needs them reliably).
+        keep_status = bool(body.get("keep_status", False))
+        directory = config.data_dir(pgroup, run_number)
+        path = directory / "status.json"
+        job_id = uuid.uuid4().hex
+        with jobs_lock:
+            jobs[job_id] = {
+                "state": "running", "step": "snapshot", "key": key,
+                "pgroup": pgroup, "run_number": run_number,
+                "path": str(path), "started_at": time.time(),
+            }
+
+        def _capture():
+            rec = {}
+            try:
+                t0 = time.time()
+                snap = store.snapshot()
+                rec["snapshot_seconds"] = time.time() - t0
+                rec["n_status"] = len(snap.get("status", {}))
+                with jobs_lock:
+                    jobs[job_id].update({"step": "write", **rec})
+
+                if keep_status:
+                    with jobs_lock:
+                        jobs[job_id]["status"] = snap.get("status", {})
+
+                t0 = time.time()
+                written = write_status_snapshot(
+                    directory, _status_payload(snap), key=key
+                )
+                rec["write_seconds"] = time.time() - t0
+                rec["path"] = str(written)
+                with jobs_lock:
+                    jobs[job_id].update({"step": "upload", **rec})
+
+                if upload:
+                    t0 = time.time()
+                    rec["upload"] = _append_aux(pgroup, run_number, [written])
+                    rec["upload_seconds"] = time.time() - t0
+                rec["state"] = "done"
+            except Exception as exc:  # noqa: BLE001 - reported via the job
+                logger.error("status capture failed", exc_info=True)
+                rec["state"] = "error"
+                rec["error"] = f"{type(exc).__name__}: {exc}"
+            rec["step"] = None
+            rec["finished_at"] = time.time()
+            with jobs_lock:
+                jobs[job_id].update(rec)
+
+        threading.Thread(
+            target=_capture, name=f"status-capture-{job_id[:8]}", daemon=True
+        ).start()
+        return (
+            jsonify({"status": "ok", "job_id": job_id, "path": str(path),
+                     "key": key, "pgroup": pgroup, "run_number": run_number,
+                     "upload": upload}),
+            202,
+        )
+
     @app.get("/status/job/<job_id>")
     def status_job(job_id):
+        want_status = request.args.get("include_status") in ("1", "true", "yes")
         with jobs_lock:
             job = jobs.get(job_id)
-        if job is None:
-            return jsonify({"status": "error", "message": "unknown job id"}), 404
-        return jsonify({"status": "ok", "job": job})
+            if job is None:
+                return jsonify({"status": "error", "message": "unknown job id"}), 404
+            body = dict(job)
+            if want_status:
+                # handed over once: holding a few MB of values per finished
+                # job for the life of the process is how a long-running
+                # service quietly turns into a memory leak.
+                if job.get("state") != "running":
+                    job.pop("status", None)
+            else:
+                body.pop("status", None)
+        return jsonify({"status": "ok", "job": body})
 
     # -- recording ---------------------------------------------------------
 

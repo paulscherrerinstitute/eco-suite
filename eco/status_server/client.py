@@ -168,14 +168,45 @@ class StatusServerClient:
             ok_codes=(200,),
         )
 
-    def write_job(self, job_id: str) -> dict:
-        return self._get(f"/status/job/{job_id}")["job"]
+    def capture(self, pgroup, run_number, key="status_run_start",
+                upload=True, wait=False, timeout=600,
+                keep_status=False) -> dict:
+        """Have the server snapshot, write status.json and upload it to the
+        run - in the background, returning as soon as the job is accepted.
 
-    def wait_write_job(self, job_id: str, timeout=60, poll=0.2) -> dict:
+        This is what a scan callback wants. `snapshot(save=True)` does the
+        same work but the caller waits for all of it and gets the whole
+        status dict back (~3 MB, ~20 s on bernina): 40 s of dead time per
+        run for a result it mostly does not read.
+
+        wait=True blocks until the job finishes, for a standalone call where
+        you do want to know it landed.
+        """
+        body = {"pgroup": pgroup, "run_number": int(run_number),
+                "key": key, "upload": upload, "keep_status": keep_status}
+        started = self._post("/status/capture", body, ok_codes=(200, 202))
+        if not wait:
+            return started
+        return self.wait_write_job(started["job_id"], timeout=timeout)
+
+    def write_job(self, job_id: str, include_status=False) -> dict:
+        suffix = "?include_status=1" if include_status else ""
+        return self._get(f"/status/job/{job_id}{suffix}")["job"]
+
+    def wait_write_job(self, job_id: str, timeout=60, poll=0.2,
+                       include_status=False) -> dict:
+        """Block until a capture/write job finishes.
+
+        include_status collects the status values the job produced along
+        with it - the server hands them over once and then drops them, so
+        ask for them only on the poll that finds the job done.
+        """
         deadline = time.time() + timeout
         while True:
             job = self.write_job(job_id)
             if job["state"] != "running":
+                if include_status:
+                    job = self.write_job(job_id, include_status=True)
                 if job["state"] == "error":
                     raise StatusServerError(
                         f"server-side status write failed: {job.get('error')}"

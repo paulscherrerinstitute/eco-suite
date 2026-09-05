@@ -1100,3 +1100,95 @@ def test_max_value_elements_keeps_waveforms_out(recording_store):
     result = recording_store.stop_recording("r1")
     assert result["n_stored"] == 2
     assert result["n_dropped_too_large"] == 1
+
+
+# --------------------------------------------------------------------------
+# /status/capture: snapshot + write + upload, all off the client's clock
+
+
+def test_capture_returns_immediately_and_does_the_work_in_the_background(
+    app_and_store, tmp_path, monkeypatch
+):
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    posted = []
+    import requests
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"status": "ok", "message": "copying user file(s) finished"}
+
+    monkeypatch.setattr(
+        requests, "post", lambda url, json=None, timeout=None: (
+            posted.append((url, json)), _Resp)[1]
+    )
+
+    client = app.test_client()
+    started = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 3, "key": "status_run_start"},
+    )
+    assert started.status_code == 202
+    job_id = started.get_json()["job_id"]
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done", job
+    path = tmp_path / "p1" / "run0003" / "aux" / "status.json"
+    assert path.exists()
+    assert json.loads(path.read_text())["status_run_start"]["status"]
+
+    # the server, not the client, handed the file to the broker
+    url, body = posted[0]
+    assert url.endswith("/copy_user_files")
+    assert body["pgroup"] == "p1" and body["run_number"] == 3
+    assert body["files"] == [str(path)]
+    assert job["upload"]["status"] == "ok"
+
+
+def test_capture_can_skip_the_upload(app_and_store, tmp_path, monkeypatch):
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    import requests
+
+    monkeypatch.setattr(requests, "post", lambda *a, **kw: pytest.fail("uploaded"))
+    client = app.test_client()
+    job_id = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 4, "upload": False},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+    assert "upload" not in job
+
+
+def test_capture_requires_pgroup_and_run_number(app_and_store):
+    app, _, _ = app_and_store
+    assert app.test_client().post("/status/capture", json={}).status_code == 400
+
+
+def test_capture_is_refused_while_not_ready(fake_module):
+    name, _ = fake_module(names=[f"n{i}" for i in range(10)], init_delay=0.05)
+    store = _store(name)
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    resp = app.test_client().post(
+        "/status/capture", json={"pgroup": "p1", "run_number": 1}
+    )
+    assert resp.status_code == 503
+    assert store.wait_ready(timeout=20)

@@ -4,6 +4,7 @@ import pandas as pd
 import warnings
 
 from eco.utilities.runtable_gsheet import RuntableGsheet
+from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from ..elements.adjustable import AdjustableFS
 from ..elements.memory import Memory
 from subprocess import call
@@ -400,6 +401,13 @@ class Run_Table2:
         else:
             self._google_sheet_api = None
 
+        # append_run/append_pos each run on their own thread and every one of
+        # them does load -> concat -> save on the same pickle, so two
+        # overlapping ones lose a row. Daq now defers append_run until the
+        # status server has the values (a few seconds after scan start -
+        # see Daq._create_runtable_metadata_append_status_to_runtable), which
+        # widens that window enough to be worth closing.
+        self._append_lock = threading.Lock()
         self.__dir__()  # why necessary to run here?
 
     def update(self):
@@ -432,12 +440,13 @@ class Run_Table2:
         metadata,
         d={},
     ):
-        self._data.append_run(runno, metadata, d=d)
-        if self._google_sheet_api is not None:
-            df = self._reduce_df()
-            self._google_sheet_api._upload_all(df=df)
-            # self._rt_gsheet.set_available_keys(self._data.df.keys())
-            self._rt_gsheet.fill_run_table_data(self._data.df)
+        with self._append_lock:
+            self._data.append_run(runno, metadata, d=d)
+            if self._google_sheet_api is not None:
+                df = self._reduce_df()
+                self._google_sheet_api._upload_all(df=df)
+                # self._rt_gsheet.set_available_keys(self._data.df.keys())
+                self._rt_gsheet.fill_run_table_data(self._data.df)
 
     def append_pos(
         self,
@@ -453,10 +462,11 @@ class Run_Table2:
         self,
         name,
     ):
-        self._data.append_pos(name)
-        if self._google_sheet_api is not None:
-            df = self._reduce_df()
-            self._google_sheet_api._upload_all(df=df)
+        with self._append_lock:
+            self._data.append_pos(name)
+            if self._google_sheet_api is not None:
+                df = self._reduce_df()
+                self._google_sheet_api._upload_all(df=df)
 
     def to_dataframe(self):
         return DataFrame(self._data)
@@ -615,17 +625,21 @@ class Run_Table_DataFrame(DataFrame):
         self.df = self[~self.index.duplicated(keep="last")]
 
     def save(self):
+        # ensure_dir, not mkdir(parents=True)+chmod(0o775): the latter
+        # creates run_data/ and run_table/ at the umask-masked 0o755 (nobody
+        # else can add the next entry) and a plain chmod(0o775) on the leaf
+        # clears the setgid bit if it was ever set, so files created inside
+        # afterwards land in the creator's *primary* group instead of the
+        # pgroup - unwritable by anyone else. Both have already happened for
+        # real to a run table on disk (see CLAUDE.md's permissions section).
         data_dir = Path(os.path.dirname(self.fname))
-        if not data_dir.exists():
-            print(
-                f"Path {data_dir.absolute().as_posix()} does not exist, will create it..."
-            )
-            data_dir.mkdir(parents=True)
-            print(f"Tried to create {data_dir.absolute().as_posix()}")
-            data_dir.chmod(0o775)
-            print(f"Tried to change permissions to 775")
+        ensure_dir(data_dir)
         pd.DataFrame(self).to_pickle(self.fname + "tmp")
         call(["mv", self.fname + "tmp", self.fname])
+        # after the mv, not before: to_pickle() creates the temp file with
+        # the umask's 0o644, and the rename carries those bits to the final
+        # name - so the final file, not the temp one, needs fixing up.
+        ensure_group_writable(self.fname)
 
     def load(self):
         if os.path.exists(self.fname):

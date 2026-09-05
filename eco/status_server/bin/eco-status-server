@@ -76,13 +76,48 @@ check_prereqs() {
 
 server_pid() { pgrep -f "$PGREP_PATTERN" | head -1; }
 
+# Is this host's server owned by the systemd user service? If so, start/stop
+# have to go through systemd: killing the process directly makes systemd
+# consider the unit stopped, so a manual restart afterwards leaves an
+# unmanaged process running while `systemctl --user status` says inactive.
+# That is not hypothetical - it is exactly the state this host was found in.
+managed_by_systemd() {
+    # Never true when *this* invocation is the unit's own ExecStart, or the
+    # guard below would make the service refuse to start itself: systemd
+    # would see exit 1, retry, and hit the start-rate limit. systemd sets
+    # INVOCATION_ID in every service's environment and nowhere else.
+    [ -n "${INVOCATION_ID:-}" ] && return 1
+    command -v systemctl >/dev/null 2>&1 || return 1
+    case "$(systemctl --user is-active eco-status-server 2>/dev/null)" in
+        active|activating|reloading) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# The account running the server, when it is not this one. Two accounts
+# writing the same run tree is fine (that is what the group-writable modes
+# in eco.utilities.datafiles are for), but silently stopping someone else's
+# server is not.
+server_owner() {
+    local pid="$1"
+    [ -n "$pid" ] && ps -o user= -p "$pid" 2>/dev/null | tr -d ' '
+}
+
 cmd_start() {
     local background=0
     if [ "${1:-}" = "-b" ] || [ "${1:-}" = "--background" ]; then background=1; shift; fi
     [ "${1:-}" = "--" ] && shift
+    if managed_by_systemd; then
+        die "the systemd user service is running this host's server; use
+  systemctl --user restart eco-status-server
+(or 'systemctl --user stop' it first if you really want to run it by hand)"
+    fi
     check_prereqs
     local pid; pid="$(server_pid || true)"
-    [ -n "$pid" ] && die "already running (pid $pid); use 'restart' or 'stop' first"
+    if [ -n "$pid" ]; then
+        local owner; owner="$(server_owner "$pid")"
+        die "already running (pid $pid, user ${owner:-unknown}); use 'restart' or 'stop' first"
+    fi
 
     export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
     if [ "$background" -eq 1 ]; then
@@ -101,8 +136,17 @@ cmd_start() {
 }
 
 cmd_stop() {
+    if managed_by_systemd; then
+        echo "stopping via systemd (the service owns this host's server)"
+        systemctl --user stop eco-status-server
+        return 0
+    fi
     local pid; pid="$(server_pid || true)"
     [ -z "$pid" ] && { echo "not running"; return 0; }
+    local owner; owner="$(server_owner "$pid")"
+    if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ]; then
+        die "pid $pid belongs to '$owner', not you - stop it from that account"
+    fi
     kill "$pid"
     for _ in $(seq 1 30); do
         sleep 1
@@ -113,7 +157,14 @@ cmd_stop() {
 
 cmd_status() {
     local pid; pid="$(server_pid || true)"
-    if [ -n "$pid" ]; then echo "process: running, pid $pid"; else echo "process: not running on $(hostname -s)"; fi
+    if [ -n "$pid" ]; then
+        local owner; owner="$(server_owner "$pid")"
+        local managed="unmanaged"
+        managed_by_systemd && managed="systemd user service"
+        echo "process: running, pid $pid, user ${owner:-unknown} ($managed)"
+    else
+        echo "process: not running on $(hostname -s)"
+    fi
     # urllib rather than curl|python: the health formatting is a real
     # program, and quoting it through a shell pipeline is how it silently
     # turns into "no answer" the first time someone edits it.
@@ -173,7 +224,13 @@ cmd_wait() {
 case "${1:-}" in
     start)   shift; cmd_start "$@" ;;
     stop)    cmd_stop ;;
-    restart) cmd_stop; shift; cmd_start -b "$@" ;;
+    restart)
+        if managed_by_systemd; then
+            echo "restarting via systemd"
+            systemctl --user restart eco-status-server
+        else
+            cmd_stop; shift; cmd_start -b "$@"
+        fi ;;
     status)  cmd_status ;;
     wait)    shift; cmd_wait "$@" ;;
     logs)    shift; [ "${1:-}" = "-f" ] && tail -f "$LOG" || tail -n 100 "$LOG" ;;

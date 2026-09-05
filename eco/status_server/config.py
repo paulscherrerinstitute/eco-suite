@@ -93,6 +93,11 @@ class NamespaceServerConfig:
     # max_workers for the get_status() fan-out that answers each snapshot -
     # the same knob namespace.get_status(max_workers=...) already has.
     read_workers: int = 20
+    # sf_daq_broker's "slow" broker, the one serving copy_user_files. Set so
+    # the server can attach the status file to the run itself, instead of
+    # handing the path back for the daq client to upload - see
+    # POST /status/capture.
+    broker_address_aux: str = "http://sf-daq:10003"
     instrument: str = "bernina"
     host: str = "0.0.0.0"
     port: int = 8091

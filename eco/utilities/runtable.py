@@ -1,3 +1,19 @@
+"""NOT the run table bernina.py actually uses - see runtable_stripped.py.
+
+`eco/bernina/bernina.py` wires both its ``run_table`` and ``run_table_old``
+namespace components to ``module_name="eco.utilities.runtable_stripped"``,
+which is a July 2025 fork of this file (commit 07e73cb, "chapman start")
+that has since diverged with real fixes this file never received: a
+`Runtable_Manager` wrapper that switches to a fresh per-pgroup run table as
+`config_bernina.pgroup` changes, live Google Sheets sync, and (as of
+2025-10-17) already-correct handling of a `get_status()`-shaped `d=`
+argument - the very bug this file's own `_status_values()` below was added
+to fix, in a file nothing imports.
+
+Kept for history/reference; do not assume changes here reach the live
+namespace. If you are fixing a run-table bug reported from an actual
+bernina session, you almost certainly want runtable_stripped.py instead.
+"""
 from oauth2client.service_account import ServiceAccountCredentials
 from pandas import DataFrame
 import pandas as pd
@@ -313,6 +329,13 @@ class Run_Table2:
             self.channels_gsheet = self._google_sheet_api.gsheet_keys
         else:
             self._google_sheet_api = None
+        # append_run/append_pos each run on their own thread and every one of
+        # them does load -> concat -> save on the same pickle, so two of them
+        # overlapping loses a row. That was already possible; deferring the
+        # append until the status server has the values (see
+        # Daq._create_runtable_metadata_append_status_to_runtable) widens the
+        # window enough that it is worth closing.
+        self._append_lock = threading.Lock()
         self.__dir__()
 
     def append_run(
@@ -333,10 +356,11 @@ class Run_Table2:
         metadata,
         d={},
     ):
-        self._data.append_run(runno, metadata, d=d)
-        if self._google_sheet_api is not None:
-            df = self._reduce_df()
-            self._google_sheet_api._upload_all(df=df)
+        with self._append_lock:
+            self._data.append_run(runno, metadata, d=d)
+            if self._google_sheet_api is not None:
+                df = self._reduce_df()
+                self._google_sheet_api._upload_all(df=df)
 
     def append_pos(
         self,
@@ -352,10 +376,11 @@ class Run_Table2:
         self,
         name,
     ):
-        self._data.append_pos(name)
-        if self._google_sheet_api is not None:
-            df = self._reduce_df()
-            self._google_sheet_api._upload_all(df=df)
+        with self._append_lock:
+            self._data.append_pos(name)
+            if self._google_sheet_api is not None:
+                df = self._reduce_df()
+                self._google_sheet_api._upload_all(df=df)
 
     def to_dataframe(self):
         return DataFrame(self._data)
@@ -600,10 +625,36 @@ class Run_Table_DataFrame(DataFrame):
         # self.order_df()
         self.save()
 
+    @staticmethod
+    def _status_values(d):
+        """The flat ``{full_name: value}`` mapping this class looks names up
+        in, from whatever the caller passed.
+
+        Callers disagree about the shape: `eco.acquisition.counters_tmp`
+        passes ``status["status_run_start"]["status"]`` (flat, correct),
+        while `Daq._create_runtable_metadata_append_status_to_runtable`
+        passed the whole ``get_status()`` result. The lookup below is
+        ``"bernina." + name in d``, which simply never matched the latter -
+        so it silently fell through to reading every adjustable over
+        Channel Access instead, i.e. the run table did its own full CA
+        fan-out at every scan start while apparently being handed the
+        values. Accept both shapes rather than depending on every caller
+        getting it right.
+        """
+        if isinstance(d, dict) and isinstance(d.get("status"), dict):
+            values = dict(d["status"])
+            # older namespaces also carried a separate settings block
+            settings = d.get("settings")
+            if isinstance(settings, dict):
+                values.update(settings)
+            return values
+        return d or {}
+
     def _get_adjustable_values(self, silent=False, d={}, by_id=True, multiindex=False):
         """
         This function gets the values of all adjustables in good adjustables and raises an error, when an adjustable is not connected anymore
         """
+        d = self._status_values(d)
         dat = {}
         if self.parse:
             for aid, adict in self.ids_parsed.items():
@@ -643,8 +694,11 @@ class Run_Table_DataFrame(DataFrame):
                 # snapshot for the run table -- an unrelated incomplete
                 # component elsewhere must not break this.
                 st = namespace.get_status(base=None, raise_on_incomplete=False)
-                d = st["status"]
-                d.update(st["settings"])
+                # .get(): get_status() has not returned a "settings" block
+                # for a while now (see Assembly.get_status), and indexing it
+                # raised KeyError here instead of falling back to status.
+                d = dict(st["status"])
+                d.update(st.get("settings") or {})
             if multiindex:
                 for name in d.keys():
                     devname = name.split(".")[0]

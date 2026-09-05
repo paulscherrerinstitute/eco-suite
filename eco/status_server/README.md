@@ -101,11 +101,44 @@ which polling `ready` alone cannot.
 ## 3. Get status from it
 
 ```python
-c.get_status()      # the same dict as namespace.get_status(base=None)
+from eco.status_server.client import StatusServerClient
+c = StatusServerClient("http://saresb-cons-04:8091")
 
-# ... and have the server write it into a run's aux directory:
+# read it - the same dict as namespace.get_status(base=None)
+st = c.get_status()
+st["status"]["bernina.att.transmission"]
+
+# read it AND have the server write it into a run's aux directory
 c.snapshot(pgroup="p19641", run_number=331, save=True, key="status_run_start")
+c.snapshot(pgroup="p19641", run_number=331, save=True, key="status_run_end")
+# -> .../run0331/aux/status.json, both blocks merged into the one file
 ```
+
+`save=True` needs `pgroup` and `run_number`; `key` is the block name inside
+`status.json` and defaults to `status_run_start`. The call returns the status
+dict plus `saved_to`. About 20 s per call on bernina (~16 500 channels) — it
+is the same `get_status()` fan-out, so budget for it in a scan the way the
+local call was budgeted for.
+
+Same thing from a shell, if you just want to look:
+
+```bash
+curl -s http://saresb-cons-04:8091/health | python -m json.tool
+curl -s -X POST http://saresb-cons-04:8091/status/snapshot \
+     -H 'Content-Type: application/json' \
+     -d '{"save": true, "pgroup": "p19641", "run_number": 331}'
+```
+
+### Reachability and access
+
+The server binds `0.0.0.0`, so any host that can route to it can use it —
+verified from `saresb-cons-01/02/05` against `saresb-cons-04`, a few
+milliseconds each. There is **no authentication**: whoever can reach port
+8091 can also `POST /admin/reinit` and `/admin/restart`. That is fine inside
+the beamline network and is the reason not to expose the port beyond it.
+
+The client is a plain `requests` wrapper, so it works from any session that
+can `import eco` — a scan script, a notebook, another beamline's console.
 
 ## 4. Use it from the DAQ
 
@@ -121,13 +154,77 @@ ECO_STATUS_SERVER=http://saresb-cons-04:8091 scripts/eco-dev -s bernina
 ```
 
 `init_namespace` then waits for the server instead of running `init_all()`
-locally, and the two status callbacks ask the server for a snapshot *and* to
-write `status.json` into the run's aux directory; this side still uploads it
-with `append_aux`, so the file, its location and its contents are unchanged
-either way. If the server is unreachable or still initializing, the callbacks
-warn and fall back to the local mechanism — `status_server_strict=True` turns
-those fallbacks into hard errors instead, which is what you want when testing
-the server path itself.
+locally, and the two status callbacks hand the whole job — snapshot, write
+`status.json`, upload it to the run — to the server and return immediately.
+Measured on bernina: **0.03 s** on the client, against ~22 s per callback when
+it waited (the server still spends ~21 s snapshotting, 0.6 s writing and ~9 s
+uploading, just not on the scan's clock). The file, its location and its
+contents are unchanged either way. Set `status_server_async=False` to go back
+to waiting and getting the status dict returned.
+
+### When the server is not usable
+
+Before each scan the client checks `/health` and decides once (the same
+decision is reused for that scan's end callback, so a run can't have its start
+status from the server and its end status from somewhere else):
+
+| situation | what happens |
+| --- | --- |
+| no server configured | local namespace, as before |
+| unreachable or still initializing | message, falls back to the local namespace |
+| ready, namespace < `status_server_max_age` (12 h) | used |
+| ready but older than that | see below |
+
+A server that has been up for days is the case worth being careful about: a
+snapshot re-reads every EPICS channel, but `AdjustableMemory`/`DetectorMemory`
+values are process-local to the server and an `AdjustableFS` setting someone
+changed in their own session never reaches it. So past 12 h the client asks,
+with a **20 s timeout**:
+
+```
+status server: its namespace was built 20.3 h ago, older than the 12.0 h limit.
+Restart it now and wait (a few minutes), or use this session's namespace? [R/l] (20 s -> restart):
+```
+
+Answer `l` for the local namespace; anything else, or letting it time out,
+restarts the server and waits — the option that leaves the next run, and every
+other session's, fast. `status_server_stale_action` picks a fixed answer
+instead (`"restart"`, `"local"`, `"use"`), and `status_server_max_age=None`
+switches the check off.
+
+`status_server_strict=True` turns every fallback into a hard error instead,
+which is what you want when testing the server path itself.
+
+### Writing status for one run by hand
+
+```python
+daq.write_status(pgroup="p19641", run_number=331)              # status_run_start
+daq.write_status(run_number=331, key="status_run_end")         # merged into the same file
+```
+
+Defaults to this Daq's pgroup and the broker's current run number, decides
+about the server the same way the callbacks do (`use_server=True`/`False`
+overrides), and unlike the callbacks it waits for the file to land before
+returning. `upload=False` writes it without handing it to the broker.
+
+### The run table
+
+`Run_Table_DataFrame._get_adjustable_values` looks names up as
+`"bernina." + name` in a **flat** `{full_name: value}` mapping. `Daq` used to
+hand it the whole `get_status()` result, so nothing ever matched and it
+quietly read every adjustable over Channel Access instead — a second full CA
+fan-out at every scan start, while apparently being handed the values. It now
+gets `...["status_run_start"]["status"]`, and `_status_values()` accepts
+either shape so no caller can reintroduce it.
+
+With the server, those values arrive ~20 s after the scan started, so the row
+is appended from a background thread once the capture job reports them
+(`capture(keep_status=True)` → `wait_write_job(include_status=True)`; the
+server hands them over once and then drops them, so a finished job does not
+sit on a few MB for the life of the process). The values never travel via the
+written file, so NFS visibility does not come into it. If the capture fails
+the row is still appended, filled the old way — a run without a run-table row
+is worse than one filled slowly.
 
 ## 5. Record all monitorable channels during a run
 
@@ -228,6 +325,7 @@ copies of every eco class in the process.
 | `max_value_elements` | (per recording, not config) drop values with more elements than this — see §5 |
 | `host`, `port` | listen address |
 | `data_root_pattern` | where `save=true` writes into |
+| `broker_address_aux` | sf_daq_broker's slow broker, used by `/status/capture` to attach the file to the run itself |
 
 `names`/`exclude_names` exist because `namespace.required_names()` for
 bernina is an `AdjustableFS` backed by a file **shared with every interactive
@@ -245,6 +343,7 @@ to answer them with.
 | `GET /names` | target / all / initialized / failed / lazy / currently-initializing names |
 | `GET /failures` | per-name exception for everything that failed to initialize |
 | `POST /status/snapshot` | a `get_status(base=None)` result; `save`+`pgroup`+`run_number`+`key` also write `status.json`, `write_async` returns a job id |
+| `POST /status/capture` | snapshot **+** write **+** upload to the run, all in the background; answers immediately with a job id. `keep_status` keeps the values for one `GET /status/job/<id>?include_status=1` |
 | `GET /status/job/<id>` | state of an async write |
 | `GET /recording`, `GET /recording/<id>` | list / live counters |
 | `POST /recording/start`, `POST /recording/stop` | start; stop and (by default) write `monitors.esc.h5` |
@@ -286,3 +385,14 @@ Recording numbers and the downthrottling analysis are in DESIGN.md §15.
   pgroup write access — and several bernina components authenticate to
   auxiliary machines over SSH during `__init__`, so its SSH credentials have
   to work non-interactively.
+- **Which account runs the server matters for the run tree.** Writes go
+  through `eco.utilities.datafiles`, so every directory level comes out
+  `2775` and every file `0664` — but a level some *other* account created at
+  `0755` before that (or outside eco) still blocks it, and the failure is a
+  bare `PermissionError` on the run directory. `datafiles.repair_tree()`,
+  run as the account that owns the offending levels, fixes it.
+- Files the server writes appear on other hosts only after the NFS attribute
+  cache expires (seconds). Harmless for `append_aux`, which hands the broker
+  a path rather than reading the file locally, but it is why a freshly
+  written `status.json` can `stat` as missing from the console you are
+  sitting at.
