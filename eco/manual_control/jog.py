@@ -23,19 +23,26 @@ class Jogger:
         self.min_interval = min_interval
         self._software_action = None
         self._adjustable = None
+        self._used_native = False
 
     @staticmethod
     def _has_native_jog(adjustable):
         return callable(getattr(adjustable, "jog", None))
 
-    def start(self, adjustable, direction):
+    def start(self, adjustable, direction, native=True):
         """Begin jogging `adjustable` in `direction` (+1 or -1). No-op if
-        already jogging something (call stop() first)."""
+        already jogging something (call stop() first).
+
+        native=False forces the stepped software jog even on an adjustable
+        that has a continuous jog() - the box offers that as a per-axis
+        choice, because continuous motion is not always what you want.
+        """
         if self._adjustable is not None:
             return
         direction = 1 if direction > 0 else -1
+        self._used_native = native and self._has_native_jog(adjustable)
 
-        if self._has_native_jog(adjustable):
+        if self._used_native:
             adjustable.jog(direction, start=True)
         else:
 
@@ -54,7 +61,7 @@ class Jogger:
     def stop(self):
         if self._adjustable is None:
             return
-        if self._has_native_jog(self._adjustable):
+        if getattr(self, "_used_native", False):
             if callable(getattr(self._adjustable, "jog_stop", None)):
                 self._adjustable.jog_stop()
             else:
@@ -64,6 +71,7 @@ class Jogger:
             self._software_action.stop()
             self._software_action = None
         self._adjustable = None
+        self._used_native = False
 
     @property
     def is_jogging(self):

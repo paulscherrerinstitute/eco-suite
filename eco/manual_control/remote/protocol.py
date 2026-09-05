@@ -7,14 +7,33 @@ RFCOMM serial device (/dev/rfcomm0) in the field.
 Design: the PC side is authoritative (it holds eco + the ManualControlBox).
 The Pi sends small *events*; the PC replies with small *state* deltas and a
 low-rate *value* stream for the armed target. The bulky tree structure is
-sent rarely (snapshot), ideally preloaded over USB, so the Bluetooth link
-only ever carries the light traffic.
+sent rarely (snapshot), so the link only ever carries light traffic.
+
+Who dials: the **box listens** and the eco session connects to it. That way
+the box belongs to no particular console - any machine holding the shared
+token may offer itself, and the operator standing at the box decides who
+gets it. The connection handshake is therefore:
+
+    PC  -> box : hello    {token, host, user, namespace, pid}
+    box -> PC  : accepted {box}            (operator tapped Accept)
+             or  rejected {reason}          (operator declined / bad token)
+    ... normal event/state traffic ...
+    box -> PC  : bye      {reason}          (e.g. taken over by another host)
+
+`bye` is what makes a displaced session close itself instead of lingering.
 """
 
 import json
 
-# --- Pi -> PC : events (each ~30-80 bytes) ---
-EV_HELLO = "hello"  # {"token": "..."} when the server requires one
+# --- PC -> box : connection request ---
+EV_HELLO = "hello"  # {"token", "host", "user", "namespace", "pid"}
+
+# --- box -> PC : verdict on that request, and a parting reason ---
+MSG_ACCEPTED = "accepted"  # {"box": "<box hostname>"}
+MSG_REJECTED = "rejected"  # {"reason": "..."}
+MSG_BYE = "bye"  # {"reason": "..."} sent before the box drops this session
+
+# --- box -> PC : events (each ~30-80 bytes) ---
 EV_ROTATE = "rotate"  # {"dir": +1|-1}  encoder detent
 EV_PRESS = "press"  # encoder short press (OK)
 EV_LONG_PRESS = "long_press"  # encoder long press (disarm)
@@ -24,6 +43,7 @@ EV_STEP = "step"  # {"dir": +1|-1}
 EV_JOG_START = "jog_start"  # {"dir": +1|-1}
 EV_JOG_STOP = "jog_stop"
 EV_GET_SNAPSHOT = "get_snapshot"
+EV_MENU = "menu"  # open/close the box menu (hardware button or touch)
 
 # --- PC -> Pi : state ---
 MSG_SNAPSHOT = "snapshot"  # {"tree": {...}}  full tree model (rare)

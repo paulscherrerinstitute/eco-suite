@@ -22,6 +22,7 @@ REMOTE_FILES = [
     "protocol.py",
     "transport.py",
     "client.py",
+    "box_link.py",
     "pi_client.py",
     "pi_hardware.py",
     "pi_screen.py",

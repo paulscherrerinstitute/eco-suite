@@ -20,7 +20,7 @@ overrides it to match the wiring in that box's build report:
     encoder A / B / push   : GPIO 5 / 6 / 13   (same in both)
     joystick push button   : ADC channel 0     (GPIO 19 in the pendant)
     joystick X / Y         : ADC channel 2 / 1 (A0 / A1 in the pendant)
-    extra momentary button : GPIO 26           (absent in the pendant)
+    extra momentary button : GPIO 26 -> menu   (absent in the pendant)
 """
 
 import threading
@@ -35,7 +35,7 @@ DEFAULT_CONFIG = {
     "joy_sw_active_low": True,  # pressed pulls the ADC reading low
     "joy_sw_threshold": 0.5,  # fraction of full scale counted as "pressed"
     "extra_sw": None,  # GPIO of an extra momentary button (PSI box: 26)
-    "extra_sw_action": "disarm",  # "disarm" or "ok"
+    "extra_sw_action": "menu",  # "menu", "disarm" or "ok"
     "joy_x_chan": 0,
     "joy_y_chan": 1,
     "adc": "auto",  # "auto" | "mcp3008" | "ads1115" | "none"
@@ -65,6 +65,10 @@ PRESETS = {
         "joy_x_chan": 2,
         "joy_y_chan": 1,
         "extra_sw": 26,
+        # Observed on the real box: pushing the stick away from you gave a
+        # falling value, so jogging ran backwards. Flip it here rather than
+        # asking every operator to think in reversed axes.
+        "invert_y": True,
     },
     "pendant": {},  # the Pi Zero 2 W design = plain defaults (ADS1115)
 }
@@ -207,8 +211,8 @@ class HardwareInput:
                 self._buttons.append(jbtn)
 
             if self.cfg["extra_sw"] is not None:
-                action = (self._on_extra_disarm
-                          if self.cfg["extra_sw_action"] == "disarm" else self._on_ok)
+                action = {"disarm": self._on_extra_disarm,
+                          "menu": self._on_menu}.get(self.cfg["extra_sw_action"], self._on_ok)
                 ebtn = Button(self.cfg["extra_sw"])
                 ebtn.when_pressed = action
                 self._buttons.append(ebtn)
@@ -240,6 +244,12 @@ class HardwareInput:
     def _on_extra_disarm(self):
         self.on_activity()
         self.client.encoder_long_press()
+
+    def _on_menu(self):
+        self.on_activity()
+        toggle = getattr(self.client, "toggle_menu", None)
+        if toggle is not None:
+            toggle()
 
     def _on_encoder_hold(self):
         self._held = True

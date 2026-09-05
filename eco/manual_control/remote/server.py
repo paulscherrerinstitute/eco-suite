@@ -26,6 +26,7 @@ def _safe_value(box):
 
 class RemoteControlServer:
     def __init__(self, root, transport, root_name=None, value_hz=5, token=None, **box_kwargs):
+        self.closed_reason = None  # why the box let this session go
         self.root = root
         self.root_name = root_name
         self.box = ManualControlBox(root, root_name=root_name, **box_kwargs)
@@ -93,6 +94,16 @@ class RemoteControlServer:
             b.jog_start(d["dir"])
         elif t == p.EV_JOG_STOP:
             b.jog_stop()
+        elif t == p.EV_MENU:
+            b.toggle_menu()
+        elif t == p.MSG_BYE:
+            # the box handed itself to someone else (or was shut down): stop
+            # rather than sit here looking connected to a box that is gone
+            self.closed_reason = d.get("reason", "closed by the box")
+            print(f"the control box closed this session: {self.closed_reason}")
+            self._stop.set()
+            self.tr.close()
+            return
         elif t in (p.EV_HELLO,):
             pass
         else:
@@ -120,6 +131,11 @@ class RemoteControlServer:
                 mode=b.mode,
                 step=b.step_size,
                 value=_safe_value(b),
+                slots=[{"name": s.name, "step": s.step_size, "motion": s.motion}
+                       for s in getattr(b, "slots", [])],
+                active_slot=getattr(b, "active_slot", 0),
+                in_menu=getattr(b, "in_menu", False),
+                message=getattr(b, "message", None),
             )
         )
 

@@ -48,6 +48,75 @@ RETRY_WINDOW = datetime.timedelta(seconds=60)
 RETRY_COUNT = 6
 RETRY_DELAY = 1.5
 
+# A single, facility-wide pulse-id counter (the injector gun EVR's raw
+# pulse-id readback) that is always live at high rate, regardless of which
+# beamline or experiment is running. Pulse ids are one shared global counter
+# for the whole facility, so this one small scalar channel's ingestion lag
+# stands in for "how far behind is sf-databuffer's ingestion right now" for
+# any BS channel -- without having to repeatedly re-query the (often much
+# larger) channels actually being waited for.
+DATABUFFER_NOW_CHANNEL = "SIN-CVME-TIFGUN-EVR0:RX-PULSEID"
+
+
+def databuffer_lag(channel=DATABUFFER_NOW_CHANNEL, window_seconds=30):
+    """Measure how far behind wall-clock "now" sf-databuffer's ingestion
+    currently is, using the last `window_seconds` of `channel` (a fast,
+    always-live scalar by default).
+
+    Returns `(latest_pulse_id, latest_time, lag_seconds)`, where
+    `latest_time` is a Unix timestamp (seconds). Raises `RuntimeError` if
+    `channel` returned no data at all in the window -- it is then not
+    actually a live channel, or the retrieval service is unreachable/stalled.
+    """
+    source = Daqbuf(backend=DEFAULT_HISTORY_BACKEND, time_type="sec")
+    table = Table()
+    source.add_listener(table)
+    end = datetime.datetime.now(datetime.timezone.utc)
+    start = end - datetime.timedelta(seconds=window_seconds)
+    source.request(
+        dict(channels=[channel], start=datetime2str(start), end=datetime2str(end))
+    )
+    df = table.as_dataframe()
+    if df is None or df.empty:
+        raise RuntimeError(
+            f"no data for {channel!r} in the last {window_seconds}s -- is it "
+            "still a live channel?"
+        )
+    latest_pulse_id = int(df[channel].iloc[-1])
+    latest_time = df.index[-1] / 1e9  # index is a ns timestamp
+    return latest_pulse_id, latest_time, time.time() - latest_time
+
+
+def wait_for_databuffer(
+    target_time, timeout=60, poll_interval=2.0, channel=DATABUFFER_NOW_CHANNEL
+):
+    """Block until sf-databuffer's ingestion has caught up to `target_time`
+    (a `time.time()`-style Unix timestamp), instead of blindly polling the
+    actual data being waited for.
+
+    Replaces a "sleep 1s, retry the real (possibly large) query, repeat up to
+    N times" loop: a first, informed sleep covers the bulk of the lag
+    estimated from a single cheap probe-channel query; after that it
+    re-checks the same cheap probe every `poll_interval` seconds. Raises
+    `TimeoutError` if ingestion has not caught up within `timeout` seconds.
+    Returns the final measured lag (seconds) once caught up.
+    """
+    deadline = time.time() + timeout
+    _, latest_time, lag = databuffer_lag(channel=channel)
+    remaining = target_time - latest_time
+    if remaining > 0:
+        time.sleep(min(remaining + 1.0, timeout))
+    while True:
+        _, latest_time, lag = databuffer_lag(channel=channel)
+        if latest_time >= target_time:
+            return lag
+        if time.time() >= deadline:
+            raise TimeoutError(
+                f"sf-databuffer has not ingested up to the requested time "
+                f"after {timeout}s (still {target_time - latest_time:.1f}s behind)"
+            )
+        time.sleep(poll_interval)
+
 
 def _is_recent(iso_end):
     end = dateutil.parser.parse(iso_end)

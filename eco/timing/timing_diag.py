@@ -11,6 +11,7 @@ from cam_server import PipelineClient
 import colorama
 import datetime
 from pint import UnitRegistry
+import time
 from time import sleep
 from ..xdiagnostics.profile_monitors import Target_xyz
 from eco.xdiagnostics.intensity_monitors import CalibrationRecord
@@ -334,6 +335,7 @@ class TimetoolBerninaUSD(Assembly):
             x = scan_array
         if reverse_direction:
             x = x[::-1]
+        stop_time = None
         try:
             pids_start = []
             pids_stop = []
@@ -344,6 +346,11 @@ class TimetoolBerninaUSD(Assembly):
                 pids_start.append(pid.value)
                 sleep(seconds)
                 pids_stop.append(pid.value)
+            # wall-clock time by which the last needed pulse was produced --
+            # lets retrieve_calibration_data wait for sf-databuffer's
+            # ingestion to catch up to this instant instead of blindly
+            # polling for the data itself
+            stop_time = time.time()
 
         except Exception as e:
             print(e)
@@ -352,22 +359,43 @@ class TimetoolBerninaUSD(Assembly):
 
         print(f"Moving back to inital value of {t0}")
         self.delay.set_target_value(t0)
-        return x, pids_start, pids_stop
+        return x, pids_start, pids_stop, stop_time
 
     def retrieve_calibration_data(
         self,
         pids_start,
         pids_stop,
         additional_channels=["SARES20-CAMS142-M5.bsen_signal_x_profile"],
+        stop_time=None,
+        max_retries=6,
     ):
+        # Wait for sf-databuffer's ingestion to catch up to the scan's end
+        # time using a cheap probe channel, instead of blindly polling the
+        # (often much larger) calibration channels themselves up to 60 times.
+        # This does most of the waiting; the retry loop below is now just a
+        # safety net for per-channel ingestion variance around that estimate.
+        if stop_time is not None:
+            from eco.dbase.archiver import wait_for_databuffer
+
+            try:
+                lag = wait_for_databuffer(stop_time, timeout=60)
+                print(
+                    f"sf-databuffer ingestion caught up (measured lag {lag:.1f}s)"
+                )
+            except Exception as e:
+                print(
+                    f"Could not confirm sf-databuffer ingestion ({e}), "
+                    "falling back to polling the calibration data directly"
+                )
+
         retrieving = True
         i = 1
         source = dh.DataBuffer()
         table = dh.Table()
         source.add_listener(table)
         while retrieving:
-            if i == 60:
-                raise TimeoutError("Retrieval failed after 60 attempts")
+            if i == max_retries:
+                raise TimeoutError(f"Retrieval failed after {max_retries} attempts")
             print(f"Waiting for data to arrive in the Data Buffer: try {i}")
             i = i + 1
             sleep(1)
@@ -435,6 +463,7 @@ class TimetoolBerninaUSD(Assembly):
         to_elog=True,
         path_figure="",
         filepath_data="",
+        bidirectional=True,
     ):
         xu = np.unique(x)
         yu = [
@@ -467,7 +496,24 @@ class TimetoolBerninaUSD(Assembly):
                 color="orange",
             )
         ax0.axvline(0, linestyle="--", color="k")
-        ax0.plot(1e15 * (np.polyval(p, ymed) - x), ymed, color="royalblue")
+        residual = 1e15 * (np.polyval(p, ymed) - x)
+        n_steps = len(x)
+        # bidirectional scans run the forward sweep then immediately retrace
+        # it backward (see calibrate()'s x_f/x_f[::-1] hstack) -- split the
+        # residual at the midpoint so a systematic forth/back offset (e.g.
+        # from stage backlash) is visible as a color difference rather than
+        # hidden inside one averaged-looking scribble.
+        if bidirectional and n_steps > 1:
+            half = n_steps // 2
+            ax0.plot(
+                residual[:half], ymed[:half], color="royalblue", label="→ forth"
+            )
+            ax0.plot(
+                residual[half:], ymed[half:], color="darkorange", label="← back"
+            )
+            ax0.legend(loc="best", fontsize="small")
+        else:
+            ax0.plot(residual, ymed, color="royalblue")
         ax1.set_xlabel("tt_kb.delay (fs)")
         ax1.set_ylabel("edge position (px)")
         at = (
@@ -505,7 +551,17 @@ class TimetoolBerninaUSD(Assembly):
         ax0.set_ylabel("edge position (px)")
         ax2.set_yticks([])
         fig.tight_layout()
-        plt.show()
+        # plt.show() alone only *schedules* the draw -- with ion() active
+        # (set at eco startup) it returns immediately without pumping the GUI
+        # event loop, so nothing actually paints until control returns to the
+        # IPython prompt. That's invisible for a single interactive call, but
+        # in a loop (or anywhere else calibrate() is called back-to-back) the
+        # window stays blank the whole time. plt.pause() forces an immediate
+        # draw + event-loop flush, which is the general-purpose fix for
+        # "update this plot now" from inside a loop/script, regardless of
+        # backend.
+        fig.canvas.draw()
+        plt.pause(0.001)
 
         if to_elog:
             fpath = path_figure + ".jpg"
@@ -714,7 +770,7 @@ class TimetoolBerninaUSD(Assembly):
                 x = None
 
             ##########    scan    ##########
-            x, pids_start, pids_stop = self.scan_calibration(
+            x, pids_start, pids_stop, stop_time = self.scan_calibration(
                 seconds=seconds,
                 scan_range=scan_range,
                 scan_steps=scan_steps,
@@ -727,6 +783,7 @@ class TimetoolBerninaUSD(Assembly):
                 pids_start=pids_start,
                 pids_stop=pids_stop,
                 additional_channels=additional_channels,
+                stop_time=stop_time,
             )
 
             ##########  fit data ##########
@@ -778,6 +835,7 @@ class TimetoolBerninaUSD(Assembly):
                     to_elog=to_elog,
                     path_figure=path_figure,
                     filepath_data=path_calib,
+                    bidirectional=bidirectional,
                 )
 
             ########## print comparison ##########

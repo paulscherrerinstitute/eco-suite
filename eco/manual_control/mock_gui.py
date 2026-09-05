@@ -187,6 +187,93 @@ class MockEncoder(tk.Canvas):
         )
 
 
+class ConnectionRequestDialog(tk.Toplevel):
+    """Asks the operator whether an eco session may drive this box.
+
+    Two situations, deliberately worded differently: nobody is connected
+    (plain accept), or somebody is (taking over drops them). The person
+    holding the box is the only one who can judge that, which is why the
+    box - not the calling machine - decides.
+    """
+
+    def __init__(self, master, request, current=None, font_scale=1.0, on_answer=None):
+        super().__init__(master)
+        self.request = request
+        self.on_answer = on_answer
+        self.answer = None
+        self.title("connection request")
+        # An accent border around a lighter panel: without a window manager
+        # (the box runs fullscreen, undecorated) a plain Toplevel is nearly
+        # invisible against the UI behind it.
+        DIALOG_BG = "#2e2e2e"
+        self.configure(bg=ACCENT)
+        self.transient(master)
+        try:
+            self.grab_set()  # modal: nothing else on the box until answered
+        except tk.TclError:
+            pass
+
+        def f(size, *style):
+            return ("Helvetica", max(7, int(round(size * font_scale))), *style)
+
+        body = tk.Frame(self, bg=DIALOG_BG)
+        body.pack(padx=3, pady=3)
+        taking_over = current is not None
+        tk.Label(body, text="another eco session wants this box" if taking_over
+                 else "an eco session wants to connect",
+                 fg=ACCENT, bg=DIALOG_BG, font=f(14, "bold")).pack(padx=16, pady=(14, 6))
+        tk.Label(body, text=request.describe(), fg=TEXT, bg=DIALOG_BG,
+                 font=("DejaVu Sans Mono", max(8, int(12 * font_scale)))).pack(padx=16)
+        if taking_over:
+            tk.Label(body, text=f"currently driven by\n{current}", fg=MUTED, bg=DIALOG_BG,
+                     font=f(10), justify="center").pack(padx=16, pady=(8, 0))
+            accept_text, reject_text = "Take over", "Keep current"
+        else:
+            accept_text, reject_text = "Accept", "Reject"
+
+        row = tk.Frame(body, bg=DIALOG_BG)
+        row.pack(padx=16, pady=14)
+        tk.Button(row, text=accept_text, font=f(13, "bold"), width=12,
+                  command=lambda: self._answer(True)).pack(side="left", padx=6)
+        tk.Button(row, text=reject_text, font=f(13), width=12,
+                  command=lambda: self._answer(False)).pack(side="left", padx=6)
+        tk.Label(body, text="knob press = accept   ·   long press / Esc = decline",
+                 fg=MUTED, bg=DIALOG_BG, font=f(8)).pack(pady=(0, 8))
+
+        self.bind("<Return>", lambda e: self._answer(True))
+        self.bind("<space>", lambda e: self._answer(True))
+        self.bind("<Escape>", lambda e: self._answer(False))
+        self.protocol("WM_DELETE_WINDOW", lambda: self._answer(False))
+        self.after(50, self._centre)
+        self.focus_set()
+
+    def _centre(self):
+        self.update_idletasks()
+        master = self.master
+        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
+        y = master.winfo_rooty() + (master.winfo_height() - self.winfo_height()) // 3
+        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
+    # the physical encoder drives it too: press accepts, long press declines
+    def encoder_press(self):
+        self._answer(True)
+
+    def encoder_long_press(self):
+        self._answer(False)
+
+    def _answer(self, accept):
+        if self.answer is not None:
+            return
+        self.answer = accept
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        self.destroy()
+        if self.on_answer:
+            self.on_answer(self.request, accept)
+
+
 # Default device screen (4" SPI panel). The "device area" of the mock is
 # clamped to exactly this, so what you see on a laptop is what fits the Pi.
 # Pass screen_size=(w, h) for a different panel - e.g. (800, 480) for the
@@ -297,6 +384,10 @@ class ManualControlApp(tk.Tk):
         tk.Button(r2, text="+", width=2, font=self._font(11), command=self._step_up, takefocus=False).pack(side="left")
         self.disarm_btn = tk.Button(r2, text="Disarm", font=self._font(10), command=self._disarm, state="disabled", takefocus=False)
         self.disarm_btn.pack(side="right")
+        tk.Button(r2, text="\u2630", font=self._font(10), command=self._toggle_menu,
+                  takefocus=False).pack(side="right", padx=4)
+        self.slot_frame = None
+        self._slot_labels = []
         tk.Label(r2, textvariable=self.mode_var, fg=ACCENT, bg=PANEL_BG, font=self._font(9, "bold")).pack(side="right", padx=8)
 
     def _build_status_column(self, status):
@@ -310,6 +401,11 @@ class ManualControlApp(tk.Tk):
         tk.Label(status, textvariable=self.mode_var, fg=ACCENT, bg=PANEL_BG, font=self._font(11, "bold"),
                  wraplength=int(self.screen_w * 0.30), justify="left").pack(anchor="w", padx=8)
 
+        # armed axes: which one the stick drives, and each one's step size
+        self.slot_frame = tk.Frame(status, bg=PANEL_BG)
+        self.slot_frame.pack(anchor="w", fill="x", padx=8, pady=(8, 0))
+        self._slot_labels = []
+
         steprow = tk.Frame(status, bg=PANEL_BG)
         steprow.pack(anchor="w", fill="x", padx=8, pady=(10, 0))
         tk.Label(steprow, text="step", fg=MUTED, bg=PANEL_BG, font=self._font(10)).pack(side="left")
@@ -319,9 +415,13 @@ class ManualControlApp(tk.Tk):
         tk.Button(btnrow, text="\u2212", font=self._font(15), width=3, command=self._step_down, takefocus=False).pack(side="left", expand=True, fill="x")
         tk.Button(btnrow, text="+", font=self._font(15), width=3, command=self._step_up, takefocus=False).pack(side="right", expand=True, fill="x")
 
-        self.disarm_btn = tk.Button(status, text="Disarm", font=self._font(13), command=self._disarm,
-                                    state="disabled", takefocus=False)
-        self.disarm_btn.pack(side="bottom", fill="x", padx=8, pady=8)
+        bottom = tk.Frame(status, bg=PANEL_BG)
+        bottom.pack(side="bottom", fill="x", padx=8, pady=8)
+        tk.Button(bottom, text="\u2630 Menu", font=self._font(13), command=self._toggle_menu,
+                  takefocus=False).pack(side="left", expand=True, fill="x", padx=(0, 4))
+        self.disarm_btn = tk.Button(bottom, text="Disarm", font=self._font(13),
+                                    command=self._disarm, state="disabled", takefocus=False)
+        self.disarm_btn.pack(side="right", expand=True, fill="x")
 
     def _font(self, size, *style):
         """Font tuple scaled by font_scale (bigger text for finger-touch)."""
@@ -329,6 +429,38 @@ class ManualControlApp(tk.Tk):
 
     def _mono(self, size):
         return ("DejaVu Sans Mono", max(6, int(round(size * self.font_scale))))
+
+    def _toggle_menu(self):
+        toggle = getattr(self.box, "toggle_menu", None)
+        if toggle is not None:
+            toggle()
+
+    def _render_slots(self):
+        """One line per armed axis; the active one (stick) is highlighted."""
+        if self.slot_frame is None:
+            return
+        slots = list(getattr(self.box, "slots", []) or [])
+        active = getattr(self.box, "active_slot", 0)
+        if len(self._slot_labels) != len(slots):
+            for widget in self.slot_frame.winfo_children():
+                widget.destroy()
+            self._slot_labels = [
+                tk.Label(self.slot_frame, bg=PANEL_BG, anchor="w", justify="left",
+                         font=self._font(9))
+                for _ in slots
+            ]
+            for label in self._slot_labels:
+                label.pack(anchor="w", fill="x")
+        for index, (slot, label) in enumerate(zip(slots, self._slot_labels)):
+            name = slot["name"] if isinstance(slot, dict) else slot.name
+            step = slot["step"] if isinstance(slot, dict) else slot.step_size
+            motion = slot["motion"] if isinstance(slot, dict) else slot.motion
+            on_stick = index == active
+            marker = "\u25b8" if on_stick else " "
+            label.config(
+                text=f"{marker} {name}  {step:g}  {motion}",
+                fg=ARMED if on_stick else MUTED,
+            )
 
     def _bind_keys(self):
         self.bind_all("<KeyPress-Up>", lambda e: self._key_jog_press(1))
@@ -339,6 +471,7 @@ class ManualControlApp(tk.Tk):
         self.bind_all("<Right>", lambda e: self._encoder_rotate(1))
         self.bind_all("<space>", lambda e: self._encoder_press())
         self.bind_all("<Escape>", lambda e: self._disarm())
+        self.bind_all("<m>", lambda e: self._toggle_menu())
         for k in ("<minus>", "<KP_Subtract>", "<bracketleft>"):
             self.bind_all(k, lambda e: self._step_down())
         for k in ("<plus>", "<equal>", "<KP_Add>", "<bracketright>"):
@@ -470,6 +603,7 @@ class ManualControlApp(tk.Tk):
         elif self.box.cursor != self._last_cursor:
             self._sync_cursor()
         self._last_cursor = self.box.cursor
+        self._render_slots()
         self._update_target()
         self._poll_job = self.after(self.poll_interval_ms, self._poll)
 

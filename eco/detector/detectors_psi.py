@@ -22,6 +22,45 @@ from eco.acquisition.decorators import scannable
 from eco.epics_utils.detector import CallbackEpics
 
 
+_bs_event_worker = None
+
+
+def _ensure_bs_event_worker():
+    """Lazily create the one shared `escape.stream.EventWorker` every
+    `DetectorBsStream.stream` needs, and register it as escape.stream's
+    module-global fallback (`EventWorker(make_default=True)`).
+
+    Must run *before* `stream.EventSource(channel, None)` is constructed
+    below: `EventSource.__init__` only checks for that global fallback once,
+    at construction time - it is not a live/deferred lookup. Previously
+    nothing in eco ever called this ahead of device construction - the
+    `bs_worker` lazy namespace entry in eco/bernina/bernina.py only got
+    touched, if at all, from inside `timetool_data_monitor()`, long after
+    the `DetectorBsStream` devices it was meant to serve were already built
+    - so every `DetectorBsStream.stream.eventWorker` was permanently `None`
+    and `.stream.accumulate()` failed with `AttributeError: 'NoneType'
+    object has no attribute 'registerSource'`. Idempotent: only the first
+    call actually builds a worker, so every `DetectorBsStream` in a session
+    shares the same one.
+
+    NOTE: `bs_worker` (eco/bernina/bernina.py) is now redundant - by the
+    time anything could touch it, some `DetectorBsStream` has essentially
+    always already called this and registered the shared worker - and is
+    also a live footgun: touching it calls `EventWorker(make_default=True)`
+    a *second* time, which unconditionally overwrites escape.stream's global
+    fallback with a fresh, empty instance, silently orphaning every
+    `DetectorBsStream.stream` already built against the first one (they keep
+    their own reference and keep working, but nothing new picks up their
+    worker - e.g. a fresh device built afterwards would get the new, empty
+    one instead). Left untouched here deliberately (a separate, more central
+    file) - flagged for a follow-up rather than changed unilaterally.
+    """
+    global _bs_event_worker
+    if _bs_event_worker is None:
+        _bs_event_worker = stream.EventWorker(make_default=True)
+    return _bs_event_worker
+
+
 @get_from_archive
 @scannable
 class DetectorBsStream:
@@ -38,6 +77,7 @@ class DetectorBsStream:
             self._pv = PV(self.pvname, auto_monitor=False)
         self.alias = Alias(name, channel=bs_channel, channeltype="BS")
 
+        _ensure_bs_event_worker()
         self.stream = stream.EscData(source=stream.EventSource(self.bs_channel, None))
 
     def bs_avail(self):

@@ -1154,96 +1154,47 @@ class Namespace(Assembly):
     # --- physical manual-control box (Raspberry Pi pendant) ---------------
     def start_eco_control_box(
         self,
-        box_host=None,
+        box_host="ecobox",
         port=8791,
-        bind="0.0.0.0",
         token=None,
         token_file="~/.eco/pendant_token",
-        ensure_box_service=True,
         **box_kwargs,
     ):
-        """Serve this namespace to the physical manual-control box.
-
-        One call does both halves: it starts the (background) server this
-        session owns, and - when the box is reachable over ssh - makes sure
-        the box's own client service is actually running:
+        """Offer this namespace to the physical manual-control box.
 
             bernina.namespace.start_eco_control_box()
 
-        Idempotent: calling it again returns the server already running in
-        this session instead of failing on the busy port. Stop it with
-        `.stop_eco_control_box()`.
+        The box listens and we call it, so this works from any console: the
+        operator standing at the box gets an "accept / take over" prompt and
+        decides. If they hand the box to someone else later, this session's
+        connection closes itself and says so.
 
-        box_host: "user@host" of the box, for the service check. Defaults to
-        $ECO_CONTROL_BOX, else the first line of ~/.eco/control_box, else the
-        check is skipped (the box retries the connection by itself anyway, so
-        this is convenience, not a requirement).
+        Idempotent: returns the session already running here rather than
+        opening a second one. Stop it with `.stop_eco_control_box()`.
         """
-        import os
-        import subprocess
-
-        from eco.manual_control.remote.serve import start_box_server
+        from eco.manual_control.remote.serve import connect_to_box
 
         existing = getattr(self, "_control_box_server", None)
         if existing is not None and not existing._stop.is_set():
-            print(f"control box server already running: {existing!r}")
+            print(f"control box session already running: {existing!r}")
             return existing
 
-        server = start_box_server(
-            self, root_name=self.name, port=port, bind=bind,
+        session = connect_to_box(
+            self, root_name=self.name, host=box_host, port=port,
             token=token, token_file=token_file, **box_kwargs
         )
-        self._control_box_server = server
-
-        if ensure_box_service:
-            if box_host is None:
-                box_host = os.environ.get("ECO_CONTROL_BOX")
-            if box_host is None:
-                cfg = os.path.expanduser("~/.eco/control_box")
-                if os.path.exists(cfg):
-                    with open(cfg) as fh:
-                        box_host = fh.read().strip() or None
-            if box_host is None:
-                print("box host unknown (set $ECO_CONTROL_BOX or ~/.eco/control_box) "
-                      "- skipping the service check; the box connects on its own")
-            else:
-                self._ensure_box_service(box_host)
-        return server
-
-    @staticmethod
-    def _ensure_box_service(box_host, unit="eco-control-box", timeout=15):
-        """Best-effort `systemctl start <unit>` on the box over ssh."""
-        import subprocess
-
-        cmd = [
-            "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", box_host,
-            f"systemctl is-active --quiet {unit} && echo already-running || "
-            f"(sudo -n systemctl start {unit} && echo started)",
-        ]
-        try:
-            done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        except (OSError, subprocess.SubprocessError) as exc:
-            print(f"could not reach the box at {box_host} ({exc}); it will connect "
-                  f"by itself once it is up")
-            return None
-        out = (done.stdout or "").strip()
-        if done.returncode == 0 and out:
-            print(f"box service on {box_host}: {out}")
-        else:
-            print(f"box service check on {box_host} failed "
-                  f"({(done.stderr or '').strip()[:120]}); start it there with "
-                  f"'sudo systemctl start {unit}'")
-        return out
+        self._control_box_server = session
+        return session
 
     def stop_eco_control_box(self):
-        """Stop this session's manual-control box server."""
-        server = getattr(self, "_control_box_server", None)
-        if server is None:
-            print("no control box server running in this session")
+        """Stop this session's connection to the manual-control box."""
+        session = getattr(self, "_control_box_server", None)
+        if session is None:
+            print("no control box session running here")
             return
-        server.stop()
+        session.stop()
         self._control_box_server = None
-        print("control box server stopped")
+        print("control box session stopped")
 
     def select_required_names(self):
 

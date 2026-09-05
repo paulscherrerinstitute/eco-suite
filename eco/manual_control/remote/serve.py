@@ -15,12 +15,18 @@ is --serial (Bluetooth RFCOMM or USB-gadget serial).
 """
 
 import argparse
+import getpass
 import os
+import socket
 import subprocess
 import threading
+import time
 
+from . import protocol as p_mod
 from .server import RemoteControlServer
-from .transport import SerialLineTransport, accept_tcp, listen_tcp
+from .transport import SerialLineTransport, accept_tcp, connect_tcp, listen_tcp
+
+DEFAULT_BOX_HOST = "ecobox"
 
 DEFAULT_PORT = 8791
 DEFAULT_TOKEN_FILE = "~/.eco/pendant_token"
@@ -90,108 +96,137 @@ def read_token(token=None, token_file=DEFAULT_TOKEN_FILE):
     return None
 
 
-class BoxServer:
-    """A listening manual-control server running in a background thread.
+class BoxSession:
+    """This eco session's connection to the control box, in the background.
 
-    Started from inside a live eco session, so the control box drives the
-    very same Adjustables/Assemblies as the shell (a separate `serve`
-    process would be a second eco instance with its own objects and its own
-    cold import). Accepts one box at a time and keeps listening, so the box
-    can reboot or reconnect freely.
+    The box listens and we call it, so the box is not tied to any console:
+    every machine holding the shared token may offer itself, and whoever is
+    standing at the box accepts or declines. That means a connection goes
+    through three states - dialling, waiting for the operator, connected -
+    and can end at any of them, so `.state` and `.reason` say where it got
+    to instead of leaving you guessing.
 
-        from eco.manual_control import start_box_server
-        box = start_box_server(bernina.namespace)   # -> prints where it listens
+        from eco.manual_control import connect_to_box
+        box = connect_to_box(bernina.namespace)      # asks the box operator
+        box.state        # 'connected' | 'waiting for the operator' | 'closed'
         box.stop()
     """
 
-    def __init__(self, root, listener, root_name=None, token=None, **box_kwargs):
+    def __init__(self, root, host, port, root_name=None, token=None,
+                 identity=None, accept_timeout=120, **box_kwargs):
         self.root = root
         self.root_name = root_name
-        self.listener = listener
+        self.host = host
+        self.port = port
         self.token = token
+        self.identity = identity or {}
+        self.accept_timeout = accept_timeout
         self.box_kwargs = box_kwargs
         self.server = None
-        self.host, self.port = listener.getsockname()[:2]
+        self.state = "dialling"
+        self.reason = None
+        self.box_name = None
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def _accept_loop(self):
-        while not self._stop.is_set():
-            try:
-                transport = accept_tcp(self.listener)
-            except OSError:
-                break
-            if self._stop.is_set():
-                break
-            # Last connection wins. The box is a single device: a new
-            # connection means the previous one is stale (it rebooted, or its
-            # old TCP connection died without a FIN). Waiting for the old one
-            # to end would leave a rebooted box unserved forever, which is
-            # exactly the "box and server cannot find each other" symptom.
-            previous = self.server
-            if previous is not None and not previous._stop.is_set():
-                print("a box reconnected - dropping the previous connection")
-                previous.stop()
-            print(f"manual-control box connected on {self.host}:{self.port}")
-            server = RemoteControlServer(
-                self.root, transport, root_name=self.root_name,
-                token=self.token, **self.box_kwargs
-            )
-            self.server = server
-            server.start()
-            threading.Thread(target=self._watch_disconnect, args=(server,),
-                             daemon=True).start()
+    # --- lifecycle ---
+    def _run(self):
+        try:
+            transport = connect_tcp(self.host, self.port)
+        except OSError as exc:
+            self._finish("closed", f"cannot reach the box at {self.host}:{self.port} ({exc})")
+            return
+        try:
+            transport.write_line(p_mod.encode(
+                p_mod.EV_HELLO, token=self.token, **self.identity))
+        except OSError as exc:
+            self._finish("closed", f"box hung up during the handshake ({exc})")
+            return
 
-    def _watch_disconnect(self, server):
+        self.state = "waiting for the operator"
+        print(f"asked the control box at {self.host}:{self.port} to accept this session "
+              f"- tap Accept on the box")
+        verdict, payload = self._await_verdict(transport)
+        if verdict != p_mod.MSG_ACCEPTED:
+            self._finish("closed", payload.get("reason", "declined at the box"))
+            transport.close()
+            return
+
+        self.box_name = payload.get("box")
+        self.state = "connected"
+        print(f"the control box ({self.box_name}) accepted this session")
+        server = RemoteControlServer(
+            self.root, transport, root_name=self.root_name, **self.box_kwargs)
+        self.server = server
+        server.start()
         server.wait()
-        if server is self.server and not self._stop.is_set():
-            print("manual-control box disconnected")
+        self._finish("closed", server.closed_reason or "the box closed the connection")
+
+    def _await_verdict(self, transport):
+        """Block until the operator answers, or the wait times out."""
+        deadline = time.time() + self.accept_timeout
+        while not self._stop.is_set():
+            if time.time() > deadline:
+                return None, {"reason": f"nobody answered at the box within "
+                                        f"{self.accept_timeout:.0f}s"}
+            try:
+                line = transport.read_line()
+            except OSError as exc:
+                return None, {"reason": f"link lost while waiting ({exc})"}
+            if line is None:
+                return None, {"reason": "the box closed the connection"}
+            try:
+                t, d = p_mod.decode(line)
+            except Exception:
+                continue
+            if t in (p_mod.MSG_ACCEPTED, p_mod.MSG_REJECTED, p_mod.MSG_ERROR):
+                return t, d
+        return None, {"reason": "stopped locally"}
+
+    def _finish(self, state, reason):
+        self.state = state
+        self.reason = reason
+        if not self._stop.is_set():
+            print(f"control box session closed: {reason}")
+        self._stop.set()
 
     @property
     def connected(self):
-        return self.server is not None and not self.server._stop.is_set()
+        return self.state == "connected" and self.server is not None \
+            and not self.server._stop.is_set()
 
     def stop(self):
         self._stop.set()
         if self.server is not None:
             self.server.stop()
-        try:
-            self.listener.close()
-        except OSError:
-            pass
+        self.state = "closed"
+        self.reason = self.reason or "stopped in this session"
 
     def __repr__(self):
-        return (f"<BoxServer {self.host}:{self.port} root={self.root_name!r} "
-                f"connected={self.connected}>")
+        return (f"<BoxSession {self.host}:{self.port} root={self.root_name!r} "
+                f"[{self.state}{'' if not self.reason else ': ' + self.reason}]>")
 
 
-def start_box_server(root, root_name=None, port=DEFAULT_PORT, bind="0.0.0.0",
-                     token=None, token_file=DEFAULT_TOKEN_FILE, **box_kwargs):
-    """Serve `root` (e.g. bernina.namespace) to the control box, in the background."""
+def connect_to_box(root, root_name=None, host=DEFAULT_BOX_HOST, port=DEFAULT_PORT,
+                   token=None, token_file=DEFAULT_TOKEN_FILE, **box_kwargs):
+    """Offer this session to the control box; the operator there accepts it."""
     token = read_token(token, token_file)
-    if bind not in ("127.0.0.1", "localhost") and not token:
-        raise ValueError(
-            f"a token is required to listen on {bind} (this port can drive motors): "
-            f"put the box's token in {token_file} or pass token=..."
-        )
     if root_name is None:
         root_name = getattr(root, "name", None) or getattr(root, "alias", None) or "eco"
-    try:
-        listener = listen_tcp(bind, port)
-    except OSError as exc:
-        raise OSError(
-            f"cannot listen on {bind}:{port} ({exc}). Another eco session is "
-            f"already serving the control box - only one can.\n"
-            f"{describe_port_holder(port)}\n"
-            f"Options: use that session, stop its server there (box.stop()), "
-            f"kill the process, or pass port=<other>."
-        ) from exc
-    server = BoxServer(root, listener, root_name=str(root_name),
-                       token=token, **box_kwargs)
-    print(f"manual-control server listening on {bind}:{port} "
-          f"({'token required' if token else 'NO token'}), serving '{root_name}'")
-    return server
+    identity = {
+        "host": socket.gethostname(),
+        "user": getpass.getuser(),
+        "namespace": str(root_name),
+        "pid": os.getpid(),
+    }
+    return BoxSession(root, host, port, root_name=str(root_name), token=token,
+                      identity=identity, **box_kwargs)
+
+
+# The box used to be the caller and eco the listener; keep the old name
+# working for anything that still uses it.
+start_box_server = connect_to_box
 
 
 def build_root(args):
@@ -199,58 +234,44 @@ def build_root(args):
         import eco.bernina as bernina
 
         return bernina.namespace, "bernina"
-    return _fake()
-
-
-def _fake():
     from ..demo import build_fake_beamline
 
     return build_fake_beamline(), "beamline"
 
 
 def main():
-    ap = argparse.ArgumentParser(description="eco manual-control remote server (PC side)")
+    ap = argparse.ArgumentParser(
+        description="offer this eco session to the manual-control box "
+                    "(the box listens; the operator there accepts)")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--bernina", action="store_true", help="serve the real bernina namespace")
     src.add_argument("--fake", action="store_true", help="serve the offline fake beamline (default)")
-    link = ap.add_mutually_exclusive_group(required=True)
-    link.add_argument("--tcp", type=int, metavar="PORT", help="listen on PORT for a networked box")
-    link.add_argument("--serial", metavar="DEV", help="serial device, e.g. /dev/rfcomm0 or /dev/ttyACM0")
-    ap.add_argument("--bind", default="127.0.0.1", metavar="HOST",
-                    help="address to listen on with --tcp (default 127.0.0.1; use 0.0.0.0 for a networked box)")
-    ap.add_argument("--token", metavar="STR", help="shared secret the box must send; required for a non-loopback --bind")
-    ap.add_argument("--token-file", metavar="PATH", help="read the shared secret from PATH (first line)")
+    ap.add_argument("--box", default=DEFAULT_BOX_HOST, metavar="HOST",
+                    help=f"the control box to call (default {DEFAULT_BOX_HOST})")
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--token", metavar="STR", help="shared secret the box requires")
+    ap.add_argument("--token-file", default=DEFAULT_TOKEN_FILE, metavar="PATH")
+    ap.add_argument("--serial", metavar="DEV",
+                    help="serial link instead of the network (Bluetooth pendant build)")
     args = ap.parse_args()
-
-    token = args.token
-    if args.token_file:
-        with open(os.path.expanduser(args.token_file)) as fh:
-            token = fh.read().strip()
-    if args.tcp and args.bind not in ("127.0.0.1", "localhost") and not token:
-        ap.error("--bind on a network address requires --token or --token-file "
-                 "(this port can drive motors)")
 
     root, name = build_root(args)
 
     if args.serial:
         print(f"serving '{name}' over {args.serial} ...")
-        server = RemoteControlServer(root, SerialLineTransport(args.serial), root_name=name, token=token).start()
+        server = RemoteControlServer(root, SerialLineTransport(args.serial),
+                                     root_name=name).start()
         server.wait()
         return
 
+    session = connect_to_box(root, root_name=name, host=args.box, port=args.port,
+                             token=args.token, token_file=args.token_file)
     try:
-        listener = listen_tcp(args.bind, args.tcp)
-    except OSError as exc:
-        ap.error(f"cannot listen on {args.bind}:{args.tcp} ({exc}).\n"
-                 f"{describe_port_holder(args.tcp)}")
-    print(f"serving '{name}' on {args.bind}:{args.tcp}"
-          f"{' (token required)' if token else ''} (Ctrl-C to stop) ...")
-    while True:
-        tr = accept_tcp(listener)
-        print("client connected")
-        server = RemoteControlServer(root, tr, root_name=name, token=token).start()
-        server.wait()
-        print("client disconnected")
+        while session.state not in ("closed",):
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        session.stop()
+    print(session.reason or "session ended")
 
 
 if __name__ == "__main__":

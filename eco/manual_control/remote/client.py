@@ -37,6 +37,10 @@ class RemoteControlClient:
         self._target = None
         self.mode = "navigate"
         self.step_size = None
+        self.slots = []
+        self.active_slot = 0
+        self.in_menu = False
+        self.message = None
         self._value = None
         self._pending_index = 0
         self._lock = threading.Lock()
@@ -72,6 +76,10 @@ class RemoteControlClient:
                     self.mode = d["mode"]
                     self.step_size = d["step"]
                     self._value = d["value"]
+                    self.slots = d.get("slots", [])
+                    self.active_slot = d.get("active_slot", 0)
+                    self.in_menu = d.get("in_menu", False)
+                    self.message = d.get("message")
                 elif t == p.MSG_VALUE:
                     self._value = d["value"]
                 elif t == p.MSG_SNAPSHOT:
@@ -142,6 +150,9 @@ class RemoteControlClient:
 
     def jog_stop(self):
         self._send(p.EV_JOG_STOP)
+
+    def toggle_menu(self):
+        self._send(p.EV_MENU)
 
     def request_snapshot(self):
         self._send(p.EV_GET_SNAPSHOT)

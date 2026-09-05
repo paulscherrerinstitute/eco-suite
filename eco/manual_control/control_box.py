@@ -37,6 +37,19 @@ class ControlBox(Assembly):
     your session on the console, which is why the box drives the very same
     objects your shell does.
 
+    WHO CALLS WHOM: the box LISTENS and eco sessions call it. The box
+    therefore belongs to no particular console - any machine holding the
+    shared token may offer itself, and the operator standing at the box
+    decides. Two situations, both answered on the box's own screen:
+
+      1. nothing connected: a session calls, the box asks Accept / Reject.
+      2. already connected: another session calls, the box asks Take over /
+         Keep current. Taking over tells the displaced session why, so it
+         closes itself instead of lingering.
+
+    Nothing on the box needs configuring per console, and no console needs
+    ssh access to the box for normal use.
+
     ================================================================
     QUICK START
     ================================================================
@@ -44,10 +57,11 @@ class ControlBox(Assembly):
         bernina.manual_control_box.status()     # is it connected?
         bernina.manual_control_box.stop()
 
-    The box connects out to the console and retries forever, so power-up
-    order does not matter and it reconnects on its own after a restart.
-    Only ONE session can serve it (one TCP port); if another already does,
-    `.competing()` says which process.
+    `.start()` returns immediately and the session then waits for the
+    operator - `.status()` shows "waiting for the operator" until someone
+    taps Accept on the box, then "connected". If the box is later handed to
+    another session, this one closes itself and `.status()` says why.
+    `.competing()` lists which sessions are connected to the box.
 
     ================================================================
     LOGGING IN TO THE BOX
@@ -64,7 +78,7 @@ class ControlBox(Assembly):
     WHAT LIVES WHERE ON THE BOX
     ================================================================
         /opt/eco-control-box/manual_control/   the thin client (no eco)
-        /etc/eco-control-box.env               PC_HOST / PC_PORT it calls
+        /etc/eco-control-box.env               LISTEN_PORT it waits on
         /etc/eco-control-box.token             shared token (permanent)
         systemd unit: eco-control-box          fullscreen app, starts at boot
 
@@ -76,23 +90,21 @@ class ControlBox(Assembly):
     ================================================================
     "THE BOX SHOWS THE WAITING SCREEN"
     ================================================================
-    The box shows a dark waiting screen reading "waiting for the eco
-    session", the host:port it is calling, a retry counter, and its own
-    hostname/IP at the bottom. That screen means the box itself is healthy
-    and nothing is serving it - it retries every 3 s and switches to the
-    control view by itself the moment a server appears. Check, in order:
+    The box shows a dark waiting screen reading "waiting for an eco
+    session", its own hostname:port (where sessions should call it) and its
+    IP addresses. That screen means the box itself is healthy and nobody is
+    driving it; it raises the accept dialog the moment a session calls.
+    Check, in order:
 
-    1. Is a server running here?        .status()  /  .competing()
-    2. Is another session holding it?   .competing() names PID and user;
-                                        stop it there with box.stop(), or
-                                        kill that PID.
-    3. Is the box calling the right host?
-                                        .box_config()  -> PC_HOST/PC_PORT
-                                        (edit /etc/eco-control-box.env, or
-                                        re-run setup_box.sh with the right
-                                        host, then restart the service)
-    4. Token mismatch shows on the server as "rejected client: bad or
-       missing token".
+    1. Did anyone offer it a session?   .start() here, then accept on the box
+    2. Did the request arrive?          the box shows the accept dialog; if
+                                        not, check the box can be reached:
+                                        ping ecobox, and .status() will show
+                                        "cannot reach the box" if not
+    3. Was it declined or handed away?  .status() gives the reason this
+                                        session ended
+    4. Token mismatch shows on the box's journal as "rejected <ip>: bad or
+       missing token", and here as a closed session with that reason.
 
     ================================================================
     "TOUCH WORKS BUT THE KNOB AND STICK DO NOTHING"
@@ -138,14 +150,41 @@ class ControlBox(Assembly):
     ================================================================
     Knob turns move the cursor, press enters a branch or arms a leaf, long
     press disarms. Pressing the knob also cycles mode: NAVIGATE (turn =
-    browse) and STEP (turn = step size). Stick up/down jogs the armed
-    target; left/right navigates. On the touchscreen, tap a row to
-    enter/arm, tap a breadcrumb to jump back up, and use the -/+ and
-    Disarm buttons in the right-hand column.
+    browse) and STEP (turn = step size). Stick up/down jogs the axis the
+    stick is assigned to; left/right navigates. On the touchscreen, tap a
+    row to enter/arm, tap a breadcrumb to jump back up, and use the -/+,
+    Menu and Disarm buttons in the right-hand column.
 
-    Motors with a native jog (MotorRecord, via JOGF/JOGR) are jogged by the
-    IOC itself; everything else is stepped repeatedly by the console, so
-    the link never makes jogging stutter.
+    SEVERAL AXES AT ONCE ("slots"). Arming a second leaf does not replace
+    the first: up to four stay armed, listed in the right-hand column with
+    their own step size and motion mode, the one on the stick marked with
+    an arrow. Beyond four, the newest replaces the one on the stick.
+
+    THE MENU (hardware button GPIO 26, the touch "Menu" button, or the key
+    m) is just another list, so the knob and finger drive it the same way -
+    turn to move, press to choose, long press to go back one level:
+
+        step size: 0.1        pick from the list (or turn the knob in
+                              STEP mode, which does the same thing)
+        motion: jog           jog = continuous (the IOC moves it, for a
+                              MotorRecord or anything with jog()); step =
+                              repeated set_target_value hops of step size
+        stick axis: theta     which armed axis the joystick drives
+        memories              this adjustable's stored memories: pick one
+                              to recall (with a YES confirmation, since it
+                              moves hardware), or save the current state
+        release <name>        drop this axis from the slots
+
+    Step sizes are remembered per adjustable across sessions, in
+    ~/.eco/manual_control_steps.json. A first-time axis takes its step from
+    the object's own `tweak` interval when it has one, else the middle of
+    the box's step list.
+
+    Motors with a native jog (MotorRecord, via JOGF/JOGR - and anything
+    decorated with `jog_option`) are jogged by the IOC itself; everything
+    else is stepped repeatedly by the console, so the link never makes
+    jogging stutter. "motion: step" forces the stepped behaviour even on
+    an axis that could jog continuously.
 
     ================================================================
     UPDATING THE SOFTWARE ON THE BOX
@@ -192,29 +231,34 @@ class ControlBox(Assembly):
             "Pass it explicitly, e.g. manual_control_box.start(bernina.namespace)"
         )
 
-    def start(self, namespace=None, port=None, bind=None, token=None, **box_kwargs):
-        """Serve a namespace to the box, in the background. Returns the server."""
-        from .remote.serve import start_box_server
+    def start(self, namespace=None, port=None, token=None, **box_kwargs):
+        """Offer a namespace to the box; the operator there accepts it."""
+        from .remote.serve import connect_to_box
 
         if self.is_serving:
-            print(f"already serving: {self.server!r}")
+            print(f"already connected: {self.server!r}")
             return self.server
         ns = namespace if namespace is not None else self._resolve_namespace()
-        self.server = start_box_server(
-            ns, root_name=getattr(ns, "name", None), port=port or self.port,
-            bind=bind or self.bind, token=token, token_file=self.token_file,
+        self.server = connect_to_box(
+            ns, root_name=getattr(ns, "name", None), host=self.host,
+            port=port or self.port, token=token, token_file=self.token_file,
             **box_kwargs,
         )
         return self.server
 
     def stop(self):
-        """Stop this session's server (the box falls back to its waiting screen)."""
+        """Disconnect from the box (it falls back to its waiting screen)."""
         if self.server is None:
-            print("no server running in this session")
+            print("no control box session running here")
             return
         self.server.stop()
         self.server = None
-        print("control box server stopped")
+        print("control box session stopped")
+
+    @property
+    def state(self):
+        """dialling / waiting for the operator / connected / closed."""
+        return "idle" if self.server is None else self.server.state
 
     @property
     def is_serving(self):
@@ -225,27 +269,30 @@ class ControlBox(Assembly):
         return bool(self.server is not None and self.server.connected)
 
     # --- who else is serving -------------------------------------------
-    def competing(self, port=None, verbose=True):
-        """Processes holding the box's port - i.e. what stops you serving it.
+    def competing(self, verbose=True):
+        """Which eco sessions are currently connected to the box.
 
-        Returns [(pid, user, cmdline)]. A holder with pid None belongs to
-        another account (the kernel hides its pid from you); find it with
-        `sudo ss -ltnp | grep <port>`.
+        The box decides who drives it, so competition is resolved there, not
+        by a contested port here: a second session simply asks the operator
+        to hand it over. This lists the established connections on the box
+        (needs ssh to it; harmless if that is unavailable).
         """
-        from .remote.serve import who_has_port
-
-        port = port or self.port
-        holders = who_has_port(port)
+        out = self.ssh(f"ss -tnH state established '( sport = :{self.port} )' 2>/dev/null")
+        peers = []
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 4:
+                peers.append(parts[3])
         if verbose:
-            if not holders:
-                print(f"nothing is listening on {port} - the port is free")
-            for pid, user, cmd in holders:
-                mine = " (this session)" if pid == os.getpid() else ""
-                print(f"PID {pid} user {user}{mine}\n    {cmd}")
-            if holders and not self.is_serving:
-                print("\nNot this session. Either stop it in the session that owns it "
-                      "(box.stop()), or kill the PID above.")
-        return holders
+            if peers:
+                print("sessions connected to the box: " + ", ".join(peers))
+            elif "Host key verification failed" in out or "Permission denied" in out:
+                print(f"cannot ask the box over ssh:\n{out.strip()}")
+            else:
+                print("no eco session is connected to the box")
+            if self.is_serving:
+                print(f"this session: {self.server!r}")
+        return peers
 
     # --- the box itself, over ssh ---------------------------------------
     @property
@@ -296,36 +343,29 @@ class ControlBox(Assembly):
 
     # --- eco conventions -------------------------------------------------
     def get_status(self):
-        holders = self.competing(verbose=False)
         return {
-            "serving": self.is_serving,
-            "box_connected": self.is_connected,
-            "endpoint": f"{self.bind}:{self.port}",
+            "state": self.state,
             "box": self.target,
+            "endpoint": f"{self.host}:{self.port}",
+            "connected": self.is_connected,
+            "reason": getattr(self.server, "reason", None),
             "token_file": self.token_file,
             "token_present": os.path.exists(os.path.expanduser(self.token_file)),
-            "port_holders": [(pid, user) for pid, user, _ in holders],
         }
 
     def status(self):
         st = self.get_status()
-        print(f"control box   : {st['box']}")
-        print(f"serving       : {st['serving']} on {st['endpoint']}"
-              f"{' - box CONNECTED' if st['box_connected'] else ''}")
+        print(f"control box   : {st['box']}   (calling {st['endpoint']})")
+        print(f"this session  : {st['state']}"
+              f"{'' if not st['reason'] else '  - ' + st['reason']}")
         print(f"token         : {st['token_file']}"
-              f"{'' if st['token_present'] else '  MISSING - the box will be rejected'}")
-        if not st["serving"]:
-            if st["port_holders"]:
-                print(f"port {self.port} held by: " +
-                      ", ".join(f"PID {p} ({u})" for p, u in st["port_holders"]) +
-                      "   -> .competing()")
-            else:
-                print(f"port {self.port} is free   -> .start() to serve this namespace")
+              f"{'' if st['token_present'] else '  MISSING - the box will reject this session'}")
+        if st["state"] == "idle":
+            print("\n.start() offers this namespace to the box; accept it on the box itself.")
+        elif st["state"] == "waiting for the operator":
+            print("\nTap Accept on the box to hand it to this session.")
         print("\n.manual() prints the full manual (setup, ssh, troubleshooting).")
         return st
 
     def __repr__(self):
-        state = "serving" if self.is_serving else "idle"
-        if self.is_connected:
-            state = "serving, box connected"
-        return f"<ControlBox {self.target} {self.bind}:{self.port} [{state}]>"
+        return f"<ControlBox {self.target} {self.host}:{self.port} [{self.state}]>"

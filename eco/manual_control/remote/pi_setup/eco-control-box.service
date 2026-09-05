@@ -1,10 +1,10 @@
-# Networked (Ethernet/PoE) control box: the PSI "Motor Control Unit" box.
-# Install to /etc/systemd/system/ (setup_box.sh does this for you), then:
-#   sudo systemctl enable --now eco-control-box
+# The control box app: it LISTENS for eco sessions and asks the operator
+# whether to accept each one. Install to /etc/systemd/system/ (setup_box.sh
+# does this), then: sudo systemctl enable --now eco-control-box
 #
-# It connects OUT to the PC running the eco session, retrying forever, so
-# power-up order does not matter and it reconnects by itself whenever the
-# eco session is restarted. Edit PC_HOST/PC_PORT in /etc/eco-control-box.env.
+# Nothing here names a console: any machine holding the shared token may
+# call this box, and whoever holds the box decides. Port in
+# /etc/eco-control-box.env.
 [Unit]
 Description=eco manual-control box (touchscreen + joystick + encoder)
 After=graphical.target network-online.target
@@ -19,7 +19,7 @@ Environment=XAUTHORITY=/home/pi/.Xauthority
 EnvironmentFile=/etc/eco-control-box.env
 WorkingDirectory=/opt/eco-control-box
 ExecStart=/usr/bin/python3 -m manual_control.remote.pi_app \
-    --tcp ${PC_HOST} ${PC_PORT} \
+    --listen ${LISTEN_PORT} \
     --token-file /etc/eco-control-box.token \
     --preset psi-mcu-box --size 800x480 --font-scale 1.4 --fullscreen
 Restart=always

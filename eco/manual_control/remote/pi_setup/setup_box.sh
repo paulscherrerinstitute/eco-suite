@@ -8,8 +8,14 @@
 # It is idempotent - re-run it after copying a newer bundle.
 set -euo pipefail
 
-PC_HOST="${1:-}"
-PC_PORT="${2:-8791}"
+# The box no longer calls a console - it listens and consoles call it - so
+# the only thing to configure is the port. A host given as $1 is accepted
+# and ignored, so older instructions still work.
+if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+    LISTEN_PORT="${1}"
+else
+    LISTEN_PORT="${2:-8791}"
+fi
 DEST="${ECO_DEST_DIR:-/opt/eco-control-box}"
 REHEARSE="${ECO_REHEARSE:-0}"   # test hook: skip the privileged/network steps
 ETC="${ECO_ETC_DIR:-/etc}"      # test hook: where the config/token land
@@ -22,10 +28,6 @@ if [[ -z "$RUN_USER" ]] || ! id -u "$RUN_USER" >/dev/null 2>&1; then
 fi
 : "${RUN_USER:=root}"
 
-if [[ -z "$PC_HOST" ]]; then
-    echo "usage: sudo $0 <pc-host-running-eco> [port]" >&2
-    exit 2
-fi
 if [[ $EUID -ne 0 && "$REHEARSE" != "1" ]]; then
     echo "run with sudo" >&2
     exit 2
@@ -111,8 +113,7 @@ done
 
 echo "== link config =="
 cat > "$ETC/eco-control-box.env" <<ENV
-PC_HOST=$PC_HOST
-PC_PORT=$PC_PORT
+LISTEN_PORT=$LISTEN_PORT
 ENV
 if [[ ! -f "$ETC/eco-control-box.token" ]]; then
     head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$ETC/eco-control-box.token"
@@ -130,16 +131,21 @@ systemctl enable eco-control-box
 
 cat <<DONE
 
-Done. Token (put the SAME string on the PC side):
+Done. This box now LISTENS on port $LISTEN_PORT for eco sessions.
+
+Token - put the SAME string on every console that may drive this box,
+in ~/.eco/pendant_token:
 
     $(cat "$ETC/eco-control-box.token")
 
-On the PC, inside or beside your eco session:
+From any console, inside an eco session:
 
-    python -m eco.manual_control.remote.serve --bernina --tcp $PC_PORT \\
-        --bind 0.0.0.0 --token '$(cat "$ETC/eco-control-box.token")'
+    bernina.manual_control_box.start()
 
-Then on the box:  sudo systemctl start eco-control-box
+then tap Accept on the box. A second console can ask to take over at any
+time; the box asks you before handing it across.
+
+Start it here:    sudo systemctl start eco-control-box
 Logs:             journalctl -u eco-control-box -f
 A reboot is needed once if SPI was just enabled.
 DONE
