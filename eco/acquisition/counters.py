@@ -67,17 +67,48 @@ class CounterValue:
         self.callbacks_step_counting = []
         self.callbacks_end_step = [self.create_arrays, self.plot_arrays]
 
-        def stopani(scan, **kwargs):
-            scan.animation.event_source.stop()
-
+        # Stopping the animation is the one step here that must never be
+        # skipped -- a still-running FuncAnimation timer keeps firing after
+        # the scan is "done" and everything else has been torn down
+        # (monitors stopped, detectors cleared, the next scan's figure
+        # having reused this one's "CounterValue" label via plt.close()),
+        # which is how a lingering animation turns into a crash rather than
+        # just a stale plot. It's listed first so an exception anywhere
+        # else in this list (create_arrays, store_arrays, ...) can't leave
+        # it un-run; stop_animation itself never raises (see its docstring).
         self.callbacks_end_scan = [
+            self.stop_animation,
             self.create_arrays,
             self.stop_monitoring,
             self.clear_detectors,
-            stopani,
             self.store_arrays,
         ]
         self.name = name
+
+    def stop_animation(self, scan=None, **kwargs):
+        """Stop `scan.animation`'s timer for good, without ever raising.
+
+        Safe to call more than once and safe to call after the figure has
+        already been closed: matplotlib's own `Animation` disconnects
+        itself on the figure's close_event and sets `event_source = None`
+        (see `matplotlib.animation.Animation._stop`), so a plain
+        `scan.animation.event_source.stop()` raises `AttributeError` in
+        that case. That used to be a real problem here in two ways: as the
+        last-but-one entry in `callbacks_end_scan`, that AttributeError
+        skipped `store_arrays` (the run's data silently never got saved);
+        and when the same unguarded call ran from the Qt "Fit" toolbar
+        button's click handler, an unhandled Python exception inside a Qt
+        slot aborts the whole interpreter under PySide6/PyQt -- confirmed
+        directly (`Aborted (core dumped)`), not a theoretical concern.
+        """
+        animation = getattr(scan, "animation", None)
+        if animation is None:
+            return
+        try:
+            if animation.event_source is not None:
+                animation.event_source.stop()
+        except Exception:
+            pass
 
     def append_detectors(self, *detectors):
         for detector in detectors:
@@ -261,18 +292,29 @@ class CounterValue:
 
         The fit GUI draws its span selector/preview on top of `axs`, which
         the live animation clears every frame (`ax.cla()`), so starting a
-        fit also stops that animation -- same effect `stopani` already has
-        once the scan itself ends.
+        fit also stops that animation -- same effect `stop_animation`
+        already has once the scan itself ends.
+
+        The whole thing runs inside a try/except: this is a Qt slot when a
+        Qt toolbar is in use, and an unhandled Python exception inside a Qt
+        slot aborts the whole interpreter under PySide6/PyQt (confirmed
+        directly -- not a defensive-programming guess), so nothing here can
+        be allowed to raise back into Qt no matter what goes wrong with the
+        animation, the axes, or escape.fit_gui itself.
         """
 
         def start_fitters(*_):
-            from escape.fit_gui import AxesFitter
+            try:
+                from escape.fit_gui import AxesFitter
 
-            if hasattr(scan, "animation"):
-                scan.animation.event_source.stop()
-            for ax in axs:
-                if ax.lines:
-                    AxesFitter(ax)
+                self.stop_animation(scan)
+                for ax in axs:
+                    if ax.lines:
+                        AxesFitter(ax)
+            except Exception:
+                import traceback
+
+                traceback.print_exc()
 
         toolbar = getattr(scan.fig.canvas.manager, "toolbar", None)
         if toolbar is not None and toolbar.__class__.__name__.startswith(

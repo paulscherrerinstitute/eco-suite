@@ -4,6 +4,12 @@ from time import time, sleep
 
 import numpy as np
 from epics import PV
+from eco.epics_utils.ca_tuning import (
+    CA_CONNECTION_TIMEOUT,
+    CA_INIT_CONNECTION_TIMEOUT,
+    note_successful_read,
+    report_none_read,
+)
 
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
@@ -44,7 +50,7 @@ class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05)
+        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self.name = name
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
         self._resolve_lock = threading.Lock()
@@ -106,7 +112,7 @@ class DetectorPvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05)
+        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 

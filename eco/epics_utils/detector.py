@@ -4,6 +4,14 @@ from time import time, sleep
 
 import numpy as np
 from epics import PV
+from eco.epics_utils.adjustable import _read_pv
+from eco.epics_utils.ca_tuning import (
+    CA_CONNECTION_TIMEOUT,
+    CA_INIT_CONNECTION_TIMEOUT,
+    has_ever_succeeded,
+    note_successful_read,
+    report_none_read,
+)
 
 from eco.acquisition.utilities import Acquisition
 from eco.acquisition.decorators import scannable
@@ -58,7 +66,8 @@ class DetectorPvData(Assembly):
 
     def get_current_value(self):
         if hasattr(self, "_pv"):
-            return self._pv.get()
+            # diagnostics only, see eco.epics_utils.ca_tuning
+            return _read_pv(self._pv, name=self.name)
         else:
             return self.readback.get_current_value()
 
@@ -107,7 +116,7 @@ class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
+        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
         self.name = name
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
         self._resolve_lock = threading.Lock()
@@ -161,7 +170,7 @@ class DetectorPvEnum(Assembly):
             return self._pv_enum(value)
 
     def get_current_value(self):
-        return self.validate(self._pv.get())
+        return self.validate(_read_pv(self._pv, name=self.name))
 
     def __call__(self):
         return self.get_current_value()
@@ -184,12 +193,12 @@ class DetectorPvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
+        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
     def get_current_value(self):
-        return self._pv.get()
+        return _read_pv(self._pv, name=getattr(self, "name", None))
 
     def __repr__(self):
         return self.get_current_value()

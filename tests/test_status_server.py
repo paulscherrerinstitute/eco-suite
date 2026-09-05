@@ -747,11 +747,15 @@ def test_purge_eco_modules_keeps_the_status_server_itself():
     ]
 
 
-def test_status_file_is_group_writable_but_not_executable(tmp_path):
-    directory = tmp_path / "aux"
+def test_status_file_and_every_directory_level_are_group_writable(tmp_path):
+    """Not just the leaf: mkdir(parents=True) creates the intermediate levels
+    at 0o755, so the first account to start a run used to lock every other
+    account out of creating the next one."""
+    directory = tmp_path / "run_data" / "daq" / "run0001" / "aux"
     path = write_status_snapshot(directory, {"status": {"a": 1}, "status_channels": {}})
-    assert path.stat().st_mode & 0o777 == 0o664
-    assert directory.stat().st_mode & 0o777 == 0o775
+    assert path.stat().st_mode & 0o664 == 0o664
+    for level in (directory, directory.parent, directory.parent.parent):
+        assert level.stat().st_mode & 0o770 == 0o770, level
 
 
 def test_retry_passes_run_serially(fake_module):

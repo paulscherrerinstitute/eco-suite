@@ -1,4 +1,10 @@
 from epics import PV
+from eco.epics_utils.ca_tuning import (
+    CA_CONNECTION_TIMEOUT,
+    CA_INIT_CONNECTION_TIMEOUT,
+    note_successful_read,
+    report_none_read,
+)
 import os
 import numpy as np
 import time
@@ -23,16 +29,16 @@ class PvRecord:
         self.alias = Alias(name)
         self.sleeptime = sleeptime
 
-        self._pv = PV(self.Id, connection_timeout=0.05, auto_monitor=True)
+        self._pv = PV(self.Id, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=True)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id, connection_timeout=0.05, auto_monitor=True)
+            self._pvreadback = PV(self.Id, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=True)
             alias_fields = {"set": pvsetname}
         else:
             self._pvreadback = PV(
-                pvreadbackname, connection_timeout=0.05, auto_monitor=True
+                pvreadbackname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=True
             )
             alias_fields = {"set": pvsetname, "readback": pvreadbackname}
 

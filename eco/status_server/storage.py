@@ -20,11 +20,16 @@ be a drop-in addition to, or replacement of, the ``scan_monitor.pkl`` /
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import h5py
 import numpy as np
+
+from eco.utilities.datafiles import (
+    ensure_dir,
+    ensure_group_writable,
+    open_group_writable,
+)
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -64,27 +69,6 @@ def json_default(obj):
     return NumpyEncoder().default(obj)
 
 
-def _ensure_group_writable(path: Path, mode=None):
-    """Best-effort match of an existing convention: aux files/dirs should be
-    group-writable and owned by the pgroup so the daq broker's aux transfer
-    (Daq.append_aux) and other pgroup members can read/write them. Silently
-    ignored on permission failure, same as the existing code.
-
-    Directories need the execute bit, a JSON file does not - hence the
-    explicit mode rather than 0o775 for both."""
-    if mode is None:
-        mode = 0o775 if path.is_dir() else 0o664
-    try:
-        path.chmod(mode)
-    except Exception:
-        pass
-    try:
-        if path.parent.exists() and not path.group() == path.parent.group():
-            shutil.chown(path, group=path.parent.group())
-    except Exception:
-        pass
-
-
 def write_status_snapshot(
     directory: Path, snapshot: dict, key: str = "status_run_start"
 ) -> Path:
@@ -104,8 +88,15 @@ def write_status_snapshot(
     ``status_run_start`` (the daq client keeps both blocks in memory and
     rewrites the whole file; a stateless server has to merge on disk).
     """
-    directory.mkdir(exist_ok=True, parents=True)
-    _ensure_group_writable(directory)
+    # ensure_dir, not mkdir(parents=True)+chmod: this server and the
+    # interactive sessions writing the same run tree are different accounts
+    # (the shared console account, somebody's personal one), and
+    # `parents=True` creates run_data/ and run_data/daq/ at plain 0o755. The
+    # first account to start a run then owns those levels and every other
+    # account gets PermissionError creating the next run directory - which
+    # is exactly what happened here: a server running as gac-bernina could
+    # not write into a tree lemke_h had created.
+    ensure_dir(directory)
 
     if "status" in snapshot and isinstance(snapshot.get("status"), dict):
         block = snapshot
@@ -130,10 +121,8 @@ def write_status_snapshot(
         if isinstance(existing, dict):
             existing.update(payload)
             payload = existing
-    statusfile.write_text(
-        json.dumps(payload, sort_keys=True, cls=NumpyEncoder, indent=4)
-    )
-    _ensure_group_writable(statusfile)
+    with open_group_writable(statusfile, "w") as f:
+        json.dump(payload, f, sort_keys=True, cls=NumpyEncoder, indent=4)
     return statusfile
 
 
@@ -171,8 +160,7 @@ def write_monitor_recording(
     """
     import escape
 
-    directory.mkdir(exist_ok=True, parents=True)
-    _ensure_group_writable(directory)
+    ensure_dir(directory)
 
     # A recording isn't step-based like a scan, so there is exactly one
     # "interval" spanning the whole start/stop window - ArrayTimestamps
@@ -214,7 +202,9 @@ def write_monitor_recording(
                 skipped[alias] = f"{type(exc).__name__}: {exc}"
     finally:
         d.results_file.close()
-    _ensure_group_writable(filepath)
+    # h5py/escape created this one, so fix it after the fact rather than
+    # opening it through open_group_writable.
+    ensure_group_writable(filepath)
     recording["write_report"] = {
         "n_written": len(written),
         "n_skipped": len(skipped),

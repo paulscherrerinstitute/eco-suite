@@ -4,6 +4,13 @@ from enum import IntEnum
 
 import numpy as np
 from epics import PV
+from eco.epics_utils.ca_tuning import (
+    CA_CONNECTION_TIMEOUT,
+    CA_INIT_CONNECTION_TIMEOUT,
+    has_ever_succeeded,
+    note_successful_read,
+    report_none_read,
+)
 
 from eco.aliases import Alias
 from eco.elements.adjustable import (
@@ -31,6 +38,81 @@ from .utilities_epics import CallbackEpics
 # path; see eco/epics/adjustable.py AdjustablePvEnum's docstring and
 # project_vacuum_and_aramis_vacuum.md memory for the full story.
 LAZY_ENUM_RESOLUTION = False
+
+
+
+
+# Both spellings of each auxiliary PV attribute. The classes here store them
+# as `_pvreadback` / `_pvlowlim` / `_pvhighlim`, but `_wait_for_initialisation`
+# had always asked for `_pv_readback` / `_pv_lowlim` / `_pv_highlim` (extra
+# underscore), so every one of those `hasattr` guards was silently False and
+# **only the setpoint PV was ever waited for** - never the readback, which is
+# the channel `get_current_value()` actually reads. Accepting both spellings
+# fixes that without betting on which convention any given class (or an older
+# checkout) uses.
+_AUX_PV_ATTRS = (
+    ("_pvreadback", "_pv_readback"),
+    ("_pvlowlim", "_pv_lowlim"),
+    ("_pvhighlim", "_pv_highlim"),
+)
+
+
+def _iter_auxiliary_pvs(obj):
+    """The readback/limit PVs of `obj`, under either attribute spelling.
+
+    Yields each distinct PV once; missing or None attributes are skipped.
+    """
+    seen = set()
+    for names in _AUX_PV_ATTRS:
+        for attr in names:
+            pv = getattr(obj, attr, None)
+            if pv is not None and id(pv) not in seen:
+                seen.add(id(pv))
+                yield pv
+
+
+def _wait_for_pvs(obj, timeout=None):
+    """Best-effort "are the channels up yet" over an object's setpoint PV and
+    its auxiliary PVs. Never raises: this is a readiness check during
+    namespace init, not a guarantee."""
+    if timeout is None:
+        timeout = CA_INIT_CONNECTION_TIMEOUT
+    seen = set()
+    for pv in [getattr(obj, "_pv", None), *_iter_auxiliary_pvs(obj)]:
+        # dedup across the setpoint too: AdjustablePv points `_pvreadback` at
+        # the setpoint PV when no separate readback name was given.
+        if pv is None or id(pv) in seen:
+            continue
+        seen.add(id(pv))
+        try:
+            pv.wait_for_connection(timeout=timeout)
+        except Exception:
+            pass
+
+
+def _read_pv(pv, name=None):
+    """`pv.get()` plus the silent-None diagnostics, with one behavioural
+    nuance: a channel that has never returned a value in this session is
+    read with the old short budget instead of the raised
+    CA_CONNECTION_TIMEOUT.
+
+    Without that, the trial timeout would make every read of an absent PV
+    cost a full second - and bernina's namespace has plenty of them, read
+    on every get_status() fan-out, i.e. once per scan step. The longer
+    budget exists for a channel that *was* working and is momentarily
+    unreachable (a dropped virtual circuit), which is exactly the case
+    `has_ever_succeeded` identifies.
+    """
+    pvname = getattr(pv, "pvname", None)
+    if not pv.connected and not has_ever_succeeded(pvname):
+        value = pv.get(timeout=CA_INIT_CONNECTION_TIMEOUT)
+    else:
+        value = pv.get()
+    if value is None:
+        report_none_read(pv, name=name)
+    else:
+        note_successful_read(pvname)
+    return value
 
 
 def wait_for_enum_strs(pv, retries=10, delay=0.05):
@@ -66,7 +148,7 @@ def read_pv_value(adjustable, timeout=3.0, attempts=3, description=None):
     Why this is needed at all: pyepics' ``PV.get()`` returns ``None`` when
     ``wait_for_connection()`` fails - it never raises (see
     ``epics/pv.py``'s ``get_with_metadata``). eco's ``AdjustablePv`` builds
-    every PV with ``connection_timeout=0.05`` and its readback with
+    every PV with ``connection_timeout=CA_CONNECTION_TIMEOUT`` and its readback with
     ``auto_monitor=False``, so a read issued shortly after construction has
     a 50 ms budget on a brand-new channel and no monitor cache to fall back
     on. During a concurrent ``Namespace.init_all()`` pass - thousands of
@@ -125,51 +207,47 @@ class AdjustableAtomicPv:
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
         #            )
 
-        self._pv = PV(self.pvname, connection_timeout=0.05, count=element_count, auto_monitor=False)
+        self._pv = PV(self.pvname, connection_timeout=CA_CONNECTION_TIMEOUT, count=element_count, auto_monitor=False)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
             self._pvreadback = PV(
-                self.pvname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                self.pvname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
             pvreadbackname = self.pvname
             self.pvname = self.pvname
         else:
             self._pvreadback = PV(
-                pvreadbackname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                pvreadbackname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
             self.pvname = pvreadbackname
 
         if pvlowlimname:
             self._pvlowlim = PV(
-                pvlowlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                pvlowlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
         else:
             self._pvlowlim = None
         if pvhighlimname:
             self._pvhighlim = PV(
-                pvhighlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                pvhighlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
         else:
             self._pvhighlim = None
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
     def _wait_for_initialisation(self):
-        self._pv.wait_for_connection()
-        if hasattr(self, "_pv_readback") and self._pv_readback:
-            self._pv_readback.wait_for_connection()
-        if hasattr(self, "_pv_lowliself.accuracy = accuracym") and self._pv_lowlim:
-            self._pv_lowlim.wait_for_connection()
-        if hasattr(self, "_pv_highlim") and self._pv_highlim:
-            self._pv_highlim.wait_for_connection()
+        # Explicit short budget rather than the (now much longer)
+        # CA_CONNECTION_TIMEOUT these PVs were built with: this is a
+        # best-effort "is it there yet" during namespace init, and waiting a
+        # full second per absent device would multiply init time by the
+        # number of them. See eco.epics_utils.ca_tuning.
+        _wait_for_pvs(self)
 
     def get_current_value(self, readback=True):
-        if readback:
-            currval = self._pvreadback.get()
-        if not readback:
-            currval = self._pv.get()
-        return currval
+        pv = self._pvreadback if readback else self._pv
+        return _read_pv(pv, name=self.name)
 
     def get_change_done(self):
         """Adjustable convention"""
@@ -238,51 +316,47 @@ class AdjustablePv:
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
         #            )
 
-        self._pv = PV(self.Id, connection_timeout=0.05, count=element_count)
+        self._pv = PV(self.Id, connection_timeout=CA_CONNECTION_TIMEOUT, count=element_count)
         self._currentChange = None
         self.accuracy = accuracy
         if unit:
             self.unit = AdjustableMemory(unit, name="unit")
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id, count=element_count, connection_timeout=0.05, auto_monitor=False)
+            self._pvreadback = PV(self.Id, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
             pvreadbackname = self.Id
             self.pvname = self.Id
         else:
             self._pvreadback = PV(
-                pvreadbackname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                pvreadbackname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
             self.pvname = pvreadbackname
 
         if pvlowlimname:
             self._pvlowlim = PV(
-                pvlowlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                pvlowlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
         else:
             self._pvlowlim = None
         if pvhighlimname:
             self._pvhighlim = PV(
-                pvhighlimname, count=element_count, connection_timeout=0.05, auto_monitor=False
+                pvhighlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
             )
         else:
             self._pvhighlim = None
         self.alias = Alias(name, channel=pvreadbackname, channeltype="CA")
 
     def _wait_for_initialisation(self):
-        self._pv.wait_for_connection()
-        if hasattr(self, "_pv_readback") and self._pv_readback:
-            self._pv_readback.wait_for_connection()
-        if hasattr(self, "_pv_lowlim") and self._pv_lowlim:
-            self._pv_lowlim.wait_for_connection()
-        if hasattr(self, "_pv_highlim") and self._pv_highlim:
-            self._pv_highlim.wait_for_connection()
+        # Explicit short budget rather than the (now much longer)
+        # CA_CONNECTION_TIMEOUT these PVs were built with: this is a
+        # best-effort "is it there yet" during namespace init, and waiting a
+        # full second per absent device would multiply init time by the
+        # number of them. See eco.epics_utils.ca_tuning.
+        _wait_for_pvs(self)
 
     def get_current_value(self, readback=True):
-        if readback:
-            currval = self._pvreadback.get()
-        if not readback:
-            currval = self._pv.get()
-        return currval
+        pv = self._pvreadback if readback else self._pv
+        return _read_pv(pv, name=self.name)
 
     def get_severity(self):
         """EPICS alarm severity of the last readback `.get()`: 0=NO_ALARM,
@@ -409,9 +483,9 @@ class AdjustablePvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05 * 2, auto_monitor=False)
+        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT * 2, auto_monitor=False)
         self.name = name
-        self._pv_set = PV(pvname_set, connection_timeout=0.05 * 2) if pvname_set else None
+        self._pv_set = PV(pvname_set, connection_timeout=CA_CONNECTION_TIMEOUT * 2) if pvname_set else None
         self.alias = Alias(name, channel=self.Id, channeltype="CA")
         self._resolve_lock = threading.Lock()
         self._resolved = False
@@ -518,7 +592,7 @@ class AdjustablePvEnum:
             return self._pv_enum(value)
 
     def get_current_value(self):
-        return self.validate(self._pv.get())
+        return self.validate(_read_pv(self._pv, name=self.name))
 
     def set_target_value(self, value, hold=False):
         """Adjustable convention"""
@@ -550,12 +624,12 @@ class AdjustablePvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=0.05, auto_monitor=False)
+        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
     def get_current_value(self):
-        return self._pv.get()
+        return _read_pv(self._pv, name=self.name)
 
     def set_target_value(self, value, hold=False):
         changer = lambda value: self._pv.put(bytes(value, "utf8"), wait=True)
