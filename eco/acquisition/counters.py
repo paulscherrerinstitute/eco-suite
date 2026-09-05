@@ -4,6 +4,7 @@ import weakref
 from eco.acquisition.utilities import Acquisition
 from eco.elements.protocols import Detector, MonitorableValueUpdate, resolve_lazy
 from eco.utilities.datafiles import ensure_dir, ensure_group_writable
+from eco.utilities.utilities import is_notebook
 from collections import namedtuple
 from escape import ArrayTimestamps
 from matplotlib.animation import FuncAnimation
@@ -16,6 +17,42 @@ from escape import DataSet
 DEFAULT_STORAGE_DIR = Path("./")
 
 StepTime = namedtuple("StepTime", "start stop")
+
+
+def _build_fit_icon(size=24):
+    """A small "scatter + fit line" QIcon for the toolbar button, drawn with
+    QPainter instead of shipping a bitmap asset."""
+    from qtpy import QtCore, QtGui
+
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+    pen = QtGui.QPen(QtGui.QColor("black"))
+    pen.setWidthF(max(1.0, size / 10))
+    pen.setCapStyle(QtCore.Qt.RoundCap)
+    painter.setPen(pen)
+    painter.drawLine(
+        QtCore.QPointF(0.08 * size, 0.85 * size),
+        QtCore.QPointF(0.92 * size, 0.15 * size),
+    )
+
+    painter.setPen(QtCore.Qt.NoPen)
+    painter.setBrush(QtGui.QColor("black"))
+    dot_r = size * 0.06
+    dots = [
+        (0.10, 0.55), (0.14, 0.72), (0.18, 0.40), (0.22, 0.62), (0.26, 0.30),
+        (0.30, 0.50), (0.34, 0.68), (0.38, 0.35), (0.42, 0.55), (0.46, 0.25),
+        (0.54, 0.62), (0.58, 0.30), (0.62, 0.50), (0.66, 0.20),
+        (0.70, 0.40), (0.74, 0.58), (0.78, 0.28), (0.82, 0.45), (0.86, 0.15),
+        (0.90, 0.35), (0.20, 0.20), (0.60, 0.65), (0.35, 0.15),
+    ]
+    for fx, fy in dots:
+        painter.drawEllipse(QtCore.QPointF(fx * size, fy * size), dot_r, dot_r)
+
+    painter.end()
+    return QtGui.QIcon(pixmap)
 
 
 
@@ -199,6 +236,7 @@ class CounterValue:
             scan.fig = f
             if isinstance(axs, plt.Axes):
                 axs = [axs]
+            scan.axs = axs
 
             def plotdat(n, *args):
                 for ma, ax in zip(scan.monitor_scan_arrays.values(), axs):
@@ -209,10 +247,46 @@ class CounterValue:
                 fig=f, func=plotdat, cache_frame_data=False, interval=500
             )
             plt.show(block=False)
+            self._add_fit_button(scan, axs)
         else:
             scan.fig.tight_layout()
             scan.fig.canvas.draw()
             scan.fig.canvas.flush_events()
+
+    def _add_fit_button(self, scan, axs):
+        """Add a UI trigger that opens `escape.fit_gui.AxesFitter` on demand,
+        one per plotted axis -- a Qt toolbar icon if the figure has a Qt
+        navigation toolbar, else an ipywidgets button if running in a
+        Jupyter kernel. Nothing is added otherwise (e.g. inline backend).
+
+        The fit GUI draws its span selector/preview on top of `axs`, which
+        the live animation clears every frame (`ax.cla()`), so starting a
+        fit also stops that animation -- same effect `stopani` already has
+        once the scan itself ends.
+        """
+
+        def start_fitters(*_):
+            from escape.fit_gui import AxesFitter
+
+            if hasattr(scan, "animation"):
+                scan.animation.event_source.stop()
+            for ax in axs:
+                if ax.lines:
+                    AxesFitter(ax)
+
+        toolbar = getattr(scan.fig.canvas.manager, "toolbar", None)
+        if toolbar is not None and toolbar.__class__.__name__.startswith(
+            "NavigationToolbar2"
+        ):
+            action = toolbar.addAction(_build_fit_icon(), "Fit", start_fitters)
+            action.setToolTip("Open interactive fit (escape.fit_gui.AxesFitter)")
+        elif is_notebook():
+            import ipywidgets
+            from IPython.display import display
+
+            button = ipywidgets.Button(description="Fit", icon="line-chart")
+            button.on_click(start_fitters)
+            display(button)
 
     def store_arrays(
         self, scan, filename="auto", directory="auto", elog=None, **kwargs

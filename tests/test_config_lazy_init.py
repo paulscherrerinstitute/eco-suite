@@ -317,3 +317,134 @@ def test_output_capture_survives_a_thread_that_outlives_the_pass():
     cap._write_sink("late output from a straggler thread")
 
     assert "late output" in real.getvalue()
+
+
+class _DependentThing:
+    def __init__(self, dep=None, name=None):
+        self.name = name
+        self.dep = dep
+
+
+def test_declared_dependencies_are_recorded_and_layered():
+    """init_all used to submit every name flat, so all thirteen consumers of
+    bernina's `event_master` reached for it at once: one built it, the rest
+    waited out init_timeout and came back as IsInitialisingError. Names are
+    now ordered behind what they declare a NamespaceComponent dependency on.
+    """
+    from eco.utilities.config import NamespaceComponent
+
+    ns = Namespace(name="test")
+    ns.append_obj(_DependentThing, lazy=True, name="master")
+    for n in range(3):
+        ns.append_obj(
+            _DependentThing,
+            NamespaceComponent(ns, "master"),
+            lazy=True,
+            name=f"consumer{n}",
+        )
+    ns.append_obj(_DependentThing, lazy=True, name="unrelated")
+    # a sub-attribute reference still resolves to the registered item
+    ns.append_obj(
+        _DependentThing,
+        NamespaceComponent(ns, "master.some.child"),
+        lazy=True,
+        name="deep",
+    )
+
+    assert ns.get_dependencies("consumer0") == {"master"}
+    assert ns.get_dependencies("deep") == {"master"}
+    assert ns.get_dependencies("master") == set()
+
+    layers = ns._dependency_layers(ns.all_names)
+    assert layers[0] == {"master", "unrelated"}
+    assert layers[1] == {"consumer0", "consumer1", "consumer2", "deep"}
+
+
+def test_init_all_builds_a_dependency_before_its_consumers(tmp_path):
+    from eco.utilities.config import NamespaceComponent
+
+    ns = Namespace(name="test")
+    ns.append_obj(_DependentThing, lazy=True, name="master")
+    for n in range(4):
+        ns.append_obj(
+            _DependentThing,
+            NamespaceComponent(ns, "master"),
+            lazy=True,
+            name=f"consumer{n}",
+        )
+
+    order = []
+    original = ns.init_name
+
+    def spy(name, **kwargs):
+        order.append(name)
+        return original(name, **kwargs)
+
+    ns.init_name = spy
+    ns.init_all(
+        required_only=False,
+        background=False,
+        silent=str(tmp_path / "i.log"),
+        max_workers=4,
+    )
+
+    assert order[0] == "master"
+    assert set(order[1:]) == {f"consumer{n}" for n in range(4)}
+
+
+def test_dependency_cycle_does_not_hang_and_is_emitted_as_one_layer():
+    from eco.utilities.config import NamespaceComponent
+
+    ns = Namespace(name="test")
+    ns.append_obj(
+        _DependentThing, NamespaceComponent(ns, "b"), lazy=True, name="a"
+    )
+    ns.append_obj(
+        _DependentThing, NamespaceComponent(ns, "a"), lazy=True, name="b"
+    )
+
+    assert ns._dependency_layers(ns.all_names) == [{"a", "b"}]
+
+
+def test_read_pv_value_retries_and_refuses_to_return_none():
+    """pyepics' PV.get() returns None on a timed-out get instead of raising,
+    and eco's AdjustablePv gives every channel a 50 ms connection budget with
+    auto_monitor=False on the readback - so under a concurrent init_all() a
+    None routinely flowed on as if it were data (an event code of None, a
+    pulser number of None)."""
+    import pytest
+
+    from eco.epics_utils.adjustable import read_pv_value
+
+    class FakePV:
+        def __init__(self, values):
+            self.values = list(values)
+            self.pvname = "FAKE:PV"
+            self.gets = 0
+
+        def wait_for_connection(self, timeout=None):
+            return True
+
+        def get(self, timeout=None):
+            self.gets += 1
+            return self.values.pop(0) if self.values else None
+
+    class FakeAdjustable:
+        def __init__(self, pv):
+            self._pvreadback = pv
+            self.name = "fake"
+
+    # a transient timeout is retried, not taken at face value
+    adj = FakeAdjustable(FakePV([None, None, 27]))
+    assert read_pv_value(adj, timeout=0.01, attempts=3) == 27
+    assert adj._pvreadback.gets == 3
+
+    # a persistent one raises with the PV named, instead of returning None
+    adj = FakeAdjustable(FakePV([]))
+    with pytest.raises(TimeoutError) as excinfo:
+        read_pv_value(adj, timeout=0.01, attempts=2)
+    assert "FAKE:PV" in str(excinfo.value)
+
+    # a legitimate falsy value is a value, not a failure
+    adj = FakeAdjustable(FakePV([0]))
+    assert read_pv_value(adj, timeout=0.01, attempts=2) == 0

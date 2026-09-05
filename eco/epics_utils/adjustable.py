@@ -59,6 +59,53 @@ def wait_for_enum_strs(pv, retries=10, delay=0.05):
     return pv.enum_strs
 
 
+def read_pv_value(adjustable, timeout=3.0, attempts=3, description=None):
+    """Read `adjustable`'s current value, treating a timed-out get as a
+    failure instead of as the value `None`.
+
+    Why this is needed at all: pyepics' ``PV.get()`` returns ``None`` when
+    ``wait_for_connection()`` fails - it never raises (see
+    ``epics/pv.py``'s ``get_with_metadata``). eco's ``AdjustablePv`` builds
+    every PV with ``connection_timeout=0.05`` and its readback with
+    ``auto_monitor=False``, so a read issued shortly after construction has
+    a 50 ms budget on a brand-new channel and no monitor cache to fall back
+    on. During a concurrent ``Namespace.init_all()`` pass - thousands of
+    channels connecting at once - that budget is regularly missed, and the
+    ``None`` then flows on as if it were data: an event code of ``None``, a
+    pulser number of ``None``. The resulting failure surfaces far from its
+    cause, or does not surface at all (see ``EvrPulser``/``EvrOutput``).
+
+    This is the same failure shape as `wait_for_enum_strs` above (a value
+    that is simply not there yet under load), and the same shape as the
+    ``Daq.get_pulse_id()`` fix - both boil down to "never let a timed-out
+    CA get become a value".
+
+    Uses the underlying PV directly so a real timeout can be given, rather
+    than inheriting the 50 ms connection timeout. Raises ``TimeoutError``
+    naming the PV once the attempts are used up, so the caller fails with
+    something readable instead of an ``AttributeError`` three frames later.
+    """
+    pv = getattr(adjustable, "_pvreadback", None)
+    if pv is None:
+        pv = getattr(adjustable, "_pv", None)
+    what = description or getattr(adjustable, "name", None) or repr(adjustable)
+    pvname = getattr(pv, "pvname", None) or getattr(adjustable, "pvname", what)
+    for _ in range(max(int(attempts), 1)):
+        if pv is not None:
+            pv.wait_for_connection(timeout=timeout)
+            value = pv.get(timeout=timeout)
+        else:
+            value = adjustable.get_current_value()
+        if value is not None:
+            return value
+    raise TimeoutError(
+        f"could not read '{what}' ({pvname}) after {attempts} attempts of "
+        f"{timeout}s each - the channel did not connect or did not return a "
+        f"value. pyepics reports this as None rather than raising, so it is "
+        f"raised here to keep it from being used as if it were data."
+    )
+
+
 # Work in progress! TODO
 @spec_convenience
 @get_from_archive

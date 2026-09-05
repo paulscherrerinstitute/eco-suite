@@ -837,6 +837,14 @@ class Namespace(Assembly):
         self._initialisation_start_time = {}
         self._init_priority = {}
 
+        # name -> [NamespaceComponent, ...] found among the args/kwargs it
+        # was registered with, i.e. the other namespace items it declares a
+        # dependency on. Recorded at append_obj time (the only moment the
+        # arguments are visible as objects rather than already-substituted
+        # proxies) so init_all can order the pass by dependency instead of
+        # letting every consumer race to build the same shared component.
+        self._declared_dependencies = {}
+
         # name -> {"module_name": str|None, "obj_factory": callable|str}, as
         # passed to append_obj. Lets reinitialize(reload_modules=True) find
         # which module to importlib.reload() for a given name; see
@@ -1381,6 +1389,71 @@ class Namespace(Assembly):
             print(f"Captured init log no longer exists at {path}.")
             return ""
 
+    def get_dependencies(self, name):
+        """Names this item declared a dependency on, via a
+        `NamespaceComponent` among its `append_obj` arguments.
+
+        Only *declared* dependencies are visible here. A component that
+        reaches into the namespace from inside its own `__init__` (rather
+        than being handed a NamespaceComponent) is invisible to this, which
+        is why dependency ordering is a scheduling hint and not a guarantee -
+        see `_dependency_layers`.
+        """
+        out = set()
+        for dep in self._declared_dependencies.get(name, ()):
+            try:
+                dep._resolve()
+            except KeyError:
+                # points at something never registered - not our problem
+                # here, it will fail loudly when the item is actually built.
+                continue
+            if dep.obj_name is not None and dep.obj_name != name:
+                out.add(dep.obj_name)
+        return out
+
+    def _dependency_layers(self, names, log=None):
+        """Split `names` into successive layers such that everything a name
+        declares a dependency on is in an earlier layer.
+
+        The point is the shared-dependency stampede: at Bernina all nine
+        EventReceivers take the same `event_master` NamespaceComponent, so a
+        flat concurrent pass has up to `max_workers` of them reaching for it
+        at once. One wins and builds it (a 256-PV `caget_many`); the rest sit
+        in the lazy-init wait until `init_timeout` expires and come back as
+        IsInitialisingError, to be retried a cycle later - which is both slow
+        and, because all of that happens while channel access is saturated,
+        the condition under which the EVRs' own reads start timing out.
+        Building `event_master` in an earlier layer removes the collision
+        entirely.
+
+        Dependencies pointing outside `names` (already initialized, excluded,
+        or never registered) impose no constraint. A dependency cycle cannot
+        be layered, so the members of the cycle are emitted together as one
+        layer and left to the existing retry loop - the same behaviour as
+        before this method existed, applied to just the cyclic group.
+        """
+        remaining = set(names)
+        edges = {n: self.get_dependencies(n) & remaining for n in remaining}
+        layers = []
+        placed = set()
+        while remaining:
+            ready = {n for n in remaining if not (edges[n] - placed)}
+            if not ready:
+                # cycle (or a dependency on something that can never be
+                # placed): stop layering and hand the rest over as one group.
+                if log is not None:
+                    log(
+                        f"dependency cycle among {len(remaining)} name(s), "
+                        f"initializing them together: "
+                        + ", ".join(sorted(remaining))
+                    )
+                layers.append(set(remaining))
+                break
+            layers.append(ready)
+            placed |= ready
+            remaining -= ready
+        return layers
+
     def _select_names_to_init(self, required_only, exclude_names, log):
         """Which names this init_all() call needs to build, honoring
         required_only/exclude_names; warns (via `log`) about pre-existing
@@ -1468,37 +1541,59 @@ class Namespace(Assembly):
                 init_fn()
 
         first_exception = None
-        pending = set(names_to_init)
-        cycles_left = max(int(N_cycles), 1)
+        # Dependency-ordered: a name is only submitted once everything it
+        # declared a NamespaceComponent dependency on has been built, so
+        # consumers of a shared component no longer race each other to build
+        # it. Names with no declared dependencies all land in the first
+        # layer, so this costs essentially no parallelism - at Bernina it
+        # moves the nine EventReceivers behind `event_master` and leaves the
+        # other ~70 components exactly as concurrent as before.
+        layers = self._dependency_layers(names_to_init, log=log)
+        if len(layers) > 1:
+            log(
+                f"Initializing in {len(layers)} dependency layers: "
+                + ", ".join(str(len(la)) for la in layers)
+                + " name(s)"
+            )
+        givenup = set()
         with cap, ThreadPoolExecutor(
             max_workers=max_workers, initializer=_thread_initializer
         ) as exc:
-            while pending and cycles_left:
-                cycles_left -= 1
-                futs = {
-                    exc.submit(
-                        self.init_name,
-                        name,
-                        verbose=verbose,
-                        raise_errors=True,
-                        quiet=bool(silent),
-                    ): name
-                    for name in pending
-                }
-                retry = set()
-                for fut in as_completed(futs):
-                    name = futs[fut]
-                    try:
-                        fut.result()
-                    except IsInitialisingError:
-                        # Lost a race for a name someone else (this pass
-                        # itself, or the session directly) is already
-                        # initializing as a dependency; retry next round.
-                        retry.add(name)
-                    except Exception as exc_:
-                        if first_exception is None:
-                            first_exception = exc_
-                pending = retry & (self.all_names - self.initialized_names)
+            for layer in layers:
+                pending = set(layer)
+                cycles_left = max(int(N_cycles), 1)
+                while pending and cycles_left:
+                    cycles_left -= 1
+                    futs = {
+                        exc.submit(
+                            self.init_name,
+                            name,
+                            verbose=verbose,
+                            raise_errors=True,
+                            quiet=bool(silent),
+                        ): name
+                        for name in pending
+                    }
+                    retry = set()
+                    for fut in as_completed(futs):
+                        name = futs[fut]
+                        try:
+                            fut.result()
+                        except IsInitialisingError:
+                            # Lost a race for a name someone else (this pass
+                            # itself, or the session directly) is already
+                            # initializing as a dependency; retry next round.
+                            retry.add(name)
+                        except Exception as exc_:
+                            if first_exception is None:
+                                first_exception = exc_
+                    pending = retry & (self.all_names - self.initialized_names)
+                # Whatever this layer could not finish is not allowed to hold
+                # up the layers behind it: the dependents are attempted
+                # anyway (they may not really need it), exactly as they were
+                # before layering existed.
+                givenup |= pending
+        pending = givenup
 
         if pending:
             # A warning rather than log(): log() is silenced by silent=True,
@@ -1985,6 +2080,11 @@ class Namespace(Assembly):
                 "module_name": module_name,
                 "obj_factory": obj_factory,
             }
+            self._declared_dependencies[name] = [
+                a
+                for a in list(args) + list(kwargs.values())
+                if isinstance(a, NamespaceComponent)
+            ]
         if lazy:
 
             def init_local():

@@ -1,7 +1,12 @@
 from epics import caget_many
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..elements.detector import DetectorVirtual
-from ..epics_utils.adjustable import AdjustablePv, AdjustablePvEnum, AdjustablePvString
+from ..epics_utils.adjustable import (
+    AdjustablePv,
+    AdjustablePvEnum,
+    AdjustablePvString,
+    read_pv_value,
+)
 from ..epics_utils.detector import DetectorPvData, DetectorPvDataStream
 from ..detector.detectors_psi import DetectorBsStream
 from eco.epics_utils.utilities_epics import EpicsString
@@ -10,6 +15,8 @@ from ..elements.assembly import Assembly
 from ..utilities.tables import format_table
 
 logging.getLogger("cta_lib").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 
 class TimingSystem(Assembly):
@@ -210,9 +217,46 @@ class MasterEventSystem(Assembly):
             )
             self.event_codes[code] = self.__dict__[f"code{code:03d}"]
 
-    def _get_slot_codes(self, slots=range(1, 257)):
+    def _get_slot_codes(self, slots=range(1, 257), attempts=3, timeout=3.0):
+        """Read the master's slot->event-code table.
+
+        `caget_many` reports a slot it could not read as `None`, and those
+        used to be dropped silently. Whichever init worker builds this
+        component does so while the rest of the pass saturates channel
+        access, so under `init_all()` a handful of slots could time out and
+        the resulting `event_codes` dict stayed permanently incomplete for
+        the life of the session - after which every EVR pulser wired to a
+        dropped code came up without its delay/frequency chain, blaming "code
+        missing in Timing Master" for what was really a timed-out read.
+        Retry the missing ones (they are a handful, so this is cheap) and say
+        so if any are still missing, rather than quietly shipping a partial
+        table. Dependency-ordered init makes this much less likely to trigger
+        in the first place, but the silent-drop path is worth closing anyway.
+        """
+        slots = list(slots)
         pvs = [f"{self.pvname}:Evt-{slot}-Code-SP" for slot in slots]
-        codes = caget_many(pvs)
+        codes = list(caget_many(pvs, timeout=timeout))
+
+        for _ in range(max(int(attempts) - 1, 0)):
+            missing = [i for i, c in enumerate(codes) if c is None]
+            if not missing:
+                break
+            retried = caget_many([pvs[i] for i in missing], timeout=timeout)
+            for i, c in zip(missing, retried):
+                codes[i] = c
+        still_missing = [slots[i] for i, c in enumerate(codes) if c is None]
+        if still_missing:
+            logger.warning(
+                "timing master %s: %d of %d event-code slots could not be "
+                "read after %d attempts (slots %s%s); event codes served by "
+                "them will look missing to every EVR pulser using them.",
+                self.pvname,
+                len(still_missing),
+                len(slots),
+                attempts,
+                ", ".join(str(x) for x in still_missing[:10]),
+                ", ..." if len(still_missing) > 10 else "",
+            )
 
         slots_out = []
         codes_out = []
@@ -326,16 +370,26 @@ class EvrPulser(Assembly):
         )
         self.description = EpicsString(pv_base + "-Name-I")
 
-        if self._eventcode is not None:
+        # Resolve the event code ONCE and keep it. It used to be a property
+        # re-issuing a CA get on every access, and __init__ touched it three
+        # times (the `is not None` guard, then .frequency, then .delay): under
+        # a concurrent init_all() the guard could pass and the next access
+        # come back None (timed-out get -> None -> KeyError -> None), giving
+        # `AttributeError: 'NoneType' object has no attribute 'frequency'` on
+        # a pulser that initializes fine on its own. One read, one value, no
+        # window between the check and the use.
+        self._eventcode_resolved = self._resolve_eventcode()
+
+        if self._eventcode_resolved is not None:
             self._append(
                 DetectorVirtual,
-                [self._eventcode.frequency],
+                [self._eventcode_resolved.frequency],
                 lambda x: x,
                 name="frequency",
             )
             self._append(
                 DetectorVirtual,
-                [self._eventcode.delay],
+                [self._eventcode_resolved.delay],
                 lambda x: x,
                 name="delay_eventcode",
             )
@@ -347,17 +401,55 @@ class EvrPulser(Assembly):
                 name="delay",
             )
         else:
-            print(f"Error initializing pulser {self.name} of EVR {self.pv_base}: Event code {self.eventcode.get_current_value()} is missing in Timing Master")
+            logger.warning(
+                "pulser %s of EVR %s: event code %s is missing in the timing "
+                "master; delay/frequency are not available on it.",
+                self.name,
+                self.pv_base,
+                self._eventcode_number,
+            )
+
+    def _resolve_eventcode(self, timeout=3.0, attempts=3):
+        """The timing-master event code object this pulser is wired to.
+
+        The read is done through `read_pv_value` rather than
+        `get_current_value()` so a channel that has not connected yet raises
+        instead of yielding `None` - a `None` here used to be looked up in
+        `event_codes`, miss, and silently leave the pulser without its
+        delay/frequency chain, which then broke every EvrOutput pointing at
+        it. Returns None only when the code is genuinely absent from the
+        master.
+        """
+        try:
+            self._eventcode_number = read_pv_value(
+                self.eventcode,
+                timeout=timeout,
+                attempts=attempts,
+                description=f"event code of pulser {self.name} ({self.pv_base})",
+            )
+        except TimeoutError as e:
+            # Degrade the way this always did (no delay/frequency chain)
+            # rather than failing the whole pulser - a PV that genuinely
+            # isn't there must not turn into a wall of new failures. The
+            # difference is that it now says so instead of silently looking
+            # up event code `None` and reporting it as missing from the
+            # master.
+            logger.warning("%s", e)
+            self._eventcode_number = None
+            return None
+        if self._eventcode_number == 27:
+            return self._parent_evr.sequencer
+        return self._event_master.event_codes.get(self._eventcode_number)
+
+    def update_eventcode(self):
+        """Re-read the event code from the IOC (it is otherwise resolved once,
+        at construction). Use after re-wiring the pulser externally."""
+        self._eventcode_resolved = self._resolve_eventcode()
+        return self._eventcode_resolved
 
     @property
     def _eventcode(self):
-        if self.eventcode.get_current_value() == 27:
-            return self._parent_evr.sequencer
-        else:
-            try:
-                return self._event_master.event_codes[self.eventcode.get_current_value()]
-            except KeyError:
-                return None
+        return self._eventcode_resolved
 
 
 class DummyPulser(Assembly):
@@ -398,6 +490,8 @@ class EvrOutput(Assembly):
             name="pulserA_number",
             is_setting=True,
         )
+        # resolve once, before the eight virtuals below reach for it
+        self._pulserA_resolved = self._resolve_pulser(self.pulserA_number, "pulserA")
         self._append(
             AdjustableVirtual,
             [self.pulserA.delay],
@@ -466,6 +560,9 @@ class EvrOutput(Assembly):
             name="pulserB_number",
             is_setting=True,
         )
+        # NB: this used to read pulserA_number - every pulserB_* virtual on
+        # every output was silently tracking pulser A.
+        self._pulserB_resolved = self._resolve_pulser(self.pulserB_number, "pulserB")
         self._append(
             AdjustableVirtual,
             [self.pulserB.delay],
@@ -521,19 +618,62 @@ class EvrOutput(Assembly):
             name="pulserB_width",
         )
 
+    def _resolve_pulser(self, number_adj, which, timeout=3.0, attempts=3):
+        """The pulser object this output is wired to, read once.
+
+        Two bugs used to live here. The read went through
+        `get_current_value()`, which returns None on a timed-out CA get, and
+        `self._pulsers[None]` raised TypeError, which was caught and turned
+        into a *fresh* `DummyPulser()`. And because this was a property,
+        `__init__` re-read it once per virtual it builds - eight times for
+        pulserA, eight for pulserB - so under a concurrent init_all() a
+        single output could end up with its eight `pulserA_*` virtuals bound
+        to several different objects, some of them throwaway dummies whose
+        values are permanently None. That mis-wiring never failed and never
+        printed anything.
+
+        `read_pv_value` raises rather than yielding None, and the result is
+        resolved once and cached; an out-of-range number still degrades to a
+        DummyPulser, since that is a real (if odd) IOC state rather than a
+        transport failure.
+        """
+        try:
+            number = read_pv_value(
+                number_adj,
+                timeout=timeout,
+                attempts=attempts,
+                description=f"{which} number of output {self.name} ({self.pv_base})",
+            )
+        except TimeoutError as e:
+            logger.warning("%s", e)
+            number = None
+        try:
+            return self._pulsers[number]
+        except (IndexError, TypeError):
+            logger.warning(
+                "output %s (%s): %s number %r does not address any of the %d "
+                "pulsers of this EVR; using a dummy pulser.",
+                self.name,
+                self.pv_base,
+                which,
+                number,
+                len(self._pulsers or ()),
+            )
+            return DummyPulser()
+
+    def update_pulsers(self):
+        """Re-read which pulsers this output is wired to (they are otherwise
+        resolved once, at construction). Use after re-wiring the output."""
+        self._pulserA_resolved = self._resolve_pulser(self.pulserA_number, "pulserA")
+        self._pulserB_resolved = self._resolve_pulser(self.pulserB_number, "pulserB")
+
     @property
     def pulserA(self):
-        try:
-            return self._pulsers[self.pulserA_number.get_current_value()]
-        except (IndexError, TypeError):
-            return DummyPulser()
+        return self._pulserA_resolved
 
     @property
     def pulserB(self):
-        try:
-            return self._pulsers[self.pulserA_number.get_current_value()]
-        except (IndexError, TypeError):
-            return DummyPulser()
+        return self._pulserB_resolved
 
 
 class EventReceiver(Assembly):
