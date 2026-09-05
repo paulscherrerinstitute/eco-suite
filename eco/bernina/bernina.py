@@ -330,17 +330,26 @@ namespace.append_obj(
 )
 
 
-# Optional: take run status from a long-running eco.status_server process
-# instead of initializing and reading *this* session's namespace at every
-# scan start (see eco/status_server/README.md). Off unless the environment
-# variable is set, e.g.
-#   ECO_STATUS_SERVER=http://saresb-cons-04:8091 scripts/eco-dev -s bernina
+# Take run status from a long-running eco.status_server process instead of
+# initializing and reading *this* session's namespace at every scan start
+# (see eco/status_server/README.md). On by default, pointed at the
+# beamline's server - Daq.use_status_server() re-checks /health before every
+# scan and falls back to the old local behaviour (with a printed warning) if
+# it is unreachable, still initializing, or older than
+# status_server_max_age, so a session never silently depends on the server
+# being up. Override the URL, or set to "" / "off" / "none" to force the old
+# always-local behaviour, with e.g.
+#   ECO_STATUS_SERVER=off scripts/eco-dev -s bernina
 # An env var rather than a key in the shared bernina config JSON on purpose:
 # which host (if any) runs a status server is a per-session choice, and that
 # file is read by every session at the beamline.
-_status_server = os.environ.get("ECO_STATUS_SERVER") or None
+_ECO_STATUS_SERVER_DEFAULT = "http://saresb-cons-04:8091"
+_status_server = os.environ.get("ECO_STATUS_SERVER", _ECO_STATUS_SERVER_DEFAULT)
+if _status_server.strip().lower() in ("", "off", "none", "false", "0"):
+    _status_server = None
 if _status_server:
-    print(f"daq: taking run status from status server {_status_server}")
+    print(f"daq: taking run status from status server {_status_server} "
+          "(set ECO_STATUS_SERVER=off to always use the local namespace)")
 
 namespace.append_obj(
     "Daq",
