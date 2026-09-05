@@ -1,0 +1,131 @@
+from eco.bernina.bernina import namespace
+from eco.utilities.config import NamespaceComponent
+
+
+## general components ##
+namespace.append_obj(
+    "CtaSequencer",
+    "SAR-CCTA-ESB",
+    0,
+    name="seq",
+    module_name="eco.timing.sequencer",
+    lazy=True,
+)
+namespace.append_obj(
+    "MasterEventSystem",
+    "SIN-TIMAST-TMA",
+    name="event_master",
+    module_name="eco.timing.event_timing_new_new",
+    # pv_eventset="SAR-CVME-TIFALL5:EvtSet",
+    # lazy=False,
+    lazy=True,
+)
+namespace.append_obj(
+    "TimingSystem",
+    pv_master="SIN-TIMAST-TMA",
+    pv_pulse_id="SARES20-CVME-01-EVR0:RX-PULSEID",
+    pv_eventset="SAR-CVME-TIFALL5:EvtSet",
+    name="event_system",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+
+namespace.append_obj(
+    "EventReceiver",
+    "SARES20-CVME-01-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=24,
+    n_output_front=7,
+    n_output_rear=16,
+    name="evr",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SLAAR-LTIM02-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=24,
+    n_output_front=7,
+    n_output_rear=16,
+    name="evr_laser",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SLAAR21-LTIM01-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=24,
+    n_output_front=7,
+    n_output_rear=16,
+    name="evr_hutch_laser",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-72-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver72",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-73-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver73",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-74-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver74",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-83-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver83",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-84-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver84",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)
+namespace.append_obj(
+    "EventReceiver",
+    "SGE-CPCW-85-EVR0",
+    NamespaceComponent(namespace,"event_master"),
+    n_pulsers=16,
+    n_output_front=16,
+    n_output_rear=0,
+    name="evr_camserver85",
+    module_name="eco.timing.event_timing_new_new",
+    lazy=True,
+)

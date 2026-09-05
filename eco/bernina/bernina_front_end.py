@@ -27,6 +27,10 @@ reentrant-import behavior, not anything eco-specific.
 from eco.bernina.bernina import namespace
 from eco.utilities.config import NamespaceComponent
 
+
+
+
+
 namespace.append_obj(
     "PhotonShutter",
     "SARFE10-OPSH044:REQUEST",
@@ -45,9 +49,22 @@ namespace.append_obj(
     module_name="eco.xoptics.slits",
     lazy=True,
 )
+
+
+
+
+
+
+
+namespace.append_obj(
+    "GasDetector",
+    name="mon_und_gas",
+    module_name="eco.xdiagnostics.intensity_monitors",
+    lazy=True,
+)
 namespace.mark_beamline(
-    "slit_und", types=("fel", "front_end"), z_source=44.0, kind="slit",
-    description="slit right after the undulator",
+    "mon_und_gas", types=("fel", "front_end"), z_source=50.0, kind="diagnostic",
+    description="gas monitor",
 )
 
 namespace.append_obj(
@@ -68,6 +85,18 @@ namespace.append_obj(
 namespace.mark_beamline(
     "mon_und", types=("fel", "front_end"), z_source=53.0, kind="diagnostic",
     description="intensity/position monitor after the undulator",
+)
+
+
+namespace.append_obj(
+    "Xspect",
+    name="xspect",
+    lazy=True,
+    module_name="eco.xdiagnostics.xspect",
+)
+namespace.mark_beamline(
+    "xspect", types=("fel", "front_end"), z_source=59.0, kind="diagnostic",
+    description="single shot Xray spectrometer",
 )
 
 namespace.append_obj(
@@ -111,4 +140,12 @@ namespace.append_obj(
 namespace.mark_beamline(
     "prof_fe", types=("fel", "front_end"), z_source=64.0, kind="profile",
     description="front-end profile monitor",
+)
+
+namespace.append_obj(
+    "SafetyShutter",
+    "SGE01-EPKT820:BST1_oeffnen",
+    name="sshut_fe",
+    module_name="eco.xoptics.shutters",
+    lazy=True,
 )
