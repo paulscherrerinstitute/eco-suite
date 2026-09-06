@@ -470,8 +470,8 @@ class TimetoolBerninaUSD(Assembly):
             np.hstack([y_step for x_step, y_step in zip(x, y) if x_step == xu_step])
             for xu_step in xu
         ]
-        binmin = np.min([np.min(step) for step in yu])
-        binmax = np.max([np.max(step) for step in yu])
+        binmin = np.min(np.hstack(yu))
+        binmax = np.max(np.hstack(yu))
         bins = np.arange(binmin, binmax, 1)
         bins_center = bins[:-1] + 0.5
         hists = np.array([np.histogram(step, bins=bins)[0] for step in yu]).T

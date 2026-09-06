@@ -1288,11 +1288,13 @@ class LaserBernina(Assembly):
                     name="oscillator_spectrum",
                     is_setting=False,
                     is_display=True,
+                    optional=False,
                 )
 
                 break
-            except:
+            except Exception:
                 print("oscillator spectrometer not configured!")
+                time.sleep(0.5)
 
         def uJ2wp(uJ):
             direction = 1
@@ -1425,6 +1427,7 @@ class LaserBernina(Assembly):
         self._append(White, "SLAAR21-LTOP-TOPNOPA", name="white")
         self._append(TwinsSeed, "SLAAR21-LTOP-TOPTWS", name="twins_seed")
         self._append(TwinsPump, "SLAAR21-LTOP-TOPTWP", name="twins_pump")
+        tmptime = time.time()
         while (time.time() - tmptime) < 10:
             try:
                 self._append(
@@ -1433,11 +1436,14 @@ class LaserBernina(Assembly):
                     name="spectrum_out",
                     is_setting=False,
                     is_display=True,
+                    optional=False,
                 )
 
                 break
-            except:
+            except Exception:
                 print("spectrum_out spectrometer not configured!")
+                time.sleep(0.5)
+        tmptime = time.time()
         while (time.time() - tmptime) < 10:
             try:
                 self._append(
@@ -1446,11 +1452,13 @@ class LaserBernina(Assembly):
                     name="spectrum_in",
                     is_setting=False,
                     is_display=True,
+                    optional=False,
                 )
 
                 break
-            except:
+            except Exception:
                 print("spectrum_in spectrometer not configured!")
+                time.sleep(0.5)
 
     def fluence(self, a,b,energy, alpha=5):
         """This function calculates the fluence on the sample, taking spot size elongation into account.
