@@ -305,7 +305,7 @@ class TimetoolBerninaUSD(Assembly):
             )
 
         status = json._default_decoder.decode(
-            json._default_encoder.encode(self.get_status())
+            json._default_encoder.encode(self.get_status(raise_on_incomplete=False))
         )
         ds.append(status, name="tt_kb_status")
 

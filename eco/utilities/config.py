@@ -215,6 +215,45 @@ def _repr_without_initializing(value):
         return f"<unreprable {type(value).__name__}: {exc}>"
 
 
+def _drop_unexpected_kwargs(obj_maker, kwargs, name, factory_desc):
+    """Warn and strip kwargs ``obj_maker`` cannot accept, instead of crashing.
+
+    ``Namespace.append_obj`` forwards every keyword it doesn't recognize
+    itself straight into the factory call -- e.g. passing ``is_display``/
+    ``is_setting`` (which belong to ``Assembly._append``, not
+    ``append_obj``) used to blow up the whole lazy init with a bare
+    ``TypeError`` deep inside ``init_local``. If the factory has no
+    ``**kwargs`` catch-all, check its signature up front so a typo'd or
+    misplaced keyword becomes a warning naming the culprit rather than an
+    opaque crash.
+    """
+    try:
+        params = signature(obj_maker).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(p.kind == p.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    accepted = {
+        p.name
+        for p in params.values()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+    }
+    unexpected = [k for k in kwargs if k not in accepted]
+    if not unexpected:
+        return kwargs
+    logger.warning(
+        "'%s' (%s): ignoring keyword argument(s) %s -- not accepted by "
+        "%s; check for a typo, or a flag (e.g. is_display/is_setting) "
+        "meant for self._append() inside the assembly rather than for "
+        "append_obj/_append itself.",
+        name,
+        factory_desc,
+        ", ".join(sorted(unexpected)),
+        factory_desc,
+    )
+    return {k: v for k, v in kwargs.items() if k not in unexpected}
+
+
 def format_manual_instantiation(
     obj_factory, args, kwargs, name=None, accepts_name=False, module_name=None
 ):
@@ -2179,6 +2218,9 @@ class Namespace(Assembly):
                     *args, **kwargs
                 )
                 accepts_name = "name" in signature(obj_maker).parameters
+                kwargs_resolved = _drop_unexpected_kwargs(
+                    obj_maker, kwargs_resolved, name, factory_desc
+                )
                 manual_context = format_manual_instantiation(
                     obj_maker,
                     args_resolved,
@@ -2290,6 +2332,9 @@ class Namespace(Assembly):
                 obj_maker = getattr(import_module(module_name), obj_factory)
             else:
                 obj_maker = obj_factory
+            kwargs = _drop_unexpected_kwargs(
+                obj_maker, kwargs, name, factory_desc
+            )
             try:
                 obj = obj_maker(*args, name=name, **kwargs)
             except TypeError:

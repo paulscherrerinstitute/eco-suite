@@ -565,6 +565,32 @@ def test_repair_tree_replace_unowned_rebuilds_them_self_owned(
     assert mode_of(device) & (stat.S_ISGID | stat.S_IWGRP)
 
 
+def test_replace_owned_dir_survives_a_chown_that_strips_setgid(tmp_path, monkeypatch):
+    """Real-world regression: on the actual eco_cnf_bernina mount, `chown`
+    was observed clearing S_ISGID unconditionally (unlike the exemption a
+    local/tmpfs filesystem grants directories under mainline Linux's
+    `chown_common`), so a naive chmod-then-chown ordering silently rebuilt
+    every directory *without* its setgid bit -- defeating the whole point.
+    Simulate that stripping here (tmp_path's local filesystem does not
+    reproduce it on its own) to pin the chown-before-chmod ordering that
+    survives it regardless of which behaviour the underlying filesystem has.
+    """
+    d = tmp_path / "device"
+    d.mkdir()
+    monkeypatch.setattr(df, "_gid_of", lambda name: os.getgid())
+    real_chown = os.chown
+
+    def stripping_chown(path, uid, gid, *a, **k):
+        real_chown(path, uid, gid)
+        st = os.stat(path)
+        os.chmod(path, stat.S_IMODE(st.st_mode) & ~stat.S_ISGID)
+
+    monkeypatch.setattr(df.os, "chown", stripping_chown)
+
+    assert df._replace_owned_dir(d, "irrelevant", warn=False) is True
+    assert mode_of(d) & stat.S_ISGID
+
+
 def test_repair_tree_dry_run_does_not_replace_anything(tmp_path, monkeypatch):
     device, value = _make_unfixable_in_place(tmp_path, monkeypatch)
 

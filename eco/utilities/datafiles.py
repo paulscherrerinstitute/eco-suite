@@ -703,12 +703,18 @@ def _replace_owned_file(path, group, warn=True):
     try:
         with os.fdopen(fd, "wb") as tmp_fh, open(path, "rb") as src:
             tmp_fh.write(src.read())
-        os.chmod(tmp_name, FILE_MODE)
+        # chown *before* chmod: the kernel silently clears S_ISUID/S_ISGID on
+        # chown of any inode that already has S_IXGRP set (not just regular
+        # files -- see `_replace_owned_dir`, which actually carries that bit).
+        # FILE_MODE carries neither bit, so this file-side ordering is a
+        # no-op today, but keeping both helpers in the same order avoids
+        # silently reintroducing the directory bug if FILE_MODE ever changes.
         if gid is not None:
             try:
                 os.chown(tmp_name, -1, gid)
             except OSError:
                 pass
+        os.chmod(tmp_name, FILE_MODE)
         os.replace(tmp_name, path)
         return True
     except OSError:
@@ -756,12 +762,20 @@ def _replace_owned_dir(path, group, warn=True):
         return False
     tmp_path = Path(tmp_name)
     try:
-        os.chmod(tmp_name, DIR_MODE)
+        # chown *before* chmod: the kernel silently clears S_ISGID on chown of
+        # any inode that already has S_IXGRP set (Linux's should_remove_suid,
+        # applied to any file type, not just regular executables) -- doing it
+        # the other way round quietly built every rebuilt directory without
+        # its setgid bit, which defeats the entire point of this function.
+        # `mkdtemp` starts the temp dir at 0700 (no group-exec bit yet), so
+        # the chown here is still a no-op-for-stripping, and setgid survives
+        # the chmod that follows it.
         if gid is not None:
             try:
                 os.chown(tmp_name, -1, gid)
             except OSError:
                 pass
+        os.chmod(tmp_name, DIR_MODE)
         for child in os.listdir(path):
             os.replace(path / child, tmp_path / child)
         os.replace(tmp_name, path)

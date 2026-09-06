@@ -518,7 +518,7 @@ class Beamline(Assembly):
         "mono": "⸗",  # ⸗
         "optic": "⦈",  # ⦈
         "slit": "⌗",  # ⌗
-        "attenuator": "\U0001d14d",  # 𝅍
+        "attenuator": "◢",  # ◢
         "profile": "⦿",  # ⦿
         "diagnostic": "◇",
         "timing": "⏱",  # ⏱
