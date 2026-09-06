@@ -58,6 +58,7 @@ def policy(tmp_path, monkeypatch):
                         tmp_path / "fast.json")
     monkeypatch.setattr(ca_tuning, "_fast_channels", set())
     monkeypatch.setattr(ca_tuning, "_update_counts", {})
+    monkeypatch.setattr(ca_tuning, "_fast_streak", {})
     monkeypatch.setattr(ca_tuning, "_tracked", {})
     monkeypatch.setattr(ca_tuning, "_sensitive_depth", 0)
     monkeypatch.setattr(ca_tuning, "_sweeper", object())  # never start a thread
@@ -95,10 +96,20 @@ def test_an_explicit_auto_monitor_still_wins(policy):
 # learning which channels are too fast
 
 
+def _fire_and_sweep_until_demoted(policy, pv, n=100, interval=1.0, sweeps=None):
+    """Fire `n` updates and sweep `sweeps` times (default:
+    AUTO_MONITOR_SUSTAINED_SWEEPS) - the number of consecutive over-threshold
+    windows now required before a channel is actually demoted."""
+    if sweeps is None:
+        sweeps = policy.AUTO_MONITOR_SUSTAINED_SWEEPS
+    for _ in range(sweeps):
+        pv.fire(n)
+        policy._sweep_once(interval=interval)
+
+
 def test_a_fast_channel_is_demoted_and_remembered(policy):
     pv = policy.make_pv("TEST:FAST")
-    pv.fire(100)                       # 100 updates ...
-    policy._sweep_once(interval=1.0)   # ... in one second = 100 Hz
+    _fire_and_sweep_until_demoted(policy, pv)  # sustained >100 Hz
 
     assert pv.auto_monitor is False
     assert pv.callbacks == {}, "the rate counter should be detached too"
@@ -120,8 +131,7 @@ def test_a_channel_someone_else_monitors_is_never_demoted(policy):
     data."""
     pv = policy.make_pv("TEST:FAST")
     pv.add_callback(lambda **kw: None)      # somebody else's monitor
-    pv.fire(100)
-    policy._sweep_once(interval=1.0)
+    _fire_and_sweep_until_demoted(policy, pv)
 
     assert pv.auto_monitor is True
     assert not policy.is_known_fast("TEST:FAST")
@@ -129,8 +139,7 @@ def test_a_channel_someone_else_monitors_is_never_demoted(policy):
 
 def test_a_known_fast_channel_is_never_subscribed_again(policy):
     pv = policy.make_pv("TEST:FAST")
-    pv.fire(100)
-    policy._sweep_once(interval=1.0)
+    _fire_and_sweep_until_demoted(policy, pv)
 
     again = policy.make_pv("TEST:FAST")
     assert again.auto_monitor is False
@@ -139,8 +148,7 @@ def test_a_known_fast_channel_is_never_subscribed_again(policy):
 
 def test_the_learned_list_survives_a_restart(policy, tmp_path):
     pv = policy.make_pv("TEST:FAST")
-    pv.fire(100)
-    policy._sweep_once(interval=1.0)
+    _fire_and_sweep_until_demoted(policy, pv)
 
     written = json.loads((tmp_path / "fast.json").read_text())
     assert written == ["TEST:FAST"]
@@ -152,12 +160,85 @@ def test_the_learned_list_survives_a_restart(policy, tmp_path):
 
 def test_clearing_forgets_everything(policy):
     pv = policy.make_pv("TEST:FAST")
-    pv.fire(100)
-    policy._sweep_once(interval=1.0)
+    _fire_and_sweep_until_demoted(policy, pv)
     assert policy.is_known_fast("TEST:FAST")
 
     policy.clear_fast_channels()
     assert not policy.is_known_fast("TEST:FAST")
+
+
+# --------------------------------------------------------------------------
+# demotion requires a *sustained* fast rate, not one lucky/unlucky window
+#
+# Real incident, 2026-09-06: SLAAR21-LMOT-M521/M524:MOTOR_1.RBV (ordinary
+# delay-stage motor readbacks) got demoted mid-scan after a single sweep
+# measured ~14 Hz during that step's move/settle burst - and demotion is
+# permanent (persisted to disk), so an idle-except-during-moves PV stayed
+# wrongly stuck on the slow, direct-CA-get path afterwards.
+
+
+def test_a_single_burst_does_not_demote(policy):
+    """One over-threshold window - a motor moving for the length of one scan
+    step, say - must not be enough evidence on its own."""
+    pv = policy.make_pv("TEST:BURST")
+    pv.fire(100)
+    policy._sweep_once(interval=1.0)  # 1st over-threshold sweep
+
+    assert pv.auto_monitor is True, "demoted from a single sweep"
+    assert not policy.is_known_fast("TEST:BURST")
+    assert "TEST:BURST" in policy._tracked
+
+
+def test_the_burst_must_be_consecutive_to_count(policy):
+    """A burst, then back to normal, then another burst must not accumulate
+    towards demotion - each episode starts the count over."""
+    pv = policy.make_pv("TEST:BURST")
+    for _ in range(policy.AUTO_MONITOR_SUSTAINED_SWEEPS - 1):
+        pv.fire(100)
+        policy._sweep_once(interval=1.0)
+    assert pv.auto_monitor is True
+
+    pv.fire(1)  # one slow sweep resets the streak
+    policy._sweep_once(interval=1.0)
+
+    for _ in range(policy.AUTO_MONITOR_SUSTAINED_SWEEPS - 1):
+        pv.fire(100)
+        policy._sweep_once(interval=1.0)
+
+    assert pv.auto_monitor is True, "non-consecutive bursts should not add up"
+
+
+def test_a_sustained_fast_rate_still_gets_demoted(policy):
+    """The whole point of the policy still has to work: a channel that is
+    genuinely fast, sweep after sweep, gets demoted - just not instantly."""
+    pv = policy.make_pv("TEST:FAST")
+    for i in range(policy.AUTO_MONITOR_SUSTAINED_SWEEPS):
+        pv.fire(100)
+        policy._sweep_once(interval=1.0)
+        if i < policy.AUTO_MONITOR_SUSTAINED_SWEEPS - 1:
+            assert pv.auto_monitor is True
+
+    assert pv.auto_monitor is False
+    assert policy.is_known_fast("TEST:FAST")
+
+
+def test_forget_channel_undoes_a_single_bad_demotion(policy):
+    """The targeted fix for an already-mismeasured channel: undo just the
+    one entry rather than wiping every learned channel with
+    clear_fast_channels()."""
+    pv = policy.make_pv("TEST:FAST")
+    _fire_and_sweep_until_demoted(policy, pv)
+    policy.make_pv("TEST:OTHER_FAST")
+    policy._fast_channels.add("TEST:OTHER_FAST")
+    assert policy.is_known_fast("TEST:FAST")
+
+    assert policy.forget_channel("TEST:FAST") is True
+    assert not policy.is_known_fast("TEST:FAST")
+    assert policy.is_known_fast("TEST:OTHER_FAST"), "unrelated entries untouched"
+
+
+def test_forget_channel_is_a_noop_for_an_unknown_channel(policy):
+    assert policy.forget_channel("TEST:NEVER_SEEN") is False
 
 
 def test_counts_are_zeroed_not_lost_between_sweeps(policy):
@@ -181,8 +262,11 @@ def test_the_sweeper_leaves_subscriptions_alone_during_an_acquisition(policy):
     with policy.sensitive_period("scan step"):
         policy._sweep_once(interval=1.0)
         assert pv.auto_monitor is True, "demoted mid-acquisition"
-    # and it still gets demoted once the window closes
-    policy._sweep_once(interval=1.0)
+    # and it still accumulates towards (sustained) demotion once the window
+    # closes, same as any other over-threshold streak
+    for _ in range(policy.AUTO_MONITOR_SUSTAINED_SWEEPS):
+        pv.fire(100)
+        policy._sweep_once(interval=1.0)
     assert pv.auto_monitor is False
 
 

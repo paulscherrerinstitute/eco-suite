@@ -128,6 +128,19 @@ AUTO_MONITOR_MAX_RATE = 10.0
 # How often the sweeper looks at accumulated counts.
 AUTO_MONITOR_SWEEP_INTERVAL = 5.0
 
+# How many *consecutive* sweeps a channel must measure above
+# AUTO_MONITOR_MAX_RATE before it is actually demoted. A single window is not
+# enough evidence: a motor .RBV updates in a burst while it is moving and
+# sits idle otherwise, and demotion is permanent (persisted to
+# AUTO_MONITOR_STATE_FILE) - one unlucky 5 s window landing on a move can
+# mislabel an ordinary readback as "fast" forever. Seen for real 2026-09-06:
+# SLAAR21-LMOT-M521/M524:MOTOR_1.RBV (delay-stage motor readbacks) demoted
+# mid-scan at step 4 after a single sweep read ~14 Hz during that step's
+# move/settle. Requiring the rate to hold for several sweeps in a row (here,
+# 3 x 5 s = 15 s) filters out a burst lasting one step without meaningfully
+# delaying real fast channels, which stay above the threshold continuously.
+AUTO_MONITOR_SUSTAINED_SWEEPS = 3
+
 # Where the learned fast-channel list is remembered. Per user rather than
 # shared: it is a local performance hint, not beamline configuration, and a
 # per-user file has none of the group-permission problems a shared one in
@@ -328,6 +341,10 @@ _fast_lock = threading.RLock()
 _fast_channels = set()      # pvnames known to update faster than the threshold
 _fast_dirty = False         # something changed since the last save
 _update_counts = {}         # pvname -> updates since the last sweep
+_fast_streak = {}           # pvname -> consecutive sweeps measured above the
+                             # threshold; reset to 0 the moment a sweep sees
+                             # it back at a normal rate (see
+                             # AUTO_MONITOR_SUSTAINED_SWEEPS)
 _tracked = {}               # pvname -> (pv, callback_index)
 _sweeper = None
 _sensitive_depth = 0        # >0 while a caller has declared a sensitive period
@@ -394,6 +411,25 @@ def clear_fast_channels():
     save_fast_channels()
 
 
+def forget_channel(pvname):
+    """Un-demote a single channel, leaving the rest of the learned list alone.
+
+    `clear_fast_channels()` wipes everything, which is unnecessarily broad
+    when only one entry turns out to have been a mismeasurement - e.g. a
+    motor .RBV demoted from a single burst during a move before
+    AUTO_MONITOR_SUSTAINED_SWEEPS existed to guard against exactly that. Safe
+    to call for a channel that isn't in the list.
+    """
+    global _fast_dirty
+    with _fast_lock:
+        if pvname not in _fast_channels:
+            return False
+        _fast_channels.discard(pvname)
+        _fast_dirty = True
+    save_fast_channels()
+    return True
+
+
 def _count_update(pvname):
     # The hot path: one dict increment per CA update, on libca's callback
     # thread. Deliberately not locked - a lost increment costs nothing to a
@@ -436,9 +472,11 @@ def _demote(pvname, pv, index, rate):
         logger.debug("ca_tuning: could not demote %s", pvname, exc_info=True)
         return False
     logger.info(
-        "ca_tuning: %s updates at ~%.0f Hz (> %.0f Hz), dropping its monitor "
-        "- reads of it go back to a direct CA get.",
-        pvname, rate, AUTO_MONITOR_MAX_RATE,
+        "ca_tuning: %s updates at ~%.0f Hz (> %.0f Hz) for %d consecutive "
+        "sweeps (~%.0f s), dropping its monitor - reads of it go back to a "
+        "direct CA get.",
+        pvname, rate, AUTO_MONITOR_MAX_RATE, AUTO_MONITOR_SUSTAINED_SWEEPS,
+        AUTO_MONITOR_SUSTAINED_SWEEPS * AUTO_MONITOR_SWEEP_INTERVAL,
     )
     return True
 
@@ -458,16 +496,29 @@ def _sweep_once(interval):
         _update_counts[name] = 0
     demoted = []
     for pvname, count in counts.items():
-        if count / interval <= AUTO_MONITOR_MAX_RATE:
+        rate = count / interval
+        if rate <= AUTO_MONITOR_MAX_RATE:
+            # Back to normal (or never was fast) - a burst does not
+            # accumulate credit towards demotion across separate episodes.
+            _fast_streak.pop(pvname, None)
+            continue
+        streak = _fast_streak.get(pvname, 0) + 1
+        if streak < AUTO_MONITOR_SUSTAINED_SWEEPS:
+            # Fast in this window, but not for long enough yet to trust it -
+            # see AUTO_MONITOR_SUSTAINED_SWEEPS for why a single window isn't
+            # taken at face value.
+            _fast_streak[pvname] = streak
             continue
         entry = _tracked.get(pvname)
         if entry is None:
+            _fast_streak.pop(pvname, None)
             continue
         pv, index = entry
-        if _demote(pvname, pv, index, count / interval):
+        if _demote(pvname, pv, index, rate):
             demoted.append(pvname)
             _tracked.pop(pvname, None)
             _update_counts.pop(pvname, None)
+            _fast_streak.pop(pvname, None)
     if demoted:
         with _fast_lock:
             _fast_channels.update(demoted)
