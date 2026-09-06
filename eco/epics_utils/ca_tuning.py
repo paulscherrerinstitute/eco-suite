@@ -230,6 +230,39 @@ def _ca_channel_state(pvname=None, limit=20000):
         return (None, None, "")
 
 
+def describe_channel(pv=None, pvname=None):
+    """One-line diagnostic: connection + history + CA-cache state.
+
+    Factored out of `report_none_read` so any other hardened chokepoint that
+    raises instead of returning `None` (e.g. `Daq.get_pulse_id`'s
+    `TimeoutError`) can attach the same evidence a `None` read already gets,
+    instead of a bare "timeout hit" that requires log archaeology after the
+    fact to tell a dropped virtual circuit from a channel that was simply
+    never demoted/recreated correctly.
+
+    Best-effort like `_ca_channel_state`: called while something is already
+    wrong, so it must not itself raise.
+    """
+    try:
+        pvname = pvname or getattr(pv, "pvname", None)
+        connected = getattr(pv, "connected", "?") if pv is not None else "?"
+        last_ok = _last_ok.get(pvname) if pvname else None
+        if last_ok is None:
+            history = "never returned a value in this session"
+        else:
+            history = f"last returned a value {time.time() - last_ok:.1f}s ago"
+        disconnected, total, detail = _ca_channel_state(pvname)
+        if disconnected is None:
+            ca_state = "CA cache unavailable"
+        else:
+            ca_state = (
+                f"{disconnected}/{total} cached channels disconnected{detail}"
+            )
+        return f"connected={connected}, {history}, {ca_state}"
+    except Exception:
+        return "diagnostics unavailable"
+
+
 def report_none_read(pv, name=None, kind="read"):
     """Log a `PV.get()` that returned None, with the context needed to tell
     a transient apart from an absent PV.
@@ -443,6 +476,31 @@ def _sweep_once(interval):
 
 
 def _sweep_loop():
+    # CRITICAL: this thread calls pv.auto_monitor = False / remove_callback
+    # on channels it did not create, which ends up in libca's
+    # ca_clear_subscription(). Every thread that touches Channel Access must
+    # first attach to the *same* CA context the channel was created on
+    # (pyepics's default is to implicitly create a new context on first use
+    # per thread) - this codebase has already been burned by skipping that,
+    # up to and including a segfault inside libca's CA-TCP-recv thread from
+    # concurrent init_all() workers each running their own context (see
+    # eco.utilities.config._run_init_pass, eco.status_server.namespace_store
+    # ._ca_thread, eco.status_server.parallel_init - all attach explicitly
+    # for exactly this reason). This function used not to, which is a live
+    # bug: calling ca_clear_subscription() on a channel from an unattached
+    # thread is undefined behaviour, not merely "affects only that one
+    # subscription" - a plausible way for one demotion to transiently
+    # disrupt delivery to a *different*, unrelated PV object monitoring the
+    # same channel (e.g. Daq's dedicated pulse_id monitor, which shares a
+    # chid with any other PV(...) built for the same pvname - pyepics
+    # dedupes channels by (context, pvname), see epics.ca.create_channel).
+    try:
+        import epics.ca as ca
+
+        ca.use_initial_context()
+    except Exception:
+        logger.warning("ca_tuning: sweeper could not attach to the shared "
+                       "CA context", exc_info=True)
     last = time.time()
     while True:
         time.sleep(AUTO_MONITOR_SWEEP_INTERVAL)

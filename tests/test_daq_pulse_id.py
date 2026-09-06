@@ -46,6 +46,7 @@ def make_daq(monitored=True, value=None, timestamp=None, pv=None, timeout=0.5):
     """A Daq carrying only what the pulse_id helpers touch."""
     daq = Daq.__new__(Daq)
     daq.timeout = timeout
+    daq.pulse_id_timeout = timeout
     daq.pulse_id = _FakePulseId(pv=pv)
     if monitored:
         daq._pulse_id_latest = {"value": value, "timestamp": timestamp}
@@ -222,3 +223,67 @@ def test_wait_honours_an_explicit_timeout():
 
     with pytest.raises(TimeoutError):
         daq.wait_for_pulse_id(99999, poll_interval=0.01, timeout=0.2)
+
+
+# --------------------------------------------------------------------------
+# pulse_id_timeout: a separate, longer-lived budget from `timeout`
+#
+# get_pulse_id() used to default to `self.timeout`, which is also the broker
+# HTTP request budget (2 s). A real scan (p19734 run 1146, 2026-09-06) hit
+# that 2 s wait on an ordinary ~3.4 s CA gap and aborted. Decoupling the two
+# lets the pulse_id wait be more patient without touching HTTP semantics.
+# --------------------------------------------------------------------------
+
+
+def test_pulse_id_timeout_defaults_to_five_seconds():
+    import inspect
+
+    assert (
+        inspect.signature(Daq.__init__).parameters["pulse_id_timeout"].default
+        == 5.0
+    )
+
+
+def test_get_pulse_id_uses_pulse_id_timeout_not_timeout():
+    """A short `timeout` (the HTTP budget) must not cut short a pulse_id wait
+    that the longer `pulse_id_timeout` would still have tolerated."""
+    daq = make_daq(value=None, timestamp=None, timeout=0.05)
+    daq.pulse_id_timeout = 5
+
+    def publish():
+        time.sleep(0.15)  # longer than daq.timeout, shorter than pulse_id_timeout
+        with daq._pulse_id_latest_lock:
+            daq._pulse_id_latest.update(value=321, timestamp=time.time())
+        daq._pulse_id_updated.set()
+
+    t = threading.Thread(target=publish)
+    t.start()
+    try:
+        assert daq.get_pulse_id() == 321
+    finally:
+        t.join()
+
+
+# --------------------------------------------------------------------------
+# TimeoutError diagnostics: enough to tell a dropped circuit apart from a
+# channel that was simply never demoted/recreated, without log archaeology.
+# --------------------------------------------------------------------------
+
+
+def test_timeout_error_carries_channel_diagnostics_monitor_path():
+    daq = make_daq(value=None, timestamp=None, timeout=0.1)
+
+    with pytest.raises(TimeoutError) as excinfo:
+        daq.get_pulse_id()
+
+    assert "connected=" in str(excinfo.value)
+
+
+def test_timeout_error_carries_channel_diagnostics_fallback_path():
+    pv = _FakePv(values=[], timevars={"timestamp": time.time()})
+    daq = make_daq(monitored=False, pv=pv, timeout=0.1)
+
+    with pytest.raises(TimeoutError) as excinfo:
+        daq.get_pulse_id()
+
+    assert "connected=" in str(excinfo.value)

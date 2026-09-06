@@ -17,6 +17,7 @@ fast, rather than every caller hand-rolling its own monitor cache.
 """
 
 import json
+import sys
 import time
 import types
 
@@ -279,3 +280,54 @@ def test_a_successful_read_needs_no_retry(read_pv):
     pv = FlakyPV(n_none=0)
     assert read_pv(pv, name="flaky") == 42.0
     assert pv.reads == 1
+
+
+# --------------------------------------------------------------------------
+# the sweeper thread must attach to the shared CA context
+#
+# It calls pv.auto_monitor = False / remove_callback on channels it did not
+# create - libca's ca_clear_subscription() from a thread that never attached
+# to the same CA context as the channel is undefined behaviour, not merely
+# "affects only that one subscription". This codebase has already been
+# burned by exactly this class of bug once (a real segfault from concurrent
+# init_all() workers each implicitly creating their own context - see
+# eco.utilities.config._run_init_pass and eco.status_server.namespace_store
+# ._ca_thread, both of which attach explicitly for this reason).
+
+
+def test_sweep_loop_attaches_to_the_shared_ca_context(monkeypatch):
+    calls = []
+    fake_ca = types.SimpleNamespace(use_initial_context=lambda: calls.append(1))
+    fake_epics = types.ModuleType("epics")
+    fake_epics.ca = fake_ca
+    monkeypatch.setitem(sys.modules, "epics", fake_epics)
+    monkeypatch.setitem(sys.modules, "epics.ca", fake_ca)
+
+    # run the loop body once by making time.sleep raise after the first call,
+    # so _sweep_loop's infinite `while True` doesn't actually hang the test
+    monkeypatch.setattr(ca_tuning.time, "sleep", lambda s: (_ for _ in ()).throw(
+        KeyboardInterrupt()))
+    try:
+        ca_tuning._sweep_loop()
+    except KeyboardInterrupt:
+        pass
+
+    assert calls, "the sweeper thread never attached to the shared CA context"
+
+
+def test_sweeper_context_attach_failure_does_not_crash_the_thread(monkeypatch):
+    """A context-attach failure must not prevent the loop (and its sweeps)
+    from running at all - degrade, don't crash a daemon thread silently."""
+    fake_ca = types.SimpleNamespace(
+        use_initial_context=lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    fake_epics = types.ModuleType("epics")
+    fake_epics.ca = fake_ca
+    monkeypatch.setitem(sys.modules, "epics", fake_epics)
+    monkeypatch.setitem(sys.modules, "epics.ca", fake_ca)
+    monkeypatch.setattr(ca_tuning.time, "sleep", lambda s: (_ for _ in ()).throw(
+        KeyboardInterrupt()))
+    try:
+        ca_tuning._sweep_loop()
+    except KeyboardInterrupt:
+        pass  # reaching this point at all is the assertion

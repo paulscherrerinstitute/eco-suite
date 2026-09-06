@@ -18,6 +18,7 @@ from eco.utilities.utilities import foo_get_kwargs
 from eco.utilities.datafiles import ensure_dir, open_group_writable
 from ..epics_utils.detector import DetectorPvDataStream
 from ..epics_utils.utilities_epics import Monitor
+from ..epics_utils import ca_tuning
 from epics import PV
 from ..acquisition.utilities import Acquisition
 from ..elements.assembly import Assembly
@@ -119,6 +120,7 @@ class Daq(Assembly):
         broker_address_aux="http://sf-daq:10003",
         timeout=2,
         # timeout=10,
+        pulse_id_timeout=5.0,
         pgroup=None,
         pulse_id_adj=None,
         event_master=None,
@@ -164,6 +166,14 @@ class Daq(Assembly):
         self.broker_address = broker_address
         self.broker_address_aux = broker_address_aux
         self.timeout = timeout
+        # Separate from `timeout` (the broker HTTP request budget) on purpose:
+        # get_pulse_id() used to default to `self.timeout`, so a 2 s HTTP
+        # timeout doubled as the pulse_id wait budget with no way to tune one
+        # without the other. A real scan (p19734 run 1146, 2026-09-06) hit
+        # this exact 2 s budget on a transient CA gap of ~3.4 s and aborted;
+        # raising just this knob gives real hiccups more room without
+        # changing broker request semantics.
+        self.pulse_id_timeout = pulse_id_timeout
         self._pgroup = pgroup
         if type(pulse_id_adj) is str:
             self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
@@ -471,10 +481,12 @@ class Daq(Assembly):
         widen the acquisition window.
 
         Raises `TimeoutError` (never returns None) if no acceptable value
-        arrives within `timeout`, defaulting to ``self.timeout``.
+        arrives within `timeout`, defaulting to ``self.pulse_id_timeout``
+        (separate from ``self.timeout``, the broker HTTP request budget, so
+        one can be tuned without the other).
         """
         if timeout is None:
-            timeout = self.timeout
+            timeout = self.pulse_id_timeout
         deadline = time.time() + timeout
 
         if hasattr(self, "_pulse_id_updated"):
@@ -488,12 +500,16 @@ class Daq(Assembly):
                     return int(val)
                 remaining = deadline - time.time()
                 if remaining <= 0:
+                    state = ca_tuning.describe_channel(
+                        getattr(self, "_pulse_id_monitor_pv", None),
+                        self.pulse_id.pvname,
+                    )
                     raise TimeoutError(
                         f"Timeout {timeout} s hit while waiting for a valid"
                         f"{', up-to-date' if newer_than is not None else ''} "
                         f"pulse_id from the {self.pulse_id.pvname} monitor. "
                         f"last value: {val}; last timestamp: {ts}; "
-                        f"required newer than: {newer_than}"
+                        f"required newer than: {newer_than}; {state}"
                     )
                 self._pulse_id_updated.wait(timeout=min(remaining, 0.25))
                 self._pulse_id_updated.clear()
@@ -519,11 +535,12 @@ class Daq(Assembly):
                 if value is not None:
                     return int(value)
             if time.time() > deadline:
+                state = ca_tuning.describe_channel(pv, getattr(pv, "pvname", None))
                 raise TimeoutError(
                     f"Timeout {timeout} s hit while waiting for a valid"
                     f"{', up-to-date' if newer_than is not None else ''} "
                     f"pulse_id. timevars: {tvars}; value: {value}; "
-                    f"required newer than: {newer_than}"
+                    f"required newer than: {newer_than}; {state}"
                 )
             time.sleep(poll_interval)
             poll_interval = min(poll_interval * 1.5, max_poll_interval)
