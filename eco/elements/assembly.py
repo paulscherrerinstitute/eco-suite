@@ -14,7 +14,7 @@ import numpy as np
 
 
 from eco.acquisition.scan_data import run_status_convenience
-from eco.elements.protocols import Detector, InitialisationWaitable
+from eco.elements.protocols import Detector, InitialisationWaitable, resolve_lazy
 from eco.epics_utils import get_from_archive
 
 from ..aliases import Alias
@@ -354,19 +354,14 @@ class Assembly:
             # `spec_convenience.<locals>.call() got an unexpected keyword
             # argument 'name'`). Resolve such a handle to the real object
             # first -- inside the try, so a failing factory is still handled
-            # by the `optional=` machinery below. Duck-typed on purpose:
-            # `eco.utilities.config` imports this module, so it can't be
-            # imported here. `__resolved__` is readable without triggering
-            # the factory; reading `__wrapped__` is what runs it.
+            # by the `optional=` machinery below. `resolve_lazy` loops rather
+            # than unwrapping once: a NamespaceComponent-supplied argument is
+            # `Proxy(component.get)`, and `.get()` itself returns
+            # `namespace.get_obj(...)` -- another unresolved Proxy for a
+            # still-lazy target, so a single unwrap used to land on that inner
+            # proxy instead of the real object. See `resolve_lazy`'s docstring.
             if not isclass(foo_obj_init):
-                try:
-                    object.__getattribute__(foo_obj_init, "__resolved__")
-                except AttributeError:
-                    pass
-                else:
-                    foo_obj_init = object.__getattribute__(
-                        foo_obj_init, "__wrapped__"
-                    )
+                foo_obj_init = resolve_lazy(foo_obj_init)
             if isinstance(foo_obj_init, Adjustable) and not isclass(foo_obj_init):
                 # adj_copy = copy.copy(foo_obj_init)
                 adj_copy = foo_obj_init

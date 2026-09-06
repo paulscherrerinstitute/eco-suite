@@ -44,7 +44,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "ElogsMultiplexer",
-    NamespaceComponent(namespace,'config_bernina.pgroup'),
+    NamespaceComponent(namespace,"scilog"),
     NamespaceComponent(namespace,"elog_gfa"),
     name="elog",
     module_name="eco.utilities.elog",

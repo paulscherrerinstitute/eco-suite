@@ -16,11 +16,9 @@ class MyExp(Assembly):
 
 namespace.append_obj(MyExp,
                  NamespaceComponent(namespace,"dummy_adjustable"),  # replace with a real adjustable name
-                 NamespaceComponent(namespace,"event_master.pulse_id"),
+                 NamespaceComponent(namespace,"daq.pulse_id"),
                  name="my_exp_object_1",
                  lazy=True,  # lazy=True: only resolves the components above once "my_exp_object_1" is actually touched
-                 is_display=True,
-                 is_setting=False,
                  )
 
 

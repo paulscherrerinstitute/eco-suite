@@ -22,26 +22,27 @@ client talks to.
 ## 1. Start it
 
 ```bash
-eco-dev-status-server start -b     # detached, logs to ~/.eco/status_server_<host>.log
-eco-dev-status-server wait         # block until it reports ready, printing progress
-eco-dev-status-server status       # state, init progress, memory, running recordings
-eco-dev-status-server stop
+eco-status-server start -b     # detached, logs to ~/.eco/status_server_<host>.log
+eco-status-server wait         # block until it reports ready, printing progress
+eco-status-server status       # state, init progress, memory, running recordings
+eco-status-server stop
 ```
 
-`/sf/bernina/bin/eco-dev-status-server` is a symlink to
-[`scripts/eco-status-server`](../../scripts/eco-status-server) at the repo
-root (alongside `eco-dev`) - editing the checkout takes effect immediately,
-nothing to redeploy. Named `eco-dev-` like `eco-dev` itself: this always
-runs the checkout it is symlinked into, not an installed package - see §11
-for what that means and how it could become a real, installed `eco-status-
-server` command instead. Without
+`/sf/bernina/bin/eco-status-server` is a symlink to
+[`scripts/eco-status-server`](../../scripts/eco-status-server) in the
+**shared `gac-bernina` checkout** (`/sf/bernina/code/gac-bernina/eco`, not a
+personal one) - editing that checkout takes effect immediately, nothing to
+redeploy. Not `eco-dev`-prefixed: unlike `eco-dev` (which deliberately always
+runs whichever checkout it happens to be symlinked into, personal or not),
+there is exactly one place this is meant to run from, so there is nothing to
+disambiguate against - see §11. Without
 `-b` it runs in the foreground, which is what the systemd unit uses — the
 service and the interactive command run exactly the same thing. It reads
 `/sf/bernina/config/eco_status_server/env` for the checkout, config and
 interpreter to use, and each of those is overridable per invocation:
 
 ```bash
-ECO_STATUS_SERVER_CHECKOUT=~/my-eco eco-dev-status-server start -b
+ECO_STATUS_SERVER_CHECKOUT=~/my-eco eco-status-server start -b
 ```
 
 The port is bound immediately; `namespace.init_all()` then runs on a
@@ -58,7 +59,7 @@ python -m eco.status_server --mode namespace --config /path/to/bernina_namespace
 ### GUI
 
 ```bash
-eco-dev-status-server gui                   # small Qt window: status, reinit, query stats
+eco-status-server gui                   # small Qt window: status, reinit, query stats
 ```
 
 Polls `/health` and `/stats` every couple of seconds. Shows state, init
@@ -72,7 +73,7 @@ has served - duration, entry count, and any error. Needs a desktop/X session;
 ### As a systemd user service
 
 ```bash
-eco-dev-status-server-install-user-service  # run this from a shell where CA works
+eco-status-server-install-user-service  # run this from a shell where CA works
 loginctl enable-linger $USER
 systemctl --user daemon-reload
 systemctl --user enable --now eco-status-server
@@ -416,17 +417,19 @@ Recording numbers and the downthrottling analysis are in DESIGN.md §15.
   written `status.json` can `stat` as missing from the console you are
   sitting at.
 
-## 11. `eco-dev-status-server` vs a real installed `eco-status-server`
+## 11. Why not `eco-dev-status-server`, and could this be an installed command
 
-The command is named `eco-dev-status-server`, not `eco-status-server`,
-because it currently only *can* mean "run from a development checkout" — the
-status-server code lives in a personal checkout
-(`/sf/bernina/config/personal/lemke_h/eco`), not the shared gac-bernina one,
-so there is no meaningfully different "production, installed" version to
-distinguish it from yet. `eco-dev` (this repo's other script) draws exactly
-that line already: it always runs the checkout it is symlinked into, ignoring
-whatever `eco` package is `pip`/`pixi`-installed in the environment, for the
-same reason.
+Not `eco-dev`-prefixed, deliberately: `eco-dev` earns that prefix because
+there really are two things it could mean - the checkout you happen to be
+in, or whatever `eco` is `pip`/`pixi`-installed in the environment - and it
+always picks the former. `eco-status-server` has no second meaning to
+disambiguate from: as of 2026-09-06 the code lives only in the shared
+`gac-bernina` checkout (`/sf/bernina/code/gac-bernina/eco`, kept in sync via
+its own git remote), `/sf/bernina/bin/eco-status-server` is a symlink
+straight into it, and that is the one and only place this runs from. (It
+briefly *was* `eco-dev-status-server`, pointed at a personal checkout, while
+the code was still being developed there - renamed back once it landed in
+the shared one.)
 
 **The two scripts are not the same thing.** `eco-status-server` is the
 day-to-day tool: start/stop/status/wait/stats/gui/logs — one running server,

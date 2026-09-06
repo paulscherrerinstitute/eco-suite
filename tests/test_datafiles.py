@@ -511,3 +511,84 @@ def test_repair_tree_fixes_every_level(tmp_path):
 
     assert mode_of(tmp_path / "dev") & (stat.S_ISGID | stat.S_IWGRP)
     assert mode_of(tmp_path / "dev" / "memories.json") & stat.S_IWGRP
+
+
+def _make_unfixable_in_place(tmp_path, monkeypatch):
+    """A file and its parent directory that `ensure_group_writable` cannot fix
+    in place (their `chmod` is blocked, simulating another account's entry),
+    but that this process CAN still delete/rename since it owns `tmp_path`
+    itself. Mirrors the real eco_cnf_bernina/memory situation: entries owned
+    by another account, sitting in a directory this account can write to."""
+    device = tmp_path / "device"
+    device.mkdir()
+    value = device / "value.json"
+    value.write_text("42")
+    os.chmod(device, 0o755)
+    os.chmod(value, 0o644)
+
+    real_chmod = df.os.chmod
+
+    def selective_chmod(path, mode, *a, **k):
+        if Path(path) in (device, value):
+            raise PermissionError(1, "Operation not permitted")
+        return real_chmod(path, mode, *a, **k)
+
+    monkeypatch.setattr(df.os, "chmod", selective_chmod)
+    monkeypatch.setattr(df, "acl_grants_group_write", lambda *a, **k: False)
+    return device, value
+
+
+def test_repair_tree_without_replace_unowned_just_reports_them(
+    tmp_path, monkeypatch
+):
+    device, value = _make_unfixable_in_place(tmp_path, monkeypatch)
+
+    bad = df.repair_tree(tmp_path, warn=False)
+
+    assert set(bad) == {device, value}
+    assert value.read_text() == "42"  # untouched
+    assert mode_of(value) == 0o644
+
+
+def test_repair_tree_replace_unowned_rebuilds_them_self_owned(
+    tmp_path, monkeypatch
+):
+    device, value = _make_unfixable_in_place(tmp_path, monkeypatch)
+
+    touched, bad = df.repair_tree(tmp_path, replace_unowned=True, warn=False)
+
+    assert bad == []
+    assert set(touched) == {device, value}
+    # same paths, same content, now fixable because they are self-owned
+    assert value.read_text() == "42"
+    assert mode_of(value) & stat.S_IWGRP
+    assert mode_of(device) & (stat.S_ISGID | stat.S_IWGRP)
+
+
+def test_repair_tree_dry_run_does_not_replace_anything(tmp_path, monkeypatch):
+    device, value = _make_unfixable_in_place(tmp_path, monkeypatch)
+
+    touched, bad = df.repair_tree(
+        tmp_path, replace_unowned=True, dry_run=True, warn=False
+    )
+
+    assert set(touched) == {device, value}
+    assert bad == []
+    assert value.read_text() == "42"
+    assert mode_of(value) == 0o644  # not actually replaced
+    assert not list(tmp_path.glob("**/.*eco-tmp"))
+
+
+def test_repair_tree_never_replaces_the_root_itself(tmp_path, monkeypatch):
+    os.chmod(tmp_path, 0o755)
+
+    def refuse(path, *a, **k):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(df.os, "chmod", refuse)
+    monkeypatch.setattr(df, "acl_grants_group_write", lambda *a, **k: False)
+
+    touched, bad = df.repair_tree(tmp_path, replace_unowned=True, warn=False)
+
+    assert tmp_path in bad
+    assert tmp_path not in touched

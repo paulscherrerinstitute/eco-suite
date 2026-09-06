@@ -675,7 +675,114 @@ def _fix_open_file(fh, path, pgroup=None, warn=True):
                 _warn_unfixable(path, group)
 
 
-def repair_tree(path, warn=True):
+def _replace_owned_file(path, group, warn=True):
+    """Replace `path` with a byte-identical copy owned by this process.
+
+    For a file this account cannot `chown`/`chmod` in place -- typically
+    another account's file sitting in a directory this account can still
+    write to (no sticky bit; see `repair_tree`'s `replace_unowned`). Copies
+    through a sibling temp file and `os.replace`, the same directory-entry
+    swap `mv` would do, so it is atomic: nothing ever observes a missing or
+    half-written file at `path`. Best-effort -- any failure along the way
+    leaves the original untouched and returns False.
+    """
+    path = Path(path)
+    gid = _gid_of(group) if group else None
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    if not stat.S_ISREG(st.st_mode):
+        return False
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f".{path.name}.", suffix=".eco-tmp"
+        )
+    except OSError:
+        return False
+    try:
+        with os.fdopen(fd, "wb") as tmp_fh, open(path, "rb") as src:
+            tmp_fh.write(src.read())
+        os.chmod(tmp_name, FILE_MODE)
+        if gid is not None:
+            try:
+                os.chown(tmp_name, -1, gid)
+            except OSError:
+                pass
+        os.replace(tmp_name, path)
+        return True
+    except OSError:
+        if warn:
+            warn_once(
+                ("replace-file-failed", str(path)),
+                f"could not replace {path} with a self-owned copy: leaving "
+                f"the original in place.",
+            )
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        return False
+
+
+def _replace_owned_dir(path, group, warn=True):
+    """Rebuild `path` as a directory owned by this process.
+
+    Counterpart to `_replace_owned_file` for a directory this account does
+    not own: builds a sibling temp directory with the right owner/group/mode
+    and moves the existing children into it (`os.replace` per child -- no
+    copying, since they are on the same filesystem and, being processed
+    bottom-up by `repair_tree`, are already correct themselves), which leaves
+    `path` empty. The final `os.replace(tmp, path)` is then a single atomic
+    rename: POSIX `rename()` permits replacing an *empty* directory in one
+    syscall, so there is no window where `path` does not exist at all -- unlike
+    a naive `rmdir` followed by a separate `rename`.
+
+    Best-effort: on any failure, already-moved children are moved back before
+    giving up, so a partial failure never leaves an entry reachable from
+    neither the original nor the temp location.
+    """
+    path = Path(path)
+    gid = _gid_of(group) if group else None
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    if not stat.S_ISDIR(st.st_mode):
+        return False
+    try:
+        tmp_name = tempfile.mkdtemp(dir=str(path.parent), prefix=f".{path.name}.")
+    except OSError:
+        return False
+    tmp_path = Path(tmp_name)
+    try:
+        os.chmod(tmp_name, DIR_MODE)
+        if gid is not None:
+            try:
+                os.chown(tmp_name, -1, gid)
+            except OSError:
+                pass
+        for child in os.listdir(path):
+            os.replace(path / child, tmp_path / child)
+        os.replace(tmp_name, path)
+        return True
+    except OSError:
+        if warn:
+            warn_once(
+                ("replace-dir-failed", str(path)),
+                f"could not rebuild {path} as a self-owned directory: leaving "
+                f"the original in place.",
+            )
+        try:
+            for child in os.listdir(tmp_name):
+                os.replace(tmp_path / child, path / child)
+            os.rmdir(tmp_name)
+        except OSError:
+            pass
+        return False
+
+
+def repair_tree(path, warn=True, replace_unowned=False, dry_run=False):
     """Make everything at and below `path` group-writable and group-owned.
 
     The counterpart to the warnings above, for the account that owns the tree:
@@ -684,19 +791,64 @@ def repair_tree(path, warn=True):
     account cannot fix are returned (and listed, owner first) rather than
     raising, so a tree with a few stragglers from a third account still gets
     everything else repaired.
+
+    ``replace_unowned=True`` additionally handles entries owned by *another*
+    account (so this one can `chmod`/`chown` neither the group nor the mode
+    bits in place) by replacing them with an identical, self-owned copy --
+    see `_replace_owned_file`/`_replace_owned_dir`. That only works where the
+    containing directory is writable by this account (no sticky bit blocking
+    delete/rename), which `ensure_group_writable`/`_warn_unfixable` cannot
+    already tell you it isn't. **This changes ownership, not just group**, and
+    is a one-way step for entries this account cannot hand back without root
+    -- consider `dry_run=True` first to see exactly what would be replaced.
+    (`dry_run` only gates *this* -- ownership-changing -- step; the ordinary
+    in-place `chmod`/`chgrp` fixes `ensure_group_writable` can already do on
+    its own still happen regardless, exactly as they would without
+    `replace_unowned` at all.) Processing walks bottom-up
+    (`os.walk(..., topdown=False)`), so a directory
+    is only rebuilt once everything inside it is already correct, and `path`
+    itself is deliberately never replaced this way: if it needs fixing, that
+    is a single directory its own owner can `chmod` directly (no `chown`
+    needed, since a bare mode/setgid fix -- unlike a group change -- never
+    requires group membership), which is simpler and less disruptive than
+    rebuilding the root of a shared tree.
+
+    Returns ``(fixed, bad)`` when `replace_unowned` or `dry_run` is given
+    (`fixed`/`would_replace` respectively), otherwise plain `bad` as before.
     """
     path = Path(path)
     bad = []
-    entries = [path]
-    for root, dirs, files in os.walk(path):
-        entries.extend(Path(root) / name for name in dirs + files)
-    for entry in entries:
-        if not ensure_group_writable(entry, warn=False):
+    touched = []  # replaced (or, under dry_run, would-be-replaced) entries
+
+    def _handle(entry):
+        group = target_group_of_path(entry)
+        if ensure_group_writable(entry, pgroup=group, warn=False):
+            return
+        if not replace_unowned:
             bad.append(entry)
+            return
+        if dry_run:
+            touched.append(entry)
+            return
+        is_dir = entry.is_dir()
+        ok = (_replace_owned_dir if is_dir else _replace_owned_file)(
+            entry, group, warn=warn
+        )
+        (touched if ok else bad).append(entry)
+
+    for root, dirs, files in os.walk(path, topdown=False):
+        root = Path(root)
+        for name in files:
+            _handle(root / name)
+        for name in dirs:
+            _handle(root / name)
+    if not ensure_group_writable(path, warn=False):
+        bad.append(path)
+
     if warn and bad:
         print(
-            f"eco: {len(bad)} of {len(entries)} entries under {path} could not "
-            f"be fixed by {_current_user()}; their owners have to:"
+            f"eco: {len(bad)} entries under {path} could not be fixed by "
+            f"{_current_user()}; their owners have to:"
         )
         for entry in bad:
             try:
@@ -707,6 +859,13 @@ def repair_tree(path, warn=True):
                 f"  {stat.filemode(st.st_mode)} {_owner_name(st):>14s} "
                 f"{_name_of_gid(st.st_gid):>18s}  {entry}"
             )
+    if warn and dry_run and touched:
+        print(f"eco: would replace {len(touched)} entries under {path}:")
+        for entry in touched:
+            print(f"  {entry}")
+
+    if replace_unowned or dry_run:
+        return touched, bad
     return bad
 
 

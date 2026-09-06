@@ -77,7 +77,13 @@ class RecentComponents:
             path = base_dir / ("_".join(parts) + ".json")
         self.max_items = max_items
         self.debounce_seconds = debounce_seconds
-        self._fs = AdjustableFS(path, default_value=[], name=name)
+        # group_writable=False: this cache is scoped to one user (see class
+        # docstring), never meant for another account to write -- skip the
+        # shared-tree group-writable machinery instead of having it fail and
+        # warn on every flush (observed under gac-bernina: a 0700 $HOME
+        # keeps other accounts out regardless of the file's own mode, so the
+        # chmod attempt could never have accomplished anything anyway).
+        self._fs = AdjustableFS(path, default_value=[], name=name, group_writable=False)
         # RLock, not Lock: touch() calls all() (also lock-guarded) while
         # already holding the lock -- a plain Lock would self-deadlock.
         self._lock = threading.RLock()

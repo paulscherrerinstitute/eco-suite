@@ -577,11 +577,32 @@ ADJUSTABLEFS_MAX_READ_PERIOD = 0.2
 @spec_convenience
 @value_property
 class AdjustableFS:
-    def __init__(self, file_path, name=None, default_value=None, max_read_period=0.2):
+    def __init__(
+        self,
+        file_path,
+        name=None,
+        default_value=None,
+        max_read_period=0.2,
+        group_writable=True,
+    ):
+        # group_writable=False: for state that is genuinely private to one
+        # account (e.g. eco.elements.recent.RecentComponents,
+        # eco.widgets.component_selector.ComponentBookmarks -- both default
+        # to a path under Path.home()), skip the shared-tree group-writable
+        # dance entirely rather than have it fail and warn every time. That
+        # machinery targets shared results/config trees
+        # (`/sf/<instrument>/data/.../res`, `eco_cnf_bernina/...`); applied
+        # to a personal ~/.eco/ cache it can only ever chmod a file nobody
+        # else is a legitimate writer of, and typically can't even do that
+        # (a 0700 home directory keeps other accounts out regardless).
         self.file_path = Path(file_path)
+        self._group_writable = group_writable
         if not self.file_path.exists():
             if not self.file_path.parent.exists():
-                ensure_dir(self.file_path.parent)
+                if group_writable:
+                    ensure_dir(self.file_path.parent)
+                else:
+                    self.file_path.parent.mkdir(parents=True, exist_ok=True)
             self._write_value(default_value)
         self.alias = Alias(name)
         self.max_read_period = max_read_period
@@ -619,8 +640,12 @@ class AdjustableFS:
         group-write bit on means the next account can still rewrite it.
         """
         self._read_value.cache_clear()
-        with open_group_writable(self.file_path, "w") as f:
-            dump({"value": value}, f, indent=4)
+        if self._group_writable:
+            with open_group_writable(self.file_path, "w") as f:
+                dump({"value": value}, f, indent=4)
+        else:
+            with open(self.file_path, "w") as f:
+                dump({"value": value}, f, indent=4)
 
     def set_target_value(self, value, hold=False):
         return Changer(

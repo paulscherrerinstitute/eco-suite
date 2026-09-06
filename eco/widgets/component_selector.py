@@ -273,7 +273,12 @@ class ComponentBookmarks:
             base_dir = Path.home() / ".eco" / "component_selector"
             fname = f"bookmarks_{namespace_name}.json" if namespace_name else "bookmarks.json"
             path = base_dir / fname
-        self._fs = AdjustableFS(path, default_value={}, name=name)
+        # group_writable=False: like eco.elements.recent.RecentComponents,
+        # this defaults to a path under Path.home() and is per-account state
+        # -- skip the shared-tree group-writable dance rather than have it
+        # fail and warn every write (a 0700 $HOME keeps other accounts out
+        # regardless of the file's own mode, so it could never help anyway).
+        self._fs = AdjustableFS(path, default_value={}, name=name, group_writable=False)
 
     @property
     def path(self) -> Path:

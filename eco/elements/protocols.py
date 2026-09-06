@@ -72,12 +72,26 @@ def resolve_lazy(obj):
     `__resolved__` is a boolean the underlying C proxy exposes without
     triggering the factory; reading `__wrapped__` is what forces the build. A
     non-proxy has neither and is returned unchanged.
+
+    Loops rather than unwrapping once: a `NamespaceComponent`-supplied
+    argument is itself `Proxy(component.get)` (built by
+    `config.replace_NamespaceComponents`), and `NamespaceComponent.get()`
+    returns `namespace.get_obj(...)` -- which, for a still-lazy target, is
+    *itself* another unresolved `Proxy` (the namespace's own `lazy_items`
+    handle). A single unwrap only reaches that inner proxy, not the real
+    object, so `isinstance(..., Adjustable)` stayed False and callers fell
+    through to treating it as a plain callable -- e.g. `_append` calling
+    `foo_obj_init(*args, **kwargs, name=name)` on what was actually still a
+    lazy adjustable proxy, hitting the adjustable's `spec_convenience`
+    `__call__` sugar (`call() got an unexpected keyword argument 'name'`)
+    instead of ever reaching the intended isinstance branch.
     """
-    try:
-        object.__getattribute__(obj, "__resolved__")
-    except AttributeError:
-        return obj
-    return object.__getattribute__(obj, "__wrapped__")
+    while True:
+        try:
+            object.__getattribute__(obj, "__resolved__")
+        except AttributeError:
+            return obj
+        obj = object.__getattribute__(obj, "__wrapped__")
 
 
 def is_adjustable(obj):

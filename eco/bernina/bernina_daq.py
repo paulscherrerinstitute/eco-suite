@@ -89,14 +89,12 @@ namespace.append_obj(
 # production one would get.
 _ECO_STATUS_SERVER_DEFAULT = "http://saresb-cons-04:8091"
 _status_server = os.environ.get("ECO_STATUS_SERVER", _ECO_STATUS_SERVER_DEFAULT)
-_status_server_is_default = "ECO_STATUS_SERVER" not in os.environ
 if _status_server.strip().lower() in ("", "off", "none", "false", "0"):
     _status_server = None
 if _status_server:
-    kind = "dev/personal-checkout" if _status_server_is_default else "configured"
-    print(f"daq: taking run status from the {kind} status server "
-          f"{_status_server} (set ECO_STATUS_SERVER=off in the shell before "
-          "starting this session to always use the local namespace instead)")
+    print(f"daq: taking run status from status server {_status_server} "
+          "(set ECO_STATUS_SERVER=off in the shell before starting this "
+          "session to always use the local namespace instead)")
 
 namespace.append_obj(
     "Daq",
@@ -126,11 +124,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "Scans",
-    # data_base_dir="scan_data",
-    # scan_info_dir=f"/sf/bernina/data/{config_bernina.pgroup()}/res/scan_info",
-    # default_counters=[daq],
     default_counters=[NamespaceComponent(namespace,"daq")],
-    # default_counters=NamespaceComponent(namespace,"daq"),
     callbacks_start_scan=[],
     callbacks_end_step=[],
     callbacks_end_scan=[],
