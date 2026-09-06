@@ -470,6 +470,17 @@ class TimetoolBerninaUSD(Assembly):
             np.hstack([y_step for x_step, y_step in zip(x, y) if x_step == xu_step])
             for xu_step in xu
         ]
+        # a step can come back empty (e.g. an all-nan x value never equals
+        # itself, so it matches nothing) -- drop those rather than let an
+        # empty array reach hstack/histogram/pcolor below
+        non_empty = [len(y_step) > 0 for y_step in yu]
+        n_empty = len(non_empty) - sum(non_empty)
+        if n_empty:
+            print(f"Excluding {n_empty} of {len(xu)} empty step(s) from the plot")
+        xu = xu[non_empty]
+        yu = [y_step for y_step, keep in zip(yu, non_empty) if keep]
+        if not yu:
+            raise RuntimeError("No non-empty calibration steps to plot")
         binmin = np.min(np.hstack(yu))
         binmax = np.max(np.hstack(yu))
         bins = np.arange(binmin, binmax, 1)
