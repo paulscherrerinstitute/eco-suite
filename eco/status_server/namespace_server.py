@@ -27,6 +27,7 @@ from flask import Flask, jsonify, request
 
 from .config import NamespaceServerConfig
 from .namespace_store import READY, NamespaceMonitorStore, NotReady, ReinitInProgress
+from .query_stats import QueryStats
 from .storage import json_default, write_monitor_recording, write_status_snapshot
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,10 @@ def create_namespace_app(
     app.config["ECO_INSTANCE_ID"] = uuid.uuid4().hex
     jobs = {}
     jobs_lock = threading.Lock()
+    # Recent /status/snapshot and /status/capture operations, for the CLI's
+    # `stats` command and the GUI's query-stats table - see query_stats.py's
+    # module docstring for why this is separate from /health.
+    stats = QueryStats()
 
     def _health_body():
         report = store.connection_report()
@@ -146,6 +151,20 @@ def create_namespace_app(
     @app.get("/health")
     def health():
         return jsonify(_health_body())
+
+    @app.get("/stats")
+    def query_stats_endpoint():
+        """Recent /status/snapshot, /status/capture and async /status/job
+        write operations - separate from /health, which is about the
+        namespace, not about whether requests are being served well. See
+        query_stats.py's module docstring.
+        """
+        limit = request.args.get("limit", type=int)
+        kind = request.args.get("kind")
+        return jsonify({
+            "summary": stats.summary(),
+            "recent": stats.recent(limit=limit, kind=kind),
+        })
 
     @app.get("/names")
     def names():
@@ -177,89 +196,95 @@ def create_namespace_app(
     @app.post("/status/snapshot")
     def status_snapshot():
         body = request.get_json(force=True, silent=True) or {}
+        t0 = time.time()
+        fields = {"save": bool(body.get("save", False))}
+        error = None
         try:
-            snap = store.snapshot(
-                allow_stale=bool(body.get("allow_stale", False)),
-                max_workers=body.get("max_workers"),
-            )
-        except NotReady as exc:
-            # health first, then the error keys: _health_body() carries its
-            # own "status" field, which would otherwise clobber "error".
-            return (
-                jsonify(
-                    {
-                        **_health_body(),
-                        "status": "error",
-                        "state": exc.state,
-                        "message": str(exc),
-                    }
-                ),
-                503,
-            )
-
-        response = {"namespace": config.module_name, **snap}
-
-        if body.get("save", False):
             try:
-                pgroup = body["pgroup"]
-                run_number = int(body["run_number"])
-            except (KeyError, TypeError, ValueError):
+                snap = store.snapshot(
+                    allow_stale=bool(body.get("allow_stale", False)),
+                    max_workers=body.get("max_workers"),
+                )
+            except NotReady as exc:
+                error = f"NotReady: {exc}"
+                # health first, then the error keys: _health_body() carries
+                # its own "status" field, which would otherwise clobber
+                # "error".
                 return (
                     jsonify(
                         {
+                            **_health_body(),
                             "status": "error",
-                            "message": "save=true requires 'pgroup' and 'run_number'",
+                            "state": exc.state,
+                            "message": str(exc),
                         }
                     ),
-                    400,
+                    503,
                 )
-            key = body.get("key", "status_run_start")
-            directory = config.data_dir(pgroup, run_number)
-            payload = _status_payload(snap)
 
-            if body.get("write_async", False):
-                job_id = uuid.uuid4().hex
-                with jobs_lock:
-                    jobs[job_id] = {
-                        "state": "running",
-                        "path": str(directory / "status.json"),
-                        "started_at": time.time(),
-                    }
+            fields["n_entries"] = len(snap.get("status", {}))
+            response = {"namespace": config.module_name, **snap}
 
-                def _write():
+            if body.get("save", False):
+                try:
+                    pgroup = body["pgroup"]
+                    run_number = int(body["run_number"])
+                except (KeyError, TypeError, ValueError):
+                    error = "save=true requires 'pgroup' and 'run_number'"
+                    return (
+                        jsonify({"status": "error", "message": error}),
+                        400,
+                    )
+                key = body.get("key", "status_run_start")
+                fields.update(pgroup=pgroup, run_number=run_number, key=key)
+                directory = config.data_dir(pgroup, run_number)
+                payload = _status_payload(snap)
+
+                if body.get("write_async", False):
+                    job_id = uuid.uuid4().hex
+                    with jobs_lock:
+                        jobs[job_id] = {
+                            "state": "running",
+                            "path": str(directory / "status.json"),
+                            "started_at": time.time(),
+                        }
+
+                    def _write():
+                        t0w = time.time()
+                        werror = None
+                        try:
+                            path = write_status_snapshot(directory, payload, key=key)
+                            rec = {"state": "done", "path": str(path)}
+                        except Exception as exc:  # noqa: BLE001 - via HTTP
+                            logger.error("async status write failed", exc_info=True)
+                            werror = f"{type(exc).__name__}: {exc}"
+                            rec = {"state": "error", "error": werror}
+                        rec["finished_at"] = time.time()
+                        with jobs_lock:
+                            jobs[job_id].update(rec)
+                        stats.record("write", time.time() - t0w, error=werror,
+                                    pgroup=pgroup, run_number=run_number, key=key)
+
+                    threading.Thread(
+                        target=_write, name=f"status-write-{job_id[:8]}", daemon=True
+                    ).start()
+                    response["write_job_id"] = job_id
+                    response["saved_to"] = str(directory / "status.json")
+                else:
                     try:
                         path = write_status_snapshot(directory, payload, key=key)
-                        rec = {"state": "done", "path": str(path)}
-                    except Exception as exc:  # noqa: BLE001 - reported via HTTP
-                        logger.error("async status write failed", exc_info=True)
-                        rec = {"state": "error", "error": f"{type(exc).__name__}: {exc}"}
-                    rec["finished_at"] = time.time()
-                    with jobs_lock:
-                        jobs[job_id].update(rec)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("status write failed", exc_info=True)
+                        error = f"could not write status file: {type(exc).__name__}: {exc}"
+                        return (
+                            jsonify({"status": "error", "message": error}),
+                            500,
+                        )
+                    response["saved_to"] = str(path)
 
-                threading.Thread(
-                    target=_write, name=f"status-write-{job_id[:8]}", daemon=True
-                ).start()
-                response["write_job_id"] = job_id
-                response["saved_to"] = str(directory / "status.json")
-            else:
-                try:
-                    path = write_status_snapshot(directory, payload, key=key)
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("status write failed", exc_info=True)
-                    return (
-                        jsonify(
-                            {
-                                "status": "error",
-                                "message": f"could not write status file: "
-                                f"{type(exc).__name__}: {exc}",
-                            }
-                        ),
-                        500,
-                    )
-                response["saved_to"] = str(path)
-
-        return jsonify(response)
+            return jsonify(response)
+        finally:
+            stats.record("snapshot", time.time() - t0, error=error, **fields)
 
     def _append_aux(pgroup, run_number, files):
         """Hand files to sf_daq_broker's copy_user_files, the same call
@@ -327,6 +352,7 @@ def create_namespace_app(
 
         def _capture():
             rec = {}
+            t0_total = time.time()
             try:
                 t0 = time.time()
                 snap = store.snapshot()
@@ -361,6 +387,14 @@ def create_namespace_app(
             rec["finished_at"] = time.time()
             with jobs_lock:
                 jobs[job_id].update(rec)
+            stats.record(
+                "capture", time.time() - t0_total, error=rec.get("error"),
+                pgroup=pgroup, run_number=run_number, key=key,
+                n_entries=rec.get("n_status"),
+                snapshot_s=rec.get("snapshot_seconds"),
+                write_s=rec.get("write_seconds"),
+                upload_s=rec.get("upload_seconds"),
+            )
 
         threading.Thread(
             target=_capture, name=f"status-capture-{job_id[:8]}", daemon=True

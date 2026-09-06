@@ -102,6 +102,9 @@ class TimeoutPath:
     def get_path(self) -> Path:
         return self._path
 
+    def __fspath__(self) -> str:
+        return self._path.__fspath__()
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._path, name)
 

@@ -132,21 +132,50 @@ class NamespaceComponent:
                 return obj
 
 
-def replace_NamespaceComponents(*args, **kwargs):
-    args_out = []
-    kwargs_out = {}
+def _replace_NamespaceComponent(value):
+    """Recurse into plain list/tuple/dict containers so a NamespaceComponent
+    stays replaceable even when passed as e.g. ``default_counters=[NamespaceComponent(...)]``
+    rather than directly as a keyword value -- see `replace_NamespaceComponents`,
+    which previously only checked one level of args/kwargs and silently left
+    any NamespaceComponent nested inside a container unresolved (a plain,
+    useless NamespaceComponent instance ends up where a real Proxy'd object
+    was expected).  Only these three container types are unwrapped/rebuilt;
+    anything else (including other iterables, e.g. numpy arrays) is passed
+    through untouched.
+    """
+    if isinstance(value, NamespaceComponent):
+        return Proxy(value.get)
+    elif isinstance(value, list):
+        return [_replace_NamespaceComponent(v) for v in value]
+    elif isinstance(value, tuple):
+        return tuple(_replace_NamespaceComponent(v) for v in value)
+    elif isinstance(value, dict):
+        return {k: _replace_NamespaceComponent(v) for k, v in value.items()}
+    else:
+        return value
 
-    for arg in args:
-        if isinstance(arg, NamespaceComponent):
-            args_out.append(Proxy(arg.get))
-        else:
-            args_out.append(arg)
-            pass
-    for name, value in kwargs.items():
-        if isinstance(value, NamespaceComponent):
-            kwargs_out[name] = Proxy(value.get)
-        else:
-            kwargs_out[name] = value
+
+def _find_NamespaceComponents(value):
+    """Collect every NamespaceComponent in `value`, recursing into plain
+    list/tuple/dict containers the same way `_replace_NamespaceComponent`
+    does -- used for declared-dependency tracking, which had the same
+    top-level-only blind spot as the resolution it mirrors.
+    """
+    found = []
+    if isinstance(value, NamespaceComponent):
+        found.append(value)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            found.extend(_find_NamespaceComponents(v))
+    elif isinstance(value, dict):
+        for v in value.values():
+            found.extend(_find_NamespaceComponents(v))
+    return found
+
+
+def replace_NamespaceComponents(*args, **kwargs):
+    args_out = [_replace_NamespaceComponent(arg) for arg in args]
+    kwargs_out = {name: _replace_NamespaceComponent(value) for name, value in kwargs.items()}
 
     return args_out, kwargs_out
 
@@ -2080,11 +2109,9 @@ class Namespace(Assembly):
                 "module_name": module_name,
                 "obj_factory": obj_factory,
             }
-            self._declared_dependencies[name] = [
-                a
-                for a in list(args) + list(kwargs.values())
-                if isinstance(a, NamespaceComponent)
-            ]
+            self._declared_dependencies[name] = _find_NamespaceComponents(
+                list(args) + list(kwargs.values())
+            )
         if lazy:
 
             def init_local():

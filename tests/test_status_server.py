@@ -1192,3 +1192,47 @@ def test_capture_is_refused_while_not_ready(fake_module):
     )
     assert resp.status_code == 503
     assert store.wait_ready(timeout=20)
+
+
+def test_health_reports_failed_required_components_separately(fake_module):
+    """A failed component that is in required_names() is the one a client has
+    to be told about loudly - the setup is not supposed to fail those."""
+    name, mod = fake_module(names=["a", "b", "c"], required=["a", "b"], fail=["b", "c"])
+    store = _store(name, init_required_only=False)
+    assert store.wait_ready(timeout=10)
+
+    report = store.connection_report()
+    assert report["failed_names"] == ["b", "c"]
+    assert report["failed_required"] == ["b"], "c is not required, b is"
+    assert report["n_failed_required"] == 1
+
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    body = app.test_client().get("/health").get_json()
+    assert body["failed_required"] == ["b"]
+
+
+def test_no_failed_required_is_reported_as_empty(fake_module):
+    name, _ = fake_module(names=["a", "b"], required=["a"], fail=["b"])
+    store = _store(name, init_required_only=False)
+    assert store.wait_ready(timeout=10)
+    report = store.connection_report()
+    assert report["failed_names"] == ["b"]
+    assert report["failed_required"] == []
+
+
+def test_the_client_warns_in_red_about_failed_required(capsys):
+    from eco.status_server.client import warn_failed_required
+
+    warned = warn_failed_required({"failed_required": ["mon_und", "scilog"]})
+    out = capsys.readouterr().out
+    assert warned == ["mon_und", "scilog"]
+    assert "REQUIRED" in out and "mon_und" in out and "scilog" in out
+    assert "\x1b[" in out, "should be colourised"
+
+
+def test_the_client_stays_quiet_when_nothing_required_failed(capsys):
+    from eco.status_server.client import warn_failed_required
+
+    assert warn_failed_required({"failed_required": [], "failed_names": ["x"]}) == []
+    assert warn_failed_required({}) == []
+    assert capsys.readouterr().out == ""

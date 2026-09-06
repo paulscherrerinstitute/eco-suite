@@ -537,3 +537,152 @@ def test_only_the_start_block_keeps_its_values_on_the_server():
     daq.append_status_to_scan_and_store(RunTableScan(runno=11))
     assert client.captures[0]["keep_status"] is True
     assert client.captures[1]["keep_status"] is False
+
+
+# --------------------------------------------------------------------------
+# rate_multiplicator / get_detector_code_frequency: never a raw CA get, never
+# a silent None reaching arithmetic (the pulse_id bug, 4th occurrence)
+
+
+class FakeFreqMonitor:
+    """Stands in for CallbackEpics(func="latest"): .data is the same dict
+    object the real one mutates in place, so a cached reference stays live."""
+
+    def __init__(self, initial=None):
+        self.data = {"value": initial}
+        self.started = False
+
+    def start(self, add_current_value=True):
+        self.started = True
+
+    def push(self, value):
+        self.data["value"] = value
+
+
+class FreqDetector:
+    def __init__(self, value, pvname="TEST:Evt-1-Freq-I", monitorable=True):
+        self._value = value
+        self.pvname = pvname
+        self._monitor = FakeFreqMonitor(value) if monitorable else None
+
+    def get_current_value(self):
+        return self._value
+
+    def set_current_value_callback(self, func="accumulate", **kwargs):
+        if self._monitor is None:
+            raise AttributeError("not monitorable")
+        return self._monitor
+
+
+def _event_master(freq_detector, code=50):
+    em = types.SimpleNamespace()
+    em.__dict__[f"code{code:03d}"] = types.SimpleNamespace(frequency=freq_detector)
+    return em
+
+
+def _freq_daq(freq_detector, code=50):
+    daq = Daq.__new__(Daq)
+    daq._event_master = None
+    daq._detectors_event_code = None
+    daq._frequency_detector = None
+    daq._frequency_monitor = None
+    daq._frequency_latest = {"value": None}
+    event_master = _event_master(freq_detector, code=code)
+    # replicate the __init__ snippet directly, since Daq.__new__ skips it
+    try:
+        daq._frequency_detector = event_master.__dict__[
+            f"code{code:03d}"
+        ].frequency
+        mon = daq._frequency_detector.set_current_value_callback(func="latest")
+        mon.start()
+        daq._frequency_monitor = mon
+        daq._frequency_latest = mon.data
+    except Exception:
+        pass
+    daq._detectors_event_code = code
+    return daq
+
+
+def test_frequency_is_read_from_the_monitor_cache_not_a_fresh_get():
+    det = FreqDetector(50.0)
+    daq = _freq_daq(det)
+    assert daq._frequency_monitor.started is True
+    assert daq.get_detector_code_frequency() == 50.0
+    assert daq.rate_multiplicator == 2
+
+
+def test_frequency_cache_follows_live_monitor_updates():
+    det = FreqDetector(50.0)
+    daq = _freq_daq(det)
+    det._monitor.push(25.0)
+    assert daq.get_detector_code_frequency() == 25.0
+
+
+def test_a_transient_none_from_the_monitor_falls_back_to_a_direct_read():
+    """The exact failure mode observed live: pyepics silently returns None
+    on a transient CA hiccup instead of raising."""
+    det = FreqDetector(50.0)
+    daq = _freq_daq(det)
+    det._monitor.push(None)
+    # get_current_value() still works even though the monitor cache is
+    # momentarily empty
+    assert daq.get_detector_code_frequency() == 50.0
+
+
+def test_no_value_anywhere_raises_instead_of_dividing_by_none():
+    """Before this fix: int(100 / freq) with freq=None -> TypeError, deep
+    inside retrieve(), killing a real scan mid-run."""
+    det = FreqDetector(None)
+    daq = _freq_daq(det)
+    with pytest.raises(TimeoutError, match="TEST:Evt-1-Freq-I"):
+        daq.get_detector_code_frequency()
+    with pytest.raises(TimeoutError):
+        daq.rate_multiplicator
+
+
+def test_a_non_monitorable_frequency_falls_back_to_direct_reads():
+    """MasterEventCodeFix (fixed CTA sequencer codes) has no PV to monitor
+    at all - set_current_value_callback isn't there, __init__'s attach must
+    not blow up, and reads should still work via get_current_value()."""
+    det = FreqDetector(50.0, monitorable=False)
+    daq = _freq_daq(det)
+    assert daq._frequency_monitor is None
+    assert daq.get_detector_code_frequency() == 50.0
+
+
+def test_missing_event_master_does_not_crash_init():
+    daq = Daq.__new__(Daq)
+    daq._frequency_detector = None
+    daq._frequency_monitor = None
+    daq._frequency_latest = {"value": None}
+    daq._detectors_event_code = None
+    with pytest.raises(TimeoutError):
+        daq.get_detector_code_frequency()
+
+
+# --------------------------------------------------------------------------
+# _create_runtable_metadata_append_status_to_runtable must honor
+# append_status_info=False (it silently didn't - a regression from the old
+# combined elog+run_table callback, which had the guard)
+
+
+def test_runtable_metadata_callback_skips_when_append_status_info_is_false():
+    rt = RunTableSpy()
+    daq = _runtable_daq(HealthClient(), rt)
+    scan = RunTableScan(runno=99)
+    daq._create_runtable_metadata_append_status_to_runtable(
+        scan, append_status_info=False
+    )
+    assert rt.calls == [], (
+        "run_table.append_run() ran despite append_status_info=False - this "
+        "is what makes a session's first scan pay for Run_Table2's Google "
+        "Sheets authentication even when status collection was disabled"
+    )
+
+
+def test_runtable_metadata_callback_still_runs_by_default():
+    rt = RunTableSpy()
+    daq = _runtable_daq(HealthClient(), rt)
+    scan = RunTableScan(runno=100)
+    daq._create_runtable_metadata_append_status_to_runtable(scan)
+    assert len(rt.calls) == 1

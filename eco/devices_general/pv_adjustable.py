@@ -2,9 +2,10 @@ from epics import PV
 from eco.epics_utils.ca_tuning import (
     CA_CONNECTION_TIMEOUT,
     CA_INIT_CONNECTION_TIMEOUT,
-    note_successful_read,
-    report_none_read,
 )
+# see eco.bs.detector: the diagnostics were imported here and never called,
+# so a None from these reads was completely silent and unretried.
+from eco.epics_utils.adjustable import _read_pv
 import os
 import numpy as np
 import time
@@ -47,9 +48,9 @@ class PvRecord:
 
     def get_current_value(self, readback=True):
         if readback:
-            currval = self._pvreadback.get()
-        if not readback:
-            currval = self._pv.get()
+            currval = _read_pv(self._pvreadback, name=getattr(self, "name", None))
+        else:
+            currval = _read_pv(self._pv, name=getattr(self, "name", None))
         return currval
 
     def get_moveDone(self):

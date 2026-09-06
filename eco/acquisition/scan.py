@@ -13,6 +13,7 @@ from pathlib import Path
 import colorama
 
 from eco.elements.protocols import Adjustable, is_adjustable, resolve_lazy
+from eco.epics_utils import ca_tuning
 from eco.utilities.datafiles import open_group_writable
 from eco.utilities.utilities import (
     NumpyEncoder,
@@ -357,38 +358,45 @@ class StepScan(Assembly):
                 pass
 
         statstr += " ; Ctrs "
-        if not self.has_callbacks_step_counting():
-            acs = []
-            for ctr in self.counters:
-                acq = ctr.acquire(
-                    scan=self, Npulses=self.pulses_per_step[0], **self.callbacks_kwargs
-                )  # TODO make sure step-individual aquisition argument is possible.
-                acs.append(acq)
-                try:
-                    if hasattr(ctr, "name"):
-                        statstr += f"{ctr.name}, "
-                except:
-                    pass
-            filenames = []
-            for ta in acs:
-                ta.wait()
-                if hasattr(ta, "file_names"):
-                    filenames.extend(ta.file_names)
-        else:
-            acs = []
-            for ctr in self.counters:
-                ctr.start(scan=self, **self.callbacks_kwargs)
-                try:
-                    if hasattr(ctr, "name"):
-                        statstr += f"{ctr.name}, "
-                except:
-                    pass
-            self.run_callbacks_step_counting()
+        # The acquisition window: from here until every counter has stopped,
+        # channel access must not be disturbed. `sensitive_period` keeps the
+        # adaptive monitor sweeper from reconfiguring subscriptions
+        # mid-acquisition, and gives reads the more patient retry budget - a
+        # read that comes back None here costs the run, while a few extra
+        # milliseconds cost nothing. See eco.epics_utils.ca_tuning.
+        with ca_tuning.sensitive_period("scan step acquisition"):
+            if not self.has_callbacks_step_counting():
+                acs = []
+                for ctr in self.counters:
+                    acq = ctr.acquire(
+                        scan=self, Npulses=self.pulses_per_step[0], **self.callbacks_kwargs
+                    )  # TODO make sure step-individual aquisition argument is possible.
+                    acs.append(acq)
+                    try:
+                        if hasattr(ctr, "name"):
+                            statstr += f"{ctr.name}, "
+                    except:
+                        pass
+                filenames = []
+                for ta in acs:
+                    ta.wait()
+                    if hasattr(ta, "file_names"):
+                        filenames.extend(ta.file_names)
+            else:
+                acs = []
+                for ctr in self.counters:
+                    ctr.start(scan=self, **self.callbacks_kwargs)
+                    try:
+                        if hasattr(ctr, "name"):
+                            statstr += f"{ctr.name}, "
+                    except:
+                        pass
+                self.run_callbacks_step_counting()
 
-            filenames = []
-            for ctr in self.counters:
-                resp = ctr.stop(scan=self, **self.callbacks_kwargs)
-                filenames.extend(resp["files"])
+                filenames = []
+                for ctr in self.counters:
+                    resp = ctr.stop(scan=self, **self.callbacks_kwargs)
+                    filenames.extend(resp["files"])
         statstr = statstr[:-2] + " done."
         print(statstr, end="\n")
 

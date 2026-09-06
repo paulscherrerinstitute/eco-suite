@@ -78,7 +78,11 @@ def test_never_connected_pv_keeps_the_short_budget():
 
 
 def test_a_disconnected_but_previously_working_pv_gets_the_full_budget():
-    """A dropped virtual circuit is exactly what the longer budget is for."""
+    """A dropped virtual circuit is exactly what the longer budget is for -
+    and, since this channel demonstrably works, also worth retrying: the
+    retry lives in `_read_pv` so no individual caller has to grow its own
+    cache the way `Daq.get_pulse_id` and the event-code frequency did."""
+    from eco.epics_utils import ca_tuning
     from eco.epics_utils.adjustable import _read_pv
 
     pv = FakePV([2.0], pvname="SOME:FLAKY:PV", connected=True)
@@ -86,7 +90,9 @@ def test_a_disconnected_but_previously_working_pv_gets_the_full_budget():
     pv.connected = False
     pv.timeouts.clear()
     _read_pv(pv, name="flaky")
-    assert pv.timeouts == [None], "should use the PV's own connection_timeout"
+    assert pv.timeouts, "no read was attempted at all"
+    assert set(pv.timeouts) == {None}, "should use the PV's own connection_timeout"
+    assert len(pv.timeouts) == 1 + ca_tuning.CA_READ_RETRIES
 
 
 def test_falsy_values_are_not_treated_as_failures(caplog):

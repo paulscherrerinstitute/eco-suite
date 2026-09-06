@@ -542,11 +542,19 @@ class NamespaceMonitorStore:
         ns = self.namespace
         n_init = n_failed = None
         failed = []
+        failed_required = []
         if ns is not None:
             try:
                 n_init = len(self._target_names & set(ns.initialized_names))
                 failed = sorted(self._target_names & set(ns.failed_names))
                 n_failed = len(failed)
+                # A failed component that is in required_names() is the one
+                # a client has to be told about loudly: the setup is not
+                # supposed to fail those, so one of them missing means the
+                # status this server serves is incomplete in a way that
+                # matters, not merely in a way that is expected.
+                required = set(ns.required_names())
+                failed_required = sorted(set(failed) & required)
             except Exception:
                 logger.debug("could not compute init progress", exc_info=True)
         return {
@@ -563,6 +571,8 @@ class NamespaceMonitorStore:
             "n_initialized": n_init,
             "n_failed": n_failed,
             "failed_names": failed,
+            "failed_required": failed_required,
+            "n_failed_required": len(failed_required),
             "last_error": self.last_error,
             "last_init_seconds": self.last_init_seconds,
             "last_init_finished": self.last_init_finished,

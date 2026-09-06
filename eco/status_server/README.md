@@ -22,21 +22,26 @@ client talks to.
 ## 1. Start it
 
 ```bash
-eco-status-server start -b     # detached, logs to ~/.eco/status_server_<host>.log
-eco-status-server wait         # block until it reports ready, printing progress
-eco-status-server status       # state, init progress, memory, running recordings
-eco-status-server stop
+eco-dev-status-server start -b     # detached, logs to ~/.eco/status_server_<host>.log
+eco-dev-status-server wait         # block until it reports ready, printing progress
+eco-dev-status-server status       # state, init progress, memory, running recordings
+eco-dev-status-server stop
 ```
 
-`/sf/bernina/bin/eco-status-server` is installed from
-[`bin/eco-status-server`](bin/eco-status-server) in this directory. Without
+`/sf/bernina/bin/eco-dev-status-server` is a symlink to
+[`scripts/eco-status-server`](../../scripts/eco-status-server) at the repo
+root (alongside `eco-dev`) - editing the checkout takes effect immediately,
+nothing to redeploy. Named `eco-dev-` like `eco-dev` itself: this always
+runs the checkout it is symlinked into, not an installed package - see §11
+for what that means and how it could become a real, installed `eco-status-
+server` command instead. Without
 `-b` it runs in the foreground, which is what the systemd unit uses — the
 service and the interactive command run exactly the same thing. It reads
 `/sf/bernina/config/eco_status_server/env` for the checkout, config and
 interpreter to use, and each of those is overridable per invocation:
 
 ```bash
-ECO_STATUS_SERVER_CHECKOUT=~/my-eco eco-status-server start -b
+ECO_STATUS_SERVER_CHECKOUT=~/my-eco eco-dev-status-server start -b
 ```
 
 The port is bound immediately; `namespace.init_all()` then runs on a
@@ -50,10 +55,24 @@ Without the wrapper it is just:
 python -m eco.status_server --mode namespace --config /path/to/bernina_namespace.json
 ```
 
+### GUI
+
+```bash
+eco-dev-status-server gui                   # small Qt window: status, reinit, query stats
+```
+
+Polls `/health` and `/stats` every couple of seconds. Shows state, init
+progress, a bold-red banner the moment any *required* component is missing
+from `initialized_names` (`failed_required` - see §8), buttons to reinitialize
+(`failed`/`full`/`restart`) with a progress bar and ETA while it runs, and a
+table of the last `/status/snapshot` and `/status/capture` calls this server
+has served - duration, entry count, and any error. Needs a desktop/X session;
+`--url` picks a server other than the site default.
+
 ### As a systemd user service
 
 ```bash
-eco-status-server-install-user-service      # run this from a shell where CA works
+eco-dev-status-server-install-user-service  # run this from a shell where CA works
 loginctl enable-linger $USER
 systemctl --user daemon-reload
 systemctl --user enable --now eco-status-server
@@ -396,3 +415,52 @@ Recording numbers and the downthrottling analysis are in DESIGN.md §15.
   a path rather than reading the file locally, but it is why a freshly
   written `status.json` can `stat` as missing from the console you are
   sitting at.
+
+## 11. `eco-dev-status-server` vs a real installed `eco-status-server`
+
+The command is named `eco-dev-status-server`, not `eco-status-server`,
+because it currently only *can* mean "run from a development checkout" — the
+status-server code lives in a personal checkout
+(`/sf/bernina/config/personal/lemke_h/eco`), not the shared gac-bernina one,
+so there is no meaningfully different "production, installed" version to
+distinguish it from yet. `eco-dev` (this repo's other script) draws exactly
+that line already: it always runs the checkout it is symlinked into, ignoring
+whatever `eco` package is `pip`/`pixi`-installed in the environment, for the
+same reason.
+
+**The two scripts are not the same thing.** `eco-status-server` is the
+day-to-day tool: start/stop/status/wait/stats/gui/logs — one running server,
+managed. `eco-status-server-install-user-service` is a one-shot generator,
+run once (or again with `--force`) to *produce* a `systemd --user` unit file
+and environment file for that server — after which `systemctl` manages it,
+not this script again. Confusingly similar names for two different jobs, kept
+separate on purpose: the daily driver stays a small, dependency-free shell
+script, while unit-file generation (capturing `EPICS_CA_*`, writing to
+`~/.config/systemd/user/`) is templating logic that does not belong mixed
+into it.
+
+**Could either become a real `pyproject.toml` [project.scripts] entry**, so
+`pip install eco` gives you an `eco-status-server` command directly (the way
+`eco = "eco_cli:main"` already does for the main package)? Only after a
+rewrite, not as-is:
+
+- `[project.scripts]` entries are Python callables (`module:function`), not
+  arbitrary executables — pip generates a tiny wrapper that imports the
+  module and calls the function. `eco-status-server` is a genuine shell
+  script (`pgrep`, `systemctl`, `nohup`, signal handling for `stop`) with no
+  Python equivalent to point at.
+- The install script is inherently host-filesystem-shaped (writes into
+  `~/.config/systemd/user/`, reads `$BASH_SOURCE` to find its sibling) — an
+  installed console-script would need that logic ported to Python
+  (`importlib.resources`/`shutil` instead of `dirname "$(readlink -f ...)"`),
+  which is a real, if mechanical, rewrite.
+- The one piece that *is* already plain Python with an argparse `main()` is
+  the GUI (`eco.status_server.gui:main`) — that one could become
+  `[project.scripts]` today with a single `pyproject.toml` line, independent
+  of the other two.
+
+Worth doing once the status-server code actually lands in a checkout meant to
+be `pip install`ed rather than run from a specific path — not before, since
+today every meaningful default (which checkout, which config) *is* "wherever
+this script lives," which a `[project.scripts]` wrapper would have no way to
+express.

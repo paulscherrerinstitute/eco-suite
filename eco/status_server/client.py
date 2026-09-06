@@ -17,7 +17,39 @@ from __future__ import annotations
 
 import time
 
+import colorama
 import requests
+
+
+def warn_failed_required(health):
+    """Shout, in red, about required components the server could not build.
+
+    A component in ``required_names()`` is one the setup is not supposed to
+    fail. If one did, the status this server serves is missing something
+    that matters - silently, since every remaining channel still answers
+    fine - so a client taking status from it needs to be told at the moment
+    it starts relying on the server, not left to discover the gap in the
+    file afterwards. Non-required components failing is expected and stays
+    quiet.
+
+    Returns the list it warned about (empty if there was nothing to say),
+    so a caller can decide to do more than print.
+    """
+    failed = list((health or {}).get("failed_required") or [])
+    if not failed:
+        return []
+    red, reset = colorama.Fore.RED + colorama.Style.BRIGHT, colorama.Style.RESET_ALL
+    print(
+        f"{red}!!! status server: {len(failed)} REQUIRED component(s) failed to "
+        f"initialize: {', '.join(failed)}{reset}",
+        flush=True,
+    )
+    print(
+        f"{red}    Status recorded from this server is missing them. Inspect "
+        f"with client.failures(), or rebuild with client.reinit().{reset}",
+        flush=True,
+    )
+    return failed
 
 
 class StatusServerError(RuntimeError):
@@ -76,6 +108,22 @@ class StatusServerClient:
     def names(self) -> dict:
         return self._get("/names")
 
+    def stats(self, limit: int = None, kind: str = None) -> dict:
+        """Recent /status/snapshot and /status/capture operations this
+        server has served: `{"summary": {...}, "recent": [...]}`. See
+        eco.status_server.query_stats - it answers "is the server serving
+        requests well", independent of `/health`'s "is the namespace
+        healthy"."""
+        path = "/stats"
+        params = []
+        if limit:
+            params.append(f"limit={int(limit)}")
+        if kind:
+            params.append(f"kind={kind}")
+        if params:
+            path += "?" + "&".join(params)
+        return self._get(path)
+
     def failures(self) -> dict:
         return self._get("/failures")["failures"]
 
@@ -120,6 +168,7 @@ class StatusServerClient:
                             f"{h.get('n_failed')} failed",
                             flush=True,
                         )
+                    warn_failed_required(h)
                     return h
                 if progress:
                     line = (

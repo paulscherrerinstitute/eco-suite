@@ -2,6 +2,7 @@ from ..elements.assembly import Assembly
 from ..aliases import Alias
 from eco import ecocnf
 from epics.pv import PV
+from ..epics_utils import ca_tuning
 
 # try:
 #     from bsread.bsavail import pollStream
@@ -74,7 +75,7 @@ class DetectorBsStream:
         else:
             self.pvname = cachannel
         if self.pvname:
-            self._pv = PV(self.pvname, auto_monitor=False)
+            self._pv = ca_tuning.make_pv(self.pvname)
         self.alias = Alias(name, channel=bs_channel, channeltype="BS")
 
         _ensure_bs_event_worker()

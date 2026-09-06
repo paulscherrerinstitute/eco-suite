@@ -122,6 +122,17 @@ def _name_of_gid(gid):
         return str(gid)
 
 
+_NOGROUP_RE = re.compile(r"(?:^|[-_])nogroup$", re.IGNORECASE)
+
+
+def _is_nogroup_sentinel(gid):
+    """True if `gid` names a ``nogroup``-shaped group (``nogroup``,
+    ``unx-nogroup``, ...) -- the fallback primary group a personal account's
+    files land in under a directory that lost its setgid bit, never a group
+    anyone chose on purpose. See `target_group_of_path`."""
+    return bool(_NOGROUP_RE.search(_name_of_gid(gid)))
+
+
 def pgroup_of_path(path):
     """The pgroup owning `path`, or None if it isn't inside a pgroup tree.
 
@@ -179,21 +190,68 @@ def target_group_of_path(path):
     Only the **nearest existing ancestor directory** is consulted, and only if
     this process is a member of its group: a grandparent's group is not the
     local convention, and a group we are not in cannot be set anyway.
+
+    One exception: if that nearest ancestor's group is itself a ``nogroup``
+    sentinel, one further level up is checked for a real group before falling
+    back to it. ``nogroup`` is never a deliberately-chosen shared group -- it
+    is the literal symptom of the very corruption this function exists to stop
+    propagating (see above): a directory that a personal account happened to
+    create under a non-setgid parent lands owned by that account's own
+    ``nogroup``-shaped primary group. Accepting it as "the local convention"
+    would keep spreading it onto every new sibling/child written next to the
+    already-broken directory -- and would do so silently, since most accounts
+    on this beamline are themselves members of ``unx-nogroup``, so the
+    ordinary "not a member" guard above never catches it. The one-level
+    lookup recovers the real, intentionally-set group directly above the
+    broken directory (e.g. ``eco_cnf_bernina/memory`` itself, one level above
+    a device directory that lost it) -- exactly the group
+    `ensure_group_writable`/`repair_tree` are trying to restore on that
+    directory anyway. It deliberately does not walk further than one extra
+    level: a tree that is genuinely, uniformly ``nogroup`` all the way up (an
+    ordinary personal ``/tmp``, say) keeps exactly its previous behaviour.
     """
     pgroup = pgroup_of_path(path)
     if pgroup is not None:
         return pgroup
 
-    for parent in Path(path).absolute().parents:
+    ancestors = list(Path(path).absolute().parents)
+    for idx, parent in enumerate(ancestors):
         try:
             st = os.stat(parent)
         except OSError:
             continue  # does not exist yet (mkdir -p is about to create it)
         if not stat.S_ISDIR(st.st_mode):
             continue
+        if _is_nogroup_sentinel(st.st_gid):
+            better = _real_group_one_level_up(ancestors[idx + 1 :])
+            if better is not None:
+                return better
         if st.st_gid in _process_gids():
             return _name_of_gid(st.st_gid)
         return None
+    return None
+
+
+def _real_group_one_level_up(remaining_ancestors):
+    """The group of the nearest existing, non-``nogroup`` directory in
+    `remaining_ancestors` that this process is a member of, or None.
+
+    Only consulted from `target_group_of_path` when the nearest ancestor is
+    itself a `nogroup` sentinel -- see there for why a single extra level is
+    enough.
+    """
+    if not remaining_ancestors:
+        return None
+    try:
+        st = os.stat(remaining_ancestors[0])
+    except OSError:
+        return None
+    if not stat.S_ISDIR(st.st_mode):
+        return None
+    if _is_nogroup_sentinel(st.st_gid):
+        return None
+    if st.st_gid in _process_gids():
+        return _name_of_gid(st.st_gid)
     return None
 
 

@@ -16,6 +16,32 @@ time on a different value and each time fixed only for that value:
 The pattern is always the same: a read that has no tolerance for a moment of
 unavailability, and a caller that treats the resulting ``None`` as data.
 
+THE GENERAL FIX (supersedes the per-PV ones above)
+--------------------------------------------------
+Each of those was fixed by hand-rolling ``auto_monitor=True`` for one PV.
+That is the whole answer, generalised - see ``AUTO_MONITOR_DEFAULT`` below
+for why, straight out of pyepics' source: with a monitor, a read is a dict
+lookup that has no failure path at all; without one, every read is a network
+round trip with two. eco's old ``auto_monitor=False`` default was therefore
+not merely unhelpful, it was *the cause*.
+
+So there are now two general mechanisms here instead of a growing list of
+per-PV caches:
+
+* **monitor by default, demote what is fast** - ``make_pv`` applies the
+  policy, and a background sweeper measures actual update rates and drops
+  the monitor on anything above ``AUTO_MONITOR_MAX_RATE``, remembering it
+  across sessions. Measured on bernina: 7 074 channels monitored, 68
+  demoted, ~8 % of one core standing cost.
+* **retry at the chokepoint** - ``eco.epics_utils.adjustable._read_pv``
+  retries a read that has worked before (``CA_READ_RETRIES``), so a
+  momentary failure is absorbed once, for every caller, instead of each one
+  discovering it separately. A channel that has never produced a value is
+  not retried, so absent PVs stay cheap.
+* **declare sensitive stretches** - ``sensitive_period`` marks a window
+  (a scan step's acquisition, say) where subscriptions must not be
+  reconfigured and reads get a more patient budget.
+
 TRIAL - CONNECTION TIMEOUT
 --------------------------
 ``CA_CONNECTION_TIMEOUT`` was ``0.05`` everywhere (22 hardcoded literals,
@@ -43,15 +69,86 @@ previous behaviour in one line. See the CLAUDE.md section "CA connection
 timeout (trial)".
 """
 
+import atexit
+import json
 import logging
+import os
 import threading
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
 # TRIAL (see module docstring): was 0.05 everywhere. Revert to 0.05 to undo.
 CA_CONNECTION_TIMEOUT = 1.0
+
+# --------------------------------------------------------------------------
+# Monitor policy: monitor by default, demote only what is actually fast
+#
+# `auto_monitor=False` was the eco-wide default, to keep subscription traffic
+# down. It is also, from pyepics' own source, the direct cause of the silent
+# `None` reads above. `PV.get_with_metadata` starts with
+#
+#     if not self.wait_for_connection(timeout=timeout):
+#         return None
+#     if ((not use_monitor) or (not self.auto_monitor) or ... ):
+#         metad = ca.get_with_metadata(...)
+#         if metad is None:
+#             return
+#
+# so with `auto_monitor=False` **every** read is a network round trip with
+# two independent ways to come back `None`, while with `auto_monitor=True`
+# and a cached value that whole block is skipped: the read is a dict lookup
+# that cannot time out, and a momentary circuit drop costs nothing. Every
+# per-PV fix so far (`Daq.get_pulse_id`, the event-code frequency cache) has
+# been hand-rolling `auto_monitor=True` for one PV at a time.
+#
+# The traffic argument for `False` turns out to apply to very few channels.
+# Measured on the real bernina namespace (a 3-minute recording of all 7 719
+# monitorable status channels, see eco/status_server/DESIGN.md section 15.2):
+#
+#     >= 50 Hz     48 channels   87 % of all updates
+#     10-50 Hz      9 channels    3 %
+#      1-10 Hz    182 channels    9 %
+#      < 1 Hz    7 480 channels    1 %
+#
+# i.e. 0.6 % of channels produce seven eighths of the load, and monitoring
+# the other 99.4 % is close to free. So: monitor everything by default, and
+# demote the handful that prove to be fast. `_MonitorRateTracker` below does
+# that automatically, and remembers them across sessions so the next one
+# never subscribes to them at all.
+AUTO_MONITOR_DEFAULT = True
+
+# A channel updating faster than this gets demoted to auto_monitor=False.
+# 10 Hz sits in the empty gap in the distribution above (the 10-50 Hz band
+# holds 9 channels of 7 719), so the threshold is not delicately placed.
+AUTO_MONITOR_MAX_RATE = 10.0
+
+# How often the sweeper looks at accumulated counts.
+AUTO_MONITOR_SWEEP_INTERVAL = 5.0
+
+# Where the learned fast-channel list is remembered. Per user rather than
+# shared: it is a local performance hint, not beamline configuration, and a
+# per-user file has none of the group-permission problems a shared one in
+# /sf/... would bring (see eco.utilities.datafiles).
+AUTO_MONITOR_STATE_FILE = Path(
+    os.environ.get("ECO_CA_FAST_CHANNELS")
+    or (Path.home() / ".eco" / "ca_fast_channels.json")
+)
+
+# How many times a read that has worked before may be retried before it is
+# reported as a silent None. See `_read_pv` in eco.epics_utils.adjustable:
+# a channel that demonstrably works and momentarily does not is the exact
+# case worth one more try, and the retry is skipped entirely for a channel
+# that has never produced anything.
+CA_READ_RETRIES = 2
+CA_READ_RETRY_DELAY = 0.05
+
+# Extra patience during a period the caller has declared sensitive (a scan
+# step's acquisition window, say), where a failed read is far more expensive
+# than a few extra milliseconds. See `sensitive_period`.
+CA_READ_RETRIES_SENSITIVE = 4
 
 # Budget used by `_wait_for_initialisation()` only. Deliberately still the
 # old value: that call is a best-effort "is it there yet" during namespace
@@ -188,3 +285,266 @@ def report_none_read(pv, name=None, kind="read"):
     except Exception:
         # diagnostics must never be able to break a read
         pass
+
+
+# --------------------------------------------------------------------------
+# adaptive monitor policy
+
+
+_fast_lock = threading.RLock()
+_fast_channels = set()      # pvnames known to update faster than the threshold
+_fast_dirty = False         # something changed since the last save
+_update_counts = {}         # pvname -> updates since the last sweep
+_tracked = {}               # pvname -> (pv, callback_index)
+_sweeper = None
+_sensitive_depth = 0        # >0 while a caller has declared a sensitive period
+
+
+def _load_fast_channels():
+    try:
+        with open(AUTO_MONITOR_STATE_FILE) as f:
+            names = json.load(f)
+        if isinstance(names, list):
+            with _fast_lock:
+                _fast_channels.update(str(n) for n in names)
+            logger.debug(
+                "ca_tuning: %d known fast channel(s) loaded from %s",
+                len(_fast_channels), AUTO_MONITOR_STATE_FILE,
+            )
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logger.debug("ca_tuning: could not read %s", AUTO_MONITOR_STATE_FILE,
+                     exc_info=True)
+
+
+def save_fast_channels():
+    """Persist the learned fast-channel list.
+
+    Worth persisting because the learning itself costs something: a session
+    that has to rediscover the ~50 fast channels subscribes to them for a few
+    seconds first. Remembering them means the next session never opens those
+    subscriptions at all.
+    """
+    global _fast_dirty
+    with _fast_lock:
+        if not _fast_dirty:
+            return
+        names = sorted(_fast_channels)
+        _fast_dirty = False
+    try:
+        AUTO_MONITOR_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = AUTO_MONITOR_STATE_FILE.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(names, f, indent=1)
+        os.replace(tmp, AUTO_MONITOR_STATE_FILE)
+    except Exception:
+        logger.debug("ca_tuning: could not write %s", AUTO_MONITOR_STATE_FILE,
+                     exc_info=True)
+
+
+def is_known_fast(pvname):
+    with _fast_lock:
+        return pvname in _fast_channels
+
+
+def clear_fast_channels():
+    """Forget everything learned, so the next reads re-measure from scratch.
+
+    For when a channel's rate has genuinely changed (a detector reconfigured,
+    an event code retimed) and it is stuck demoted from a previous session.
+    """
+    global _fast_dirty
+    with _fast_lock:
+        _fast_channels.clear()
+        _fast_dirty = True
+    save_fast_channels()
+
+
+def _count_update(pvname):
+    # The hot path: one dict increment per CA update, on libca's callback
+    # thread. Deliberately not locked - a lost increment costs nothing to a
+    # rate heuristic, and taking a lock here would put every monitored
+    # channel in the namespace through one contended lock.
+    _update_counts[pvname] = _update_counts.get(pvname, 0) + 1
+
+
+def _track(pv):
+    """Attach the rate counter to `pv` and remember it for the sweeper."""
+    pvname = getattr(pv, "pvname", None)
+    if not pvname or pvname in _tracked:
+        return
+    try:
+        # with_ctrlvars=False: pyepics defaults it to True, which issues a
+        # blocking get_ctrlvars() per already-connected PV - for a whole
+        # namespace that is exactly the get-storm this policy exists to
+        # avoid (same reason eco.status_server.monitor_store passes it).
+        index = pv.add_callback(
+            lambda pvname=pvname, **kw: _count_update(pvname),
+            with_ctrlvars=False,
+        )
+    except Exception:
+        return
+    _tracked[pvname] = (pv, index)
+
+
+def _demote(pvname, pv, index, rate):
+    """Stop monitoring a channel that updates too fast to be worth it."""
+    try:
+        # Never demote a channel somebody is deliberately monitoring: a
+        # recording, a Monitor(), a CallbackEpics all register their own
+        # callback, and clearing the subscription under them would silently
+        # stop their data. Ours is the only one we may account for.
+        if len(getattr(pv, "callbacks", {})) > 1:
+            return False
+        pv.remove_callback(index)
+        pv.auto_monitor = False
+    except Exception:
+        logger.debug("ca_tuning: could not demote %s", pvname, exc_info=True)
+        return False
+    logger.info(
+        "ca_tuning: %s updates at ~%.0f Hz (> %.0f Hz), dropping its monitor "
+        "- reads of it go back to a direct CA get.",
+        pvname, rate, AUTO_MONITOR_MAX_RATE,
+    )
+    return True
+
+
+def _sweep_once(interval):
+    global _fast_dirty
+    if _sensitive_depth > 0:
+        # Do not reconfigure subscriptions in the middle of an acquisition:
+        # the point of a sensitive period is that nothing about channel
+        # access changes under it. Counts keep accumulating; the next sweep
+        # after it ends sees them.
+        return
+    # snapshot then zero, rather than clearing in place, so an update
+    # landing mid-sweep is counted against the next window instead of lost
+    counts = dict(_update_counts)
+    for name in counts:
+        _update_counts[name] = 0
+    demoted = []
+    for pvname, count in counts.items():
+        if count / interval <= AUTO_MONITOR_MAX_RATE:
+            continue
+        entry = _tracked.get(pvname)
+        if entry is None:
+            continue
+        pv, index = entry
+        if _demote(pvname, pv, index, count / interval):
+            demoted.append(pvname)
+            _tracked.pop(pvname, None)
+            _update_counts.pop(pvname, None)
+    if demoted:
+        with _fast_lock:
+            _fast_channels.update(demoted)
+            _fast_dirty = True
+        save_fast_channels()
+
+
+def _sweep_loop():
+    last = time.time()
+    while True:
+        time.sleep(AUTO_MONITOR_SWEEP_INTERVAL)
+        now = time.time()
+        interval, last = max(now - last, 1e-6), now
+        try:
+            _sweep_once(interval)
+        except Exception:
+            logger.debug("ca_tuning: sweep failed", exc_info=True)
+
+
+def _ensure_sweeper():
+    global _sweeper
+    if _sweeper is not None:
+        return
+    with _fast_lock:
+        if _sweeper is not None:
+            return
+        _sweeper = threading.Thread(
+            target=_sweep_loop, name="ca_tuning_monitor_sweeper", daemon=True
+        )
+        _sweeper.start()
+
+
+def make_pv(pvname, auto_monitor=None, **kwargs):
+    """Build a `PV` under the adaptive monitor policy.
+
+    Use this instead of `PV(...)` for anything eco reads repeatedly. It
+    monitors by default (see AUTO_MONITOR_DEFAULT for why that is both
+    faster and the fix for the silent-None class of bug), except for
+    channels already known to be too fast, and it registers the PV with the
+    sweeper that finds the rest.
+
+    `auto_monitor` still wins if given explicitly, for the cases that
+    genuinely know better than the policy.
+    """
+    from epics import PV
+
+    if auto_monitor is None:
+        auto_monitor = AUTO_MONITOR_DEFAULT and not is_known_fast(pvname)
+    pv = PV(pvname, auto_monitor=auto_monitor, **kwargs)
+    if auto_monitor:
+        _track(pv)
+        _ensure_sweeper()
+    return pv
+
+
+class sensitive_period:
+    """Declare a stretch of time where channel access must not be disturbed.
+
+    Two things change while one is active: the sweeper leaves subscriptions
+    alone (reconfiguring a monitor mid-acquisition is exactly the wrong
+    moment), and reads get the more patient retry budget
+    (`CA_READ_RETRIES_SENSITIVE`), because inside a scan step a failed read
+    costs a run and a few extra milliseconds cost nothing.
+
+    Reentrant and thread-safe by depth counting, so nesting - a step inside
+    a scan inside a queue - behaves.
+
+        with ca_tuning.sensitive_period("scan step"):
+            ...
+    """
+
+    def __init__(self, what=""):
+        self.what = what
+
+    def __enter__(self):
+        global _sensitive_depth
+        with _fast_lock:
+            _sensitive_depth += 1
+        return self
+
+    def __exit__(self, *exc):
+        global _sensitive_depth
+        with _fast_lock:
+            _sensitive_depth = max(0, _sensitive_depth - 1)
+        return False
+
+
+def in_sensitive_period():
+    return _sensitive_depth > 0
+
+
+def read_retries():
+    """How many extra attempts a read that has worked before may make."""
+    return CA_READ_RETRIES_SENSITIVE if _sensitive_depth > 0 else CA_READ_RETRIES
+
+
+def monitor_report():
+    """What the policy currently believes, for looking at from a session."""
+    with _fast_lock:
+        fast = sorted(_fast_channels)
+    return {
+        "auto_monitor_default": AUTO_MONITOR_DEFAULT,
+        "max_rate_hz": AUTO_MONITOR_MAX_RATE,
+        "monitored": len(_tracked),
+        "known_fast": fast,
+        "n_known_fast": len(fast),
+        "state_file": str(AUTO_MONITOR_STATE_FILE),
+        "in_sensitive_period": in_sensitive_period(),
+    }
+
+
+_load_fast_channels()
+atexit.register(save_fast_channels)

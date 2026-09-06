@@ -483,7 +483,9 @@ components = [
 ]
 
 try:
-    components.extend(config["components"])
-    print("Did append additional components!")
+    _additional_components = config["components"]
+    components.extend(_additional_components)
+    if _additional_components:
+        print(f"Did append {len(_additional_components)} additional components!")
 except:
     print("Could not append components from config.")

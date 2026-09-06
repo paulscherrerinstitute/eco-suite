@@ -1,4 +1,6 @@
-from epics import caget_many
+import time
+
+from epics import PV, caget_many
 from ..elements.adjustable import AdjustableMemory, AdjustableVirtual
 from ..elements.detector import DetectorVirtual
 from ..epics_utils.adjustable import (
@@ -217,7 +219,8 @@ class MasterEventSystem(Assembly):
             )
             self.event_codes[code] = self.__dict__[f"code{code:03d}"]
 
-    def _get_slot_codes(self, slots=range(1, 257), attempts=3, timeout=3.0):
+    def _get_slot_codes(self, slots=range(1, 257), attempts=3, timeout=3.0,
+                        connect_timeout=1.0):
         """Read the master's slot->event-code table.
 
         `caget_many` reports a slot it could not read as `None`, and those
@@ -228,28 +231,68 @@ class MasterEventSystem(Assembly):
         the life of the session - after which every EVR pulser wired to a
         dropped code came up without its delay/frequency chain, blaming "code
         missing in Timing Master" for what was really a timed-out read.
-        Retry the missing ones (they are a handful, so this is cheap) and say
-        so if any are still missing, rather than quietly shipping a partial
-        table. Dependency-ordered init makes this much less likely to trigger
-        in the first place, but the silent-drop path is worth closing anyway.
+        Retry the missing ones and say so if any are still missing, rather
+        than quietly shipping a partial table.
+
+        **A slot that is simply not configured is not a failure.** Measured
+        on SIN-TIMAST-TMA (2026-09-06): exactly 74 of the 256 slots exist;
+        the other 182 have no record on the IOC at all - their PVs do not
+        connect even given 5 s on a completely idle network, and the count
+        is identical inside and outside `init_all()`. Retrying those is
+        pointless (three `caget_many` passes over 182 non-existent channels
+        cost ~15 s of every namespace init) and warning about them is a false
+        alarm that has been firing at every session start.
+
+        So the two cases are separated by *connection*, which is the only
+        thing that distinguishes them - `caget_many` reports both as `None`.
+        A channel that does not connect is an unconfigured slot: skipped
+        silently. A channel that connects but whose read came back empty is
+        a genuine timed-out read, which is what the retry and the warning
+        are for.
         """
         slots = list(slots)
         pvs = [f"{self.pvname}:Evt-{slot}-Code-SP" for slot in slots]
         codes = list(caget_many(pvs, timeout=timeout))
 
+        missing = [i for i, c in enumerate(codes) if c is None]
+        unconfigured = set()
+        if missing:
+            # Create the channels non-blockingly and let libca resolve them
+            # in the background, then ask once - far cheaper than a
+            # wait_for_connection() per channel.
+            probes = {i: PV(pvs[i], connection_timeout=connect_timeout,
+                            auto_monitor=False) for i in missing}
+            deadline = time.time() + connect_timeout
+            while time.time() < deadline and not all(
+                p.connected for p in probes.values()
+            ):
+                time.sleep(0.05)
+            unconfigured = {i for i, p in probes.items() if not p.connected}
+
+        retryable = [i for i in missing if i not in unconfigured]
         for _ in range(max(int(attempts) - 1, 0)):
-            missing = [i for i, c in enumerate(codes) if c is None]
-            if not missing:
+            if not retryable:
                 break
-            retried = caget_many([pvs[i] for i in missing], timeout=timeout)
-            for i, c in zip(missing, retried):
+            retried = caget_many([pvs[i] for i in retryable], timeout=timeout)
+            for i, c in zip(retryable, retried):
                 codes[i] = c
-        still_missing = [slots[i] for i, c in enumerate(codes) if c is None]
+            retryable = [i for i in retryable if codes[i] is None]
+
+        if unconfigured:
+            logger.debug(
+                "timing master %s: %d of %d event-code slots are not "
+                "configured (no record on the IOC) and were skipped; %d in "
+                "use.",
+                self.pvname, len(unconfigured), len(slots),
+                len(slots) - len(unconfigured),
+            )
+        still_missing = [slots[i] for i in retryable]
         if still_missing:
             logger.warning(
-                "timing master %s: %d of %d event-code slots could not be "
-                "read after %d attempts (slots %s%s); event codes served by "
-                "them will look missing to every EVR pulser using them.",
+                "timing master %s: %d of %d event-code slots connected but "
+                "could not be read after %d attempts (slots %s%s); event "
+                "codes served by them will look missing to every EVR pulser "
+                "using them.",
                 self.pvname,
                 len(still_missing),
                 len(slots),
@@ -465,6 +508,27 @@ class DummyPulser(Assembly):
         self._append(AdjustableMemory, None, name="width")
 
 
+_shared_dummy_pulser = None
+
+
+def _get_shared_dummy_pulser():
+    """The one `DummyPulser` instance for the whole process.
+
+    An out-of-range pulser number is a routine, expected IOC state (an unwired
+    output) rather than a per-output failure, so there is nothing output- or
+    EVR-specific to preserve by giving each affected output its own instance.
+    A full `init_all()` can hit this on a few dozen outputs at once (as it does
+    on the real Bernina EVR0, all wired to the sentinel 65535), and each fresh
+    `DummyPulser()` builds and appends eight `AdjustableMemory` children for no
+    behavioural difference from any other dummy -- one shared, lazily-built
+    instance avoids that multiplied-by-outputs construction cost.
+    """
+    global _shared_dummy_pulser
+    if _shared_dummy_pulser is None:
+        _shared_dummy_pulser = DummyPulser()
+    return _shared_dummy_pulser
+
+
 class EvrOutput(Assembly):
     def __init__(self, pv_base, pulsers=None, name=None):
         super().__init__(name=name)
@@ -650,7 +714,11 @@ class EvrOutput(Assembly):
         try:
             return self._pulsers[number]
         except (IndexError, TypeError):
-            logger.warning(
+            # An unwired output (number outside the EVR's pulser range, e.g.
+            # the 65535 sentinel) is routine IOC state, not a failure worth
+            # surfacing by default -- see the docstring above and the shared
+            # dummy singleton this returns.
+            logger.debug(
                 "output %s (%s): %s number %r does not address any of the %d "
                 "pulsers of this EVR; using a dummy pulser.",
                 self.name,
@@ -659,7 +727,7 @@ class EvrOutput(Assembly):
                 number,
                 len(self._pulsers or ()),
             )
-            return DummyPulser()
+            return _get_shared_dummy_pulser()
 
     def update_pulsers(self):
         """Re-read which pulsers this output is wired to (they are otherwise
@@ -684,12 +752,14 @@ class EventReceiver(Assembly):
         n_pulsers=24,
         n_output_front=8,
         n_output_rear=16,
+        has_evr_sequencer=True,
         name=None,
     ):
         super().__init__(name=name)
         self.pvname = pvname
 
-        self._append(EvrSequencer,self.pvname,name='sequencer', is_display=True, is_setting=True)
+        if has_evr_sequencer:
+            self._append(EvrSequencer,self.pvname,name='sequencer', is_display=True, is_setting=True)
         
 
         pulsers = []

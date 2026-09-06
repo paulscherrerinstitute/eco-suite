@@ -4,12 +4,17 @@ from time import time, sleep
 
 import numpy as np
 from epics import PV
+from eco.epics_utils import ca_tuning
 from eco.epics_utils.ca_tuning import (
     CA_CONNECTION_TIMEOUT,
     CA_INIT_CONNECTION_TIMEOUT,
-    note_successful_read,
-    report_none_read,
 )
+# The CA-backed classes in this module read through the same chokepoint as
+# eco.epics_utils: it is what applies the retry for a channel that has
+# worked before, and the silent-None diagnostics. Importing the diagnostics
+# without ever calling them (as this module did) left these reads with no
+# None handling at all.
+from eco.epics_utils.adjustable import _read_pv
 
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
@@ -27,7 +32,7 @@ class DetectorBsData(Assembly):
         self.status_collection.append(self)
         self.bschannel = bschannel
         if epics_pv_available & epics_pv_availabe == "same":
-            self._pv = PV(pvname)
+            self._pv = ca_tuning.make_pv(pvname)
             self._append(
                 AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
             )
@@ -35,7 +40,7 @@ class DetectorBsData(Assembly):
         self.alias = Alias(self.name, channel=self.pvname, channeltype="BS")
 
     def get_current_value(self):
-        return self._pv.get()
+        return _read_pv(self._pv, name=getattr(self, "name", None))
 
     def __call__(self):
         return self.get_current_value()
@@ -50,7 +55,7 @@ class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
+        self._pv = ca_tuning.make_pv(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self.name = name
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
         self._resolve_lock = threading.Lock()
@@ -102,7 +107,7 @@ class DetectorPvEnum(Assembly):
             return self._pv_enum(value)
 
     def get_current_value(self):
-        return self.validate(self._pv.get())
+        return self.validate(_read_pv(self._pv, name=getattr(self, "name", None)))
 
     def __call__(self):
         return self.get_current_value()
@@ -112,12 +117,12 @@ class DetectorPvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
+        self._pv = ca_tuning.make_pv(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
     def get_current_value(self):
-        return self._pv.get()
+        return _read_pv(self._pv, name=getattr(self, "name", None))
 
     def set_target_value(self, value, hold=False):
         changer = lambda value: self._pv.put(bytes(value, "utf8"), wait=True)
@@ -141,7 +146,7 @@ class DetectorPvDataStream(Assembly):
         super().__init__(name=name)
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname)
+        self._pv = ca_tuning.make_pv(pvname)
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
         self._append(
             AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
@@ -255,4 +260,4 @@ class DetectorPvDataStream(Assembly):
     data = property(get_data)
 
     def get_current_value(self):
-        return self._pv.get()
+        return _read_pv(self._pv, name=getattr(self, "name", None))

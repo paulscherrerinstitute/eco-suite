@@ -1,8 +1,9 @@
 #!/bin/bash
-# eco status server (namespace mode) - start/stop/status wrapper.
+# eco status server (namespace mode) - start/stop/status/gui wrapper.
 #
-# Canonical copy lives in the eco repo at eco/status_server/bin/; the copy in
-# /sf/bernina/bin is installed from there (see install-user-service).
+# Canonical copy lives in the eco repo at scripts/, alongside eco-dev;
+# /sf/bernina/bin/eco-status-server is a symlink to this file, so editing
+# the checkout takes effect immediately - nothing to redeploy.
 #
 # Runs in the FOREGROUND by default, which is what systemd's Type=simple
 # wants and what the accompanying user unit calls. Use `-b` to detach for
@@ -46,6 +47,8 @@ usage: $(basename "$0") <command> [options]
   status                        query $URL/health
   wait [timeout]                block until the server reports ready
   logs [-f]                     show the detached-mode log
+  stats                         recent /status/snapshot & /status/capture calls
+  gui                           launch the Qt status/reinit GUI (detached)
   config                        print the resolved configuration
 
 Environment (current values):
@@ -68,7 +71,7 @@ check_prereqs() {
     if [ -z "${EPICS_CA_ADDR_LIST:-}" ]; then
         echo "$(basename "$0"): warning: EPICS_CA_ADDR_LIST is not set;" >&2
         echo "  most components will fail to connect. See the EnvironmentFile" >&2
-        echo "  written by eco-status-server-install-user-service." >&2
+        echo "  written by the install-user-service script alongside this one." >&2
     fi
     [ -r "$CONFIG" ] || die "no server config at $CONFIG (set ECO_STATUS_SERVER_CONFIG)"
     [ -x "$PYTHON" ] || die "no interpreter at $PYTHON (set ECO_STATUS_SERVER_PYTHON)"
@@ -174,6 +177,14 @@ cmd_status() {
     "$PYTHON" - "$URL" <<'PYEOF' || true
 import json, sys, urllib.request
 
+RED_BOLD = "\033[1;31m"
+YELLOW = "\033[33m"
+RESET = "\033[0m"
+color = sys.stdout.isatty()
+
+def c(s, code):
+    return f"{code}{s}{RESET}" if color else s
+
 url = sys.argv[1].rstrip("/") + "/health"
 try:
     with urllib.request.urlopen(url, timeout=15) as r:
@@ -190,8 +201,20 @@ print("serving: {d} status detectors, {m} monitorable".format(
     d=h["n_direct_read"], m=h.get("n_monitorable")))
 print("process: {r:.0f} MB, {t} threads, {c:.0f} s cpu".format(
     r=h.get("rss_mb") or 0, t=h.get("n_threads"), c=h.get("cpu_seconds") or 0))
-if h.get("failed_names"):
-    print("failed:  " + ", ".join(h["failed_names"]))
+# failed_required: components that are BOTH in required_names() and in
+# failed_names(), i.e. the setup is not supposed to fail these - see
+# NamespaceMonitorStore.connection_report(). A merely-optional failure
+# (failed_names but not required) stays in the plain line below, unhighlighted.
+failed_required = h.get("failed_required") or []
+other_failed = [n for n in (h.get("failed_names") or []) if n not in failed_required]
+if failed_required:
+    print(c(
+        "!!! {n} REQUIRED component(s) failed to initialize: {names}".format(
+            n=len(failed_required), names=", ".join(failed_required)),
+        RED_BOLD,
+    ))
+if other_failed:
+    print("failed:  " + ", ".join(other_failed))
 for rec in h.get("recordings", []):
     if rec.get("running"):
         print("recording {id}: {u} updates, {s} stored".format(
@@ -207,6 +230,36 @@ with urllib.request.urlopen(sys.argv[1].rstrip("/") + "/health", timeout=15) as 
 PYEOF
 }
 
+# One progress+ETA line, from /health alone: elapsed time in the current
+# state (state_seconds) and how far init has gotten (n_initialized of
+# n_target_names) linearly project how much longer it needs. Rough on
+# purpose - components do not all cost the same - but far better than a
+# bare spinner for something that can take several minutes.
+progress_line() {
+    "$PYTHON" - "$URL" <<'PYEOF' 2>/dev/null || true
+import json, sys, urllib.request
+
+with urllib.request.urlopen(sys.argv[1].rstrip("/") + "/health", timeout=15) as r:
+    h = json.load(r)
+
+state, elapsed = h["state"], h.get("state_seconds") or 0
+i, t = h.get("n_initialized") or 0, h.get("n_target_names") or 0
+line = f"{state}: {i}/{t} initialized ({h.get('n_failed')} failed)"
+if t and i:
+    frac = i / t
+    eta = elapsed * (1 - frac) / frac if frac > 0 else None
+    bar_width = 24
+    filled = int(round(bar_width * min(frac, 1.0)))
+    bar = "#" * filled + "-" * (bar_width - filled)
+    line += f"  [{bar}] {frac*100:5.1f}%  elapsed {elapsed:.0f}s"
+    if eta is not None:
+        line += f"  eta ~{eta:.0f}s"
+else:
+    line += f"  elapsed {elapsed:.0f}s"
+print(line)
+PYEOF
+}
+
 cmd_wait() {
     # split, not `local a=.. b=$((a))`: under `set -u` bash evaluates the
     # arithmetic before the first assignment is visible, and the command
@@ -215,10 +268,54 @@ cmd_wait() {
     local end=$((SECONDS + timeout))
     while [ $SECONDS -lt $end ]; do
         if is_ready; then cmd_status; return 0; fi
-        cmd_status | sed -n '2p'
+        progress_line
         sleep 15
     done
     die "not ready after ${timeout}s"
+}
+
+cmd_stats() {
+    "$PYTHON" - "$URL" <<'PYEOF' || true
+import json, sys, urllib.request
+
+url = sys.argv[1].rstrip("/") + "/stats"
+try:
+    with urllib.request.urlopen(url, timeout=15) as r:
+        d = json.load(r)
+except Exception as exc:
+    print("stats:   no answer from %s (%s)" % (url, exc))
+    raise SystemExit(1)
+
+s = d["summary"]
+if not s.get("n"):
+    print("no requests served yet")
+    raise SystemExit(0)
+print(f"{s['n']} operation(s) recorded, {s['n_errors']} error(s)")
+if s.get("avg_duration_s") is not None:
+    print(f"duration: avg {s['avg_duration_s']:.2f}s  "
+          f"min {s['min_duration_s']:.2f}s  max {s['max_duration_s']:.2f}s")
+if s.get("last_error"):
+    print(f"last error: {s['last_error']}")
+
+print()
+print(f"{'when':>8s}  {'kind':<9s} {'dur(s)':>7s}  {'entries':>7s}  error")
+import time
+for e in d["recent"][-20:]:
+    age = time.time() - e["at"]
+    dur = e.get("duration_s")
+    dur_s = f"{dur:.2f}" if dur is not None else "?"
+    n = e.get("n_entries")
+    err = e.get("error") or ""
+    print(f"{age:7.0f}s  {e['kind']:<9s} {dur_s:>7s}  {str(n) if n is not None else '-':>7s}  {err}")
+PYEOF
+}
+
+cmd_gui() {
+    check_prereqs
+    export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
+    nohup "$PYTHON" -m eco.status_server.gui --url "$URL" "$@"         </dev/null >/dev/null 2>&1 &
+    disown
+    echo "launched (pid $!)"
 }
 
 case "${1:-}" in
@@ -234,6 +331,8 @@ case "${1:-}" in
     status)  cmd_status ;;
     wait)    shift; cmd_wait "$@" ;;
     logs)    shift; [ "${1:-}" = "-f" ] && tail -f "$LOG" || tail -n 100 "$LOG" ;;
+    stats)   cmd_stats ;;
+    gui)     shift; cmd_gui "$@" ;;
     config)  usage ;;
     ""|-h|--help|help) usage ;;
     *)       usage; exit 2 ;;

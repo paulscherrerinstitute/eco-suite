@@ -193,6 +193,38 @@ class Daq(Assembly):
         self._running_ids = count()
         self._event_master = event_master
         self._detectors_event_code = detectors_event_code
+        # Dedicated CA-monitor cache for the detectors' event-code
+        # frequency, read by `rate_multiplicator` on *every* scan step (via
+        # `retrieve()`, once per `stop()`). Reading it with a fresh
+        # get_current_value() each time is the exact `pulse_id` bug above,
+        # on a different PV: pyepics' PV.get() returns None on a transient
+        # CA hiccup instead of raising, and `int(100 / freq)` on that None
+        # killed a real scan mid-run (SIN-TIMAST-TMA:Evt-52-Freq-I, hundreds
+        # of channels transiently disconnected under CA congestion - see
+        # the ca_tuning "silent None" warning this raised). Monitor once
+        # here, same pattern as the pulse_id cache above, and read the cache
+        # in `rate_multiplicator` instead of gets on the hot path.
+        self._frequency_detector = None
+        self._frequency_monitor = None
+        self._frequency_latest = {"value": None}
+        if event_master is not None and detectors_event_code is not None:
+            try:
+                self._frequency_detector = event_master.__dict__[
+                    f"code{detectors_event_code:03d}"
+                ].frequency
+                mon = self._frequency_detector.set_current_value_callback(
+                    func="latest"
+                )
+                mon.start()  # one get to seed the cache, then monitor-only
+                self._frequency_monitor = mon
+                self._frequency_latest = mon.data
+            except Exception:
+                # A code with no live frequency (MasterEventCodeFix, used for
+                # the CTA sequencer's fixed-delay codes) has no PV to
+                # monitor at all - get_detector_code_frequency()'s own
+                # fallback below handles that by raising a clear error
+                # instead of a bare TypeError on `100 / None`.
+                pass
         self.name = name
         self.namespace = namespace
         self.checker = checker
@@ -276,10 +308,38 @@ class Daq(Assembly):
 
     @property
     def rate_multiplicator(self):
-        freq = self._event_master.__dict__[
-            f"code{self._detectors_event_code:03d}"
-        ].frequency.get_current_value()
-        return int(100 / freq)
+        return int(100 / self.get_detector_code_frequency())
+
+    def get_detector_code_frequency(self):
+        """Frequency (Hz) of the detectors' event code -- never `None`.
+
+        Reads the CA-monitor cache set up in `__init__`, not a fresh get:
+        this is called once per scan step (`rate_multiplicator`, from
+        `retrieve()`), which is exactly the traffic pattern that made the
+        `pulse_id` bug (see `get_pulse_id`'s docstring) real rather than
+        theoretical. Falls back to one direct read only if the monitor was
+        never able to attach (e.g. the code was resolved before the
+        underlying component finished initializing), and raises rather than
+        ever returning `None` for the caller to divide by.
+        """
+        value = self._frequency_latest.get("value")
+        if value is not None:
+            return value
+        if self._frequency_detector is not None:
+            try:
+                value = self._frequency_detector.get_current_value()
+            except Exception:
+                value = None
+            if value is not None:
+                return value
+        pvname = getattr(self._frequency_detector, "pvname", "<unknown PV>")
+        raise TimeoutError(
+            f"could not determine the frequency of detectors_event_code="
+            f"{self._detectors_event_code} ({pvname}): no monitored value "
+            "yet and a direct read also failed or returned None. If this "
+            "code has no live frequency (e.g. a fixed-delay CTA sequencer "
+            "code), detectors_event_code is pointed at the wrong one."
+        )
 
     @property
     def pgroup(self):
@@ -1606,6 +1666,16 @@ class Daq(Assembly):
     def _create_runtable_metadata_append_status_to_runtable(
         self, scan, append_status_info=True, **kwargs
     ):
+        # Lost when this was split out of the old combined elog+run_table
+        # callback (see eco.acquisition.counters_tmp, which still has the
+        # guard in the equivalent spot) - without it, append_status_info=False
+        # still built scan metadata and called run_table.append_run(), whose
+        # very first use in a session authenticates to Google Sheets
+        # (Run_Table2.__init__ -> Gsheet_API), a genuinely slow, easily
+        # mistaken-for-init_all pause that append_status_info=False is
+        # supposed to buy out of.
+        if not append_status_info:
+            return
 
         print("run_table appending run")
         runno = scan.daq_run_number.get_current_value()

@@ -5,6 +5,7 @@ from time import time, sleep
 import numpy as np
 from epics import PV
 from eco.epics_utils.adjustable import _read_pv
+from eco.epics_utils import ca_tuning
 from eco.epics_utils.ca_tuning import (
     CA_CONNECTION_TIMEOUT,
     CA_INIT_CONNECTION_TIMEOUT,
@@ -50,7 +51,7 @@ class DetectorPvData(Assembly):
             self._append(AdjustablePv, pvname, name="readback", is_setting=False)
             # self.status_collection.append(self)
         else:
-            self._pv = PV(pvname, auto_monitor=False)
+            self._pv = ca_tuning.make_pv(pvname)
             self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
             self.status_collection.append(self)
             self.status_collection.append(self, selection="settings", recursive=False)
@@ -116,7 +117,7 @@ class DetectorPvEnum(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
+        self._pv = ca_tuning.make_pv(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self.name = name
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
         self._resolve_lock = threading.Lock()
@@ -193,7 +194,7 @@ class DetectorPvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
+        self._pv = ca_tuning.make_pv(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 
@@ -230,7 +231,7 @@ class DetectorPvDataStream(Assembly):
         super().__init__(name=name)
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname, auto_monitor=False)
+        self._pv = ca_tuning.make_pv(pvname)
         self.alias = Alias(self.name, channel=self.pvname, channeltype="CA")
         if has_fields:
             self._append(

@@ -92,196 +92,17 @@ namespace.append_obj(
 
 
 from . import bernina_vacuum
-
 from . import bernina_event_timing
-
-
-
-
-
-# First real trial of the generalized beamline-view prototype (see
-# eco.elements.beamline_view / Assembly.mark_beamline) on the live namespace,
-# in parallel with the untouched eco.xoptics.beamline_assembly.Beamline draft
-# (eco.xoptics.beamline_bernina.make_bernina_front_end/make_bernina_experiment_
-# hutch) -- z_source/kind values below are taken straight from those modules
-# so they agree. Every "fel"-tagged component below also carries an
-# organisational subtype -- "front_end" (SARFE10, up to the end-of-front-end
-# shutter), "optics" (SAROP21 Bernina optics hutch), or "hutch" (the
-# experiment hutch itself, see further down) -- navigable by prefix via
-# mark_beamline's path/subtype doc. Purely additive bookkeeping:
-# mark_beamline() never touches EPICS or constructs anything, so nothing
-# here changes unless namespace.beamline (or .beamline_view(...)) is
-# actually used. Try e.g.:
-#   namespace.beamline.fel             # every "fel" position, any subtype
-#   namespace.beamline.fel.front_end   # just this subtype
-#   namespace.beamline.fel.optics
-#   namespace.beamline.fel.hutch
-#   namespace.beamline.vacuum          # the vacuum system, same 3 subtypes,
-#                                       # unfolding into each section's real
-#                                       # valve/gauge/pump devices
-
-
-# The whole "fel"/"front_end" group (pshut_und, slit_und, mon_und, pshut_fe,
-# att_fe, prof_fe) is delegated to bernina_front_end.py, which imports
-# `namespace` back and self-registers - only needs to come after
-# `namespace = Namespace(...)` above; see that module's docstring for why
-# that's not a circular import.
 from . import bernina_front_end  # noqa: F401
 from . import bernina_optics_hutch
-
 from . import bernina_beamline_hutch
 from . import bernina_laser
 from . import bernina_hutch_devices
+from . import bernina_alarms
+from . import bernina_daq
 
 
-
-
-
-
-# Alarm-overview panels mirroring the caqtdm "Alarms overview" launcher entry
-# (S_charts.json -> alarms_caqtdm -> alarms.ui) and its two Papamoll pump-laser
-# "Expert" sub-panels. See eco/devices_general/alarms/README.md.
-namespace.append_obj(
-    "BerninaAlarmsOverview",
-    lazy=True,
-    name="alarms",
-    module_name="eco.devices_general.alarms",
-)
-namespace.append_obj(
-    "PapamollAlarms",
-    "26l_dean_1um_35fs",
-    lazy=True,
-    name="papamoll_alarms_35fs",
-    module_name="eco.devices_general.alarms",
-)
-namespace.append_obj(
-    "PapamollAlarms",
-    "26h_orr_510nm_100fs",
-    lazy=True,
-    name="papamoll_alarms_100fs",
-    module_name="eco.devices_general.alarms",
-)
-
-
-
-
-namespace.append_obj(
-    "AdjustableFS",
-    # "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/config_JFs.json",
-    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/config_JFs.json",
-    module_name="eco.elements.adjustable",
-    lazy=True,
-    name="config_JFs",
-)
-
-
-
-
-### channelsfor daq ###
-namespace.append_obj(
-    "AdjustableFS",
-    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_JF.json",
-    module_name="eco.elements.adjustable",
-    lazy=True,
-    name="channels_JF",
-)
-namespace.append_obj(
-    "AdjustableFS",
-    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_BS.json",
-    module_name="eco.elements.adjustable",
-    lazy=True,
-    name="channels_BS",
-)
-namespace.append_obj(
-    "AdjustableFS",
-    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_BSCAM.json",
-    module_name="eco.elements.adjustable",
-    lazy=True,
-    name="channels_BSCAM",
-)
-namespace.append_obj(
-    "AdjustableFS",
-    "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/channels_CA.json",
-    module_name="eco.elements.adjustable",
-    lazy=True,
-    name="channels_CA",
-)
-
-# namespace.append_obj(
-#     "MpodModule",
-#     "SARES21-PS7071",
-#     [1, 2, 3, 4],
-#     ["ch1", "ch2", "ch3", "ch4"],
-#     module_string="LV_OMPV_1",
-#     name="power_LV_patch1",
-#     lazy=True,
-#     module_name="eco.devices_general.powersockets",
-# )
-
-# namespace.append_obj(
-#     "MpodModule",
-#     "SARES21-PS7071",
-#     [5, 6, 7, 8],
-#     ["ch1", "ch2", "ch3", "ch4"],
-#     module_string="LV_OMPV_1",
-#     name="power_LV_patch2",
-#     lazy=True,
-#     module_name="eco.devices_general.powersockets",
-# )
-
-# new MPOD implementation
-
-
-from eco.loptics.bernina_laser import Stage_LXT_Delay
-
-# namespace.append_obj(
-#     "NEW_MpodModule",
-#     "SARES20-MPD1",
-#     [0, 1, 2, 3],
-#     ["ch1", "ch2", "ch3", "ch4"],
-#     module_string='1',
-#     name="power_LV_patch1",
-#     lazy=True,
-#     module_name="eco.devices_general.powersockets",
-# )
-
-# namespace.append_obj(
-#     "NEW_MpodModule",
-#     "SARES21-MPD1",
-#     [4, 5, 6, 7],
-#     ["ch4", "ch5", "ch6", "ch7"],
-#     module_string='1',
-#     name="power_LV_patch2",
-#     lazy=True,
-#     module_name="eco.devices_general.powersockets",
-# )
-
-# namespace.append_obj(
-#     "CheckerCA",
-#     module_name="eco.acquisition.checkers",
-#     pvname="SLAAR21-LTIM01-EVR0:CALCI",
-#     thresholds=[0.2, 10],
-#     required_fraction=0.6,
-#     filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds.json",
-#     filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds_fraction.json",
-#     lazy=True,
-#     name="checker_mon_opt_ioxos",
-# )
-
-namespace.append_obj(
-    "CheckerBS",
-    module_name="eco.acquisition.checkers",
-    bs_channel="SAROP21-PBPS133:INTENSITY",
-    thresholds=[0.2, 10],
-    required_fraction=0.6,
-    filepath_thresholds="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds.json",
-    filepath_fraction="/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/default_checker_thresholds_fraction.json",
-    lazy=True,
-    name="checker",
-)
-
-
-##### standard DAQ #######
+##### run table stuff #######
 
 
 # TODO: need to check if the value property actually works here for the pgroup in the run table to make is dynamic!
@@ -330,81 +151,6 @@ namespace.append_obj(
 )
 
 
-# Take run status from a long-running eco.status_server process instead of
-# initializing and reading *this* session's namespace at every scan start
-# (see eco/status_server/README.md). On by default, pointed at the
-# beamline's server - Daq.use_status_server() re-checks /health before every
-# scan and falls back to the old local behaviour (with a printed warning) if
-# it is unreachable, still initializing, or older than
-# status_server_max_age, so a session never silently depends on the server
-# being up. Override the URL, or set to "" / "off" / "none" to force the old
-# always-local behaviour, with e.g.
-#   ECO_STATUS_SERVER=off scripts/eco-dev -s bernina
-# An env var rather than a key in the shared bernina config JSON on purpose:
-# which host (if any) runs a status server is a per-session choice, and that
-# file is read by every session at the beamline.
-_ECO_STATUS_SERVER_DEFAULT = "http://saresb-cons-04:8091"
-_status_server = os.environ.get("ECO_STATUS_SERVER", _ECO_STATUS_SERVER_DEFAULT)
-if _status_server.strip().lower() in ("", "off", "none", "false", "0"):
-    _status_server = None
-if _status_server:
-    print(f"daq: taking run status from status server {_status_server} "
-          "(set ECO_STATUS_SERVER=off to always use the local namespace)")
-
-namespace.append_obj(
-    "Daq",
-    instrument="bernina",
-    status_server=_status_server,
-    pgroup=NamespaceComponent(namespace, "config_bernina.pgroup"),
-    channels_JF=NamespaceComponent(namespace, "channels_JF"),
-    channels_BS=NamespaceComponent(namespace, "channels_BS"),
-    channels_BSCAM=NamespaceComponent(namespace, "channels_BSCAM"),
-    channels_CA=NamespaceComponent(namespace, "channels_CA"),
-    config_JFs=NamespaceComponent(namespace, "config_JFs"),
-    # pulse_id_adj="SLAAR21-LTIM01-EVR0:RX-PULSEID",
-    pulse_id_adj="SARES20-CVME-01-EVR0:RX-PULSEID",
-    event_master=NamespaceComponent(namespace, "event_master"),
-    detectors_event_code=50,
-    rate_multiplicator="auto",
-    name="daq",
-    namespace=namespace,
-    checker=NamespaceComponent(namespace, "checker"),
-    run_table=NamespaceComponent(namespace, "run_table"),
-    pulse_picker=NamespaceComponent(namespace, "xp"),
-    elog=NamespaceComponent(namespace, "elog"),
-    module_name="eco.acquisition.daq_client",
-    lazy=True,
-)
-
-
-namespace.append_obj(
-    "Scans",
-    # data_base_dir="scan_data",
-    # scan_info_dir=f"/sf/bernina/data/{config_bernina.pgroup()}/res/scan_info",
-    default_counters=[daq],
-    # default_counters=[NamespaceComponent(namespace,"daq")],
-    # default_counters=NamespaceComponent(namespace,"daq"),
-    callbacks_start_scan=[],
-    callbacks_end_step=[],
-    callbacks_end_scan=[],
-    # elog=elog,
-    name="scans",
-    module_name="eco.acquisition.scan",
-    lazy=True,
-)
-
-namespace.append_obj(
-    "Scans",
-    # data_base_dir="scan_data",
-    # scan_info_dir=f"/sf/bernina/data/{config_bernina.pgroup()}/res/scan_info",
-    default_counters=[],
-    callbacks_start_scan=[],
-    callbacks_end_step=[],
-    callbacks_end_scan=[],
-    name="scans_test",
-    module_name="eco.acquisition.scan",
-    lazy=True,
-)
 
 #####################################################################################################
 ## more temporary devices will be outcoupled to temorary module.
@@ -986,8 +732,9 @@ namespace.mark_beamline(
 # TODO  pgroup non dynamic here!
 try:
     import sys
+    import shutil
     from ..utilities import TimeoutPath
-    from ..utilities.datafiles import ensure_dir
+    from ..utilities.datafiles import ensure_dir, ensure_group_writable
 
     if TimeoutPath(f"/sf/bernina/data/{config_bernina.pgroup()}/res/").exists():
         pgroup_eco_path = TimeoutPath(
@@ -999,6 +746,26 @@ try:
         ensure_dir(pgroup_eco_path)
 
         sys.path.append(pgroup_eco_path.as_posix())
+
+        pgroup_exp_path = pgroup_eco_path.get_path() / "bernina_exp.py"
+        if not any(pgroup_eco_path.get_path().iterdir()):
+            # Freshly created (empty) pgroup eco folder: seed it with an
+            # editable copy of the template, so there is somewhere obvious to
+            # add pgroup-specific devices/components without touching the
+            # checkout. ensure_dir already made the folder group-writable
+            # (setgid + group rwx), so the copy just needs the same treatment
+            # -- ensure_group_writable, not a hand-rolled chmod (see
+            # eco.utilities.datafiles).
+            shutil.copyfile(
+                Path(__file__).parent / "bernina_exp_template.py", pgroup_exp_path
+            )
+            ensure_group_writable(pgroup_exp_path)
+
+        if pgroup_exp_path.exists():
+            # pgroup_eco_path is on sys.path (above), so this is a plain
+            # top-level module import, not a package-relative one -- the
+            # per-pgroup file lives outside the eco package entirely.
+            import bernina_exp
     else:
         print(
             "Could not access experiment folder, could be due to more systematic file system failure!"

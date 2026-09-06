@@ -1,9 +1,14 @@
+import logging
 import threading
 import time
 from enum import IntEnum
 
 import numpy as np
 from epics import PV
+# the module itself as well as the names: the retry budget is read live from
+# `ca_tuning` (it changes with `sensitive_period`), which a copied
+# `from ... import` would freeze at import time.
+from eco.epics_utils import ca_tuning
 from eco.epics_utils.ca_tuning import (
     CA_CONNECTION_TIMEOUT,
     CA_INIT_CONNECTION_TIMEOUT,
@@ -11,6 +16,8 @@ from eco.epics_utils.ca_tuning import (
     note_successful_read,
     report_none_read,
 )
+
+logger = logging.getLogger(__name__)
 
 from eco.aliases import Alias
 from eco.elements.adjustable import (
@@ -106,8 +113,31 @@ def _read_pv(pv, name=None):
     pvname = getattr(pv, "pvname", None)
     if not pv.connected and not has_ever_succeeded(pvname):
         value = pv.get(timeout=CA_INIT_CONNECTION_TIMEOUT)
-    else:
-        value = pv.get()
+        if value is None:
+            report_none_read(pv, name=name)
+        else:
+            note_successful_read(pvname)
+        return value
+
+    value = pv.get()
+    if value is None:
+        # A channel that has worked before and momentarily has not is the
+        # one case worth trying again: the failure is a dropped virtual
+        # circuit or a get that lost a race, both of which clear in
+        # milliseconds. Retrying here, at the single chokepoint every
+        # instrumented read goes through, is what stops the next caller
+        # having to grow its own private cache the way `Daq.get_pulse_id`
+        # and the event-code frequency did - and it is bounded, so an
+        # absent channel (handled above) never pays for it.
+        for attempt in range(ca_tuning.read_retries()):
+            time.sleep(ca_tuning.CA_READ_RETRY_DELAY)
+            value = pv.get()
+            if value is not None:
+                logger.debug(
+                    "%s (%s) returned None, then a value on retry %d",
+                    name or pvname, pvname, attempt + 1,
+                )
+                break
     if value is None:
         report_none_read(pv, name=name)
     else:
@@ -207,31 +237,31 @@ class AdjustableAtomicPv:
         #                Alias(an, channel=".".join([pvname, af]), channeltype="CA")
         #            )
 
-        self._pv = PV(self.pvname, connection_timeout=CA_CONNECTION_TIMEOUT, count=element_count, auto_monitor=False)
+        self._pv = ca_tuning.make_pv(self.pvname, connection_timeout=CA_CONNECTION_TIMEOUT, count=element_count)
         self._currentChange = None
         self.accuracy = accuracy
 
         if pvreadbackname is None:
-            self._pvreadback = PV(
-                self.pvname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvreadback = ca_tuning.make_pv(
+                self.pvname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
             pvreadbackname = self.pvname
             self.pvname = self.pvname
         else:
-            self._pvreadback = PV(
-                pvreadbackname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvreadback = ca_tuning.make_pv(
+                pvreadbackname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
             self.pvname = pvreadbackname
 
         if pvlowlimname:
-            self._pvlowlim = PV(
-                pvlowlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvlowlim = ca_tuning.make_pv(
+                pvlowlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
         else:
             self._pvlowlim = None
         if pvhighlimname:
-            self._pvhighlim = PV(
-                pvhighlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvhighlim = ca_tuning.make_pv(
+                pvhighlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
         else:
             self._pvhighlim = None
@@ -323,24 +353,24 @@ class AdjustablePv:
             self.unit = AdjustableMemory(unit, name="unit")
 
         if pvreadbackname is None:
-            self._pvreadback = PV(self.Id, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
+            self._pvreadback = ca_tuning.make_pv(self.Id, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT)
             pvreadbackname = self.Id
             self.pvname = self.Id
         else:
-            self._pvreadback = PV(
-                pvreadbackname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvreadback = ca_tuning.make_pv(
+                pvreadbackname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
             self.pvname = pvreadbackname
 
         if pvlowlimname:
-            self._pvlowlim = PV(
-                pvlowlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvlowlim = ca_tuning.make_pv(
+                pvlowlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
         else:
             self._pvlowlim = None
         if pvhighlimname:
-            self._pvhighlim = PV(
-                pvhighlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False
+            self._pvhighlim = ca_tuning.make_pv(
+                pvhighlimname, count=element_count, connection_timeout=CA_CONNECTION_TIMEOUT
             )
         else:
             self._pvhighlim = None
@@ -483,7 +513,7 @@ class AdjustablePvEnum:
     def __init__(self, pvname, pvname_set=None, name=None):
         self.Id = pvname
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT * 2, auto_monitor=False)
+        self._pv = ca_tuning.make_pv(pvname, connection_timeout=CA_CONNECTION_TIMEOUT * 2)
         self.name = name
         self._pv_set = PV(pvname_set, connection_timeout=CA_CONNECTION_TIMEOUT * 2) if pvname_set else None
         self.alias = Alias(name, channel=self.Id, channeltype="CA")
@@ -624,7 +654,7 @@ class AdjustablePvString:
     def __init__(self, pvname, name=None, elog=None):
         self.name = name
         self.pvname = pvname
-        self._pv = PV(pvname, connection_timeout=CA_CONNECTION_TIMEOUT, auto_monitor=False)
+        self._pv = ca_tuning.make_pv(pvname, connection_timeout=CA_CONNECTION_TIMEOUT)
         self._elog = elog
         self.alias = Alias(name, channel=self.pvname, channeltype="CA")
 

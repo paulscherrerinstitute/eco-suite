@@ -70,7 +70,10 @@ def test_multi_source_and_stepscan_binning(bs_worker):
     fake_scan = FakeScan(n_steps)
     for cb in ctr.callbacks_start_scan:
         cb(scan=fake_scan)
-    assert len(ctr._scan._values) == n_steps
+    # Bins are open-ended (escape-fel 0.2.7 -- see bs_counter.py's module
+    # docstring) and created on demand, so none exist yet right after
+    # start; they grow to n_steps once every step has been visited below.
+    assert len(ctr._scan._values) == 0
 
     all_pulse_ids = {name: [] for name in ctr._channels}
     for step in range(n_steps):
@@ -81,14 +84,16 @@ def test_multi_source_and_stepscan_binning(bs_worker):
             assert len(pids) == 10
             all_pulse_ids[name].extend(pids)
 
+    assert len(ctr._scan._values) == n_steps
+
     for cb in ctr.callbacks_end_scan:
         cb(scan=fake_scan)
 
     # Pulse ids strictly increasing and non-overlapping across steps, for
     # every channel -- confirms the per-step bins are a clean partition of
-    # the live stream (this is exactly the case that silently lost data
-    # with an un-pre-declared/open-ended escape.stream.Scan -- see
-    # bs_counter.py's module docstring).
+    # the live stream. This is exactly the case that used to silently lose
+    # data for a late-joining channel on a shared, open-ended
+    # escape.stream.Scan before escape-fel 0.2.7.
     for name, ids in all_pulse_ids.items():
         assert ids == sorted(ids)
         assert len(ids) == len(set(ids))

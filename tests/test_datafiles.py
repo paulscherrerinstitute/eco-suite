@@ -333,6 +333,38 @@ def test_target_group_of_path_uses_the_nearest_existing_ancestor(tmp_path):
     )
 
 
+def test_target_group_of_path_skips_a_nogroup_ancestor(tmp_path, monkeypatch):
+    """A directory that lost its setgid bit and was recreated by a personal
+    account lands owned by that account's own nogroup-shaped primary group --
+    the eco_cnf_bernina/memory incident described in the module docstring. A
+    new file written next to/inside that broken directory must not inherit
+    the broken group; the walk should recover the real group one level up
+    instead (fully mocked here, since the real gid a `/tmp`-shaped path gets
+    on a given machine is itself sometimes nogroup, which would make this
+    indistinguishable from the bug it is testing for)."""
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    real_stat = os.stat
+    broken_gid, real_group_gid = 999998, 999999
+    names = {broken_gid: "unx-nogroup", real_group_gid: "unx-sf_bernina_bs"}
+
+    def fake_stat(path, *a, **k):
+        st = real_stat(path, *a, **k)
+        gid = broken_gid if Path(path) == broken else (
+            real_group_gid if Path(path) == tmp_path else None
+        )
+        if gid is None:
+            return st
+        return type("FakeStat", (), {"st_gid": gid, "st_mode": st.st_mode})()
+
+    monkeypatch.setattr(df.os, "stat", fake_stat)
+    monkeypatch.setattr(df, "_name_of_gid", lambda gid: names.get(gid, str(gid)))
+    monkeypatch.setattr(df, "_process_gids", lambda: frozenset(names))
+
+    result = df.target_group_of_path(broken / "new_file.json")
+    assert result == "unx-sf_bernina_bs"
+
+
 def test_target_group_of_path_ignores_a_group_the_process_is_not_in(
     tmp_path, monkeypatch
 ):
