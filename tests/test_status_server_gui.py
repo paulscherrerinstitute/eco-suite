@@ -152,13 +152,32 @@ def test_stats_table_populates_and_colors_errors(win):
 def test_reinit_click_disables_buttons_and_calls_the_client(win, qapp):
     calls = []
     win.client.reinit = lambda **kw: calls.append(kw) or {
-        "n_initialized": 80, "n_target_names": 86, "n_failed": 6,
+        "status": "ok", "message": "reinit started in background",
     }
     win.btn_failed.click()
     win._reinit_worker.wait(2000)
     qapp.processEvents()
     assert calls and calls[0]["mode"] == "failed"
-    assert "reinit finished" in win.action_status.text()
+    assert calls[0]["wait"] is False, "must not block the GUI thread for the rebuild"
+    assert "reinit started in background" in win.action_status.text()
+
+
+def test_reinit_request_does_not_block_the_window_from_closing(win, qapp):
+    """The bug this guards against: a reinit used to keep the worker thread
+    (and so closeEvent's guard) alive for the whole rebuild, which can run
+    for minutes - making the window impossible to close even though it is
+    only a monitor and the rebuild itself is entirely server-side."""
+    win.client.reinit = lambda **kw: {
+        "status": "ok", "message": "reinit started in background",
+    }
+    win.btn_full.click()
+    win._reinit_worker.wait(2000)
+    qapp.processEvents()
+    assert win._reinit_worker is None
+
+    ev = QtGui.QCloseEvent()
+    win.closeEvent(ev)
+    assert ev.isAccepted()
 
 
 def test_reinit_error_is_shown(win, qapp):

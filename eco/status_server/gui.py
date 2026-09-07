@@ -339,22 +339,28 @@ class StatusServerMonitor(QtWidgets.QWidget):
         self.action_status.setStyleSheet(f"color: {COLOR_WARN};")
 
         def call():
-            return self.client.reinit(mode=mode, wait=True, timeout=1800,
-                                      progress=False)
+            # wait=False: this worker only has to make the request itself
+            # (one or two quick HTTP calls, bounded by self.client.timeout)
+            # rather than block for the whole rebuild, which can run for
+            # minutes. The already-running _Poller keeps showing live
+            # progress via /health regardless - nothing here needs to wait
+            # for the result, and this is what keeps the window closable
+            # during a reinit (see closeEvent).
+            return self.client.reinit(mode=mode, wait=False)
 
         self._reinit_worker = _ReinitWorker(call, self)
-        self._reinit_worker.finished_ok.connect(self._on_reinit_ok)
+        self._reinit_worker.finished_ok.connect(self._on_reinit_requested)
         self._reinit_worker.finished_error.connect(self._on_reinit_error)
         self._reinit_worker.start()
 
-    def _on_reinit_ok(self, health: dict):
+    def _on_reinit_requested(self, started: dict):
         self._reinit_worker = None
         self.action_status.setText(
-            f"reinit finished: {health.get('n_initialized')}/"
-            f"{health.get('n_target_names')} initialized, "
-            f"{health.get('n_failed')} failed"
+            started.get("message") or "reinit request accepted"
         )
-        self.action_status.setStyleSheet(f"color: {COLOR_OK};")
+        self.action_status.setStyleSheet(f"color: {COLOR_WARN};")
+        # buttons stay disabled by _on_health's busy check until the next
+        # poll sees the server actually go non-ready
 
     def _on_reinit_error(self, message: str):
         self._reinit_worker = None
@@ -362,13 +368,17 @@ class StatusServerMonitor(QtWidgets.QWidget):
         self.action_status.setStyleSheet(f"color: {COLOR_BAD};")
 
     def closeEvent(self, event):
-        # A reinit is a blocking network call that can run for minutes
-        # (client.reinit(wait=True)); destroying the QThread while it is
-        # still running is a hard crash (observed directly, not
-        # hypothetically), so the window refuses to close under it instead.
+        # _reinit_worker only runs for as long as the request itself takes
+        # (see _start_reinit's wait=False) - normally under a second, not
+        # the whole rebuild, which the server keeps doing regardless of
+        # whether this window is even open. But destroying a QThread while
+        # it is still running is a hard crash (observed directly, not
+        # hypothetically) if the request itself is slow (an unreachable or
+        # overloaded server, bounded by self.client.timeout), so the window
+        # still refuses to close for that brief window rather than risk it.
         # No modal dialog here on purpose - that would block the whole
-        # process on a click while the reinit keeps running regardless;
-        # the status label already says why nothing happened.
+        # process on a click for no reason; the status label already says
+        # why nothing happened, and it clears itself within a few seconds.
         if self._reinit_worker is not None and self._reinit_worker.isRunning():
             self.action_status.setText(
                 "cannot close: a reinit/restart is still running on the server"
