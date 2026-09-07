@@ -1,0 +1,232 @@
+#!/bin/bash
+# eco manual-control box server - start/stop/status/gui wrapper.
+#
+# Mirrors scripts/eco-status-server closely (same start/stop/status/logs/gui
+# shape, same env-var-overridable everything, same systemd-ownership guard);
+# see that script for the full reasoning behind each piece. The service
+# itself is much lighter, though: it holds one TCP connection to the
+# physical control box (eco.manual_control.box_server) rather than a whole
+# initialized namespace, so there is no minutes-long init to wait for.
+#
+# Canonical copy lives in the eco repo at scripts/, alongside eco-dev and
+# eco-status-server; /sf/bernina/bin/eco-box-server is a symlink to this
+# file, so editing the checkout takes effect immediately.
+#
+# Runs in the FOREGROUND by default, which is what systemd's Type=simple
+# wants. Use `-b` to detach for interactive use.
+#
+#   ECO_BOX_SERVER_CHECKOUT   eco checkout to run (prepended to PYTHONPATH)
+#   ECO_BOX_SERVER_SCOPE      -s/--scope passed to the server (e.g. bernina)
+#   ECO_BOX_SERVER_BOX_HOST   the physical box to call (default: ecobox)
+#   ECO_BOX_SERVER_BOX_PORT   port the box listens on (default: 8791)
+#   ECO_BOX_SERVER_TOKEN_FILE shared token file (default: ~/.eco/pendant_token)
+#   ECO_BOX_SERVER_HOST       admin/health HTTP bind address (default: 0.0.0.0)
+#   ECO_BOX_SERVER_PORT       admin/health HTTP port (default: 8092)
+#   ECO_BOX_SERVER_PYTHON     interpreter (needs eco's full dependency set)
+#   ECO_BOX_SERVER_URL        what `status`/`disconnect`/`reconnect`/`gui` talk to
+#   ECO_BOX_SERVER_LOG        log file used by -b
+#
+# A file at /sf/bernina/config/eco_box_server/env (or $ECO_BOX_SERVER_ENV)
+# is sourced first if it exists, so a site can set those in one place.
+set -euo pipefail
+
+ENV_FILE="${ECO_BOX_SERVER_ENV:-/sf/bernina/config/eco_box_server/env}"
+# shellcheck source=/dev/null
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+
+CHECKOUT="${ECO_BOX_SERVER_CHECKOUT:-/sf/bernina/code/gac-bernina/eco}"
+SCOPE="${ECO_BOX_SERVER_SCOPE:-bernina}"
+BOX_HOST="${ECO_BOX_SERVER_BOX_HOST:-ecobox}"
+BOX_PORT="${ECO_BOX_SERVER_BOX_PORT:-8791}"
+TOKEN_FILE="${ECO_BOX_SERVER_TOKEN_FILE:-~/.eco/pendant_token}"
+BIND_HOST="${ECO_BOX_SERVER_HOST:-0.0.0.0}"
+BIND_PORT="${ECO_BOX_SERVER_PORT:-8092}"
+PYTHON="${ECO_BOX_SERVER_PYTHON:-/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python}"
+URL="${ECO_BOX_SERVER_URL:-http://$(hostname -s):$BIND_PORT}"
+LOG="${ECO_BOX_SERVER_LOG:-$HOME/.eco/box_server_$(hostname -s).log}"
+
+# Matches only the running server, never this script or an ssh command line
+# that mentions it (the bracket keeps the pattern from matching itself).
+PGREP_PATTERN='[e]co\.manual_control\.box_server'
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") <command> [options]
+
+  start [-b] [-- <extra args>]  run the server (foreground; -b to detach)
+  stop                          stop the running server on this host
+  restart                       stop, then start detached
+  status                        query \$URL/health
+  disconnect                    release the box now (the safety button)
+  reconnect                     offer this session to the box again
+                                (the operator at the box must accept it)
+  logs [-f]                     show the detached-mode log
+  gui                           launch the Qt monitor/control panel (detached)
+  config                        print the resolved configuration
+
+Environment (current values):
+  ECO_BOX_SERVER_CHECKOUT=$CHECKOUT
+  ECO_BOX_SERVER_SCOPE=$SCOPE
+  ECO_BOX_SERVER_BOX_HOST=$BOX_HOST
+  ECO_BOX_SERVER_BOX_PORT=$BOX_PORT
+  ECO_BOX_SERVER_TOKEN_FILE=$TOKEN_FILE
+  ECO_BOX_SERVER_HOST=$BIND_HOST
+  ECO_BOX_SERVER_PORT=$BIND_PORT
+  ECO_BOX_SERVER_PYTHON=$PYTHON
+  ECO_BOX_SERVER_URL=$URL
+  ECO_BOX_SERVER_LOG=$LOG
+EOF
+}
+
+die() { echo "$(basename "$0"): $*" >&2; exit 1; }
+
+check_prereqs() {
+    [ -d "$CHECKOUT/eco" ] || die "no eco checkout at $CHECKOUT (set ECO_BOX_SERVER_CHECKOUT)"
+    [ -x "$PYTHON" ] || die "no interpreter at $PYTHON (set ECO_BOX_SERVER_PYTHON)"
+}
+
+server_pid() { pgrep -f "$PGREP_PATTERN" | head -1; }
+
+# Is this host's server owned by the systemd user service? Same reasoning
+# as eco-status-server's managed_by_systemd - see that script.
+managed_by_systemd() {
+    [ -n "${INVOCATION_ID:-}" ] && return 1
+    command -v systemctl >/dev/null 2>&1 || return 1
+    case "$(systemctl --user is-active eco-box-server 2>/dev/null)" in
+        active|activating|reloading) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+server_owner() {
+    local pid="$1"
+    [ -n "$pid" ] && ps -o user= -p "$pid" 2>/dev/null | tr -d ' '
+}
+
+cmd_start() {
+    local background=0
+    if [ "${1:-}" = "-b" ] || [ "${1:-}" = "--background" ]; then background=1; shift; fi
+    [ "${1:-}" = "--" ] && shift
+    if managed_by_systemd; then
+        die "the systemd user service is running this host's server; use
+  systemctl --user restart eco-box-server
+(or 'systemctl --user stop' it first if you really want to run it by hand)"
+    fi
+    check_prereqs
+    local pid; pid="$(server_pid || true)"
+    if [ -n "$pid" ]; then
+        local owner; owner="$(server_owner "$pid")"
+        die "already running (pid $pid, user ${owner:-unknown}); use 'restart' or 'stop' first"
+    fi
+
+    export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
+    local args=(-s "$SCOPE" --box-host "$BOX_HOST" --box-port "$BOX_PORT"
+               --token-file "$TOKEN_FILE" --host "$BIND_HOST" --port "$BIND_PORT")
+    if [ "$background" -eq 1 ]; then
+        mkdir -p "$(dirname "$LOG")"
+        # </dev/null: nothing here should ever block on stdin in detached mode.
+        nohup "$PYTHON" -u -m eco.manual_control.box_server "${args[@]}" "$@" \
+            </dev/null >>"$LOG" 2>&1 &
+        echo "started pid $! -> $LOG"
+    else
+        exec "$PYTHON" -u -m eco.manual_control.box_server "${args[@]}" "$@" </dev/null
+    fi
+}
+
+cmd_stop() {
+    if managed_by_systemd; then
+        echo "stopping via systemd (the service owns this host's server)"
+        systemctl --user stop eco-box-server
+        return 0
+    fi
+    local pid; pid="$(server_pid || true)"
+    [ -z "$pid" ] && { echo "not running"; return 0; }
+    local owner; owner="$(server_owner "$pid")"
+    if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ]; then
+        die "pid $pid belongs to '$owner', not you - stop it from that account"
+    fi
+    kill "$pid"
+    for _ in $(seq 1 30); do
+        sleep 1
+        pgrep -f "$PGREP_PATTERN" >/dev/null || { echo "stopped (was pid $pid)"; return 0; }
+    done
+    die "pid $pid did not exit after 30 s"
+}
+
+cmd_status() {
+    local pid; pid="$(server_pid || true)"
+    if [ -n "$pid" ]; then
+        local owner; owner="$(server_owner "$pid")"
+        local managed="unmanaged"
+        managed_by_systemd && managed="systemd user service"
+        echo "process: running, pid $pid, user ${owner:-unknown} ($managed)"
+    else
+        echo "process: not running on $(hostname -s)"
+    fi
+    "$PYTHON" - "$URL" <<'PYEOF' || true
+import json, sys, urllib.request
+
+url = sys.argv[1].rstrip("/") + "/health"
+try:
+    with urllib.request.urlopen(url, timeout=10) as r:
+        h = json.load(r)
+except Exception as exc:
+    print("health:  no answer from %s (%s)" % (url, exc))
+    raise SystemExit(1)
+
+connected = " - box CONNECTED" if h.get("connected") else ""
+print(f"state:   {h['state']}{connected}")
+if h.get("reason"):
+    print(f"reason:  {h['reason']}")
+print(f"box:     {h.get('box')}")
+print(f"process: pid {h.get('pid')}, up {h.get('uptime_s', 0)/60:.1f} min, "
+      f"{h.get('rss_mb') or 0:.0f} MB, {h.get('n_threads')} threads")
+PYEOF
+}
+
+cmd_disconnect() {
+    "$PYTHON" - "$URL" <<'PYEOF'
+import json, sys, urllib.request
+req = urllib.request.Request(sys.argv[1].rstrip("/") + "/admin/disconnect", method="POST")
+with urllib.request.urlopen(req, timeout=10) as r:
+    print(json.load(r).get("message", "disconnected"))
+PYEOF
+}
+
+cmd_reconnect() {
+    "$PYTHON" - "$URL" <<'PYEOF'
+import json, sys, urllib.request
+req = urllib.request.Request(sys.argv[1].rstrip("/") + "/admin/reconnect", method="POST")
+with urllib.request.urlopen(req, timeout=10) as r:
+    print(json.load(r).get("message", "reconnecting"))
+PYEOF
+}
+
+cmd_gui() {
+    check_prereqs
+    export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
+    nohup "$PYTHON" -m eco.manual_control.box_server_gui --url "$URL" "$@" \
+        </dev/null >/dev/null 2>&1 &
+    disown
+    echo "launched (pid $!)"
+}
+
+case "${1:-}" in
+    start)      shift; cmd_start "$@" ;;
+    stop)       cmd_stop ;;
+    restart)
+        if managed_by_systemd; then
+            echo "restarting via systemd"
+            systemctl --user restart eco-box-server
+        else
+            cmd_stop; shift; cmd_start -b "$@"
+        fi ;;
+    status)     cmd_status ;;
+    disconnect) cmd_disconnect ;;
+    reconnect)  cmd_reconnect ;;
+    logs)       shift; [ "${1:-}" = "-f" ] && tail -f "$LOG" || tail -n 100 "$LOG" ;;
+    gui)        shift; cmd_gui "$@" ;;
+    config)     usage ;;
+    ""|-h|--help|help) usage ;;
+    *)          usage; exit 2 ;;
+esac
