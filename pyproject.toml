@@ -25,7 +25,7 @@ requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eco"
+name = "eco-suite"
 description = "Experiment control and orchestration framework for the SwissFEL Bernina endstation"
 readme = "Readme.md"
 requires-python = ">=3.8"
@@ -72,6 +72,14 @@ dependencies = [
     "numpy-stl",
     "diffcalc-core",
     "IPython",
+    # eco/elements/assembly.py unconditionally imports eco.acquisition.scan_data,
+    # which imports escape.swissfel -- so these two are load-bearing for a bare
+    # `import eco`, not optional. escape-fel is a public PyPI package (the
+    # `psi` extra below used to pull it via git, which both duplicated it here
+    # and left the base import broken without [psi] installed -- verified by
+    # `pip install .` + `import eco` in a clean venv).
+    "escape-fel",
+    "dask-jobqueue",
 ]
 
 [project.optional-dependencies]
@@ -114,11 +122,12 @@ hardware = [
 # the default IPython shell; install on demand.
 lab = ["jupyterlab"]
 voila = ["voila"]
-# git-only PSI/lab packages, no PyPI release. Installable with
-#   pip install "eco[psi] @ ."   (needs network + git)
+# PSI-internal packages with no public PyPI release, plus scilog (which *is*
+# on PyPI as `scilog`, so no git URL needed -- verified). escape-fel used to
+# live here too, but it's both on PyPI and load-bearing for a bare `import
+# eco` (see `dependencies` above), so it moved there instead.
 psi = [
-    "scilog @ git+https://github.com/paulscherrerinstitute/scilog#subdirectory=sdk/python",
-    "escape-fel @ git+https://github.com/htlemke/escape-fel",
+    "scilog",
 ]
 docs = [
     "sphinx>=7,<9",
@@ -140,8 +149,11 @@ dev = [
 eco = "eco_cli:main"
 
 [project.urls]
-Homepage = "https://gitea.psi.ch/Bernina/eco"
-Repository = "https://gitea.psi.ch/Bernina/eco"
+Homepage = "https://github.com/paulscherrerinstitute/eco-suite"
+Documentation = "https://eco-suite.readthedocs.io"
+Repository = "https://github.com/paulscherrerinstitute/eco-suite"
+Issues = "https://github.com/paulscherrerinstitute/eco-suite/issues"
+"Internal source (PSI)" = "https://gitea.psi.ch/Bernina/eco"
 
 # --- Package discovery ----------------------------------------------------
 # Only ship the `eco` package tree. The nested vendored project under
