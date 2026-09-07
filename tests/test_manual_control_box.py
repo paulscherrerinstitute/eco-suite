@@ -652,3 +652,11 @@ def test_menu_survives_an_adjustable_with_a_broken_memory():
     box.set_cursor(names.index("memories"))
     box.activate_cursor()
     assert any("cannot read memories" in e.name for e in box.entries)
+
+
+def test_control_box_manual_mentions_the_background_service():
+    from eco.manual_control.control_box import ControlBox
+
+    manual = ControlBox.__doc__
+    for topic in ["eco-box-server", "eco-dev box-server", "box_server"]:
+        assert topic in manual, f"manual does not mention {topic!r}"

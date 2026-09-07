@@ -68,7 +68,7 @@ _BUILTIN_DEFAULTS = {
     "lazy": True,
 }
 
-_COMMANDS = ("console", "desktop", "webapp", "jupyterlab")
+_COMMANDS = ("console", "desktop", "webapp", "jupyterlab", "box-server")
 
 
 def _ecorc_path():
@@ -196,6 +196,38 @@ def _run_webapp(args):
     _exec(
         ["voila", notebook],
         "Install it with e.g. `pip install eco[voila]` or `conda install voila`.",
+    )
+
+
+def _run_box_server(args):
+    """Hold this console's connection to the physical manual-control box
+    as a background service - see eco.manual_control.box_server. Exec's
+    into that module (like every other _run_* here), so this launcher
+    stays import-eco-free; -s/--scope picks which instrument namespace to
+    offer the box (imports eco.<scope>, same as `eco console -s <scope>`).
+
+    This is the "run it from a checkout, for quick dev/testing" path -
+    same module the production `eco-box-server` wrapper script runs, just
+    without that script's start/stop/systemd/log-file machinery. Runs in
+    the foreground; Ctrl-C disconnects from the box and exits.
+    """
+    if not args.scope:
+        sys.exit(
+            "eco: box-server needs -s/--scope to know which instrument "
+            "namespace to offer the box, e.g. `eco box-server -s bernina`"
+        )
+    cmd = [sys.executable, "-m", "eco.manual_control.box_server", "-s", args.scope]
+    if args.box_host:
+        cmd += ["--box-host", args.box_host]
+    if args.box_port:
+        cmd += ["--box-port", str(args.box_port)]
+    if args.token_file:
+        cmd += ["--token-file", args.token_file]
+    cmd += ["--host", args.host, "--port", str(args.port)]
+    _exec(
+        cmd,
+        "It ships with eco itself (eco.manual_control.box_server); "
+        "the admin/health API additionally needs flask (`pip install eco[gui]`).",
     )
 
 
@@ -713,6 +745,25 @@ def main(argv=None):
         help_off="just open JupyterLab, no separate console (the eco-<scope> kernel is still registered/default if -s is given)",
     )
 
+    p_box_server = subparsers.add_parser(
+        "box-server",
+        help="Hold this console's connection to the physical manual-control "
+             "box (see eco.manual_control.control_box's manual).",
+    )
+    # Same -s/--scope/-l/--set-rcfile as every other subcommand; -l/--lazy is
+    # accepted but unused (box-server never calls init_all -- see the box's
+    # own lazy-tree philosophy in control_box.py's manual) so that
+    # --set-rcfile / .ecorc keep working uniformly across all subcommands.
+    _add_common_args(p_box_server, defaults, scope_default=defaults["scope"])
+    p_box_server.add_argument("--box-host", default="ecobox",
+                              help="the box to call (default: %(default)s)")
+    p_box_server.add_argument("--box-port", type=int, default=8791)
+    p_box_server.add_argument("--token-file", default="~/.eco/pendant_token")
+    p_box_server.add_argument("--host", default="0.0.0.0",
+                              help="admin/health HTTP bind address (default: %(default)s)")
+    p_box_server.add_argument("--port", type=int, default=8092,
+                              help="admin/health HTTP port (default: %(default)s)")
+
     args = parser.parse_args(argv)
 
     if args.set_rcfile is not None:
@@ -730,6 +781,8 @@ def main(argv=None):
         _run_webapp(args)
     elif args.command == "jupyterlab":
         _run_jupyterlab(args)
+    elif args.command == "box-server":
+        _run_box_server(args)
 
 
 if __name__ == "__main__":

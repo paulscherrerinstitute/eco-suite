@@ -187,6 +187,31 @@ class ControlBox(Assembly):
     an axis that could jog continuously.
 
     ================================================================
+    RUNNING THIS AS A BACKGROUND SERVICE (no session left open)
+    ================================================================
+    Everything above works from inside any eco session. If you would
+    rather not keep an interactive session open just to hold the box
+    connection, eco.manual_control.box_server does the same thing
+    (namespace.start_eco_control_box()) as a small standalone process with
+    its own admin/health HTTP API - mirrors eco-status-server's shape.
+
+        eco-box-server start [-b]    # foreground, or -b to detach
+        eco-box-server status        # state, box, reason, process stats
+        eco-box-server disconnect    # the safety button
+        eco-box-server reconnect     # offer a session again (box must accept)
+        eco-box-server restart       # re-exec to pick up new device code
+        eco-box-server gui           # Qt monitor/control panel (same actions)
+        eco-box-server stop
+
+    Same env-var-overridable configuration as eco-status-server
+    (ECO_BOX_SERVER_CHECKOUT/SCOPE/BOX_HOST/BOX_PORT/TOKEN_FILE/...) - see
+    the script's own header, or `eco-box-server config`.
+
+    From a checkout, for quick local testing against uncommitted device
+    changes: `eco-dev box-server -s bernina` runs the same module in the
+    foreground against *this* checkout, no wrapper script involved.
+
+    ================================================================
     UPDATING THE SOFTWARE ON THE BOX
     ================================================================
     Build a fresh bundle here, copy it over, re-run the installer:
