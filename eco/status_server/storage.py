@@ -126,6 +126,25 @@ def write_status_snapshot(
     return statusfile
 
 
+def write_aliases_file(
+    directory: Path, aliases: list, filename: str = "aliases.json"
+) -> Path:
+    """Write the namespace's alias list to ``<directory>/<filename>``.
+
+    ``aliases`` is the flat ``[{"alias": ..., "channel": ..., "channeltype":
+    ...}, ...]`` list produced by ``Namespace.alias.get_all()`` - written
+    through unchanged, so the file is byte-compatible with what
+    ``Daq.copy_aliases_to_scan`` writes today from the local namespace.
+    Unlike ``status.json`` this is not merged with an existing file: the
+    alias tree does not grow mid-run, so each write simply replaces it.
+    """
+    ensure_dir(directory)
+    path = directory / filename
+    with open_group_writable(path, "w") as f:
+        json.dump(aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4)
+    return path
+
+
 def _as_storable_array(values):
     """Turn a recorded value list into an array h5 can hold, or None.
 

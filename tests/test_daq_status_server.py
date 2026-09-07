@@ -73,6 +73,7 @@ class FakeStatusClient:
 def _daq(status_server=None, namespace=None, strict=False):
     daq = Daq.__new__(Daq)
     daq.name = "daq"
+    daq.instrument = None
     daq._pgroup = "p12345"
     daq.namespace = namespace
     daq._status_server = status_server
@@ -92,10 +93,20 @@ def _daq(status_server=None, namespace=None, strict=False):
     return daq
 
 
+class FakeAliasTree:
+    def __init__(self):
+        self.calls = []
+
+    def get_all(self, **kwargs):
+        self.calls.append(kwargs)
+        return [{"alias": "bernina.a", "channel": "PV:A", "channeltype": "CA"}]
+
+
 class FakeNamespace:
     def __init__(self):
         self.init_calls = []
         self.status_calls = []
+        self.alias = FakeAliasTree()
 
     def init_all(self, **kwargs):
         self.init_calls.append(kwargs)
@@ -261,12 +272,14 @@ def _health(ready=True, age_s=0.0, **extra):
 class HealthClient(FakeStatusClient):
     base_url = "http://fake:8091"
 
-    def __init__(self, health=None, capture_fail=None):
+    def __init__(self, health=None, capture_fail=None, aliases_fail=None):
         super().__init__()
         self._health_body = health if health is not None else _health()
         self.captures = []
+        self.alias_captures = []
         self.reinits = 0
         self._capture_fail = capture_fail
+        self._aliases_fail = aliases_fail
 
     def health(self):
         return self._health_body
@@ -276,6 +289,12 @@ class HealthClient(FakeStatusClient):
             raise self._capture_fail
         self.captures.append(kwargs)
         return {"job_id": "j1", "path": "/data/p1/run0042/aux/status.json"}
+
+    def capture_aliases(self, **kwargs):
+        if self._aliases_fail:
+            raise self._aliases_fail
+        self.alias_captures.append(kwargs)
+        return {"job_id": "j2", "path": "/data/p1/run0042/aux/aliases.json"}
 
     def wait_write_job(self, job_id, timeout=None):
         return {"state": "done", "path": "/data/p1/run0042/aux/status.json"}
@@ -385,6 +404,66 @@ def test_scan_start_delegates_the_whole_capture_to_the_server(capsys):
     block = scan.counter_scratch("daq")["namespace_status"]["status_run_start"]
     assert block["written_by_status_server"].endswith("status.json")
     assert "delegated" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# aliases: same server-first, local-fallback shape as status
+
+
+def test_aliases_delegate_to_the_server_and_never_touch_the_local_namespace():
+    """The bug this exists to fix: before this branch existed,
+    copy_aliases_to_scan always called self.namespace.alias.get_all()
+    unconditionally, even in status-server mode - against a namespace that
+    status-server mode deliberately never initializes."""
+    client = HealthClient()
+    ns = FakeNamespace()
+    daq = _daq_fresh(client)
+    daq.namespace = ns
+    scan = FakeScan(runno=42)
+    daq.copy_aliases_to_scan(scan)
+
+    assert client.alias_captures == [
+        {"pgroup": "p12345", "run_number": 42, "upload": True,
+         "channeltypes": None}
+    ]
+    assert ns.alias.calls == [], "local namespace.alias was touched"
+    assert scan.scan_parameters["aliases"] == "aux/aliases.json"
+    job = scan.counter_scratch("daq")["status_jobs"]["aliases"]
+    assert job["path"].endswith("aliases.json")
+
+
+def test_aliases_only_sent_on_the_first_step():
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    daq.namespace = FakeNamespace()
+    scan = FakeScan(runno=42)
+    scan._values_done = [1, 2, 3]  # not the first step
+    daq.copy_aliases_to_scan(scan)
+    assert client.alias_captures == []
+
+
+def test_aliases_send_aliases_now_overrides_the_step_guard():
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    daq.namespace = FakeNamespace()
+    scan = FakeScan(runno=42)
+    scan._values_done = [1, 2, 3]
+    daq.copy_aliases_to_scan(scan, send_aliases_now=True)
+    assert len(client.alias_captures) == 1
+
+
+def test_aliases_capture_failure_falls_back_to_the_local_namespace(monkeypatch):
+    client = HealthClient(aliases_fail=ConnectionError("refused"))
+    ns = FakeNamespace()
+    daq = _daq_fresh(client)
+    daq.namespace = ns
+    scan = FakeScan(runno=42)
+    monkeypatch.setattr(daq, "get_last_run_number", lambda **kw: 42, raising=False)
+    with pytest.raises(Exception):
+        # the local branch fails writing to /sf/bernina/data/... in a test
+        # environment; what matters is that it got that far.
+        daq.copy_aliases_to_scan(scan)
+    assert ns.alias.calls, "did not fall back to namespace.alias.get_all()"
 
 
 def test_scan_end_delegates_and_sets_the_scan_parameter():

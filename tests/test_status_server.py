@@ -52,6 +52,27 @@ class FakeStatusCollection:
         return list(self._items)
 
 
+class FakeNamespaceAlias:
+    """Enough of eco.aliases.aliases.Alias.get_all() for the /aliases route:
+    a flat list built from whatever detectors this fake namespace holds,
+    same shape as the real Namespace.alias.get_all()."""
+
+    def __init__(self, detectors):
+        self._detectors = detectors
+
+    def get_all(self, joiner=".", channeltypes=None):
+        out = []
+        for d in self._detectors:
+            entry = {
+                "alias": d.alias.get_full_name(joiner=joiner),
+                "channel": d.alias.channel,
+                "channeltype": "CA",
+            }
+            if (not channeltypes) or (entry["channeltype"] in channeltypes):
+                out.append(entry)
+        return out
+
+
 class FakeNamespace:
     """Enough of Namespace for NamespaceMonitorStore."""
 
@@ -73,6 +94,7 @@ class FakeNamespace:
                 for n in sorted(names)
             ]
         )
+        self.alias = FakeNamespaceAlias(self.status_collection._items)
 
     def required_names(self):
         return list(self._required)
@@ -438,6 +460,33 @@ def test_names_and_failures_endpoints(fake_module):
     assert names["failed_names"] == ["b"]
     failures = client.get("/failures").get_json()["failures"]
     assert "b boom" in failures["b"]
+
+
+def test_aliases_endpoint_returns_the_alias_list(app_and_store):
+    app, _, _ = app_and_store
+    body = app.test_client().get("/aliases").get_json()
+    assert body["n_aliases"] == 3
+    assert {"alias": "fake.a", "channel": "PV:A", "channeltype": "CA"} in body["aliases"]
+
+
+def test_aliases_endpoint_filters_by_channeltype(app_and_store):
+    app, _, _ = app_and_store
+    body = app.test_client().get("/aliases?channeltype=BS").get_json()
+    assert body["aliases"] == []
+    assert body["n_aliases"] == 0
+
+    body = app.test_client().get("/aliases?channeltype=CA").get_json()
+    assert body["n_aliases"] == 3
+
+
+def test_aliases_endpoint_503_while_not_ready(fake_module):
+    name, _ = fake_module(names=[f"n{i}" for i in range(10)], init_delay=0.05)
+    store = _store(name)
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    resp = app.test_client().get("/aliases")
+    assert resp.status_code == 503
+    assert resp.get_json()["status"] == "error"
+    assert store.wait_ready(timeout=20)
 
 
 def test_reinit_endpoint_202_then_409_while_busy(fake_module):
@@ -1189,6 +1238,97 @@ def test_capture_is_refused_while_not_ready(fake_module):
     app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
     resp = app.test_client().post(
         "/status/capture", json={"pgroup": "p1", "run_number": 1}
+    )
+    assert resp.status_code == 503
+    assert store.wait_ready(timeout=20)
+
+
+# --------------------------------------------------------------------------
+# /aliases/capture: compute + write + upload, all off the client's clock
+
+
+def test_aliases_capture_returns_immediately_and_does_the_work_in_the_background(
+    app_and_store, tmp_path, monkeypatch
+):
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    posted = []
+    import requests
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"status": "ok", "message": "copying user file(s) finished"}
+
+    monkeypatch.setattr(
+        requests, "post", lambda url, json=None, timeout=None: (
+            posted.append((url, json)), _Resp)[1]
+    )
+
+    client = app.test_client()
+    started = client.post(
+        "/aliases/capture", json={"pgroup": "p1", "run_number": 3}
+    )
+    assert started.status_code == 202
+    job_id = started.get_json()["job_id"]
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done", job
+    path = tmp_path / "p1" / "run0003" / "aux" / "aliases.json"
+    assert path.exists()
+    written = json.loads(path.read_text())
+    assert {"alias": "fake.a", "channel": "PV:A", "channeltype": "CA"} in written
+
+    # the server, not the client, handed the file to the broker
+    url, body = posted[0]
+    assert url.endswith("/copy_user_files")
+    assert body["pgroup"] == "p1" and body["run_number"] == 3
+    assert body["files"] == [str(path)]
+    assert job["upload"]["status"] == "ok"
+
+
+def test_aliases_capture_can_skip_the_upload(app_and_store, tmp_path, monkeypatch):
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    import requests
+
+    monkeypatch.setattr(requests, "post", lambda *a, **kw: pytest.fail("uploaded"))
+    client = app.test_client()
+    job_id = client.post(
+        "/aliases/capture", json={"pgroup": "p1", "run_number": 4, "upload": False}
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+    assert "upload" not in job
+
+
+def test_aliases_capture_requires_pgroup_and_run_number(app_and_store):
+    app, _, _ = app_and_store
+    assert app.test_client().post("/aliases/capture", json={}).status_code == 400
+
+
+def test_aliases_capture_is_refused_while_not_ready(fake_module):
+    name, _ = fake_module(names=[f"n{i}" for i in range(10)], init_delay=0.05)
+    store = _store(name)
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    resp = app.test_client().post(
+        "/aliases/capture", json={"pgroup": "p1", "run_number": 1}
     )
     assert resp.status_code == 503
     assert store.wait_ready(timeout=20)

@@ -174,6 +174,14 @@ class Daq(Assembly):
         # raising just this knob gives real hiccups more room without
         # changing broker request semantics.
         self.pulse_id_timeout = pulse_id_timeout
+        # Never actually stored before despite being an __init__ parameter
+        # since day one - every f"/sf/{self.instrument or 'bernina'}/..."
+        # path built in _write_status_locally()/write_status() therefore hit
+        # AttributeError on any real Daq (masked so far because the only
+        # caller reachable in tests treats "any exception" as "fell back
+        # correctly" - see test_start_status_falls_back_to_local_namespace_
+        # on_server_error).
+        self.instrument = instrument
         self._pgroup = pgroup
         if type(pulse_id_adj) is str:
             self.pulse_id = DetectorPvDataStream(pulse_id_adj, name="pulse_id")
@@ -1964,56 +1972,90 @@ class Daq(Assembly):
             if not self.checker.stop_and_analyze():
                 scan._current_step_ok = False
 
-    def copy_aliases_to_scan(self, scan, send_aliases_now=False, pgroup=None, **kwargs):
-        if send_aliases_now or (len(scan.values_done()) == 1):
-            namespace_aliases = self.namespace.alias.get_all()
-            if hasattr(scan, "daq_run_number"):
-                runno = scan.daq_run_number.get_current_value()
-            else:
-                runno = self.daq.get_last_run_number()
-            if pgroup is None:
-                pgroup = self.pgroup
-            tmpdir = Path(
-                f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux"
+    def _capture_aliases_on_server(self, runno, pgroup, channeltypes=None):
+        """Fire-and-forget: the server computes the alias list from its own,
+        already-initialized namespace and writes/uploads aux/aliases.json.
+        Returns the job description, or None on failure so the caller can
+        fall back to the local namespace."""
+        try:
+            return self.status_client.capture_aliases(
+                pgroup=pgroup, run_number=runno, upload=True,
+                channeltypes=channeltypes,
             )
-            ensure_dir(tmpdir)
-            aliasfile = tmpdir / Path("aliases.json")
-            if not Path(aliasfile).exists():
-                with open_group_writable(aliasfile, "w") as f:
-                    json.dump(
-                        namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
-                    )
-            else:
-                with open_group_writable(aliasfile, "r+") as f:
-                    f.seek(0)
-                    json.dump(
-                        namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
-                    )
-                    f.truncate()
-            if not aliasfile.group() == aliasfile.parent.group():
-                shutil.chown(aliasfile, group=aliasfile.parent.group())
+        except Exception as exc:
+            return self._status_server_failed("aliases capture", exc)
 
-            scan.remaining_tasks.append(
-                Thread(
-                    target=self.append_aux,
-                    args=[aliasfile.resolve().as_posix()],
-                    kwargs=dict(pgroup=pgroup, run_number=runno),
+    def copy_aliases_to_scan(self, scan, send_aliases_now=False, pgroup=None, **kwargs):
+        """Write this run's alias list (short name -> PV/channel) into its
+        aux directory, so downstream tools can map recorded status/data back
+        to human-readable names without re-deriving eco's own namespace.
+
+        With a status server configured and healthy for this scan (the same
+        decision ``append_start_status_to_scan`` already made and cached on
+        ``scan._eco_status_server_ok``), the server computes and writes the
+        file from its own already-initialized namespace instead of this
+        one - avoiding forcing the local, deliberately-still-lazy namespace
+        just to read ``.alias``, which is exactly the cost status-server
+        mode exists to avoid for ``get_status()``. Before this branch
+        existed, ``self.namespace.alias.get_all()`` ran unconditionally here
+        even in status-server mode, against a namespace nothing else had
+        initialized - so ``aux/aliases.json`` was silently incomplete
+        whenever a status server was in use. Falls back to the local path
+        below (unchanged) on any server failure.
+        """
+        if not (send_aliases_now or (len(scan.values_done()) == 1)):
+            return
+        if hasattr(scan, "daq_run_number"):
+            runno = scan.daq_run_number.get_current_value()
+        else:
+            runno = self.daq.get_last_run_number()
+        if pgroup is None:
+            pgroup = self.pgroup
+
+        if self._status_server_ok_for_this_scan(scan):
+            job = self._capture_aliases_on_server(runno, pgroup)
+            if job is not None:
+                scan.counter_scratch(self.name).setdefault(
+                    "status_jobs", {}
+                )["aliases"] = job
+                print(f"aliases: delegated to {self.status_client.base_url} "
+                      f"-> {job.get('path')}")
+                scan.set_scan_parameter("aliases", "aux/aliases.json")
+                return
+            # server failed - _status_server_failed already printed why and
+            # that this is falling back; fall through to the local path.
+
+        namespace_aliases = self.namespace.alias.get_all()
+        tmpdir = Path(
+            f"/sf/{self.instrument or 'bernina'}/data/{pgroup}"
+            f"/res/run_data/daq/run{runno:04d}/aux"
+        )
+        ensure_dir(tmpdir)
+        aliasfile = tmpdir / Path("aliases.json")
+        if not Path(aliasfile).exists():
+            with open_group_writable(aliasfile, "w") as f:
+                json.dump(
+                    namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
                 )
+        else:
+            with open_group_writable(aliasfile, "r+") as f:
+                f.seek(0)
+                json.dump(
+                    namespace_aliases, f, sort_keys=True, cls=NumpyEncoder, indent=4
+                )
+                f.truncate()
+        if not aliasfile.group() == aliasfile.parent.group():
+            shutil.chown(aliasfile, group=aliasfile.parent.group())
+
+        scan.remaining_tasks.append(
+            Thread(
+                target=self.append_aux,
+                args=[aliasfile.resolve().as_posix()],
+                kwargs=dict(pgroup=pgroup, run_number=runno),
             )
-            # DEBUG
-            # print(
-            #     f"Sending scan_info_rel.json in {Path(aliasfile).parent.stem} to run number {runno}."
-            # )
-            scan.remaining_tasks[-1].start()
-            # response = daq.append_aux(
-            #     aliasfile.resolve().as_posix(),
-            #     pgroup=pgroup,
-            #     run_number=runno,
-            # )
-            # print("####### transfer aliases started #######")
-            # print(response.json())
-            # print("################################")
-            scan.set_scan_parameter("aliases", "aux/aliases.json")
+        )
+        scan.remaining_tasks[-1].start()
+        scan.set_scan_parameter("aliases", "aux/aliases.json")
 
     def scan_message_to_elog(self, scan=None, **kwargs):
         # def _create_metadata_structure_start_scan(

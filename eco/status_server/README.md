@@ -215,6 +215,30 @@ switches the check off.
 `status_server_strict=True` turns every fallback into a hard error instead,
 which is what you want when testing the server path itself.
 
+### Aliases
+
+`copy_aliases_to_scan` — the callback that writes each run's
+`aux/aliases.json` (short name → PV/channel, used to map recorded status/data
+back to human names) — is server-aware the same way the status callbacks are,
+and reuses the same per-scan decision. With the server in use it asks it to
+compute the alias list from its own, already-initialized namespace
+(`namespace.alias.get_all()`, a pure in-memory tree walk — no CA traffic, so
+it is fast even though it fires as a `/aliases/capture` background job for
+consistency with the status path) and write/upload the file, instead of
+calling `self.namespace.alias.get_all()` against *this* session's own
+namespace. That local call used to run unconditionally, including in
+status-server mode — against a namespace status-server mode deliberately
+never initializes, so `aliases.json` was silently missing everything the
+local session had not happened to touch. File location, name and content are
+unchanged either way.
+
+To fetch the list directly instead of writing it to a run:
+
+```python
+c.aliases()                       # [{"alias": ..., "channel": ..., "channeltype": ...}, ...]
+c.aliases(channeltypes=["CA"])    # only EPICS channels
+```
+
 ### Writing status for one run by hand
 
 ```python
@@ -364,7 +388,9 @@ to answer them with.
 | `GET /failures` | per-name exception for everything that failed to initialize |
 | `POST /status/snapshot` | a `get_status(base=None)` result; `save`+`pgroup`+`run_number`+`key` also write `status.json`, `write_async` returns a job id |
 | `POST /status/capture` | snapshot **+** write **+** upload to the run, all in the background; answers immediately with a job id. `keep_status` keeps the values for one `GET /status/job/<id>?include_status=1` |
-| `GET /status/job/<id>` | state of an async write |
+| `GET /aliases` | this namespace's current alias list, `namespace.alias.get_all()` verbatim — no CA traffic, so this answers fast |
+| `POST /aliases/capture` | compute **+** write **+** upload `aliases.json` to the run, in the background — the alias equivalent of `/status/capture`, same job id space |
+| `GET /status/job/<id>` | state of an async write (shared by `/status/capture` and `/aliases/capture`) |
 | `GET /recording`, `GET /recording/<id>` | list / live counters |
 | `POST /recording/start`, `POST /recording/stop` | start; stop and (by default) write `monitors.esc.h5` |
 | `POST /admin/reinit` | `mode` = `failed` / `names` / `full` / `init` / `reimport` |

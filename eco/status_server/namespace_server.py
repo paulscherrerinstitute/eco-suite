@@ -28,7 +28,12 @@ from flask import Flask, jsonify, request
 from .config import NamespaceServerConfig
 from .namespace_store import READY, NamespaceMonitorStore, NotReady, ReinitInProgress
 from .query_stats import QueryStats
-from .storage import json_default, write_monitor_recording, write_status_snapshot
+from .storage import (
+    json_default,
+    write_aliases_file,
+    write_monitor_recording,
+    write_status_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +197,118 @@ def create_namespace_app(
     @app.get("/failures")
     def failures():
         return jsonify({"failures": store.failure_details()})
+
+    @app.get("/aliases")
+    def aliases():
+        """The namespace's current alias list: ``[{alias, channel,
+        channeltype}, ...]``, straight from ``Namespace.alias.get_all()``.
+
+        Unlike a status snapshot this touches no CA channel - the alias tree
+        is built as a side effect of the components this server already
+        holds initialized, so this is a fast, synchronous in-memory walk.
+        Optional repeated ``?channeltype=CA&channeltype=BS`` filters it, same
+        as ``Alias.get_all(channeltypes=...)``.
+        """
+        if store.state != READY:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "message": f"namespace store is '{store.state}'"}),
+                503,
+            )
+        ns = store.namespace
+        if ns is None:
+            return jsonify({"status": "error", "message": "no namespace"}), 503
+        channeltypes = request.args.getlist("channeltype") or None
+        t0 = time.time()
+        alias_list = ns.alias.get_all(channeltypes=channeltypes)
+        stats.record("aliases", time.time() - t0, n_entries=len(alias_list))
+        return jsonify({"aliases": alias_list, "n_aliases": len(alias_list)})
+
+    @app.post("/aliases/capture")
+    def aliases_capture():
+        """Compute the current alias list and write/upload
+        ``aux/aliases.json`` - in the background, mirroring
+        ``/status/capture``. ``Alias.get_all()`` involves no CA traffic, so
+        this is fast; going async mainly means the caller does not wait on
+        the broker's own ``copy_user_files`` round trip.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            pgroup = body["pgroup"]
+            run_number = int(body["run_number"])
+        except (KeyError, TypeError, ValueError):
+            return (
+                jsonify({"status": "error",
+                         "message": "'pgroup' and 'run_number' are required"}),
+                400,
+            )
+        if store.state != READY:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "message": f"namespace store is '{store.state}'"}),
+                503,
+            )
+        ns = store.namespace
+        if ns is None:
+            return jsonify({"status": "error", "message": "no namespace"}), 503
+
+        upload = bool(body.get("upload", True))
+        channeltypes = body.get("channeltypes")
+        directory = config.data_dir(pgroup, run_number)
+        path = directory / "aliases.json"
+        job_id = uuid.uuid4().hex
+        with jobs_lock:
+            jobs[job_id] = {
+                "state": "running", "step": "compute", "kind": "aliases",
+                "pgroup": pgroup, "run_number": run_number,
+                "path": str(path), "started_at": time.time(),
+            }
+
+        def _capture():
+            rec = {}
+            t0_total = time.time()
+            try:
+                t0 = time.time()
+                alias_list = ns.alias.get_all(channeltypes=channeltypes)
+                rec["compute_seconds"] = time.time() - t0
+                rec["n_aliases"] = len(alias_list)
+                with jobs_lock:
+                    jobs[job_id].update({"step": "write", **rec})
+
+                t0 = time.time()
+                written = write_aliases_file(directory, alias_list)
+                rec["write_seconds"] = time.time() - t0
+                rec["path"] = str(written)
+                with jobs_lock:
+                    jobs[job_id].update({"step": "upload", **rec})
+
+                if upload:
+                    t0 = time.time()
+                    rec["upload"] = _append_aux(pgroup, run_number, [written])
+                    rec["upload_seconds"] = time.time() - t0
+                rec["state"] = "done"
+            except Exception as exc:  # noqa: BLE001 - reported via the job
+                logger.error("aliases capture failed", exc_info=True)
+                rec["state"] = "error"
+                rec["error"] = f"{type(exc).__name__}: {exc}"
+            rec["step"] = None
+            rec["finished_at"] = time.time()
+            with jobs_lock:
+                jobs[job_id].update(rec)
+            stats.record(
+                "aliases", time.time() - t0_total, error=rec.get("error"),
+                pgroup=pgroup, run_number=run_number,
+                n_entries=rec.get("n_aliases"),
+            )
+
+        threading.Thread(
+            target=_capture, name=f"aliases-capture-{job_id[:8]}", daemon=True
+        ).start()
+        return (
+            jsonify({"status": "ok", "job_id": job_id, "path": str(path),
+                     "pgroup": pgroup, "run_number": run_number, "upload": upload}),
+            202,
+        )
 
     @app.post("/status/snapshot")
     def status_snapshot():

@@ -108,6 +108,18 @@ class StatusServerClient:
     def names(self) -> dict:
         return self._get("/names")
 
+    def aliases(self, channeltypes=None) -> list:
+        """The namespace's current alias list: ``[{alias, channel,
+        channeltype}, ...]`` - the same shape (and, since both come from the
+        same ``Alias.get_all()``, the same content) as
+        ``self.namespace.alias.get_all()`` would give locally, without
+        having to initialize that namespace to get it.
+        """
+        path = "/aliases"
+        if channeltypes:
+            path += "?" + "&".join(f"channeltype={c}" for c in channeltypes)
+        return self._get(path)["aliases"]
+
     def stats(self, limit: int = None, kind: str = None) -> dict:
         """Recent /status/snapshot and /status/capture operations this
         server has served: `{"summary": {...}, "recent": [...]}`. See
@@ -234,6 +246,24 @@ class StatusServerClient:
         body = {"pgroup": pgroup, "run_number": int(run_number),
                 "key": key, "upload": upload, "keep_status": keep_status}
         started = self._post("/status/capture", body, ok_codes=(200, 202))
+        if not wait:
+            return started
+        return self.wait_write_job(started["job_id"], timeout=timeout)
+
+    def capture_aliases(self, pgroup, run_number, upload=True, wait=False,
+                        timeout=600, channeltypes=None) -> dict:
+        """Have the server compute the alias list from its own namespace,
+        write aliases.json and upload it to the run - in the background,
+        returning as soon as the job is accepted. See :meth:`capture` for
+        the status.json equivalent; use :meth:`wait_write_job` (job ids are
+        shared across both) to wait on the returned ``job_id`` later.
+
+        wait=True blocks until the job finishes, for a standalone call.
+        """
+        body = {"pgroup": pgroup, "run_number": int(run_number), "upload": upload}
+        if channeltypes:
+            body["channeltypes"] = list(channeltypes)
+        started = self._post("/aliases/capture", body, ok_codes=(200, 202))
         if not wait:
             return started
         return self.wait_write_job(started["job_id"], timeout=timeout)
