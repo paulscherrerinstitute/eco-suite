@@ -36,6 +36,27 @@ pd.options.display.max_colwidth = 50
 pd.options.display.width = None
 pd.set_option("display.float_format", lambda x: "%.5g" % x)
 
+# Header row + formatting of the "Custom table" worksheet, copied from the
+# reference run-table spreadsheet
+# (https://docs.google.com/spreadsheets/d/1Y-ANSJYBhZFDPtGt4WjOcankhWMPJrj4mNzNtFmAaoQ,
+# gid=1376080306) so every freshly created run-table spreadsheet starts from
+# the same template instead of a blank sheet. Column indices below (B, E)
+# refer to positions in this list.
+CUSTOM_TABLE_DEFAULT_HEADER = [
+    "Run number",
+    "scans.acquiring_scan.start_time",
+    "Sample/Note",
+    "scans.acquiring_scan.description",
+    "lxt.delay",
+    "att_usd.readback",
+    "att.transmission_fund",
+    "mono.mono_und_energy",
+    "scans.acquiring_scan.scan_command",
+    "scans.acquiring_scan.adjustables_names",
+    "scans.acquiring_scan.initial_values",
+    "scans.acquiring_scan.number_of_steps",
+]
+
 
 class Gsheet_API:
     def __init__(
@@ -72,14 +93,54 @@ class Gsheet_API:
         spreadsheet = self.gc.create(
             title=f"run_table_{exp_id}", folder_id="1F7DgF0HW1O71nETpfrTvQ35lRZCs5GvH"
         )
-        spreadsheet.add_worksheet("Custom table", 10,10)
+        ws_custom_table = spreadsheet.add_worksheet(
+            "Custom table", 10, len(CUSTOM_TABLE_DEFAULT_HEADER)
+        )
         spreadsheet.add_worksheet("runtable", 10, 10)
         spreadsheet.add_worksheet("positions", 10, 10)
         spreadsheet.add_worksheet("Available keys", 10,10)
 
         ws = spreadsheet.get_worksheet(0)
         spreadsheet.del_worksheet(ws)
+        self._apply_custom_table_defaults(ws_custom_table)
         return spreadsheet
+
+    def _apply_custom_table_defaults(self, ws):
+        """Seed a freshly created "Custom table" worksheet with the header
+        row and formatting of the reference run-table spreadsheet (see
+        CUSTOM_TABLE_DEFAULT_HEADER above), instead of leaving it blank.
+        """
+        ws.update(range_name="A1", values=[CUSTOM_TABLE_DEFAULT_HEADER])
+
+        last_col = gspread.utils.rowcol_to_a1(1, len(CUSTOM_TABLE_DEFAULT_HEADER))
+        gf.format_cell_range(
+            ws,
+            f"A1:{last_col}",
+            gf.CellFormat(
+                textFormat=gf.TextFormat(fontFamily="Arial", bold=True),
+                verticalAlignment="BOTTOM",
+            ),
+        )
+        # per-column number formats observed on the reference sheet
+        gf.format_cell_range(
+            ws,
+            "B1",
+            gf.CellFormat(
+                numberFormat=gf.NumberFormat(type="DATE_TIME", pattern='ddd"/ "h":"mm'),
+                textFormat=gf.TextFormat(fontFamily="Arial", bold=True),
+                verticalAlignment="BOTTOM",
+            ),
+        )
+        gf.format_cell_range(
+            ws,
+            "E1",
+            gf.CellFormat(
+                numberFormat=gf.NumberFormat(type="SCIENTIFIC", pattern="0.00E+00"),
+                textFormat=gf.TextFormat(fontFamily="Arial", bold=True),
+                verticalAlignment="BOTTOM",
+            ),
+        )
+        gf.set_frozen(ws, rows=1, cols=1)
 
     def _append_to_gspread_key_df(self, gspread_key_df):
         if os.path.exists(self._keydf_fname):

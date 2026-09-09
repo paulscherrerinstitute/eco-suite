@@ -1,3 +1,5 @@
+from eco.acquisition.decorators import scannable
+
 from ..elements.assembly import Assembly
 from ..aliases import Alias
 from eco import ecocnf
@@ -21,7 +23,6 @@ from time import time, sleep
 from eco.acquisition.utilities import Acquisition
 from eco.detector.bs_counter import bs_scannable
 from eco.epics_utils.detector import CallbackEpics
-
 
 _bs_event_worker = None
 
@@ -63,7 +64,7 @@ def _ensure_bs_event_worker():
 
 
 @get_from_archive
-@bs_scannable
+@scannable
 class DetectorBsStream:
     def __init__(self, bs_channel, cachannel="same", name=None):
         self.name = name
