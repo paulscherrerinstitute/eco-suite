@@ -357,6 +357,18 @@ def create_namespace_app(
                 directory = config.data_dir(pgroup, run_number)
                 payload = _status_payload(snap)
 
+                # Same opportunistic backfill as /status/capture - this
+                # snapshot already read every channel, so a running
+                # recording for the same run can borrow a value from it.
+                try:
+                    store.backfill_running_recordings(
+                        pgroup, run_number, snap.get("status", {}),
+                        snap.get("status_times"),
+                    )
+                except Exception:
+                    logger.debug("recording backfill from status failed",
+                                exc_info=True)
+
                 if body.get("write_async", False):
                     job_id = uuid.uuid4().hex
                     with jobs_lock:
@@ -477,6 +489,21 @@ def create_namespace_app(
                 rec["n_status"] = len(snap.get("status", {}))
                 with jobs_lock:
                     jobs[job_id].update({"step": "write", **rec})
+
+                # Opportunistic: this status capture was going to read every
+                # channel anyway, so any running recording for the same run
+                # can borrow a value from it for a channel that has not
+                # updated on its own yet - see
+                # NamespaceMonitorStore.backfill_running_recordings. Must
+                # never turn a successful status capture into a failed one.
+                try:
+                    store.backfill_running_recordings(
+                        pgroup, run_number, snap.get("status", {}),
+                        snap.get("status_times"),
+                    )
+                except Exception:
+                    logger.debug("recording backfill from status failed",
+                                exc_info=True)
 
                 if keep_status:
                     with jobs_lock:
@@ -650,6 +677,11 @@ def create_namespace_app(
                 ),
                 max_value_elements=body.get("max_value_elements"),
                 subscription_mask=_subscription_mask(body.get("subscription_mask")),
+                pgroup=body.get("pgroup"),
+                run_number=(
+                    int(body["run_number"]) if body.get("run_number") is not None
+                    else None
+                ),
             )
         except NotReady as exc:
             return (

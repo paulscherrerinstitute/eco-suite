@@ -648,12 +648,17 @@ class NamespaceMonitorStore:
                         min_interval=0.0, sample_interval=0.1,
                         max_points_per_channel=100_000,
                         max_value_elements=None,
-                        subscription_mask=True):
+                        subscription_mask=True, pgroup=None, run_number=None):
         """Start monitoring every monitorable status detector (or `names`).
 
         See RecordingSession for what the modes do. Refused while the store
         is not ready: attaching monitors to objects a reinit is about to
         tear down would leave dangling callbacks.
+
+        pgroup/run_number are optional and purely for later cross-
+        referencing: a status capture for the same (pgroup, run_number) can
+        then opportunistically backfill this recording's still-empty
+        channels from its own snapshot - see backfill_running_recordings.
         """
         if self.state != READY:
             raise NotReady(self.state, self.state_detail)
@@ -683,10 +688,46 @@ class NamespaceMonitorStore:
                 max_points_per_channel=max_points_per_channel,
                 max_value_elements=max_value_elements,
                 subscription_mask=subscription_mask,
+                pgroup=pgroup,
+                run_number=run_number,
             )
             session.start()
             self._recordings[recording_id] = session
             return session
+
+    def backfill_running_recordings(self, pgroup, run_number, status,
+                                    status_times=None):
+        """Opportunistically fill in a single value for any still-empty
+        channel of every *running* recording started for this (pgroup,
+        run_number), from a status snapshot that was already being taken
+        for other reasons - see RecordingSession.backfill_from_status.
+
+        Best-effort and silent by design: called from a status capture's
+        own code path, where a bug here must not turn a successful status
+        capture into a failed one. Returns the number of recordings
+        touched (not the number of channels filled), mainly for tests.
+        """
+        if pgroup is None or run_number is None or not status:
+            return 0
+        try:
+            run_number = int(run_number)
+        except (TypeError, ValueError):
+            return 0
+        touched = 0
+        with self._recordings_lock:
+            sessions = list(self._recordings.values())
+        for session in sessions:
+            if not session.is_running:
+                continue
+            if session.pgroup != pgroup or session.run_number != run_number:
+                continue
+            try:
+                session.backfill_from_status(status, status_times)
+                touched += 1
+            except Exception:
+                logger.debug("could not backfill recording %s from status",
+                             session.recording_id, exc_info=True)
+        return touched
 
     def stop_recording(self, recording_id):
         with self._recordings_lock:
@@ -944,11 +985,19 @@ class RecordingSession:
         max_points_per_channel=100_000,
         max_value_elements=None,
         subscription_mask=True,
+        pgroup=None,
+        run_number=None,
     ):
         if mode not in ("all", "throttle", "sample"):
             raise ValueError(f"unknown recording mode {mode!r}")
         self.recording_id = recording_id
         self.detectors = detectors  # [(full_name, obj, channel)]
+        # Only used to find this session again from a status capture for the
+        # same run (see backfill_from_status / NamespaceMonitorStore
+        # .backfill_running_recordings) - optional, purely informational
+        # otherwise.
+        self.pgroup = pgroup
+        self.run_number = run_number
         self.mode = mode
         self.min_interval = float(min_interval)
         self.sample_interval = float(sample_interval)
@@ -988,6 +1037,8 @@ class RecordingSession:
         self.n_dropped_large = 0
         self.n_attach_failed = 0
         self.n_attached = 0
+        self.n_seeded = 0
+        self.n_backfilled = 0
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -1000,16 +1051,38 @@ class RecordingSession:
                 if mon is None:
                     self.n_attach_failed += 1
                     continue
-                # add_current_value=False / with_ctrlvars=False: both would
-                # issue a blocking CA round trip *per channel* at start, and
-                # at namespace scale that is thousands of them - the very
-                # get-storm this service exists to avoid.
+                # with_ctrlvars=False always: get_ctrlvars() (units, limits,
+                # precision) is a blocking CA round trip per channel
+                # regardless of monitor state - a get-storm at namespace
+                # scale either way.
+                #
+                # add_current_value, though, only costs that same round trip
+                # for a channel that would need one anyway: pyepics'
+                # PV.get_with_metadata() returns the cached last value with
+                # zero network traffic when auto_monitor is already True and
+                # the channel is connected (see ca_tuning's "Resolved
+                # 2026-09-06" note - measured at ~0.017 ms there). That is
+                # true for the large majority of channels under
+                # ca_tuning.make_pv()'s default policy, so seed those for
+                # free rather than leaving every channel's first point to
+                # chance; a demoted "fast" channel or one not yet connected
+                # would make this a real blocking get, so those still get no
+                # seed here - see backfill_from_status for how they can get
+                # one anyway, opportunistically, without new CA traffic.
+                pv = getattr(mon, "pv", None)
+                seed = bool(
+                    pv is not None
+                    and getattr(pv, "auto_monitor", False)
+                    and getattr(pv, "connected", False)
+                )
                 mon.start(
-                    add_current_value=False,
+                    add_current_value=seed,
                     with_ctrlvars=False,
                     auto_monitor=self.subscription_mask,
                 )
                 self._monitors[name] = mon
+                if seed:
+                    self.n_seeded += 1
             except Exception:
                 self.n_attach_failed += 1
                 logger.debug("could not attach a recording monitor to %s", name,
@@ -1151,6 +1224,47 @@ class RecordingSession:
     def is_running(self):
         return self.started_at is not None and self.stopped_at is None
 
+    def backfill_from_status(self, status, status_times=None):
+        """Give any channel that still has zero recorded points one value
+        from `status` (a get_status()-shaped {alias: value} dict) - the
+        channel it corresponds to has an entry in status.json regardless of
+        whether it ever updated, since get_status() reads it directly
+        rather than relying on a monitor.
+
+        Deliberately opportunistic, not a trigger of its own: this is meant
+        to be called with a status snapshot that was already being taken
+        for other reasons (a scan's own status_run_start/status_run_end
+        capture), never to justify a fresh CA read purely to backfill one
+        channel - see NamespaceMonitorStore.backfill_running_recordings,
+        the only caller. A channel not in `status` either (never attempted,
+        or the status read itself failed) still ends up with nothing, same
+        as before this existed.
+
+        Same race tolerance as the rest of this class (see stop()'s
+        docstring): a genuine update landing in the same instant as a
+        backfill for the same channel is not locked against, since the live
+        per-channel callback path is not locked either - worst case here is
+        one extra, slightly-out-of-order point on a channel that was about
+        to update anyway, not a correctness problem worth a lock that
+        would not be honoured on the other side regardless.
+        """
+        if not status:
+            return 0
+        now = time.time()
+        filled = 0
+        for name, buf in self._buffers.items():
+            if buf["values"]:
+                continue
+            if name not in status:
+                continue
+            value = status[name]
+            if value is None:
+                continue
+            self._append(buf, value, (status_times or {}).get(name, now))
+            filled += 1
+        self.n_backfilled += filled
+        return filled
+
     def report(self, with_channels=False):
         elapsed = (self.stopped_at or time.time()) - (self.started_at or time.time())
         counts = self._final_counts if self._final_counts is not None else {
@@ -1159,6 +1273,8 @@ class RecordingSession:
         n_points = sum(counts.values())
         rep = {
             "recording_id": self.recording_id,
+            "pgroup": self.pgroup,
+            "run_number": self.run_number,
             "running": self.is_running,
             "mode": self.mode,
             "min_interval": self.min_interval,
@@ -1172,6 +1288,8 @@ class RecordingSession:
             # raises is counted in n_attach_failed, not silently folded in.
             "n_channels_attached": self.n_attached,
             "n_attach_failed": self.n_attach_failed,
+            "n_seeded": self.n_seeded,
+            "n_backfilled": self.n_backfilled,
             "n_updates": self.n_updates,
             "n_stored": n_points,
             "n_dropped_throttle": self.n_dropped_throttle,

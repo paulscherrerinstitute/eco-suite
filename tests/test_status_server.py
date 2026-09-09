@@ -860,14 +860,33 @@ def test_retry_passes_run_serially(fake_module):
 # recording
 
 
+class FakePV:
+    """Stands in for the pyepics PV a CallbackEpics wraps - just enough for
+    the recording session's seed-if-already-monitored decision and the seed
+    read itself (pv.get()/pv.timestamp), same shape pyepics gives a real,
+    connected, auto_monitor=True PV where get() is a cached-value read with
+    no CA traffic."""
+
+    def __init__(self, pvname, value=0.0, auto_monitor=True, connected=True):
+        self.pvname = pvname
+        self.auto_monitor = auto_monitor
+        self.connected = connected
+        self.timestamp = time.time()
+        self._value = value
+
+    def get(self, **kwargs):
+        return self._value
+
+
 class FakeMonitor:
     """Stands in for CallbackEpics: remembers how it was started and lets a
     test push updates through the callback the store registered."""
 
     instances = []
 
-    def __init__(self, func):
+    def __init__(self, func, pv=None):
         self.func = func
+        self.pv = pv
         self.started_with = None
         self.stopped = False
         FakeMonitor.instances.append(self)
@@ -878,6 +897,11 @@ class FakeMonitor:
             "with_ctrlvars": with_ctrlvars,
             "auto_monitor": auto_monitor,
         }
+        # Same order as the real CallbackEpics.start(): seed before the
+        # subscription is (would be) registered.
+        if add_current_value and self.pv is not None:
+            self.func(pvname=self.pv.pvname, value=self.pv.get(),
+                      timestamp=self.pv.timestamp)
 
     def stop(self):
         self.stopped = True
@@ -888,8 +912,12 @@ class FakeMonitor:
 
 
 class MonitorableDetector(FakeDetector):
+    def __init__(self, full_name, value, channel=None, pv=None):
+        super().__init__(full_name, value, channel=channel)
+        self._fake_pv = pv
+
     def set_current_value_callback(self, func="accumulate", **kwargs):
-        return FakeMonitor(func)
+        return FakeMonitor(func, pv=self._fake_pv)
 
 
 @pytest.fixture
@@ -903,6 +931,18 @@ def recording_store(fake_module):
             FakeDetector("fake.plain", 3.0, channel="PV:P"),  # not monitorable
         ]
     )
+    store = _store(name)
+    assert store.wait_ready(timeout=10)
+    return store
+
+
+def _recording_store_with(fake_module, detectors):
+    """Like `recording_store`, but with caller-chosen detectors - for tests
+    that need specific FakePV configurations (auto_monitor/connected) per
+    channel."""
+    FakeMonitor.instances = []
+    name, mod = fake_module()
+    mod.namespace.status_collection = FakeStatusCollection(detectors)
     store = _store(name)
     assert store.wait_ready(timeout=10)
     return store
@@ -958,6 +998,207 @@ def test_recording_sample_mode_uses_a_grid_not_the_update_rate(recording_store):
     # a handful of grid points, nowhere near 200
     assert 1 <= result["n_stored"] <= 20
     assert result["data"]["fake.m1"]["values"][-1] == 199.0
+
+
+# --------------------------------------------------------------------------
+# seeding: a channel that is already auto_monitor=True and connected gets a
+# free current-value point at attach time (pyepics' PV.get() is a cached
+# read with no CA traffic there - see ca_tuning's "Resolved 2026-09-06"
+# note), so a channel that never itself updates during the recording is not
+# automatically empty.
+
+
+def test_an_already_monitored_connected_channel_is_seeded_for_free(fake_module):
+    store = _recording_store_with(fake_module, [
+        MonitorableDetector("fake.m1", 1.0, channel="PV:M1",
+                            pv=FakePV("PV:M1", value=42.0)),
+    ])
+    result = store.start_recording("r1")
+    assert result.n_seeded == 1
+    assert FakeMonitor.instances[0].started_with["add_current_value"] is True
+
+    stopped = store.stop_recording("r1")
+    # seeded, never pushed again - one point, the seed value
+    assert stopped["data"]["fake.m1"]["values"] == [42.0]
+
+
+def test_a_demoted_channel_is_not_seeded(fake_module):
+    """auto_monitor=False (ca_tuning demoted it as too fast) means PV.get()
+    is a real CA round trip, not a cached read - skip the seed rather than
+    pay for thousands of those at once."""
+    store = _recording_store_with(fake_module, [
+        MonitorableDetector("fake.m1", 1.0, channel="PV:M1",
+                            pv=FakePV("PV:M1", auto_monitor=False)),
+    ])
+    result = store.start_recording("r1")
+    assert result.n_seeded == 0
+    assert FakeMonitor.instances[0].started_with["add_current_value"] is False
+
+
+def test_a_disconnected_channel_is_not_seeded(fake_module):
+    store = _recording_store_with(fake_module, [
+        MonitorableDetector("fake.m1", 1.0, channel="PV:M1",
+                            pv=FakePV("PV:M1", connected=False)),
+    ])
+    result = store.start_recording("r1")
+    assert result.n_seeded == 0
+
+
+def test_a_channel_with_no_pv_reference_is_not_seeded(recording_store):
+    """The plain FakeMonitor(pv=None) case - e.g. a Monitorable whose
+    CallbackEpics wraps something other than a bare pyepics PV."""
+    result = recording_store.start_recording("r1")
+    assert result.n_seeded == 0
+
+
+def test_seeding_still_respects_the_recording_mode(fake_module):
+    """The seed goes through the same per-mode callback as any other
+    update - throttle/sample apply to it exactly like a real one."""
+    store = _recording_store_with(fake_module, [
+        MonitorableDetector("fake.m1", 1.0, channel="PV:M1",
+                            pv=FakePV("PV:M1", value=7.0)),
+    ])
+    store.start_recording("r1", mode="throttle", min_interval=10.0)
+    mon = FakeMonitor.instances[0]
+    mon.push(8.0)   # within min_interval of the seed - dropped
+    stopped = store.stop_recording("r1")
+    assert stopped["data"]["fake.m1"]["values"] == [7.0]
+    assert stopped["n_dropped_throttle"] == 1
+
+
+# --------------------------------------------------------------------------
+# backfill: opportunistically fill a still-empty channel from a status
+# snapshot that was already being taken for another reason (a scan's own
+# status_run_start/status_run_end capture) - never a trigger of new CA
+# traffic on its own.
+
+
+def test_backfill_from_status_fills_empty_channels_only(recording_store):
+    recording_store.start_recording("r1")
+    mon0 = FakeMonitor.instances[0]  # fake.m1
+    mon0.push(5.0)  # fake.m1 already has a real point - must not be touched
+
+    filled = recording_store._recordings["r1"].backfill_from_status(
+        {"fake.m1": 999.0, "fake.m2": 2.5, "fake.plain": 3.0}
+    )
+    assert filled == 1  # only fake.m2 was empty
+    stopped = recording_store.stop_recording("r1")
+    assert stopped["data"]["fake.m1"]["values"] == [5.0]
+    assert stopped["data"]["fake.m2"]["values"] == [2.5]
+    assert stopped["n_backfilled"] == 1
+
+
+def test_backfill_ignores_channels_not_in_the_status_dict(recording_store):
+    recording_store.start_recording("r1")
+    filled = recording_store._recordings["r1"].backfill_from_status(
+        {"fake.m1": 1.0}  # nothing for fake.m2
+    )
+    assert filled == 1
+    stopped = recording_store.stop_recording("r1")
+    assert "fake.m2" not in stopped["data"]
+
+
+def test_backfill_ignores_a_none_value(recording_store):
+    recording_store.start_recording("r1")
+    filled = recording_store._recordings["r1"].backfill_from_status(
+        {"fake.m1": None, "fake.m2": 2.0}
+    )
+    assert filled == 1
+    stopped = recording_store.stop_recording("r1")
+    assert "fake.m1" not in stopped["data"]
+
+
+def test_backfill_running_recordings_finds_the_matching_run(recording_store):
+    recording_store.start_recording(
+        "r1", pgroup="p1", run_number=5, names=["fake.m1"]
+    )
+    recording_store.start_recording(
+        "r2", pgroup="p1", run_number=6, names=["fake.m2"]
+    )
+    touched = recording_store.backfill_running_recordings(
+        "p1", 5, {"fake.m1": 1.0, "fake.m2": 2.0}
+    )
+    assert touched == 1  # only r1 matches (p1, 5)
+    assert recording_store._recordings["r1"].n_backfilled == 1
+    assert recording_store._recordings["r2"].n_backfilled == 0
+
+
+def test_backfill_running_recordings_ignores_a_stopped_recording(recording_store):
+    recording_store.start_recording("r1", pgroup="p1", run_number=5)
+    recording_store.stop_recording("r1")
+    touched = recording_store.backfill_running_recordings(
+        "p1", 5, {"fake.m1": 1.0}
+    )
+    assert touched == 0
+
+
+def test_backfill_running_recordings_is_a_noop_without_pgroup_or_run_number(
+    recording_store
+):
+    recording_store.start_recording("r1")  # no pgroup/run_number given
+    assert recording_store.backfill_running_recordings(
+        "p1", 5, {"fake.m1": 1.0}
+    ) == 0
+
+
+def test_status_capture_backfills_a_running_recording_for_the_same_run(
+    recording_store, tmp_path
+):
+    """The real end-to-end path: /status/capture's own snapshot (already
+    happening for other reasons) opportunistically fills in the recording's
+    still-empty channels for the same run - no extra CA traffic beyond what
+    the status capture was already doing."""
+    config = NamespaceServerConfig(module_name=recording_store.module_name)
+    config.data_root_pattern = str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    app = create_namespace_app(config, store=recording_store)
+    client = app.test_client()
+
+    client.post(
+        "/recording/start",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 12},
+    )
+
+    job_id = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 12, "upload": False},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+
+    live = client.get("/recording/r1").get_json()
+    assert live["n_backfilled"] == 2  # fake.m1 and fake.m2, both still empty
+
+
+def test_status_capture_does_not_backfill_a_recording_from_a_different_run(
+    recording_store, tmp_path
+):
+    config = NamespaceServerConfig(module_name=recording_store.module_name)
+    config.data_root_pattern = str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    app = create_namespace_app(config, store=recording_store)
+    client = app.test_client()
+
+    client.post(
+        "/recording/start",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 12},
+    )
+    job_id = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 13, "upload": False},  # different run
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+
+    live = client.get("/recording/r1").get_json()
+    assert live["n_backfilled"] == 0
 
 
 def test_recording_respects_the_point_cap(recording_store):

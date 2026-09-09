@@ -517,7 +517,7 @@ def test_start_scan_monitoring_starts_a_recording_named_for_the_run():
 
     assert client.recording_starts == [
         {"recording_id": "p12345_run0042", "names": None, "mode": "throttle",
-         "min_interval": 0.1}
+         "min_interval": 0.1, "pgroup": "p12345", "run_number": 42}
     ]
     assert result["n_channels_attached"] == 100
     assert (

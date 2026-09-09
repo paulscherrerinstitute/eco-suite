@@ -323,7 +323,8 @@ class StatusServerClient:
                         min_interval=0.0, sample_interval=0.1,
                         max_points_per_channel=100_000,
                         max_value_elements=None,
-                        subscription_mask=None) -> dict:
+                        subscription_mask=None,
+                        pgroup=None, run_number=None) -> dict:
         """Start monitoring every monitorable status channel on the server.
 
         mode:
@@ -343,6 +344,12 @@ class StatusServerClient:
         subscription_mask="log" additionally subscribes to the IOC's archive
         deadband stream (DBE_LOG) instead of DBE_VALUE - the only option
         here that reduces how often the IOC actually sends.
+
+        pgroup/run_number are optional and purely for later cross-
+        referencing: pass them (as start_scan_monitoring does) so a status
+        capture for the same run can opportunistically backfill a channel
+        that has not updated on its own yet - see
+        NamespaceMonitorStore.backfill_running_recordings.
         """
         body = {
             "recording_id": recording_id,
@@ -353,6 +360,8 @@ class StatusServerClient:
             "max_points_per_channel": max_points_per_channel,
             "max_value_elements": max_value_elements,
             "subscription_mask": subscription_mask,
+            "pgroup": pgroup,
+            "run_number": run_number,
         }
         return self._post("/recording/start", body, ok_codes=(200, 202))
 

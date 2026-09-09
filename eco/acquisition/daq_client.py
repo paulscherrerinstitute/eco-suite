@@ -2153,7 +2153,7 @@ class Daq(Assembly):
         try:
             result = self.status_client.start_recording(
                 recording_id=recording_id, names=names, mode=mode,
-                min_interval=min_interval,
+                min_interval=min_interval, pgroup=pgroup, run_number=runno,
             )
         except Exception as exc:
             return self._status_server_failed("start monitoring", exc)
