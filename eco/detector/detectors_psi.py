@@ -21,7 +21,6 @@ from ..epics_utils import get_from_archive
 from escape import stream
 from time import time, sleep
 from eco.acquisition.utilities import Acquisition
-from eco.detector.bs_counter import bs_scannable
 from eco.epics_utils.detector import CallbackEpics
 
 _bs_event_worker = None

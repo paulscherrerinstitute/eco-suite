@@ -67,6 +67,54 @@ misattribute shots during a slow step. Recording the *live* pulse_id at
 the moment each step actually starts (``self.step_pulse_ids``, mirroring
 ``Daq.start()``'s ``get_pulse_id(newer_than=...)``) is kept anyway, purely
 as a diagnostic/traceability record -- it does not drive the binning.
+
+What changed testing against the real dispatcher (not the synthetic test
+stream): console noise, and a real teardown/rebuild bug
+--------------------------------------------------------------------------
+escape-fel has since moved to a ``datahub``-backed default event handler
+(``DataHubEventHandler(backend="bsread")``, wrapping PSI's ``psi-datahub``
+package) instead of the plain-bsread ``EventHandler_SFEL`` this was first
+tested against -- ``EventWorker()`` with no explicit ``eventHandler`` now
+picks the datahub one whenever ``datahub`` is importable. That's a real
+behavior change, not just internal refactor: this class's own
+teardown/rebuild pattern used to call ``Stream.accumulate(True)``/``(False)``
+(which round-trips through ``EventWorker.registerSource``/``removeSource``)
+on **every scan start and end** -- fine against the synthetic
+``LocalEventHandler``, but against the real dispatcher/datahub handler this:
+
+1. produced a lot of console output, because ``registerSource`` on that
+   handler unconditionally schedules a debounced restart of the *entire
+   shared* connection (``EventWorker._schedule_restart``) on every call,
+   regardless of whether the channel was already subscribed -- so every
+   scan start/end paid for a full connection teardown+rebuild rather than a
+   no-op;
+2. was confirmed, on a real run against ``SAROP21-PBPS133:INTENSITY``, to
+   occasionally race with the datahub-backed handler's own background
+   receive thread mid-teardown (``zmq.error.ZMQError: Socket operation on
+   non-socket`` from a ``do_run`` thread reading a socket the restart had
+   just closed underneath it) -- a real bug, not just noise, though not
+   this module's own bug to fix (see below).
+
+Fixed here by decoupling the two lifecycles that were conflated: **channel
+subscription** (``registerSource``, done once per channel in ``__init__``,
+never repeated) from **per-scan bin structure** (a fresh ``Scan`` built in
+``_build_bins()``, which now only manipulates local ``eventCallbacks``
+bookkeeping -- no ``accumulate()``, no ``registerSource``/``removeSource``
+at all after ``__init__``). Confirmed directly: two consecutive real
+``ascan()`` runs against the real dispatcher, with a real ``DummyAdjustable``,
+now produce no extra console output and no teardown-race exception, with
+correct per-step values and pulse_id partitioning both times.
+
+Recommended upstream (not done here -- this file only avoids triggering
+it): ``EventWorker.registerSource``/``removeSource`` should skip
+``_schedule_restart()`` when the channel is already in (or already absent
+from) ``source_ids`` -- i.e. only restart when the *subscribed channel set
+actually changes* -- which would make calling ``accumulate(True)`` on an
+already-accumulating Stream, or ``(False)`` on an already-stopped one, a
+safe no-op instead of a full connection cycle. That would also close the
+observed race at its root (no restart, nothing to race with the datahub
+handler's own stream teardown), independent of any caller working around
+it the way this module now does.
 """
 
 from threading import Event
@@ -97,12 +145,14 @@ def _resolve_stream(source, eventworker=None):
     """Accept a bs channel name, a live ``escape.stream.Stream``, or an
     ``eco.detector.detectors_psi.DetectorBsStream`` (whose already-built
     ``.stream`` is reused directly -- no second subscription), and return
-    the underlying ``Stream``."""
+    the underlying ``Stream``. Duck-typed rather than an ``isinstance``
+    check against the concrete ``DetectorBsStream`` class: any object
+    exposing a ``.stream`` that is itself an ``escape.stream.Stream`` is
+    accepted, so a from-scratch device class (e.g. a throwaway dev/test
+    detector) works exactly like ``DetectorBsStream`` here without having
+    to subclass it or be registered anywhere."""
     from escape import stream as escape_stream
-    from eco.detector.detectors_psi import DetectorBsStream
 
-    if isinstance(source, DetectorBsStream):
-        return source.stream
     if isinstance(source, escape_stream.Stream):
         return source
     if isinstance(source, str):
@@ -111,9 +161,12 @@ def _resolve_stream(source, eventworker=None):
 
             eventworker = _ensure_bs_event_worker()
         return escape_stream.Stream(source, eventworker)
+    inner = getattr(source, "stream", None)
+    if isinstance(inner, escape_stream.Stream):
+        return inner
     raise TypeError(
-        "Expected a bs channel name, escape.stream.Stream, or DetectorBsStream, "
-        f"got {type(source)}"
+        "Expected a bs channel name, an escape.stream.Stream, or an object "
+        f"with a .stream attribute that is one, got {type(source)}"
     )
 
 
@@ -204,6 +257,12 @@ class BsStreamCounter:
         self.last_pulse_ids = {}
         self.step_pulse_ids = {}
 
+        # Subscribe each channel with the transport exactly once, here, for
+        # the life of this counter -- see _build_bins()'s docstring for why
+        # this must not repeat on every scan.
+        for base in self._raw.values():
+            base._source.eventWorker.registerSource(base._source.name)
+
         self._build_bins()
 
         self.callbacks_start_scan = [self._on_scan_start]
@@ -214,29 +273,60 @@ class BsStreamCounter:
 
     # -- (re)building the shared per-step bin structure ---------------------
     def _build_bins(self):
-        # Open-ended (values=None): bins are created on demand as new step
-        # indices appear. Safe to share across every channel in self._raw
-        # regardless of which one's data reaches a given step first -- see
-        # the module docstring (escape-fel 0.2.7, DataManager.append).
+        """Fresh per-scan bins, reusing the already-subscribed channels.
+
+        Open-ended (values=None): bins are created on demand as new step
+        indices appear. Safe to share across every channel in self._raw
+        regardless of which one's data reaches a given step first -- see
+        the module docstring (escape-fel 0.2.7, DataManager.append).
+
+        Deliberately does NOT call ``Stream.accumulate(True)`` (which is
+        what an earlier version of this method did): that calls
+        ``EventWorker.registerSource``, which -- for the real
+        dispatcher/datahub-backed handler -- unconditionally schedules a
+        debounced restart of the *entire shared* underlying connection
+        (``EventWorker._schedule_restart``) even when the channel is
+        already subscribed, on every single call. Doing that on every scan
+        start/end (this method used to run from both) was confirmed
+        against the real dispatcher to be the source of most of this
+        class's console output, and to occasionally race with the
+        datahub-backed handler's own stream teardown (an
+        already-registered channel does not need registering again, only a
+        fresh bin to write into).
+        """
         from escape import stream as escape_stream
 
         self._scan = escape_stream.Scan(parameters=[self._step_source])
         self._step_source.value = 0.0
         self._step_index = 0
-        self.step_pulse_ids = {}
+        # NOTE: step_pulse_ids is deliberately NOT reset here -- _build_bins()
+        # runs at the end of a scan too (_on_scan_end), and clearing it there
+        # would wipe the just-finished scan's record before calling code ever
+        # gets to read it. Only _on_scan_start resets it (a fresh scan is
+        # starting, the old record is no longer relevant); __init__ starts it
+        # at {} directly.
 
         self._channels = {}
         for name, base in self._raw.items():
             binned = escape_stream.Stream(source=base._source, scan=self._scan)
-            binned.accumulate(True)
-            binned._source.eventWorker.eventCallbacks.append(self._new_data.set)
+            ew = binned._source.eventWorker
+            if binned._appendEventData not in ew.eventCallbacks:
+                ew.eventCallbacks.append(binned._appendEventData)
+            ew.eventCallbacks.append(self._new_data.set)
             self._channels[name] = binned
 
     def _teardown_bins(self):
+        # Mirrors _build_bins(): only removes the per-scan bin-wrapper's own
+        # callbacks, never touches the channel subscription itself (no
+        # accumulate(False)/removeSource -- see _build_bins()'s docstring).
         for s in self._channels.values():
-            s.accumulate(False)
+            ew = s._source.eventWorker
             try:
-                s._source.eventWorker.eventCallbacks.remove(self._new_data.set)
+                ew.eventCallbacks.remove(s._appendEventData)
+            except ValueError:
+                pass
+            try:
+                ew.eventCallbacks.remove(self._new_data.set)
             except ValueError:
                 pass
         self._channels = {}
@@ -244,14 +334,19 @@ class BsStreamCounter:
     def _on_scan_start(self, scan=None, **kwargs):
         self._teardown_bins()
         self._build_bins()
+        self.step_pulse_ids = {}
 
     def _on_scan_end(self, scan=None, **kwargs):
         self._teardown_bins()
         self._build_bins()
 
     def close(self):
-        """Unsubscribe every channel."""
+        """Unsubscribe every channel for good (the one deliberate use of
+        removeSource/its restart -- everything else keeps the subscription
+        alive for this counter's whole lifetime, see _build_bins())."""
         self._teardown_bins()
+        for base in self._raw.values():
+            base._source.eventWorker.removeSource(base._source.name)
 
     # -- reading the current step's bin -------------------------------------
     # Bins are created on demand (open-ended Scan) the first time a matching
@@ -361,3 +456,52 @@ class BsStreamCounter:
         self.step_pulse_ids[step_index] = start_pid
         n0 = {name: len(self._bin(name, step_index)) for name in self._channels}
         return step_index, n0
+
+
+@bs_scannable
+class DetectorBsTest:
+    """Throwaway bs-stream test detector for exercising ``BsStreamCounter``/
+    ``bs_scannable`` end to end -- construction, ``.scans``, a real
+    ``ascan()`` -- against the real facility dispatcher, without touching
+    ``DetectorBsStream`` or any production device built on it (e.g.
+    ``mon_opt.intensity``, which deliberately stays on the plain
+    EPICS-monitor ``@scannable``/``CounterValue`` path; see this module's
+    "What changed testing against the real dispatcher" section above for
+    why bs-stream scanning isn't ready to be the default there yet).
+
+    This is explicitly **not** wired into any namespace and has no PV
+    mirror, settings, or status-display integration -- construct throwaway
+    instances directly, e.g.::
+
+        det = DetectorBsTest("SAROP21-PBPS133:INTENSITY", name="test_intensity")
+        det.get_current_value()
+        det.scans.ascan(some_dummy_adjustable, 0, 4, 4, 10)
+        det._bs_counter.close()   # unsubscribe when done experimenting
+
+    Confirmed against the real dispatcher (``SAROP21-PBPS133:INTENSITY``,
+    an ``eco.elements.adjustable.DummyAdjustable``, two consecutive
+    ``ascan()`` runs): correct per-step values, correct per-step pulse_id
+    partitioning, and -- after the ``_build_bins()`` fix described above --
+    no extra console output and no teardown-race exception.
+    """
+
+    def __init__(self, bs_channel, name=None):
+        from escape import stream as escape_stream
+        from eco.detector.detectors_psi import _ensure_bs_event_worker
+
+        self.name = name or bs_channel
+        self.bs_channel = bs_channel
+        self.alias = Alias(self.name, channel=bs_channel, channeltype="BS")
+        _ensure_bs_event_worker()
+        self.stream = escape_stream.Stream(bs_channel, None)
+
+    def get_current_value(self):
+        return self._get_bs_current_value()
+
+    def _get_bs_current_value(self):
+        # Lazily built and cached (not per-call) -- see BsStreamCounter/
+        # bs_scannable docstrings for why that must not be rebuilt on every
+        # read (it holds a live bs subscription).
+        if not hasattr(self, "_bs_counter"):
+            self._bs_counter = BsStreamCounter(self, name=self.name)
+        return self._bs_counter.get_current_value()

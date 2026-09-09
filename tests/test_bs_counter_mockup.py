@@ -13,7 +13,7 @@ pytest.importorskip("escape.stream")
 from escape.stream.escape_stream import EventWorker, Stream, TestStream
 from escape.stream.es_wrappers import LocalEventHandler
 
-from eco.detector.bs_counter import BsStreamCounter
+from eco.detector.bs_counter import BsStreamCounter, DetectorBsTest
 from eco.detector.detectors_psi import DetectorBsStream
 
 PORT = 9894
@@ -117,7 +117,12 @@ def test_start_stop_mode(bs_worker):
     ctr.close()
 
 
-def test_detector_bs_stream_scans_and_bs_read(bs_worker):
+def test_detector_bs_stream_force_bsstream_read(bs_worker):
+    # DetectorBsStream itself deliberately stays on the plain EPICS-monitor
+    # @scannable/CounterValue path (see detectors_psi.py) -- production
+    # devices like mon_opt.intensity are not to be repointed at bs-stream
+    # scanning here. Only the opt-in force_bsstream=True direct-read path
+    # (unrelated to .scans) is this module's concern.
     det = DetectorBsStream("i0", cachannel="none", name="i0")
     det.stream = Stream("i0", bs_worker, unit="a.u.")
 
@@ -133,7 +138,19 @@ def test_detector_bs_stream_scans_and_bs_read(bs_worker):
     assert isinstance(v, float)
     assert hasattr(det, "_bs_counter")
 
-    # "DetectorBsStream should have a lazy scans container like Detectors"
+    det._bs_counter.close()
+
+
+def test_detector_bs_test_scans(bs_worker):
+    # DetectorBsTest is the dedicated, isolated dev class for exercising
+    # bs_scannable/.scans -- not DetectorBsStream (see above).
+    det = DetectorBsTest("i0", name="i0_test")
+    det.stream = Stream("i0", bs_worker, unit="a.u.")
+
+    v = det.get_current_value()
+    assert isinstance(v, float)
+    assert hasattr(det, "_bs_counter")
+
     s = det.scans
     assert s._default_counters == [det._bs_counter]
     assert det.scans is s  # cached, not rebuilt on every access
