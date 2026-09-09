@@ -295,6 +295,11 @@ class Daq(Assembly):
             self.init_namespace,
             self.count_run_number_up_and_attach_to_scan,
             self.append_start_status_to_scan,
+            # namespace-wide recording on the status server - no-op without
+            # one (see start_scan_monitoring's docstring); after
+            # count_run_number_up_and_attach_to_scan, which is where
+            # scan.daq_run_number comes from.
+            self.start_scan_monitoring,
             self.scan_message_to_elog,
             self._create_runtable_metadata_append_status_to_runtable,
             self.append_scan_monitors,
@@ -312,6 +317,10 @@ class Daq(Assembly):
         ]
         self.callbacks_end_scan = [
             self.append_status_to_scan_and_store,
+            # before copy_scan_info_to_raw: registers "monitors" on
+            # scan.scan_parameters, which that call then writes into
+            # scan_info_rel.json (see end_scan_monitoring's docstring).
+            self.end_scan_monitoring,
             self.copy_scan_info_to_raw,
             self.end_scan_monitors,
         ]
@@ -2101,14 +2110,17 @@ class Daq(Assembly):
         scan.remaining_tasks[-1].start()
         scan.set_scan_parameter("aliases", "aux/aliases.json")
 
-    # -- namespace-wide monitoring, server-only (not wired into any scan
-    # callback yet - see start_scan_monitoring/end_scan_monitoring below) --
+    # -- namespace-wide monitoring, server-only (callbacks_start_scan/
+    # callbacks_end_scan below) --
     #
     # Unlike status/aliases, there is deliberately no local fallback here: a
     # local recording would mean this session's own namespace holding a live
     # CA monitor per channel for the scan's whole duration, which is exactly
     # the per-session cost the status server exists to avoid. If there is no
-    # server (or it is not in use for this scan), these are no-ops.
+    # server (or it is not in use for this scan), these are no-ops - so a
+    # scan run without a status server simply gets no
+    # aux/namespace_monitor.h5, same as it already gets no server-backed
+    # aliases.json/status.json.
 
     def start_scan_monitoring(self, scan, pgroup=None, mode="throttle",
                               min_interval=0.1, names=None, **kwargs):
@@ -2122,9 +2134,10 @@ class Daq(Assembly):
         points/s for mode="all" over the same window (DESIGN.md SS15).
         `names` restricts to a subset instead of every monitorable channel.
 
-        Not wired into `callbacks_start_scan` - call this explicitly (or
-        append it there) once you are ready to use it for real; not doing
-        so yet is deliberate, not an oversight.
+        Wired into `callbacks_start_scan`, right after
+        `count_run_number_up_and_attach_to_scan` (needs `scan.daq_run_number`)
+        and `append_start_status_to_scan` (shares its per-scan
+        server-in-use decision, cached on the scan).
         """
         if self.status_client is None:
             return None
@@ -2174,7 +2187,10 @@ class Daq(Assembly):
         way it already carries "aliases"/"status", regardless of whether
         the write+upload job has actually finished writing the file yet.
 
-        Not wired into `callbacks_end_scan` - see start_scan_monitoring.
+        Wired into `callbacks_end_scan`, right after
+        `append_status_to_scan_and_store` and before `copy_scan_info_to_raw`
+        (which needs the "monitors" scan parameter already set to write it
+        into scan_info_rel.json).
         """
         if self.status_client is None:
             return None

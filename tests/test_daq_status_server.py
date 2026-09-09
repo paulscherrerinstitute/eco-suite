@@ -497,12 +497,16 @@ def test_aliases_capture_failure_falls_back_to_the_local_namespace(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# start_scan_monitoring / end_scan_monitoring - NOT wired into
-# callbacks_start_scan/callbacks_end_scan (see Daq.__init__): these methods
-# exist to be called explicitly, or added to those lists deliberately later.
-# There is no local fallback - a local recording would need this session's
-# own namespace to hold a live monitor per channel for the scan's whole
-# duration, exactly the per-session cost the status server exists to avoid.
+# start_scan_monitoring / end_scan_monitoring - wired into
+# callbacks_start_scan/callbacks_end_scan (see Daq.__init__). There is no
+# local fallback - a local recording would need this session's own
+# namespace to hold a live monitor per channel for the scan's whole
+# duration, exactly the per-session cost the status server exists to avoid
+# - so these only ever do anything for a server-backed, daq-counter scan
+# (any scan that runs this Daq's callbacks at all already implies "daq is a
+# counter"); a scan with no status server configured gets no
+# namespace_monitor.h5, the same way it already gets no server-backed
+# aliases.json/status.json.
 
 
 def test_start_scan_monitoring_starts_a_recording_named_for_the_run():
@@ -585,15 +589,33 @@ def test_end_scan_monitoring_failure_does_not_raise(capsys):
     assert "WARNING" in capsys.readouterr().out
 
 
-def test_start_and_end_scan_monitoring_are_not_wired_into_any_callback():
-    """The whole point of this round: methods that exist and work, but are
-    not yet part of a real scan - see Daq.__init__'s callbacks_start_scan/
-    callbacks_end_scan."""
+def test_start_scan_monitoring_is_wired_into_callbacks_start_scan_after_run_number():
+    """Needs scan.daq_run_number (set by
+    count_run_number_up_and_attach_to_scan) and the server-in-use decision
+    (cached by append_start_status_to_scan) - both must run first."""
     import inspect
 
     source = inspect.getsource(Daq.__init__)
-    assert "start_scan_monitoring" not in source
-    assert "end_scan_monitoring" not in source
+    assert (
+        source.index("count_run_number_up_and_attach_to_scan")
+        < source.index("append_start_status_to_scan")
+        < source.index("self.start_scan_monitoring")
+    )
+
+
+def test_end_scan_monitoring_is_wired_into_callbacks_end_scan_before_scan_info():
+    """Must run before callbacks_end_scan's copy_scan_info_to_raw, which is
+    what actually writes the "monitors" scan parameter end_scan_monitoring
+    registers into scan_info_rel.json. copy_scan_info_to_raw also appears
+    earlier, in callbacks_end_step - rindex() to get the callbacks_end_scan
+    occurrence, not that one."""
+    import inspect
+
+    source = inspect.getsource(Daq.__init__)
+    assert (
+        source.index("self.end_scan_monitoring")
+        < source.rindex("self.copy_scan_info_to_raw")
+    )
 
 
 def test_scan_end_delegates_and_sets_the_scan_parameter():
