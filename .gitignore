@@ -10,3 +10,7 @@ docs/_build/
 *.egg-info/
 build/
 dist/
+
+# kept locally for Claude Code, deliberately not committed (contains
+# internal PSI facility paths/details) -- see MEMORY.md
+CLAUDE.md
