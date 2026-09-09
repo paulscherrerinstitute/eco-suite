@@ -2166,6 +2166,14 @@ class Daq(Assembly):
         (no server, server not in use, or the start itself failed) - there
         is nothing to stop.
 
+        Registers the file at `scan.set_scan_parameter("monitors",
+        "aux/<filename>")` right after a successful dispatch - the same
+        "register the path now, the job finishes later" pattern
+        copy_aliases_to_scan/append_status_to_scan_and_store already use -
+        so copy_scan_info_to_raw's scan_info_rel.json carries it the same
+        way it already carries "aliases"/"status", regardless of whether
+        the write+upload job has actually finished writing the file yet.
+
         Not wired into `callbacks_end_scan` - see start_scan_monitoring.
         """
         if self.status_client is None:
@@ -2184,12 +2192,14 @@ class Daq(Assembly):
         try:
             job = self.status_client.capture_recording(
                 recording_id, pgroup, runno, upload=upload,
+                filename="namespace_monitor.h5",
             )
         except Exception as exc:
             return self._status_server_failed("end monitoring", exc)
         scan.counter_scratch(self.name).setdefault("status_jobs", {})[
             "recording"
         ] = job
+        scan.set_scan_parameter("monitors", "aux/namespace_monitor.h5")
         print(
             f"monitoring: recording '{recording_id}' stopped, capture job "
             f"{job.get('job_id')} -> {job.get('path')}"
