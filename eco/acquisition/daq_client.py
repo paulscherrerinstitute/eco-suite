@@ -2101,6 +2101,101 @@ class Daq(Assembly):
         scan.remaining_tasks[-1].start()
         scan.set_scan_parameter("aliases", "aux/aliases.json")
 
+    # -- namespace-wide monitoring, server-only (not wired into any scan
+    # callback yet - see start_scan_monitoring/end_scan_monitoring below) --
+    #
+    # Unlike status/aliases, there is deliberately no local fallback here: a
+    # local recording would mean this session's own namespace holding a live
+    # CA monitor per channel for the scan's whole duration, which is exactly
+    # the per-session cost the status server exists to avoid. If there is no
+    # server (or it is not in use for this scan), these are no-ops.
+
+    def start_scan_monitoring(self, scan, pgroup=None, mode="throttle",
+                              min_interval=0.1, names=None, **kwargs):
+        """Start a namespace-wide recording on the status server for this
+        run: every monitorable channel's update history during the scan,
+        not just the two snapshots status.json already captures.
+
+        mode="throttle", min_interval=0.1 (10 Hz per channel) is the
+        README's recommended default for a full-namespace recording -
+        measured at ~22 MB / ~900 points/s against ~239 MB / ~5500
+        points/s for mode="all" over the same window (DESIGN.md SS15).
+        `names` restricts to a subset instead of every monitorable channel.
+
+        Not wired into `callbacks_start_scan` - call this explicitly (or
+        append it there) once you are ready to use it for real; not doing
+        so yet is deliberate, not an oversight.
+        """
+        if self.status_client is None:
+            return None
+        if not self._status_server_ok_for_this_scan(scan):
+            return None
+        if pgroup is None:
+            pgroup = self.pgroup
+        if hasattr(scan, "daq_run_number"):
+            runno = scan.daq_run_number.get_current_value()
+        else:
+            runno = self.daq.get_last_run_number()
+        recording_id = f"{pgroup}_run{runno:04d}"
+        try:
+            result = self.status_client.start_recording(
+                recording_id=recording_id, names=names, mode=mode,
+                min_interval=min_interval,
+            )
+        except Exception as exc:
+            return self._status_server_failed("start monitoring", exc)
+        scan.counter_scratch(self.name)["monitoring_recording_id"] = recording_id
+        print(
+            f"monitoring: recording '{recording_id}' started on "
+            f"{self.status_client.base_url} "
+            f"({result.get('n_channels_attached')}/"
+            f"{result.get('n_channels_requested')} channels attached)"
+        )
+        return result
+
+    def end_scan_monitoring(self, scan, pgroup=None, upload=True, **kwargs):
+        """Stop this scan's recording (see start_scan_monitoring) and have
+        the server write it and upload it to the run - in the background
+        (POST /recording/capture), the same fire-and-forget shape as
+        append_status_to_scan_and_store/copy_aliases_to_scan: the write
+        (one ArrayTimestamps per channel) and the broker upload both scale
+        with how much was recorded, and neither should be on the scan's
+        clock.
+
+        A no-op if start_scan_monitoring was never called for this scan
+        (no server, server not in use, or the start itself failed) - there
+        is nothing to stop.
+
+        Not wired into `callbacks_end_scan` - see start_scan_monitoring.
+        """
+        if self.status_client is None:
+            return None
+        recording_id = scan.counter_scratch(self.name).get(
+            "monitoring_recording_id"
+        )
+        if recording_id is None:
+            return None
+        if pgroup is None:
+            pgroup = self.pgroup
+        if hasattr(scan, "daq_run_number"):
+            runno = scan.daq_run_number.get_current_value()
+        else:
+            runno = self.daq.get_last_run_number()
+        try:
+            job = self.status_client.capture_recording(
+                recording_id, pgroup, runno, upload=upload,
+            )
+        except Exception as exc:
+            return self._status_server_failed("end monitoring", exc)
+        scan.counter_scratch(self.name).setdefault("status_jobs", {})[
+            "recording"
+        ] = job
+        print(
+            f"monitoring: recording '{recording_id}' stopped, capture job "
+            f"{job.get('job_id')} -> {job.get('path')}"
+        )
+        return job
+
     def scan_message_to_elog(self, scan=None, **kwargs):
         # def _create_metadata_structure_start_scan(
         # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs

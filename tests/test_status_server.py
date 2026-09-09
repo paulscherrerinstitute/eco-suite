@@ -1176,6 +1176,160 @@ def test_max_value_elements_keeps_waveforms_out(recording_store):
 
 
 # --------------------------------------------------------------------------
+# /recording/capture: stop + write + upload, all off the client's clock -
+# the recording equivalent of /status/capture and /aliases/capture. Stopping
+# itself (detaching callbacks) happens synchronously before the response;
+# only the write and upload are backgrounded.
+
+
+def test_recording_capture_returns_immediately_and_does_the_work_in_the_background(
+    recording_store, tmp_path, monkeypatch
+):
+    config = NamespaceServerConfig(module_name=recording_store.module_name)
+    config.data_root_pattern = str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    app = create_namespace_app(config, store=recording_store)
+    client = app.test_client()
+
+    posted = []
+    import requests
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"status": "ok", "message": "copying user file(s) finished"}
+
+    monkeypatch.setattr(
+        requests, "post", lambda url, json=None, timeout=None: (
+            posted.append((url, json)), _Resp)[1]
+    )
+
+    client.post("/recording/start", json={"recording_id": "r1"})
+    for mon in FakeMonitor.instances:
+        for v in range(4):
+            mon.push(float(v))
+
+    started = client.post(
+        "/recording/capture",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 9},
+    )
+    assert started.status_code == 202
+    job_id = started.get_json()["job_id"]
+    # stopping (detaching callbacks) already happened, synchronously, before
+    # the response - only the write+upload are still pending
+    assert client.get("/recording/r1").get_json()["running"] is False
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done", job
+    path = tmp_path / "p1" / "run0009" / "aux" / "monitors.esc.h5"
+    assert path.exists()
+    assert job["n_written"] == 2
+
+    url, body = posted[0]
+    assert url.endswith("/copy_user_files")
+    assert body["pgroup"] == "p1" and body["run_number"] == 9
+    assert body["files"] == [str(path)]
+    assert job["upload"]["status"] == "ok"
+    # dropped by default once the job is done
+    assert client.get("/recording/r1").status_code == 404
+
+
+def test_recording_capture_can_skip_the_upload(recording_store, tmp_path, monkeypatch):
+    config = NamespaceServerConfig(module_name=recording_store.module_name)
+    config.data_root_pattern = str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    app = create_namespace_app(config, store=recording_store)
+    client = app.test_client()
+    import requests
+
+    monkeypatch.setattr(requests, "post", lambda *a, **kw: pytest.fail("uploaded"))
+    client.post("/recording/start", json={"recording_id": "r1"})
+    job_id = client.post(
+        "/recording/capture",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 10,
+              "upload": False},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+    assert "upload" not in job
+
+
+def test_recording_capture_can_keep_the_recording_instead_of_dropping_it(
+    recording_store, tmp_path
+):
+    config = NamespaceServerConfig(module_name=recording_store.module_name)
+    config.data_root_pattern = str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    app = create_namespace_app(config, store=recording_store)
+    client = app.test_client()
+    client.post("/recording/start", json={"recording_id": "r1"})
+    job_id = client.post(
+        "/recording/capture",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 11,
+              "upload": False, "drop": False},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert client.get("/recording/r1").status_code == 200
+
+
+def test_recording_capture_requires_pgroup_and_run_number(recording_store):
+    app = create_namespace_app(
+        NamespaceServerConfig(module_name=recording_store.module_name),
+        store=recording_store,
+    )
+    client = app.test_client()
+    client.post("/recording/start", json={"recording_id": "r1"})
+    resp = client.post("/recording/capture", json={"recording_id": "r1"})
+    assert resp.status_code == 400
+
+
+def test_recording_capture_unknown_recording_id_is_404(recording_store):
+    app = create_namespace_app(
+        NamespaceServerConfig(module_name=recording_store.module_name),
+        store=recording_store,
+    )
+    resp = app.test_client().post(
+        "/recording/capture",
+        json={"recording_id": "nope", "pgroup": "p1", "run_number": 1},
+    )
+    assert resp.status_code == 404
+
+
+def test_recording_capture_of_an_already_stopped_recording_is_409(recording_store):
+    app = create_namespace_app(
+        NamespaceServerConfig(module_name=recording_store.module_name),
+        store=recording_store,
+    )
+    client = app.test_client()
+    client.post("/recording/start", json={"recording_id": "r1"})
+    client.post(
+        "/recording/capture",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 1,
+              "upload": False, "drop": False},
+    )
+    resp = client.post(
+        "/recording/capture",
+        json={"recording_id": "r1", "pgroup": "p1", "run_number": 1,
+              "upload": False},
+    )
+    assert resp.status_code == 409
+
+
+# --------------------------------------------------------------------------
 # /status/capture: snapshot + write + upload, all off the client's clock
 
 
@@ -1372,6 +1526,63 @@ def test_status_push_arriving_after_the_capture_write_still_lands(
     body = client.get(f"/status/job/{job_id}?include_status=1").get_json()["job"]
     assert "x" not in body["status"]
     assert "n_pushed" not in body
+
+
+def test_a_pending_push_is_not_stolen_by_an_unrelated_job_kind(
+    app_and_store, tmp_path
+):
+    """aliases-capture (and recording-capture) jobs carry pgroup/run_number
+    for their own reporting but no "key" - the merge in /status/job must not
+    default one, or a push meant for the real status_run_start job of the
+    same run could be consumed by whichever job happens to be read first
+    with include_status=1."""
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    client = app.test_client()
+
+    client.post(
+        "/status/push",
+        json={"pgroup": "p1", "run_number": 20,
+              "values": {"scans.acquiring_scan.description": "a scan"}},
+    )
+
+    alias_job_id = client.post(
+        "/aliases/capture",
+        json={"pgroup": "p1", "run_number": 20, "upload": False},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{alias_job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+
+    # reading the aliases job with include_status=1 must not consume the
+    # push meant for the run's real status_run_start job
+    body = client.get(
+        f"/status/job/{alias_job_id}?include_status=1"
+    ).get_json()["job"]
+    assert "status" not in body
+    assert "n_pushed" not in body
+
+    # it is still there for the job it was actually meant for
+    status_job_id = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 20, "upload": False,
+              "keep_status": True},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{status_job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    body = client.get(
+        f"/status/job/{status_job_id}?include_status=1"
+    ).get_json()["job"]
+    assert body["status"]["scans.acquiring_scan.description"] == "a scan"
 
 
 # --------------------------------------------------------------------------

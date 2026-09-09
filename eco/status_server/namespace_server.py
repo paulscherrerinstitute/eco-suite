@@ -572,16 +572,22 @@ def create_namespace_app(
             else:
                 body.pop("status", None)
         # Merge in any values pushed for this same (pgroup, run_number, key)
-        # -- only meaningful once the job is done and only for job kinds
-        # that carry pgroup/run_number/key (aliases-capture jobs and
-        # write_async status/snapshot jobs do not; pop_pushed_status then
-        # just finds nothing and this is a no-op).
+        # -- only meaningful once the job is done and only for genuine
+        # status/capture jobs, which are the only job kind that sets "key"
+        # explicitly. aliases-capture and recording-capture jobs also carry
+        # pgroup/run_number (for their own reporting) but no "key" - do not
+        # default it to "status_run_start" here, or a job that happens to
+        # finish first would steal a push meant for the real status job of
+        # the same run (found while adding the recording-capture job kind,
+        # which would otherwise have hit the exact same gap aliases-capture
+        # already had - neither ever exercised include_status=1, so it
+        # never surfaced).
         if want_status and body.get("state") != "running":
-            pgroup, run_number = body.get("pgroup"), body.get("run_number")
-            if pgroup is not None and run_number is not None:
-                pushed = store.pop_pushed_status(
-                    pgroup, run_number, body.get("key", "status_run_start")
-                )
+            pgroup, run_number, key = (
+                body.get("pgroup"), body.get("run_number"), body.get("key")
+            )
+            if pgroup is not None and run_number is not None and key is not None:
+                pushed = store.pop_pushed_status(pgroup, run_number, key)
                 if pushed:
                     body["status"] = {**(body.get("status") or {}), **pushed}
                     body["n_pushed"] = len(pushed)
@@ -727,6 +733,109 @@ def create_namespace_app(
             except Exception:
                 logger.debug("could not drop recording %s", recording_id, exc_info=True)
         return jsonify(response)
+
+    @app.post("/recording/capture")
+    def recording_capture():
+        """Stop a recording, write it, and upload it to the run - all in the
+        background, mirroring /status/capture and /aliases/capture. This is
+        the endpoint a scan boundary should use instead of /recording/stop
+        with save=true: stopping itself (detaching callbacks) is instant,
+        but the write (one ArrayTimestamps per channel) and the broker
+        upload both scale with how much was recorded and how busy
+        broker_address_aux is - real cost, not something a scan should wait
+        on. Stopping happens synchronously here, before responding, so the
+        recording is unambiguously over by the time the caller gets a job
+        id; only the write+upload are backgrounded.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        recording_id = body.get("recording_id")
+        try:
+            pgroup = body["pgroup"]
+            run_number = int(body["run_number"])
+        except (KeyError, TypeError, ValueError):
+            return (
+                jsonify({"status": "error",
+                         "message": "'pgroup' and 'run_number' are required"}),
+                400,
+            )
+        try:
+            result = store.stop_recording(recording_id)
+        except KeyError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 409
+
+        data = result.pop("data")
+        result.pop("channels", None)
+        upload = bool(body.get("upload", True))
+        drop = bool(body.get("drop", True))
+        filename = body.get("filename", "monitors.esc.h5")
+        directory = config.data_dir(pgroup, run_number)
+        path = directory / filename
+        job_id = uuid.uuid4().hex
+        with jobs_lock:
+            jobs[job_id] = {
+                "state": "running", "step": "write", "kind": "recording",
+                "pgroup": pgroup, "run_number": run_number,
+                "recording_id": recording_id, "path": str(path),
+                "started_at": time.time(), **result,
+            }
+
+        def _capture():
+            rec = {}
+            t0_total = time.time()
+            try:
+                payload = {
+                    "started_at": result["started_at"],
+                    "stopped_at": result["stopped_at"],
+                    "data": data,
+                }
+                t0 = time.time()
+                written = write_monitor_recording(
+                    directory, payload, filename=filename,
+                    libver=body.get("libver", "latest"),
+                )
+                rec["write_seconds"] = time.time() - t0
+                rec["path"] = str(written)
+                rec.update(payload.get("write_report", {}))
+                with jobs_lock:
+                    jobs[job_id].update({"step": "upload", **rec})
+
+                if upload:
+                    t0 = time.time()
+                    rec["upload"] = _append_aux(pgroup, run_number, [written])
+                    rec["upload_seconds"] = time.time() - t0
+                rec["state"] = "done"
+            except Exception as exc:  # noqa: BLE001 - reported via the job
+                logger.error("recording capture failed", exc_info=True)
+                rec["state"] = "error"
+                rec["error"] = f"{type(exc).__name__}: {exc}"
+            rec["step"] = None
+            rec["finished_at"] = time.time()
+            with jobs_lock:
+                jobs[job_id].update(rec)
+            stats.record(
+                "recording_capture", time.time() - t0_total, error=rec.get("error"),
+                pgroup=pgroup, run_number=run_number, recording_id=recording_id,
+                n_entries=result.get("n_stored"),
+                write_s=rec.get("write_seconds"), upload_s=rec.get("upload_seconds"),
+            )
+            if drop:
+                try:
+                    store.drop_recording(recording_id)
+                except Exception:
+                    logger.debug("could not drop recording %s", recording_id,
+                                exc_info=True)
+
+        threading.Thread(
+            target=_capture, name=f"recording-capture-{job_id[:8]}", daemon=True
+        ).start()
+        return (
+            jsonify({"status": "ok", "job_id": job_id, "path": str(path),
+                     "recording_id": recording_id, "pgroup": pgroup,
+                     "run_number": run_number, "upload": upload, **result}),
+            202,
+        )
 
     @app.post("/admin/reinit")
     def admin_reinit():

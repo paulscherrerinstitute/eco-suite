@@ -273,16 +273,35 @@ class HealthClient(FakeStatusClient):
     base_url = "http://fake:8091"
 
     def __init__(self, health=None, capture_fail=None, aliases_fail=None,
-                 push_fail=None):
+                 push_fail=None, start_recording_fail=None,
+                 capture_recording_fail=None):
         super().__init__()
         self._health_body = health if health is not None else _health()
         self.captures = []
         self.alias_captures = []
         self.pushes = []
+        self.recording_starts = []
+        self.recording_captures = []
         self.reinits = 0
         self._capture_fail = capture_fail
         self._aliases_fail = aliases_fail
         self._push_fail = push_fail
+        self._start_recording_fail = start_recording_fail
+        self._capture_recording_fail = capture_recording_fail
+
+    def start_recording(self, **kwargs):
+        if self._start_recording_fail:
+            raise self._start_recording_fail
+        self.recording_starts.append(kwargs)
+        return {"n_channels_attached": 100, "n_channels_requested": 120}
+
+    def capture_recording(self, recording_id, pgroup, run_number, **kwargs):
+        if self._capture_recording_fail:
+            raise self._capture_recording_fail
+        call = {"recording_id": recording_id, "pgroup": pgroup,
+                "run_number": run_number, **kwargs}
+        self.recording_captures.append(call)
+        return {"job_id": "j3", "path": "/data/p1/run0042/aux/monitors.esc.h5"}
 
     def push_status(self, pgroup, run_number, values, key="status_run_start"):
         if self._push_fail:
@@ -475,6 +494,103 @@ def test_aliases_capture_failure_falls_back_to_the_local_namespace(monkeypatch):
         # environment; what matters is that it got that far.
         daq.copy_aliases_to_scan(scan)
     assert ns.alias.calls, "did not fall back to namespace.alias.get_all()"
+
+
+# --------------------------------------------------------------------------
+# start_scan_monitoring / end_scan_monitoring - NOT wired into
+# callbacks_start_scan/callbacks_end_scan (see Daq.__init__): these methods
+# exist to be called explicitly, or added to those lists deliberately later.
+# There is no local fallback - a local recording would need this session's
+# own namespace to hold a live monitor per channel for the scan's whole
+# duration, exactly the per-session cost the status server exists to avoid.
+
+
+def test_start_scan_monitoring_starts_a_recording_named_for_the_run():
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    result = daq.start_scan_monitoring(scan)
+
+    assert client.recording_starts == [
+        {"recording_id": "p12345_run0042", "names": None, "mode": "throttle",
+         "min_interval": 0.1}
+    ]
+    assert result["n_channels_attached"] == 100
+    assert (
+        scan.counter_scratch("daq")["monitoring_recording_id"]
+        == "p12345_run0042"
+    )
+
+
+def test_start_scan_monitoring_is_a_noop_without_a_status_server():
+    daq = _daq_fresh(None)
+    daq._status_server = None
+    daq._status_server_client = None
+    scan = FakeScan(runno=42)
+    assert daq.start_scan_monitoring(scan) is None
+
+
+def test_start_scan_monitoring_is_a_noop_when_the_server_is_not_used(capsys):
+    client = HealthClient(_health(ready=False))
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    assert daq.start_scan_monitoring(scan) is None
+    assert client.recording_starts == []
+    assert "monitoring_recording_id" not in scan.counter_scratch("daq")
+
+
+def test_start_scan_monitoring_failure_falls_back_to_doing_nothing(capsys):
+    client = HealthClient(start_recording_fail=ConnectionError("refused"))
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    assert daq.start_scan_monitoring(scan) is None
+    assert "WARNING" in capsys.readouterr().out
+    assert "monitoring_recording_id" not in scan.counter_scratch("daq")
+
+
+def test_end_scan_monitoring_is_a_noop_when_nothing_was_started():
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    assert daq.end_scan_monitoring(scan) is None
+    assert client.recording_captures == []
+
+
+def test_end_scan_monitoring_captures_the_recording_started_for_this_scan():
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    daq.start_scan_monitoring(scan)
+    job = daq.end_scan_monitoring(scan)
+
+    assert client.recording_captures == [
+        {"recording_id": "p12345_run0042", "pgroup": "p12345",
+         "run_number": 42, "upload": True}
+    ]
+    assert job["job_id"] == "j3"
+    assert (
+        scan.counter_scratch("daq")["status_jobs"]["recording"]["job_id"] == "j3"
+    )
+
+
+def test_end_scan_monitoring_failure_does_not_raise(capsys):
+    client = HealthClient(capture_recording_fail=ConnectionError("refused"))
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    daq.start_scan_monitoring(scan)
+    assert daq.end_scan_monitoring(scan) is None
+    assert "WARNING" in capsys.readouterr().out
+
+
+def test_start_and_end_scan_monitoring_are_not_wired_into_any_callback():
+    """The whole point of this round: methods that exist and work, but are
+    not yet part of a real scan - see Daq.__init__'s callbacks_start_scan/
+    callbacks_end_scan."""
+    import inspect
+
+    source = inspect.getsource(Daq.__init__)
+    assert "start_scan_monitoring" not in source
+    assert "end_scan_monitoring" not in source
 
 
 def test_scan_end_delegates_and_sets_the_scan_parameter():

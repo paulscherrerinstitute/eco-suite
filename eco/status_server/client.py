@@ -383,6 +383,26 @@ class StatusServerClient:
             timeout=timeout or self.snapshot_timeout, ok_codes=(200,),
         )
 
+    def capture_recording(self, recording_id, pgroup, run_number, upload=True,
+                          filename="monitors.esc.h5", drop=True, wait=False,
+                          timeout=600) -> dict:
+        """Stop a recording, write it and upload it to the run - in the
+        background, returning as soon as the job is accepted. The
+        recording-stop equivalent of :meth:`capture`/:meth:`capture_aliases`;
+        use this instead of :meth:`stop_recording` at a scan boundary, where
+        the write+upload time (real, scales with how much was recorded)
+        should not be on the scan's clock.
+
+        wait=True blocks until the job finishes, for a standalone call.
+        """
+        body = {"recording_id": recording_id, "pgroup": pgroup,
+                "run_number": int(run_number), "upload": upload,
+                "filename": filename, "drop": drop}
+        started = self._post("/recording/capture", body, ok_codes=(200, 202))
+        if not wait:
+            return started
+        return self.wait_write_job(started["job_id"], timeout=timeout)
+
     # -- admin -------------------------------------------------------------
 
     def reinit(self, mode="restart", names=None, reload_modules=False,
