@@ -268,6 +268,25 @@ class StatusServerClient:
             return started
         return self.wait_write_job(started["job_id"], timeout=timeout)
 
+    def push_status(self, pgroup, run_number, values: dict,
+                    key: str = "status_run_start") -> dict:
+        """Hand the server a small dict of values it could never poll
+        itself -- anything with no CA channel at all (e.g.
+        scans.acquiring_scan.*, built from DetectorMemory, whose alias has
+        channel=None -- see eco.aliases.aliases.Alias.get_all(), which only
+        ever returns an alias that has one). This session already resolved
+        the real object and has the value in hand.
+
+        Merged into the matching /status/capture job's status the next
+        time it is read with include_status=True (see
+        wait_write_job(include_status=True)) -- consumed once, and dropped
+        if nothing reads it in time (see the server-side
+        NamespaceMonitorStore.pop_pushed_status).
+        """
+        body = {"pgroup": pgroup, "run_number": int(run_number),
+                "key": key, "values": dict(values)}
+        return self._post("/status/push", body, ok_codes=(200,))
+
     def write_job(self, job_id: str, include_status=False) -> dict:
         suffix = "?include_status=1" if include_status else ""
         return self._get(f"/status/job/{job_id}{suffix}")["job"]

@@ -523,6 +523,38 @@ def create_namespace_app(
             202,
         )
 
+    @app.post("/status/push")
+    def status_push():
+        """Merge a small client-supplied dict into the *next* /status/job
+        read for this (pgroup, run_number, key) -- for values this store
+        can never poll itself. See NamespaceMonitorStore.push_status's
+        docstring for why (no CA channel at all -- e.g. scans.acquiring_scan.*
+        is DetectorMemory-backed). The pushing session already resolved the
+        real object and has its value in hand; this just hands it over
+        instead of the server trying, and permanently failing, to poll
+        something that was never pollable.
+
+        Consumed once by the next /status/job?include_status=1 read at the
+        same key, not held indefinitely -- see pop_pushed_status.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            pgroup = body["pgroup"]
+            run_number = int(body["run_number"])
+            values = body["values"]
+        except (KeyError, TypeError, ValueError):
+            return (
+                jsonify({"status": "error",
+                         "message": "'pgroup', 'run_number' and 'values' are required"}),
+                400,
+            )
+        if not isinstance(values, dict):
+            return jsonify({"status": "error", "message": "'values' must be an object"}), 400
+        key = body.get("key", "status_run_start")
+        store.push_status(pgroup, run_number, key, values)
+        return jsonify({"status": "ok", "pgroup": pgroup, "run_number": run_number,
+                        "key": key, "n_values": len(values)})
+
     @app.get("/status/job/<job_id>")
     def status_job(job_id):
         want_status = request.args.get("include_status") in ("1", "true", "yes")
@@ -539,6 +571,20 @@ def create_namespace_app(
                     job.pop("status", None)
             else:
                 body.pop("status", None)
+        # Merge in any values pushed for this same (pgroup, run_number, key)
+        # -- only meaningful once the job is done and only for job kinds
+        # that carry pgroup/run_number/key (aliases-capture jobs and
+        # write_async status/snapshot jobs do not; pop_pushed_status then
+        # just finds nothing and this is a no-op).
+        if want_status and body.get("state") != "running":
+            pgroup, run_number = body.get("pgroup"), body.get("run_number")
+            if pgroup is not None and run_number is not None:
+                pushed = store.pop_pushed_status(
+                    pgroup, run_number, body.get("key", "status_run_start")
+                )
+                if pushed:
+                    body["status"] = {**(body.get("status") or {}), **pushed}
+                    body["n_pushed"] = len(pushed)
         return jsonify({"status": "ok", "job": body})
 
     # -- recording ---------------------------------------------------------

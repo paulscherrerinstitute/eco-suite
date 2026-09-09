@@ -272,14 +272,25 @@ def _health(ready=True, age_s=0.0, **extra):
 class HealthClient(FakeStatusClient):
     base_url = "http://fake:8091"
 
-    def __init__(self, health=None, capture_fail=None, aliases_fail=None):
+    def __init__(self, health=None, capture_fail=None, aliases_fail=None,
+                 push_fail=None):
         super().__init__()
         self._health_body = health if health is not None else _health()
         self.captures = []
         self.alias_captures = []
+        self.pushes = []
         self.reinits = 0
         self._capture_fail = capture_fail
         self._aliases_fail = aliases_fail
+        self._push_fail = push_fail
+
+    def push_status(self, pgroup, run_number, values, key="status_run_start"):
+        if self._push_fail:
+            raise self._push_fail
+        call = {"pgroup": pgroup, "run_number": run_number, "values": values,
+                "key": key}
+        self.pushes.append(call)
+        return {"status": "ok", "n_values": len(values)}
 
     def health(self):
         return self._health_body
@@ -534,6 +545,7 @@ class RunTableScan(FakeScan):
         self.scan_command = get("ascan(...)")
         self.pulses_per_step = [10, 10]
         self.adjustables = [types.SimpleNamespace(name="dummy", Id="PV:DUMMY")]
+        self.initial_values = get({"dummy": 0.5})
 
 
 def _runtable_daq(client, run_table):
@@ -606,6 +618,76 @@ def test_runtable_append_is_inline_when_the_status_is_already_there():
     }
     daq._create_runtable_metadata_append_status_to_runtable(scan)
     assert rt.calls[0]["d"] == {"bernina.c": 3}   # no thread involved
+
+
+# --------------------------------------------------------------------------
+# scans.acquiring_scan.* is pushed to the server -- see
+# eco.status_server.namespace_store.NamespaceMonitorStore.push_status: the
+# server can never poll these itself (no CA channel), so the client hands
+# over the same values it already builds `metadata` from.
+
+
+def test_push_acquiring_scan_status_sends_the_real_scan_values():
+    rt = RunTableSpy()
+    client = HealthClient()
+    client.wait_write_job = lambda job_id, timeout=None, include_status=False: {
+        "state": "done", "status": {}
+    }
+    daq = _runtable_daq(client, rt)
+    scan = RunTableScan(runno=7)
+
+    daq.append_start_status_to_scan(scan=scan)
+    daq._create_runtable_metadata_append_status_to_runtable(scan)
+
+    assert len(client.pushes) == 1
+    push = client.pushes[0]
+    assert push["pgroup"] == daq.pgroup
+    assert push["run_number"] == 7
+    assert push["key"] == "status_run_start"
+    values = push["values"]
+    assert values["scans.acquiring_scan.description"] == "a scan"
+    assert values["scans.acquiring_scan.scan_command"] == "ascan(...)"
+    assert values["scans.acquiring_scan.adjustables_names"] == ["dummy"]
+    assert values["scans.acquiring_scan.initial_values"] == {"dummy": 0.5}
+    assert values["scans.acquiring_scan.number_of_steps"] == 2
+    assert "scans.acquiring_scan.start_time" in values
+
+
+def test_push_is_skipped_when_status_is_already_inline():
+    """No server job means nothing will ever read a pushed value back, so
+    there is nothing to push."""
+    rt = RunTableSpy()
+    client = HealthClient()
+    daq = _runtable_daq(client, rt)
+    daq.status_server_async = False
+    scan = RunTableScan(runno=9)
+    scan.counter_scratch("daq")["namespace_status"] = {
+        "status_run_start": {"status": {"bernina.c": 3}}
+    }
+    daq._create_runtable_metadata_append_status_to_runtable(scan)
+    assert client.pushes == []
+
+
+def test_push_failure_does_not_break_the_runtable_append(capsys):
+    """A failed push must not cost the run its run-table row -- the row
+    still gets everything under metadata.* regardless."""
+    rt = RunTableSpy()
+    client = HealthClient(push_fail=ConnectionError("server went away"))
+    client.wait_write_job = lambda job_id, timeout=None, include_status=False: {
+        "state": "done", "status": {}
+    }
+    daq = _runtable_daq(client, rt)
+    scan = RunTableScan(runno=13)
+
+    daq.append_start_status_to_scan(scan=scan)
+    daq._create_runtable_metadata_append_status_to_runtable(scan)
+
+    deadline = time.time() + 5
+    while time.time() < deadline and not rt.calls:
+        time.sleep(0.02)
+    assert rt.calls, "run table row was never appended"
+    assert rt.calls[0]["runno"] == 13
+    assert "could not push scans.acquiring_scan status" in capsys.readouterr().out
 
 
 def test_only_the_start_block_keeps_its_values_on_the_server():

@@ -169,6 +169,10 @@ class NamespaceMonitorStore:
         self._worker = None
         self._recordings = {}
         self._recordings_lock = threading.RLock()
+        # (pgroup, run_number, key) -> {"values": {...}, "pushed_at": t} --
+        # see push_status()'s docstring for what this is and why snapshot()
+        # itself can never produce these values.
+        self._pushed = {}
 
         if start:
             self.start()
@@ -537,6 +541,51 @@ class NamespaceMonitorStore:
             "generation": self.generation,
             "mode": "monitors",
         }
+
+    # -- client-pushed values -----------------------------------------------
+    #
+    # Some values have no CA channel at all -- e.g. scans.acquiring_scan.*,
+    # built from DetectorMemory (eco.elements.detector), whose Alias is
+    # constructed with channel=None. snapshot()'s monitored path only ever
+    # tracks what the channel registry knows about, and the channel registry
+    # itself is built from Alias.get_all(), which only returns an alias
+    # `if self.channel:` (eco/aliases/aliases.py) -- so this store can never
+    # see such values by polling, no matter how it is configured. The client
+    # session that actually resolved and used the object already has the
+    # real value; push_status() lets it hand that over instead.
+
+    def push_status(self, pgroup, run_number, key, values):
+        """Record `values` to be merged into the next matching
+        /status/job read (see namespace_server.status_job), replacing any
+        not-yet-collected push for the same (pgroup, run_number, key) --
+        the caller always sends its full current view, not a delta."""
+        if not isinstance(values, dict):
+            raise TypeError(f"values must be a dict, got {type(values).__name__}")
+        with self._lock:
+            self._pushed[(str(pgroup), int(run_number), str(key))] = {
+                "values": dict(values),
+                "pushed_at": time.time(),
+            }
+
+    def pop_pushed_status(self, pgroup, run_number, key, max_age=300.0):
+        """Consume and return the values pushed for this (pgroup,
+        run_number, key), or {} if nothing was pushed or the push is older
+        than max_age. The age cap matters because a push is not guaranteed
+        to ever be collected (an aborted scan, a client that crashed right
+        after pushing) -- without it, a stale push would sit here and
+        silently attach itself to a later, unrelated job read at the same
+        key once someone eventually asks."""
+        try:
+            k = (str(pgroup), int(run_number), str(key))
+        except (TypeError, ValueError):
+            return {}
+        with self._lock:
+            entry = self._pushed.pop(k, None)
+        if entry is None:
+            return {}
+        if time.time() - entry["pushed_at"] > max_age:
+            return {}
+        return entry["values"]
 
     def connection_report(self):
         ns = self.namespace

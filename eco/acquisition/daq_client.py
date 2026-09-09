@@ -1,6 +1,7 @@
 import json
 import pickle
 import shutil
+from datetime import datetime
 from itertools import count
 from threading import Thread, Lock, Event, Timer
 import time
@@ -1688,6 +1689,46 @@ class Daq(Assembly):
                 run_number=runno,
             )
 
+    def _push_acquiring_scan_status(self, scan, metadata, runno):
+        """Hand the status server the scans.acquiring_scan.* values it can
+        never poll on its own.
+
+        Nothing under `scans` has a CA channel -- it is built from
+        DetectorMemory (eco.elements.detector), whose Alias is constructed
+        with channel=None -- and the server's own snapshot walk is driven
+        entirely by Alias.get_all(), which only ever returns an alias that
+        has one (eco.aliases.aliases.Alias.get_all). So the server is
+        structurally blind to these values no matter how long it runs or
+        how it is configured; this session already resolved the real scan
+        object a moment ago to build `metadata`, so it hands the same
+        values over instead, keyed to match the run table's "Custom table"
+        header convention (see eco.utilities.runtable_stripped).
+
+        Best-effort: a failed push must not break the run table append,
+        which still gets everything under metadata.* regardless.
+        """
+        try:
+            values = {
+                "scans.acquiring_scan.start_time": datetime.now(),
+                "scans.acquiring_scan.description": metadata.get("name"),
+                "scans.acquiring_scan.scan_command": metadata.get("scan_command"),
+                "scans.acquiring_scan.adjustables_names": [
+                    adj.name for adj in scan.adjustables if hasattr(adj, "name")
+                ],
+                "scans.acquiring_scan.initial_values": (
+                    scan.initial_values.get_current_value()
+                ),
+                "scans.acquiring_scan.number_of_steps": metadata.get("steps"),
+            }
+            self.status_client.push_status(
+                self.pgroup, runno, values, key="status_run_start"
+            )
+        except Exception:
+            print(
+                f"WARNING: could not push scans.acquiring_scan status for run {runno}"
+            )
+            traceback.print_exc()
+
     def _create_runtable_metadata_append_status_to_runtable(
         self, scan, append_status_info=True, **kwargs
     ):
@@ -1746,6 +1787,9 @@ class Daq(Assembly):
         # caller should still pass the right one.)
         values = block.get("status") or {}
         job = (cs.get("status_jobs") or {}).get("status_run_start")
+
+        if job is not None and self.status_client is not None:
+            self._push_acquiring_scan_status(scan, metadata, runno)
 
         if values or job is None:
             self._append_run_to_runtable(runno, metadata, values)

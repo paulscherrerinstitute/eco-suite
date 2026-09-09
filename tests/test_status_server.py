@@ -627,6 +627,30 @@ def test_client_snapshot_save_and_async_job(live_server, tmp_path):
     assert (tmp_path / "p1" / "run0004" / "aux" / "status.json").exists()
 
 
+def test_client_push_status_merges_into_a_real_capture_job(live_server, tmp_path):
+    from eco.status_server.client import StatusServerClient
+
+    url, store, app, _ = live_server
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    client = StatusServerClient(url)
+    client.wait_ready(timeout=30, poll=0.05)
+
+    started = client.capture(pgroup="p1", run_number=5, upload=False,
+                             keep_status=True)
+    client.wait_write_job(started["job_id"], timeout=10)
+
+    resp = client.push_status(
+        "p1", 5, {"scans.acquiring_scan.description": "a scan"}
+    )
+    assert resp["status"] == "ok"
+
+    job = client.wait_write_job(started["job_id"], timeout=10, include_status=True)
+    assert job["status"]["scans.acquiring_scan.description"] == "a scan"
+    assert job["status"]["fake.n0"] == "N0"
+
+
 def test_snapshot_endpoint_serializes_numpy_values(fake_module):
     """A waveform PV or an image stat returns a numpy array; Flask's default
     JSON provider raises TypeError on those, which turned one odd value into
@@ -1241,6 +1265,185 @@ def test_capture_is_refused_while_not_ready(fake_module):
     )
     assert resp.status_code == 503
     assert store.wait_ready(timeout=20)
+
+
+# --------------------------------------------------------------------------
+# /status/push: values the store can never poll itself, merged into the next
+# /status/job read for the matching (pgroup, run_number, key)
+
+
+def test_status_push_requires_pgroup_run_number_and_values(app_and_store):
+    app, _, _ = app_and_store
+    client = app.test_client()
+    assert client.post("/status/push", json={}).status_code == 400
+    assert client.post(
+        "/status/push", json={"pgroup": "p1", "run_number": 1}
+    ).status_code == 400
+
+
+def test_status_push_rejects_non_dict_values(app_and_store):
+    app, _, _ = app_and_store
+    resp = app.test_client().post(
+        "/status/push",
+        json={"pgroup": "p1", "run_number": 1, "values": ["not", "a", "dict"]},
+    )
+    assert resp.status_code == 400
+
+
+def test_status_push_records_on_the_store(app_and_store):
+    app, store, _ = app_and_store
+    resp = app.test_client().post(
+        "/status/push",
+        json={"pgroup": "p1", "run_number": 5, "values": {"scans.acquiring_scan.a": 1}},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body == {"status": "ok", "pgroup": "p1", "run_number": 5,
+                    "key": "status_run_start", "n_values": 1}
+    assert store.pop_pushed_status("p1", 5, "status_run_start") == {
+        "scans.acquiring_scan.a": 1
+    }
+
+
+def test_status_push_merges_into_the_next_capture_job_read(app_and_store, tmp_path):
+    """This is the real flow: capture (server-pollable values) runs first,
+    the client pushes what it alone knows a moment later, and the *next*
+    read with include_status=1 sees both merged into one status dict."""
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    client = app.test_client()
+    job_id = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 6, "upload": False, "keep_status": True},
+    ).get_json()["job_id"]
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+
+    client.post(
+        "/status/push",
+        json={"pgroup": "p1", "run_number": 6,
+              "values": {"scans.acquiring_scan.description": "a scan"}},
+    )
+
+    body = client.get(f"/status/job/{job_id}?include_status=1").get_json()["job"]
+    assert body["status"]["fake.a"] == "A"  # the server's own polled value
+    assert body["status"]["scans.acquiring_scan.description"] == "a scan"
+    assert body["n_pushed"] == 1
+
+    # handed over once, same as the job's own status
+    body_again = client.get(f"/status/job/{job_id}?include_status=1").get_json()["job"]
+    assert "status" not in body_again
+
+
+def test_status_push_arriving_after_the_capture_write_still_lands(
+    app_and_store, tmp_path
+):
+    """The push does not have to race the server's own (potentially
+    multi-second) snapshot - only the client's later job read."""
+    app, _, _ = app_and_store
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    client = app.test_client()
+    job_id = client.post(
+        "/status/capture",
+        json={"pgroup": "p1", "run_number": 8, "upload": False, "keep_status": True},
+    ).get_json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        job = client.get(f"/status/job/{job_id}").get_json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.02)
+
+    # a push for an unrelated run must not show up here
+    client.post(
+        "/status/push",
+        json={"pgroup": "p1", "run_number": 999, "values": {"x": 1}},
+    )
+    body = client.get(f"/status/job/{job_id}?include_status=1").get_json()["job"]
+    assert "x" not in body["status"]
+    assert "n_pushed" not in body
+
+
+# --------------------------------------------------------------------------
+# NamespaceMonitorStore.push_status/pop_pushed_status directly: things with
+# no CA channel (e.g. scans.acquiring_scan.*) that snapshot() can never see
+# on its own -- see push_status's docstring. (Deliberately placed late in
+# this file, not next to the other store-lifecycle tests up top: those run
+# store._build_worker() on a background thread and are sensitive to overall
+# process load, and extra tests immediately ahead of them was enough to
+# perturb timing in test_target_names_from_required_without_writing_required_names.)
+
+
+def test_push_status_and_pop_pushed_status_round_trip(fake_module):
+    name, _ = fake_module()
+    store = _store(name)
+    assert store.wait_ready(timeout=10)
+    store.push_status("p1", 3, "status_run_start", {"a.b": 1})
+    assert store.pop_pushed_status("p1", 3, "status_run_start") == {"a.b": 1}
+
+
+def test_pop_pushed_status_consumes_the_value(fake_module):
+    """Handed over once, same as a job's own status - not re-readable."""
+    name, _ = fake_module()
+    store = _store(name)
+    store.push_status("p1", 3, "status_run_start", {"a.b": 1})
+    assert store.pop_pushed_status("p1", 3, "status_run_start") == {"a.b": 1}
+    assert store.pop_pushed_status("p1", 3, "status_run_start") == {}
+
+
+def test_pop_pushed_status_ignores_run_number_type(fake_module):
+    """The client sends run_number as an int; a job dict may carry it as
+    whatever JSON gave it back - both must resolve to the same key."""
+    name, _ = fake_module()
+    store = _store(name)
+    store.push_status("p1", 3, "status_run_start", {"a.b": 1})
+    assert store.pop_pushed_status("p1", "3", "status_run_start") == {"a.b": 1}
+
+
+def test_pop_pushed_status_is_scoped_by_pgroup_run_number_and_key(fake_module):
+    name, _ = fake_module()
+    store = _store(name)
+    store.push_status("p1", 3, "status_run_start", {"a.b": 1})
+    assert store.pop_pushed_status("p2", 3, "status_run_start") == {}
+    assert store.pop_pushed_status("p1", 4, "status_run_start") == {}
+    assert store.pop_pushed_status("p1", 3, "status_run_end") == {}
+    assert store.pop_pushed_status("p1", 3, "status_run_start") == {"a.b": 1}
+
+
+def test_push_status_replaces_not_merges(fake_module):
+    """The caller always sends its full current view, not a delta."""
+    name, _ = fake_module()
+    store = _store(name)
+    store.push_status("p1", 3, "status_run_start", {"a.b": 1, "a.c": 2})
+    store.push_status("p1", 3, "status_run_start", {"a.b": 9})
+    assert store.pop_pushed_status("p1", 3, "status_run_start") == {"a.b": 9}
+
+
+def test_pop_pushed_status_drops_a_push_older_than_max_age(fake_module, monkeypatch):
+    name, _ = fake_module()
+    store = _store(name)
+    t = [1000.0]
+    monkeypatch.setattr(ns_store.time, "time", lambda: t[0])
+    store.push_status("p1", 3, "status_run_start", {"a.b": 1})
+    t[0] += 400
+    assert store.pop_pushed_status("p1", 3, "status_run_start", max_age=300) == {}
+
+
+def test_push_status_rejects_non_dict_values(fake_module):
+    name, _ = fake_module()
+    store = _store(name)
+    with pytest.raises(TypeError):
+        store.push_status("p1", 3, "status_run_start", ["not", "a", "dict"])
 
 
 # --------------------------------------------------------------------------
