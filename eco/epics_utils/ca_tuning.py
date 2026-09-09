@@ -205,6 +205,82 @@ def has_ever_succeeded(pvname):
     return pvname in _last_ok
 
 
+# Attribute names under which a PV-backed object keeps its pyepics `PV`
+# objects, across every class this applies to (AdjustablePv/AdjustablePiHex/
+# AdjustablePvEnum in epics_utils/adjustable.py, DetectorPvData and friends in
+# epics_utils/detector.py, ...). Deliberately duplicated rather than imported
+# from `epics_utils.adjustable._AUX_PV_ATTRS`/`_iter_auxiliary_pvs`: this
+# module is intentionally dependency-free (see the module docstring) and is
+# imported *by* adjustable.py/detector.py, so importing back would be
+# circular. Both underscore spellings are accepted for the same reason
+# `_wait_for_pvs` accepts both (see adjustable.py) - some classes/older
+# checkouts use one, some the other.
+_PV_ATTRS = (
+    "_pv",
+    "_pvreadback",
+    "_pv_readback",
+    "_pvlowlim",
+    "_pv_lowlim",
+    "_pvhighlim",
+    "_pv_highlim",
+)
+
+
+def iter_object_pvs(obj):
+    """Yield each distinct pyepics `PV` held by `obj` under the conventional
+    attribute names above. Duplicates are yielded once (e.g. `_pvreadback`
+    pointing at the same PV as `_pv` when no separate readback name was
+    given)."""
+    seen = set()
+    for attr in _PV_ATTRS:
+        pv = getattr(obj, attr, None)
+        if pv is not None and id(pv) not in seen:
+            seen.add(id(pv))
+            yield pv
+
+
+def pv_is_dead(pv):
+    """Whether `pv` looks like it has never actually talked to anything:
+    disconnected right now, and has never returned a value in this session.
+
+    Deliberately excludes a channel that worked before and is only
+    momentarily unreachable (`has_ever_succeeded`) - that is a transient,
+    already handled by `_read_pv`'s retry, not the "this device is not
+    actually there" case this is for.
+    """
+    if pv is None:
+        return False
+    try:
+        return (not pv.connected) and not has_ever_succeeded(
+            getattr(pv, "pvname", None)
+        )
+    except Exception:
+        return False
+
+
+def component_pv_health(obj):
+    """(has_pvs, all_dead) for `obj`: whether it holds any PVs at all under
+    the conventional attribute names (see `iter_object_pvs`), and whether
+    every one of them is dead (see `pv_is_dead`). `(False, False)` for an
+    object with no such PVs - nothing to check, not every Detector/Adjustable
+    is PV-backed.
+
+    Why this exists: `AdjustablePv`'s connection wait (`_wait_for_pvs` in
+    epics_utils/adjustable.py) deliberately never raises on a channel that
+    never connects - "a readiness check ... must not fail the containing
+    assembly". That is the right call for `Assembly._append`'s optional-
+    component machinery (`_failed_appends`), but it also means a component
+    whose IOC is entirely down constructs exactly like a healthy one: no
+    exception anywhere, not a `FailedComponent`, nothing in `_failed_appends`.
+    This is the check that catches that case instead - see
+    `Assembly.get_disconnected_components`.
+    """
+    pvs = list(iter_object_pvs(obj))
+    if not pvs:
+        return False, False
+    return True, all(pv_is_dead(pv) for pv in pvs)
+
+
 def _ca_channel_state(pvname=None, limit=20000):
     """(disconnected, total, detail) from pyepics' channel-access cache.
 

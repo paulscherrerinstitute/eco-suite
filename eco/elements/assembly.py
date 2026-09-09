@@ -721,7 +721,19 @@ class Assembly:
             description = ""
 
         if value is None:
+            # a bare None is indistinguishable from a legitimately-None
+            # detector value -- check whether it is actually a dead channel
+            # (see ca_tuning.component_pv_health) and say so if it is, rather
+            # than rendering a blank cell that looks like everything is fine.
             value = ""
+            try:
+                from eco.epics_utils import ca_tuning
+
+                has_pvs, all_dead = ca_tuning.component_pv_health(to)
+                if has_pvs and all_dead:
+                    value = "\x1b[33m\x1b[1m⚠ never connected\x1b[0m"
+            except Exception:
+                pass
         return value, unit, description, typechar
 
     def get_display_str(
@@ -990,6 +1002,73 @@ class Assembly:
                     out[f"{base}.{n}"] = exc
         return out
 
+    def get_disconnected_components(self):
+        """Return {dotted_name: [pvnames]} for every PV-backed component in
+        this assembly (recursively) that constructed without error but has
+        never actually connected to any of its channels - see
+        `eco.epics_utils.ca_tuning.component_pv_health`.
+
+        Distinct from `get_failed_components()`: a `_failed_appends` entry
+        means construction itself raised. A component reported here looks
+        completely normal - present, right type, no exception anywhere in
+        `_failed_appends` - but is silently not talking to any hardware, e.g.
+        an IOC that is down at the address the device was built with.
+        `AdjustablePv`'s connection wait deliberately never raises on that
+        (see `component_pv_health`'s docstring), so without this check it is
+        invisible short of reading a value and noticing it is `None`.
+
+        A sub-assembly all of whose PV-backed leaves are dead is reported
+        once, by its own name, rather than as a wall of individual leaf
+        rows (e.g. a whole broken hexapod controller comes back as one
+        entry `"hex"`, not nine `"hex.x_raw"`/`"hex.y_raw"`/... rows). A
+        sub-assembly with only *some* dead leaves is left expanded, since
+        that is a more specific and more interesting signal (e.g. one
+        channel out of nine actually down) than "everything under here is
+        unreachable".
+        """
+        from eco.epics_utils import ca_tuning
+
+        # top-level child name -> ([dead leaf names], [all PV-backed leaf
+        # names checked under it]) -- lets a subtree that is *entirely* dead
+        # collapse to one row instead of one per leaf.
+        per_child = {}
+        pvnames_by_leaf = {}
+        for item in self.status_collection.get_list():
+            if item is self:
+                continue
+            has_pvs, all_dead = ca_tuning.component_pv_health(item)
+            if not has_pvs:
+                continue
+            try:
+                name = item.alias.get_full_name(base=self)
+            except Exception:
+                name = getattr(item, "name", None) or repr(item)
+            top = name.split(".", 1)[0]
+            dead_names, total_names = per_child.setdefault(top, ([], []))
+            if name in total_names:
+                continue
+            total_names.append(name)
+            if all_dead:
+                dead_names.append(name)
+                pvnames_by_leaf[name] = [
+                    getattr(pv, "pvname", None)
+                    for pv in ca_tuning.iter_object_pvs(item)
+                ]
+
+        out = {}
+        for top, (dead_names, total_names) in per_child.items():
+            if not dead_names:
+                continue
+            if len(dead_names) == len(total_names):
+                pvnames = sorted(
+                    {pv for n in dead_names for pv in pvnames_by_leaf[n] if pv}
+                )
+                out[top] = pvnames
+            else:
+                for n in dead_names:
+                    out[n] = pvnames_by_leaf[n]
+        return out
+
     def _display_text(self, tree=None):
         """The plain (non-live) text `__repr__`/`live_status()` both show:
         an INITIALIZATION INCOMPLETE banner (if any component failed) plus
@@ -999,14 +1078,25 @@ class Assembly:
         fullname = self.alias.get_full_name()
         label = fullname + " display\n"
         banner = ""
+        reset = colorama.Style.RESET_ALL
         failed = self.get_failed_components()
         if failed:
             red = colorama.Fore.RED + colorama.Style.BRIGHT
-            reset = colorama.Style.RESET_ALL
             names = ", ".join(failed)
-            banner = (
+            banner += (
                 f"{red}⚠️  {fullname}: INITIALIZATION INCOMPLETE — "
                 f"failed component(s): {names}{reset}\n"
+            )
+        # distinct from the red banner above: these components did not raise
+        # anywhere (nothing in _failed_appends), they just never connected to
+        # any hardware -- see get_disconnected_components().
+        disconnected = self.get_disconnected_components()
+        if disconnected:
+            yellow = colorama.Fore.YELLOW + colorama.Style.BRIGHT
+            names = ", ".join(disconnected)
+            banner += (
+                f"{yellow}⚠️  {fullname}: NEVER CONNECTED — component(s) "
+                f"initialized but not talking to any PV: {names}{reset}\n"
             )
         return banner + label + self.get_display_str(tree=tree)
 
