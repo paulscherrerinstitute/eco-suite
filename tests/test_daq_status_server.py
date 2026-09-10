@@ -526,6 +526,19 @@ def test_start_scan_monitoring_starts_a_recording_named_for_the_run():
     )
 
 
+def test_start_scan_monitoring_warns_about_failed_required_channels(capsys):
+    client = HealthClient()
+    client.start_recording = lambda **kw: {
+        "n_channels_attached": 100, "n_channels_requested": 120,
+        "failed_required": ["daq.something"],
+    }
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    daq.start_scan_monitoring(scan)
+    out = capsys.readouterr().out
+    assert "REQUIRED" in out and "daq.something" in out
+
+
 def test_start_scan_monitoring_is_a_noop_without_a_status_server():
     daq = _daq_fresh(None)
     daq._status_server = None

@@ -9,54 +9,81 @@ Daq turns into its own ``StatusServerClient`` internally, see
 poked at directly from a session - ``bernina.status_server.gui()``,
 ``.status()``, ``.restart()`` - and to hold the settings a human actually
 wants to see and change (recording mode, throttle interval, max element
-size, ...) as real ``AdjustableMemory`` children, the way any other
-device's configuration shows up in ``.settings()``, instead of as
-hardcoded literals buried in ``bernina_daq.py`` or ``Daq``'s own kwargs.
+size, ...) as real ``AdjustableFS`` children, the way any other device's
+filesystem-backed configuration shows up in ``.settings()``, instead of
+as hardcoded literals buried in ``bernina_daq.py`` or ``Daq``'s own
+kwargs.
 
-Currently a read/inspect surface for the settings - nothing in ``Daq``
-consults these yet (``start_scan_monitoring`` still uses its own
-mode="throttle"/min_interval=0.1 defaults). Wiring them through so
-changing a setting here actually changes what the next scan does is a
-natural next step, not yet done.
+AdjustableFS, not AdjustableMemory, deliberately: a setting changed in one
+session must be visible to *any other process* that can read the same
+shared filesystem - another session, or the status server process itself
+- with no REST call or other new communication of its own, the same way
+``channels_JF``/``config_JFs`` already work in ``bernina_daq.py``. Each
+setting is its own small JSON file under ``config_dir`` (default: the
+shared ``eco_cnf_bernina/configuration`` tree), read with AdjustableFS's
+own short TTL cache (``ADJUSTABLEFS_MAX_READ_PERIOD``, 0.2 s) rather than
+once at import time.
+
+Currently a read/inspect surface for the settings - nothing (not Daq, not
+the server) consults these yet (``start_scan_monitoring`` still uses its
+own mode="throttle"/min_interval=0.1 defaults). Being filesystem-based is
+what would let the server read them directly, without inventing a new
+settings-push endpoint - actually doing that is a natural next step, not
+yet done.
 """
 
 from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
-from eco.elements.adjustable import AdjustableMemory
+from eco.elements.adjustable import AdjustableFS
 from eco.elements.assembly import Assembly
 
 from .client import StatusServerClient, warn_failed_required
 
+# The same shared tree bernina_daq.py's channels_JF/config_JFs/etc already
+# use - see eco.utilities.datafiles for why this needs to be a group-
+# writable tree (AdjustableFS handles that itself, same as those).
+_DEFAULT_CONFIG_DIR = "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration"
+
 
 class StatusServer(Assembly):
-    def __init__(self, base_url: str, name=None):
+    def __init__(self, base_url: str, name=None, config_dir=None):
         super().__init__(name=name)
         self.base_url = base_url
         self._client = StatusServerClient(base_url)
         self._gui_proc = None
 
-        # -- settings: what a server-backed scan should do. Real
-        # AdjustableMemory children so they show up in .settings()/status()
-        # like any other device's configuration - not yet read by Daq, see
-        # the module docstring.
-        self._append(AdjustableMemory, "throttle", name="recording_mode",
-                    is_setting=True)
-        self._append(AdjustableMemory, 0.1, name="recording_min_interval",
-                    is_setting=True)
-        self._append(AdjustableMemory, 0.1, name="recording_sample_interval",
-                    is_setting=True)
+        cfg = Path(config_dir) if config_dir is not None else Path(_DEFAULT_CONFIG_DIR)
+        self._append(
+            AdjustableFS, str(cfg / "status_server_recording_mode.json"),
+            default_value="throttle", name="recording_mode", is_setting=True,
+        )
+        self._append(
+            AdjustableFS, str(cfg / "status_server_recording_min_interval.json"),
+            default_value=0.1, name="recording_min_interval", is_setting=True,
+        )
+        self._append(
+            AdjustableFS, str(cfg / "status_server_recording_sample_interval.json"),
+            default_value=0.1, name="recording_sample_interval", is_setting=True,
+        )
         # "maximum_element_size": the largest value (by element count) a
         # recording will store - None keeps everything, including
         # waveforms. See RecordingSession/write_monitor_recording's own
         # docs for why this is usually the one knob that matters most for
         # file size.
-        self._append(AdjustableMemory, None, name="recording_max_value_elements",
-                    is_setting=True)
-        self._append(AdjustableMemory, 100_000,
-                    name="recording_max_points_per_channel", is_setting=True)
+        self._append(
+            AdjustableFS, str(cfg / "status_server_recording_max_value_elements.json"),
+            default_value=None, name="recording_max_value_elements", is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            str(cfg / "status_server_recording_max_points_per_channel.json"),
+            default_value=100_000, name="recording_max_points_per_channel",
+            is_setting=True,
+        )
 
     # -- control --------------------------------------------------------
 

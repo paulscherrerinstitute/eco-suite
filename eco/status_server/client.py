@@ -86,6 +86,37 @@ def warn_failed_required(health):
     return failed
 
 
+def warn_recording_failed_required(result):
+    """Shout, in red, about required-component channels a recording could
+    not attach to.
+
+    Same "everyone else failing is expected, this failing is not"
+    distinction as warn_failed_required, but for a running recording's own
+    attach failures - not to be confused with that one: a channel can fail
+    to attach here (demoted, disconnected, no underlying PV) even though
+    its component initialized perfectly fine, so this deliberately does not
+    suggest client.reinit() the way warn_failed_required does - rebuilding
+    the namespace would not fix a channel that simply never connects.
+
+    Returns the list it warned about (empty if there was nothing to say).
+    """
+    failed = list((result or {}).get("failed_required") or [])
+    if not failed:
+        return []
+    red, reset = colorama.Fore.RED + colorama.Style.BRIGHT, colorama.Style.RESET_ALL
+    print(
+        f"{red}!!! monitoring: {len(failed)} REQUIRED component channel(s) "
+        f"could not be attached: {', '.join(failed)}{reset}",
+        flush=True,
+    )
+    print(
+        f"{red}    This run's namespace_monitor.h5 will be missing them - see "
+        f"client.recording(recording_id).{reset}",
+        flush=True,
+    )
+    return failed
+
+
 class StatusServerError(RuntimeError):
     pass
 
@@ -415,8 +446,23 @@ class StatusServerClient:
         }
         return self._post("/recording/start", body, ok_codes=(200, 202))
 
-    def recording(self, recording_id, channels=False) -> dict:
-        suffix = "?channels=1" if channels else ""
+    def recording(self, recording_id, channels=False, size=False,
+                  size_top_n=None) -> dict:
+        """size=True adds "size_per_channel": a projected-bandwidth
+        estimate per channel (rate * value size - "frequency * data shape
+        * bitdepth"), sorted biggest first, from this recording's own
+        buffers so far - works on a still-running recording, meant for
+        judging storage/bandwidth cost from a short trial before
+        committing to a long one. size_top_n caps how many channels come
+        back (the point is usually "what are the biggest contributors")."""
+        params = []
+        if channels:
+            params.append("channels=1")
+        if size:
+            params.append("size=1")
+        if size_top_n:
+            params.append(f"size_top_n={int(size_top_n)}")
+        suffix = "?" + "&".join(params) if params else ""
         return self._get(f"/recording/{recording_id}{suffix}")
 
     def recordings(self) -> list:

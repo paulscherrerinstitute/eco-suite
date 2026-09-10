@@ -969,6 +969,16 @@ class MonitorableDetector(FakeDetector):
         return FakeMonitor(func, pv=self._fake_pv)
 
 
+class AttachFailingDetector(FakeDetector):
+    """Monitorable (has the method, so isinstance(ts, MonitorableValueUpdate)
+    is True and it lands in _monitorable) but attaching always fails - a
+    demoted/disconnected-channel stand-in, distinct from not being
+    monitorable at all."""
+
+    def set_current_value_callback(self, func="accumulate", **kwargs):
+        return None
+
+
 @pytest.fixture
 def recording_store(fake_module):
     FakeMonitor.instances = []
@@ -985,12 +995,13 @@ def recording_store(fake_module):
     return store
 
 
-def _recording_store_with(fake_module, detectors):
+def _recording_store_with(fake_module, detectors, **fake_module_kwargs):
     """Like `recording_store`, but with caller-chosen detectors - for tests
     that need specific FakePV configurations (auto_monitor/connected) per
-    channel."""
+    channel, or a specific required_names() (fake_module_kwargs, e.g.
+    required=(...))."""
     FakeMonitor.instances = []
-    name, mod = fake_module()
+    name, mod = fake_module(**fake_module_kwargs)
     mod.namespace.status_collection = FakeStatusCollection(detectors)
     store = _store(name)
     assert store.wait_ready(timeout=10)
@@ -1139,6 +1150,133 @@ def test_a_composed_virtual_channel_is_seeded_for_free(fake_module):
 
     stopped = store.stop_recording("r1")
     assert stopped["data"]["fake.composed"]["values"] == [3.0]
+
+
+# --------------------------------------------------------------------------
+# failed_required: the recording equivalent of /health's failed_required -
+# a channel that fails to attach and belongs to a required namespace
+# component is reported separately, same "expected vs not" distinction.
+
+
+def test_recording_reports_failed_required_channels(fake_module):
+    store = _recording_store_with(
+        fake_module,
+        [
+            AttachFailingDetector("required_comp.a", 1.0, channel="PV:A"),
+            AttachFailingDetector("optional_comp.b", 2.0, channel="PV:B"),
+            MonitorableDetector("required_comp.c", 3.0, channel="PV:C"),
+        ],
+        required=("required_comp",),
+    )
+    session = store.start_recording("r1")
+    rep = session.report()
+    assert rep["n_attach_failed"] == 2
+    assert rep["failed_required"] == ["required_comp.a"]
+    assert rep["n_failed_required"] == 1
+
+
+def test_recording_failed_required_is_empty_when_nothing_required_failed(
+    fake_module
+):
+    store = _recording_store_with(
+        fake_module,
+        [
+            AttachFailingDetector("optional_comp.b", 2.0, channel="PV:B"),
+            MonitorableDetector("required_comp.c", 3.0, channel="PV:C"),
+        ],
+        required=("required_comp",),
+    )
+    session = store.start_recording("r1")
+    rep = session.report()
+    assert rep["failed_required"] == []
+    assert rep["n_failed_required"] == 0
+
+
+# --------------------------------------------------------------------------
+# size_report: projected bandwidth per channel (frequency * shape *
+# bitdepth), to judge storage/bandwidth cost from a short trial recording
+
+
+def test_size_report_computes_rate_times_value_size(recording_store):
+    import numpy as np
+
+    recording_store.start_recording("r1", names=["fake.m1"])
+    mon = FakeMonitor.instances[0]
+    for _ in range(10):
+        mon.push(np.zeros(4, dtype=np.float64))  # 4 elements * 8 bytes = 32
+    session = recording_store._recordings["r1"]
+    session.started_at -= 2.0  # pretend 2s elapsed, for an exact rate
+
+    rep = session.size_report()
+    assert rep["fake.m1"]["n_points"] == 10
+    assert rep["fake.m1"]["rate_hz"] == pytest.approx(5.0, rel=0.01)
+    assert rep["fake.m1"]["n_elements"] == 4
+    assert rep["fake.m1"]["bytes_per_point"] == 32
+    assert rep["fake.m1"]["projected_bytes_per_s"] == pytest.approx(160.0, rel=0.01)
+
+
+def test_size_report_skips_channels_with_no_points_yet(recording_store):
+    recording_store.start_recording("r1")
+    session = recording_store._recordings["r1"]
+    assert session.size_report() == {}
+
+
+def test_size_report_sorts_biggest_contributor_first(recording_store):
+    import numpy as np
+
+    recording_store.start_recording("r1")
+    m1, m2 = FakeMonitor.instances
+    m1.push(np.zeros(1))     # small
+    m2.push(np.zeros(1000))  # big
+    session = recording_store._recordings["r1"]
+
+    rep = session.size_report()
+    assert list(rep.keys())[0] == "fake.m2"
+
+
+def test_size_report_top_n_truncates(recording_store):
+    import numpy as np
+
+    recording_store.start_recording("r1")
+    for mon in FakeMonitor.instances:
+        mon.push(np.zeros(1))
+    session = recording_store._recordings["r1"]
+
+    assert len(session.size_report(top_n=1)) == 1
+
+
+def test_recording_report_endpoint_includes_size_on_request(
+    recording_store, tmp_path
+):
+    import numpy as np
+
+    config = NamespaceServerConfig(module_name=recording_store.module_name)
+    app = create_namespace_app(config, store=recording_store)
+    client = app.test_client()
+
+    client.post("/recording/start", json={"recording_id": "r1"})
+    FakeMonitor.instances[0].push(np.zeros(4, dtype=np.float64))
+
+    plain = client.get("/recording/r1").get_json()
+    assert "size_per_channel" not in plain
+
+    sized = client.get("/recording/r1?size=1").get_json()
+    assert "fake.m1" in sized["size_per_channel"]
+    assert sized["size_per_channel"]["fake.m1"]["bytes_per_point"] == 32
+
+
+def test_client_recording_size_round_trips(live_server):
+    """live_server's FakeNamespace has no monitorable channels wired up for
+    recording, so this only checks the request shape/plumbing, not real
+    numbers - see the fake_module-based tests above for that."""
+    from eco.status_server.client import StatusServerClient
+
+    url, store, app, _ = live_server
+    client = StatusServerClient(url)
+    client.wait_ready(timeout=30, poll=0.05)
+    client.start_recording("r1")
+    body = client.recording("r1", size=True, size_top_n=5)
+    assert "size_per_channel" in body
 
 
 # --------------------------------------------------------------------------
@@ -2105,4 +2243,26 @@ def test_the_client_stays_quiet_when_nothing_required_failed(capsys):
 
     assert warn_failed_required({"failed_required": [], "failed_names": ["x"]}) == []
     assert warn_failed_required({}) == []
+    assert capsys.readouterr().out == ""
+
+
+def test_the_client_warns_in_red_about_recording_failed_required(capsys):
+    from eco.status_server.client import warn_recording_failed_required
+
+    warned = warn_recording_failed_required(
+        {"failed_required": ["daq.something"]}
+    )
+    out = capsys.readouterr().out
+    assert warned == ["daq.something"]
+    assert "REQUIRED" in out and "daq.something" in out
+    assert "\x1b[" in out, "should be colourised"
+    # deliberately does not suggest reinit() - see the function's docstring
+    assert "reinit" not in out
+
+
+def test_the_client_stays_quiet_when_no_recording_required_channel_failed(capsys):
+    from eco.status_server.client import warn_recording_failed_required
+
+    assert warn_recording_failed_required({"failed_required": []}) == []
+    assert warn_recording_failed_required({}) == []
     assert capsys.readouterr().out == ""

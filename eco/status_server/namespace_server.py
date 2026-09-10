@@ -664,11 +664,14 @@ def create_namespace_app(
 
     @app.get("/recording/<recording_id>")
     def recording_get(recording_id):
+        size_top_n = request.args.get("size_top_n", type=int)
         try:
             return jsonify(
                 store.recording_report(
                     recording_id,
                     with_channels=request.args.get("channels") in ("1", "true", "yes"),
+                    with_size=request.args.get("size") in ("1", "true", "yes"),
+                    size_top_n=size_top_n,
                 )
             )
         except KeyError as exc:

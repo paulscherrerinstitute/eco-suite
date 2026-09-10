@@ -2162,6 +2162,8 @@ class Daq(Assembly):
             )
         except Exception as exc:
             return self._status_server_failed("start monitoring", exc)
+        from eco.status_server.client import warn_recording_failed_required
+
         scan.counter_scratch(self.name)["monitoring_recording_id"] = recording_id
         print(
             f"monitoring: recording '{recording_id}' started on "
@@ -2169,6 +2171,7 @@ class Daq(Assembly):
             f"({result.get('n_channels_attached')}/"
             f"{result.get('n_channels_requested')} channels attached)"
         )
+        warn_recording_failed_required(result)
         return result
 
     def end_scan_monitoring(self, scan, pgroup=None, upload=True, **kwargs):

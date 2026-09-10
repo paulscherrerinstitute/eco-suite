@@ -1,11 +1,14 @@
 """eco.status_server.namespace_component.StatusServer: the namespace-level
 handle for a long-running status server (bernina.status_server, alongside
 daq/scans) - control, inspection, and the recording settings as real
-AdjustableMemory children.
+AdjustableFS children (filesystem-based, so another process reading the
+same shared config tree sees a changed setting with no REST call needed).
 
 The underlying StatusServerClient is monkeypatched out entirely - these
 tests are about StatusServer's own delegation/settings/gui-launch logic,
-not the HTTP client (already covered in test_status_server.py).
+not the HTTP client (already covered in test_status_server.py). The
+settings' config_dir is pointed at tmp_path, never the real shared
+eco_cnf_bernina tree.
 """
 
 import subprocess
@@ -16,7 +19,7 @@ from eco.status_server.namespace_component import StatusServer
 
 
 @pytest.fixture
-def server(monkeypatch):
+def server(monkeypatch, tmp_path):
     calls = {}
 
     class FakeClient:
@@ -50,14 +53,15 @@ def server(monkeypatch):
             calls["reinit"] = {"mode": mode, "wait": wait, **kwargs}
             return {"status": "ok"}
 
-    s = StatusServer("http://fake:8091", name="status_server")
+    s = StatusServer("http://fake:8091", name="status_server", config_dir=tmp_path)
     s._client = FakeClient("http://fake:8091")
     s._calls = calls
     return s
 
 
 # --------------------------------------------------------------------------
-# settings: real AdjustableMemory children, not yet consumed by Daq
+# settings: real AdjustableFS children (filesystem-based), not yet
+# consumed by Daq or the server
 
 
 def test_recording_settings_have_sensible_defaults(server):
@@ -69,10 +73,29 @@ def test_recording_settings_have_sensible_defaults(server):
 
 
 def test_recording_settings_are_settable(server):
-    server.recording_mode.set_target_value("all")
-    server.recording_max_value_elements.set_target_value(1024)
+    # set_target_value(hold=False, the default) starts the write on a
+    # background thread and returns immediately - wait() before asserting,
+    # same as any other Changer-backed Adjustable.
+    server.recording_mode.set_target_value("all").wait()
+    server.recording_max_value_elements.set_target_value(1024).wait()
     assert server.recording_mode.get_current_value() == "all"
     assert server.recording_max_value_elements.get_current_value() == 1024
+
+
+def test_a_setting_changed_in_one_process_is_visible_in_another(tmp_path):
+    """The actual point of AdjustableFS over AdjustableMemory: a second
+    StatusServer instance (standing in for a second session, or the server
+    process itself, reading the same shared config tree) sees a value
+    changed by the first with no communication between the two at all -
+    just the shared filesystem."""
+    a = StatusServer("http://fake:8091", name="a", config_dir=tmp_path)
+    b = StatusServer("http://fake:8091", name="b", config_dir=tmp_path)
+
+    a.recording_mode.set_target_value("sample").wait()
+    assert b.recording_mode.get_current_value() == "sample"
+
+    b.recording_max_value_elements.set_target_value(2048).wait()
+    assert a.recording_max_value_elements.get_current_value() == 2048
 
 
 # --------------------------------------------------------------------------

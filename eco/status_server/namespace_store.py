@@ -62,6 +62,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
+
 from eco.elements.adjustable import CallbackComposedValue
 from eco.elements.protocols import Detector, MonitorableValueUpdate
 
@@ -680,6 +682,12 @@ class NamespaceMonitorStore:
             detectors = [
                 (name, obj, self._channels.get(name)) for name, obj in selected
             ]
+            try:
+                required_component_names = set(self.namespace.required_names())
+            except Exception:
+                logger.debug("could not read required_names() for recording %s",
+                             recording_id, exc_info=True)
+                required_component_names = set()
             session = RecordingSession(
                 recording_id,
                 detectors,
@@ -691,6 +699,7 @@ class NamespaceMonitorStore:
                 subscription_mask=subscription_mask,
                 pgroup=pgroup,
                 run_number=run_number,
+                required_component_names=required_component_names,
             )
             session.start()
             self._recordings[recording_id] = session
@@ -744,11 +753,15 @@ class NamespaceMonitorStore:
             "data": data,
         }
 
-    def recording_report(self, recording_id, with_channels=False):
+    def recording_report(self, recording_id, with_channels=False, with_size=False,
+                         size_top_n=None):
         session = self._recordings.get(recording_id)
         if session is None:
             raise KeyError(f"no such recording '{recording_id}'")
-        return session.report(with_channels=with_channels)
+        rep = session.report(with_channels=with_channels)
+        if with_size:
+            rep["size_per_channel"] = session.size_report(top_n=size_top_n)
+        return rep
 
     def list_recordings(self):
         with self._recordings_lock:
@@ -988,6 +1001,7 @@ class RecordingSession:
         subscription_mask=True,
         pgroup=None,
         run_number=None,
+        required_component_names=None,
     ):
         if mode not in ("all", "throttle", "sample"):
             raise ValueError(f"unknown recording mode {mode!r}")
@@ -999,6 +1013,14 @@ class RecordingSession:
         # otherwise.
         self.pgroup = pgroup
         self.run_number = run_number
+        # Top-level namespace component names (namespace.required_names())
+        # - a channel whose full_name starts with one of these and failed to
+        # attach is reported separately in report()'s failed_required, the
+        # same distinction /health's failed_required already makes for init
+        # failures. A full_name's top-level component is everything before
+        # its first ".", matching Alias.get_full_name(base=None)'s own
+        # dotted convention.
+        self._required_names = set(required_component_names or ())
         self.mode = mode
         self.min_interval = float(min_interval)
         self.sample_interval = float(sample_interval)
@@ -1040,6 +1062,10 @@ class RecordingSession:
         self.n_attached = 0
         self.n_seeded = 0
         self.n_backfilled = 0
+        # Names (not just a count) of channels that failed to attach - kept
+        # so NamespaceMonitorStore.start_recording can classify them against
+        # namespace.required_names(), same as /health's failed_required.
+        self._attach_failed_names = []
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -1051,6 +1077,7 @@ class RecordingSession:
                 mon = obj.set_current_value_callback(func=self._make_callback(name))
                 if mon is None:
                     self.n_attach_failed += 1
+                    self._attach_failed_names.append(name)
                     continue
                 # with_ctrlvars=False always: get_ctrlvars() (units, limits,
                 # precision) is a blocking CA round trip per channel
@@ -1102,6 +1129,7 @@ class RecordingSession:
                     self.n_seeded += 1
             except Exception:
                 self.n_attach_failed += 1
+                self._attach_failed_names.append(name)
                 logger.debug("could not attach a recording monitor to %s", name,
                              exc_info=True)
         if self.mode == "sample":
@@ -1282,12 +1310,76 @@ class RecordingSession:
         self.n_backfilled += filled
         return filled
 
+    def size_report(self, top_n=None):
+        """Per-channel projected size: rate (this channel's own point
+        count over the recording's elapsed time so far) times a sample
+        value's size (element count * dtype itemsize, i.e. "frequency *
+        data shape * bitdepth") - to judge storage/bandwidth cost from a
+        short trial recording before committing to a long one, without
+        needing to guess or wait for the real thing to finish.
+
+        Works on a still-running recording (reads the live buffers - the
+        same lax race tolerance as the rest of this class: a value read
+        here while a CA callback is mid-append is not locked against
+        beyond the dict-level snapshot, see stop()'s own docstring) as
+        well as a stopped one, though a stopped session's buffers are
+        empty (stop() hands them to the caller) - call this before
+        stop(), not after, if you want it there too.
+
+        Returns ``{full_name: {"n_points", "rate_hz", "n_elements",
+        "bytes_per_point", "projected_bytes_per_s"}}``, sorted by
+        projected_bytes_per_s descending and truncated to `top_n` if
+        given - the point of this is usually "what are the biggest
+        contributors", not a complete listing.
+        """
+        elapsed = (self.stopped_at or time.time()) - (self.started_at or time.time())
+        if elapsed <= 0:
+            return {}
+        with self._lock:
+            snapshot = {name: list(buf["values"]) for name, buf in self._buffers.items()}
+        out = {}
+        for name, values in snapshot.items():
+            n_points = len(values)
+            if not n_points:
+                continue
+            try:
+                arr = np.asarray(values[-1])
+                n_elements = int(arr.size) or 1
+                bytes_per_point = int(arr.nbytes) or arr.itemsize
+            except Exception:
+                # a value numpy cannot characterise at all (rare) - still
+                # worth a rough entry rather than silently dropping the
+                # channel from the report.
+                n_elements, bytes_per_point = 1, 8
+            rate_hz = n_points / elapsed
+            out[name] = {
+                "n_points": n_points,
+                "rate_hz": rate_hz,
+                "n_elements": n_elements,
+                "bytes_per_point": bytes_per_point,
+                "projected_bytes_per_s": rate_hz * bytes_per_point,
+            }
+        out = dict(
+            sorted(out.items(), key=lambda kv: -kv[1]["projected_bytes_per_s"])
+        )
+        if top_n:
+            out = dict(list(out.items())[:top_n])
+        return out
+
     def report(self, with_channels=False):
         elapsed = (self.stopped_at or time.time()) - (self.started_at or time.time())
         counts = self._final_counts if self._final_counts is not None else {
             name: len(b["values"]) for name, b in self._buffers.items()
         }
         n_points = sum(counts.values())
+        # Which of the failed-to-attach channels belong to a *required*
+        # namespace component - the recording equivalent of /health's
+        # failed_required, same "everyone else failing is expected, this
+        # failing is not" distinction.
+        failed_required = sorted(
+            {n for n in self._attach_failed_names
+             if n.split(".", 1)[0] in self._required_names}
+        )
         rep = {
             "recording_id": self.recording_id,
             "pgroup": self.pgroup,
@@ -1305,6 +1397,8 @@ class RecordingSession:
             # raises is counted in n_attach_failed, not silently folded in.
             "n_channels_attached": self.n_attached,
             "n_attach_failed": self.n_attach_failed,
+            "failed_required": failed_required,
+            "n_failed_required": len(failed_required),
             "n_seeded": self.n_seeded,
             "n_backfilled": self.n_backfilled,
             "n_updates": self.n_updates,
