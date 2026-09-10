@@ -849,7 +849,8 @@ class AdjustableVirtual:
                 f"(set_current_value_callback)."
             )
         return CallbackComposedValue(
-            self, func=func, run_once=run_once, print_output=print_output, **kwargs
+            self, self._adjustables, func=func, run_once=run_once,
+            print_output=print_output, **kwargs
         )
 
     def check_target_value_within_limits(self, value):
@@ -879,20 +880,27 @@ class AdjustableVirtual:
 
 
 class CallbackComposedValue:
-    """set_current_value_callback() implementation for AdjustableVirtual.
+    """set_current_value_callback() implementation for a value computed from
+    other Monitorable* objects - used by both AdjustableVirtual and
+    DetectorVirtual (eco.elements.detector), which is why `composed`/
+    `children` are generic rather than hardcoded to "virtual adjustable" and
+    its `._adjustables`.
 
-    Subscribes to every parent adjustable's own set_current_value_callback()
-    and recomputes the virtual's get_current_value() whenever any parent
-    reports an update - so a derived/calculated value can be monitored with
-    the same push-based, no-polling contract as a plain PV-backed value.
-    Mirrors eco.epics_utils.utilities_epics.CallbackEpics (same .data shape,
+    Subscribes to every child's own set_current_value_callback() and
+    recomputes `composed.get_current_value()` whenever any child reports an
+    update - so a derived/calculated value can be monitored with the same
+    push-based, no-polling contract as a plain PV-backed value. Mirrors
+    eco.epics_utils.utilities_epics.CallbackEpics (same .data shape,
     .start()/.stop(), context-manager support), and forwards the same
-    `func`/`run_once` convention to each parent, so this also works when a
-    parent is itself another AdjustableVirtual (nested composition).
+    `func`/`run_once` convention to each child, so this also works when a
+    child is itself another composed value (nested composition, e.g. a
+    virtual built from other virtuals).
     """
 
-    def __init__(self, virtual, func="accumulate", run_once=True, print_output=False):
-        self.virtual = virtual
+    def __init__(self, composed, children, func="accumulate", run_once=True,
+                 print_output=False):
+        self.composed = composed
+        self.children = children
         self.print = print_output
         if func == "accumulate":
             func = self._accumulate
@@ -915,7 +923,7 @@ class CallbackComposedValue:
         self.data["timestamps_ioc"].append(timestamp)
         if self.print:
             print(
-                f"{self.virtual.name}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
+                f"{self.composed.name}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
             )
 
     def _set_latest(self, pvname=None, value=None, timestamp=None, **kwargs):
@@ -925,21 +933,34 @@ class CallbackComposedValue:
         self.data["timestamp_local"] = ts_local
         if self.print:
             print(
-                f"{self.virtual.name}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
+                f"{self.composed.name}:  {value};  time_ioc: {timestamp}; time_local: {ts_local}"
             )
 
     def _on_parent_update(self, pvname=None, value=None, timestamp=None, **kwargs):
-        # Ignore the individual parent's own value/pvname - recompute the
-        # combined value from every parent's current value instead.
-        new_value = self.virtual.get_current_value()
-        self.foo(pvname=self.virtual.name, value=new_value, timestamp=timestamp)
+        # Ignore the individual child's own value/pvname - recompute the
+        # combined value from every child's current value instead.
+        new_value = self.composed.get_current_value()
+        self.foo(pvname=self.composed.name, value=new_value, timestamp=timestamp)
 
-    def start(self, add_current_value=True):
-        for adj in self.virtual._adjustables:
-            mon = adj.set_current_value_callback(
+    def start(self, add_current_value=True, with_ctrlvars=True, auto_monitor=True):
+        """with_ctrlvars/auto_monitor exist so this is a drop-in match for
+        CallbackEpics.start()'s interface (a caller that does not know
+        whether a given channel is CA-backed or composed should not have to
+        care) - both are simply forwarded to every child, recursively, in
+        case a child is itself a composed value with children of its own.
+        add_current_value is deliberately NOT forwarded the same way: each
+        child starts without seeding (add_current_value=False), and this
+        object seeds itself once at the end from the fully-composed
+        get_current_value() instead of from each child's seed individually
+        - the same recompute _on_parent_update always does, just triggered
+        once up front rather than per child.
+        """
+        for child in self.children:
+            mon = child.set_current_value_callback(
                 func=self._on_parent_update, run_once=self.run_once
             )
-            mon.start(add_current_value=False)
+            mon.start(add_current_value=False, with_ctrlvars=with_ctrlvars,
+                     auto_monitor=auto_monitor)
             self._child_monitors.append(mon)
         if add_current_value:
             self._on_parent_update(timestamp=time.time())

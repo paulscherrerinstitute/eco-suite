@@ -3,10 +3,12 @@ from threading import Thread
 from eco.acquisition.decorators import scannable
 from eco.elements.adjustable import (
     AdjustableMemory,
+    CallbackComposedValue,
     default_representation,
     spec_convenience,
 )
 from eco.elements.assembly import Assembly
+from eco.elements.protocols import MonitorableValueUpdate
 from eco.aliases import Alias
 import time
 
@@ -72,6 +74,33 @@ class DetectorVirtual(Assembly):
     def get_current_value(self):
         return self._foo_get_current_value(
             *[det.get_current_value() for det in self._detectors]
+        )
+
+    def set_current_value_callback(
+        self, func="accumulate", run_once=True, print_output=False, **kwargs
+    ):
+        """Only possible if every underlying detector is itself a
+        MonitorableValueUpdate (e.g. a PV-backed Detector, or another
+        DetectorVirtual/AdjustableVirtual whose own parents all are) - same
+        rule and same mechanism as AdjustableVirtual.set_current_value_
+        callback, independent of whether the chain bottoms out in CA or
+        something else (a DetectorGet with monitor_frequency=, say): in
+        that case the combined value can be kept up to date by recomputing
+        get_current_value() whenever any parent reports an update, with no
+        polling."""
+        non_monitorable = [
+            det for det in self._detectors if not isinstance(det, MonitorableValueUpdate)
+        ]
+        if non_monitorable:
+            names = [getattr(det, "name", repr(det)) for det in non_monitorable]
+            raise NotImplementedError(
+                f"Cannot monitor virtual detector '{self.name}': parent(s) "
+                f"{names} do not implement MonitorableValueUpdate "
+                f"(set_current_value_callback)."
+            )
+        return CallbackComposedValue(
+            self, self._detectors, func=func, run_once=run_once,
+            print_output=print_output, **kwargs
         )
 
 

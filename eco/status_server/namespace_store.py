@@ -62,6 +62,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from eco.elements.adjustable import CallbackComposedValue
 from eco.elements.protocols import Detector, MonitorableValueUpdate
 
 logger = logging.getLogger(__name__)
@@ -1075,6 +1076,22 @@ class RecordingSession:
                     and getattr(pv, "auto_monitor", False)
                     and getattr(pv, "connected", False)
                 )
+                if not seed and isinstance(mon, CallbackComposedValue):
+                    # AdjustableVirtual/DetectorVirtual: its seed is a
+                    # get_current_value() recompute from its own already-
+                    # monitored parents (mon.start() below only reaches
+                    # here because set_current_value_callback() already
+                    # required every parent to be a MonitorableValueUpdate),
+                    # not a CA get of its own - free in the common case. Not
+                    # strictly free if a parent happens to be individually
+                    # demoted/disconnected right now, but that costs at
+                    # most that one parent's own get, bounded by how many
+                    # direct parents one computed value has (a handful),
+                    # nowhere near the per-channel storm this policy exists
+                    # to avoid - simpler to always seed these than to
+                    # recurse the same connected/auto_monitor check through
+                    # an arbitrary composition tree.
+                    seed = True
                 mon.start(
                     add_current_value=seed,
                     with_ctrlvars=False,

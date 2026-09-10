@@ -1066,6 +1066,32 @@ def test_seeding_still_respects_the_recording_mode(fake_module):
     assert stopped["n_dropped_throttle"] == 1
 
 
+def test_a_composed_virtual_channel_is_seeded_for_free(fake_module):
+    """DetectorVirtual/AdjustableVirtual (eco.elements) implement
+    set_current_value_callback() themselves when every one of their own
+    parents does - discovered here via the same isinstance(ts,
+    MonitorableValueUpdate) check that finds any other monitorable channel,
+    no special-casing needed. Their seed is a recompute from already-
+    monitored parents, not a CA get of its own - free the same way a plain
+    monitored PV's seed is."""
+    from eco.elements.detector import DetectorVirtual
+
+    a = MonitorableDetector("fake.a", 1.0, channel="PV:A")
+    b = MonitorableDetector("fake.b", 2.0, channel="PV:B")
+    composed = DetectorVirtual(
+        [a, b], foo_get_current_value=lambda x, y: x + y, name="fake.composed"
+    )
+
+    store = _recording_store_with(fake_module, [composed])
+    assert store.monitorable_names() == ["fake.composed"]
+
+    result = store.start_recording("r1")
+    assert result.n_seeded == 1
+
+    stopped = store.stop_recording("r1")
+    assert stopped["data"]["fake.composed"]["values"] == [3.0]
+
+
 # --------------------------------------------------------------------------
 # backfill: opportunistically fill a still-empty channel from a status
 # snapshot that was already being taken for another reason (a scan's own
