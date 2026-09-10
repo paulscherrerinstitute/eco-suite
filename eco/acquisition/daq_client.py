@@ -1718,7 +1718,12 @@ class Daq(Assembly):
         """
         try:
             values = {
-                "scans.acquiring_scan.start_time": datetime.now(),
+                # A raw datetime isn't JSON-serializable (requests' own
+                # json.dumps has no encoder hook for it - confirmed live,
+                # this crashed the push outright); a unix timestamp matches
+                # every other timestamp already flowing through this file
+                # (status_times, recording started_at/stopped_at, ...).
+                "scans.acquiring_scan.start_time": datetime.now().timestamp(),
                 "scans.acquiring_scan.description": metadata.get("name"),
                 "scans.acquiring_scan.scan_command": metadata.get("scan_command"),
                 "scans.acquiring_scan.adjustables_names": [

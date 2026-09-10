@@ -15,10 +15,44 @@ usable standalone from any eco session to inspect or drive a server:
 
 from __future__ import annotations
 
+import datetime
+import json
 import time
 
 import colorama
+import numpy as np
 import requests
+
+
+def _json_default(obj):
+    """Best-effort ``default=`` for ``json.dumps`` on a request body this
+    client builds - not the server's own NumpyEncoder (eco.status_server.
+    storage), which pulls in h5py and belongs server-side only; this stays
+    numpy-only plus the couple of extra types a caller of push_status()/
+    capture_recording() etc. might reasonably hand over.
+
+    Exists because ``requests.post(..., json=body)`` serializes with plain
+    stdlib ``json.dumps`` and no encoder hook at all - confirmed live: a
+    raw ``datetime`` in a push_status() call crashed with
+    ``TypeError: Object of type datetime is not JSON serializable`` before
+    this existed. The str() fallback degrades one odd field rather than
+    failing the whole request over it, same reasoning as NumpyEncoder's.
+    """
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.timestamp() if isinstance(obj, datetime.datetime) else obj.isoformat()
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", "replace")
+    if isinstance(obj, (set, frozenset, tuple)):
+        return list(obj)
+    return str(obj)
 
 
 def warn_failed_required(health):
@@ -85,8 +119,16 @@ class StatusServerClient:
         return r.json()
 
     def _post(self, path, body=None, timeout=None, ok_codes=(200, 202)):
+        # data=json.dumps(..., default=_json_default), not json=body: the
+        # latter serializes with plain stdlib json.dumps and no encoder
+        # hook, which raises TypeError outright on a datetime, a numpy
+        # scalar, or anything else `requests` does not already know -
+        # confirmed live, see _json_default's docstring.
         r = requests.post(
-            f"{self.base_url}{path}", json=body or {}, timeout=timeout or self.timeout
+            f"{self.base_url}{path}",
+            data=json.dumps(body or {}, default=_json_default),
+            headers={"Content-Type": "application/json"},
+            timeout=timeout or self.timeout,
         )
         if r.status_code == 503:
             raise StatusServerNotReady(r.json())

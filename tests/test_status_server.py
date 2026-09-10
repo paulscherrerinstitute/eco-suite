@@ -651,6 +651,37 @@ def test_client_push_status_merges_into_a_real_capture_job(live_server, tmp_path
     assert job["status"]["fake.n0"] == "N0"
 
 
+def test_client_push_status_serializes_datetime_and_numpy_values(live_server):
+    """Real bug, hit live on a real test scan: requests.post(json=body)
+    serializes with plain stdlib json.dumps, which has no encoder for a
+    datetime (Daq._push_acquiring_scan_status used to hand one over
+    directly) or a numpy scalar - both used to raise TypeError inside
+    requests' own prepare_body, before the client ever got a response back
+    to fall back gracefully from."""
+    import datetime
+
+    import numpy as np
+
+    from eco.status_server.client import StatusServerClient
+
+    url, store, app, _ = live_server
+    client = StatusServerClient(url)
+    client.wait_ready(timeout=30, poll=0.05)
+
+    resp = client.push_status(
+        "p1",
+        7,
+        {
+            "scans.acquiring_scan.start_time": datetime.datetime(2026, 1, 1),
+            "scans.acquiring_scan.initial_values": [np.float64(1.5), np.int32(3)],
+        },
+    )
+    assert resp["status"] == "ok"
+    pushed = store.pop_pushed_status("p1", 7, "status_run_start")
+    assert pushed["scans.acquiring_scan.initial_values"] == [1.5, 3]
+    assert isinstance(pushed["scans.acquiring_scan.start_time"], float)
+
+
 def test_snapshot_endpoint_serializes_numpy_values(fake_module):
     """A waveform PV or an image stat returns a numpy array; Flask's default
     JSON provider raises TypeError on those, which turned one odd value into
