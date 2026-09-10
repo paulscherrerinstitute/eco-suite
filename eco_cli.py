@@ -175,6 +175,8 @@ def _run_desktop(args):
     cmd += ["--lazy"] if args.lazy else ["--no-lazy"]
     if not args.console:
         cmd += ["--no-console"]
+    if not args.namespace_panel:
+        cmd += ["--no-namespace-panel"]
     if args.theme:
         cmd += ["--theme", args.theme]
     if args.workspace:
@@ -687,6 +689,20 @@ def _add_console_flag(parser, help_on, help_off):
     grp.add_argument("--no-console", dest="console", action="store_false", help=help_off)
 
 
+def _add_namespace_panel_flag(parser):
+    grp = parser.add_mutually_exclusive_group()
+    grp.add_argument(
+        "--namespace-panel", dest="namespace_panel", action="store_true", default=True,
+        help="dockable Namespace launcher panel [default]",
+    )
+    grp.add_argument(
+        "--no-namespace-panel", dest="namespace_panel", action="store_false",
+        help="skip the Namespace launcher panel -- -s's namespace is still built/"
+             "usable (in the console, and to reopen a --workspace's widgets), just "
+             "without the browsable panel taking up screen space",
+    )
+
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
@@ -723,6 +739,7 @@ def main(argv=None):
         help_on="embedded IPython console",
         help_off="skip the embedded console (Namespace launcher panel only, if -s is given)",
     )
+    _add_namespace_panel_flag(p_desktop)
     p_desktop.add_argument(
         "--theme", choices=["dark", "light", "none"], default=None,
         help="modern skin, or 'none' for native OS style (default: dark)",

@@ -48,7 +48,14 @@ def _calling_namespace():
     return getattr(ip, "user_ns", {}).get("namespace")
 
 
-def start_desktop(theme=None, link_terminal=True, scope=None, lazy=True, with_console=True):
+def start_desktop(
+    theme=None,
+    link_terminal=True,
+    scope=None,
+    lazy=True,
+    with_console=True,
+    with_namespace_panel=True,
+):
     """Open the Qt desktop workbench (eco.widgets.desktop_app) from a
     running terminal session, for easy testing without leaving it.
 
@@ -73,6 +80,13 @@ def start_desktop(theme=None, link_terminal=True, scope=None, lazy=True, with_co
     Namespace panel still works fully (opening a widget never needed the
     console -- see EcoDesktopApp._open_widget), you just can't type Python
     directly into the desktop window itself.
+
+    with_namespace_panel=True (default): the dockable "Namespace" launcher
+    panel is shown. False: it's skipped -- the namespace itself is still
+    built and usable (in the console, and to reopen widgets from a loaded
+    workspace), just without the browsable panel taking up screen space.
+    Both the Console and Namespace docks are also closable at any time from
+    their own title bar, if you only want to drop one mid-session.
     """
     from eco.widgets.desktop_app import EcoDesktopApp, build_namespace
 
@@ -89,6 +103,7 @@ def start_desktop(theme=None, link_terminal=True, scope=None, lazy=True, with_co
         scope=scope,
         lazy=lazy,
         with_console=with_console,
+        with_namespace_panel=with_namespace_panel,
     )
 
 

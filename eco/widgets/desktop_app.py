@@ -605,6 +605,7 @@ class EcoDesktopApp:
         scope="bernina",
         lazy=True,
         with_console=True,
+        with_namespace_panel=True,
     ):
         self.namespace = namespace
         self.theme = theme
@@ -632,6 +633,16 @@ class EcoDesktopApp:
         # console window/kernel taking memory and a moment to start for
         # nothing.
         self.with_console = with_console
+        # with_namespace_panel=False: skip building the dockable "Namespace"
+        # launcher panel -- for a startup-script-generated "just these
+        # widgets" dashboard (see save_startup_script) where the panel
+        # would otherwise permanently reserve screen space nobody needs
+        # once its job (opening those widgets once, at startup) is done.
+        # Doesn't affect anything else: `namespace` itself is still built
+        # and still pushed into the console (see _build_console) and still
+        # used to resolve/open widgets from a loaded workspace (see
+        # load_workspace) -- only the browsable panel UI is skipped.
+        self.with_namespace_panel = with_namespace_panel
         self.window = None
         # True only when run() created its own blocking QApplication.exec_()
         # loop (the plain-script / `eco desktop` CLI case) -- see run()'s
@@ -662,6 +673,12 @@ class EcoDesktopApp:
         # workspace save/reload (only which *names* were open is; see
         # _opened_names), since reopening a name rebuilds this fresh.
         self._widget_docks = []
+        # the "no console" central-area placeholder (see
+        # _build_no_console_placeholder) -- torn out the moment the first
+        # real dock claims that space (see _dock_widget_object), so it
+        # never permanently wastes screen real estate; None once with_console
+        # is True, or after that first removal
+        self._no_console_placeholder = None
         if auto_start:
             self.start()
 
@@ -694,30 +711,50 @@ class EcoDesktopApp:
             # whole client area to the dock layout instead of carving out
             # a fixed centre region for it, which is what lets the console
             # dock end up filling that same space by default.)
-            dock = QtWidgets.QDockWidget("Console", self.window)
+            # Closable (unlike before) -- closing it really does stop the
+            # console's kernel (see _on_console_dock_closed), for a "don't
+            # need this anymore" startup-script-style session. Movable dock,
+            # not the central widget, exactly like before.
+            dock = _ManagedDockWidget("Console", self._on_console_dock_closed, parent=self.window)
             dock.setObjectName("console")
             dock.setWidget(self._console)
             dock.setFeatures(
-                QtWidgets.QDockWidget.DockWidgetMovable | QtWidgets.QDockWidget.DockWidgetFloatable
+                QtWidgets.QDockWidget.DockWidgetMovable
+                | QtWidgets.QDockWidget.DockWidgetFloatable
+                | QtWidgets.QDockWidget.DockWidgetClosable
             )
             self.window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
             self._console_dock = dock
         else:
-            self.window.setCentralWidget(self._build_no_console_placeholder())
+            placeholder = self._build_no_console_placeholder()
+            self.window.setCentralWidget(placeholder)
+            self._no_console_placeholder = placeholder
 
         if self.namespace is not None:
+            # Built regardless of with_namespace_panel -- load_workspace's
+            # reopen-by-name (and any other programmatic open_by_name call)
+            # needs this object's logic even when its dock isn't shown; see
+            # with_namespace_panel's docstring in __init__.
             launcher = _NamespaceLauncher(self.namespace, self._open_widget, parent=self.window)
-            dock = QtWidgets.QDockWidget("Namespace", self.window)
-            # saveState()/restoreState() (see save_workspace/load_workspace
-            # below) match docks up by objectName -- Qt warns without one
-            dock.setObjectName("namespace_launcher")
-            dock.setWidget(launcher)
-            dock.setFeatures(
-                QtWidgets.QDockWidget.DockWidgetMovable | QtWidgets.QDockWidget.DockWidgetFloatable
-            )
-            self.window.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
-            self._launcher_dock = dock
             self._launcher = launcher
+            if self.with_namespace_panel:
+                # Closable (unlike before) -- closing it only hides the
+                # browsing UI, see _on_namespace_dock_closed: the launcher
+                # itself (and its live-refresh timer, and open_by_name) keep
+                # running headlessly, so nothing that depends on it --
+                # workspace reload included -- breaks.
+                dock = _ManagedDockWidget("Namespace", self._on_namespace_dock_closed, parent=self.window)
+                # saveState()/restoreState() (see save_workspace/load_workspace
+                # below) match docks up by objectName -- Qt warns without one
+                dock.setObjectName("namespace_launcher")
+                dock.setWidget(launcher)
+                dock.setFeatures(
+                    QtWidgets.QDockWidget.DockWidgetMovable
+                    | QtWidgets.QDockWidget.DockWidgetFloatable
+                    | QtWidgets.QDockWidget.DockWidgetClosable
+                )
+                self.window.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
+                self._launcher_dock = dock
 
         self._build_workspace_menu()
         self._build_tools_menu()
@@ -859,7 +896,15 @@ class EcoDesktopApp:
         """Central widget used instead of a console when with_console=False
         -- just an explanatory label, so the window isn't a confusing blank
         rectangle. The Namespace panel (a dock, added separately) is the
-        actually-useful content in this mode."""
+        actually-useful content in this mode. Set as the QMainWindow's
+        *central* widget (unlike every dock, this reserves a fixed central
+        area no matter what) purely because there's nothing else -- yet --
+        to give that space to; the moment a real dock claims it (the first
+        opened device widget, see _dock_widget_object), this is torn back
+        out via QMainWindow.takeCentralWidget() so the docks get the full
+        client area instead, exactly as if with_console had been True and
+        no central widget had ever been set (see _build_window's console
+        branch for why that's what "no central widget" gets you)."""
         label = QtWidgets.QLabel(
             "No embedded console (with_console=False).\n\n"
             "Use the Namespace panel to browse and open device widgets --\n"
@@ -965,6 +1010,51 @@ class EcoDesktopApp:
             banner=banner,
             startup_code=startup_code,
         )
+
+    def _on_console_dock_closed(self):
+        """Runs when the Console dock is closed via its own title-bar X
+        (see _ManagedDockWidget/_build_console's dock.setFeatures). Unlike
+        the Namespace panel (see _on_namespace_dock_closed), this really
+        does stop the kernel -- there's nothing useful left running once
+        the console UI that was talking to it is gone, and freeing that
+        kernel (a real process or thread) is exactly the point for anyone
+        closing it on purpose (e.g. trimming a startup-script dashboard
+        down to just its device widgets). Not reopenable afterwards short
+        of restarting the desktop -- there's no "new console" action (a
+        reasonable follow-up, not attempted here)."""
+        from eco.widgets.console_kernel import stop_kernel
+
+        stop_kernel(self._kernel_manager, self._kernel_client, self._kernel_session)
+        self._kernel_manager = None
+        self._kernel_client = None
+        self._kernel_session = None
+        self._console = None
+        dock = self._console_dock
+        self._console_dock = None
+        if dock is not None:
+            self.window.removeDockWidget(dock)
+            dock.setParent(None)
+            dock.deleteLater()
+
+    def _on_namespace_dock_closed(self):
+        """Runs when the Namespace dock is closed via its own title-bar X.
+        Unlike the Console (see _on_console_dock_closed), this only hides
+        the browsing UI -- self._launcher itself (its live-refresh timer,
+        its open_by_name) is deliberately kept alive, reparented onto the
+        main window instead of deleted along with the dock, so nothing that
+        depends on it stops working just because the panel isn't visible
+        anymore: a device widget already docked keeps polling exactly as
+        before, and load_workspace's reopen-by-name (or any other
+        programmatic open_by_name call) still works headlessly."""
+        dock = self._launcher_dock
+        self._launcher_dock = None
+        if dock is not None:
+            if self._launcher is not None:
+                self._launcher.setParent(self.window)
+                self._launcher.hide()
+            self.window.removeDockWidget(dock)
+            dock.setParent(None)
+            dock.deleteLater()
 
     def _terminal_user_ns(self):
         """The calling IPython session's own user namespace dict, if
@@ -1099,6 +1189,20 @@ class EcoDesktopApp:
         )
         dock.setWidget(inner)
 
+        if self._no_console_placeholder is not None:
+            # First real dock ever claiming this window's content area --
+            # the "no console" placeholder (see _build_no_console_placeholder)
+            # has done its job (saying why the window wasn't blank) and would
+            # otherwise sit there forever as dead weight. takeCentralWidget()
+            # -- as opposed to swapping in an empty QWidget -- is what
+            # actually gives the freed space to the docks instead of merely
+            # shrinking a still-reserved central region (see
+            # _build_window's console branch, which never sets a central
+            # widget at all for exactly this reason).
+            self.window.takeCentralWidget()
+            self._no_console_placeholder.deleteLater()
+            self._no_console_placeholder = None
+
         row, col = divmod(len(self._widget_docks), self.WIDGET_DOCK_GRID_COLUMNS)
         if not self._widget_docks:
             self.window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
@@ -1212,6 +1316,18 @@ class EcoDesktopApp:
 
         scope_arg = "-s {} ".format(self.scope) if self.scope else ""
         lazy_flag = "-l" if self.lazy else "--no-lazy"
+        # Reflects this session's CURRENT state, not just the with_console/
+        # with_namespace_panel it was constructed with -- e.g. closing the
+        # Console dock mid-session (see _on_console_dock_closed) now makes
+        # the regenerated script skip it too, matching what "Save Startup
+        # Script" is for: a minimal relaunch of exactly what's in front of
+        # you right now, not what you started with.
+        console_flag = "" if self._console_dock is not None else " --no-console"
+        namespace_panel_flag = (
+            " --no-namespace-panel"
+            if self.namespace is not None and self._launcher_dock is None
+            else ""
+        )
         script = (
             "#!/bin/bash\n"
             "# Auto-generated by eco desktop's Workspace menu (Save Startup\n"
@@ -1220,8 +1336,8 @@ class EcoDesktopApp:
             "# namespace gets touched, so this is a fast, minimal dashboard rather\n"
             "# than the full namespace. Edit freely; re-running the menu action\n"
             "# overwrites both this file and its companion .json workspace file.\n"
-            'exec eco desktop {}{} --workspace "{}" "$@"\n'.format(
-                scope_arg, lazy_flag, workspace_path
+            'exec eco desktop {}{}{}{} --workspace "{}" "$@"\n'.format(
+                scope_arg, lazy_flag, console_flag, namespace_panel_flag, workspace_path
             )
         )
         sh_path.write_text(script)
@@ -1377,6 +1493,18 @@ def _main(argv=None):
     console_grp = parser.add_mutually_exclusive_group()
     console_grp.add_argument("--console", dest="with_console", action="store_true", default=True)
     console_grp.add_argument("--no-console", dest="with_console", action="store_false")
+    namespace_panel_grp = parser.add_mutually_exclusive_group()
+    namespace_panel_grp.add_argument(
+        "--namespace-panel", dest="with_namespace_panel", action="store_true", default=True
+    )
+    namespace_panel_grp.add_argument(
+        "--no-namespace-panel",
+        dest="with_namespace_panel",
+        action="store_false",
+        help="skip the dockable Namespace launcher panel -- the namespace itself "
+             "is still built/usable (in the console, and to reopen a --workspace's "
+             "widgets), just without the browsable panel taking up screen space",
+    )
     parser.add_argument(
         "--theme",
         choices=["dark", "light", "none"],
@@ -1413,6 +1541,7 @@ def _main(argv=None):
         scope=args.scope,
         lazy=args.lazy,
         with_console=args.with_console,
+        with_namespace_panel=args.with_namespace_panel,
     )
     app.run(workspace=args.workspace)
 
