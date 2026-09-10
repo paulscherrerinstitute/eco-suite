@@ -143,17 +143,40 @@ class Memory:
 
     def setup_path(self):
         name = self.obj_parent().alias.get_full_name(joiner=None)
-        self.dir = Path(self.base_dir) / Path("/".join(reversed(name)))
-        try:
-            # group-writable + setgid, so another pgroup member can store their
-            # own memories/presets for the same device -- eco.utilities.datafiles
-            ensure_dir(self.dir)
-        except:
-            print("Could not create memory directory")
+        rel = Path("/".join(reversed(name)))
+        self.dir = Path(self.base_dir) / rel
+        # group-writable + setgid, so another pgroup member can store their
+        # own memories/presets for the same device -- eco.utilities.datafiles
+        ensure_dir(self.dir)
+        group_writable = True
+        if not self.dir.is_dir():
+            # `ensure_dir` already warned about why (e.g. the account this
+            # is running as, such as the shared gac-bernina console account,
+            # isn't a member of the group that owns the shared memory tree
+            # -- a fixed account property `chmod`/`setgid` can't work around).
+            # Rather than lose memory/presets outright for every object this
+            # account happens to be the first to construct, fall back to a
+            # private, per-account directory -- the same fallback
+            # AdjustableFS's own `group_writable=False` already uses for
+            # RecentComponents/ComponentBookmarks, just applied here too.
+            print(
+                f"Could not create shared memory directory {self.dir} -- "
+                "falling back to a private, per-account one (memories/"
+                "presets saved here won't be visible to other accounts)"
+            )
+            self.dir = Path.home() / ".eco" / "memory" / rel
+            self.dir.mkdir(parents=True, exist_ok=True)
+            group_writable = False
         self._memories = AdjustableFS(
-            self.dir / Path("memories.json"), default_value={}
+            self.dir / Path("memories.json"),
+            default_value={},
+            group_writable=group_writable,
         )
-        self._presets = AdjustableFS(self.dir / Path("presets.json"), default_value={})
+        self._presets = AdjustableFS(
+            self.dir / Path("presets.json"),
+            default_value={},
+            group_writable=group_writable,
+        )
 
     def memories(self, indices=None, search_key=None):
         self.setup_path()

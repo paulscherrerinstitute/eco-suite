@@ -281,7 +281,29 @@ class Assembly:
                 memory_kwargs["categories"] = memory_categories
             if memory_change_serially is not None:
                 memory_kwargs["change_serially"] = memory_change_serially
-            self.memory = memory.Memory(self, **memory_kwargs)
+            try:
+                self.memory = memory.Memory(self, **memory_kwargs)
+            except Exception:
+                # A brand new object's memory directory doesn't exist yet,
+                # and not every account that can construct namespace objects
+                # is in the group that can create one in the shared
+                # memory tree (e.g. eco_cnf_bernina/memory/ -- see
+                # AdjustableFS._write_value's own comment on the same
+                # shared-tree ownership problem). Memory/presets are a
+                # nice-to-have on top of the object, not load-bearing for
+                # whether it can be constructed at all, so degrade to
+                # `self.memory = None` -- already a state other code here
+                # expects (see `getattr(ancestor, "memory", None)` in
+                # memory.py's `__call__`) -- rather than take the whole
+                # object down.
+                logger.warning(
+                    "%s: could not set up memory/presets (directory not "
+                    "writable by this account?) - memory disabled for this "
+                    "object",
+                    name,
+                    exc_info=True,
+                )
+                self.memory = None
         if elog:
             self.__elog = elog
         # else:
