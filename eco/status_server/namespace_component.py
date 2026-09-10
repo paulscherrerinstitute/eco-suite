@@ -36,7 +36,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+import colorama
 
 from eco.elements.adjustable import AdjustableFS
 from eco.elements.assembly import Assembly
@@ -49,6 +52,36 @@ from .client import StatusServerClient, warn_failed_required
 _DEFAULT_CONFIG_DIR = "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration"
 
 
+class _AdjustableFSChoice(AdjustableFS):
+    """An AdjustableFS restricted to a fixed set of string choices.
+
+    Deliberately not `eco.elements.adjustable.AdjustableEnum`: that wraps a
+    base Adjustable and stores the *IntEnum's integer*, not the string
+    itself -- fine for a PV-backed mbbi record, but it would change what
+    lands in this setting's JSON file from the plain string
+    RecordingSession.__init__ already parses (`mode not in ("all",
+    "throttle", "sample")`) to an int, which only this class's own
+    unwrapping would understand. `enum_strs` is enough on its own: per
+    `eco.elements.protocols.AdjustableEnum`, any Adjustable exposing a
+    truthy `enum_strs` structurally qualifies (no subclassing needed) --
+    including getting picked up as a dropdown by widget layers'
+    `_enum_options()` -- so this only adds that attribute plus write-time
+    validation, storage stays a plain string, wire-compatible with the
+    server as it already is.
+    """
+
+    def __init__(self, *args, enum_strs, **kwargs):
+        self.enum_strs = tuple(enum_strs)
+        super().__init__(*args, **kwargs)
+
+    def set_target_value(self, value, hold=False):
+        if value not in self.enum_strs:
+            raise ValueError(
+                f"{self.name}: {value!r} is not one of {self.enum_strs}"
+            )
+        return super().set_target_value(value, hold=hold)
+
+
 class StatusServer(Assembly):
     def __init__(self, base_url: str, name=None, config_dir=None):
         super().__init__(name=name)
@@ -57,9 +90,18 @@ class StatusServer(Assembly):
         self._gui_proc = None
 
         cfg = Path(config_dir) if config_dir is not None else Path(_DEFAULT_CONFIG_DIR)
+        # RecordingSession.__init__'s own accepted modes -- see its
+        # docstring (module namespace_store.py) for what each does:
+        # "all" keeps every update (unbounded memory risk, hence
+        # max_points_per_channel); "throttle" drops updates faster than
+        # recording_min_interval per channel but still runs the callback
+        # every time; "sample" only latches a "latest" slot per update and
+        # copies it onto a fixed grid (recording_sample_interval) from a
+        # separate thread, the cheapest per-update cost of the three.
         self._append(
-            AdjustableFS, str(cfg / "status_server_recording_mode.json"),
+            _AdjustableFSChoice, str(cfg / "status_server_recording_mode.json"),
             default_value="throttle", name="recording_mode", is_setting=True,
+            enum_strs=("all", "throttle", "sample"),
         )
         self._append(
             AdjustableFS, str(cfg / "status_server_recording_min_interval.json"),
@@ -69,15 +111,25 @@ class StatusServer(Assembly):
             AdjustableFS, str(cfg / "status_server_recording_sample_interval.json"),
             default_value=0.1, name="recording_sample_interval", is_setting=True,
         )
-        # "maximum_element_size": the largest value (by element count) a
-        # recording will store - None keeps everything, including
-        # waveforms. See RecordingSession/write_monitor_recording's own
-        # docs for why this is usually the one knob that matters most for
-        # file size.
+        # "maximum_element_size": drops an update *outright* if that one
+        # value's own element count (e.g. an 8000-sample waveform) exceeds
+        # this - a per-VALUE-WIDTH filter, aimed at exactly the waveform
+        # channels that otherwise dominate a recording's file size by an
+        # order of magnitude (see RecordingSession's own docstring: two
+        # digitizer waveforms were 204 MB of a 239 MB file). None keeps
+        # everything, including waveforms.
         self._append(
             AdjustableFS, str(cfg / "status_server_recording_max_value_elements.json"),
             default_value=None, name="recording_max_value_elements", is_setting=True,
         )
+        # A per-CHANNEL-LENGTH cap instead: how many stored points (across
+        # the whole recording's duration) one channel may accumulate before
+        # further updates for it are dropped - protects against a single
+        # fast/never-idle channel growing unbounded over a long recording
+        # (the OOM incident RecordingSession's docstring mentions). Distinct
+        # axis from recording_max_value_elements above: that one filters by
+        # the size of each individual value, this one by how many values
+        # pile up over time.
         self._append(
             AdjustableFS,
             str(cfg / "status_server_recording_max_points_per_channel.json"),
@@ -114,17 +166,49 @@ class StatusServer(Assembly):
         return self._client.monitor_policy()
 
     def status(self):
-        """Print a one-line summary and return the raw /health body - the
-        console equivalent of the GUI's top panel."""
+        """Print a fuller summary (health + recent request activity) and
+        return the raw /health body - the console equivalent of the GUI's
+        top panel."""
         h = self.health()
         state = h.get("state")
+        n_failed = h.get("n_failed") or 0
+        ok = bool(h.get("ready")) and not n_failed
+        color = (
+            colorama.Fore.GREEN if ok
+            else colorama.Fore.RED if not h.get("ready")
+            else colorama.Fore.YELLOW
+        )
+        reset = colorama.Style.RESET_ALL
         print(
-            f"{self.base_url}: {state} "
+            f"{self.base_url}: {color}{state}{reset} "
             f"({h.get('n_initialized')}/{h.get('n_target_names')} initialized, "
-            f"{h.get('n_failed')} failed, {h.get('n_monitorable')} monitorable), "
+            f"{n_failed} failed, {h.get('n_monitorable')} monitorable), "
             f"generation {h.get('generation')}, up {h.get('uptime_s', 0)/60:.1f} min"
         )
+        failed = h.get("failed_names") or []
+        if failed:
+            shown = ", ".join(failed[:10])
+            more = f" (+{len(failed) - 10} more)" if len(failed) > 10 else ""
+            red = colorama.Fore.RED + colorama.Style.BRIGHT
+            print(f"  {red}failed:{reset} {shown}{more}")
         warn_failed_required(h)
+
+        try:
+            summary = self.stats().get("summary") or {}
+        except Exception:
+            summary = {}
+        if summary.get("n"):
+            last_ago = (
+                time.time() - summary["last_at"] if summary.get("last_at") else None
+            )
+            ago = f"{last_ago:.1f}s ago" if last_ago is not None else "?"
+            errs = f", {summary['n_errors']} errors" if summary.get("n_errors") else ""
+            last_dur = summary.get("last_duration_s")
+            dur = f"{last_dur * 1000:.0f} ms" if last_dur is not None else "?"
+            print(
+                f"  requests: {summary['n']} recent{errs}, last "
+                f"'{summary.get('last_kind')}' {ago} ({dur})"
+            )
         return h
 
     def __repr__(self):

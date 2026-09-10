@@ -12,6 +12,7 @@ eco_cnf_bernina tree.
 """
 
 import subprocess
+import time
 
 import pytest
 
@@ -30,8 +31,9 @@ def server(monkeypatch, tmp_path):
             calls.setdefault("health", 0)
             calls["health"] += 1
             return {
-                "state": "ready", "n_initialized": 80, "n_target_names": 82,
-                "n_failed": 1, "n_monitorable": 9000, "generation": 3,
+                "state": "ready", "ready": True, "n_initialized": 80,
+                "n_target_names": 82, "n_failed": 1, "failed_names": ["bad_component"],
+                "n_monitorable": 9000, "generation": 3,
                 "uptime_s": 120.0, "failed_required": [],
             }
 
@@ -40,7 +42,13 @@ def server(monkeypatch, tmp_path):
 
         def stats(self, limit=None, kind=None):
             calls["stats"] = {"limit": limit, "kind": kind}
-            return {"summary": {}, "recent": []}
+            return {
+                "summary": {
+                    "n": 42, "n_errors": 0, "last_at": time.time() - 3.5,
+                    "last_kind": "snapshot", "last_duration_s": 0.017,
+                },
+                "recent": [],
+            }
 
         def monitor_policy(self):
             return {"max_rate_hz": 10.0, "auto_monitor_default": True}
@@ -70,6 +78,19 @@ def test_recording_settings_have_sensible_defaults(server):
     assert server.recording_sample_interval.get_current_value() == 0.1
     assert server.recording_max_value_elements.get_current_value() is None
     assert server.recording_max_points_per_channel.get_current_value() == 100_000
+
+
+def test_recording_mode_exposes_its_choices(server):
+    # structural eco.elements.protocols.AdjustableEnum: any Adjustable with
+    # a truthy enum_strs qualifies, e.g. for widget-layer dropdown display
+    assert server.recording_mode.enum_strs == ("all", "throttle", "sample")
+
+
+def test_recording_mode_rejects_an_invalid_choice(server):
+    with pytest.raises(ValueError):
+        server.recording_mode.set_target_value("bogus")
+    # rejected before ever touching the backing file
+    assert server.recording_mode.get_current_value() == "throttle"
 
 
 def test_recording_settings_are_settable(server):
@@ -124,6 +145,39 @@ def test_status_prints_a_summary_and_returns_health(server, capsys):
     out = capsys.readouterr().out
     assert "ready" in out
     assert "80/82" in out
+
+
+def test_status_lists_failed_component_names(server, capsys):
+    server.status()
+    out = capsys.readouterr().out
+    assert "failed:" in out
+    assert "bad_component" in out
+
+
+def test_status_omits_failed_line_when_nothing_failed(server, capsys):
+    server._client.health = lambda: {
+        "state": "ready", "ready": True, "n_initialized": 82, "n_target_names": 82,
+        "n_failed": 0, "failed_names": [], "n_monitorable": 9000, "generation": 3,
+        "uptime_s": 120.0, "failed_required": [],
+    }
+    server.status()
+    out = capsys.readouterr().out
+    assert "failed:" not in out
+
+
+def test_status_shows_recent_request_activity(server, capsys):
+    server.status()
+    out = capsys.readouterr().out
+    assert "requests:" in out
+    assert "42 recent" in out
+    assert "snapshot" in out
+
+
+def test_status_omits_request_line_when_no_stats_yet(server, capsys):
+    server._client.stats = lambda limit=None, kind=None: {"summary": {"n": 0}, "recent": []}
+    server.status()
+    out = capsys.readouterr().out
+    assert "requests:" not in out
 
 
 def test_status_warns_in_red_about_failed_required(server, capsys):
