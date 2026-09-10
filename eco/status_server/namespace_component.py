@@ -130,13 +130,21 @@ class StatusServer(Assembly):
     def __repr__(self):
         try:
             h = self.health()
+            header = (
+                f"StatusServer('{self.base_url}') - {h.get('state')}, "
+                f"{h.get('n_initialized')}/{h.get('n_target_names')} initialized, "
+                f"{h.get('n_failed')} failed\n"
+            )
         except Exception as exc:
-            return f"StatusServer('{self.base_url}') - unreachable ({type(exc).__name__})"
-        return (
-            f"StatusServer('{self.base_url}') - {h.get('state')}, "
-            f"{h.get('n_initialized')}/{h.get('n_target_names')} initialized, "
-            f"{h.get('n_failed')} failed"
-        )
+            header = f"StatusServer('{self.base_url}') - unreachable ({type(exc).__name__})\n"
+        # settings (recording_mode, recording_min_interval, ...) were already
+        # registered for display -- _append's own is_display defaults to
+        # True, and nothing here overrides it. What was missing is this
+        # override actually asking for that table: unlike a plain Assembly,
+        # StatusServer replaces __repr__ outright for the health summary
+        # above, so Assembly.get_display_str() (the settings table) never
+        # got called.
+        return header + self.get_display_str()
 
     # -- gui ---------------------------------------------------------------
 

@@ -149,6 +149,13 @@ def test_repr_shows_state_without_raising(server):
     assert "ready" in repr(server)
 
 
+def test_repr_also_shows_the_recording_settings(server):
+    r = repr(server)
+    assert "recording_mode" in r
+    assert "throttle" in r
+    assert "recording_max_points_per_channel" in r
+
+
 def test_repr_degrades_when_unreachable(server):
     def boom():
         raise ConnectionError("refused")
