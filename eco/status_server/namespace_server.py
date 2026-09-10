@@ -198,6 +198,19 @@ def create_namespace_app(
     def failures():
         return jsonify({"failures": store.failure_details()})
 
+    @app.get("/monitor_policy")
+    def monitor_policy():
+        """What eco.epics_utils.ca_tuning's adaptive monitor policy
+        currently believes *in this server process* - the max-rate
+        threshold a channel gets demoted above, how many channels are
+        monitored/known-fast, and whether a sensitive period is active.
+        Read-only: the threshold itself is a module constant, not (yet)
+        remotely adjustable.
+        """
+        from eco.epics_utils import ca_tuning
+
+        return jsonify(ca_tuning.monitor_report())
+
     @app.get("/aliases")
     def aliases():
         """The namespace's current alias list: ``[{alias, channel,

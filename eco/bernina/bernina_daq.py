@@ -96,6 +96,22 @@ if _status_server:
           "(set ECO_STATUS_SERVER=off in the shell before starting this "
           "session to always use the local namespace instead)")
 
+# Namespace-level handle for the same server: bernina.status_server.status()/
+# .gui()/.restart()/.reinit(), plus the recording settings (mode, throttle
+# interval, max element size, ...) as real, inspectable AdjustableMemory
+# children - see eco.status_server.namespace_component's module docstring.
+# Always built, even if this session is not itself using the server for
+# status (_status_server is None) - the server keeps running regardless of
+# any one session's ECO_STATUS_SERVER choice, and staying able to look at
+# it/restart it is useful either way.
+namespace.append_obj(
+    "StatusServer",
+    _ECO_STATUS_SERVER_DEFAULT,
+    module_name="eco.status_server.namespace_component",
+    lazy=True,
+    name="status_server",
+)
+
 namespace.append_obj(
     "Daq",
     instrument="bernina",

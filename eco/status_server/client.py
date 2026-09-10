@@ -181,6 +181,14 @@ class StatusServerClient:
     def failures(self) -> dict:
         return self._get("/failures")["failures"]
 
+    def monitor_policy(self) -> dict:
+        """What eco.epics_utils.ca_tuning's adaptive monitor policy
+        currently believes in the server's own process - max_rate_hz (the
+        threshold a channel gets demoted above), how many channels are
+        monitored/known-fast, whether a sensitive period is active. Read-
+        only - see eco.status_server.namespace_server's /monitor_policy."""
+        return self._get("/monitor_policy")
+
     def wait_ready(self, timeout=1800, poll=2.0, progress=False,
                    min_generation=None, instance_id_not=None):
         """Block until the server reports ready.

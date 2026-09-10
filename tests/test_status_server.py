@@ -462,6 +462,14 @@ def test_names_and_failures_endpoints(fake_module):
     assert "b boom" in failures["b"]
 
 
+def test_monitor_policy_endpoint_reports_ca_tuning_state(app_and_store):
+    app, _, _ = app_and_store
+    body = app.test_client().get("/monitor_policy").get_json()
+    assert "max_rate_hz" in body
+    assert "auto_monitor_default" in body
+    assert "known_fast" in body
+
+
 def test_aliases_endpoint_returns_the_alias_list(app_and_store):
     app, _, _ = app_and_store
     body = app.test_client().get("/aliases").get_json()
@@ -680,6 +688,16 @@ def test_client_push_status_serializes_datetime_and_numpy_values(live_server):
     pushed = store.pop_pushed_status("p1", 7, "status_run_start")
     assert pushed["scans.acquiring_scan.initial_values"] == [1.5, 3]
     assert isinstance(pushed["scans.acquiring_scan.start_time"], float)
+
+
+def test_client_monitor_policy_round_trips(live_server):
+    from eco.status_server.client import StatusServerClient
+
+    url, store, app, _ = live_server
+    client = StatusServerClient(url)
+    client.wait_ready(timeout=30, poll=0.05)
+    body = client.monitor_policy()
+    assert "max_rate_hz" in body
 
 
 def test_snapshot_endpoint_serializes_numpy_values(fake_module):
