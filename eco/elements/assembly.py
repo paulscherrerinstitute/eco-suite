@@ -1529,6 +1529,12 @@ class Assembly:
         -- embeds the viewer as a tiled dock in that window instead of a
         separate top-level one, e.g.
         `namespace.show(backend="window", dock_in=app)`.
+        The native-window viewer also gets a "Settings" toolbar button
+        that opens `self.widget(normal=True)` -- mirrors
+        eco.widgets.camserver_stream_qt.CamServerStreamQt's own "Camera
+        Settings" button. If this panel is itself docked (dock_in=...)
+        into a still-open workbench, the settings widget docks alongside
+        it there too.
         sidecar_anchor (notebook only, e.g. "split-right"): opens the
         viewer in its own JupyterLab Sidecar panel instead of displaying
         inline in the current cell. See `eco.utilities.svg_interactor.

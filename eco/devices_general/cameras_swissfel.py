@@ -889,7 +889,7 @@ class CameraBasler(Assembly):
 
         if separate_process:
             return _spawn_separate_process_viewer(
-                self.pvname, name=name, cam_class=self._CAM_CLASS_PATH,
+                self.pvname, name=name, cam_class=getattr(self, "_CAM_CLASS_PATH", None),
                 pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme,
             )
 
@@ -1101,7 +1101,7 @@ class CameraPCO(Assembly):
 
         if separate_process:
             return _spawn_separate_process_viewer(
-                self.pvname, name=name, cam_class=self._CAM_CLASS_PATH,
+                self.pvname, name=name, cam_class=getattr(self, "_CAM_CLASS_PATH", None),
                 pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme,
             )
 

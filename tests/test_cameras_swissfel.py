@@ -59,7 +59,7 @@ def test_camera_basler_viewer_resolves_its_own_camera_pipeline(monkeypatch):
     )
 
     fake_self = _FakeCameraSelf(BASLER_PVNAME)
-    result = CameraBasler._widget_viewer(fake_self)
+    result = CameraBasler._widget_viewer(fake_self, separate_process=False)
 
     assert result == "the basler viewer"
     # the raw PV/camera name is passed through as-is, with kind=
@@ -87,7 +87,7 @@ def test_camera_pco_viewer_resolves_its_own_camera_pipeline(monkeypatch):
     )
 
     fake_self = _FakeCameraSelf(PCO_PVNAME)
-    result = CameraPCO._widget_viewer(fake_self)
+    result = CameraPCO._widget_viewer(fake_self, separate_process=False)
 
     assert result == "the pco viewer"
     assert calls["name"] == "SARES20-PROF146-M1"
@@ -103,7 +103,9 @@ def test_camera_basler_viewer_passes_through_rate_and_theme(monkeypatch):
     )
 
     fake_self = _FakeCameraSelf(BASLER_PVNAME)
-    CameraBasler._widget_viewer(fake_self, rate_hz=25.0, theme="dark", auto_start=False)
+    CameraBasler._widget_viewer(
+        fake_self, rate_hz=25.0, theme="dark", auto_start=False, separate_process=False
+    )
 
     assert calls["rate_hz"] == 25.0
     assert calls["theme"] == "dark"
@@ -113,11 +115,40 @@ def test_camera_basler_viewer_passes_through_rate_and_theme(monkeypatch):
 # -- separate_process=True: escapes this session's own event-loop freezes --
 
 
+def test_camera_basler_default_dock_in_is_true():
+    assert CameraBasler._default_dock_in is True
+
+
+def test_camera_pco_default_dock_in_is_true():
+    assert CameraPCO._default_dock_in is True
+
+
+def test_camera_basler_separate_process_is_the_default(monkeypatch):
+    """separate_process now defaults to True -- calling _widget_viewer()
+    with no separate_process= at all must take the subprocess path, not
+    the in-process one."""
+    monkeypatch.setattr(
+        "eco.devices_general.cameras_swissfel._spawn_separate_process_viewer",
+        lambda *a, **k: "the subprocess handle",
+    )
+    monkeypatch.setattr(
+        "eco.widgets.camserver_stream_qt.make_camserver_stream_qt",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not build an in-process viewer")),
+    )
+
+    fake_self = _FakeCameraSelf(BASLER_PVNAME)
+    result = CameraBasler._widget_viewer(fake_self)
+
+    assert result == "the subprocess handle"
+
+
 def test_camera_basler_viewer_separate_process_spawns_subprocess_instead(monkeypatch):
     calls = {}
 
-    def fake_spawn(pvname, pipeline_url=None, rate_hz=10.0, theme=None):
+    def fake_spawn(pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None):
         calls["pvname"] = pvname
+        calls["name"] = name
+        calls["cam_class"] = cam_class
         calls["pipeline_url"] = pipeline_url
         calls["rate_hz"] = rate_hz
         calls["theme"] = theme
@@ -137,9 +168,32 @@ def test_camera_basler_viewer_separate_process_spawns_subprocess_instead(monkeyp
     result = CameraBasler._widget_viewer(fake_self, rate_hz=25.0, theme="dark", separate_process=True)
 
     assert result == "the subprocess handle"
+    # _FakeCameraSelf carries no .alias/._CAM_CLASS_PATH -- both fall back
+    # to None (see test_camera_basler_viewer_separate_process_passes_name_
+    # and_cam_class below for the real-object case)
     assert calls == {
-        "pvname": BASLER_PVNAME, "pipeline_url": None, "rate_hz": 25.0, "theme": "dark",
+        "pvname": BASLER_PVNAME, "name": None, "cam_class": None,
+        "pipeline_url": None, "rate_hz": 25.0, "theme": "dark",
     }
+
+
+def test_camera_basler_viewer_separate_process_passes_name_and_cam_class(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        "eco.devices_general.cameras_swissfel._spawn_separate_process_viewer",
+        lambda pvname, **kwargs: calls.update(pvname=pvname, **kwargs) or "the subprocess handle",
+    )
+
+    class _FakeCameraSelfWithAlias(_FakeCameraSelf):
+        def __init__(self, pvname, full_name):
+            super().__init__(pvname)
+            self.alias = _FakeAlias(full_name)
+
+    fake_self = _FakeCameraSelfWithAlias(BASLER_PVNAME, "bernina.cam1")
+    CameraBasler._widget_viewer(fake_self, separate_process=True)
+
+    assert calls["name"] == "bernina.cam1"
+    assert calls["cam_class"] == "eco.devices_general.cameras_swissfel.CameraBasler"
 
 
 def test_camera_pco_viewer_separate_process_spawns_subprocess_instead(monkeypatch):
@@ -157,38 +211,69 @@ def test_camera_pco_viewer_separate_process_spawns_subprocess_instead(monkeypatc
 
 
 def test_spawn_separate_process_viewer_builds_the_expected_command_line(monkeypatch):
+    """_spawn_separate_process_viewer no longer calls subprocess.Popen
+    directly -- it goes through eco.widgets.subprocess_embed.
+    EmbeddedProcessWindow (spawn + WINID-handshake embedding), so this
+    monkeypatches that instead and inspects the argv/title it was built
+    with. The env/PYTHONPATH fix-up itself now lives in and is tested by
+    eco.widgets.subprocess_embed's own child_process_environment (see
+    tests/test_subprocess_embed.py), since spawn_and_embed applies it by
+    default rather than this function building it by hand."""
     from eco.devices_general.cameras_swissfel import _spawn_separate_process_viewer
 
     captured = {}
 
-    class _FakePopen:
-        def __init__(self, argv, env=None):
-            captured["argv"] = argv
-            captured["env"] = env
+    class _FakeEmbeddedProcessWindow:
+        def __init__(self, cmd, title=""):
+            captured["cmd"] = cmd
+            captured["title"] = title
 
-    monkeypatch.setattr("subprocess.Popen", _FakePopen)
-
-    result = _spawn_separate_process_viewer(
-        BASLER_PVNAME, pipeline_url="http://pipeline:8080", rate_hz=15.0, theme="dark"
+    monkeypatch.setattr(
+        "eco.widgets.subprocess_embed.EmbeddedProcessWindow", _FakeEmbeddedProcessWindow
     )
 
-    assert isinstance(result, _FakePopen)
-    argv = captured["argv"]
-    assert argv[1:4] == ["-m", "eco.widgets.camserver_stream_qt", BASLER_PVNAME]
-    assert "--kind" in argv and argv[argv.index("--kind") + 1] == "camera_pipeline"
-    assert "--pipeline-url" in argv and argv[argv.index("--pipeline-url") + 1] == "http://pipeline:8080"
-    assert "--rate" in argv and argv[argv.index("--rate") + 1] == "15.0"
-    assert "--theme" in argv and argv[argv.index("--theme") + 1] == "dark"
-    # the spawned process needs this checkout's eco on its own PYTHONPATH
-    # (see _child_process_environment's own docstring in
-    # eco.widgets.camserver_panel_qt for why -- a plain subprocess only
-    # inherits environment variables, never this process's live sys.path)
-    import os
+    result = _spawn_separate_process_viewer(
+        BASLER_PVNAME, name="bernina.cam1",
+        cam_class="eco.devices_general.cameras_swissfel.CameraBasler",
+        pipeline_url="http://pipeline:8080", rate_hz=15.0, theme="dark",
+    )
 
-    import eco
+    assert isinstance(result, _FakeEmbeddedProcessWindow)
+    cmd = captured["cmd"]
+    assert cmd[1:4] == ["-m", "eco.widgets.camserver_stream_qt", BASLER_PVNAME]
+    assert "--embed" in cmd
+    assert "--kind" in cmd and cmd[cmd.index("--kind") + 1] == "camera_pipeline"
+    assert "--pipeline-url" in cmd and cmd[cmd.index("--pipeline-url") + 1] == "http://pipeline:8080"
+    assert "--rate" in cmd and cmd[cmd.index("--rate") + 1] == "15.0"
+    assert "--theme" in cmd and cmd[cmd.index("--theme") + 1] == "dark"
+    assert "--eco-name" in cmd and cmd[cmd.index("--eco-name") + 1] == "bernina.cam1"
+    assert (
+        "--cam-class" in cmd
+        and cmd[cmd.index("--cam-class") + 1] == "eco.devices_general.cameras_swissfel.CameraBasler"
+    )
+    assert captured["title"] == "cam_server stream - bernina.cam1"
 
-    eco_root = os.path.dirname(os.path.dirname(os.path.abspath(eco.__file__)))
-    assert eco_root in captured["env"]["PYTHONPATH"].split(os.pathsep)
+
+def test_spawn_separate_process_viewer_omits_eco_name_and_cam_class_when_not_given(monkeypatch):
+    from eco.devices_general.cameras_swissfel import _spawn_separate_process_viewer
+
+    captured = {}
+
+    class _FakeEmbeddedProcessWindow:
+        def __init__(self, cmd, title=""):
+            captured["cmd"] = cmd
+            captured["title"] = title
+
+    monkeypatch.setattr(
+        "eco.widgets.subprocess_embed.EmbeddedProcessWindow", _FakeEmbeddedProcessWindow
+    )
+
+    _spawn_separate_process_viewer(BASLER_PVNAME)
+
+    cmd = captured["cmd"]
+    assert "--eco-name" not in cmd
+    assert "--cam-class" not in cmd
+    assert captured["title"] == f"cam_server stream - {BASLER_PVNAME}"
 
 
 # -- get_camera_calibration / set_camera_calibration ----------------------

@@ -13,6 +13,8 @@ from eco.widgets.camserver_stream_qt import (
     ScreenpanelAnalysis,
     _HistogramColorbar,
     _StreamWorker,
+    _build_cam_from_argv,
+    _main,
     capture_camera_snapshot,
     default_pipeline_name,
     normalize_to_uint8,
@@ -745,6 +747,91 @@ def test_camera_settings_button_absent_without_cam():
         assert matches == []
     finally:
         gui.stop()
+
+
+# -- window title: eco device name vs. raw pvname/pipeline name --------
+
+
+def test_window_title_uses_eco_name_when_given():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", eco_name="bernina.cam1", auto_start=False)
+    try:
+        gui._build_window()
+        assert gui.window.windowTitle() == "cam_server stream - bernina.cam1"
+    finally:
+        gui.stop()
+
+
+def test_window_title_falls_back_to_name_without_eco_name():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False)
+    try:
+        gui._build_window()
+        assert gui.window.windowTitle() == "cam_server stream - demo"
+    finally:
+        gui.stop()
+
+
+# -- --eco-name / --cam-class CLI plumbing (separate-process viewer) ---
+
+
+def test_main_parses_eco_name_and_cam_class_flags(monkeypatch):
+    captured = {}
+
+    class _FakeViewer:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        def run(self):
+            captured["ran"] = True
+
+    monkeypatch.setattr("eco.widgets.camserver_stream_qt.CamServerStreamQt", _FakeViewer)
+    # a nonexistent class path -- _build_cam_from_argv degrades to cam=None
+    # rather than raising, so this doesn't need a real importable class
+    _main(["demo", "--kind", "demo", "--eco-name", "bernina.cam1", "--cam-class", "not.a.real.Class"])
+
+    assert captured["eco_name"] == "bernina.cam1"
+    assert captured["cam"] is None
+    assert captured["ran"] is True
+
+
+def test_build_cam_from_argv_returns_none_and_logs_on_import_failure():
+    assert _build_cam_from_argv("not.a.real.module.Class", "SOME-PV") is None
+
+
+def test_build_cam_from_argv_constructs_the_named_class(monkeypatch):
+    import sys
+    import types
+
+    calls = []
+
+    class _FakeCam:
+        def __init__(self, pvname):
+            calls.append(pvname)
+
+    fake_module = types.SimpleNamespace(FakeCam=_FakeCam)
+    monkeypatch.setitem(sys.modules, "eco_test_fake_cam_module", fake_module)
+
+    result = _build_cam_from_argv("eco_test_fake_cam_module.FakeCam", "PVNAME")
+
+    assert isinstance(result, _FakeCam)
+    assert calls == ["PVNAME"]
+
+
+def test_build_cam_from_argv_falls_back_to_none_on_construction_failure(monkeypatch):
+    import sys
+    import types
+
+    class _FakeCamBoom:
+        def __init__(self, pvname):
+            raise RuntimeError("EPICS unreachable")
+
+    fake_module = types.SimpleNamespace(FakeCamBoom=_FakeCamBoom)
+    monkeypatch.setitem(sys.modules, "eco_test_fake_cam_module_boom", fake_module)
+
+    result = _build_cam_from_argv("eco_test_fake_cam_module_boom.FakeCamBoom", "PVNAME")
+
+    assert result is None
 
 
 # -- drag-to-zoom -------------------------------------------------------

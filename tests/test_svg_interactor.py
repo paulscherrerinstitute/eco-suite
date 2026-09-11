@@ -114,9 +114,10 @@ def test_launch_svg_viewer_docks_into_desktop_app_instead_of_opening_standalone(
 
     def fake_build_qt_window(svg_path, ip_instance, namespace_prefix, exclude_group_ids,
                               blocking=False, refresh=None, refresh_interval_ms=2000,
-                              dock_in=None, dock_name=None):
+                              dock_in=None, dock_name=None, assembly=None):
         calls.update(
             svg_path=svg_path, blocking=blocking, dock_in=dock_in, dock_name=dock_name,
+            assembly=assembly,
         )
 
     monkeypatch.setattr(svg_interactor, "_build_qt_window", fake_build_qt_window)
@@ -141,10 +142,68 @@ def test_launch_svg_viewer_docks_into_desktop_app_instead_of_opening_standalone(
     assert calls["blocking"] is False
 
 
-def test_build_qt_window_dock_in_calls_dock_widget_object_not_show(monkeypatch, tmp_path):
-    """The real dock_in wiring inside _build_qt_window itself: given a
-    dock_in, it must hand the view to _dock_widget_object instead of
-    calling view.show()/registering it in the standalone-window list."""
+class _FakeAction:
+    def __init__(self, text):
+        self.text = text
+        self._slot = None
+        self.triggered = types.SimpleNamespace(connect=self._connect)
+
+    def _connect(self, slot):
+        self._slot = slot
+
+    def trigger(self):
+        self._slot()
+
+
+class _FakeToolBar:
+    def __init__(self, title, parent=None):
+        self.title = title
+        self.actions = []
+
+    def setMovable(self, *a):
+        pass
+
+    def addAction(self, text):
+        action = _FakeAction(text)
+        self.actions.append(action)
+        return action
+
+
+class _FakeMainWindow:
+    def __init__(self, *a, **kw):
+        self.shown = False
+        self.central = None
+        self.toolbars = []
+        self._eco_container = None  # set directly by tests that need it
+
+    def setWindowTitle(self, *a):
+        pass
+
+    def setAttribute(self, *a):
+        pass
+
+    def setCentralWidget(self, w):
+        self.central = w
+
+    def resize(self, *a):
+        pass
+
+    def addToolBar(self, tb):
+        self.toolbars.append(tb)
+
+    def show(self):
+        self.shown = True
+
+    def close(self):
+        pass
+
+
+def _install_fake_qt_window_modules(monkeypatch):
+    """Installs fake qtpy.QtCore/QtWidgets/QtWebChannel/QtWebEngineWidgets
+    modules (no real Qt WebEngine build is available in this environment
+    -- see the module docstring) so svg_interactor._build_qt_window can be
+    exercised directly. Returns the fake QWebEngineView class so a test
+    can instantiate/inspect one if it needs to."""
     fake_qtcore = types.ModuleType("qtpy.QtCore")
     fake_qtcore.Qt = types.SimpleNamespace(AA_ShareOpenGLContexts=1, WA_QuitOnClose=2)
     fake_qtcore.QObject = object
@@ -174,6 +233,8 @@ def test_build_qt_window_dock_in_calls_dock_widget_object_not_show(monkeypatch, 
 
     fake_qtwidgets = types.ModuleType("qtpy.QtWidgets")
     fake_qtwidgets.QApplication = _FakeApp
+    fake_qtwidgets.QMainWindow = _FakeMainWindow
+    fake_qtwidgets.QToolBar = _FakeToolBar
 
     fake_webchannel_mod = types.ModuleType("qtpy.QtWebChannel")
 
@@ -182,8 +243,6 @@ def test_build_qt_window_dock_in_calls_dock_widget_object_not_show(monkeypatch, 
             pass
 
     fake_webchannel_mod.QWebChannel = _FakeChannel
-
-    docked = []
 
     class _FakeView:
         def __init__(self):
@@ -216,12 +275,27 @@ def test_build_qt_window_dock_in_calls_dock_widget_object_not_show(monkeypatch, 
     monkeypatch.setitem(sys.modules, "qtpy.QtWebEngineWidgets", fake_webengine_mod)
     monkeypatch.setattr(svg_interactor, "_qt_windows", [])
 
-    class _FakeDesktopApp:
-        def __init__(self):
-            self.docked = []
+    return _FakeView
 
-        def _dock_widget_object(self, name, widget_obj):
-            self.docked.append((name, widget_obj))
+
+class _FakeDesktopApp:
+    def __init__(self):
+        self.docked = []
+
+    def _dock_widget_object(self, name, widget_obj):
+        self.docked.append((name, widget_obj))
+
+    # real EcoDesktopApp exposes the same method under this public alias
+    # (see desktop_app.py) -- _open_settings's getattr(..., "host_widget")
+    # check looks for exactly this name, not _dock_widget_object.
+    host_widget = _dock_widget_object
+
+
+def test_build_qt_window_dock_in_calls_dock_widget_object_not_show(monkeypatch, tmp_path):
+    """The real dock_in wiring inside _build_qt_window itself: given a
+    dock_in, it must hand the view to _dock_widget_object instead of
+    calling view.show()/registering it in the standalone-window list."""
+    _install_fake_qt_window_modules(monkeypatch)
 
     svg_path = tmp_path / "x.svg"
     svg_path.write_text("<svg width='10' height='10'></svg>")
@@ -237,6 +311,89 @@ def test_build_qt_window_dock_in_calls_dock_widget_object_not_show(monkeypatch, 
     assert isinstance(handle, svg_interactor._SvgViewerHandle)
     assert handle.window.shown is False  # dock_in path must not self-show
     assert svg_interactor._qt_windows == []  # and must not register as a standalone window either
+
+
+# -- _build_qt_window: "Settings" toolbar button (assembly=) ------------
+
+
+class _FakeAssembly:
+    def __init__(self):
+        self.widget_calls = []
+        self.widget_result = "the settings widget"
+
+    def widget(self, normal=False):
+        self.widget_calls.append(normal)
+        return self.widget_result
+
+    class _Alias:
+        @staticmethod
+        def get_full_name():
+            return "bernina.prepump"
+
+    alias = _Alias()
+
+
+def test_build_qt_window_no_settings_button_without_assembly(monkeypatch, tmp_path):
+    _install_fake_qt_window_modules(monkeypatch)
+    svg_path = tmp_path / "x.svg"
+    svg_path.write_text("<svg width='10' height='10'></svg>")
+
+    app = _FakeDesktopApp()
+    svg_interactor._build_qt_window(
+        str(svg_path), ip_instance=object(), dock_in=app, dock_name="bernina", assembly=None,
+    )
+
+    _name, handle = app.docked[0]
+    assert handle.window.toolbars == []
+
+
+def test_build_qt_window_settings_button_present_and_opens_normal_widget(monkeypatch, tmp_path):
+    _install_fake_qt_window_modules(monkeypatch)
+    svg_path = tmp_path / "x.svg"
+    svg_path.write_text("<svg width='10' height='10'></svg>")
+
+    app = _FakeDesktopApp()
+    fake_assembly = _FakeAssembly()
+    svg_interactor._build_qt_window(
+        str(svg_path), ip_instance=object(), dock_in=app, dock_name="bernina",
+        assembly=fake_assembly,
+    )
+
+    _name, handle = app.docked[0]
+    assert len(handle.window.toolbars) == 1
+    settings_action = handle.window.toolbars[0].actions[0]
+    assert settings_action.text == "Settings"
+
+    settings_action.trigger()
+
+    assert fake_assembly.widget_calls == [True]  # normal=True
+
+
+def test_build_qt_window_settings_button_docks_into_eco_container_when_present(monkeypatch, tmp_path):
+    """If this SVG panel is itself docked into a live workbench
+    (_eco_container gets set on it -- see EcoDesktopApp._dock_widget_object),
+    clicking "Settings" should dock the settings widget there too, same
+    idiom display_qt.py/camera_stream_qt.py already use for their own
+    child "Settings" windows."""
+    _install_fake_qt_window_modules(monkeypatch)
+    svg_path = tmp_path / "x.svg"
+    svg_path.write_text("<svg width='10' height='10'></svg>")
+
+    app = _FakeDesktopApp()
+    fake_assembly = _FakeAssembly()
+    svg_interactor._build_qt_window(
+        str(svg_path), ip_instance=object(), dock_in=app, dock_name="bernina",
+        assembly=fake_assembly,
+    )
+
+    _name, handle = app.docked[0]
+    container = _FakeDesktopApp()
+    handle.window._eco_container = container
+
+    settings_action = handle.window.toolbars[0].actions[0]
+    settings_action.trigger()
+
+    assert container.docked == [("bernina.prepump settings", "the settings widget")]
 
 
 # -- launch_svg_viewer: notebook / sidecar_anchor ------------------------

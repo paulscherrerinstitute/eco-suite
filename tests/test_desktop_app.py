@@ -14,6 +14,7 @@ from eco.widgets.desktop_app import (
     _NamespaceLauncher,
     _qbytearray_to_str,
     _str_to_qbytearray,
+    get_or_create_default_container,
     sorted_namespace_entries,
 )
 
@@ -25,6 +26,17 @@ def _no_real_home_writes(tmp_path, monkeypatch):
     # redirect that for every test in this file so nothing here ever
     # touches the real account's home directory
     monkeypatch.setattr(desktop_app, "DEFAULT_WORKSPACE_FILE", tmp_path / "desktop_workspace.json")
+
+
+@pytest.fixture(autouse=True)
+def _clean_live_desktop_apps_registry():
+    # _live_desktop_apps (get_or_create_default_container's registry) is a
+    # module global -- reset it around every test in this file so a live
+    # EcoDesktopApp left over from one test (or another test module) can
+    # never leak into another test's "most recently opened" resolution.
+    desktop_app._live_desktop_apps.clear()
+    yield
+    desktop_app._live_desktop_apps.clear()
 
 
 class _FakeWidgetWrapper:
@@ -1444,3 +1456,95 @@ def test_combine_into_tabs_tabifies_the_selected_panels(monkeypatch):
         assert gui._launcher_dock in gui.window.tabifiedDockWidgets(gui._console_dock)
     finally:
         gui.stop()
+
+
+# -- get_or_create_default_container (Feature 1: Assembly.widget(dock_in=)) --
+
+
+def test_get_or_create_default_container_creates_a_headless_one_when_none_open():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert desktop_app._live_desktop_apps == []
+
+    container = get_or_create_default_container()
+    try:
+        assert isinstance(container, EcoDesktopApp)
+        assert container.window is not None
+        # with_console=False, with_namespace_panel=False -- a pure empty
+        # docking shell, same assertions as test_with_console_false_skips_
+        # console_and_kernel
+        assert container._console is None
+        assert container._launcher is None
+        assert container._launcher_dock is None
+    finally:
+        container.stop()
+
+
+def test_get_or_create_default_container_reuses_the_most_recently_built_live_app():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace()
+    first = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    first._build_window()
+    second = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    second._build_window()
+    try:
+        assert get_or_create_default_container() is second
+    finally:
+        first.stop()
+        second.stop()
+
+
+def test_get_or_create_default_container_skips_a_closed_one():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace()
+    first = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    first._build_window()
+    first.stop()
+
+    second = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    second._build_window()
+    try:
+        assert first not in desktop_app._live_desktop_apps
+        assert get_or_create_default_container() is second
+    finally:
+        second.stop()
+
+
+def test_build_window_registers_self_in_live_desktop_apps():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace()
+    gui = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    assert gui not in desktop_app._live_desktop_apps
+    gui._build_window()
+    try:
+        assert gui in desktop_app._live_desktop_apps
+    finally:
+        gui.stop()
+
+
+def test_stop_deregisters_self_from_live_desktop_apps():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace()
+    gui = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    gui._build_window()
+    assert gui in desktop_app._live_desktop_apps
+
+    gui.stop()
+
+    assert gui not in desktop_app._live_desktop_apps
+
+
+def test_native_close_deregisters_self_from_live_desktop_apps():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace()
+    gui = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    gui._build_window()
+    assert gui in desktop_app._live_desktop_apps
+
+    gui.window.close()  # simulates the native X button, not gui.stop()
+
+    # deregistration happens synchronously inside _on_window_closing, same
+    # as test_native_close_tears_down_docked_widgets_same_as_stop's own
+    # note about what needs a real event-loop turn vs. what doesn't
+    assert gui not in desktop_app._live_desktop_apps
+    QtCore.QTimer.singleShot(200, app.quit)
+    app.exec_()
