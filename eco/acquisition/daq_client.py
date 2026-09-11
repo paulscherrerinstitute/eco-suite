@@ -1201,6 +1201,108 @@ class Daq(Assembly):
             if o == "c":
                 raise Exception("User-requested cancelling!")
 
+    def _compare_channels_on_server(self, list_names=None):
+        """Fire-and-forget: ask the status server to compare ITS OWN,
+        already-initialized namespace against the recorded-channel lists.
+        Returns the comparison dict, or None on failure so the caller can
+        fall back to the local namespace."""
+        try:
+            return self.status_client.compare_channels(list_names=list_names)
+        except Exception as exc:
+            return self._status_server_failed("comparing channels", exc)
+
+    def compare_channels(self, list_names=None, use_server=None, verbose=True):
+        """Compare the namespace against the DAQ's recorded-channel lists
+        (``self.channels["channels_JF"/"channels_BS"/"channels_BSCAM"]``):
+        for each, which channels a currently-initialized namespace
+        component of the matching channeltype (``eco.aliases.Alias``)
+        provides but the recorded list does not ("missing" -- won't land
+        in the run's raw data), and which channels are in the recorded
+        list but backed by no such component ("exceeding"). Only these
+        three lists are compared for now -- see
+        ``eco.aliases.channel_lists.CHANNEL_LIST_CHANNELTYPES``.
+
+        use_server: None (default) asks :meth:`use_status_server` -- a
+        healthy, fresh status server runs the comparison against ITS OWN
+        initialized namespace, so this session's (deliberately lazy)
+        namespace is never forced just to read this. True/False force one
+        or the other. A server failure always falls back to the local
+        namespace (unless ``status_server_strict``).
+
+        Returns ``{list_name: {"channeltype", "missing", "exceeding",
+        "n_required", "n_recorded"}}``.
+        """
+        from eco.aliases.channel_lists import (
+            CHANNEL_LIST_CHANNELTYPES,
+            compare_channel_lists,
+        )
+
+        list_names = list(list_names) if list_names else list(CHANNEL_LIST_CHANNELTYPES)
+
+        if use_server is None:
+            use_server = self.use_status_server(verbose=verbose)
+        if use_server:
+            result = self._compare_channels_on_server(list_names=list_names)
+            if result is not None:
+                if verbose:
+                    print(f"compare_channels: from status server "
+                          f"{self.status_client.base_url}")
+                    self._print_channel_comparison(result)
+                return result
+            # server failed - _status_server_failed already printed why and
+            # that this is falling back; fall through to the local path.
+
+        if self.namespace is None:
+            raise RuntimeError(
+                "compare_channels: no local namespace available (this Daq "
+                "was not constructed with namespace=...) and no usable "
+                "status server -- nothing to compare against."
+            )
+        channeltypes = [
+            CHANNEL_LIST_CHANNELTYPES[n] for n in list_names
+            if n in CHANNEL_LIST_CHANNELTYPES
+        ]
+        alias_list = self.namespace.alias.get_all(channeltypes=channeltypes)
+        recorded_by_list = {}
+        for name in list_names:
+            chs = self.channels.get(name)
+            if chs is None:
+                continue
+            recorded_by_list[name] = list(chs.get_current_value())
+        result = compare_channel_lists(
+            alias_list, recorded_by_list, list_names=list_names
+        )
+        if verbose:
+            print("compare_channels: from this session's local namespace")
+            self._print_channel_comparison(result)
+        return result
+
+    @staticmethod
+    def _print_channel_comparison(comparison):
+        for list_name, info in comparison.items():
+            header = (
+                f"{list_name} ({info['channeltype']}): "
+                f"{info['n_required']} required, {info['n_recorded']} recorded"
+            )
+            if not info["missing"] and not info["exceeding"]:
+                print(colorama.Fore.GREEN + f"{header} -- OK" + colorama.Fore.RESET)
+                continue
+            print(colorama.Fore.YELLOW + header + colorama.Fore.RESET)
+            if info["missing"]:
+                print(
+                    colorama.Fore.RED
+                    + f"  missing ({len(info['missing'])}, in the namespace "
+                    f"but not recorded): {info['missing']}"
+                    + colorama.Fore.RESET
+                )
+            if info["exceeding"]:
+                print(
+                    colorama.Fore.RED
+                    + f"  exceeding ({len(info['exceeding'])}, recorded but "
+                    f"not backed by the namespace): {info['exceeding']}"
+                    + colorama.Fore.RESET
+                )
+
     def count_run_number_up_and_attach_to_scan(self, scan, pgroup=None, **kwargs):
         """
         Increments the run number by one.

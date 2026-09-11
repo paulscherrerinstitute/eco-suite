@@ -64,6 +64,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from eco.aliases.channel_lists import CHANNEL_LIST_CHANNELTYPES, compare_channel_lists
 from eco.elements.adjustable import CallbackComposedValue
 from eco.elements.protocols import Detector, MonitorableValueUpdate
 
@@ -641,6 +642,41 @@ class NamespaceMonitorStore:
             except Exception:
                 out[name] = "<no exception recorded>"
         return out
+
+    def compare_channels(self, list_names=None):
+        """Compare this store's initialized namespace against the DAQ's
+        recorded-channel lists (channels_JF/channels_BS/channels_BSCAM) --
+        see eco.aliases.channel_lists. No CA traffic: the alias tree and
+        the recorded lists (AdjustableFS, JSON-file backed) are both
+        already in-process, so this is a fast, synchronous in-memory
+        computation, same character as /aliases.
+
+        A recorded-list name not yet in ``ns.all_names`` (e.g. excluded
+        from this server's target set) is simply left out of the result
+        rather than raising -- same "skip, don't fabricate" rule
+        compare_channel_lists documents for a list it could not resolve.
+        """
+        if self.state != READY:
+            raise NotReady(self.state, self.state_detail)
+        ns = self.namespace
+        if ns is None:
+            raise NotReady(self.state, "no namespace")
+        list_names = list(list_names) if list_names else list(CHANNEL_LIST_CHANNELTYPES)
+        channeltypes = [
+            CHANNEL_LIST_CHANNELTYPES[n] for n in list_names
+            if n in CHANNEL_LIST_CHANNELTYPES
+        ]
+        alias_list = ns.alias.get_all(channeltypes=channeltypes)
+        recorded_by_list = {}
+        for name in list_names:
+            if name not in CHANNEL_LIST_CHANNELTYPES or name not in ns.all_names:
+                continue
+            try:
+                recorded_by_list[name] = list(ns.get_obj(name).get_current_value())
+            except Exception:
+                logger.warning("compare_channels: could not read '%s'", name,
+                               exc_info=True)
+        return compare_channel_lists(alias_list, recorded_by_list, list_names=list_names)
 
     # -- recording ---------------------------------------------------------
 

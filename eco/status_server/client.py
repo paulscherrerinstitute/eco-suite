@@ -193,6 +193,19 @@ class StatusServerClient:
             path += "?" + "&".join(f"channeltype={c}" for c in channeltypes)
         return self._get(path)["aliases"]
 
+    def compare_channels(self, list_names=None) -> dict:
+        """Compare the server's initialized namespace against the DAQ's
+        recorded-channel lists (channels_JF/channels_BS/channels_BSCAM):
+        ``{list_name: {"channeltype", "missing", "exceeding", "n_required",
+        "n_recorded"}}``. See eco.aliases.channel_lists and
+        eco.acquisition.daq_client.Daq.compare_channels, which calls this
+        when a status server is configured and healthy.
+        """
+        path = "/channels/compare"
+        if list_names:
+            path += "?" + "&".join(f"list={n}" for n in list_names)
+        return self._get(path)["channels"]
+
     def stats(self, limit: int = None, kind: str = None) -> dict:
         """Recent /status/snapshot and /status/capture operations this
         server has served: `{"summary": {...}, "recent": [...]}`. See

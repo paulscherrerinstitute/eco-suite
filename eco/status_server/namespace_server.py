@@ -323,6 +323,49 @@ def create_namespace_app(
             202,
         )
 
+    @app.get("/channels/compare")
+    def channels_compare():
+        """Compare the namespace's currently-initialized channels against
+        the DAQ's recorded-channel lists (channels_JF/channels_BS/
+        channels_BSCAM): ``{list_name: {channeltype, missing, exceeding,
+        n_required, n_recorded}}`` -- see
+        eco.aliases.channel_lists.compare_channel_lists.
+        ``Daq.compare_channels()`` calls this when a status server is
+        configured and healthy, so the comparison runs against THIS
+        server's namespace instead of forcing the calling session's own
+        (deliberately lazy) one.
+
+        Like /aliases, this touches no CA channel -- both sides are
+        already in-process. Optional repeated ``?list=channels_JF&list=
+        channels_BS`` restricts which lists are compared (default: all
+        three known ones).
+        """
+        if store.state != READY:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "message": f"namespace store is '{store.state}'"}),
+                503,
+            )
+        list_names = request.args.getlist("list") or None
+        t0 = time.time()
+        try:
+            channels = store.compare_channels(list_names=list_names)
+        except NotReady as exc:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "state": exc.state, "message": str(exc)}),
+                503,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("channels/compare failed", exc_info=True)
+            return (
+                jsonify({"status": "error",
+                         "message": f"{type(exc).__name__}: {exc}"}),
+                500,
+            )
+        stats.record("channels_compare", time.time() - t0, n_lists=len(channels))
+        return jsonify({"status": "ok", "channels": channels})
+
     @app.post("/status/snapshot")
     def status_snapshot():
         body = request.get_json(force=True, silent=True) or {}

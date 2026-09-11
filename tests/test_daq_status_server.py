@@ -497,6 +497,103 @@ def test_aliases_capture_failure_falls_back_to_the_local_namespace(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# compare_channels: server-first (compares the SERVER's OWN namespace, so
+# this session's namespace is never forced), local fallback - see
+# eco.aliases.channel_lists (tested directly in tests/test_channel_lists.py)
+# and eco.status_server's /channels/compare endpoint (tested in
+# tests/test_status_server.py).
+
+
+class ChannelAliasTree:
+    """Just enough of eco.aliases.Alias for compare_channels' local path -
+    unlike FakeAliasTree above, actually honors channeltypes so these tests
+    can put JF/BS-tagged entries in and see them (not) come back out."""
+
+    def __init__(self, entries):
+        self._entries = entries
+        self.calls = []
+
+    def get_all(self, joiner=".", channeltypes=None):
+        self.calls.append(channeltypes)
+        return [
+            e for e in self._entries
+            if not channeltypes or e["channeltype"] in channeltypes
+        ]
+
+
+class FakeChannelList:
+    def __init__(self, value):
+        self._value = value
+
+    def get_current_value(self):
+        return self._value
+
+
+def _channels_namespace(entries):
+    ns = FakeNamespace()
+    ns.alias = ChannelAliasTree(entries)
+    return ns
+
+
+def test_compare_channels_delegates_to_the_server():
+    client = HealthClient()
+    client.compare_channels = lambda list_names=None: {
+        "channels_JF": {"channeltype": "JF", "missing": ["JF03"],
+                         "exceeding": [], "n_required": 2, "n_recorded": 1}
+    }
+    daq = _daq_fresh(client)
+    result = daq.compare_channels(verbose=False)
+    assert result["channels_JF"]["missing"] == ["JF03"]
+
+
+def test_compare_channels_server_failure_falls_back_to_local(capsys):
+    client = HealthClient()
+
+    def boom(list_names=None):
+        raise ConnectionError("refused")
+
+    client.compare_channels = boom
+    daq = _daq_fresh(client)
+    daq.namespace = _channels_namespace([
+        {"alias": "jf03", "channel": "JF03", "channeltype": "JF"},
+        {"alias": "jf04", "channel": "JF04", "channeltype": "JF"},
+    ])
+    daq.channels = {"channels_JF": FakeChannelList(["JF03"])}
+    result = daq.compare_channels(verbose=False)
+    assert result["channels_JF"]["missing"] == ["JF04"]
+    assert result["channels_JF"]["exceeding"] == []
+    assert "WARNING" in capsys.readouterr().out
+
+
+def test_compare_channels_local_reports_missing_and_exceeding():
+    daq = _daq(status_server=None)
+    daq.namespace = _channels_namespace([
+        {"alias": "jf03", "channel": "JF03", "channeltype": "JF"},
+    ])
+    daq.channels = {"channels_JF": FakeChannelList(["JF03", "JF_OLD"])}
+    result = daq.compare_channels(verbose=False)
+    assert result["channels_JF"]["missing"] == []
+    assert result["channels_JF"]["exceeding"] == ["JF_OLD"]
+
+
+def test_compare_channels_raises_without_namespace_or_server():
+    daq = _daq(status_server=None, namespace=None)
+    with pytest.raises(RuntimeError, match="no local namespace"):
+        daq.compare_channels(verbose=False)
+
+
+def test_compare_channels_prints_a_summary_by_default(capsys):
+    daq = _daq(status_server=None)
+    daq.namespace = _channels_namespace([
+        {"alias": "jf03", "channel": "JF03", "channeltype": "JF"},
+    ])
+    daq.channels = {"channels_JF": FakeChannelList(["JF03"])}
+    daq.compare_channels()
+    out = capsys.readouterr().out
+    assert "channels_JF" in out and "OK" in out
+
+
+# --------------------------------------------------------------------------
 # start_scan_monitoring / end_scan_monitoring - wired into
 # callbacks_start_scan/callbacks_end_scan (see Daq.__init__). There is no
 # local fallback - a local recording would need this session's own

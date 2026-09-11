@@ -1,11 +1,19 @@
+import ast
+import importlib.util as ilu
+import inspect
+import json
 import shutil
+import subprocess
+import textwrap
 import time
+import types
 from tkinter import W
 
 from eco.base.adjustable import Adjustable
 from eco.devices_general.therm import ChillerThermotek
 from eco.elements.adj_obj import AdjustableObject
 from eco.elements.detector import DetectorGet
+from eco.detector.detectors_psi import DetectorBsStream
 from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from ..elements.adjustable import AdjustableFS, AdjustableVirtual, AdjustableGetSet
 from ..epics_utils.adjustable import AdjustablePv
@@ -15,6 +23,223 @@ from pathlib import Path
 from ..elements import memory
 from datetime import datetime
 import requests
+
+
+# Modules a custom DAP script is allowed to import, checked (statically, via
+# ast) by check_dap_script_imports before anything is uploaded. sf_daq_broker
+# execs an uploaded script unsandboxed against live detector data
+# (dap.algos.custom.calc_custom -> load_custom -> exec_module, see dap's
+# CUSTOM_SCRIPTS.md) -- this is eco's only gate against e.g. "import os"
+# ending up in something that then runs unattended on the pipeline. numpy and
+# scipy are what CUSTOM_SCRIPTS.md documents as actually available there --
+# NOT independently verified against a live dap worker (see
+# list_dap_env_packages/check_dap_env_modules below, which check that
+# directly and, as of 2026-09, found no "scipy" in either candidate conda
+# env). Treat this default as documentation-derived, not confirmed.
+DEFAULT_ALLOWED_DAP_MODULES = ("numpy", "scipy", "math")
+
+# Conda envs seen under /sf/jungfrau/applications/miniconda3/envs (only
+# reachable from a filesystem with /sf/jungfrau mounted, e.g. a Bernina
+# console -- not an arbitrary dev checkout) that could plausibly be what a
+# live dap worker actually runs. "dap" is the one dap's own README names
+# (`conda activate dap`); "sf-dap" also exists alongside it and was checked
+# only because it was there, not because anything documents it as the live
+# one. Neither could be confirmed against an actual running worker process
+# (no reachable shell on the daq node itself, sf-daq-11.psi.ch, as of
+# 2026-09) -- both are also missing packages ("bsread", "logzero",
+# "streak_finder") the current dap git source imports, so either may simply
+# be stale relative to whatever is really deployed.
+DAP_CONDA_ENVS = {
+    "dap": Path("/sf/jungfrau/applications/miniconda3/envs/dap/bin/python"),
+    "sf-dap": Path("/sf/jungfrau/applications/miniconda3/envs/sf-dap/bin/python"),
+}
+
+
+def list_dap_env_packages(env="dap"):
+    """
+    List every package actually installed in a dap conda env, by asking that
+    env's own `python -m pip list` -- works without sourcing/activating
+    conda, since pip only looks at its own interpreter's site-packages.
+    Ground truth for "what can a custom DAP script import", as opposed to
+    CUSTOM_SCRIPTS.md's prose or DEFAULT_ALLOWED_DAP_MODULES' assumption
+    (see the comment above it).
+
+    `env` is a key into DAP_CONDA_ENVS, or a direct path to a python
+    executable.
+
+    Only runs where /sf/jungfrau is mounted (a Bernina console) -- raises
+    FileNotFoundError there, not just an empty/wrong result, if it isn't.
+    Returns {package_name: version}.
+    """
+    python = DAP_CONDA_ENVS.get(env, env)
+    python = Path(python)
+    if not python.exists():
+        raise FileNotFoundError(
+            f"{python} does not exist -- this only works on a filesystem "
+            "with /sf/jungfrau mounted (e.g. a Bernina console), not here"
+        )
+    proc = subprocess.run(
+        [str(python), "-m", "pip", "list", "--format=json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    return {pkg["name"]: pkg["version"] for pkg in json.loads(proc.stdout)}
+
+
+def check_dap_env_modules(modules=DEFAULT_ALLOWED_DAP_MODULES, env="dap"):
+    """
+    Actually try `import <module>` in a dap conda env's own interpreter, for
+    each of `modules` -- more direct than list_dap_env_packages (a pip
+    package name doesn't always match its import name, e.g.
+    "jungfrau_utils" vs "jungfrau-utils" on PyPI), and exactly the question
+    check_dap_script_imports' allow-list needs answered: "can a script
+    running there import this".
+
+    `env` is a key into DAP_CONDA_ENVS, or a direct path to a python
+    executable. Only runs where /sf/jungfrau is mounted (a Bernina console)
+    -- raises FileNotFoundError there if it isn't, same as
+    list_dap_env_packages.
+
+    Returns {module_name: True/False}.
+    """
+    python = DAP_CONDA_ENVS.get(env, env)
+    python = Path(python)
+    if not python.exists():
+        raise FileNotFoundError(
+            f"{python} does not exist -- this only works on a filesystem "
+            "with /sf/jungfrau mounted (e.g. a Bernina console), not here"
+        )
+    results = {}
+    for mod in modules:
+        proc = subprocess.run(
+            [str(python), "-c", f"import {mod}"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        results[mod] = proc.returncode == 0
+    return results
+
+
+def check_dap_script_imports(source, allowed_modules=DEFAULT_ALLOWED_DAP_MODULES):
+    """
+    Raise ValueError if `source` imports anything outside `allowed_modules`.
+
+    Static (ast-based): it only catches literal `import`/`from ... import`
+    statements, not e.g. `importlib.import_module("os")` -- a guardrail
+    against honest mistakes, not a sandbox (same spirit as
+    eco.elements.access's write-access gate).
+    """
+    tree = ast.parse(source)
+    used = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            used.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            used.add(node.module.split(".")[0])
+    disallowed = used - set(allowed_modules)
+    if disallowed:
+        raise ValueError(
+            f"custom DAP script imports disallowed module(s) {sorted(disallowed)} "
+            f"-- only {sorted(allowed_modules)} are allowed"
+        )
+    return used
+
+
+def _dap_script_source_from_function(func):
+    """
+    Reconstruct a standalone .py source string for a live function (e.g. one
+    just defined at the prompt, or pulled off the eco namespace) so it can be
+    uploaded as a custom DAP script -- sf_daq_broker execs the uploaded code
+    as its own module server-side, so none of the caller's other imports
+    travel with the function automatically. An `import ... as ...` line is
+    prepended for every module-valued global the function actually
+    references (via `func.__code__.co_names` against `func.__globals__`),
+    matching however the caller imported it (`import numpy as np` stays
+    `np`).
+    """
+    src = textwrap.dedent(inspect.getsource(func))
+
+    import_lines = []
+    for name in func.__code__.co_names:
+        val = func.__globals__.get(name)
+        if isinstance(val, types.ModuleType):
+            modname = val.__name__
+            if modname == name:
+                import_lines.append(f"import {modname}")
+            else:
+                import_lines.append(f"import {modname} as {name}")
+
+    if import_lines:
+        return "\n".join(import_lines) + "\n\n" + src
+    return src
+
+
+def _load_dap_script_function_from_file(fpath):
+    """
+    Load the `proc` (or `<file stem>`-named) function out of a custom DAP
+    script file -- same convention as
+    slic.core.acquisition.broker.customdap.load_proc_from_file / dap's
+    CUSTOM_SCRIPTS.md.
+    """
+    module_name = fpath.stem
+    spec = ilu.spec_from_file_location(module_name, fpath)
+    module = ilu.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    func = getattr(module, "proc", None) or getattr(module, module_name, None)
+    if func is None:
+        raise AttributeError(
+            f'"{fpath}" defines neither a "proc" nor a "{module_name}" function'
+        )
+    return func
+
+
+def _test_dap_script_function(func, max_time=0.1):
+    """
+    Run a candidate custom-DAP-script function once against synthetic
+    (meta, image, mask), matching the shape/call convention
+    dap.algos.custom.calc_custom actually uses. Mirrors
+    slic.core.acquisition.broker.customdap.test_run -- minus its
+    LineProfiler-based profiling output, which isn't a dependency of eco --
+    refusing anything that mutates its inputs (only the return value is
+    allowed to carry the result) or that is too slow to run inline per
+    frame.
+    """
+    import numpy as np
+
+    shape = (1024, 512)
+    image = np.random.random(shape)
+    mask = image < 0.5
+    meta = {}
+
+    orig_meta = meta.copy()
+    orig_image = image.copy()
+    orig_mask = mask.copy()
+
+    t0 = time.time()
+    result = func(meta, image, mask)
+    dt = time.time() - t0
+
+    name = getattr(func, "__name__", "custom_dap_script")
+
+    if meta != orig_meta:
+        raise RuntimeError(
+            f'function "{name}" modifies the metadata dict -- this is not '
+            "allowed, return the result(s) instead"
+        )
+    if not np.array_equal(image, orig_image, equal_nan=True):
+        raise RuntimeError(f'function "{name}" modifies the image in place')
+    if not np.array_equal(mask, orig_mask, equal_nan=True):
+        raise RuntimeError(f'function "{name}" modifies the mask in place')
+    if dt > max_time:
+        raise RuntimeError(
+            f'function "{name}" took {dt:.3g}s on a single test frame -- '
+            f"this is too slow to run inline per frame (limit {max_time}s)"
+        )
+    return result
 
 
 class JungfrauChannel(Assembly):
@@ -68,6 +293,13 @@ class Jungfrau(Assembly):
             )
         self._append(
             JungfrauChannel, jf_id + "_dap_col3", name="ppref_online_processing"
+        )
+        self._append(
+            DetectorBsStream,
+            f"{jf_id}:roi_intensities",
+            cachannel=None,
+            name="intensity_roi",
+            optional=True,
         )
         self._append(
             AdjustablePv,
@@ -320,6 +552,172 @@ class Jungfrau(Assembly):
         if m["status"] == "ok":
             self._dap_settings_storage.set_target_value(dap_setting_dict).wait()
             return m
+
+    def upload_custom_dap_script(
+        self,
+        source,
+        name=None,
+        allowed_modules=DEFAULT_ALLOWED_DAP_MODULES,
+        max_time=0.1,
+    ):
+        """
+        Upload a custom online-analysis script to run on this detector's
+        stream, via sf_daq_broker's slow-broker "upload_custom_dap_script"
+        endpoint (same one slic.core.acquisition.broker.customdap /
+        BrokerClient.upload_custom_dap_script use -- see dap's
+        CUSTOM_SCRIPTS.md for the server-side contract).
+
+        `source` is either:
+          - a path (str/Path) to an existing .py file defining a
+            `proc(meta, image, mask)` function (or one named after the
+            file's stem) -- same file convention slic uses; or
+          - a live function already defined in the caller's namespace
+            (e.g. written at the prompt, or pulled off a namespace
+            component) with that same `(meta, image, mask) -> result`
+            signature. Its source is reconstructed into a standalone
+            module via `_dap_script_source_from_function` so it can be
+            exec'd server-side on its own -- see that function's
+            docstring for what it can and can't pick up automatically.
+
+        Before anything is sent, the resulting source is (1) checked via
+        `check_dap_script_imports` to only import modules in
+        `allowed_modules` -- sf_daq_broker execs custom scripts
+        unsandboxed against live detector data, so this is the only gate
+        against e.g. "import os" landing in something that then runs
+        unattended on the pipeline -- and (2) actually run once against
+        synthetic (meta, image, mask) via `_test_dap_script_function`,
+        which refuses anything that mutates its inputs or runs too slowly
+        to do inline per frame.
+
+        `result` may be a single value (uploaded as channel
+        "{jf_id}:{name}") or a dict (one channel per key) -- see dap's
+        CUSTOM_SCRIPTS.md. Once uploaded, enable it with e.g.
+        `self.set_dap_settings({"custom_script": f"<beamline>:{name}"})`.
+
+        Keeping state across pulses: the uploaded script is NOT re-imported
+        every frame. dap.algos.custom.load_custom(script) (server-side) is
+        `@functools.cache`d, keyed on the "beamline:name" string -- the
+        first call execs the module and the very same function object is
+        then reused for every later frame that worker process handles,
+        so ordinary Python persistence works: a module-level global mutated
+        via `global` inside your function, an object built once at module
+        import time and captured in a closure, or even an attribute set on
+        the function itself (`proc.count = ...`) will all carry over
+        pulse-to-pulse for as long as that worker process runs. (The
+        `@cooldown(60)` wrapping it only throttles retries after a load
+        *failure* -- a successful load is cached indefinitely, not just for
+        60s -- which is also why disable_custom_script()'s docstring warns
+        that re-uploading a fix under the same name won't reach an
+        already-running worker.)
+
+        Two caveats on relying on that for real accumulation, from reading
+        dap's source (not confirmed against a live worker -- see
+        list_dap_env_packages/check_dap_env_modules above for the same
+        access limitation):
+          - dap's workers are horizontally scaled: each one's
+            dap.zmqsocks.ZMQSocketsWorker.backend_socket is a ZeroMQ PULL
+            socket connected to a shared PUSH backend -- the standard
+            fair-queued *competing consumers* pattern. If more than one
+            worker process is handling this detector's stream, consecutive
+            pulses are round-robined across independent processes, each
+            with its own separate copy of any module-level state -- so a
+            naive `count += 1` global would only count the fraction of
+            pulses that particular process happened to receive, silently.
+            Nothing found in dap/sf_daq_broker/slic reveals how many worker
+            processes are actually configured per detector.
+          - State is lost on a worker restart, same caching mechanism, same
+            unknown restart cadence noted in disable_custom_script().
+        """
+        if callable(source):
+            func = source
+            name = name or getattr(func, "__name__", None)
+            if not name:
+                raise ValueError("name is required for this source")
+            code = _dap_script_source_from_function(func)
+        else:
+            fpath = Path(source)
+            if not fpath.is_file():
+                raise TypeError(
+                    "source must be a path to an existing .py file or a "
+                    f"callable (meta, image, mask) -> result function, got {source!r}"
+                )
+            name = name or fpath.stem
+            code = fpath.read_text()
+            func = _load_dap_script_function_from_file(fpath)
+
+        check_dap_script_imports(code, allowed_modules=allowed_modules)
+        _test_dap_script_function(func, max_time=max_time)
+
+        m = requests.post(
+            f"{self.broker_address_aux}/upload_custom_dap_script",
+            json={"name": name, "code": code},
+        ).json()
+        return m
+
+    def get_active_custom_script(self, force=True):
+        """
+        Return the "beamline:name" of the custom DAP script currently
+        applied to this detector's live stream, or None if none is active.
+
+        This is the "custom_script" key of get_dap_settings()'s parameters
+        dict -- i.e. the same pipeline_parameters.{jf_id}.json file the
+        running dap worker itself re-reads every frame
+        (dap.worker.work()'s `config = config_file.load()`, a BufferedJSON
+        that is mtime-cached for at most 2s) and merges into the per-frame
+        `results` dict that dap.algos.custom.calc_custom reads
+        "custom_script" off of. So what this returns really is "what's
+        running now", with at most ~2s of staleness -- not merely "what was
+        last requested".
+
+        Unlike get_dap_settings() itself, this defaults to force=True: the
+        whole point of calling this is to know the live state, and the
+        cached _dap_settings_storage value (force=False) can be arbitrarily
+        stale, e.g. it never reflects a change made by someone else's
+        session, or via the raw REST endpoint directly.
+        """
+        parameters = self.get_dap_settings(force=force) or {}
+        return parameters.get("custom_script") or None
+
+    def disable_custom_script(self):
+        """
+        Turn off whichever custom DAP script is currently active on this
+        detector (calc_custom: `if not script: return`), reverting to
+        eco/dap's normal built-in analysis chain. Equivalent to
+        `self.set_dap_settings({"custom_script": None})`.
+
+        Read this before relying on it as an "undo" for
+        upload_custom_dap_script -- it is *not* a full undo:
+
+        - It only clears which script is selected, not the script file
+          itself. The file previously uploaded under that name stays on
+          GPFS (it is written into a git-tracked "custom_dap_scripts" repo
+          server-side and committed -- see upload_custom_dap_script's
+          docstring), recoverable only via git access to that repo, which
+          neither eco nor slic exposes over the REST API.
+        - It does not restore whatever custom_script value (if any) was
+          active *before* the one you are disabling. If you need to go
+          back to a specific prior script rather than "none", capture it
+          yourself first via get_active_custom_script() and pass it to
+          set_dap_settings() explicitly.
+        - Re-enabling a script by name later does not guarantee you get
+          the file's current content: dap.algos.custom.load_custom (the
+          server-side loader) is functools.cache'd per detector's dap
+          worker process, keyed on the "beamline:name" string, with no
+          cache invalidation on re-upload. A worker that has already
+          successfully loaded a given name once keeps using that cached
+          function indefinitely, even across this disable/re-enable, until
+          that worker process itself restarts -- eco/dap/slic's source
+          gave no visibility into when/how often that happens. If you
+          uploaded a fixed version of a script under the *same* name while
+          it may have already run, disabling and re-enabling it here is
+          not sufficient to guarantee the fix is what executes next --
+          uploading under a new name (and pointing custom_script at that)
+          is the only way from eco to be sure.
+        - Applying the change itself is near-immediate (~2s, see
+          get_active_custom_script()'s docstring), same as any other
+          set_dap_settings() call.
+        """
+        return self.set_dap_settings({"custom_script": None})
 
     def get_detector_settings(self, force=False):
         """

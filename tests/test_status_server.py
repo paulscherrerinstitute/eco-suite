@@ -55,10 +55,13 @@ class FakeStatusCollection:
 class FakeNamespaceAlias:
     """Enough of eco.aliases.aliases.Alias.get_all() for the /aliases route:
     a flat list built from whatever detectors this fake namespace holds,
-    same shape as the real Namespace.alias.get_all()."""
+    same shape as the real Namespace.alias.get_all(). `extra` are raw
+    alias dicts appended as-is, for channeltypes (JF/BS/BSCAM) the detector
+    fixtures above don't produce - see /channels/compare's tests."""
 
-    def __init__(self, detectors):
+    def __init__(self, detectors, extra=None):
         self._detectors = detectors
+        self._extra = list(extra or [])
 
     def get_all(self, joiner=".", channeltypes=None):
         out = []
@@ -70,6 +73,9 @@ class FakeNamespaceAlias:
             }
             if (not channeltypes) or (entry["channeltype"] in channeltypes):
                 out.append(entry)
+        for entry in self._extra:
+            if (not channeltypes) or (entry["channeltype"] in channeltypes):
+                out.append(entry)
         return out
 
 
@@ -77,11 +83,16 @@ class FakeNamespace:
     """Enough of Namespace for NamespaceMonitorStore."""
 
     def __init__(self, names=("a", "b", "c"), required=("a", "b"), init_delay=0.0,
-                 fail=()):
-        self.all_names = set(names)
+                 fail=(), channel_lists=None, extra_aliases=()):
+        # channel_lists: {"channels_JF": [...], ...} - fake AdjustableFS-like
+        # namespace items, for /channels/compare's tests. Folded into
+        # all_names/lazy_names like any other name, so get_obj() and
+        # init_all() see them the same way the real store does.
+        self._channel_lists = dict(channel_lists or {})
+        self.all_names = set(names) | set(self._channel_lists)
         self.initialized_names = set()
         self.failed_names = set()
-        self.lazy_names = set(names)
+        self.lazy_names = set(self.all_names)
         self.failed_items_excpetion = {}
         self._required = list(required)
         self._init_delay = init_delay
@@ -94,10 +105,16 @@ class FakeNamespace:
                 for n in sorted(names)
             ]
         )
-        self.alias = FakeNamespaceAlias(self.status_collection._items)
+        self.alias = FakeNamespaceAlias(self.status_collection._items, extra=extra_aliases)
 
     def required_names(self):
         return list(self._required)
+
+    def get_obj(self, name):
+        if name in self._channel_lists:
+            value = self._channel_lists[name]
+            return types.SimpleNamespace(get_current_value=lambda: value)
+        raise KeyError(f"{name} is not initialized!")
 
     def init_all(self, required_only=True, exclude_names=(), max_workers=1,
                  background=False, silent=True, **kwargs):
@@ -492,6 +509,57 @@ def test_aliases_endpoint_503_while_not_ready(fake_module):
     store = _store(name)
     app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
     resp = app.test_client().get("/aliases")
+    assert resp.status_code == 503
+    assert resp.get_json()["status"] == "error"
+    assert store.wait_ready(timeout=20)
+
+
+def test_channels_compare_endpoint_reports_missing_and_exceeding(fake_module):
+    name, _ = fake_module(
+        channel_lists={"channels_JF": ["JF03", "JF_OLD"]},
+        extra_aliases=[
+            {"alias": "jf03", "channel": "JF03", "channeltype": "JF"},
+            {"alias": "jf04", "channel": "JF04", "channeltype": "JF"},
+        ],
+    )
+    store = _store(name)
+    assert store.wait_ready(timeout=10)
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    body = app.test_client().get("/channels/compare").get_json()
+    assert body["status"] == "ok"
+    result = body["channels"]["channels_JF"]
+    assert result["channeltype"] == "JF"
+    assert result["missing"] == ["JF04"]
+    assert result["exceeding"] == ["JF_OLD"]
+    assert result["n_required"] == 2
+    assert result["n_recorded"] == 2
+    # channels_BS/channels_BSCAM were never registered on this fake namespace
+    assert set(body["channels"]) == {"channels_JF"}
+
+
+def test_channels_compare_endpoint_list_filter(fake_module):
+    name, _ = fake_module(
+        channel_lists={"channels_JF": ["JF03"], "channels_BS": ["BS1"]},
+        extra_aliases=[
+            {"alias": "jf03", "channel": "JF03", "channeltype": "JF"},
+            {"alias": "bs1", "channel": "BS1", "channeltype": "BS"},
+        ],
+    )
+    store = _store(name)
+    assert store.wait_ready(timeout=10)
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    body = app.test_client().get("/channels/compare?list=channels_JF").get_json()
+    assert set(body["channels"]) == {"channels_JF"}
+
+
+def test_channels_compare_endpoint_503_while_not_ready(fake_module):
+    name, _ = fake_module(
+        names=[f"n{i}" for i in range(10)], init_delay=0.05,
+        channel_lists={"channels_JF": []},
+    )
+    store = _store(name)
+    app = create_namespace_app(NamespaceServerConfig(module_name=name), store=store)
+    resp = app.test_client().get("/channels/compare")
     assert resp.status_code == 503
     assert resp.get_json()["status"] == "error"
     assert store.wait_ready(timeout=20)
