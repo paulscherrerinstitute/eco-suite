@@ -23,6 +23,7 @@ pytest.importorskip("cam_server")
 from eco.devices_general.cameras_swissfel import (
     CameraBasler,
     CameraPCO,
+    QioptiqMicroscope,
     get_camera_calibration,
     set_camera_calibration,
 )
@@ -274,6 +275,84 @@ def test_spawn_separate_process_viewer_omits_eco_name_and_cam_class_when_not_giv
     assert "--eco-name" not in cmd
     assert "--cam-class" not in cmd
     assert captured["title"] == f"cam_server stream - {BASLER_PVNAME}"
+
+
+# -- QioptiqMicroscope._widget_viewer: composite viewer + zoom/focus sliders --
+# A short example custom widget built purely from eco.widgets.containers.stack
+# and eco.widgets.indicator_widgets_qt_simple.slider -- see that method's own
+# docstring. __init__ makes real EPICS/cam_server calls, so these tests use a
+# QioptiqMicroscope subclass that skips it (same reasoning as _FakeCameraSelf
+# above, but this method's super()._widget_viewer() call needs a real instance
+# of the class for super() to resolve, not a bare unrelated stand-in).
+
+
+class _FakeMicroscopeSelfNoAxes(QioptiqMicroscope):
+    def __init__(self):
+        pass  # skip the real __init__ (EPICS/cam_server calls) entirely
+
+
+class _FakeMicroscopeSelfWithAxes(QioptiqMicroscope):
+    def __init__(self, zoom=None, focus=None):
+        if zoom is not None:
+            self.zoom = zoom
+        if focus is not None:
+            self.focus = focus
+
+
+def test_qioptiq_microscope_widget_viewer_falls_back_to_plain_viewer_without_zoom_or_focus(monkeypatch):
+    monkeypatch.setattr(CameraBasler, "_widget_viewer", lambda self, **kw: "the plain viewer")
+
+    result = QioptiqMicroscope._widget_viewer(_FakeMicroscopeSelfNoAxes())
+
+    assert result == "the plain viewer"
+
+
+def test_qioptiq_microscope_widget_viewer_stacks_zoom_and_focus_sliders(monkeypatch):
+    monkeypatch.setattr(CameraBasler, "_widget_viewer", lambda self, **kw: "the plain viewer")
+
+    slider_calls = []
+
+    def fake_slider(item, title=None):
+        slider_calls.append((item, title))
+        return f"slider:{title}"
+
+    monkeypatch.setattr("eco.widgets.indicator_widgets_qt_simple.slider", fake_slider)
+
+    stack_calls = []
+
+    def fake_stack(*children, direction="vertical", align="start"):
+        built = tuple(c() if callable(c) else c for c in children)
+        result = ("STACK", direction, built)
+        stack_calls.append(result)
+        return result
+
+    monkeypatch.setattr("eco.widgets.containers.stack", fake_stack)
+
+    fake_self = _FakeMicroscopeSelfWithAxes(zoom="ZOOM-ADJ", focus="FOCUS-ADJ")
+    result = QioptiqMicroscope._widget_viewer(fake_self)
+
+    assert slider_calls == [("ZOOM-ADJ", "Zoom"), ("FOCUS-ADJ", "Focus")]
+    inner = ("STACK", "horizontal", ("slider:Zoom", "slider:Focus"))
+    assert stack_calls[0] == inner
+    assert result == ("STACK", "vertical", ("the plain viewer", inner))
+
+
+def test_qioptiq_microscope_widget_viewer_includes_only_the_axis_that_exists(monkeypatch):
+    monkeypatch.setattr(CameraBasler, "_widget_viewer", lambda self, **kw: "the plain viewer")
+    monkeypatch.setattr(
+        "eco.widgets.indicator_widgets_qt_simple.slider",
+        lambda item, title=None: f"slider:{title}",
+    )
+
+    def fake_stack(*children, direction="vertical", align="start"):
+        return ("STACK", direction, tuple(c() if callable(c) else c for c in children))
+
+    monkeypatch.setattr("eco.widgets.containers.stack", fake_stack)
+
+    fake_self = _FakeMicroscopeSelfWithAxes(zoom="ZOOM-ADJ")  # no focus motor configured
+    result = QioptiqMicroscope._widget_viewer(fake_self)
+
+    assert result == ("STACK", "vertical", ("the plain viewer", ("STACK", "horizontal", ("slider:Zoom",))))
 
 
 # -- get_camera_calibration / set_camera_calibration ----------------------
