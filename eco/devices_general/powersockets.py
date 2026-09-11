@@ -183,6 +183,55 @@ class MpodStatus(Assembly):
         )
 
 
+def _append_voltage_setpoint_pair(assembly, voltage_sp_pvname, voltage_readback_pvname=None):
+    """Append `voltage`/`voltage_set_point` `AdjustablePv` children, both
+    writing the same setpoint PV (`voltage` also carries the live readback).
+    Limits are `AdjustablePv`'s own built-in `.LOPR`/`.HOPR`-backed
+    `pvlowlimname`/`pvhighlimname` (already enforced on every `change()`,
+    already readable via `get_limits()`) -- no separate PV connections are
+    opened for them, `is_display="recursive"` is enough to surface them.
+
+    Shared between the legacy-ioc (`MpodChannel`) and new-ioc
+    (`NEW_MpodChannel`) hardware generations, which name their setpoint PVs
+    differently upstream but both land on a plain EPICS record with the same
+    `.LOPR`/`.HOPR` limit-field convention.
+    """
+    voltage_lowlim_pvname = voltage_sp_pvname + ".LOPR"
+    voltage_highlim_pvname = voltage_sp_pvname + ".HOPR"
+    assembly._append(
+        AdjustablePv,
+        voltage_sp_pvname,
+        pvreadbackname=voltage_readback_pvname,
+        pvlowlimname=voltage_lowlim_pvname,
+        pvhighlimname=voltage_highlim_pvname,
+        name="voltage",
+        is_setting=True,
+        is_display="recursive",
+    )
+    assembly._append(
+        AdjustablePv,
+        voltage_sp_pvname,
+        pvlowlimname=voltage_lowlim_pvname,
+        pvhighlimname=voltage_highlim_pvname,
+        name="voltage_set_point",
+        is_setting=True,
+        is_display="recursive",
+    )
+
+
+def _mpod_channel_get_current_value(channel, *args, **kwargs):
+    return (
+        channel.voltage_set_point.get_current_value(*args, **kwargs),
+        channel.on.get_current_value(*args, **kwargs),
+    )
+
+
+def _mpod_channel_set_target_value(channel, value, *args, **kwargs):
+    if isinstance(value, bool):
+        return channel.on.set_target_value(value, *args, **kwargs)
+    return channel.voltage_set_point.set_target_value(value, *args, **kwargs)
+
+
 @spec_convenience
 class MpodChannel(Assembly):
     def __init__(self, pvbase, channel_number, module_string="LV_OMPV_1", name=None):
@@ -199,46 +248,11 @@ class MpodChannel(Assembly):
         voltage_sp_pvname = (
             self.pvbase + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP"
         )
-        voltage_lowlim_pvname = voltage_sp_pvname + ".LOPR"
-        voltage_highlim_pvname = voltage_sp_pvname + ".HOPR"
-        # AdjustablePv.change() already enforces these limits on every write
-        # (both here and on voltage_set_point below, since both write the
-        # same OUTPUT_V_SP); the limit_low/limit_high siblings that make the
-        # limit values themselves visible in status/display are only added
-        # once, under voltage_set_point.
-        self._append(
-            AdjustablePv,
+        _append_voltage_setpoint_pair(
+            self,
             voltage_sp_pvname,
-            pvreadbackname=self.pvbase
+            voltage_readback_pvname=self.pvbase
             + f":{self._module_string}_CH{self.channel_number}_MEAS_SENS_V",
-            pvlowlimname=voltage_lowlim_pvname,
-            pvhighlimname=voltage_highlim_pvname,
-            name="voltage",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            AdjustablePv,
-            voltage_sp_pvname,
-            pvlowlimname=voltage_lowlim_pvname,
-            pvhighlimname=voltage_highlim_pvname,
-            name="voltage_set_point",
-            is_setting=True,
-            is_display=True,
-        )
-        self._append(
-            DetectorPvData,
-            voltage_lowlim_pvname,
-            name="voltage_set_point_limit_low",
-            is_status=True,
-            is_display=True,
-        )
-        self._append(
-            DetectorPvData,
-            voltage_highlim_pvname,
-            name="voltage_set_point_limit_high",
-            is_status=True,
-            is_display=True,
         )
         self._append(
             AdjustablePv,
@@ -278,15 +292,10 @@ class MpodChannel(Assembly):
         )
 
     def get_current_value(self, *args, **kwargs):
-        return (
-            self.voltage_set_point.get_current_value(*args, **kwargs),
-            self.on.get_current_value(*args, **kwargs),
-        )
+        return _mpod_channel_get_current_value(self, *args, **kwargs)
 
     def set_target_value(self, value, *args, **kwargs):
-        if isinstance(value, bool):
-            return self.on.set_target_value(value, *args, **kwargs)
-        return self.voltage_set_point.set_target_value(value, *args, **kwargs)
+        return _mpod_channel_set_target_value(self, value, *args, **kwargs)
 
 
 class MpodModule(Assembly):
@@ -369,15 +378,11 @@ class NEW_MpodChannel(Assembly):
             is_display=True,
         )
 
-        self._append(
-            AdjustablePv,
+        _append_voltage_setpoint_pair(
+            self,
             self.pvbase + f":{self._module_string}0{self.channel_number}-V_SP",
-            pvreadbackname=self.pvbase
+            voltage_readback_pvname=self.pvbase
             + f":{self._module_string}0{self.channel_number}-V_RB",
-            pvlowlimname=self.pvbase,
-            name="voltage",
-            is_setting=True,
-            is_display=True,
         )
 
         self._append(
@@ -439,6 +444,7 @@ class NEW_MpodChannel(Assembly):
             self.pvbase + f":{self._module_string}0{self.channel_number}-STAT",
             name="_flags",
             is_setting=False,
+            is_display=False,
         )
 
         self._append(
@@ -450,10 +456,10 @@ class NEW_MpodChannel(Assembly):
         )
 
     def get_current_value(self, *args, **kwargs):
-        return self.on.get_current_value(*args, **kwargs)
+        return _mpod_channel_get_current_value(self, *args, **kwargs)
 
-    def set_target_value(self, *args, **kwargs):
-        return self.on.set_target_value(*args, **kwargs)
+    def set_target_value(self, value, *args, **kwargs):
+        return _mpod_channel_set_target_value(self, value, *args, **kwargs)
 
 
 class NEW_MpodModule(Assembly):
