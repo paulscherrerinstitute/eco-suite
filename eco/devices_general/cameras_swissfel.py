@@ -304,7 +304,9 @@ class CamserverConfig(Assembly):
         return s
 
 
-def _spawn_separate_process_viewer(pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None):
+def _spawn_separate_process_viewer(
+    pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None
+):
     """Launch eco.widgets.camserver_stream_qt's own CLI as an independent
     OS process and embed its window into a local wrapper via
     eco.widgets.subprocess_embed -- the same spawn/WINID-handshake/embed
@@ -841,7 +843,9 @@ class CameraBasler(Assembly):
             fig = plt.figure(num=self.config_cs.cam_id)
             plt.title(f"Set cross: left mouse click, Finish: right click")
             plt.imshow(img)
-            cross_plot = plt.plot(np.atleast_1d(x), np.atleast_1d(y), "+r", markersize=10)[0]
+            cross_plot = plt.plot(
+                np.atleast_1d(x), np.atleast_1d(y), "+r", markersize=10
+            )[0]
             bid = fig.canvas.mpl_connect("button_press_event", on_click)
             plt.show(block=True)
             x, y = self.config_cs._cross
@@ -854,7 +858,11 @@ class CameraBasler(Assembly):
         )
 
     def _widget_viewer(
-        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True,
+        self,
+        pipeline_url=None,
+        rate_hz=10.0,
+        theme=None,
+        auto_start=True,
         separate_process=True,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
@@ -889,8 +897,12 @@ class CameraBasler(Assembly):
 
         if separate_process:
             return _spawn_separate_process_viewer(
-                self.pvname, name=name, cam_class=getattr(self, "_CAM_CLASS_PATH", None),
-                pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme,
+                self.pvname,
+                name=name,
+                cam_class=getattr(self, "_CAM_CLASS_PATH", None),
+                pipeline_url=pipeline_url,
+                rate_hz=rate_hz,
+                theme=theme,
             )
 
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
@@ -986,6 +998,32 @@ class QioptiqMicroscope(CameraBasler):
             self._append(MotorRecord, pvname_zoom, name="zoom", is_setting=True)
         if pvname_focus:
             self._append(MotorRecord, pvname_focus, name="focus", is_setting=True)
+
+    def _widget_viewer(self, **kwargs):
+        """A short example of building a custom device widget purely by
+        composing eco's existing pieces, no new Qt code of its own: the
+        plain camera screen-panel viewer (CameraBasler._widget_viewer,
+        via super()) stacked above a row of
+        eco.widgets.indicator_widgets_qt_simple.slider() controls -- one
+        per settable zoom/focus sub-Adjustable this microscope happens to
+        have (see __init__). Each slider is built straight from the
+        Adjustable itself (slider() reads/writes it directly via
+        get_current_value()/set_target_value()) -- nothing here registers
+        or configures anything beyond that."""
+        from eco.widgets.containers import stack
+        from eco.widgets.indicator_widgets_qt_simple import slider
+
+        controls = [
+            lambda name=name, label=label: slider(getattr(self, name), title=label)
+            for name, label in (("zoom", "Zoom"), ("focus", "Focus"))
+            if hasattr(self, name)
+        ]
+        viewer = super()._widget_viewer(**kwargs)
+        if not controls:
+            return viewer
+        return stack(
+            viewer, stack(*controls, direction="horizontal"), direction="vertical"
+        )
 
 
 class CameraPCO(Assembly):
@@ -1090,7 +1128,11 @@ class CameraPCO(Assembly):
         )
 
     def _widget_viewer(
-        self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True,
+        self,
+        pipeline_url=None,
+        rate_hz=10.0,
+        theme=None,
+        auto_start=True,
         separate_process=True,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
@@ -1101,8 +1143,12 @@ class CameraPCO(Assembly):
 
         if separate_process:
             return _spawn_separate_process_viewer(
-                self.pvname, name=name, cam_class=getattr(self, "_CAM_CLASS_PATH", None),
-                pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme,
+                self.pvname,
+                name=name,
+                cam_class=getattr(self, "_CAM_CLASS_PATH", None),
+                pipeline_url=pipeline_url,
+                rate_hz=rate_hz,
+                theme=theme,
             )
 
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
