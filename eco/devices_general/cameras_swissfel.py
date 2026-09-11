@@ -517,11 +517,14 @@ class CameraBasler(Assembly):
     # property grid -- mirrors eco.devices_general.cameras_ptz.AxisPTZ. See
     # Assembly._default_widget/_widget_viewer() below.
     _default_widget = "_widget_viewer"
-    # The viewer now runs in a separate process by default (see
-    # _widget_viewer's separate_process=True default) and should dock into
-    # the shared EcoDesktopApp workbench rather than pop an untethered
-    # window -- see Assembly._default_dock_in/_maybe_dock.
-    _default_dock_in = True
+    # The viewer runs in a separate process by default (see
+    # _widget_viewer's separate_process=True default), but stays standalone
+    # unless the caller explicitly opts in with widget(dock_in=True) --
+    # docking by default surprised users starting eco plainly (a viewer
+    # they never asked to dock, docking anyway). dock_in=True still gets
+    # the shared EcoDesktopApp workbench auto-created if none is open yet
+    # (see Assembly._maybe_dock -> get_or_create_default_container()).
+    _default_dock_in = None
     # Dotted import path the separate-process viewer subprocess uses to
     # rebuild its own independent camera object (see
     # _spawn_separate_process_viewer) -- kept as a class constant rather
@@ -877,11 +880,12 @@ class CameraBasler(Assembly):
 
         separate_process=True (the default): run the viewer in its own OS
         process instead of this one -- immune to this session blocking on
-        something (a synchronous motor move, a long scan, ...) -- embedded
-        into the shared EcoDesktopApp workbench (see _default_dock_in)
-        rather than popping untethered, titled by this camera's own eco
-        name, and with its own independently-built camera object (talking
-        directly to EPICS/cam_server) behind its "Camera Settings" button
+        something (a synchronous motor move, a long scan, ...) -- pops as
+        its own standalone window by default, but can be docked into the
+        shared EcoDesktopApp workbench instead via widget(dock_in=True)
+        (see _default_dock_in/Assembly._maybe_dock), titled by this
+        camera's own eco name, and with its own independently-built camera
+        object (talking directly to EPICS/cam_server) behind its "Camera Settings" button
         -- see _spawn_separate_process_viewer for the full trade-off and
         the deferred-IPC TODO. Returns an
         eco.widgets.subprocess_embed.EmbeddedProcessWindow rather than a
@@ -1034,7 +1038,7 @@ class CameraPCO(Assembly):
     _default_widget = "_widget_viewer"
     # See CameraBasler's own copy of these two for the rationale --
     # mirrored here identically.
-    _default_dock_in = True
+    _default_dock_in = None
     _CAM_CLASS_PATH = "eco.devices_general.cameras_swissfel.CameraPCO"
 
     def __init__(self, pvname, camserver_alias=None, name=None):

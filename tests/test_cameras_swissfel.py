@@ -116,12 +116,14 @@ def test_camera_basler_viewer_passes_through_rate_and_theme(monkeypatch):
 # -- separate_process=True: escapes this session's own event-loop freezes --
 
 
-def test_camera_basler_default_dock_in_is_true():
-    assert CameraBasler._default_dock_in is True
+def test_camera_basler_default_dock_in_is_none():
+    # Standalone unless the caller opts in with widget(dock_in=True) --
+    # docking by default surprised users starting eco plainly.
+    assert CameraBasler._default_dock_in is None
 
 
-def test_camera_pco_default_dock_in_is_true():
-    assert CameraPCO._default_dock_in is True
+def test_camera_pco_default_dock_in_is_none():
+    assert CameraPCO._default_dock_in is None
 
 
 def test_camera_basler_separate_process_is_the_default(monkeypatch):
