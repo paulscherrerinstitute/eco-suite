@@ -34,6 +34,21 @@ _app_ref = None
 # to own this constant) as the one shared source of truth.
 EMBED_TIMEOUT_S = 30.0
 
+# Shown in EmbeddedProcessWindow's body while the subprocess is still
+# starting up -- without it the window is just blank for however long that
+# takes (eco's own first import alone is ~10-15s, see EMBED_TIMEOUT_S
+# above), which reads as broken/hung rather than "working on it". Cleared
+# automatically by whichever of embed()/show_floating_note()/show_error()
+# resolves next, since all three call clear_layout() first.
+STARTING_NOTE_TEXT = (
+    "Starting viewer subprocess...\n"
+    "(eco's first import in a fresh process can take ~10-15s)\n\n"
+    "To skip this wait, pass separate_process=False to build the viewer "
+    "in this process instead -- it will then freeze for the duration of "
+    "any blocking call in this session (a synchronous motor move, a long "
+    "scan, ...), which is why that isn't the default."
+)
+
 
 def child_process_environment():
     """Environment for a viewer subprocess: this process's own, plus the
@@ -194,6 +209,12 @@ class EmbeddedProcessWindow:
         self._layout.setContentsMargins(2, 2, 2, 2)
         self.window.setCentralWidget(body)
         self._body_widget = body
+
+        starting_note = QtWidgets.QLabel(STARTING_NOTE_TEXT)
+        starting_note.setWordWrap(True)
+        starting_note.setAlignment(QtCore.Qt.AlignCenter)
+        starting_note.setStyleSheet("color: #666;")
+        self._layout.addWidget(starting_note)
 
         self.process = spawn_and_embed(self, cmd, env=env, timeout_s=timeout_s)
 
