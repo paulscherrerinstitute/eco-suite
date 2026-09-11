@@ -186,6 +186,12 @@ def test_camera_basler_viewer_separate_process_passes_name_and_cam_class(monkeyp
     )
 
     class _FakeCameraSelfWithAlias(_FakeCameraSelf):
+        # matches the real CameraBasler._CAM_CLASS_PATH class attribute --
+        # getattr(self, "_CAM_CLASS_PATH", None) in _widget_viewer() reads
+        # off self's actual runtime type, not CameraBasler's (this stand-in
+        # doesn't inherit from CameraBasler), so it must be set here too.
+        _CAM_CLASS_PATH = "eco.devices_general.cameras_swissfel.CameraBasler"
+
         def __init__(self, pvname, full_name):
             super().__init__(pvname)
             self.alias = _FakeAlias(full_name)

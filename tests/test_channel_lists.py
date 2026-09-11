@@ -5,7 +5,6 @@ namespace_server, and tests/test_daq_status_server.py /
 tests/test_status_server.py for the two integration paths)."""
 
 from eco.aliases.channel_lists import (
-    CHANNEL_LIST_CHANNELTYPES,
     compare_channel_lists,
     required_channels_by_type,
 )
@@ -31,7 +30,7 @@ def test_compare_reports_missing_and_exceeding():
     ]
     recorded = {"channels_JF": ["JF03", "JF_OLD"]}
     result = compare_channel_lists(alias_list, recorded)
-    assert set(result) == set(CHANNEL_LIST_CHANNELTYPES)  # every known list reported
+    assert set(result) == {"channels_JF"}  # only lists present in `recorded`
     jf = result["channels_JF"]
     assert jf["channeltype"] == "JF"
     assert jf["missing"] == ["JF04"]
