@@ -95,6 +95,11 @@ logger = logging.getLogger(__name__)
 
 _app_ref = None
 
+# Every live (built, not-yet-closed) EcoDesktopApp, most-recently-opened
+# last -- see get_or_create_default_container(), registered/deregistered
+# by _build_window()/_on_window_closing() below.
+_live_desktop_apps = []
+
 # classic terminal "spinner" glyphs -- rotated through while a lazy
 # namespace entry is initializing (see _NamespaceLauncher)
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -762,6 +767,11 @@ class EcoDesktopApp:
         self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
         self.window.resize(1200, 800)
         self.window.show()
+
+        # Registered last, only once the window is fully built and shown --
+        # a mid-construction exception above must never register a
+        # half-built app. See get_or_create_default_container().
+        _live_desktop_apps.append(self)
 
     def _build_workspace_menu(self):
         menu = self.window.menuBar().addMenu("&Workspace")
@@ -1444,6 +1454,9 @@ class EcoDesktopApp:
         "last window closed -> quit" never fires, so exec_() -- and the
         whole `eco desktop` process/terminal -- would hang forever with no
         window left to close it from."""
+        if self in _live_desktop_apps:
+            _live_desktop_apps.remove(self)
+
         self._autosave_workspace()
         for dock in list(self._widget_docks):
             try:
@@ -1479,6 +1492,40 @@ class EcoDesktopApp:
             except Exception:
                 pass
             self.window = None
+
+
+def get_or_create_default_container():
+    """The EcoDesktopApp that Assembly.widget()'s dock_in="auto"/True (see
+    eco.elements.assembly.Assembly._maybe_dock) attaches a widget to by
+    default: the most recently opened still-live EcoDesktopApp, or a
+    freshly created headless one (no console, no Namespace panel -- a pure
+    empty docking shell) if none is currently open. Mirrors
+    eco.widgets.dashboard_qt.get_default_dashboard's create-on-first-use/
+    reuse-while-alive pattern, generalized to "most recently opened" of
+    however many live EcoDesktopApp windows there are, rather than one
+    single shared slot.
+
+    Deliberately builds the fresh fallback via _build_window() directly
+    rather than EcoDesktopApp(auto_start=True)/start()/run(): start()
+    falls back to a *blocking* run() (app.exec_()) whenever no IPython Qt
+    event loop is already active (see start()'s own docstring) -- fine for
+    the `eco desktop` CLI entry point, but would silently hang any plain
+    `some_device.widget()` call made from a non-interactive script/
+    subprocess the moment it needed to auto-create a container.
+    _build_window() alone just builds and shows the window without
+    blocking, exactly like every other single-widget open path in this
+    codebase (make_assembly_qt_window, make_camserver_stream_qt, ...) --
+    callers are expected to already have Qt's event loop pumped by their
+    own context (an interactive IPython session's `%gui qt`, or their own
+    app.exec_()), same as those."""
+    live = [a for a in _live_desktop_apps if a.window is not None]
+    _live_desktop_apps[:] = live
+    if live:
+        return live[-1]
+
+    app = EcoDesktopApp(with_console=False, with_namespace_panel=False, auto_start=False)
+    app._build_window()
+    return app
 
 
 def _main(argv=None):

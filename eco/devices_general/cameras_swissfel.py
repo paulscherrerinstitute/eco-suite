@@ -304,44 +304,65 @@ class CamserverConfig(Assembly):
         return s
 
 
-def _spawn_separate_process_viewer(pvname, pipeline_url=None, rate_hz=10.0, theme=None):
+def _spawn_separate_process_viewer(pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None):
     """Launch eco.widgets.camserver_stream_qt's own CLI as an independent
-    OS process, own QApplication/event loop -- the same subprocess-per-
-    viewer pattern eco.widgets.camserver_panel_qt already uses for each
-    viewer it spawns (see its _child_process_environment/_spawn_viewer;
-    this is a plain subprocess.Popen equivalent of the same idea, not
-    embedded into any panel, so it needs no --embed/window-id handshake).
+    OS process and embed its window into a local wrapper via
+    eco.widgets.subprocess_embed -- the same spawn/WINID-handshake/embed
+    mechanism eco.widgets.camserver_panel_qt already uses per-viewer (see
+    that module and eco.widgets.subprocess_embed.spawn_and_embed), so the
+    resulting window can be docked into the shared EcoDesktopApp workbench
+    (see CameraBasler._default_dock_in) instead of popping untethered.
 
-    Why: Qt's event loop is only pumped between IPython prompts (via the
-    terminal's GUI-integration hook, same as eco.utilities.strip_plot's own
-    module docstring explains for exactly this reason). A viewer built
-    in-process therefore freezes -- both its live image updates and the
-    whole window's responsiveness -- for the duration of any single
-    blocking statement in this session (a synchronous motor move, a long
-    scan, ...). A separate-process viewer has its own independent event
-    loop untouched by that, at the cost of no reference back to this
-    camera object -- no "Camera Settings"/"Elog" buttons in that window;
-    use widget(normal=True)/camera.elog() from the session itself instead.
-    Returns the subprocess.Popen handle."""
-    import os
-    import subprocess
+    Why a separate process at all: Qt's event loop is only pumped between
+    IPython prompts (via the terminal's GUI-integration hook, same as
+    eco.utilities.strip_plot's own module docstring explains for exactly
+    this reason). A viewer built in-process therefore freezes -- both its
+    live image updates and the whole window's responsiveness -- for the
+    duration of any single blocking statement in this session (a
+    synchronous motor move, a long scan, ...). A separate-process viewer
+    has its own independent event loop untouched by that.
+
+    `name`: the eco device's own alias name (e.g. "bernina.cam1", NOT the
+    same as `pvname`) -- used for the window title and passed through as
+    --eco-name. `cam_class`: a dotted import path (e.g.
+    "eco.devices_general.cameras_swissfel.CameraBasler") the subprocess
+    uses to build its OWN independent camera object via `cam_class(pvname)`,
+    for the "Camera Settings"/Elog buttons and camera.screenpanel_ana
+    access inside that window.
+
+    DELIBERATE SIMPLIFICATION: the subprocess's camera object is a fresh,
+    independent instance talking directly to EPICS/cam_server -- there is
+    NO live IPC link back to this session's own camera object, so state
+    set here (e.g. calibration tweaks) isn't reflected there and vice
+    versa, beyond what both read from EPICS/cam_server directly. TODO: a
+    real IPC channel (e.g. QLocalSocket/QLocalServer) to the parent
+    process, for tighter live communication (shared analysis results,
+    coordinated calibration state, ...), is a deliberately deferred future
+    improvement -- not built here. For that tighter coupling right now,
+    use `separate_process=False` (in-process, `cam=self` -- e.g.
+    camera.screenpanel_ana for intensity computation) instead.
+
+    Returns an eco.widgets.subprocess_embed.EmbeddedProcessWindow (the
+    .window/.stop() wrapper convention every eco Qt widget follows -- see
+    EcoDesktopApp._dock_widget_object) -- NOT a bare subprocess.Popen like
+    before, since it must be dockable via Assembly.widget()'s dock_in
+    machinery (see CameraBasler/CameraPCO._default_dock_in)."""
     import sys
 
-    import eco
+    from eco.widgets.subprocess_embed import EmbeddedProcessWindow
 
-    eco_root = os.path.dirname(os.path.dirname(os.path.abspath(eco.__file__)))
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, [eco_root, env.get("PYTHONPATH", "")]))
-
-    argv = [
-        sys.executable, "-m", "eco.widgets.camserver_stream_qt",
-        pvname, "--kind", "camera_pipeline", "--rate", str(rate_hz),
-    ]
+    argv = [pvname, "--kind", "camera_pipeline", "--embed", "--rate", str(rate_hz)]
     if pipeline_url:
         argv += ["--pipeline-url", pipeline_url]
     if theme:
         argv += ["--theme", theme]
-    return subprocess.Popen(argv, env=env)
+    if name:
+        argv += ["--eco-name", name]
+    if cam_class:
+        argv += ["--cam-class", cam_class]
+
+    cmd = [sys.executable, "-m", "eco.widgets.camserver_stream_qt", *argv]
+    return EmbeddedProcessWindow(cmd, title=f"cam_server stream - {name or pvname}")
 
 
 def get_camera_calibration(camera):
@@ -494,6 +515,18 @@ class CameraBasler(Assembly):
     # property grid -- mirrors eco.devices_general.cameras_ptz.AxisPTZ. See
     # Assembly._default_widget/_widget_viewer() below.
     _default_widget = "_widget_viewer"
+    # The viewer now runs in a separate process by default (see
+    # _widget_viewer's separate_process=True default) and should dock into
+    # the shared EcoDesktopApp workbench rather than pop an untethered
+    # window -- see Assembly._default_dock_in/_maybe_dock.
+    _default_dock_in = True
+    # Dotted import path the separate-process viewer subprocess uses to
+    # rebuild its own independent camera object (see
+    # _spawn_separate_process_viewer) -- kept as a class constant rather
+    # than derived from type(self) so a subclass with a different __init__
+    # signature (e.g. QioptiqMicroscope below) doesn't silently try to
+    # reconstruct itself with the wrong arguments in the subprocess.
+    _CAM_CLASS_PATH = "eco.devices_general.cameras_swissfel.CameraBasler"
 
     def __init__(
         self,
@@ -822,7 +855,7 @@ class CameraBasler(Assembly):
 
     def _widget_viewer(
         self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True,
-        separate_process=False,
+        separate_process=True,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
         own default processing pipeline -- the pipeline name is resolved
@@ -834,16 +867,30 @@ class CameraBasler(Assembly):
         widget(normal=True) (the normal property-grid display) -- mirrors
         eco.devices_general.cameras_ptz.AxisPTZ._widget_viewer().
 
-        separate_process=True: run the viewer in its own OS process
-        instead of this one -- immune to this session blocking on
-        something (a synchronous motor move, a long scan, ...), at the
-        cost of the "Camera Settings"/"Elog" buttons (no cam= reference
-        across the process boundary). See _spawn_separate_process_viewer
-        for the why/trade-off in full; returns its subprocess.Popen handle
-        rather than a CamServerStreamQt instance in that case."""
+        separate_process=True (the default): run the viewer in its own OS
+        process instead of this one -- immune to this session blocking on
+        something (a synchronous motor move, a long scan, ...) -- embedded
+        into the shared EcoDesktopApp workbench (see _default_dock_in)
+        rather than popping untethered, titled by this camera's own eco
+        name, and with its own independently-built camera object (talking
+        directly to EPICS/cam_server) behind its "Camera Settings" button
+        -- see _spawn_separate_process_viewer for the full trade-off and
+        the deferred-IPC TODO. Returns an
+        eco.widgets.subprocess_embed.EmbeddedProcessWindow rather than a
+        CamServerStreamQt instance in that case.
+
+        separate_process=False: build the viewer in this process instead,
+        with a direct (not rebuilt) `cam=self` reference -- e.g. for
+        camera.screenpanel_ana intensity/analysis access tied to this
+        exact object, at the cost of the viewer freezing for the duration
+        of any blocking statement in this session."""
+        alias = getattr(self, "alias", None)
+        name = alias.get_full_name() if alias is not None else None
+
         if separate_process:
             return _spawn_separate_process_viewer(
-                self.pvname, pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme
+                self.pvname, name=name, cam_class=self._CAM_CLASS_PATH,
+                pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme,
             )
 
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
@@ -856,6 +903,7 @@ class CameraBasler(Assembly):
             theme=theme,
             auto_start=auto_start,
             cam=self,
+            eco_name=name,
         )
 
     def elog(
@@ -946,6 +994,10 @@ class CameraPCO(Assembly):
     # property grid -- mirrors CameraBasler/eco.devices_general.cameras_ptz.
     # AxisPTZ. See Assembly._default_widget/_widget_viewer() below.
     _default_widget = "_widget_viewer"
+    # See CameraBasler's own copy of these two for the rationale --
+    # mirrored here identically.
+    _default_dock_in = True
+    _CAM_CLASS_PATH = "eco.devices_general.cameras_swissfel.CameraPCO"
 
     def __init__(self, pvname, camserver_alias=None, name=None):
         super().__init__(name=name)
@@ -1039,14 +1091,18 @@ class CameraPCO(Assembly):
 
     def _widget_viewer(
         self, pipeline_url=None, rate_hz=10.0, theme=None, auto_start=True,
-        separate_process=False,
+        separate_process=True,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
         own default processing pipeline -- see CameraBasler._widget_viewer(),
         which this mirrors (separate_process included)."""
+        alias = getattr(self, "alias", None)
+        name = alias.get_full_name() if alias is not None else None
+
         if separate_process:
             return _spawn_separate_process_viewer(
-                self.pvname, pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme
+                self.pvname, name=name, cam_class=self._CAM_CLASS_PATH,
+                pipeline_url=pipeline_url, rate_hz=rate_hz, theme=theme,
             )
 
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
@@ -1059,6 +1115,7 @@ class CameraPCO(Assembly):
             theme=theme,
             auto_start=auto_start,
             cam=self,
+            eco_name=name,
         )
 
     def elog(

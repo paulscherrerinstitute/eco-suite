@@ -184,6 +184,57 @@ class MpodStatus(Assembly):
 
 
 @spec_convenience
+class MpodVoltageAdjustable(Assembly):
+    """`AdjustablePv` wrapper that also exposes its EPICS setpoint limits
+    (`.LOPR`/`.HOPR`) as `limit_low`/`limit_high` status/display children.
+
+    `AdjustablePv` already enforces these limits on every write (`change()`
+    raises if the target is outside `[pvlowlim, pvhighlim]`) -- this just
+    makes the limit values themselves visible, instead of only living inside
+    the underlying PVs.
+    """
+
+    def __init__(
+        self,
+        pvsetname,
+        pvlowlimname,
+        pvhighlimname,
+        pvreadbackname=None,
+        name=None,
+    ):
+        super().__init__(name=name)
+        self._adjustable = AdjustablePv(
+            pvsetname,
+            pvreadbackname=pvreadbackname,
+            pvlowlimname=pvlowlimname,
+            pvhighlimname=pvhighlimname,
+            name=name,
+        )
+        self._append(
+            DetectorPvData, pvlowlimname, name="limit_low", is_status=True, is_display=True
+        )
+        self._append(
+            DetectorPvData,
+            pvhighlimname,
+            name="limit_high",
+            is_status=True,
+            is_display=True,
+        )
+
+    def get_current_value(self, *args, **kwargs):
+        return self._adjustable.get_current_value(*args, **kwargs)
+
+    def set_target_value(self, *args, **kwargs):
+        return self._adjustable.set_target_value(*args, **kwargs)
+
+    def get_limits(self):
+        return self._adjustable.get_limits()
+
+    def set_limits(self, *args, **kwargs):
+        return self._adjustable.set_limits(*args, **kwargs)
+
+
+@spec_convenience
 class MpodChannel(Assembly):
     def __init__(self, pvbase, channel_number, module_string="LV_OMPV_1", name=None):
         super().__init__(name=name)
@@ -197,26 +248,28 @@ class MpodChannel(Assembly):
             is_setting=True,
         )
         self._append(
-            AdjustablePv,
+            MpodVoltageAdjustable,
             self.pvbase + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP",
+            pvlowlimname=self.pvbase
+            + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP.LOPR",
+            pvhighlimname=self.pvbase
+            + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP.HOPR",
             pvreadbackname=self.pvbase
             + f":{self._module_string}_CH{self.channel_number}_MEAS_SENS_V",
-            pvlowlimname=self.pvbase
-            + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP.LOPR",
-            pvhighlimname=self.pvbase
-            + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP.HOPR",
             name="voltage",
             is_setting=True,
+            is_display="recursive",
         )
         self._append(
-            AdjustablePv,
+            MpodVoltageAdjustable,
             self.pvbase + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP",
             pvlowlimname=self.pvbase
             + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP.LOPR",
             pvhighlimname=self.pvbase
             + f":{self._module_string}_CH{self.channel_number}_OUTPUT_V_SP.HOPR",
-            name="voltage_setpoint",
+            name="voltage_set_point",
             is_setting=True,
+            is_display="recursive",
         )
         self._append(
             AdjustablePv,
@@ -256,10 +309,15 @@ class MpodChannel(Assembly):
         )
 
     def get_current_value(self, *args, **kwargs):
-        return self.on.get_current_value(*args, **kwargs)
+        return (
+            self.voltage_set_point.get_current_value(*args, **kwargs),
+            self.on.get_current_value(*args, **kwargs),
+        )
 
-    def set_target_value(self, *args, **kwargs):
-        return self.on.set_target_value(*args, **kwargs)
+    def set_target_value(self, value, *args, **kwargs):
+        if isinstance(value, bool):
+            return self.on.set_target_value(value, *args, **kwargs)
+        return self.voltage_set_point.set_target_value(value, *args, **kwargs)
 
 
 class MpodModule(Assembly):

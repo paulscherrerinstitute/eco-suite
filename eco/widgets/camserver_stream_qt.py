@@ -1321,6 +1321,7 @@ class CamServerStreamQt:
         theme=None,
         auto_start=True,
         cam=None,
+        eco_name=None,
     ):
         self.name = name
         self.kind = kind
@@ -1335,6 +1336,12 @@ class CamServerStreamQt:
         # mirroring eco.widgets.camera_stream_qt.AxisPTZStreamQt's own
         # "Settings" button/cam parameter.
         self.cam = cam
+        # the eco device's own alias name (e.g. "bernina.cam1"), if known --
+        # NOT the same as `name` above (the pvname/pipeline name). Used for
+        # the window title instead of `name` when given (see _build_window);
+        # falls back to today's pvname-based title otherwise, so the plain
+        # CLI with no originating eco device is unaffected.
+        self.eco_name = eco_name
         self._settings_window = None
         # the window's own width the moment the settings dock was last
         # hidden (i.e. *with* the dock still visible) -- restored when the
@@ -1396,7 +1403,7 @@ class CamServerStreamQt:
         # `sidePanel`/`buttonSidePanel`) more closely than the original
         # stack of full-width rows did.
         self.window = QtWidgets.QMainWindow()
-        self.window.setWindowTitle(f"cam_server stream - {self.name}")
+        self.window.setWindowTitle(f"cam_server stream - {self.eco_name or self.name}")
         self.window.setAttribute(QtCore.Qt.WA_QuitOnClose, False)
         if self.embed:
             self.window.setWindowFlags(QtCore.Qt.FramelessWindowHint)
@@ -2479,11 +2486,13 @@ def make_camserver_stream_qt(
     theme=None,
     auto_start=True,
     cam=None,
+    eco_name=None,
 ):
     """Convenience factory, mirrors make_axisptz_qt_window's signature.
     theme: "dark" | "light" | None (native) -- see eco.widgets.qt_theme.
     cam: the eco camera Assembly this viewer belongs to, if any -- adds a
-    "Camera Settings" button (see CamServerStreamQt._open_settings)."""
+    "Camera Settings" button (see CamServerStreamQt._open_settings).
+    eco_name: that same Assembly's own alias name, for the window title."""
     return CamServerStreamQt(
         name,
         kind=kind,
@@ -2493,7 +2502,31 @@ def make_camserver_stream_qt(
         theme=theme,
         auto_start=auto_start,
         cam=cam,
+        eco_name=eco_name,
     )
+
+
+def _build_cam_from_argv(cam_class_path, pvname):
+    """Re-instantiate the eco camera Assembly named by `cam_class_path` (a
+    dotted import path) directly against `pvname` -- this subprocess's OWN
+    independent camera object, talking directly to EPICS/cam_server, NOT
+    any live link back to whatever parent session spawned this (see
+    eco.devices_general.cameras_swissfel._spawn_separate_process_viewer's
+    docstring for the deliberate-simplification rationale and the
+    deferred-IPC TODO). Returns None (logged, not raised) if the import or
+    construction fails -- a bad class path or unreachable EPICS/cam_server
+    degrades to "no Camera Settings button", never crashes the viewer."""
+    import importlib
+
+    try:
+        module_path, _, class_name = cam_class_path.rpartition(".")
+        cam_class = getattr(importlib.import_module(module_path), class_name)
+        return cam_class(pvname)
+    except Exception:
+        logger.exception(
+            "failed to construct %r(%r) for cam= in this subprocess", cam_class_path, pvname
+        )
+        return None
 
 
 def _main(argv=None):
@@ -2521,7 +2554,26 @@ def _main(argv=None):
         help="modern flat skin (default: none/native, or whatever ECO_QT_THEME is set to -- "
         "see eco.widgets.qt_theme)",
     )
+    parser.add_argument(
+        "--eco-name",
+        default=None,
+        help="the eco device's own alias name (not the pvname/pipeline name) -- used for the "
+        "window title when given, else the existing pvname-based default. Set automatically "
+        "by eco.devices_general.cameras_swissfel._spawn_separate_process_viewer; not normally "
+        "typed by hand.",
+    )
+    parser.add_argument(
+        "--cam-class",
+        default=None,
+        help="dotted import path of an eco camera Assembly class to re-instantiate in this "
+        "subprocess (e.g. eco.devices_general.cameras_swissfel.CameraBasler), constructed as "
+        "CLASS(<name>) using this CLI's own positional `name` as the pvname, for cam= (Camera "
+        "Settings button, Elog, screenpanel_ana...). Falls back to cam=None if omitted or if "
+        "construction fails -- see _build_cam_from_argv.",
+    )
     args = parser.parse_args(argv)
+
+    cam = _build_cam_from_argv(args.cam_class, args.name) if args.cam_class else None
 
     viewer = CamServerStreamQt(
         args.name,
@@ -2533,6 +2585,8 @@ def _main(argv=None):
         rate_hz=args.rate,
         theme=args.theme,
         auto_start=False,
+        cam=cam,
+        eco_name=args.eco_name,
     )
     viewer.run()
 

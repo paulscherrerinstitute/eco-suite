@@ -40,6 +40,11 @@ _initializing_assemblies = []
 # calls can still override this explicitly with optional=True/False.
 OPTIONAL_APPEND_DEFAULT = True
 
+# Sentinel for Assembly.widget()'s dock_in kwarg -- distinct from None so
+# dock_in=None can mean "explicitly force a standalone window" while
+# *omitting* dock_in entirely means "use type(self)._default_dock_in".
+_UNSET = object()
+
 
 def _register_parent_assembly(obj, parent):
     """Record that `obj` was appended into `parent` (called from every
@@ -1246,7 +1251,15 @@ class Assembly:
     # behavior either way.
     _default_widget = None
 
-    def widget(self, show_hidden: bool = False, normal: bool = False, **kwargs):
+    # Subclasses with a purpose-built view that should, by default, dock
+    # into a shared EcoDesktopApp workbench instead of popping its own
+    # standalone window (e.g. CameraBasler/CameraPCO's separate-process
+    # screen panel -- see cameras_swissfel.py) set this to True. None (the
+    # default) means "stay standalone unless the caller passes dock_in=
+    # explicitly" -- see widget()'s dock_in kwarg / _maybe_dock below.
+    _default_dock_in = None
+
+    def widget(self, show_hidden: bool = False, normal: bool = False, dock_in=_UNSET, **kwargs):
         """The widget for this object: `_default_widget`'s override if one
         is set (and `normal` isn't True), else the generic property grid
         (`_widget_assembly()`). Any subclass may also override `widget()`
@@ -1262,15 +1275,50 @@ class Assembly:
         without this, `self.cam.widget()` there would just reopen the
         same special viewer it was clicked from, since `_default_widget`
         has no notion of "the widget that's asking already knows about
-        the override and wants the other one" otherwise."""
+        the override and wants the other one" otherwise.
+
+        dock_in: dock the returned widget into a shared EcoDesktopApp
+        workbench instead of leaving it as a standalone window -- same
+        vocabulary as `show()`'s own `dock_in` kwarg. `True`/`"auto"`
+        resolves to the most recently opened live EcoDesktopApp, auto-
+        creating an empty one (no console, no Namespace panel) if none is
+        open (see eco.widgets.desktop_app.get_or_create_default_container);
+        an explicit EcoDesktopApp instance docks into that one; omitting
+        `dock_in` falls back to `type(self)._default_dock_in` (None for
+        most classes, i.e. standalone); `dock_in=None` explicitly forces a
+        standalone window even for a class whose `_default_dock_in` is
+        True. See `_maybe_dock`."""
         if not normal:
             override_name = getattr(type(self), "_default_widget", None)
             if override_name:
                 override = getattr(self, override_name, None)
                 if callable(override):
-                    return override()
+                    return self._maybe_dock(override(**kwargs), dock_in)
 
-        return self._widget_assembly(show_hidden=show_hidden, **kwargs)
+        return self._maybe_dock(self._widget_assembly(show_hidden=show_hidden, **kwargs), dock_in)
+
+    def _maybe_dock(self, widget_obj, dock_in):
+        """Resolve `dock_in` (an explicit widget()/show() kwarg, or the
+        sentinel _UNSET meaning "fall back to type(self)._default_dock_in")
+        and, if truthy, dock `widget_obj` into the resolved EcoDesktopApp
+        container via its host_widget()/`_dock_widget_object` -- a safe
+        no-op for anything that doesn't follow the .window/.stop() Qt-
+        widget-wrapper convention (see EcoDesktopApp._dock_widget_object's
+        own docstring). Always returns `widget_obj` -- docking is a side
+        effect, never changes what widget() itself returns to the caller."""
+        effective = dock_in if dock_in is not _UNSET else getattr(type(self), "_default_dock_in", None)
+        if not effective:
+            return widget_obj
+
+        if effective is True or effective == "auto":
+            from eco.widgets.desktop_app import get_or_create_default_container
+
+            container = get_or_create_default_container()
+        else:
+            container = effective  # already an EcoDesktopApp instance
+
+        container.host_widget(self.alias.get_full_name(), widget_obj)
+        return widget_obj
 
     def _widget_assembly(self, show_hidden: bool = False, **kwargs):
         """The generic property-grid widget -- what `widget()` falls back
@@ -1520,6 +1568,7 @@ class Assembly:
             dock_name=self.alias.get_full_name(),
             sidecar_anchor=sidecar_anchor,
             backend=backend,
+            assembly=self,
         )
 
 

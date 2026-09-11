@@ -55,43 +55,22 @@ behavior and the embedding on a real control-room X11 display before
 relying on it day to day.
 """
 import logging
-import os
 import sys
 
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtWidgets
 
-import eco
 from eco.widgets.camserver_stream_qt import BERNINA_PREFIXES
+from eco.widgets.subprocess_embed import (
+    EMBED_TIMEOUT_S,
+    child_process_environment as _child_process_environment,
+    clear_layout,
+    embed_foreign_window,
+    spawn_and_embed,
+)
 
 logger = logging.getLogger(__name__)
 
 _app_ref = None
-
-
-def _child_process_environment():
-    """Environment for a viewer subprocess: this process's own, plus the
-    directory containing the *actual* `eco` package this code is running
-    from prepended to PYTHONPATH. Without this, a viewer spawned via
-    QProcess can fail with "No module named 'eco.widgets'" (or silently
-    import a different/older eco) if this session's eco was put on
-    sys.path at interpreter-runtime -- e.g. by a dev-checkout IPython
-    startup script -- rather than via PYTHONPATH or a .pth file; a freshly
-    spawned child only inherits environment variables, never the parent's
-    live in-memory sys.path."""
-    eco_root = os.path.dirname(os.path.dirname(os.path.abspath(eco.__file__)))
-    env = QtCore.QProcessEnvironment.systemEnvironment()
-    existing = env.value("PYTHONPATH", "")
-    env.insert("PYTHONPATH", os.pathsep.join([eco_root, existing]) if existing else eco_root)
-    return env
-
-# Must comfortably exceed eco's own known-slow first import inside the
-# subprocess (~10-15s, see feedback_no_full_eco_import in project memory)
-# -- a shorter value routinely fires before a perfectly healthy subprocess
-# has even finished importing, marking its dock "resolved" as a floating
-# window prematurely (harmless on its own since on_finished's
-# truly_embedded check still catches a subsequent crash, but pointless
-# churn for the common case of nothing being wrong).
-EMBED_TIMEOUT_S = 30.0
 
 
 def sorted_names(names, prefixes=BERNINA_PREFIXES):
@@ -128,9 +107,12 @@ class _ViewerDock(QtWidgets.QDockWidget):
 
     closed = QtCore.Signal(object)  # self
 
-    def __init__(self, title, process, parent=None):
+    def __init__(self, title, parent=None):
         super().__init__(title, parent)
-        self.process = process
+        # set by CamServerPanelQt._spawn_viewer right after construction
+        # (via subprocess_embed.spawn_and_embed, which owns QProcess
+        # creation now)
+        self.process = None
         # `embedded`: resolved one way or another (real embed, floating-
         # window fallback, or an error) -- stops on_stdout/check_timeout
         # from acting further. `truly_embedded`: specifically "a real X11
@@ -150,26 +132,14 @@ class _ViewerDock(QtWidgets.QDockWidget):
         self._body_layout.setContentsMargins(2, 2, 2, 2)
         self.setWidget(body)
 
-    def _clear_body(self):
-        while self._body_layout.count():
-            item = self._body_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.setParent(None)
-                w.deleteLater()
-
     def embed(self, win_id):
-        self._clear_body()
-        foreign = QtGui.QWindow.fromWinId(win_id)
-        foreign.setFlags(QtCore.Qt.FramelessWindowHint)
-        container = QtWidgets.QWidget.createWindowContainer(foreign, self.widget())
-        container.setMinimumSize(200, 150)
-        self._body_layout.addWidget(container)
+        clear_layout(self._body_layout)
+        embed_foreign_window(win_id, self._body_layout, self.widget())
         self.embedded = True
         self.truly_embedded = True
 
     def show_floating_note(self):
-        self._clear_body()
+        clear_layout(self._body_layout)
         note = QtWidgets.QLabel("running as a separate window\n(embedding unavailable)")
         note.setAlignment(QtCore.Qt.AlignCenter)
         self._body_layout.addWidget(note)
@@ -180,7 +150,7 @@ class _ViewerDock(QtWidgets.QDockWidget):
         show why instead of the dock just silently vanishing (which is
         what removing it immediately used to look like), replacing
         whatever placeholder (e.g. the floating-window note) was showing."""
-        self._clear_body()
+        clear_layout(self._body_layout)
         label = QtWidgets.QLabel(message)
         label.setWordWrap(True)
         label.setStyleSheet("color: #b00020;")
@@ -365,10 +335,7 @@ class CamServerPanelQt:
         return self._spawn_viewer(name, argv)
 
     def _spawn_viewer(self, name, argv):
-        process = QtCore.QProcess(self.window)
-        process.setProcessChannelMode(QtCore.QProcess.SeparateChannels)
-
-        dock = _ViewerDock(name, process, parent=self.window)
+        dock = _ViewerDock(name, parent=self.window)
         dock.closed.connect(self._remove_dock)
 
         self.window.addDockWidget(QtCore.Qt.TopDockWidgetArea, dock)
@@ -378,69 +345,11 @@ class CamServerPanelQt:
         dock.show()
         dock.raise_()
 
-        stdout_buf = bytearray()
-        stderr_lines = []
-
-        def on_stdout():
-            stdout_buf.extend(bytes(process.readAllStandardOutput()))
-            while b"\n" in stdout_buf and not dock.embedded:
-                line, _, rest = bytes(stdout_buf).partition(b"\n")
-                del stdout_buf[: len(line) + 1]
-                text = line.decode(errors="ignore").strip()
-                if text.startswith("WINID "):
-                    try:
-                        win_id = int(text.split()[1])
-                        dock.embed(win_id)
-                    except Exception as exc:
-                        logger.warning("failed to embed viewer window for %r: %s", name, exc)
-                        if not dock.embedded:
-                            dock.show_floating_note()
-
-        def on_stderr():
-            # previously discarded entirely -- a subprocess crash before it
-            # ever reported a window id was invisible except as its dock
-            # silently disappearing. Surface it both to this process's own
-            # stderr (visible in the console the panel was started from)
-            # and, via on_finished below, in the dock itself.
-            chunk = bytes(process.readAllStandardError()).decode(errors="ignore")
-            if chunk:
-                sys.stderr.write(f"[camserver_panel_qt] viewer {name!r} stderr: {chunk}")
-                sys.stderr.flush()
-                stderr_lines.extend(chunk.splitlines())
-                del stderr_lines[:-20]  # keep only the tail
-
-        def on_finished(exit_code, _exit_status):
-            if exit_code == 0 or dock.truly_embedded:
-                # a normal exit, or a subprocess that really was embedded
-                # (and later closed/crashed after successfully running) --
-                # just clean up, same as before
-                self._remove_dock(dock)
-                return
-            # exited with an error and a real embed never happened -- even
-            # if the floating-window fallback already fired (eco's own
-            # slow first import routinely takes longer than
-            # EMBED_TIMEOUT_S, so that fallback can beat a crash that
-            # follows shortly after), replace whatever placeholder is
-            # showing with the actual reason instead of silently removing
-            # the dock, which used to look like an unexplained
-            # flash-and-vanish
-            non_empty = [ln for ln in stderr_lines if ln.strip()]
-            detail = non_empty[-1] if non_empty else f"exited with code {exit_code}, no output captured"
-            dock.show_error(f"viewer process exited unexpectedly:\n{detail}")
-
-        process.readyReadStandardOutput.connect(on_stdout)
-        process.readyReadStandardError.connect(on_stderr)
-        process.finished.connect(on_finished)
-
-        process.setProcessEnvironment(_child_process_environment())
-        process.start(sys.executable, ["-m", "eco.widgets.camserver_stream_qt", *argv])
-
-        def check_timeout():
-            if not dock.embedded and process.state() != QtCore.QProcess.NotRunning:
-                dock.show_floating_note()
-
-        QtCore.QTimer.singleShot(int(EMBED_TIMEOUT_S * 1000), check_timeout)
-        return process
+        cmd = [sys.executable, "-m", "eco.widgets.camserver_stream_qt", *argv]
+        dock.process = spawn_and_embed(
+            dock, cmd, parent=self.window, on_clean_finish=lambda: self._remove_dock(dock)
+        )
+        return dock.process
 
     def _remove_dock(self, dock):
         if dock not in self._docks:

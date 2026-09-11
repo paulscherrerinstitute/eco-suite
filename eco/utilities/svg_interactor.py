@@ -535,16 +535,20 @@ _qt_windows = []  # keep strong refs to open SVG windows (+ their bridge/channel
 
 
 class _SvgViewerHandle:
-    """`.window`/`.stop()` wrapper around an already-built SvgWindow, for
-    the eco desktop dock convention `EcoDesktopApp._dock_widget_object`
-    expects (same shape as DisplayQt/AxisPTZStreamQt/CamServerStreamQt --
-    see desktop_app.py's module docstring). `.window` is the SvgWindow
-    itself (a QWebEngineView, so it dock/undocks/floats like any other
-    QWidget); `.stop()` shuts down the background live-refresh server, if
-    any, so nothing keeps polling EPICS after the dock is closed."""
+    """`.window`/`.stop()` wrapper around an already-built SVG viewer
+    window, for the eco desktop dock convention
+    `EcoDesktopApp._dock_widget_object` expects (same shape as
+    DisplayQt/AxisPTZStreamQt/CamServerStreamQt -- see desktop_app.py's
+    module docstring). `.window` is the top-level `_SvgMainWindow` built by
+    `_build_qt_window` (a QMainWindow wrapping the actual SvgWindow/
+    QWebEngineView as its central widget, plus the optional "Settings"
+    toolbar -- see that function), so it dock/undocks/floats, toolbar
+    included, like any other QWidget; `.stop()` shuts down the background
+    live-refresh server, if any, so nothing keeps polling EPICS after the
+    dock is closed."""
 
-    def __init__(self, view):
-        self.window = view
+    def __init__(self, window):
+        self.window = window
 
     def stop(self):
         _shutdown_dash_server(self.window)
@@ -564,7 +568,7 @@ def _shutdown_dash_server(view):
 
 def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
                       blocking=False, refresh=None, refresh_interval_ms=2000,
-                      dock_in=None, dock_name=None):
+                      dock_in=None, dock_name=None, assembly=None):
     """Opens a native, resizable window rendering the SVG via Qt's QWebEngineView.
 
     dock_in (see `launch_svg_viewer`): an EcoDesktopApp instance (or
@@ -572,10 +576,11 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     to embed the viewer into as a tiled dock instead of opening it as a
     separate top-level window -- same convention any other eco Qt widget
     docks with (see desktop_app.py's module docstring). When given, this
-    builds the SvgWindow but does NOT call `.show()`/register it in
-    `_qt_windows` itself; `dock_in._dock_widget_object` takes over showing
-    it (reparented into the dock) instead. Still poppable back out to a
-    free-floating window at any time via the dock's own float button.
+    builds the wrapping `_SvgMainWindow` but does NOT call `.show()`/
+    register it in `_qt_windows` itself; `dock_in._dock_widget_object`
+    takes over showing it (reparented into the dock) instead. Still
+    poppable back out to a free-floating window at any time via the dock's
+    own float button.
 
     refresh (see `launch_svg_viewer`): if given, this is a *live* panel.
     Rather than embedding a frozen snapshot and re-pushing new content into
@@ -625,9 +630,19 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     backend, no server needed at all), and JS-to-Python communication goes
     through a QWebChannel bridge rather than WebKitGTK's
     script-message-handler API.
+
+    assembly: the Assembly this panel belongs to (e.g. `self` from
+    Assembly.show()), if any -- when given, adds a "Settings" toolbar
+    button that opens `assembly.widget(normal=True)`, mirroring
+    eco.widgets.camserver_stream_qt.CamServerStreamQt's own "Camera
+    Settings" button. If this panel itself was docked (dock_in=...) into a
+    workbench that's still open, the settings widget docks alongside it
+    there too (same _eco_container/host_widget propagation
+    display_qt.py/camera_stream_qt.py already use for their own child
+    "Settings" windows); otherwise it opens as a standalone window.
     """
     from qtpy.QtCore import Qt, QUrl
-    from qtpy.QtWidgets import QApplication
+    from qtpy.QtWidgets import QApplication, QMainWindow, QToolBar
     from qtpy.QtWebEngineWidgets import QWebEngineView
 
     with open(svg_path, "r", encoding="utf-8") as f:
@@ -639,11 +654,9 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     width, height = _peek_svg_dimensions(svg_content)
 
     class SvgWindow(QWebEngineView):
-        def closeEvent(self, event):
-            if self in _qt_windows:
-                _qt_windows.remove(self)
-            _shutdown_dash_server(self)
-            super().closeEvent(event)
+        pass  # cleanup lives on _SvgMainWindow below, the real top-level
+        # window now -- a QWebEngineView used as a central widget never
+        # gets a native closeEvent of its own.
 
     global _qt_app_ref
     app = QApplication.instance()
@@ -655,11 +668,41 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         _qt_app_ref = app
 
     view = SvgWindow()
+
+    class _SvgMainWindow(QMainWindow):
+        def closeEvent(self, event):
+            if self in _qt_windows:
+                _qt_windows.remove(self)
+            _shutdown_dash_server(self)
+            super().closeEvent(event)
+
+    wrapper = _SvgMainWindow()
+    wrapper.setWindowTitle("Interactive SVG Viewer")
     # Don't let closing this window quit a shared QApplication/event loop
     # (e.g. the one IPython's "qt" gui integration is pumping).
-    view.setAttribute(Qt.WA_QuitOnClose, False)
-    view.setWindowTitle("Interactive SVG Viewer")
-    view.resize(max(int(width), 200), max(int(height), 150))
+    wrapper.setAttribute(Qt.WA_QuitOnClose, False)
+    wrapper.setCentralWidget(view)
+    wrapper.resize(max(int(width), 200), max(int(height), 150))
+
+    if assembly is not None:
+        # Mirrors eco.widgets.camserver_stream_qt.CamServerStreamQt's own
+        # "Camera Settings" button -- opens the plain property-grid widget
+        # for the assembly this panel belongs to, and, if this panel
+        # itself is docked into a live workbench, docks the settings
+        # widget alongside it there too (same _eco_container/host_widget
+        # idiom display_qt.py/camera_stream_qt.py already use for their
+        # own child "Settings" windows).
+        def _open_settings():
+            widget_obj = assembly.widget(normal=True)
+            container = getattr(wrapper, "_eco_container", None)
+            if container is not None and hasattr(container, "host_widget"):
+                container.host_widget(f"{assembly.alias.get_full_name()} settings", widget_obj)
+
+        toolbar = QToolBar("Settings", wrapper)
+        toolbar.setMovable(False)
+        settings_action = toolbar.addAction("Settings")
+        settings_action.triggered.connect(_open_settings)
+        wrapper.addToolBar(toolbar)
 
     if refresh is not None:
         port_holder = {"port": None, "server": None, "ready": threading.Event()}
@@ -676,7 +719,7 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
         if not port_holder["ready"].wait(timeout=5.0) or port_holder["port"] is None:
             print("eco SVG viewer: live panel's background server did not start in time.")
             return
-        view._dash_server = port_holder["server"]  # keep alive + for closeEvent's shutdown()
+        wrapper._dash_server = port_holder["server"]  # keep alive + for closeEvent's shutdown()
         view.load(QUrl(f"http://127.0.0.1:{port_holder['port']}"))
     else:
         from qtpy.QtCore import QObject, Slot
@@ -745,15 +788,15 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
 
     if dock_in is not None:
         # dock_in takes over showing the window (reparented into a tile) --
-        # calling view.show() first would flash it as a top-level window
+        # calling wrapper.show() first would flash it as a top-level window
         # for one frame before _dock_widget_object hides/reparents it, so
         # leave that to it (same "hide before it can flash" note in
         # _dock_widget_object's own docstring).
-        dock_in._dock_widget_object(dock_name or "svg viewer", _SvgViewerHandle(view))
+        dock_in._dock_widget_object(dock_name or "svg viewer", _SvgViewerHandle(wrapper))
         return
 
-    view.show()
-    _qt_windows.append(view)
+    wrapper.show()
+    _qt_windows.append(wrapper)
 
     if blocking and created_app:
         # No GUI event-loop integration is available to pump this window
@@ -765,8 +808,13 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
 
 def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
                        refresh=None, refresh_interval_ms=2000, dock_in=None, dock_name=None,
-                       sidecar_anchor=None, backend=None):
+                       sidecar_anchor=None, backend=None, assembly=None):
     """Spawns an isolated background service for the SVG interface.
+
+    assembly: the Assembly this panel belongs to, if any -- forwarded to
+    `_build_qt_window` (native window backend only), which adds a
+    "Settings" toolbar button opening `assembly.widget(normal=True)`. See
+    `_build_qt_window`'s own docstring for the full behavior.
 
     backend: **where to show it. Defaults to "auto"** -- a native Qt window
     in a terminal IPython session, inline in a notebook/lab kernel. Force
@@ -914,7 +962,7 @@ def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
 
         _build_qt_window(svg_path, ip, namespace_prefix, exclude_group_ids, blocking=blocking,
                           refresh=refresh, refresh_interval_ms=refresh_interval_ms,
-                          dock_in=dock_in, dock_name=dock_name)
+                          dock_in=dock_in, dock_name=dock_name, assembly=assembly)
         if not blocking and dock_in is None:
             print("Interactive SVG window launched.")
         return
