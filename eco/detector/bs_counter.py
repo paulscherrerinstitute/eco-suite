@@ -465,7 +465,11 @@ class BsStreamCounter:
             # yet -- plot_med() itself keeps live-updating afterward
             # regardless (see escape.stream.plots.Plot), it just won't
             # have its very first point yet.
-            self._plot = self._channels[name].plot_med(timeout=2)
+            # label=self.name: this counter's own (possibly custom) name,
+            # not the raw bs channel plot_med() would otherwise title/label
+            # the plot with -- e.g. "mon_opt.intensity", not
+            # "SAROP21-PBPS133:INTENSITY".
+            self._plot = self._channels[name].plot_med(timeout=2, label=self.name)
         except Exception as exc:
             print(f"{self.name}: couldn't start a live plot: {exc}")
 

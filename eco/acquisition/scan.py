@@ -17,6 +17,7 @@ from eco.epics_utils import ca_tuning
 from eco.utilities.datafiles import open_group_writable
 from eco.utilities.utilities import (
     NumpyEncoder,
+    PropagatingThread,
     foo_get_kwargs,
     get_eco_name,
     linlog_intervals,
@@ -36,6 +37,82 @@ inval_chars = [" ", "/"]
 ScanNameError = Exception(
     f"invalid character in acquisition name, please use a name without {inval_chars}"
 )
+
+
+def _flush_open_figures():
+    """Process pending GUI events (paints, redraw timers) on every currently
+    open matplotlib figure. Cheap no-op if matplotlib/pyplot was never
+    imported (nothing to flush) or a given figure's canvas doesn't support
+    it (a non-interactive backend)."""
+    import sys
+
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is None:
+        return
+    for num in plt.get_fignums():
+        try:
+            plt.figure(num).canvas.flush_events()
+        except Exception:
+            pass
+
+
+def _inputimeout_nonblocking(prompt, timeout):
+    """Like ``inputimeout.inputimeout(prompt=, timeout=)``, but doesn't
+    block the calling thread's GUI event loop for the whole wait.
+
+    ``inputimeout`` itself already runs in its own thread here -- what it
+    doesn't do is let *this* (the calling) thread do anything else while it
+    waits, and this is normally called from the interactive session's own
+    main thread, the same one any live-plot window's GUI event loop runs
+    on. A plain blocking call there freezes every open plot window for the
+    whole timeout after every scan, the same class of bug fixed for
+    per-step counter acquisition by ``eco.acquisition.utilities.Acquisition``'s
+    ``on_tick`` -- this mirrors that: poll the read with short joins
+    instead of one blocking wait, flushing every open figure's GUI events
+    between them.
+
+    Raises ``inputimeout.TimeoutOccurred`` on timeout, same as
+    ``inputimeout.inputimeout``.
+    """
+    result = {}
+
+    def _read():
+        try:
+            result["value"] = inputimeout.inputimeout(prompt=prompt, timeout=timeout)
+        except BaseException as e:
+            result["error"] = e
+
+    reader = PropagatingThread(target=_read)
+    reader.start()
+    while reader.is_alive():
+        _flush_open_figures()
+        reader.join(timeout=0.05)
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
+
+
+def _input_nonblocking(prompt):
+    """Like the builtin ``input(prompt)``, but doesn't block the calling
+    thread's GUI event loop while waiting -- same reasoning and mechanism
+    as :func:`_inputimeout_nonblocking`, just without a timeout (the
+    background thread runs until an answer actually arrives)."""
+    result = {}
+
+    def _read():
+        try:
+            result["value"] = input(prompt)
+        except BaseException as e:
+            result["error"] = e
+
+    reader = PropagatingThread(target=_read)
+    reader.start()
+    while reader.is_alive():
+        _flush_open_figures()
+        reader.join(timeout=0.05)
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
 
 
 class RunList(Assembly):
@@ -672,7 +749,7 @@ class StepScan(Assembly):
                 self.run_callbacks_end_scan()
 
                 if self.return_at_end == "question":
-                    if input("Change back to initial values? (y/n)")[0] == "y":
+                    if _input_nonblocking("Change back to initial values? (y/n)")[0] == "y":
                         chs = self.changeToInitialValues()
                         print("Changing back to value(s) before scan.")
                         for ch in chs:
@@ -681,7 +758,7 @@ class StepScan(Assembly):
                 elif self.return_at_end == "timeout":
                     timeout = 10
                     try:
-                        o = inputimeout.inputimeout(
+                        o = _inputimeout_nonblocking(
                             prompt=f"Change back to initial values? (y/n) Changing back in {timeout} seconds.",
                             timeout=timeout,
                         )
