@@ -59,6 +59,15 @@ def _ensure_bs_event_worker():
     global _bs_event_worker
     if _bs_event_worker is None:
         _bs_event_worker = stream.EventWorker(make_default=True)
+    # Idempotent, cheap -- see eco.detector.bs_counter.install_stream_scans()
+    # for why this lives here: DetectorBsStream construction is the single
+    # most reliable "this session touches bs streams" signal, happening for
+    # essentially every real Bernina device well before any interactive
+    # command, so this is the earliest safe point to guarantee every
+    # escape.stream.Stream instance already has `.scans` available.
+    from eco.detector.bs_counter import install_stream_scans
+
+    install_stream_scans()
     return _bs_event_worker
 
 

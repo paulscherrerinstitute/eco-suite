@@ -137,10 +137,16 @@ class _StepIndexSource:
     keys bins on the *tuple* of however many parameters it's given, so N
     of these give N-D (grid) binning for free; see
     ``BsStreamCounter._advance_step`` and ``escape.stream.Grid``.
+
+    Also duck-types ``.unit`` (unused by ``Scan`` itself, but real
+    ``escape.stream`` code assumes any scan parameter has one --
+    e.g. ``escape.stream.plots.Plot.plot()``'s axis auto-labeling, used by
+    ``BsStreamCounter``'s ``live_plot``).
     """
 
     def __init__(self, name="step_index"):
         self.name = name
+        self.unit = "step"
         self.value = 0.0
 
     def _getEventData(self):
@@ -204,13 +210,22 @@ def bs_scannable(Obj):
     rebuilding it on every ``.scans`` access would leak one subscription
     (and its dispatcher-restart cost) per access instead of reusing one.
     """
+    Obj.scans = _make_scans_property(lambda self: self.alias.get_full_name())
+    return Obj
+
+
+def _make_scans_property(get_name):
+    """Shared body behind ``bs_scannable``'s ``.scans`` and
+    ``install_stream_scans()``'s patched ``Stream.scans`` -- both just wrap
+    ``self`` in a cached ``BsStreamCounter``/``Scans`` pair, differing only
+    in how they name the counter (``get_name(self)``)."""
 
     @property
     def scans(self):
         from eco.acquisition import scan  # avoid circular import
 
         if not hasattr(self, "_bs_counter"):
-            self._bs_counter = BsStreamCounter(self, name=self.alias.get_full_name())
+            self._bs_counter = BsStreamCounter(self, name=get_name(self))
         if not hasattr(self, "_scans"):
             self._scans = scan.Scans(default_counters=[self._bs_counter])
         else:
@@ -218,8 +233,38 @@ def bs_scannable(Obj):
             self._scans._augment_docstrings()
         return self._scans
 
-    Obj.scans = scans
-    return Obj
+    return scans
+
+
+_stream_scans_installed = False
+
+
+def install_stream_scans():
+    """Monkey-patch ``escape.stream.Stream`` with a lazy ``.scans``
+    property (same mechanism as ``bs_scannable``), so *any* ``Stream``
+    instance anywhere in eco -- built through ``DetectorBsStream``,
+    directly via ``escape.stream.Stream(...)``, or produced by Stream
+    arithmetic (``a / b``, ``.element(0)``, ...) -- can be scanned with
+    ``some_stream.scans.ascan(...)``/``.meshscan(...)`` immediately, with
+    no wrapping needed.
+
+    Idempotent (checked both here and by the ``hasattr`` guards inside the
+    property itself) -- safe to call from multiple entry points; see
+    ``eco.detector.detectors_psi._ensure_bs_event_worker()``, which calls
+    this on the very first ``DetectorBsStream`` construction in a session
+    (the earliest reliable "this session touches bs streams" signal), and
+    this module's own import, below.
+    """
+    global _stream_scans_installed
+    if _stream_scans_installed:
+        return
+    from escape.stream import Stream as EscapeStream
+
+    EscapeStream.scans = _make_scans_property(lambda self: self.name)
+    _stream_scans_installed = True
+
+
+install_stream_scans()
 
 
 class BsStreamCounter:
@@ -242,6 +287,20 @@ class BsStreamCounter:
         Defaults to the module-global worker shared by ``DetectorBsStream``
         for any *name*-string sources; ignored for sources that already
         carry their own (a ``Stream`` or ``DetectorBsStream``).
+    live_plot : bool, default True
+        Automatically open (and keep live-updating) a plot for a 1-D scan
+        -- ``self._channels[name].plot_med()`` (median + percentile bands
+        + peak overlay, see ``escape.stream.Stream.plot_med``), reusing
+        the exact same already-accumulating per-step Stream this counter
+        uses internally, so this costs nothing beyond drawing. Only for a
+        single-channel, single-dimension (non-grid) counter -- silently
+        skipped otherwise (a grid counter has no 1-D "vs. scan variable"
+        plot to draw; use ``.grid().plot()`` instead once the scan is a
+        real mesh/grid scan). This is what a plain
+        ``BsStreamCounter`` (including one obtained through
+        ``bs_scannable``/the patched ``Stream.scans``, see
+        ``install_stream_scans()``) was missing compared to the older
+        EPICS-monitor-based ``CounterValue``, which always auto-plots.
 
     Usage
     -----
@@ -256,7 +315,10 @@ class BsStreamCounter:
     and reduce that step's bin, across all channels at once.
     """
 
-    def __init__(self, sources, name=None, reduction=np.mean, timeout=10, eventworker=None):
+    def __init__(
+        self, sources, name=None, reduction=np.mean, timeout=10, eventworker=None,
+        live_plot=True,
+    ):
         sources = sources if isinstance(sources, (list, tuple)) else [sources]
         self._raw = {}
         for src in sources:
@@ -266,6 +328,8 @@ class BsStreamCounter:
         self.name = name or "+".join(self._raw)
         self.reduction = reduction
         self.timeout = timeout
+        self.live_plot = live_plot
+        self._plot = None
         self.alias = Alias(self.name, channel=list(self._raw), channeltype="BS")
 
         # One source per grid dimension -- just one ("step_index") for an
@@ -388,6 +452,22 @@ class BsStreamCounter:
         self._teardown_bins()
         self._build_bins()
         self.step_pulse_ids = {}
+        self._start_live_plot(ndim)
+
+    def _start_live_plot(self, ndim):
+        self._plot = None
+        if not self.live_plot or ndim != 1 or len(self._channels) != 1:
+            return
+        (name,) = self._channels
+        try:
+            # Short timeout: this runs synchronously at scan start, so it
+            # must not meaningfully delay the scan if data isn't flowing
+            # yet -- plot_med() itself keeps live-updating afterward
+            # regardless (see escape.stream.plots.Plot), it just won't
+            # have its very first point yet.
+            self._plot = self._channels[name].plot_med(timeout=2)
+        except Exception as exc:
+            print(f"{self.name}: couldn't start a live plot: {exc}")
 
     def _on_scan_end(self, scan=None, **kwargs):
         # Snapshot the just-finished scan's bins before _build_bins() below
@@ -403,6 +483,18 @@ class BsStreamCounter:
         self._last_scan = self._scan
         self._last_grid_specs = self._grid_specs
         self._scan_running = False
+        if self._plot is not None:
+            # Stop the redraw timer (not accumulate(False)/close the
+            # figure -- see live_plot's docstring on why this counter
+            # never tears down the channel subscription itself) so the
+            # scan's final result stays visible instead of continuing to
+            # "update" against the fresh, empty standalone bins
+            # _build_bins() is about to create.
+            try:
+                self._plot.replot()  # one last redraw with the true final data
+                self._plot.stop()
+            except Exception:
+                pass
         self._teardown_bins()
         self._build_bins()
 
