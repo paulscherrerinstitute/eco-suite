@@ -938,19 +938,6 @@ class XrayWaveplate(Assembly):
         # )
 
         self._append(
-            Jungfrau,
-            "JF01T03V01",
-            config_adj=daq.config_JFs,
-            pgroup_adj=config_bernina.pgroup,
-            event_master=NamespaceComponent(namespace, "event_master"),
-            detectors_event_code=50,
-            name="det_jf",
-            is_setting=True,
-            is_status=True,
-            # is_display="recursive",
-        )
-
-        self._append(
             DigitizerIoxosBoxcarChannel, "SARES20-LSCP9-FNS:CH1", name="diode_side"
         )
         self._append(

@@ -125,6 +125,14 @@ class StepScan(Assembly):
         if repetitions > 1:
             values = values * repetitions
             self.pulses_per_step = self.pulses_per_step * repetitions
+            if gridspecs is not None:
+                # index_plan has one entry per step of a *single* pass over
+                # the grid (built once, in meshscan(), before repetitions
+                # was applied here) -- without repeating it too,
+                # do_next_step()'s gridspecs["index_plan"][self.next_step]
+                # indexes past the end (IndexError) the moment the scan
+                # enters its second repetition.
+                gridspecs = dict(gridspecs, index_plan=gridspecs["index_plan"] * repetitions)
             print(
                 f"Repeating scan {repetitions} times. Total steps: {len(values)}, {len(values)/repetitions} per repetition."
             )

@@ -1,0 +1,31 @@
+#!/bin/bash
+# Dev entry point for testing this eco checkout together with a sibling
+# escape-fel checkout -- like scripts/eco-dev, but also prepends a local
+# escape-fel checkout to PYTHONPATH, ahead of whatever `escape`/`escape-fel`
+# is installed in the environment (bpy312), so `import escape` resolves to
+# that checkout instead of the installed release.
+#
+# Assumes the escape-fel checkout lives right next to this eco checkout,
+# i.e. as a sibling directory under the same parent (e.g. ~/drv/eco and
+# ~/drv/escape-fel) -- resolved from this script's own location the same
+# way eco-dev resolves the eco checkout, so it works from any eco checkout
+# with such a sibling, not just this one.
+#
+# Usage: same as eco-dev, e.g.
+#   eco-escape-test -s bernina -l --ui shell
+#
+# See eco-dev's own header comment for why PYTHONPATH specifically (not
+# just sys.path) is what needs prepending here.
+source bpy-env
+
+ECO_CHECKOUT="$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")"
+ESCAPE_CHECKOUT="$(dirname "$ECO_CHECKOUT")/escape-fel"
+
+if [ ! -d "$ESCAPE_CHECKOUT/escape" ]; then
+    echo "eco-escape-test: no escape-fel checkout found at $ESCAPE_CHECKOUT" >&2
+    echo "  (expected as a sibling directory of this eco checkout: $ECO_CHECKOUT)" >&2
+    exit 1
+fi
+
+export PYTHONPATH="${ESCAPE_CHECKOUT}:${ECO_CHECKOUT}${PYTHONPATH:+:$PYTHONPATH}"
+exec python "${ECO_CHECKOUT}/eco_cli.py" "$@"
