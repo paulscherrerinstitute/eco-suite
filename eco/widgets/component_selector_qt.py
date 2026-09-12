@@ -459,3 +459,50 @@ def make_component_selector_qt_window(
         max_depth=max_depth,
         auto_start=auto_start,
     )
+
+
+def pick_component_modal(
+    root: Any,
+    kind_filter: str = "All",
+    bookmarks: Optional[ComponentBookmarks] = None,
+    recent: Optional[RecentComponents] = None,
+):
+    """Block until the user picks a component (or closes the window without
+    picking), regardless of any active IPython Qt event-loop integration --
+    unlike `ComponentSelectorQtWindow.start()`/`run()`, which either hands
+    off to IPython's async pumping (returning immediately, selection still
+    pending) or blocks the whole process forever via `app.exec_()`. This
+    runs its own nested `QEventLoop` that quits the instant a pick (or a
+    close) happens, then hands control straight back -- for a caller that
+    needs an actual answer before it can do anything else, like eco.
+    ipymagic's inline `...` picker (an AST transform can't return control to
+    IPython and get an answer later; it has to have one before it returns
+    at all).
+
+    Returns `(dotted_path, obj)`, or `(None, None)` if the window was
+    closed without picking anything.
+    """
+    global _app_ref
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication([])
+        _app_ref = app
+
+    win = ComponentSelectorQtWindow(
+        root, kind_filter=kind_filter, bookmarks=bookmarks, recent=recent, auto_start=False
+    )
+    win._build_window()
+
+    loop = QtCore.QEventLoop()
+    picked = {}
+
+    def _on_select(path, obj):
+        picked["path"], picked["obj"] = path, obj
+        loop.quit()
+
+    win.on_select(_on_select)
+    win.window.destroyed.connect(loop.quit)
+    loop.exec_()
+    win.stop()
+
+    return picked.get("path"), picked.get("obj")
