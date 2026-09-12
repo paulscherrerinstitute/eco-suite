@@ -60,7 +60,8 @@ def _transform_source(source, root=None):
 def test_bare_ellipsis_expression_is_replaced_with_the_picked_path(monkeypatch):
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
-        lambda root, **kw: ("mono.energy", object()),  # relative to root, like the real picker
+        # relative to root, like the real picker
+        lambda root, **kw: ("component", "mono.energy", object()),
     )
     out, picked_any = _transform_source("(1 / ...).plot()")
     assert out == "(1 / bernina.mono.energy).plot()"
@@ -73,7 +74,7 @@ def test_two_markers_are_resolved_left_to_right_in_source_order(monkeypatch):
 
     def fake_pick(root, **kw):
         seen_roots.append(root)
-        return next(picks), object()
+        return "component", next(picks), object()
 
     monkeypatch.setattr("eco.widgets.component_selector_qt.pick_component_modal", fake_pick)
     root = _NamedRoot("bernina")
@@ -83,6 +84,19 @@ def test_two_markers_are_resolved_left_to_right_in_source_order(monkeypatch):
     assert out == "cen = (left := bernina.mono.energy) - (right := bernina.attenuator.transmission)"
     assert picked_any is True
     assert seen_roots == [root, root]
+
+
+def test_command_pick_is_used_verbatim_not_prefixed_with_root(monkeypatch):
+    # a "command" pick is already a full expression string -- unlike a
+    # "component" pick (a bare dotted path relative to root), it must not
+    # be run through _full_path.
+    monkeypatch.setattr(
+        "eco.widgets.component_selector_qt.pick_component_modal",
+        lambda root, **kw: ("command", "mono.mv(5)", None),
+    )
+    out, picked_any = _transform_source("...")
+    assert out == "mono.mv(5)"
+    assert picked_any is True
 
 
 def test_subscript_slice_ellipsis_is_left_alone(monkeypatch):
@@ -101,7 +115,7 @@ def test_qt_modal_fallback_is_attempted_in_a_real_terminal_session(monkeypatch):
     monkeypatch.setattr(ipymagic, "_has_display", lambda: True)
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
-        lambda root, **kw: ("mono.energy", object()),
+        lambda root, **kw: ("component", "mono.energy", object()),
     )
 
     out, picked_any = _transform_source("(1 / ...).plot()")
@@ -128,7 +142,7 @@ def test_qt_modal_fallback_is_skipped_without_a_display(monkeypatch, capsys):
 def test_cancelled_pick_leaves_the_literal_ellipsis_in_place(monkeypatch, capsys):
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
-        lambda root, **kw: (None, None),
+        lambda root, **kw: (None, None, None),
     )
     out, picked_any = _transform_source("(1 / ...).plot()")
     assert out == "(1 / ...).plot()"
@@ -142,6 +156,35 @@ def test_transform_is_a_noop_when_start_has_not_been_called():
     tree = ast.parse("(1 / ...).plot()")
     out = ast.unparse(ipymagic._ast_transformer.visit(tree))
     assert out == "(1 / ...).plot()"
+
+
+def test_ast_transformer_cancels_execution_and_fills_next_input(monkeypatch):
+    # _EllipsisPicker alone (exercised above via _transform_source) only
+    # checks *what* gets spliced in -- this checks _AstTransformer.visit's
+    # own behavior once something was picked: the cell must not actually
+    # run (empty body), and the expanded code must go to the next prompt
+    # via set_next_input rather than being printed-then-executed.
+    ipymagic._state["root"] = _NamedRoot("bernina")
+    ipymagic._state["kind_filter"] = "All"
+    ipymagic._state["bookmarks"] = None
+    ipymagic._state["recent"] = None
+    monkeypatch.setattr(
+        "eco.widgets.component_selector_qt.pick_component_modal",
+        lambda root, **kw: ("component", "mono.energy", object()),
+    )
+    next_inputs = []
+
+    class _FakeIp:
+        def set_next_input(self, text, replace=False):
+            next_inputs.append((text, replace))
+
+    monkeypatch.setattr("IPython.get_ipython", lambda: _FakeIp())
+
+    tree = ast.parse("(1 / ...).plot()")
+    new_tree = ipymagic._ast_transformer.visit(tree)
+
+    assert new_tree.body == []
+    assert next_inputs == [("(1 / bernina.mono.energy).plot()", True)]
 
 
 def test_start_registers_the_transformer_and_matchers_once(monkeypatch):

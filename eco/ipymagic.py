@@ -1,22 +1,30 @@
 """Opt-in inline component picker for IPython: write a bare ``...``
 (the builtin ``Ellipsis`` literal) anywhere an expression is expected, and
-it's replaced -- before execution -- by whatever component you pick from
-the namespace tree. The *expanded* code (with the picked component's real
-dotted path spliced in, not a placeholder) is printed first, then run --
-so what actually executed is always visible and re-typeable::
+it's replaced -- before execution -- by whatever you pick in a small Qt
+window with two tabs, Components (the namespace tree) and Commands (prior
+input, from `eco.logs`). The *expanded* code (with the picked component's
+real dotted path, or the picked command's raw text, spliced in) never runs
+on its own -- it's handed straight to the next prompt/cell, pre-filled and
+ready to edit, exactly like ``%edit``/``%load`` do, so only something you
+explicitly submit yourself ever actually executes::
 
     from eco import bernina
     from eco import ipymagic
     ipymagic.start(bernina)
 
     In [1]: (1 / ...).plot()
-    (1 / bernina.mono.energy).plot()
-    <plot appears>
+    <pick "mono.energy" in the Components tab -- Enter, double-click, or Go>
+    In [2]: (1 / bernina.mono.energy).plot()
+    <cursor sits here, ready to edit or just press Enter>
 
     In [2]: cen = (left := ...) - (right := ...)
-    cen = (left := bernina.mono.energy) - (right := bernina.attenuator.transmission)
+    In [3]: cen = (left := bernina.mono.energy) - (right := bernina.attenuator.transmission)
 
-Each ``...`` prompts once, in left-to-right order, and the picker itself
+Each ``...`` prompts once, in left-to-right order. In the picker, a single
+click only *highlights* a row (in either tab, or a Recent/Bookmark choice)
+-- it never picks anything by itself, so idle browsing is safe. Only
+pressing Enter/Return, double-clicking a row, or the one shared Go button
+below both tabs actually commits a pick. The picker itself
 (``eco.widgets.component_selector_qt``) remembers its own fold/search state
 and a per-user Recent list across invocations already -- nothing extra
 needed here for that.
@@ -186,17 +194,22 @@ class _EllipsisPicker(ast.NodeTransformer):
             return node
         from eco.widgets.component_selector_qt import pick_component_modal
 
-        path, obj = pick_component_modal(
+        kind, text, obj = pick_component_modal(
             self.root,
             kind_filter=self.kind_filter,
             bookmarks=self.bookmarks,
             recent=self.recent,
         )
-        if path is None:
+        if kind is None:
             print("eco.ipymagic: selection cancelled -- left `...` in place")
             return node
         self.picked_any = True
-        replacement = ast.parse(_full_path(self.root, path), mode="eval").body
+        # A "command" pick is already a full, standalone expression string
+        # (e.g. "mono.mv(5)") -- unlike a "component" pick (a bare dotted
+        # path *relative to* root, see _full_path's docstring), it must
+        # NOT be run through _full_path.
+        expression = _full_path(self.root, text) if kind == "component" else text
+        replacement = ast.parse(expression, mode="eval").body
         return ast.copy_location(replacement, node)
 
 
@@ -218,7 +231,33 @@ class _AstTransformer:
         )
         node = picker.visit(node)
         if picker.picked_any:
-            print(ast.unparse(node))
+            expanded = ast.unparse(node)
+            from IPython import get_ipython
+
+            ip = get_ipython()
+            if ip is not None:
+                # Cancel *this* cell's execution (an empty body -- nothing
+                # left to run) and hand the expanded code to the next
+                # prompt/cell instead, pre-filled and ready to edit --
+                # `set_next_input` is the same mechanism `%edit`/`%load`
+                # use, and (unlike printing-then-executing, this file's
+                # original approach) it works in both a terminal (fills
+                # the next `In [n]:` line, see TerminalInteractiveShell.
+                # prompt_for_code's `rl_next_input` check) and a notebook/
+                # qtconsole kernel (ZMQInteractiveShell overrides
+                # set_next_input to send a payload the frontend turns into
+                # a new, pre-filled cell) -- so what actually runs is
+                # always something the user explicitly submitted
+                # themselves, never something this module ran on its own.
+                ip.set_next_input(expanded, replace=True)
+                node.body = []
+            else:
+                # No live IPython session to hand a next-input to (should
+                # not happen in practice -- this transformer only ever
+                # runs as part of IPython's own cell-execution pipeline --
+                # kept as a safe fallback rather than silently dropping
+                # the expansion).
+                print(expanded)
         return node
 
 
