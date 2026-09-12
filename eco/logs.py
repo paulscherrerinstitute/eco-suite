@@ -98,6 +98,50 @@ def tail(n=20, session=None):
     return _kernel_entries(session=session)[-n:]
 
 
+def recent_commands(n=200, max_scan=5000):
+    """Up to `n` distinct prior commands, most-recent-first, merged across
+    every kernel-log session on disk -- the "Recent" data source for eco.
+    ipymagic's command-picker mode.
+
+    `max_scan` bounds how many trailing log entries are even looked at
+    (kernel logs across every session/day can get large; this only ever
+    needs the tail of it). Deduplicates by keeping each distinct command's
+    *most recent* occurrence and dropping older repeats, rather than
+    letting a repeatedly-run command (`daq.compare_channels()` typed every
+    few minutes) crowd out everything else.
+    """
+    entries = _kernel_entries()[-max_scan:]
+    seen = set()
+    out = []
+    for entry in reversed(entries):
+        if entry.kind != "input" or not entry.text.strip():
+            continue
+        if entry.text in seen:
+            continue
+        seen.add(entry.text)
+        out.append(entry.text)
+        if len(out) >= n:
+            break
+    return out
+
+
+def frequent_commands(n=200, max_scan=5000):
+    """Up to `n` distinct prior commands, most-used-first (ties broken by
+    most-recent-use), merged across every kernel-log session on disk -- the
+    "Recommended" data source for eco.ipymagic's command-picker mode. See
+    `recent_commands` for `max_scan`."""
+    entries = _kernel_entries()[-max_scan:]
+    counts = {}
+    last_seen = {}
+    for entry in entries:
+        if entry.kind != "input" or not entry.text.strip():
+            continue
+        counts[entry.text] = counts.get(entry.text, 0) + 1
+        last_seen[entry.text] = entry.t
+    ranked = sorted(counts, key=lambda text: (-counts[text], -last_seen[text]))
+    return ranked[:n]
+
+
 def widget(session=None, prefer="auto", title=None):
     """Open the kernel-log timeline. `session` is a specific .jsonl path
     (see logs.sessions()); by default every session on disk is merged
