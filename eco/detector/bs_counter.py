@@ -130,15 +130,36 @@ class _StepIndexSource:
     """Mutable stand-in for a real bs channel, used only as the ``Scan``
     binning key: its "current value" is whatever step is presently open,
     set directly by ``BsStreamCounter`` rather than derived from any
-    stream data."""
+    stream data.
 
-    name = "step_index"
+    ``BsStreamCounter`` uses one of these per grid dimension (just one,
+    named "step_index", for an ordinary linear scan) -- ``Scan`` already
+    keys bins on the *tuple* of however many parameters it's given, so N
+    of these give N-D (grid) binning for free; see
+    ``BsStreamCounter._advance_step`` and ``escape.stream.Grid``.
+    """
 
-    def __init__(self):
+    def __init__(self, name="step_index"):
+        self.name = name
         self.value = 0.0
 
     def _getEventData(self):
         return self.value
+
+
+def _get_grid_specs(scan):
+    """Return *scan*'s ``grid_specs`` dict (``{"shape", "positions",
+    "index_plan", "grid_dimension_names"}``, see
+    ``eco.acquisition.scan.Scans.meshscan``) if it has one and it's set,
+    else ``None`` -- covers both a plain scan (no ``grid_specs`` attribute
+    at all) and an ordinary non-grid scan (``grid_specs`` present but
+    ``None``) the same way."""
+    if scan is None or not hasattr(scan, "grid_specs"):
+        return None
+    try:
+        return scan.grid_specs.get_current_value()
+    except Exception:
+        return None
 
 
 def _resolve_stream(source, eventworker=None):
@@ -247,9 +268,24 @@ class BsStreamCounter:
         self.timeout = timeout
         self.alias = Alias(self.name, channel=list(self._raw), channeltype="BS")
 
-        self._step_source = _StepIndexSource()
+        # One source per grid dimension -- just one ("step_index") for an
+        # ordinary linear scan; _on_scan_start() sizes this to match
+        # scan.grid_specs for a real mesh/grid scan, before _build_bins()
+        # builds the Scan() from them. Scan() keys bins on the tuple of
+        # however many of these there are, so this is the entire mechanism
+        # N-D (grid) binning needs -- see escape.stream.Grid, which reads
+        # this same tuple structure back out of self._scan._values (also
+        # what self.grid() below hands it).
+        self._step_sources = [_StepIndexSource("step_index")]
+        self._grid_specs = None  # set by _on_scan_start() for a grid scan
         self._scan = None
         self._channels = {}
+        self._scan_running = False
+        # Snapshot of the most recently *completed* scan's bins -- see
+        # _on_scan_end() and grid().
+        self._last_channels = {}
+        self._last_scan = None
+        self._last_grid_specs = None
         self._new_data = Event()
         self._step_index = 0
         self.last_value = None
@@ -296,8 +332,9 @@ class BsStreamCounter:
         """
         from escape import stream as escape_stream
 
-        self._scan = escape_stream.Scan(parameters=[self._step_source])
-        self._step_source.value = 0.0
+        self._scan = escape_stream.Scan(parameters=list(self._step_sources))
+        for src in self._step_sources:
+            src.value = 0.0
         self._step_index = 0
         # NOTE: step_pulse_ids is deliberately NOT reset here -- _build_bins()
         # runs at the end of a scan too (_on_scan_end), and clearing it there
@@ -332,11 +369,40 @@ class BsStreamCounter:
         self._channels = {}
 
     def _on_scan_start(self, scan=None, **kwargs):
+        # Size self._step_sources to match *this* scan's grid dimensionality
+        # (1 for an ordinary linear scan) before _build_bins() builds the
+        # Scan() from them -- growing this later, inside _advance_step(),
+        # would be after the Scan/DataManagers for this run already exist
+        # with the wrong number of parameters.
+        ndim = 1
+        grid_specs = _get_grid_specs(scan)
+        if grid_specs:
+            ndim = len(grid_specs["shape"])
+        self._step_sources = (
+            [_StepIndexSource("step_index")]
+            if ndim <= 1
+            else [_StepIndexSource(f"step_index_{d}") for d in range(ndim)]
+        )
+        self._grid_specs = grid_specs  # None for an ordinary scan -- see grid()
+        self._scan_running = True
         self._teardown_bins()
         self._build_bins()
         self.step_pulse_ids = {}
 
     def _on_scan_end(self, scan=None, **kwargs):
+        # Snapshot the just-finished scan's bins before _build_bins() below
+        # replaces self._channels/self._scan with fresh, empty ones for
+        # standalone use -- without this, grid()/any post-scan inspection
+        # of the full per-step data (not just last_value(s), the one step
+        # snapshot) would see nothing the moment the scan ends, since
+        # tearing down and rebuilding is exactly what always happened here
+        # even before grid() existed (fine for last_value(s), which are
+        # already-extracted plain values, not fine for anything reading
+        # the bins themselves after the fact).
+        self._last_channels = dict(self._channels)
+        self._last_scan = self._scan
+        self._last_grid_specs = self._grid_specs
+        self._scan_running = False
         self._teardown_bins()
         self._build_bins()
 
@@ -447,15 +513,104 @@ class BsStreamCounter:
         needed here -- any non-negative step index is valid, it simply
         hasn't collected any samples yet until the first matching event
         arrives.
+
+        Grid (N-D) scans: ``self._step_sources`` has one entry per grid
+        dimension (sized in ``_on_scan_start``, from *scan*'s own
+        ``grid_specs``) -- each gets set from
+        ``grid_specs["index_plan"][step_index]`` instead of the plain
+        linear ``step_index``, so the shared ``Scan`` keys bins on the
+        (x_index, y_index, ...) tuple rather than a flat count. The linear
+        ``step_index`` itself is still what indexes into
+        ``DataManager._data`` (unchanged): a real StepScan/meshscan visits
+        each grid cell exactly once, in ``index_plan`` order, so the Nth
+        step is always the Nth genuinely-new tuple the shared ``Scan``
+        discovers -- ``scan._values[step_index] == index_plan[step_index]``
+        holds the same way the plain 1-D case already relied on
+        ``scan._values[step_index]`` matching step order.
         """
         step_index = scan.next_step if scan is not None else 0
         self._step_index = step_index
-        self._step_source.value = float(step_index)
+        grid_specs = _get_grid_specs(scan)
+        if grid_specs:
+            grid_index = grid_specs["index_plan"][step_index]
+            for src, idx in zip(self._step_sources, grid_index):
+                src.value = float(idx)
+        else:
+            self._step_sources[0].value = float(step_index)
         ew = next(iter(self._channels.values()))._source.eventWorker
         start_pid = ew.event.getEventId() if ew.event is not None else None
         self.step_pulse_ids[step_index] = start_pid
         n0 = {name: len(self._bin(name, step_index)) for name in self._channels}
         return step_index, n0
+
+    def grid(self, channel=None, shape=None, positions=None, dimension_names=None):
+        """Wrap one of this counter's channels as a live
+        ``escape.stream.Grid`` (N-D reshaping + optional ``plot=True``
+        live plotting for every reduction method -- see that class).
+
+        Only meaningful once ``callbacks_start_scan`` has run for a real
+        grid/mesh scan (``eco.acquisition.scan.Scans.meshscan``) -- that's
+        what sizes ``self._step_sources`` to more than one dimension and
+        records ``grid_specs`` (used to default ``shape``/``positions``/
+        ``dimension_names`` below) in the first place.
+
+        Works both while such a scan is still running (a live, filling-in
+        grid -- reads ``self._channels``, the currently-active bins) and
+        after it has finished (reads ``self._last_channels``, a frozen
+        snapshot taken the moment the scan ended, *before*
+        ``callbacks_end_scan`` rebuilds fresh, empty bins for standalone
+        use -- without that snapshot, calling this after the scan would
+        see nothing, even though ``last_value``/``last_values`` still
+        report the final step's value just fine, since those are already-
+        extracted plain values rather than a reference into the bins).
+
+        Parameters
+        ----------
+        channel : str, optional
+            Which of this counter's channels to view as a grid; required
+            only if this counter has more than one (with exactly one,
+            that one is used automatically).
+        shape, positions, dimension_names : optional
+            Forwarded to ``Grid()``; default to this counter's
+            last-seen ``grid_specs`` (from the scan itself) when omitted.
+
+        Returns
+        -------
+        escape.stream.Grid
+        """
+        from escape.stream import Grid
+
+        channels = self._channels if self._scan_running else self._last_channels
+        grid_specs = self._grid_specs if self._scan_running else self._last_grid_specs
+        if not channels:
+            raise ValueError(
+                f"{self.name}: no scan data to grid yet -- run a scan "
+                "(callbacks_start_scan) first, or check .close()d channels."
+            )
+        if channel is None:
+            if len(channels) != 1:
+                raise ValueError(
+                    f"{self.name}: multiple channels ({list(channels)}) -- "
+                    "pass channel=<name> to pick one for the grid."
+                )
+            (channel,) = channels
+        gs = grid_specs or {}
+        if shape is None:
+            shape = gs.get("shape")
+        if positions is None:
+            positions = gs.get("positions")
+        if dimension_names is None:
+            dimension_names = gs.get("grid_dimension_names")
+        if shape is None:
+            raise ValueError(
+                f"{self.name}: no grid shape known -- run a real mesh/grid scan "
+                "first (callbacks_start_scan sets this from scan.grid_specs), "
+                "or pass shape= explicitly."
+            )
+        return Grid(
+            channels[channel], shape=shape, positions=positions,
+            dimension_names=dimension_names,
+        )
 
 
 @bs_scannable
