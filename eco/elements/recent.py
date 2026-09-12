@@ -153,10 +153,108 @@ class RecentComponents:
         self._timer.start()
 
 
-# --- process-wide, per-user instance used by the Changer write chokepoint ---
+class FrequencyCounts:
+    """Per-user use-*count* tracking -- "Recommended" in the picker UI is
+    ranked by how often a component has actually been used (real writes via
+    Changer, or picks made through any picker UI), which is a different
+    question from RecentComponents' "most recently" -- a component you use
+    constantly but not in the last hour should still surface here even
+    after newer, one-off components have pushed it out of Recent.
+
+    Same AdjustableFS-persisted-json pattern, same per-user scoping, same
+    debounced flush as RecentComponents -- see that class for the fuller
+    rationale, not repeated here.
+    """
+
+    def __init__(
+        self,
+        path=None,
+        namespace_name: Optional[str] = None,
+        user: Optional[str] = None,
+        debounce_seconds: float = default_debounce_seconds,
+        name: str = "component_selector_frequency",
+    ):
+        self.user = user if user is not None else _current_user()
+        if path is None:
+            base_dir = Path.home() / ".eco" / "component_selector"
+            parts = ["frequency"]
+            if namespace_name:
+                parts.append(str(namespace_name))
+            parts.append(self.user)
+            path = base_dir / ("_".join(parts) + ".json")
+        self.debounce_seconds = debounce_seconds
+        self._fs = AdjustableFS(path, default_value={}, name=name, group_writable=False)
+        self._lock = threading.RLock()
+        self._cache: Optional[dict] = None
+        self._timer: Optional[threading.Timer] = None
+
+    @property
+    def path(self) -> Path:
+        return self._fs.file_path
+
+    def all(self) -> dict:
+        """`{dotted_path: count}`, unordered."""
+        with self._lock:
+            if self._cache is not None:
+                return dict(self._cache)
+        return dict(self._fs.get_current_value())
+
+    def touch(self, dotted_path: str) -> None:
+        """Record one more use of `dotted_path`. No-op for an empty path."""
+        if not dotted_path:
+            return
+        with self._lock:
+            counts = dict(self._cache) if self._cache is not None else self.all()
+            counts[dotted_path] = counts.get(dotted_path, 0) + 1
+            self._cache = counts
+            self._schedule_flush()
+
+    def top(self, n: int = 15) -> list:
+        """Up to `n` dotted paths, most-used first (ties broken
+        alphabetically, for a stable order across calls)."""
+        counts = self.all()
+        ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        return [path for path, _count in ranked[:n]]
+
+    def flush(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            pending = self._cache
+        if pending is not None:
+            self._fs.write_value_direct(pending)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache = {}
+            self._schedule_flush()
+
+    def _schedule_flush(self) -> None:
+        # caller already holds self._lock
+        if self._timer is not None:
+            self._timer.cancel()
+
+        def fire():
+            with self._lock:
+                pending = self._cache
+                self._timer = None
+            try:
+                self._fs.write_value_direct(pending)
+            except Exception:
+                pass  # never let a debounced write raise into the caller's thread
+
+        self._timer = threading.Timer(self.debounce_seconds, fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+
+# --- process-wide, per-user instances used by the Changer write chokepoint ---
 
 _instances = {}
 _instances_lock = threading.Lock()
+_frequency_instances = {}
+_frequency_instances_lock = threading.Lock()
 
 
 def _instance_for_current_user() -> RecentComponents:
@@ -169,6 +267,16 @@ def _instance_for_current_user() -> RecentComponents:
         return inst
 
 
+def _frequency_instance_for_current_user() -> FrequencyCounts:
+    user = _current_user()
+    with _frequency_instances_lock:
+        inst = _frequency_instances.get(user)
+        if inst is None:
+            inst = FrequencyCounts(user=user)
+            _frequency_instances[user] = inst
+        return inst
+
+
 def touch_from_write(component) -> None:
     """Called from eco.devices_general.utilities.Changer.__init__ for every
     adjustable write. Deliberately swallows everything -- a broken recent-
@@ -176,6 +284,8 @@ def touch_from_write(component) -> None:
     if not enabled:
         return
     try:
-        _instance_for_current_user().touch(_full_name(component))
+        name = _full_name(component)
+        _instance_for_current_user().touch(name)
+        _frequency_instance_for_current_user().touch(name)
     except Exception:
         pass
