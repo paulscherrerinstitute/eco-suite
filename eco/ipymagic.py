@@ -38,17 +38,85 @@ literal ``...`` in place, so it fails exactly the way typing a real
 ``Ellipsis`` there would (a clear `TypeError` if it's actually used, no
 silent auto-pick).
 
-Deliberately namespace-tree-only for now -- see the module TODO below for
-picking from prior *commands* (eco.logs' kernel history) as a planned
-second mode, likely via a different trigger so the two don't collide.
+Terminal overlay (Tab-completion mode)
+--------------------------------------
+In a real terminal (or a notebook -- ipykernel's completion goes through
+the same IPCompleter matcher pipeline), typing the trigger and pressing
+Tab pops IPython's own native completion menu -- the same widget/rendering
+Python attribute completion already uses -- populated with three sections
+instead of attributes: Recent, Recommended (ranked by actual use-count via
+`eco.elements.recent.FrequencyCounts`, not just recency), and (component
+mode only) a live, filterable walk of the whole namespace tree. This is
+the preferred way to pick something in a terminal: it never blocks on a
+Qt window, and -- critically -- it only ever *inserts text at the cursor*,
+never executes anything, so you can keep composing/editing the line and
+submit whenever you're ready yourself:
+
+    In [1]: (1 / ...<TAB>
+            .bernina.mono.energy        recent
+            .bernina.attenuator.transmission   recommended
+            .bernina.slit1.width        namespace
+    In [1]: (1 / bernina.mono.energy
+
+Typing more after the trigger (`...ene<TAB>`) narrows the namespace
+section by substring match; Recent/Recommended stay unfiltered (picking
+something you use constantly shouldn't require spelling it first).
+
+A second trigger, `...h` (mnemonic: history), does the same for prior
+*commands* (`eco.logs.recent_commands`/`frequent_commands`) instead of
+components -- no namespace section (commands have no tree to browse), and
+picking one always just inserts its text for further editing, the same
+"never auto-executes" rule as components. Both share one on/off switch
+(`start()`/`stop()`); there's no separate flag for the completion path
+since it always inserts rather than executes, so there's nothing about it
+that needs its own opt-out.
+
+If you never press Tab and just hit Enter with a literal `...` still in
+the line, the `...`-in-an-expression mechanism above (the Qt modal picker)
+still applies as a fallback -- the two compose rather than conflict, since
+accepting a Tab-completion replaces the `...` in the buffer before the
+line is ever submitted, leaving nothing for the AST transform to find.
 """
 import ast
+
+from IPython.core.completer import SimpleCompletion, context_matcher
+
+COMPONENT_TRIGGER = "..."
+COMMAND_TRIGGER = "...h"
+_RECENT_COUNT = 8
+_RECOMMENDED_COUNT = 8
+_NAMESPACE_LIMIT = 30
 
 _state = {}
 
 
 def _is_marker(node):
     return isinstance(node, ast.Constant) and node.value is Ellipsis
+
+
+def _full_path(root, relative_path):
+    """`component_selector.build_tree`/`resolve_path` paths (and so
+    `pick_component_modal`'s return value) are relative to `root` --
+    plain `getattr` chains starting *from* root, never including root's
+    own name (confirmed against `Alias.get_full_name(base=...)`, which
+    stops at `base` and returns "" for `base` itself) -- not a standalone
+    expression that means anything on its own. This combines it with the
+    name `root` is actually bound to in the executing namespace (its own
+    `.name`, matching this codebase's convention that a namespace object's
+    `.name` already matches how it's imported at the top level -- e.g.
+    `import eco.bernina as bernina` gives an object whose `.name` is
+    already "bernina", and `eco.ipymagic.start()`'s own docstring assumes
+    exactly this) so the printed/inserted code is directly executable and
+    re-typeable on its own, not silently relative to some invisible root.
+
+    Contrast with `eco.elements.recent.RecentComponents`/`FrequencyCounts`
+    paths, which come from `Alias.get_full_name()` with *no* base -- those
+    are already absolute and must NOT be run through this again.
+    """
+    root_name = getattr(root, "name", None) or "root"
+    if not relative_path:
+        return root_name
+    return f"{root_name}.{relative_path}"
 
 
 class _EllipsisPicker(ast.NodeTransformer):
@@ -87,7 +155,7 @@ class _EllipsisPicker(ast.NodeTransformer):
             print("eco.ipymagic: selection cancelled -- left `...` in place")
             return node
         self.picked_any = True
-        replacement = ast.parse(path, mode="eval").body
+        replacement = ast.parse(_full_path(self.root, path), mode="eval").body
         return ast.copy_location(replacement, node)
 
 
@@ -116,17 +184,102 @@ class _AstTransformer:
 _ast_transformer = _AstTransformer()
 
 
+def _flatten_paths(node, out=None):
+    """All dotted paths in a `component_selector.ComponentNode` tree,
+    depth-first (the root itself included, if it has a name)."""
+    if out is None:
+        out = []
+    if node.name:
+        out.append(node.name)
+    for child in node.children:
+        _flatten_paths(child, out)
+    return out
+
+
+def _ranked_completions(recent_items, recommended_items, extra_items, query):
+    """Recent, then Recommended (recommended items already in Recent are
+    dropped -- no point suggesting the same thing twice), then whatever
+    `extra_items` are left (already excludes both, and already filtered
+    by `query` by the caller -- Recent/Recommended stay unfiltered)."""
+    completions = [SimpleCompletion(text=p, type="recent") for p in recent_items]
+    recommended_items = [p for p in recommended_items if p not in recent_items]
+    completions += [SimpleCompletion(text=p, type="recommended") for p in recommended_items]
+    completions += [SimpleCompletion(text=p, type="namespace") for p in extra_items]
+    return completions
+
+
+@context_matcher()
+def _component_matcher(context):
+    token = context.token
+    root = _state.get("root")
+    if root is None or not token.startswith(COMPONENT_TRIGGER) or token.startswith(
+        COMMAND_TRIGGER
+    ):
+        return {"completions": []}
+
+    from eco.elements.recent import FrequencyCounts, RecentComponents
+    from eco.widgets.component_selector import build_tree
+
+    namespace_name = getattr(root, "name", None)
+    recent_paths = RecentComponents(namespace_name=namespace_name).all()[:_RECENT_COUNT]
+    recommended_paths = FrequencyCounts(namespace_name=namespace_name).top(
+        _RECOMMENDED_COUNT * 2
+    )[:_RECOMMENDED_COUNT]
+
+    query = token[len(COMPONENT_TRIGGER) :].lower()
+    exclude = set(recent_paths) | set(recommended_paths)
+    # build_tree's paths are relative to root (see _full_path's docstring)
+    # -- convert to absolute *before* dedup/query matching, so they compare
+    # correctly against Recent/Recommended's already-absolute paths.
+    namespace_paths = [
+        full
+        for full in (_full_path(root, p) for p in _flatten_paths(build_tree(root)))
+        if full not in exclude and (not query or query in full.lower())
+    ][:_NAMESPACE_LIMIT]
+
+    completions = _ranked_completions(recent_paths, recommended_paths, namespace_paths, query)
+    return {"completions": completions, "suppress": True}
+
+
+@context_matcher()
+def _command_matcher(context):
+    token = context.token
+    if _state.get("root") is None or not token.startswith(COMMAND_TRIGGER):
+        return {"completions": []}
+
+    from eco import logs
+
+    recent_cmds = logs.recent_commands(n=_RECENT_COUNT)
+    recommended_cmds = logs.frequent_commands(n=_RECOMMENDED_COUNT * 2)[:_RECOMMENDED_COUNT]
+
+    query = token[len(COMMAND_TRIGGER) :].lower()
+
+    def _keep(cmd):
+        return not query or query in cmd.lower()
+
+    recent_cmds = [c for c in recent_cmds if _keep(c)]
+    recommended_cmds = [c for c in recommended_cmds if _keep(c)]
+
+    completions = _ranked_completions(recent_cmds, recommended_cmds, [], query)
+    return {"completions": completions, "suppress": True}
+
+
 def start(root, kind_filter="All", bookmarks=None, recent=None):
-    """Register the `...` picker on the *current* IPython shell.
+    """Register the `...` picker on the *current* IPython shell: both the
+    Tab-completion overlay (`...`/`...h`, terminal and notebook alike) and
+    the Qt-modal fallback for a `...` that reaches Enter unexpanded.
 
     `root`: the namespace/Assembly tree to pick from (e.g. `bernina`).
     `kind_filter`/`bookmarks`/`recent`: passed straight through to the
-    picker window each time (see `eco.widgets.component_selector_qt.
-    pick_component_modal`) -- left as `None` picks up that frontend's own
-    per-user, per-namespace defaults, same as opening it any other way.
+    Qt-modal picker each time it opens (see `eco.widgets.
+    component_selector_qt.pick_component_modal`) -- left as `None` picks up
+    that frontend's own per-user, per-namespace defaults, same as opening
+    it any other way. The Tab-completion overlay always uses its own
+    per-namespace Recent/Recommended (see `eco.elements.recent`), not
+    these -- there's no window to hand a shared instance to.
 
     Calling this again just repoints `root` (etc.) for the next pick --
-    it does not install a second hook, so re-running a startup cell is
+    it does not install the hooks twice, so re-running a startup cell is
     safe.
     """
     from IPython import get_ipython
@@ -142,11 +295,15 @@ def start(root, kind_filter="All", bookmarks=None, recent=None):
 
     if not getattr(ip, "_eco_ipymagic_installed", False):
         ip.ast_transformers.append(_ast_transformer)
+        ip.Completer.custom_matchers.extend([_component_matcher, _command_matcher])
         ip._eco_ipymagic_installed = True
 
 
 def stop():
-    """Turn picking off (`...` goes back to being a plain literal) without
-    needing a shell restart -- e.g. a notebook cell that wants to type a
-    real Ellipsis afterward."""
+    """Turn picking off (`...`/`...h` go back to being plain text/a plain
+    literal) without needing a shell restart -- e.g. a notebook cell that
+    wants to type a real Ellipsis afterward. The completion matchers stay
+    registered (harmless: both already no-op whenever `_state["root"]` is
+    `None`, checked first) -- only `_state["root"]` is cleared, same as
+    the Qt-modal fallback's own gate."""
     _state["root"] = None

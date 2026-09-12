@@ -18,9 +18,15 @@ class _FakeEvents:
         pass
 
 
+class _FakeCompleter:
+    def __init__(self):
+        self.custom_matchers = []
+
+
 class _FakeShell:
     def __init__(self):
         self.ast_transformers = []
+        self.Completer = _FakeCompleter()
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +36,20 @@ def _reset_state():
     ipymagic._state.clear()
 
 
-def _transform_source(source, root="the_root"):
+class _NamedRoot:
+    """A pick_component_modal path is relative to root (see
+    ipymagic._full_path's docstring) -- these tests need a `root` with a
+    real `.name` for the resulting expanded code to come out right, not
+    a bare string (which has no `.name` and would fall back to a dummy
+    "root" prefix)."""
+
+    def __init__(self, name):
+        self.name = name
+
+
+def _transform_source(source, root=None):
+    if root is None:
+        root = _NamedRoot("bernina")
     tree = ast.parse(source)
     picker = ipymagic._EllipsisPicker(root, "All", None, None)
     new_tree = picker.visit(tree)
@@ -41,7 +60,7 @@ def _transform_source(source, root="the_root"):
 def test_bare_ellipsis_expression_is_replaced_with_the_picked_path(monkeypatch):
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
-        lambda root, **kw: ("bernina.mono.energy", object()),
+        lambda root, **kw: ("mono.energy", object()),  # relative to root, like the real picker
     )
     out, picked_any = _transform_source("(1 / ...).plot()")
     assert out == "(1 / bernina.mono.energy).plot()"
@@ -49,7 +68,7 @@ def test_bare_ellipsis_expression_is_replaced_with_the_picked_path(monkeypatch):
 
 
 def test_two_markers_are_resolved_left_to_right_in_source_order(monkeypatch):
-    picks = iter(["bernina.mono.energy", "bernina.attenuator.transmission"])
+    picks = iter(["mono.energy", "attenuator.transmission"])
     seen_roots = []
 
     def fake_pick(root, **kw):
@@ -57,12 +76,13 @@ def test_two_markers_are_resolved_left_to_right_in_source_order(monkeypatch):
         return next(picks), object()
 
     monkeypatch.setattr("eco.widgets.component_selector_qt.pick_component_modal", fake_pick)
+    root = _NamedRoot("bernina")
     out, picked_any = _transform_source(
-        "cen = (left := ...) - (right := ...)", root="bernina"
+        "cen = (left := ...) - (right := ...)", root=root
     )
     assert out == "cen = (left := bernina.mono.energy) - (right := bernina.attenuator.transmission)"
     assert picked_any is True
-    assert seen_roots == ["bernina", "bernina"]
+    assert seen_roots == [root, root]
 
 
 def test_subscript_slice_ellipsis_is_left_alone(monkeypatch):
@@ -94,7 +114,7 @@ def test_transform_is_a_noop_when_start_has_not_been_called():
     assert out == "(1 / ...).plot()"
 
 
-def test_start_registers_the_transformer_once(monkeypatch):
+def test_start_registers_the_transformer_and_matchers_once(monkeypatch):
     shell = _FakeShell()
     monkeypatch.setattr("IPython.get_ipython", lambda: shell)
 
@@ -102,6 +122,10 @@ def test_start_registers_the_transformer_once(monkeypatch):
     ipymagic.start("bernina")  # idempotent -- must not install a second hook
 
     assert shell.ast_transformers == [ipymagic._ast_transformer]
+    assert shell.Completer.custom_matchers == [
+        ipymagic._component_matcher,
+        ipymagic._command_matcher,
+    ]
     assert ipymagic._state["root"] == "bernina"
 
 
@@ -121,3 +145,130 @@ def test_stop_makes_the_transform_a_noop_again(monkeypatch):
     tree = ast.parse("(1 / ...).plot()")
     out = ast.unparse(ipymagic._ast_transformer.visit(tree))
     assert out == "(1 / ...).plot()"
+
+
+# -- Tab-completion overlay (_component_matcher / _command_matcher) --------
+
+
+class _Ctx:
+    """Just enough of CompletionContext for these matchers -- both only
+    ever read `.token`."""
+
+    def __init__(self, token):
+        self.token = token
+
+
+class _FakeRoot:
+    name = "bernina"
+
+
+def _texts(result):
+    return [c.text for c in result["completions"]]
+
+
+def _types(result):
+    return [c.type for c in result["completions"]]
+
+
+def test_component_matcher_returns_nothing_when_not_started():
+    assert ipymagic._component_matcher(_Ctx("...")) == {"completions": []}
+
+
+def test_component_matcher_ignores_tokens_without_the_trigger(monkeypatch):
+    ipymagic._state["root"] = _FakeRoot()
+    assert ipymagic._component_matcher(_Ctx("bernina")) == {"completions": []}
+
+
+def test_component_matcher_defers_to_command_matcher_for_the_history_trigger(monkeypatch):
+    ipymagic._state["root"] = _FakeRoot()
+    assert ipymagic._component_matcher(_Ctx("...h")) == {"completions": []}
+
+
+def _fake_node(name, children=()):
+    return type("N", (), {"name": name, "children": list(children)})()
+
+
+def _fake_tree_relative_to_bernina():
+    # build_tree's own node names are relative to root (see _full_path's
+    # docstring) -- root's own name comes back "" (Alias.get_full_name
+    # stops at base), children are unprefixed ("mono.energy", not
+    # "bernina.mono.energy").
+    return _fake_node(
+        "",
+        children=[
+            _fake_node("mono.energy"),
+            _fake_node("attenuator.transmission"),
+        ],
+    )
+
+
+def test_component_matcher_sections_are_recent_then_recommended_then_namespace(monkeypatch):
+    ipymagic._state["root"] = _FakeRoot()
+    monkeypatch.setattr(
+        "eco.elements.recent.RecentComponents.all", lambda self: ["bernina.slit1.width"]
+    )
+    monkeypatch.setattr(
+        "eco.elements.recent.FrequencyCounts.top",
+        lambda self, n: ["bernina.slit1.width", "bernina.mono.energy"],
+    )
+    monkeypatch.setattr(
+        "eco.widgets.component_selector.build_tree",
+        lambda root: _fake_tree_relative_to_bernina(),
+    )
+
+    result = ipymagic._component_matcher(_Ctx("..."))
+
+    # bernina.slit1.width: recent, wins over also being "recommended".
+    # bernina.mono.energy: recommended (already absolute -- RecentComponents/
+    # FrequencyCounts paths come from Alias.get_full_name() with no base,
+    # unlike build_tree's root-relative ones) -- also excluded from the
+    # namespace section below since it's already shown once.
+    # bernina.attenuator.transmission: plain namespace, root-prefixed since
+    # build_tree gave back the relative "attenuator.transmission".
+    assert _texts(result) == [
+        "bernina.slit1.width",
+        "bernina.mono.energy",
+        "bernina.attenuator.transmission",
+    ]
+    assert _types(result) == ["recent", "recommended", "namespace"]
+    assert result["suppress"] is True
+
+
+def test_component_matcher_query_narrows_namespace_but_not_recent(monkeypatch):
+    ipymagic._state["root"] = _FakeRoot()
+    monkeypatch.setattr(
+        "eco.elements.recent.RecentComponents.all", lambda self: ["bernina.slit1.width"]
+    )
+    monkeypatch.setattr("eco.elements.recent.FrequencyCounts.top", lambda self, n: [])
+    monkeypatch.setattr(
+        "eco.widgets.component_selector.build_tree",
+        lambda root: _fake_tree_relative_to_bernina(),
+    )
+
+    result = ipymagic._component_matcher(_Ctx("...ene"))
+
+    # "slit1.width" doesn't match "ene" but stays -- Recent is unfiltered.
+    # Of the namespace section, only "bernina.mono.energy" (via "ene") matches.
+    assert _texts(result) == ["bernina.slit1.width", "bernina.mono.energy"]
+
+
+def test_command_matcher_returns_nothing_when_not_started():
+    assert ipymagic._command_matcher(_Ctx("...h")) == {"completions": []}
+
+
+def test_command_matcher_ignores_the_plain_component_trigger(monkeypatch):
+    ipymagic._state["root"] = _FakeRoot()
+    assert ipymagic._command_matcher(_Ctx("...")) == {"completions": []}
+
+
+def test_command_matcher_has_recent_and_recommended_but_no_namespace_section(monkeypatch):
+    ipymagic._state["root"] = _FakeRoot()
+    monkeypatch.setattr("eco.logs.recent_commands", lambda n: ["mono.mv(5)"])
+    monkeypatch.setattr(
+        "eco.logs.frequent_commands", lambda n: ["daq.compare_channels()", "mono.mv(5)"]
+    )
+
+    result = ipymagic._command_matcher(_Ctx("...h"))
+
+    assert _texts(result) == ["mono.mv(5)", "daq.compare_channels()"]
+    assert _types(result) == ["recent", "recommended"]
