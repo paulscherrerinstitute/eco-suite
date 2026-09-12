@@ -95,11 +95,26 @@ def test_subscript_slice_ellipsis_is_left_alone(monkeypatch):
     assert picked_any is False
 
 
-def test_qt_modal_fallback_is_skipped_in_a_real_terminal_session(monkeypatch, capsys):
-    monkeypatch.setattr(ipymagic, "_in_real_terminal", lambda: True)
+def test_qt_modal_fallback_is_attempted_in_a_real_terminal_session(monkeypatch):
+    # a terminal session alone must no longer skip the Qt modal -- only the
+    # absence of a display does (see the next test).
+    monkeypatch.setattr(ipymagic, "_has_display", lambda: True)
+    monkeypatch.setattr(
+        "eco.widgets.component_selector_qt.pick_component_modal",
+        lambda root, **kw: ("mono.energy", object()),
+    )
+
+    out, picked_any = _transform_source("(1 / ...).plot()")
+
+    assert out == "(1 / bernina.mono.energy).plot()"
+    assert picked_any is True
+
+
+def test_qt_modal_fallback_is_skipped_without_a_display(monkeypatch, capsys):
+    monkeypatch.setattr(ipymagic, "_has_display", lambda: False)
 
     def fail_if_called(root, **kw):
-        raise AssertionError("the Qt modal must not be opened in a real terminal session")
+        raise AssertionError("the Qt modal must not be opened with no display available")
 
     monkeypatch.setattr("eco.widgets.component_selector_qt.pick_component_modal", fail_if_called)
 

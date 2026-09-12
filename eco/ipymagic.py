@@ -73,14 +73,16 @@ that needs its own opt-out.
 
 If you never press Tab and just hit Enter with a literal `...` still in
 the line, the `...`-in-an-expression mechanism above (the Qt modal picker)
-still applies as a fallback in a notebook/qtconsole/script -- the two
-compose rather than conflict, since accepting a Tab-completion replaces
-the `...` in the buffer before the line is ever submitted, leaving nothing
-for the AST transform to find. In a real terminal session specifically,
-that Qt-popup fallback is skipped instead (a window appearing after just
-pressing Enter is a surprising thing for a terminal-only workflow, and
-Tab-completion is already the actual intended terminal experience) -- `...`
-is left as a plain literal and a one-line hint is printed pointing at Tab.
+still applies as a fallback -- terminal session included -- since the two
+compose rather than conflict: accepting a Tab-completion replaces the
+`...` in the buffer before the line is ever submitted, leaving nothing for
+the AST transform to find, so it only ever fires when Tab wasn't used.
+The one case it backs off in is no display being available at all (no
+`DISPLAY`/`WAYLAND_DISPLAY`, e.g. a plain SSH session with no X
+forwarding) -- opening a `QApplication` there doesn't raise a catchable
+exception, it aborts the whole process, so that case is checked for and
+turned into a one-line printed hint pointing at Tab instead, `...` left in
+place, rather than attempted.
 """
 import ast
 
@@ -124,19 +126,30 @@ def _full_path(root, relative_path):
     return f"{root_name}.{relative_path}"
 
 
-def _in_real_terminal():
-    """True only for an actual terminal IPython session (as opposed to a
-    notebook/JupyterLab/qtconsole kernel, which run ZMQInteractiveShell) --
-    used to skip the Qt-modal fallback there, since Tab-completion (see the
-    module docstring's "Terminal overlay" section) is the actual intended
-    terminal experience and a popup Qt window appearing after just hitting
-    Enter is surprising in a pure-terminal workflow."""
-    try:
-        from IPython import get_ipython
-        from IPython.terminal.interactiveshell import TerminalInteractiveShell
-    except Exception:
-        return False
-    return isinstance(get_ipython(), TerminalInteractiveShell)
+def _has_display():
+    """Whether opening a Qt window is actually possible right now. This
+    exists because creating a `QApplication` with no display connected
+    doesn't raise a catchable Python exception -- it's a native abort
+    (confirmed directly: `QApplication([])` with `DISPLAY` unset kills the
+    whole interpreter with SIGABRT, no `except` clause runs) -- so this
+    must be checked *before* ever constructing one, not caught around it.
+
+    A `QApplication` that already exists (e.g. `%gui qt` already enabled,
+    or an earlier picker) means Qt is already known-safe regardless of the
+    checks below. Otherwise this is the same `DISPLAY`/`WAYLAND_DISPLAY`
+    convention X11/Wayland clients generally rely on; macOS/Windows have no
+    such env var and are assumed fine (a real deploy target for eco is
+    Linux/X11 only, so this is best-effort for the rest)."""
+    import os
+    import sys
+
+    from qtpy import QtWidgets
+
+    if QtWidgets.QApplication.instance() is not None:
+        return True
+    if sys.platform == "darwin" or sys.platform.startswith("win"):
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 class _EllipsisPicker(ast.NodeTransformer):
@@ -163,11 +176,12 @@ class _EllipsisPicker(ast.NodeTransformer):
     def visit_Constant(self, node):
         if not _is_marker(node):
             return node
-        if _in_real_terminal():
+        if not _has_display():
             print(
-                "eco.ipymagic: '...' reached Enter unexpanded -- in a terminal session, "
-                "type '...' (or '...h' for a command) then press Tab to pick inline instead "
-                "of waiting for this popup. Left '...' in place."
+                "eco.ipymagic: '...' reached Enter unexpanded -- no display available to open "
+                "the component picker window (DISPLAY/WAYLAND_DISPLAY not set). Type '...' "
+                "(or '...h' for a command) then press Tab to pick inline instead. Left '...' "
+                "in place."
             )
             return node
         from eco.widgets.component_selector_qt import pick_component_modal
