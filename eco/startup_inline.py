@@ -137,3 +137,17 @@ install_lazy_completion_gate()
 from eco.widgets import kernel_registry
 
 kernel_registry.install_shell_logger(kind="console", label=scope or "console")
+
+# Opt-in `...`-triggered inline component picker (see eco.ipymagic's module
+# docstring) -- on by default here since this *is* the real interactive
+# entry point (this file, run via either `eco`/`eco-dev`'s `run -m eco.
+# startup_inline` or the /sf/bernina/bin wrappers' startup_inline_new.py
+# shim); a plain `from eco import bernina` library import still has to ask
+# for it explicitly (see eco.ipymagic's own docstring for why). Only when a
+# scope was actually given -- `scope` is imported into this namespace by
+# name a few lines up (`import eco.{scope} as {scope}`), so `eval(scope)`
+# is that same object, not a fresh one.
+if scope:
+    from eco import ipymagic
+
+    ipymagic.start(eval(scope))
