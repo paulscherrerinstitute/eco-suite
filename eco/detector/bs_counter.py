@@ -554,6 +554,32 @@ class BsStreamCounter:
                 )
             self._new_data.wait(timeout=0.05)
             self._new_data.clear()
+            self._flush_live_plot()
+
+    def _flush_live_plot(self):
+        """Process this counter's live-plot figure's pending GUI events
+        (paints, and its own redraw QTimer's callback) right here, in the
+        per-step polling loop.
+
+        A scan runs as one long synchronous Python call on the calling
+        thread -- the same thread an interactive Qt/ipympl session's GUI
+        event loop normally runs on. Nothing services that event loop while
+        Python is busy inside ``ascan()``/``meshscan()``, so without this,
+        the live-plot window sits there unpainted (often literally black --
+        the canvas never got its first real paint event) for the whole
+        scan, and the redraw ``QTimer`` started by ``Stream.plot_med()``
+        never fires either -- both only catch up once the scan call
+        returns and control is handed back to the normal event loop. This
+        loop already blocks in ~50ms slices waiting for new data, so
+        flushing here costs nothing extra and gives the plot a chance to
+        repaint every ~50ms while the scan is running.
+        """
+        if self._plot is None:
+            return
+        try:
+            self._plot.fig.canvas.flush_events()
+        except Exception:
+            pass
 
     # -- plain Detector protocol (single channel, standalone use only) ------
     def get_current_value(self):
