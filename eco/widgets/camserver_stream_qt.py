@@ -1486,6 +1486,25 @@ class CamServerStreamQt:
         # that oversized images are handled by the scroll area/zoom modes
         # instead
         self.window.resize(780, 620)
+
+        if self.embed:
+            # Embedded (docked into EcoDesktopApp, or camserver_panel_qt's
+            # grid) means the actual on-screen size is whatever the
+            # surrounding dock/splitter allocates -- often much less than
+            # the ~780px this window was designed around. The Settings
+            # dock (up to 400px wide) was found to be the single biggest
+            # avoidable cost there: investigated live (multiple cameras
+            # docked side by side in a real EcoDesktopApp), it routinely
+            # ate most or all of a squeezed camera's own share of the
+            # width, leaving the image itself a sliver. Reusing
+            # _on_settings_toggled (rather than a bare dock.setVisible)
+            # also shrinks the window's own width to match, so the freed
+            # space actually goes to the image instead of sitting empty.
+            # Standalone (embed=False) keeps the previous open-by-default
+            # behavior -- there the extra ~780px this was tuned for is
+            # actually available.
+            self._settings_action.setChecked(False)
+
         self.window.show()
 
         if self.embed:
