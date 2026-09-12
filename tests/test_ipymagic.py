@@ -95,6 +95,21 @@ def test_subscript_slice_ellipsis_is_left_alone(monkeypatch):
     assert picked_any is False
 
 
+def test_qt_modal_fallback_is_skipped_in_a_real_terminal_session(monkeypatch, capsys):
+    monkeypatch.setattr(ipymagic, "_in_real_terminal", lambda: True)
+
+    def fail_if_called(root, **kw):
+        raise AssertionError("the Qt modal must not be opened in a real terminal session")
+
+    monkeypatch.setattr("eco.widgets.component_selector_qt.pick_component_modal", fail_if_called)
+
+    out, picked_any = _transform_source("(1 / ...).plot()")
+
+    assert out == "(1 / ...).plot()"
+    assert picked_any is False
+    assert "Tab" in capsys.readouterr().out
+
+
 def test_cancelled_pick_leaves_the_literal_ellipsis_in_place(monkeypatch, capsys):
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",

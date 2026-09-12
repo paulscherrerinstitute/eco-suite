@@ -73,9 +73,14 @@ that needs its own opt-out.
 
 If you never press Tab and just hit Enter with a literal `...` still in
 the line, the `...`-in-an-expression mechanism above (the Qt modal picker)
-still applies as a fallback -- the two compose rather than conflict, since
-accepting a Tab-completion replaces the `...` in the buffer before the
-line is ever submitted, leaving nothing for the AST transform to find.
+still applies as a fallback in a notebook/qtconsole/script -- the two
+compose rather than conflict, since accepting a Tab-completion replaces
+the `...` in the buffer before the line is ever submitted, leaving nothing
+for the AST transform to find. In a real terminal session specifically,
+that Qt-popup fallback is skipped instead (a window appearing after just
+pressing Enter is a surprising thing for a terminal-only workflow, and
+Tab-completion is already the actual intended terminal experience) -- `...`
+is left as a plain literal and a one-line hint is printed pointing at Tab.
 """
 import ast
 
@@ -119,6 +124,21 @@ def _full_path(root, relative_path):
     return f"{root_name}.{relative_path}"
 
 
+def _in_real_terminal():
+    """True only for an actual terminal IPython session (as opposed to a
+    notebook/JupyterLab/qtconsole kernel, which run ZMQInteractiveShell) --
+    used to skip the Qt-modal fallback there, since Tab-completion (see the
+    module docstring's "Terminal overlay" section) is the actual intended
+    terminal experience and a popup Qt window appearing after just hitting
+    Enter is surprising in a pure-terminal workflow."""
+    try:
+        from IPython import get_ipython
+        from IPython.terminal.interactiveshell import TerminalInteractiveShell
+    except Exception:
+        return False
+    return isinstance(get_ipython(), TerminalInteractiveShell)
+
+
 class _EllipsisPicker(ast.NodeTransformer):
     """Replaces every bare (non-subscript-slice) ``...`` in a parsed AST
     with the dotted-path expression of whatever the user picks, depth/
@@ -142,6 +162,13 @@ class _EllipsisPicker(ast.NodeTransformer):
 
     def visit_Constant(self, node):
         if not _is_marker(node):
+            return node
+        if _in_real_terminal():
+            print(
+                "eco.ipymagic: '...' reached Enter unexpanded -- in a terminal session, "
+                "type '...' (or '...h' for a command) then press Tab to pick inline instead "
+                "of waiting for this popup. Left '...' in place."
+            )
             return node
         from eco.widgets.component_selector_qt import pick_component_modal
 

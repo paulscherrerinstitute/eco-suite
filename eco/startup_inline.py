@@ -143,11 +143,34 @@ kernel_registry.install_shell_logger(kind="console", label=scope or "console")
 # entry point (this file, run via either `eco`/`eco-dev`'s `run -m eco.
 # startup_inline` or the /sf/bernina/bin wrappers' startup_inline_new.py
 # shim); a plain `from eco import bernina` library import still has to ask
-# for it explicitly (see eco.ipymagic's own docstring for why). Only when a
-# scope was actually given -- `scope` is imported into this namespace by
-# name a few lines up (`import eco.{scope} as {scope}`), so `eval(scope)`
-# is that same object, not a fresh one.
+# for it explicitly (see eco.ipymagic's own docstring for why).
+#
+# Root must be the actual eco.utilities.config.Namespace instance (the
+# thing every device gets registered onto via namespace.append_obj(...),
+# with the real status_collection/lazy_names ipymagic's tree-walk needs) --
+# NOT eval(scope) alone, which is just the *package module* `eco.{scope}`
+# (import eco.bernina as bernina gives a plain `module`, no `.name`, no
+# status_collection at all). Confirmed live the hard way: passing the bare
+# module made every picked path fall back to a literal, undefined "root."
+# prefix, and made the tree/completions look sparse and near-random --
+# build_tree() on a real module returns no children whatsoever, so what
+# little showed up was only whatever Recent/Recommended already had from
+# unrelated earlier use. `eco.{scope}.namespace` is that same instance --
+# eco.bernina.py's own module-level `namespace = Namespace(name=scope, ...)`
+# convention, which `from eco.{scope} import *` a few lines up already
+# re-exports as a bare top-level `namespace` too. Falls back to eval(scope)
+# for a scope module that doesn't follow this convention, rather than
+# failing outright -- with a warning, since that fallback silently regresses
+# to the same bug above.
 if scope:
     from eco import ipymagic
 
-    ipymagic.start(eval(scope))
+    try:
+        _ipymagic_root = eval(f"{scope}.namespace")
+    except AttributeError:
+        print(
+            f"eco.ipymagic: eco.{scope} has no `.namespace` attribute -- falling back to "
+            f"eco.{scope} itself, which may not be walkable as a real component tree."
+        )
+        _ipymagic_root = eval(scope)
+    ipymagic.start(_ipymagic_root)
