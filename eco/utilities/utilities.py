@@ -130,6 +130,14 @@ class PropagatingThread(Thread):
 
     def join(self, **kwargs):
         super(PropagatingThread, self).join(**kwargs)
+        if self.is_alive():
+            # A timeout was given and the thread hasn't finished yet --
+            # self.exc/self.ret aren't set until run() completes, so there
+            # is nothing to propagate/return yet. Same signal a plain
+            # Thread.join(timeout=...) gives for "didn't finish in time":
+            # the caller should check is_alive()/loop and try again rather
+            # than this being treated as done.
+            return None
         if self.exc:
             raise self.exc
         return self.ret

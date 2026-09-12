@@ -12,12 +12,18 @@ class Acquisition:
         hold=True,
         stopper=None,
         get_result=lambda: None,
+        on_tick=None,
     ):
         self.acquisition_kwargs = acquisition_kwargs
         for key, val in acquisition_kwargs.items():
             self.__dict__[key] = val
         self._stopper = stopper
         self._get_result = get_result
+        # Called repeatedly on wait()'s (calling) thread while it's blocked
+        # waiting for the acquisition thread -- e.g. to keep a live-plot
+        # window responsive, since that window belongs to the calling
+        # thread's GUI event loop, not the acquisition thread's. See wait().
+        self._on_tick = on_tick
         if acquire:
             self.set_acquire_foo(acquire, hold=hold)
 
@@ -28,7 +34,15 @@ class Acquisition:
             self._thread.start()
 
     def wait(self):
-        self._thread.join()
+        if self._on_tick is None:
+            self._thread.join()
+        else:
+            # Poll instead of a single blocking join() so on_tick() gets a
+            # chance to run repeatedly, on *this* (the calling) thread,
+            # while this thread would otherwise just sit idle in join().
+            while self._thread.is_alive():
+                self._thread.join(timeout=0.05)
+                self._on_tick()
         return self._get_result()
 
     def start(self):

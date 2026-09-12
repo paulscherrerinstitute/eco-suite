@@ -554,25 +554,32 @@ class BsStreamCounter:
                 )
             self._new_data.wait(timeout=0.05)
             self._new_data.clear()
-            self._flush_live_plot()
 
     def _flush_live_plot(self):
         """Process this counter's live-plot figure's pending GUI events
-        (paints, and its own redraw QTimer's callback) right here, in the
-        per-step polling loop.
+        (paints, and its own redraw ``QTimer``'s callback).
 
-        A scan runs as one long synchronous Python call on the calling
-        thread -- the same thread an interactive Qt/ipympl session's GUI
-        event loop normally runs on. Nothing services that event loop while
-        Python is busy inside ``ascan()``/``meshscan()``, so without this,
-        the live-plot window sits there unpainted (often literally black --
-        the canvas never got its first real paint event) for the whole
-        scan, and the redraw ``QTimer`` started by ``Stream.plot_med()``
-        never fires either -- both only catch up once the scan call
-        returns and control is handed back to the normal event loop. This
-        loop already blocks in ~50ms slices waiting for new data, so
-        flushing here costs nothing extra and gives the plot a chance to
-        repaint every ~50ms while the scan is running.
+        Must be called from the *calling* thread of a scan (e.g. the
+        interactive Qt/ipympl session's own thread) -- not from
+        ``_wait_for_n_new()`` itself, which normally runs on a separate
+        acquisition thread (``acquire()`` builds its ``Acquisition`` with
+        ``hold=False``, so the wait loop is already off-thread by the time
+        it starts). A GUI toolkit's event loop belongs to a single thread,
+        and calling into it from any other thread is unsafe -- see
+        ``acquire()``, which instead passes this as ``on_tick=`` to
+        :class:`eco.acquisition.utilities.Acquisition`, so it runs
+        repeatedly on the *calling* thread's own blocking ``wait()`` call.
+
+        The GUI-thread pumping is needed at all because a scan runs as one
+        long synchronous Python call on that thread -- the same thread an
+        interactive session's GUI event loop normally runs on. Nothing
+        services that event loop while ``ascan()``/``meshscan()`` is
+        running, so without this, the live-plot window sits there
+        unpainted (often literally black -- the canvas never got its first
+        real paint event) for the whole scan, and the redraw ``QTimer``
+        started by ``Stream.plot_med()`` never fires either -- both only
+        catch up once the scan call returns and control is handed back to
+        the normal event loop.
         """
         if self._plot is None:
             return
@@ -606,7 +613,8 @@ class BsStreamCounter:
             return self._reduce_step(step_index, n0)
 
         return Acquisition(
-            acquire=_wait_and_reduce, hold=False, get_result=lambda: self.last_value
+            acquire=_wait_and_reduce, hold=False, get_result=lambda: self.last_value,
+            on_tick=self._flush_live_plot,
         )
 
     # -- scan Counter protocol, start/stop mode ------------------------------
