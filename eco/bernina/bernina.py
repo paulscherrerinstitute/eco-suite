@@ -997,7 +997,13 @@ class Tapedrive(Assembly):
 
         self._append(
             Jungfrau,
-            "JF07T32V01",
+            # Was hardcoded "JF07T32V01" -- stale. The live persisted config
+            # (/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/
+            # bernina_config.json) has both "xrd_config"."jfs" and
+            # "robot_config"."jf_id"/"jf_name" saying det_diff is actually
+            # JF01T03V01 (confirmed live on the dispatcher; JF07T32V01's
+            # roi_intensities channel currently is not).
+            "JF01T03V01",
             config_adj=daq.config_JFs,
             pgroup_adj=config_bernina.pgroup,
             event_master=NamespaceComponent(namespace, "event_master"),
