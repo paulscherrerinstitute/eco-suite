@@ -117,6 +117,8 @@ handler's own stream teardown), independent of any caller working around
 it the way this module now does.
 """
 
+from datetime import datetime
+from pathlib import Path
 from threading import Event
 from time import time as _time
 
@@ -301,6 +303,27 @@ class BsStreamCounter:
         ``bs_scannable``/the patched ``Stream.scans``, see
         ``install_stream_scans()``) was missing compared to the older
         EPICS-monitor-based ``CounterValue``, which always auto-plots.
+    store : bool, default True
+        Automatically convert each channel's just-finished bins to a real
+        ``escape.Array`` and write them to a fresh ``.esc.h5`` file when a
+        scan ends (see ``_build_arrays``/``_store_arrays``) -- the
+        bs-stream analogue of ``CounterValue.create_arrays``/
+        ``store_arrays``, which do this unconditionally for the older
+        EPICS-monitor path. This was the other thing a plain
+        ``BsStreamCounter`` was missing compared to ``CounterValue``:
+        without it, a bs-stream scan's data lived only in this counter's
+        in-memory bins (``last_value(s)``, ``.grid()``, the raw
+        ``_channels``), gone the moment the next scan tore them down, with
+        nothing on disk. Failure to store (any exception -- a bad
+        directory, a concurrent writer, ...) is printed, never raised, so
+        it can't fail the scan itself; see ``_store_arrays``.
+    storage_dir : str | Path | callable, default "auto"
+        Where to write the ``.esc.h5`` file -- forwarded to
+        ``_store_arrays`` the same way ``CounterValue.store_arrays``'s own
+        ``directory`` argument works (``"auto"`` -> current directory,
+        matching ``eco.acquisition.counters.DEFAULT_STORAGE_DIR``; a
+        callable is called with no arguments to get the path). Ignored if
+        ``store`` is ``False``.
 
     Usage
     -----
@@ -317,7 +340,7 @@ class BsStreamCounter:
 
     def __init__(
         self, sources, name=None, reduction=np.mean, timeout=10, eventworker=None,
-        live_plot=True,
+        live_plot=True, store=True, storage_dir="auto",
     ):
         sources = sources if isinstance(sources, (list, tuple)) else [sources]
         self._raw = {}
@@ -330,6 +353,13 @@ class BsStreamCounter:
         self.timeout = timeout
         self.live_plot = live_plot
         self._plot = None
+        self.store = store
+        self.storage_dir = storage_dir
+        # Snapshot of the most recently *completed* scan's channels as real
+        # escape.Array objects (see _build_arrays) -- {channel_name: Array},
+        # and the file they were last written to (_store_arrays), if any.
+        self.last_arrays = {}
+        self.stored_filename = None
         self.alias = Alias(self.name, channel=list(self._raw), channeltype="BS")
 
         # One source per grid dimension -- just one ("step_index") for an
@@ -501,6 +531,118 @@ class BsStreamCounter:
                 pass
         self._teardown_bins()
         self._build_bins()
+
+        if self.store:
+            # Never let a storage problem fail the scan itself -- same
+            # contract as CounterValue.store_arrays, which wraps its own
+            # DataSet creation in a bare try/except and prints instead of
+            # raising.
+            try:
+                self._build_arrays(scan)
+                self._store_arrays()
+            except Exception as exc:
+                print(f"{self.name}: couldn't build/store arrays: {exc}")
+
+    def _build_arrays(self, scan):
+        """Convert this scan's just-finished per-channel bins
+        (``self._last_channels``, snapshotted above) into real
+        ``escape.Array`` objects, one per channel -- with the parameter
+        axis relabeled to the scan's actual adjustable values (mirroring
+        ``eco.acquisition.counters.parameter_from_scan``) instead of
+        ``Stream.to_array()``'s own default, the synthetic step index this
+        counter's internal ``Scan`` is keyed on (see ``_StepIndexSource``
+        and the module docstring) -- which carries no physical meaning of
+        its own, only bin identity.
+
+        Sets ``self.last_arrays`` (``{channel_name: escape.Array}``);
+        left at its previous value if ``scan`` isn't a real
+        ``eco.acquisition.scan.StepScan`` (no ``scan_info``) or no steps
+        were recorded (a scan that errored before its first step).
+        """
+        scan_info = getattr(scan, "scan_info", None)
+        scan_values = scan_info.get("scan_values") if scan_info else None
+        if not scan_values:
+            return
+        n_steps = len(scan_values)
+        par_names = scan_info["scan_parameters"]["name"]
+        parameter = {
+            parname: {"values": [tvs[n] for tvs in scan_values]}
+            for n, parname in enumerate(par_names)
+        }
+
+        arrays = {}
+        for name, channel in self._last_channels.items():
+            n_bins = len(channel.lens())
+            if n_bins == n_steps:
+                arrays[name] = channel.to_array(
+                    parameter=parameter, grid_specs=self._last_grid_specs
+                )
+            else:
+                # A step that timed out with zero samples never created a
+                # bin (see _build_bins()'s open-ended-Scan docstring) --
+                # the real scan values wouldn't line up against this
+                # channel's shorter bin list, so fall back to to_array()'s
+                # own synthetic step_index rather than mislabel steps.
+                print(
+                    f"{self.name}: {name} has {n_bins} bins but the scan "
+                    f"took {n_steps} steps -- keeping the synthetic "
+                    "step_index parameter instead of the real scan values."
+                )
+                arrays[name] = channel.to_array()
+        self.last_arrays = arrays
+
+    def _store_arrays(self):
+        """Write ``self.last_arrays`` (see ``_build_arrays``) to a fresh
+        ``escape.DataSet`` HDF5 file, one dataset per channel -- the
+        bs-stream-counter analogue of
+        ``eco.acquisition.counters.CounterValue.store_arrays`` (same
+        ``DataSet.create_with_new_result_file``/``.append``/``.store()``
+        round-trip, reusing the same ``DEFAULT_STORAGE_DIR``/directory
+        handling), just scoped to this one counter's channels rather than
+        a whole scan's monitors.
+
+        Sets ``self.stored_filename`` to the resulting path. No-op if
+        ``self.last_arrays`` is empty (nothing to store).
+        """
+        if not self.last_arrays:
+            return
+        from escape import DataSet
+
+        from eco.acquisition.counters import DEFAULT_STORAGE_DIR
+        from eco.utilities.datafiles import ensure_dir, ensure_group_writable
+
+        directory = self.storage_dir
+        if directory == "auto":
+            directory = DEFAULT_STORAGE_DIR
+        if callable(directory):
+            directory = directory()
+        directory = Path(directory)
+        if not directory.exists():
+            try:
+                ensure_dir(directory)
+            except Exception:
+                print(f"{self.name}: could not create directory {directory.resolve()} !")
+
+        filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + f".{self.name}.esc.h5"
+        path = directory / filename
+
+        d = DataSet.create_with_new_result_file(path, force_overwrite=False)
+        names = list(self.last_arrays)
+        for k in names:
+            d.append(self.last_arrays[k], name=k)
+            self.last_arrays[k].store()
+        d.results_file.close()
+        ensure_group_writable(path)
+        self.stored_filename = path.resolve().as_posix()
+        print(f"{self.name}: stored filename {self.stored_filename}")
+
+        # Re-open read-back handles (same as CounterValue.store_arrays) so
+        # self.last_arrays keeps working after this method returns rather
+        # than referencing data tied to the now-closed results_file.
+        d = DataSet.load_from_result_file(path)
+        for k in names:
+            self.last_arrays[k] = d.datasets[k]
+        d.results_file.close()
 
     def close(self):
         """Unsubscribe every channel for good (the one deliberate use of
