@@ -526,10 +526,16 @@ class Jungfrau(Assembly):
                 self._last_dap_req_time = time.time()
 
             if self._last_dap_message["status"] == "ok":
-                self._dap_settings_storage.set_target_value(
-                    self._last_dap_message["parameters"]
-                ).wait()
-                return self._last_dap_message["parameters"]
+                params = self._last_dap_message["parameters"]
+                # Every force=True call lands here, including ones served
+                # from the 5s throttle cache above with no network round
+                # trip at all -- comparing before writing avoids rewriting
+                # _dap_settings_storage's shared file on disk (and the
+                # gac-bernina group-ownership fallout that write can
+                # trigger, see project notes) when nothing actually changed.
+                if self._dap_settings_storage.get_current_value() != params:
+                    self._dap_settings_storage.set_target_value(params).wait()
+                return params
         else:
             val = self._dap_settings_storage.get_current_value()
             if not val:
@@ -739,10 +745,12 @@ class Jungfrau(Assembly):
                 self._last_detector_settings_req_time = time.time()
 
             if self._last_detector_settings_message["status"] == "ok":
-                self._detector_settings_storage.set_target_value(
-                    self._last_detector_settings_message["parameters"]
-                ).wait()
-                return self._last_detector_settings_message["parameters"]
+                params = self._last_detector_settings_message["parameters"]
+                # See get_dap_settings's comment above -- same unconditional
+                # rewrite-on-every-call issue, same fix.
+                if self._detector_settings_storage.get_current_value() != params:
+                    self._detector_settings_storage.set_target_value(params).wait()
+                return params
         else:
             val = self._detector_settings_storage.get_current_value()
             if not val:
@@ -756,18 +764,74 @@ class Jungfrau(Assembly):
         REST: POST {broker_address_aux}/set_detector_settings, body
         {"detector_name": jf_id, "parameters": detector_setting_dict}. Only
         delay, detector_mode, exptime and gain_mode are recognised
-        server-side; anything else in the dict is ignored. The broker stops
-        the trigger, applies changes via setattr on its Detector object,
-        then restarts the trigger -- i.e. this briefly interrupts triggering
-        for this detector. Do not call it mid-acquisition.
+        server-side; anything else in the dict is ignored.
+
+        This is genuinely slow, not just broker-congestion slow: reading
+        sf_daq_broker's own source (sf_daq_broker/detector/detector.py's
+        set_detector_settings handler), it unconditionally calls
+        Trigger.stop() then Trigger.start() around the setattr calls --
+        and each of those (sf_daq_broker/detector/trigger.py:47-66) writes
+        to a single, BEAMLINE-WIDE EVR soft-event PV (the same 254/255
+        event code this class's own `trigger`/`trigger_enable` already
+        wrap -- SAR-CVME-TIFALL5-EVG0:SoftEvt-EvtCode-SP for Bernina), then
+        unconditionally sleeps 4s before even reading back to confirm --
+        still marked "#TODO: this seems excessive, check!" in the current
+        server source. That's >= ~8s of hard sleep alone per call, on a PV
+        that gates triggering for the *whole beamline*, not just this
+        detector -- which is why a single settings change can look like "a
+        lot of processes restarting" rather than one detector
+        reconfiguring.
+
+        To avoid paying that unconditionally, this now checks
+        `detector_setting_dict` against the cached current settings
+        (_detector_settings_storage, the same local cache
+        get_detector_settings() already maintains -- seeded via a real
+        get_detector_settings(force=True) if the cache is empty) *before*
+        calling the broker, and skips the POST entirely if nothing in it
+        would actually change anything -- mirroring the diff
+        sf_daq_broker's own handler does server-side
+        ("if old_value == new_value: continue"), just done locally, before
+        paying for the trigger stop/start rather than after. This is a
+        pure local-cache comparison (no fresh broker read unless the cache
+        was empty), so it can miss a change made out-of-band by another
+        session/caller since the cache was last refreshed -- call
+        get_detector_settings(force=True) first if that matters for your
+        use case.
+
+        Also fixes a pre-existing cache-corruption bug: previously a
+        *partial* detector_setting_dict (e.g. just {"exptime": ...}) fully
+        replaced _detector_settings_storage's content on a successful set,
+        silently dropping whatever delay/detector_mode/gain_mode had been
+        cached from an earlier read -- the cache write is now merged
+        (current | changed) instead of replaced.
         """
+        current = self._detector_settings_storage.get_current_value()
+        if not current:
+            current = self.get_detector_settings(force=True) or {}
+
+        changed = {
+            k: v
+            for k, v in detector_setting_dict.items()
+            if v is not None and current.get(k) != v
+        }
+        if not changed:
+            return {
+                "status": "ok",
+                "message": (
+                    "no change -- every requested value already matches "
+                    "the cached hardware settings, skipped the broker "
+                    "round trip (and its beamline-wide trigger stop/start)"
+                ),
+                "changed_parameters": {},
+            }
+
         m = requests.post(
             f"{self.broker_address_aux}/set_detector_settings",
-            json={"detector_name": self.jf_id, "parameters": detector_setting_dict},
+            json={"detector_name": self.jf_id, "parameters": changed},
         ).json()
         if m["status"] == "ok":
             self._detector_settings_storage.set_target_value(
-                detector_setting_dict
+                {**current, **changed}
             ).wait()
             return m
 

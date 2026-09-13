@@ -12,11 +12,21 @@ class AdjustableObject(Assembly):
         self.init_object(is_setting_children=is_setting_children)
 
     def set_field(self, fieldname, value):
+        # set_target_value(..., hold=False) (AdjustableGetSet's default)
+        # starts its Changer's background thread immediately and returns --
+        # .wait() here is required, not optional: a caller doing
+        # `some_field.set_target_value(x).wait()` on the per-field
+        # AdjustableGetSet this feeds (see init_object below) only joins
+        # *that* Changer's thread, which just calls this method and returns;
+        # without waiting here too, the real underlying write above keeps
+        # running orphaned after the caller believes it's done, and a
+        # second set_field() call racing it can read a get_current_value()
+        # that doesn't yet reflect it, silently clobbering it.
         d = self._base_dict.get_current_value()
         if fieldname not in d.keys():
             raise Exception(f"{fieldname} is not in dictionary")
         d[fieldname] = value
-        self._base_dict.set_target_value(d)
+        self._base_dict.set_target_value(d).wait()
 
     def get_field(self, fieldname):
         d = self._base_dict.get_current_value()
@@ -27,7 +37,7 @@ class AdjustableObject(Assembly):
     def update_base_dict(self, updatedict):
         tmp = self._base_dict.get_current_value()
         tmp.update(updatedict)
-        self._base_dict.set_target_value(tmp)
+        self._base_dict.set_target_value(tmp).wait()  # see set_field's comment
         self.__init__(self._base_dict, name=self.name)
 
     def init_object(self, is_setting_children=False):

@@ -1,6 +1,6 @@
 from eco.xoptics.attenuator_safety_bernina import AttenuatorSafetyBernina
 from scipy import constants
-from eco.devices_general.powersockets import MpodChannel
+from eco.devices_general.powersockets import MpodChannel, NEW_MpodChannel
 from eco.devices_general.wago import AnalogOutput
 from eco.devices_general.cameras_swissfel import CameraBasler
 from eco.epics_utils.detector import DetectorPvDataStream
@@ -1715,6 +1715,14 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
             camera_config=self.camera_configuration,
         )
 
+        self._append(
+            NEW_MpodChannel,
+            pvbase="SARES20-MPD1",
+            channel_number=3,
+            module_string="1",
+            name="illumination",
+        )
+
         for name, config in self.motor_configuration.items():
             self._append(
                 SmaractRecord,
@@ -1770,12 +1778,7 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
             name="interferometer_value",
         )
 
-        #        self._append(
-        #            MpodChannel,
-        #            pvbase="SARES21-PS7071",
-        #            channel_number=3,
-        #            name="illumination",
-        #        )
+    
         self._append(
             AttenuatorSafetyBernina,
             xp=xp,

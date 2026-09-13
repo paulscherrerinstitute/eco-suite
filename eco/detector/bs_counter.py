@@ -200,11 +200,15 @@ def _resolve_stream(source, eventworker=None):
 
 
 def bs_scannable(Obj):
-    """Class decorator giving a bs-stream-backed detector (e.g.
-    ``DetectorBsStream``) a lazy ``.scans`` container powered by
-    ``BsStreamCounter`` -- the bs-stream analogue of
+    """Class decorator giving a bs-stream-backed detector a lazy ``.scans``
+    container powered by ``BsStreamCounter`` -- the bs-stream analogue of
     ``eco.acquisition.decorators.scannable`` (which wires up ``CounterValue``,
-    i.e. EPICS-monitor/polling-based scanning, instead).
+    i.e. EPICS-monitor/polling-based scanning, instead). Useful for a
+    from-scratch throwaway bs-stream detector class; ``DetectorBsStream``
+    itself (``eco.detector.detectors_psi``) doesn't use this decorator --
+    it needs the choice between the two per *instance*, not per class (see
+    its ``bs_scan_mode`` constructor flag), which a class decorator can't
+    express.
 
     Built once and cached (unlike ``scannable``, which deliberately rebuilds
     its ``CounterValue`` on every access to reset accumulated data): a
@@ -885,50 +889,11 @@ class BsStreamCounter:
         )
 
 
-@bs_scannable
-class DetectorBsTest:
-    """Throwaway bs-stream test detector for exercising ``BsStreamCounter``/
-    ``bs_scannable`` end to end -- construction, ``.scans``, a real
-    ``ascan()`` -- against the real facility dispatcher, without touching
-    ``DetectorBsStream`` or any production device built on it (e.g.
-    ``mon_opt.intensity``, which deliberately stays on the plain
-    EPICS-monitor ``@scannable``/``CounterValue`` path; see this module's
-    "What changed testing against the real dispatcher" section above for
-    why bs-stream scanning isn't ready to be the default there yet).
-
-    This is explicitly **not** wired into any namespace and has no PV
-    mirror, settings, or status-display integration -- construct throwaway
-    instances directly, e.g.::
-
-        det = DetectorBsTest("SAROP21-PBPS133:INTENSITY", name="test_intensity")
-        det.get_current_value()
-        det.scans.ascan(some_dummy_adjustable, 0, 4, 4, 10)
-        det._bs_counter.close()   # unsubscribe when done experimenting
-
-    Confirmed against the real dispatcher (``SAROP21-PBPS133:INTENSITY``,
-    an ``eco.elements.adjustable.DummyAdjustable``, two consecutive
-    ``ascan()`` runs): correct per-step values, correct per-step pulse_id
-    partitioning, and -- after the ``_build_bins()`` fix described above --
-    no extra console output and no teardown-race exception.
-    """
-
-    def __init__(self, bs_channel, name=None):
-        from escape import stream as escape_stream
-        from eco.detector.detectors_psi import _ensure_bs_event_worker
-
-        self.name = name or bs_channel
-        self.bs_channel = bs_channel
-        self.alias = Alias(self.name, channel=bs_channel, channeltype="BS")
-        _ensure_bs_event_worker()
-        self.stream = escape_stream.Stream(bs_channel, None)
-
-    def get_current_value(self):
-        return self._get_bs_current_value()
-
-    def _get_bs_current_value(self):
-        # Lazily built and cached (not per-call) -- see BsStreamCounter/
-        # bs_scannable docstrings for why that must not be rebuilt on every
-        # read (it holds a live bs subscription).
-        if not hasattr(self, "_bs_counter"):
-            self._bs_counter = BsStreamCounter(self, name=self.name)
-        return self._bs_counter.get_current_value()
+    # The throwaway bs-stream test detector that used to live here
+    # (`DetectorBsTest`, for exercising `BsStreamCounter`/`bs_scannable`
+    # end to end without touching production `DetectorBsStream` instances)
+    # has been absorbed into `eco.detector.detectors_psi.DetectorBsStream`
+    # itself as its `bs_scan_mode=True` constructor flag, now that this has
+    # been confirmed working against the real dispatcher -- see that
+    # class's docstring. Construct a plain `DetectorBsStream(bs_channel,
+    # cachannel="none", name=..., bs_scan_mode=True)` instead.

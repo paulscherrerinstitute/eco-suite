@@ -766,6 +766,21 @@ try:
             # top-level module import, not a package-relative one -- the
             # per-pgroup file lives outside the eco package entirely.
             import bernina_exp
+
+        # Default location for Assembly._append(..., add_patch=True) (see
+        # eco.elements.assembly.Assembly._write_patch): same pgroup eco
+        # folder as bernina_exp.py above, so both live next to each other
+        # and share the same ownership/writability story. Unlike
+        # bernina_exp.py, patches.py is never seeded from a template --
+        # it does not exist until the first add_patch=True append actually
+        # writes one, so an unused pgroup has no empty patches.py sitting
+        # around. Importing it here (after bernina_exp, so patches can
+        # build on whatever bernina_exp.py added) replays every patch
+        # captured in a previous interactive session.
+        pgroup_patch_path = pgroup_eco_path.get_path() / "patches.py"
+        namespace.patch_file = pgroup_patch_path
+        if pgroup_patch_path.exists():
+            import patches
     else:
         print(
             "Could not access experiment folder, could be due to more systematic file system failure!"

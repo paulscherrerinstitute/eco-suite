@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import copy
 import logging
 from datetime import datetime
-from inspect import isclass
+from inspect import isclass, signature
 import json
 from pathlib import Path
 from tkinter import W
@@ -24,6 +24,7 @@ import colorama
 from . import memory
 from enum import Enum
 import os
+import getpass
 import subprocess
 from rich.progress import track
 from eco import Adjustable, Detector
@@ -84,6 +85,35 @@ def iter_ancestor_assemblies(obj):
         seen.add(id(parent))
         yield parent
         frontier.extend(getattr(parent, "_parent_assemblies", []) or [])
+
+
+def _capture_current_input():
+    """Best-effort raw source of the IPython cell/line currently executing.
+
+    Used by `Assembly._append(..., add_patch=True)` (see there) to record
+    the code that built the object being appended. Tries the message that
+    triggered the current execution first (works the same in a terminal
+    IPython session and a notebook/lab kernel); falls back to the input
+    history for a plain `%run`-less terminal line. Returns None outside
+    IPython, or if neither source is available -- callers must treat that
+    as "nothing to capture", not as an error.
+    """
+    try:
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        if ip is None:
+            return None
+        parent = ip.get_parent() or {}
+        code = parent.get("content", {}).get("code")
+        if code:
+            return code
+        hist = list(ip.history_manager.get_range(raw=True))
+        if hist:
+            return hist[-1][2]
+    except Exception:
+        pass
+    return None
 
 
 class IncompleteInitialisationError(Exception):
@@ -148,7 +178,7 @@ class StatusCollection:
             if item is self.parent:
                 continue
 
-            if item in ls:
+            if any(item is x for x in ls):
                 continue
 
             if selection is not None:
@@ -181,16 +211,16 @@ class StatusCollection:
                         selection=selection, ls=[]
                     ):
 
-                        if titem not in ls:
+                        if not any(titem is x for x in ls):
                             ls.append(titem)
 
                 else:
 
-                    if item not in ls:
+                    if not any(item is x for x in ls):
                         ls.append(item)
 
             else:
-                if item not in ls:
+                if not any(item is x for x in ls):
                     ls.append(item)
 
         return ls
@@ -328,6 +358,7 @@ class Assembly:
         call_obj=True,
         overwrite=False,
         optional=None,
+        add_patch=False,
         **kwargs,
     ):
         """This hidden method appends an object to the assembly. It can take either an object instance, or a class (in which case it will be called with the provided args and kwargs).
@@ -357,7 +388,23 @@ class Assembly:
             The assembly is then "incomplete" and ``get_status`` will raise
             :class:`IncompleteInitialisationError` naming the missing alias.
             If None (the default), the module-level ``OPTIONAL_APPEND_DEFAULT``
-            is used."""
+            is used.
+        add_patch : bool, optional
+            If True, once this component has been appended successfully,
+            capture the IPython input that produced this `_append(...)` call
+            (see `_capture_current_input`) and append it -- with a small
+            header comment -- to this assembly's namespace's patch file, so
+            it can be replayed the next time that namespace is built (e.g.
+            `eco/bernina/bernina.py` importing its pgroup's `patches.py`
+            after the rest of the namespace exists). "This assembly's
+            namespace" is found by walking `self` and its ancestor
+            assemblies (`iter_ancestor_assemblies`) for the nearest one with
+            a `patch_file` attribute set -- ordinarily the root `Namespace`
+            instance, e.g. `namespace.patch_file = <path>`. Best-effort and
+            non-fatal: no `patch_file` configured, not running interactively,
+            or a write failure all just log a warning -- `add_patch` is a
+            convenience on top of a successful append, never a reason for
+            the append itself to raise. See `_write_patch`."""
         if optional is None:
             optional = OPTIONAL_APPEND_DEFAULT
         if overwrite:
@@ -500,6 +547,104 @@ class Assembly:
                 self.status_collection.append(
                     self.__dict__[name], selection=group_name, recursive=recursive
                 )
+
+        if add_patch:
+            self._write_patch(name)
+
+    def _resolve_patch_target(self):
+        """(patch_file, root_module) from the nearest of `self` and its
+        ancestor assemblies (`iter_ancestor_assemblies`) that has a
+        `patch_file` attribute set -- see `_append`'s `add_patch` kwarg.
+        `patch_file` is a plain attribute, the same convention as
+        `_show_svg` above: whichever code builds the top-level `Namespace`
+        sets it once (e.g. `namespace.patch_file = <path>` in
+        `eco/bernina/bernina.py`), and every `Assembly` appended anywhere
+        under it shares that one file. `root_module`, read off the same
+        object if it has one (true for a `Namespace`), is used to seed a
+        freshly-created patch file with a `from <root_module> import *`
+        preamble, so captured code that refers to other top-level namespace
+        items by their bare interactive name (e.g. `daq`, `mono`) resolves
+        the same way on replay. Returns (None, None) if nothing in the
+        chain has a `patch_file`.
+        """
+        candidates = [self]
+        candidates.extend(iter_ancestor_assemblies(self))
+        for obj in candidates:
+            patch_file = getattr(obj, "patch_file", None)
+            if patch_file:
+                return Path(patch_file), getattr(obj, "root_module", None)
+        return None, None
+
+    def _write_patch(self, name):
+        """Append the IPython input that just built `self.__dict__[name]`
+        (captured via `_capture_current_input`) to this assembly's
+        namespace's patch file (`_resolve_patch_target`) -- see `_append`'s
+        `add_patch` kwarg for the full picture.
+
+        Best-effort and non-fatal by design, mirroring the optional-memory
+        fallback in `__init__` above: a failed capture or write only logs a
+        warning, never raises -- `add_patch` is a convenience layered on top
+        of an already-successful `_append`, and a shared pgroup directory
+        this account cannot currently write to (the same class of hazard as
+        other shared config/data trees in this codebase) must not be able to
+        take that append down.
+        """
+        patch_file, root_module = self._resolve_patch_target()
+        if patch_file is None:
+            logger.warning(
+                "add_patch=True on '%s.%s' but no ancestor namespace has a "
+                "'patch_file' set -- nothing saved. Set "
+                "<namespace>.patch_file = <path> to enable capturing "
+                "patches for it.",
+                self.alias.get_full_name(),
+                name,
+            )
+            return
+        code = _capture_current_input()
+        if not code:
+            logger.warning(
+                "add_patch=True on '%s.%s' but could not capture the "
+                "generating IPython input (not running interactively?) -- "
+                "nothing saved.",
+                self.alias.get_full_name(),
+                name,
+            )
+            return
+        try:
+            from ..utilities.datafiles import ensure_dir, ensure_group_writable
+
+            ensure_dir(patch_file.parent)
+            is_new = not patch_file.exists()
+            with open(patch_file, "a") as f:
+                if is_new:
+                    f.write(
+                        "# Auto-generated patch file -- appended to by "
+                        "Assembly._append(..., add_patch=True) calls made "
+                        "in interactive sessions, then re-run (imported) "
+                        "the next time this namespace is built, to "
+                        "recreate them. Safe to hand-edit (e.g. to drop a "
+                        "patch that turned out to be wrong) as long as the "
+                        "file stays valid Python.\n"
+                    )
+                    if root_module:
+                        f.write(f"from {root_module} import *\n")
+                full_name = self.alias.get_full_name()
+                target = f"{full_name}.{name}" if full_name else name
+                f.write(
+                    f"\n# --- patch for {target} "
+                    f"({datetime.now().isoformat(timespec='seconds')}, "
+                    f"{getpass.getuser()}) ---\n"
+                )
+                f.write(code.rstrip("\n") + "\n")
+            ensure_group_writable(patch_file)
+        except Exception:
+            logger.warning(
+                "add_patch=True on '%s.%s': failed to write patch to %s",
+                self.alias.get_full_name(),
+                name,
+                patch_file,
+                exc_info=True,
+            )
 
     def get_status(
         self,
@@ -957,6 +1102,7 @@ class Assembly:
         auto_title=True,
         attach_display=True,
         attach_status_file=True,
+        pgroup=None,
     ):
         if elog is None:
             elog = self._get_elog()
@@ -992,10 +1138,17 @@ class Assembly:
         if len(files) > 1:
             print(files)
 
+        # not every elog implementation is pgroup-scoped (e.g. the plain
+        # PSI/GFA elog has no notion of a pgroup and forwards unknown
+        # kwargs straight into a third-party call) -- only pass this
+        # through to ones that actually declare the parameter.
+        post_kwargs = {"text_encoding": "html"}
+        if pgroup is not None and "pgroup" in signature(elog.post).parameters:
+            post_kwargs["pgroup"] = pgroup
         return elog.post(
             message,
             *files,
-            text_encoding="html",
+            **post_kwargs,
         )
         # tags=[],
 
@@ -1060,7 +1213,11 @@ class Assembly:
         # collapse to one row instead of one per leaf.
         per_child = {}
         pvnames_by_leaf = {}
-        for item in self.status_collection.get_list():
+        try:
+            members = self.status_collection.get_list()
+        except Exception:
+            members = []
+        for item in members:
             if item is self:
                 continue
             has_pvs, all_dead = ca_tuning.component_pv_health(item)

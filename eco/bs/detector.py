@@ -25,27 +25,6 @@ from eco.epics_utils import get_from_archive
 from eco.elements.protocols import enum_repr
 
 
-@get_from_archive
-class DetectorBsData(Assembly):
-    def __init__(self, bschannel, name=None):
-        super().__init__(name=name)
-        self.status_collection.append(self)
-        self.bschannel = bschannel
-        if epics_pv_available & epics_pv_availabe == "same":
-            self._pv = ca_tuning.make_pv(pvname)
-            self._append(
-                AdjustablePvString, self.pvname + ".EGU", name="unit", is_setting=False
-            )
-        self.name = name
-        self.alias = Alias(self.name, channel=self.pvname, channeltype="BS")
-
-    def get_current_value(self):
-        return _read_pv(self._pv, name=getattr(self, "name", None))
-
-    def __call__(self):
-        return self.get_current_value()
-
-
 @enum_repr
 @get_from_archive
 class DetectorPvEnum(Assembly):

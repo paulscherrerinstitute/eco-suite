@@ -1,3 +1,4 @@
+import inspect
 import warnings
 from pathlib import Path
 
@@ -24,10 +25,17 @@ class ElogsMultiplexer:
     def __init__(self, *args):
         self.elogs = args
 
-    def post(self, *args, **kwargs):
+    def post(self, *args, pgroup=None, **kwargs):
+        # not every wrapped elog is pgroup-scoped (e.g. the plain PSI/GFA
+        # elog below has no notion of a pgroup) -- only forward the override
+        # to the ones that actually declare a `pgroup` parameter, so it
+        # doesn't leak into some other elog's **kwargs and its post() call.
         mids = []
         for elog in self.elogs:
-            mids.append(elog.post(*args, **kwargs))
+            if pgroup is not None and "pgroup" in inspect.signature(elog.post).parameters:
+                mids.append(elog.post(*args, pgroup=pgroup, **kwargs))
+            else:
+                mids.append(elog.post(*args, **kwargs))
         return mids
 
 

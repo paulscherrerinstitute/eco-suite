@@ -2332,10 +2332,12 @@ class Daq(Assembly):
         )
         return job
 
-    def scan_message_to_elog(self, scan=None, **kwargs):
+    def scan_message_to_elog(self, scan=None, pgroup=None, **kwargs):
         # def _create_metadata_structure_start_scan(
         # scan, run_table=run_table, elog=elog, append_status_info=True, **kwargs
         # ):
+        if pgroup is None:
+            pgroup = self.pgroup
         runno = scan.daq_run_number.get_current_value()
         message_string = f"#### DAQ run {runno}"
         if scan.description():
@@ -2343,7 +2345,9 @@ class Daq(Assembly):
         else:
             message_string += f"\n"
         try:
-            elog_ids = scan.status_to_elog(text=message_string, auto_title=False)
+            elog_ids = scan.status_to_elog(
+                text=message_string, auto_title=False, pgroup=pgroup
+            )
             scan.counter_scratch(self.name)["elog_id"] = elog_ids[1]
 
         # message_string += "`" + metadata["scan_info_file"] + "`\n"

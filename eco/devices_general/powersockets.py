@@ -359,6 +359,8 @@ class NEW_MpodFlags(Assembly):
             )
 
     def _get_flag_name_value(self, value, flag_name=None):
+        if value is None:
+            return None
         index = flag_names_mpod.index(flag_name)
         return int("{0:015b}".format(int(value))[-1 * (index + 1)]) == 1
 

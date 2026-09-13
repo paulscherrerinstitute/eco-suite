@@ -1,10 +1,11 @@
-from eco.acquisition.decorators import scannable
+import weakref
 
 from ..elements.assembly import Assembly
 from ..aliases import Alias
 from eco import ecocnf
 from epics.pv import PV
 from ..epics_utils import ca_tuning
+from eco.acquisition.counters import CounterValue
 
 # try:
 #     from bsread.bsavail import pollStream
@@ -72,10 +73,25 @@ def _ensure_bs_event_worker():
 
 
 @get_from_archive
-@scannable
-class DetectorBsStream:
-    def __init__(self, bs_channel, cachannel="same", name=None):
-        self.name = name
+class DetectorBsStream(Assembly):
+    def __init__(self, bs_channel, cachannel="same", name=None, bs_scan_mode=False):
+        """bs_scan_mode : bool, optional
+        False (default): ``.scans`` is the plain EPICS-monitor/polling
+        ``CounterValue`` used by every other detector (via ``self._pv`` --
+        requires `cachannel` to actually provide one). True: ``.scans`` is
+        instead backed by a live ``BsStreamCounter`` reading `self.stream`
+        directly, with per-scan-step histogram binning -- absorbs what used
+        to be the separate, hand-duplicated ``DetectorBsTest`` class in
+        ``eco.detector.bs_counter`` (kept apart from production
+        `DetectorBsStream` instances only because nothing here had ever
+        been exercised against the real dispatcher yet; now that it has,
+        see that module's docstring, it's just a mode). Independent of
+        `cachannel`: `get_current_value(force_bsstream=True)` /
+        `_get_bs_current_value()` already reach the same bs-stream path
+        regardless of this flag -- `bs_scan_mode` only decides what plain
+        `.scans` resolves to.
+        """
+        super().__init__(name=name)
         self.bs_channel = bs_channel
         if cachannel == "same":
             self.pvname = bs_channel
@@ -85,10 +101,58 @@ class DetectorBsStream:
             self.pvname = cachannel
         if self.pvname:
             self._pv = ca_tuning.make_pv(self.pvname)
-        self.alias = Alias(name, channel=bs_channel, channeltype="BS")
+        self.alias.channel = bs_channel
+        self.alias.channeltype = "BS"
+        self._bs_scan_mode = bs_scan_mode
 
         _ensure_bs_event_worker()
-        self.stream = stream.EscData(source=stream.EventSource(self.bs_channel, None))
+        stream_obj = stream.Stream(source=stream.EventSource(self.bs_channel, None))
+        # escape.stream.Stream defaults .name to the raw channel string
+        # (source.name) -- supersede it with this device's own name here so
+        # plots/labels show the meaningful eco name instead of the bare
+        # channel id. Giving it an Alias (escape.stream.Stream has none of
+        # its own) lets it be appended like any other component -- the
+        # parent-path composition then comes for free from Assembly._append/
+        # Alias.append, rather than being hand-built here.
+        stream_obj.name = f"{name}_stream"
+        stream_obj.alias = Alias(f"{name}_stream", channel=bs_channel, channeltype="BS")
+        self._append(
+            stream_obj, name="stream", call_obj=False, is_setting=False, is_display=False
+        )
+
+    @property
+    def scans(self):
+        """See `bs_scan_mode` above: the live-bs-stream `BsStreamCounter`
+        when set, else the plain EPICS-monitor `CounterValue` every other
+        detector uses (`eco.acquisition.decorators.scannable`'s own body,
+        duplicated here rather than stacked as a decorator, since a
+        decorator-installed property is a class-level data descriptor --
+        it can't be swapped per-instance, only chosen once per class).
+        """
+        from eco.acquisition import scan  # avoid circular import
+
+        if self._bs_scan_mode:
+            from eco.detector.bs_counter import BsStreamCounter
+
+            if not hasattr(self, "_bs_counter"):
+                self._bs_counter = BsStreamCounter(
+                    self, name=self.alias.get_full_name()
+                )
+            counter = self._bs_counter
+        else:
+            if hasattr(self, "_counter"):
+                if not hasattr(self, "_old_counters"):
+                    self._old_counters = []
+                self._old_counters.append(weakref.ref(self._counter))
+                del self._counter
+            self._counter = CounterValue(self, name=self.alias.get_full_name())
+            counter = self._counter
+        if not hasattr(self, "_scans"):
+            self._scans = scan.Scans(default_counters=[counter])
+        else:
+            self._scans._default_counters = [counter]
+            self._scans._augment_docstrings()
+        return self._scans
 
     def bs_avail(self):
         return self.bs_channel in [
@@ -212,8 +276,11 @@ class DetectorBsStream:
         # up to `timeout` seconds blocking for a first shot) would be a
         # surprising, hard-to-diagnose slowdown for existing status/settings
         # code that never asked for it. force_bsstream=True is opt-in and
-        # safe to route to the real implementation.
-        if not force_bsstream:
+        # safe to route to the real implementation. bs_scan_mode=True
+        # (absorbed from the former DetectorBsTest -- see __init__) also
+        # routes here unconditionally: that mode has no PV mirror by design
+        # and always meant "read straight from the bs stream".
+        if not (force_bsstream or self._bs_scan_mode):
             if not hasattr(self, "_pv"):
                 return None
             return self._pv.get()
@@ -360,11 +427,3 @@ class DetectorBsStream:
                 print_output=print_output,
                 **kwargs,
             )
-
-
-@get_from_archive
-class DetectorBsCam:
-    def __init__(self, bschannel, name=None):
-        self.name = name
-        self.bschannel = bschannel
-        self.alias = Alias(name, channel=bschannel, channeltype="BSCAM")

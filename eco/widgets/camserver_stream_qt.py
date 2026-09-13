@@ -2525,7 +2525,7 @@ def make_camserver_stream_qt(
     )
 
 
-def _build_cam_from_argv(cam_class_path, pvname):
+def _build_cam_from_argv(cam_class_path, pvname, eco_name=None):
     """Re-instantiate the eco camera Assembly named by `cam_class_path` (a
     dotted import path) directly against `pvname` -- this subprocess's OWN
     independent camera object, talking directly to EPICS/cam_server, NOT
@@ -2534,13 +2534,25 @@ def _build_cam_from_argv(cam_class_path, pvname):
     docstring for the deliberate-simplification rationale and the
     deferred-IPC TODO). Returns None (logged, not raised) if the import or
     construction fails -- a bad class path or unreachable EPICS/cam_server
-    degrades to "no Camera Settings button", never crashes the viewer."""
+    degrades to "no Camera Settings button", never crashes the viewer.
+
+    `eco_name` (the parent session's own alias for this camera, e.g.
+    "xrd.gic.samplecam.sideview" -- already passed to this subprocess as
+    --eco-name, for the window title) is threaded through as `name=` here
+    too: without it, this standalone Assembly gets constructed with
+    name=None, i.e. an alias with alias=None and no parent, and e.g.
+    CameraBasler.__init__ unconditionally calling
+    self.alias.get_full_name() to build its camserver_alias then raises
+    TypeError (join() on a [None] name list) -- caught here, so the viewer
+    still works, but as a noisy, avoidable stderr traceback on every
+    startup. Passing the real name gives the alias a plain string with no
+    parent to walk, so get_full_name() just returns it."""
     import importlib
 
     try:
         module_path, _, class_name = cam_class_path.rpartition(".")
         cam_class = getattr(importlib.import_module(module_path), class_name)
-        return cam_class(pvname)
+        return cam_class(pvname, name=eco_name)
     except Exception:
         logger.exception(
             "failed to construct %r(%r) for cam= in this subprocess", cam_class_path, pvname
@@ -2592,7 +2604,11 @@ def _main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    cam = _build_cam_from_argv(args.cam_class, args.name) if args.cam_class else None
+    cam = (
+        _build_cam_from_argv(args.cam_class, args.name, eco_name=args.eco_name)
+        if args.cam_class
+        else None
+    )
 
     viewer = CamServerStreamQt(
         args.name,

@@ -130,12 +130,16 @@ class Elog(Assembly):
         self,
         *args,
         tags=[],
-        pgroups=None,
+        pgroup=None,
         text_encoding="markdown",
         markdown_extensions=["fenced_code"],
         **kwargs,
     ):
-        """args can be text or pathlibPath instances (for files to be uploaded)"""
+        """args can be text or pathlibPath instances (for files to be uploaded).
+
+        `pgroup`, if given, overrides this Elog's own `self.pgroup` adjustable
+        for this call only (posts to that pgroup's logbook instead of
+        whatever `self.pgroup.get_current_value()` currently is)."""
         msg = LogbookMessage()
         for targ in args:
             if not (isinstance(targ, str) or isinstance(targ, Path)):
@@ -157,7 +161,11 @@ class Elog(Assembly):
         for tag in tags:
             msg.add_tag(tag)
 
-        return self._log.send_logbook_message(msg)
+        if pgroup is None:
+            log = self._log
+        else:
+            log = self._get_scilog_dynamically(self.scilog_url, pgroup)
+        return log.send_logbook_message(msg)
 
     def screenshot(self, message="", window=False, desktop=False, delay=3, **kwargs):
         filepath = self._screenshot.shoot()[0]
