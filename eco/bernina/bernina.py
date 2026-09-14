@@ -154,24 +154,24 @@ namespace.append_obj(
 
 #####################################################################################################
 ## more temporary devices will be outcoupled to temorary module.
-namespace.append_obj(
-    "RIXS",
-    lazy=True,
-    name="rixs",
-    jf_id="JF14T01V01",
-    config_jf_adj=config_JFs,
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.endstations.bernina_rixs",
-)
+# namespace.append_obj(
+#     "RIXS",
+#     lazy=True,
+#     name="rixs",
+#     jf_id="JF14T01V01",
+#     config_jf_adj=config_JFs,
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.endstations.bernina_rixs",
+# )
 
-namespace.append_obj(
-    "SaxsSpectrometer",
-    lazy=True,
-    name="xspec_gc",
-    config_jf_adj=config_JFs,
-    pgroup_adj=config_bernina.pgroup,
-    module_name="eco.bernina.bernina_exp",
-)
+# namespace.append_obj(
+#     "SaxsSpectrometer",
+#     lazy=True,
+#     name="xspec_gc",
+#     config_jf_adj=config_JFs,
+#     pgroup_adj=config_bernina.pgroup,
+#     module_name="eco.bernina.bernina_exp",
+# )
 
 
 # namespace.append_obj(
@@ -252,32 +252,32 @@ namespace.append_obj(
 #     module_name="eco.microscopes",
 # )
 
-# this is the large inline camera
-namespace.append_obj(
-    "BerninaInlineMicroscope",
-    # pvname_camera="SARES20-CAMS142-M3", #THC
-    pvname_camera="SARES20-CAMS142-M3",  # GIC
-    lazy=True,
-    name="samplecam_microscope",
-    module_name="eco.microscopes",
-)
+# # this is the large inline camera
+# namespace.append_obj(
+#     "BerninaInlineMicroscope",
+#     # pvname_camera="SARES20-CAMS142-M3", #THC
+#     pvname_camera="SARES20-CAMS142-M3",  # GIC
+#     lazy=True,
+#     name="samplecam_microscope",
+#     module_name="eco.microscopes",
+# )
 
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-M2",
-    lazy=True,
-    name="samplecam_top",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-M2",
+#     lazy=True,
+#     name="samplecam_top",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
-namespace.append_obj(
-    "CameraBasler",
-    "SARES20-CAMS142-M1",
-    lazy=True,
-    name="samplecam_sideview_90",
-    module_name="eco.devices_general.cameras_swissfel",
-)
+# namespace.append_obj(
+#     "CameraBasler",
+#     "SARES20-CAMS142-M1",
+#     lazy=True,
+#     name="samplecam_sideview_90",
+#     module_name="eco.devices_general.cameras_swissfel",
+# )
 
 # namespace.append_obj(
 #     "CameraBasler",
@@ -885,7 +885,7 @@ class SampleHeaterJet(Assembly):
         )
 
 
-namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
+# namespace.append_obj(SampleHeaterJet, name="heater_jet", lazy=True)
 
 
 ## sample illumination
@@ -903,21 +903,21 @@ from eco.devices_general.powersockets import MpodChannel
 # import numpy as np
 
 
-namespace.append_obj(
-    "LiquidJetSpectroscopy",
-    pgroup_adj=config_bernina.pgroup,
-    config_JF_adj=config_JFs,
-    name="jet",
-    module_name="eco.bernina.bernina_exp",
-    lazy=True,
-)
+# namespace.append_obj(
+#     "LiquidJetSpectroscopy",
+#     pgroup_adj=config_bernina.pgroup,
+#     config_JF_adj=config_JFs,
+#     name="jet",
+#     module_name="eco.bernina.bernina_exp",
+#     lazy=True,
+# )
 
-namespace.append_obj(
-    "TimetoolBerninaDSD",
-    name="tt_opt",
-    module_name="eco.timing.timing_diag",
-    lazy=True,
-)
+# namespace.append_obj(
+#     "TimetoolBerninaDSD",
+#     name="tt_opt",
+#     module_name="eco.timing.timing_diag",
+#     lazy=True,
+# )
 
 from eco.detector import Jungfrau
 
