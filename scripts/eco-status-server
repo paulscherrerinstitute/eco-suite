@@ -43,7 +43,15 @@ usage: $(basename "$0") <command> [options]
 
   start [-b] [-- <extra args>]  run the server (foreground; -b to detach)
   stop                          stop the running server on this host
-  restart                       stop, then start detached
+  restart                       stop, then start detached (this host only)
+  respawn [-w] [-d delay]       POST /admin/restart to \$URL: the server
+                                 re-execs *itself* (os.execv) wherever it
+                                 actually runs - unlike restart/stop/start
+                                 above, which only see this host's own
+                                 processes (pgrep/systemctl are local),
+                                 this reaches the real server over HTTP
+                                 regardless of host/account. -w waits for
+                                 it to come back ready.
   status                        query $URL/health
   wait [timeout]                block until the server reports ready
   logs [-f]                     show the detached-mode log
@@ -310,6 +318,83 @@ for e in d["recent"][-20:]:
 PYEOF
 }
 
+# The CLI equivalent of the GUI's "Restart process" button
+# (eco/status_server/gui.py's btn_restart -> client.reinit(mode="restart")
+# -> client.restart() -> POST /admin/restart) - unlike restart/stop/start
+# above, which only ever manage a process on *this* host via pgrep/
+# systemctl, this goes over HTTP to whatever $URL actually is, and the
+# server re-execs *itself* (os.execv, same PID/user/host it was already
+# running as - see eco/status_server/namespace_server.py's admin_restart).
+# So this is the one that correctly reaches a server running elsewhere as
+# a different account; restart/stop/start would instead find nothing
+# local and happily start a brand-new one right here as you.
+cmd_respawn() {
+    local wait=0 delay=0.5
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -w|--wait) wait=1; shift ;;
+            -d|--delay) delay="$2"; shift 2 ;;
+            *) die "respawn: unknown option '$1'" ;;
+        esac
+    done
+    "$PYTHON" - "$URL" "$delay" "$wait" <<'PYEOF'
+import json, sys, time, urllib.request
+
+url, delay, do_wait = sys.argv[1].rstrip("/"), float(sys.argv[2]), sys.argv[3] == "1"
+
+
+def health():
+    with urllib.request.urlopen(url + "/health", timeout=15) as r:
+        return json.load(r)
+
+
+try:
+    before = health()
+except Exception as exc:
+    print(f"respawn: no answer from {url}/health before restarting ({exc})")
+    raise SystemExit(1)
+
+req = urllib.request.Request(
+    url + "/admin/restart",
+    data=json.dumps({"delay": delay}).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        body = json.load(r)
+except Exception as exc:
+    print(f"respawn: request failed ({exc})")
+    raise SystemExit(1)
+
+print(f"restarting pid {body.get('pid')} (instance {body.get('instance_id')}) "
+      f"wherever it is actually running, in {delay}s")
+
+if not do_wait:
+    raise SystemExit(0)
+
+# Give the old process time to actually go away first - otherwise the very
+# first poll can still be answered by it (same reasoning as
+# StatusServerClient.restart()'s own wait=True path).
+time.sleep(max(delay, 0.5) + 0.5)
+deadline = time.time() + 1800
+before_id = before.get("instance_id")
+while time.time() < deadline:
+    try:
+        h = health()
+        if h.get("ready") and h.get("instance_id") != before_id:
+            print(f"ready again: generation {h['generation']}, "
+                  f"{h['n_initialized']}/{h['n_target_names']} initialized, "
+                  f"{h['n_failed']} failed")
+            raise SystemExit(0)
+    except Exception:
+        pass
+    time.sleep(5)
+print("respawn: not ready again within 1800s")
+raise SystemExit(1)
+PYEOF
+}
+
 cmd_gui() {
     check_prereqs
     export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
@@ -328,6 +413,7 @@ case "${1:-}" in
         else
             cmd_stop; shift; cmd_start -b "$@"
         fi ;;
+    respawn) shift; cmd_respawn "$@" ;;
     status)  cmd_status ;;
     wait)    shift; cmd_wait "$@" ;;
     logs)    shift; [ "${1:-}" = "-f" ] && tail -f "$LOG" || tail -n 100 "$LOG" ;;
