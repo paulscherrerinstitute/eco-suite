@@ -48,7 +48,13 @@ usage: $(basename "$0") <command> [options]
                                  crosstalk-causing instance) - -f/--force
                                  skips that check.
   stop                          stop the running server on this host
-  restart                       stop, then start detached (this host only)
+  restart                       restart whichever server is actually
+                                 running: local (stop+start here) if one
+                                 is, else the real one at \$URL via
+                                 respawn if that's up elsewhere, else
+                                 (nothing running anywhere) start fresh
+                                 here - never starts a redundant second
+                                 one next to an already-healthy remote.
   respawn [-w] [-d delay]       POST /admin/restart to \$URL: the server
                                  re-execs *itself* (os.execv) wherever it
                                  actually runs - unlike restart/stop/start
@@ -373,6 +379,34 @@ PYEOF
 # So this is the one that correctly reaches a server running elsewhere as
 # a different account; restart/stop/start would instead find nothing
 # local and happily start a brand-new one right here as you.
+cmd_restart() {
+    if managed_by_systemd; then
+        echo "restarting via systemd"
+        systemctl --user restart eco-status-server
+        return
+    fi
+    local pid; pid="$(server_pid || true)"
+    if [ -n "$pid" ]; then
+        # A server is running right here -- restart *that one*, in place.
+        cmd_stop
+        cmd_start -b "$@"
+        return
+    fi
+    if remote_duplicate_running; then
+        # Nothing local, but the real one ($URL) is up and healthy
+        # elsewhere -- restart *that* instead of starting a fresh, second
+        # one here (which is exactly what a plain stop-then-start-local
+        # used to do, and exactly how the cons-03/04/05 crosstalk
+        # happened). See remote_duplicate_running()/cmd_respawn().
+        echo "no local server; $URL is up elsewhere -- respawning that one instead"
+        cmd_respawn "$@"
+        return
+    fi
+    # Genuinely nothing running anywhere this script can see -- safe to
+    # start fresh here.
+    cmd_start -b "$@"
+}
+
 cmd_respawn() {
     local wait=0 delay=0.5
     while [ $# -gt 0 ]; do
@@ -451,13 +485,7 @@ cmd_gui() {
 case "${1:-}" in
     start)   shift; cmd_start "$@" ;;
     stop)    cmd_stop ;;
-    restart)
-        if managed_by_systemd; then
-            echo "restarting via systemd"
-            systemctl --user restart eco-status-server
-        else
-            cmd_stop; shift; cmd_start -b "$@"
-        fi ;;
+    restart) shift; cmd_restart "$@" ;;
     respawn) shift; cmd_respawn "$@" ;;
     status)  cmd_status ;;
     wait)    shift; cmd_wait "$@" ;;
