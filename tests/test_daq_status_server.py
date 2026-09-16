@@ -78,6 +78,7 @@ def _daq(status_server=None, namespace=None, strict=False):
     daq.namespace = namespace
     daq._status_server = status_server
     daq._status_server_client = status_server
+    daq.use_running_status_server = True
     daq.status_server_timeout = 5.0
     daq.status_server_snapshot_timeout = 60.0
     daq.status_server_strict = strict
@@ -121,6 +122,7 @@ def test_status_client_is_built_from_a_url_string():
     daq = Daq.__new__(Daq)
     daq._status_server = "http://host:8091/"
     daq._status_server_client = None
+    daq.use_running_status_server = True
     daq.status_server_timeout = 3.0
     daq.status_server_snapshot_timeout = 60.0
     client = daq.status_client
@@ -132,7 +134,26 @@ def test_no_status_server_means_no_client():
     daq = Daq.__new__(Daq)
     daq._status_server = None
     daq._status_server_client = None
+    daq.use_running_status_server = True
     assert daq.status_client is None
+
+
+def test_use_running_status_server_false_overrides_a_configured_server():
+    """The master switch (bernina.daq.use_running_status_server = False) --
+    unlike setting _status_server = None, this must not lose the
+    configured URL: flip it back to True and the same client (same
+    base_url) comes back, not a freshly-built one asked all over again."""
+    daq = Daq.__new__(Daq)
+    daq._status_server = "http://host:8091/"
+    daq._status_server_client = None
+    daq.use_running_status_server = False
+    daq.status_server_timeout = 3.0
+    daq.status_server_snapshot_timeout = 60.0
+    assert daq.status_client is None
+
+    daq.use_running_status_server = True
+    client = daq.status_client
+    assert client.base_url == "http://host:8091"
 
 
 def test_init_namespace_uses_server_and_skips_local_init(capsys):
@@ -253,6 +274,7 @@ def test_snapshot_and_health_get_separate_timeouts():
     daq = Daq.__new__(Daq)
     daq._status_server = "http://host:8091"
     daq._status_server_client = None
+    daq.use_running_status_server = True
     daq.status_server_timeout = 10.0
     daq.status_server_snapshot_timeout = 180.0
     client = daq.status_client

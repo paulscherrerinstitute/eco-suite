@@ -149,6 +149,8 @@ class Daq(Assembly):
         status_server_stale_timeout=20.0,
         status_server_async=True,
         scan_monitoring=True,
+        use_running_status_server=True,
+        speak_run_number=False,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -259,6 +261,21 @@ class Daq(Assembly):
         # None (default) keeps the existing, unchanged local behaviour.
         self._status_server = status_server
         self._status_server_client = None
+        # Master on/off switch, independent of _status_server itself: unlike
+        # setting _status_server = None, toggling this off and back on again
+        # does not lose the configured URL/client - status_client (and so
+        # every status-server-backed callback, all of which go through it)
+        # just returns None while it is False, exactly as if none were
+        # configured. Live-toggleable (bernina.daq.use_running_status_server
+        # = False), not just a constructor default, for the same "switch it
+        # off mid-session without restarting the namespace" reason as
+        # scan_monitoring above.
+        self.use_running_status_server = use_running_status_server
+        # Off by default: this is a per-instrument audible preference
+        # (originated as bernina.py's _message_end_scan, which spoke the run
+        # number via pyttsx3 on every scan end), not something every Daq
+        # user wants. Live-toggleable like use_running_status_server above.
+        self.speak_run_number = speak_run_number
         # Short timeout for /health and the admin routes (so an unreachable
         # server fails fast), long one for a snapshot - a full get_status()
         # fan-out over ~14k bernina channels takes 10-20 s.
@@ -340,6 +357,7 @@ class Daq(Assembly):
             self.end_scan_monitoring,
             self.copy_scan_info_to_raw,
             self.end_scan_monitors,
+            self.announce_run_number,
         ]
         self.elog = elog
 
@@ -1331,6 +1349,29 @@ class Daq(Assembly):
         # scan.daq_run_number = runno
         scan._append(DetectorMemory, runno, name="daq_run_number")
 
+    def announce_run_number(self, scan=None, **kwargs):
+        """
+        Speaks the finished run number out loud via pyttsx3. Opt-in
+        (self.speak_run_number, off by default) and best-effort: any failure
+        here (no audio device, engine busy, pyttsx3 not installed, ...) must
+        never fail a scan, exactly like the timetool_data_monitor alarm in
+        eco.bernina.bernina. Formerly bernina.py's module-level
+        _message_end_scan/callbacks_end_scan, from before Daq owned its own
+        scan callbacks.
+        """
+        if not self.speak_run_number:
+            return
+        try:
+            import pyttsx3
+
+            runno = scan.daq_run_number.get_current_value()
+            e = pyttsx3.init()
+            e.say(f"Finished run {runno}.")
+            e.runAndWait()
+            e.stop()
+        except Exception:
+            pass
+
     # get/set_dap_settings and get/set_detector_settings are NOT dead here by
     # accident -- they're implemented and used, just per-detector rather than
     # per-Daq: see eco.detector.jungfrau.Jungfrau.get_dap_settings/
@@ -1349,7 +1390,15 @@ class Daq(Assembly):
 
     @property
     def status_client(self):
-        """The configured StatusServerClient, or None if not using one."""
+        """The configured StatusServerClient, or None if not using one --
+        either because none is configured (_status_server is None) or
+        because use_running_status_server has been switched off. Every
+        status-server-backed callback in this class goes through this
+        property rather than _status_server/_status_server_client
+        directly, so gating it here is enough to make the switch above
+        cover all of them."""
+        if not self.use_running_status_server:
+            return None
         if self._status_server is None:
             return None
         if self._status_server_client is None:
