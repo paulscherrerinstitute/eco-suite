@@ -41,7 +41,12 @@ usage() {
     cat <<EOF
 usage: $(basename "$0") <command> [options]
 
-  start [-b] [-- <extra args>]  run the server (foreground; -b to detach)
+  start [-b] [-f] [-- <extra args>]
+                                 run the server (foreground; -b to detach).
+                                 Refuses if \$URL is already healthy on a
+                                 *different* host (would be a second,
+                                 crosstalk-causing instance) - -f/--force
+                                 skips that check.
   stop                          stop the running server on this host
   restart                       stop, then start detached (this host only)
   respawn [-w] [-d delay]       POST /admin/restart to \$URL: the server
@@ -114,10 +119,41 @@ server_owner() {
     [ -n "$pid" ] && ps -o user= -p "$pid" 2>/dev/null | tr -d ' '
 }
 
+# Guards against exactly what actually happened once: someone runs `start`
+# on a *different* host than $URL (almost always the site default from the
+# env file, e.g. saresb-cons-04) while that one is perfectly healthy,
+# ending up with two independent, silently-drifting namespaces answering
+# on the same port on different hosts - real crosstalk, not hypothetical
+# (found three simultaneous instances across cons-03/04/05 on 2026-09-16).
+# No shared lock file: /sf/bernina/config/eco_status_server/ is not
+# group-writable by every account that might run this (a personal,
+# lemke_h-owned directory - a shared cross-account lock there would hit
+# the same permission wall eco_cnf_bernina/memory/ once did), and $URL's
+# own /health is already the right source of truth - no extra state to
+# keep in sync or clean up on a crash.
+#
+# Deliberately does NOT block starting elsewhere when $URL's host is
+# actually down (health check fails/times out) - that is a legitimate
+# "the real one is gone, stand up a replacement" case, not the mistake
+# this guards against. Skip entirely with -f/--force.
+remote_duplicate_running() {
+    local url_host this_host
+    url_host="$(echo "$URL" | sed -E 's#^[a-zA-Z]+://([^:/]+).*#\1#')"
+    this_host="$(hostname -s)"
+    [ "$url_host" = "$this_host" ] && return 1
+    curl -s --max-time 5 "$URL/health" 2>/dev/null | grep -q '"ready":[[:space:]]*true'
+}
+
 cmd_start() {
-    local background=0
-    if [ "${1:-}" = "-b" ] || [ "${1:-}" = "--background" ]; then background=1; shift; fi
-    [ "${1:-}" = "--" ] && shift
+    local background=0 force=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -b|--background) background=1; shift ;;
+            -f|--force) force=1; shift ;;
+            --) shift; break ;;
+            *) break ;;
+        esac
+    done
     if managed_by_systemd; then
         die "the systemd user service is running this host's server; use
   systemctl --user restart eco-status-server
@@ -128,6 +164,15 @@ cmd_start() {
     if [ -n "$pid" ]; then
         local owner; owner="$(server_owner "$pid")"
         die "already running (pid $pid, user ${owner:-unknown}); use 'restart' or 'stop' first"
+    fi
+    if [ "$force" -ne 1 ] && remote_duplicate_running; then
+        die "\$URL ($URL) is already up and healthy, on a *different* host
+  than this one ($(hostname -s)) - starting another server here would be a
+  second, independent instance with its own drifting namespace, i.e. exactly
+  the crosstalk this check exists to prevent.
+  If the one at \$URL is actually stale/wrong and you really want a fresh
+  one here instead, pass -f/--force (and fix ECO_STATUS_SERVER_URL/the site
+  env file afterwards so it stops pointing at the wrong host)."
     fi
 
     export PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}"
