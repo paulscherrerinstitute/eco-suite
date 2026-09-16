@@ -148,6 +148,7 @@ class Daq(Assembly):
         status_server_stale_action="ask",
         status_server_stale_timeout=20.0,
         status_server_async=True,
+        scan_monitoring=True,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -286,6 +287,22 @@ class Daq(Assembly):
         # to the run in the background, instead of making the scan wait for
         # all three. See Daq.write_status / POST /status/capture.
         self.status_server_async = status_server_async
+        # Whether callbacks_start_scan/_end_scan attempt the namespace-wide
+        # recording at all (start_scan_monitoring/end_scan_monitoring) -
+        # live-toggleable (bernina.daq.scan_monitoring = False), not just a
+        # constructor default, since this is exactly the kind of thing you
+        # want to switch off mid-session without restarting the namespace.
+        # Currently a plain, synchronous, per-channel attach loop server-side
+        # (RecordingSession.start(), no thread pool) against only a 10 s
+        # client timeout (status_server_timeout, not the more generous
+        # status_server_snapshot_timeout that whole-namespace snapshot/
+        # capture calls get) - reliably too slow at bernina's namespace size,
+        # which is why this defaults to True but is meant to be turned off
+        # until that's fixed properly (make /recording/start async, like
+        # /status/capture already is) rather than spamming "start monitoring
+        # failed ... falling back to the local namespace mechanism" every
+        # single scan.
+        self.scan_monitoring = scan_monitoring
         if not rate_multiplicator == "auto":
             print(
                 "warning: rate multiplicator automatically determined from event_master!"
@@ -2287,6 +2304,8 @@ class Daq(Assembly):
         and `append_start_status_to_scan` (shares its per-scan
         server-in-use decision, cached on the scan).
         """
+        if not self.scan_monitoring:
+            return None
         if self.status_client is None:
             return None
         if not self._status_server_ok_for_this_scan(scan):
@@ -2343,6 +2362,8 @@ class Daq(Assembly):
         (which needs the "monitors" scan parameter already set to write it
         into scan_info_rel.json).
         """
+        if not self.scan_monitoring:
+            return None
         if self.status_client is None:
             return None
         recording_id = scan.counter_scratch(self.name).get(

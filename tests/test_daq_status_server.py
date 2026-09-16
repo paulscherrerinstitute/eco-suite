@@ -88,6 +88,7 @@ def _daq(status_server=None, namespace=None, strict=False):
     # the pre-existing tests below cover the synchronous path; the async one
     # has its own set further down
     daq.status_server_async = False
+    daq.scan_monitoring = True
     daq.aux_calls = []
     daq.append_aux = lambda *a, **kw: daq.aux_calls.append((a, kw))
     return daq
@@ -638,6 +639,34 @@ def test_start_scan_monitoring_warns_about_failed_required_channels(capsys):
     daq.start_scan_monitoring(scan)
     out = capsys.readouterr().out
     assert "REQUIRED" in out and "daq.something" in out
+
+
+def test_start_scan_monitoring_is_a_noop_when_disabled():
+    """scan_monitoring=False (bernina.daq.scan_monitoring = False) -- the
+    opt-out for RecordingSession.start()'s current per-channel, unthreaded
+    attach loop being reliably slower than status_server_timeout at
+    bernina's namespace size. Checked before even touching status_client,
+    so this also can't produce a "start monitoring failed" warning."""
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    daq.scan_monitoring = False
+    scan = FakeScan(runno=42)
+    assert daq.start_scan_monitoring(scan) is None
+    assert client.recording_starts == []
+    assert "monitoring_recording_id" not in scan.counter_scratch("daq")
+
+
+def test_end_scan_monitoring_is_a_noop_when_disabled_even_with_a_recording_id():
+    """Belt-and-suspenders: even if monitoring_recording_id somehow got set
+    (e.g. scan_monitoring flipped off mid-scan), end_scan_monitoring must
+    not try to capture it."""
+    client = HealthClient()
+    daq = _daq_fresh(client)
+    scan = FakeScan(runno=42)
+    scan.counter_scratch("daq")["monitoring_recording_id"] = "p12345_run0042"
+    daq.scan_monitoring = False
+    assert daq.end_scan_monitoring(scan) is None
+    assert client.recording_captures == []
 
 
 def test_start_scan_monitoring_is_a_noop_without_a_status_server():
