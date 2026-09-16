@@ -148,13 +148,17 @@ def test_camera_basler_separate_process_is_the_default(monkeypatch):
 def test_camera_basler_viewer_separate_process_spawns_subprocess_instead(monkeypatch):
     calls = {}
 
-    def fake_spawn(pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None):
+    def fake_spawn(
+        pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None,
+        dockable=True,
+    ):
         calls["pvname"] = pvname
         calls["name"] = name
         calls["cam_class"] = cam_class
         calls["pipeline_url"] = pipeline_url
         calls["rate_hz"] = rate_hz
         calls["theme"] = theme
+        calls["dockable"] = dockable
         return "the subprocess handle"
 
     monkeypatch.setattr(
@@ -176,8 +180,26 @@ def test_camera_basler_viewer_separate_process_spawns_subprocess_instead(monkeyp
     # and_cam_class below for the real-object case)
     assert calls == {
         "pvname": BASLER_PVNAME, "name": None, "cam_class": None,
-        "pipeline_url": None, "rate_hz": 25.0, "theme": "dark",
+        "pipeline_url": None, "rate_hz": 25.0, "theme": "dark", "dockable": True,
     }
+
+
+def test_camera_basler_viewer_dockable_false_is_passed_through(monkeypatch):
+    """widget(dockable=False) must reach _spawn_separate_process_viewer so
+    it can skip the X11-embedding/dock machinery entirely (see
+    eco.widgets.subprocess_embed.DetachedProcessWindow) -- not silently get
+    dropped."""
+    calls = {}
+    monkeypatch.setattr(
+        "eco.devices_general.cameras_swissfel._spawn_separate_process_viewer",
+        lambda pvname, **kwargs: calls.update(pvname=pvname, **kwargs) or "the subprocess handle",
+    )
+
+    fake_self = _FakeCameraSelf(BASLER_PVNAME)
+    result = CameraBasler._widget_viewer(fake_self, dockable=False)
+
+    assert result == "the subprocess handle"
+    assert calls["dockable"] is False
 
 
 def test_camera_basler_viewer_separate_process_passes_name_and_cam_class(monkeypatch):
@@ -261,6 +283,33 @@ def test_spawn_separate_process_viewer_builds_the_expected_command_line(monkeypa
         and cmd[cmd.index("--cam-class") + 1] == "eco.devices_general.cameras_swissfel.CameraBasler"
     )
     assert captured["title"] == "cam_server stream - bernina.cam1"
+
+
+def test_spawn_separate_process_viewer_dockable_false_skips_embed_flag(monkeypatch):
+    """dockable=False must route through DetachedProcessWindow instead of
+    EmbeddedProcessWindow, and must NOT pass --embed -- the whole point is
+    the subprocess never becomes a reparenting target (see
+    eco.widgets.subprocess_embed.DetachedProcessWindow's docstring)."""
+    from eco.devices_general.cameras_swissfel import _spawn_separate_process_viewer
+
+    captured = {}
+
+    class _FakeDetachedProcessWindow:
+        def __init__(self, cmd):
+            captured["cmd"] = cmd
+
+    def fail_if_embedded(*a, **k):
+        raise AssertionError("dockable=False must not build an EmbeddedProcessWindow")
+
+    monkeypatch.setattr(
+        "eco.widgets.subprocess_embed.DetachedProcessWindow", _FakeDetachedProcessWindow
+    )
+    monkeypatch.setattr("eco.widgets.subprocess_embed.EmbeddedProcessWindow", fail_if_embedded)
+
+    result = _spawn_separate_process_viewer(BASLER_PVNAME, dockable=False)
+
+    assert isinstance(result, _FakeDetachedProcessWindow)
+    assert "--embed" not in captured["cmd"]
 
 
 def test_spawn_separate_process_viewer_omits_eco_name_and_cam_class_when_not_given(monkeypatch):

@@ -305,23 +305,42 @@ class CamserverConfig(Assembly):
 
 
 def _spawn_separate_process_viewer(
-    pvname, name=None, cam_class=None, pipeline_url=None, rate_hz=10.0, theme=None
+    pvname,
+    name=None,
+    cam_class=None,
+    pipeline_url=None,
+    rate_hz=10.0,
+    theme=None,
+    dockable=True,
 ):
     """Launch eco.widgets.camserver_stream_qt's own CLI as an independent
-    OS process and embed its window into a local wrapper via
-    eco.widgets.subprocess_embed -- the same spawn/WINID-handshake/embed
-    mechanism eco.widgets.camserver_panel_qt already uses per-viewer (see
-    that module and eco.widgets.subprocess_embed.spawn_and_embed), so the
-    resulting window can be docked into the shared EcoDesktopApp workbench
-    (see CameraBasler._default_dock_in) instead of popping untethered.
+    OS process. dockable=True (the default): embed its window into a local
+    wrapper via eco.widgets.subprocess_embed's WINID-handshake/embed
+    mechanism (the same one eco.widgets.camserver_panel_qt uses per-viewer,
+    see that module and eco.widgets.subprocess_embed.spawn_and_embed), so
+    the result can be docked into the shared EcoDesktopApp workbench (see
+    CameraBasler._default_dock_in) instead of popping untethered.
 
-    Why a separate process at all: Qt's event loop is only pumped between
-    IPython prompts (via the terminal's GUI-integration hook, same as
-    eco.utilities.strip_plot's own module docstring explains for exactly
-    this reason). A viewer built in-process therefore freezes -- both its
-    live image updates and the whole window's responsiveness -- for the
-    duration of any single blocking statement in this session (a
-    synchronous motor move, a long scan, ...). A separate-process viewer
+    dockable=False: skip that embedding entirely -- the subprocess's window
+    is a plain, independent, WM-managed top-level window (see
+    eco.widgets.subprocess_embed.DetachedProcessWindow), never dockable
+    (widget(dock_in=True) then silently no-ops, per
+    EcoDesktopApp._dock_widget_object), but immune to embedding's own
+    fragility: QWindow.fromWinId()/createWindowContainer()-based reparenting
+    is unreliable on some display setups -- confirmed live 2026-09-14 under
+    an SSH-X11-forwarded session ultimately backed by XWayland on the
+    client side (content drifting outside its container, not tracking
+    resizes, not receiving clicks) -- see the "Camera viewer XWayland
+    embedding" project memory. Prefer this whenever you don't need docking
+    and have seen that class of glitch.
+
+    Why a separate process at all (either way): Qt's event loop is only
+    pumped between IPython prompts (via the terminal's GUI-integration
+    hook, same as eco.utilities.strip_plot's own module docstring explains
+    for exactly this reason). A viewer built in-process therefore freezes
+    -- both its live image updates and the whole window's responsiveness
+    -- for the duration of any single blocking statement in this session
+    (a synchronous motor move, a long scan, ...). A separate-process viewer
     has its own independent event loop untouched by that.
 
     `name`: the eco device's own alias name (e.g. "bernina.cam1", NOT the
@@ -344,16 +363,18 @@ def _spawn_separate_process_viewer(
     use `separate_process=False` (in-process, `cam=self` -- e.g.
     camera.screenpanel_ana for intensity computation) instead.
 
-    Returns an eco.widgets.subprocess_embed.EmbeddedProcessWindow (the
-    .window/.stop() wrapper convention every eco Qt widget follows -- see
-    EcoDesktopApp._dock_widget_object) -- NOT a bare subprocess.Popen like
-    before, since it must be dockable via Assembly.widget()'s dock_in
-    machinery (see CameraBasler/CameraPCO._default_dock_in)."""
+    Returns an eco.widgets.subprocess_embed.EmbeddedProcessWindow or (when
+    dockable=False) .DetachedProcessWindow -- both follow the .window/
+    .stop() wrapper convention every eco Qt widget follows (see
+    EcoDesktopApp._dock_widget_object), NOT a bare subprocess.Popen like
+    before this pair existed."""
     import sys
 
-    from eco.widgets.subprocess_embed import EmbeddedProcessWindow
+    from eco.widgets.subprocess_embed import DetachedProcessWindow, EmbeddedProcessWindow
 
-    argv = [pvname, "--kind", "camera_pipeline", "--embed", "--rate", str(rate_hz)]
+    argv = [pvname, "--kind", "camera_pipeline", "--rate", str(rate_hz)]
+    if dockable:
+        argv += ["--embed"]
     if pipeline_url:
         argv += ["--pipeline-url", pipeline_url]
     if theme:
@@ -364,7 +385,9 @@ def _spawn_separate_process_viewer(
         argv += ["--cam-class", cam_class]
 
     cmd = [sys.executable, "-m", "eco.widgets.camserver_stream_qt", *argv]
-    return EmbeddedProcessWindow(cmd, title=f"cam_server stream - {name or pvname}")
+    if dockable:
+        return EmbeddedProcessWindow(cmd, title=f"cam_server stream - {name or pvname}")
+    return DetachedProcessWindow(cmd)
 
 
 def get_camera_calibration(camera):
@@ -867,35 +890,45 @@ class CameraBasler(Assembly):
         theme=None,
         auto_start=True,
         separate_process=True,
+        dockable=True,
     ):
-        """Open the live cam_server "screen panel" viewer for this camera's
-        own default processing pipeline -- the pipeline name is resolved
-        automatically from self.pvname (no need to know or guess a
-        pipeline/instance name), mirroring pshell's own screen panel (see
-        eco.widgets.camserver_stream_qt.resolve_camera_pipeline for the
-        exact "{camera}_sp" naming convention and auto-create-if-missing
-        behavior this reuses). The window's "Camera Settings" button opens
-        widget(normal=True) (the normal property-grid display) -- mirrors
-        eco.devices_general.cameras_ptz.AxisPTZ._widget_viewer().
+        """Open the live cam_server viewer for this camera's own default
+        processing pipeline (resolved automatically from self.pvname).
 
-        separate_process=True (the default): run the viewer in its own OS
-        process instead of this one -- immune to this session blocking on
-        something (a synchronous motor move, a long scan, ...) -- pops as
-        its own standalone window by default, but can be docked into the
-        shared EcoDesktopApp workbench instead via widget(dock_in=True)
-        (see _default_dock_in/Assembly._maybe_dock), titled by this
-        camera's own eco name, and with its own independently-built camera
-        object (talking directly to EPICS/cam_server) behind its "Camera Settings" button
-        -- see _spawn_separate_process_viewer for the full trade-off and
-        the deferred-IPC TODO. Returns an
-        eco.widgets.subprocess_embed.EmbeddedProcessWindow rather than a
-        CamServerStreamQt instance in that case.
+        separate_process=True (the default): runs in its own OS process, so
+        it keeps updating/responding even while this session is blocked
+        (a motor move, a scan, ...). Costs ~10-15s to start (a fresh process
+        importing eco) and its "Camera Settings" button opens an
+        independent camera object talking directly to EPICS/cam_server --
+        not this one, so e.g. camera.screenpanel_ana state set here isn't
+        reflected there.
 
-        separate_process=False: build the viewer in this process instead,
-        with a direct (not rebuilt) `cam=self` reference -- e.g. for
-        camera.screenpanel_ana intensity/analysis access tied to this
-        exact object, at the cost of the viewer freezing for the duration
-        of any blocking statement in this session."""
+          dockable=True (the default): standalone window unless you pass
+          widget(dock_in=True) to dock it into the shared EcoDesktopApp
+          workbench -- but either way, the window is embedded into its
+          wrapper via X11 reparenting (QWindow.fromWinId +
+          createWindowContainer, see eco.widgets.subprocess_embed), which
+          is known to misbehave on some desktops/remote-display setups
+          (embedded content drifting outside its container, not tracking
+          resizes, or not receiving clicks -- confirmed under an
+          SSH-X11-forwarded session backed by XWayland).
+
+          dockable=False: skips that embedding entirely -- a genuine,
+          independent, WM-managed top-level window that can never be
+          dockable (widget(dock_in=True) then silently no-ops), but immune
+          to the reparenting glitches above. Prefer this if you've hit that
+          class of display bug and don't need docking; separate_process=
+          False (below) is the other way around it, if you don't need a
+          separate process either.
+
+        separate_process=False: builds the viewer in this process instead --
+        starts instantly, no subprocess/X11-embedding involved so no risk
+        of the display glitches above, and `cam=self` is the exact same
+        object (screenpanel_ana etc. all tied to it). Trade-off: the viewer
+        freezes (no repaint, no clicks) for the duration of any blocking
+        statement in this session (a synchronous motor move, a long scan,
+        ...) -- prefer this whenever you're just looking at the image and
+        not about to run something long alongside it."""
         alias = getattr(self, "alias", None)
         name = alias.get_full_name() if alias is not None else None
 
@@ -907,6 +940,7 @@ class CameraBasler(Assembly):
                 pipeline_url=pipeline_url,
                 rate_hz=rate_hz,
                 theme=theme,
+                dockable=dockable,
             )
 
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt
@@ -1138,10 +1172,11 @@ class CameraPCO(Assembly):
         theme=None,
         auto_start=True,
         separate_process=True,
+        dockable=True,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
         own default processing pipeline -- see CameraBasler._widget_viewer(),
-        which this mirrors (separate_process included)."""
+        which this mirrors (separate_process/dockable included)."""
         alias = getattr(self, "alias", None)
         name = alias.get_full_name() if alias is not None else None
 
@@ -1153,6 +1188,7 @@ class CameraPCO(Assembly):
                 pipeline_url=pipeline_url,
                 rate_hz=rate_hz,
                 theme=theme,
+                dockable=dockable,
             )
 
         from ..widgets.camserver_stream_qt import make_camserver_stream_qt

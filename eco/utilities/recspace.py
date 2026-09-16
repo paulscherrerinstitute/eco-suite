@@ -9,6 +9,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import os
+import json
+import html as html_lib
+import tempfile
+import webbrowser
+from pathlib import Path
 from PIL import Image
 from scipy.spatial.transform import Rotation
 
@@ -26,6 +31,72 @@ from eco.elements.adj_obj import AdjustableObject
 from epics import PV
 
 logger = logging.getLogger(__name__)
+
+# Vendored from swissfel/bernina-scripts apps/dev/diffractometer_3d.html: a
+# self-contained Three.js reciprocal-space viewer that needs no server, only
+# a JSON payload (angles, UB matrix, k-magnitude, surface normal) written
+# into a hidden element it polls every 150ms.
+_GEOM_WIDGET_HTML_PATH = Path(__file__).parent / "diffractometer_3d.html"
+
+
+def _build_geom_widget_html(entries):
+    """Wrap the vendored 3D viewer with a sidebar that lets you click through
+    ``entries`` (each ``{"label": str, "payload": dict}``), writing the
+    clicked entry's payload into the "#diff3d-payload" element the viewer
+    polls."""
+    scene_html = _GEOM_WIDGET_HTML_PATH.read_text()
+    srcdoc = html_lib.escape(scene_html)
+    entries_json = json.dumps(entries)
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Reciprocal space geometry</title>
+<style>
+  html, body {{ margin: 0; height: 100%; font-family: sans-serif; }}
+  #layout {{ display: flex; height: 100vh; }}
+  #sidebar {{ width: 240px; overflow: auto; border-right: 1px solid #ccc; padding: 8px; box-sizing: border-box; }}
+  #sidebar h3 {{ margin: 4px 0 8px; font-size: 13px; }}
+  button.refl {{
+    display: block; width: 100%; text-align: left; margin: 2px 0;
+    padding: 5px 6px; font-size: 12px; border: 1px solid #ccc; background: #fff;
+    cursor: pointer;
+  }}
+  button.refl.active {{ background: #cfe8fb; border-color: #7ab8e6; }}
+  #frame-wrap {{ flex: 1; min-width: 0; }}
+  iframe {{ width: 100%; height: 100%; border: 0; }}
+</style>
+</head>
+<body>
+<div id="layout">
+  <div id="sidebar">
+    <h3>Reflections</h3>
+    <div id="refl-list"></div>
+  </div>
+  <div id="frame-wrap">
+    <iframe id="diff3d" srcdoc="{srcdoc}"></iframe>
+  </div>
+</div>
+<span id="diff3d-payload" style="display:none"></span>
+<script>
+const ENTRIES = {entries_json};
+function show(i) {{
+  document.getElementById('diff3d-payload').textContent = JSON.stringify(ENTRIES[i].payload);
+  document.querySelectorAll('#refl-list .refl').forEach((b, j) => b.classList.toggle('active', j === i));
+}}
+const list = document.getElementById('refl-list');
+ENTRIES.forEach((entry, i) => {{
+  const b = document.createElement('button');
+  b.className = 'refl';
+  b.textContent = entry.label;
+  b.onclick = () => show(i);
+  list.appendChild(b);
+}});
+if (ENTRIES.length) show(0);
+</script>
+</body>
+</html>
+"""
 
 
 class Diffractometer_Dummy(Assembly):
@@ -1023,6 +1094,73 @@ class DiffGeometryYou(Assembly):
             ub_matrix=y2b @ self.ub_matrix.get_current_value(),
         )
         return solution
+
+    def _geom_entry(self, label, mu, delta, gamma, eta, chi, phi, energy=None, hkl=None):
+        """Build one clickable entry (angles + UB + surface normal, as the
+        vendored 3D viewer expects) for the given diffractometer position."""
+        if energy is None:
+            energy = self.get_energy()
+        if hkl is None:
+            hkl = self.calc_hkl(
+                mu=mu, delta=delta, gamma=gamma, eta=eta, chi=chi, phi=phi, energy=energy
+            )
+        if hkl is not None:
+            label = f"{label}  ({hkl[0]:.3g}, {hkl[1]:.3g}, {hkl[2]:.3g})"
+        lam = self.en2lam(energy)
+        n_phi = np.asarray(self.ubcalc.n_phi, dtype=float).ravel()
+        norm = np.linalg.norm(n_phi)
+        return {
+            "label": label,
+            "payload": {
+                "angles": {
+                    "mu": mu,
+                    "eta": eta,
+                    "chi": chi,
+                    "phi": phi,
+                    "delta": delta,
+                    "gamma": gamma,
+                },
+                "kMag": 2 * np.pi / lam,
+                "ub": np.asarray(self.ubcalc.UB, dtype=float).tolist(),
+                "nPhi": (n_phi / norm).tolist() if norm > 0 else [0.0, 0.0, 1.0],
+            },
+        }
+
+    def widget_geom(self):
+        """Open a browser tab visualizing this crystal's reciprocal-space
+        geometry: the current diffractometer position plus every stored
+        reference reflection, clickable in a sidebar.
+
+        Reuses the 3D viewer from swissfel/bernina-scripts
+        apps/dev/diffractometer_3d.html unmodified - only the UB matrix,
+        current/stored angles and energy are fed in, so none of that
+        notebook's manual unit-cell/orientation input fields are needed here;
+        this crystal's own UB calculation already has them.
+        """
+        self.to_diffcalc()
+        mu, delta, gamma, eta, chi, phi = self.get_diffractometer_angles()
+        entries = [self._geom_entry("current", mu, delta, gamma, eta, chi, phi)]
+        for i, refl in enumerate(self.reflections()):
+            mu, delta, gamma, eta, chi, phi = refl["position"]
+            tag = refl.get("tag") or f"#{i}"
+            entries.append(
+                self._geom_entry(
+                    str(tag),
+                    mu,
+                    delta,
+                    gamma,
+                    eta,
+                    chi,
+                    phi,
+                    energy=refl["energy"],
+                    hkl=refl["hkl"],
+                )
+            )
+        path = Path(tempfile.gettempdir()) / f"eco_widget_geom_{self.name}.html"
+        path.write_text(_build_geom_widget_html(entries))
+        webbrowser.open(f"file://{path}")
+        print(f"Opened reciprocal-space geometry view: {path}")
+        return path
 
     def calc_angles_unique(self, h=None, k=None, l=None, energy=None):
         """calculate unique solution of diffractometer angles for a given h,k,l and energy in eV.

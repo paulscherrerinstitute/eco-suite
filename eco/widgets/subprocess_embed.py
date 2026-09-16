@@ -178,6 +178,63 @@ def spawn_and_embed(target, cmd, env=None, timeout_s=EMBED_TIMEOUT_S, parent=Non
     return process
 
 
+class DetachedProcessWindow:
+    """.window/.stop()-shaped wrapper (same convention as
+    EmbeddedProcessWindow) around a viewer subprocess that is deliberately
+    NOT embedded anywhere -- its window is a plain, independent, fully
+    WM-managed top-level window, exactly as if the CLI had been run by
+    hand. `.window` is always None: there is nothing local to reparent or
+    dock, which is the point.
+
+    Exists to route around QWindow.fromWinId()/createWindowContainer()-
+    based embedding (see spawn_and_embed/EmbeddedProcessWindow) being
+    unreliable on some display setups -- XWayland in particular (a Wayland
+    compositor's X11-compat layer only partially emulates the
+    XReparentWindow-based trick that embedding depends on), confirmed live
+    2026-09-14: embedded content drifting outside its container, not
+    tracking resizes, or not receiving clicks at all. A plain top-level
+    window never gets reparented in the first place, so it's immune to
+    that whole class of bug -- at the cost of never being dockable into an
+    EcoDesktopApp workbench (EcoDesktopApp._dock_widget_object checks for
+    a real `.window` QWidget and is a documented no-op otherwise, so
+    `widget(dock_in=True)` on one of these silently just leaves it
+    standalone rather than erroring)."""
+
+    window = None
+
+    def __init__(self, cmd, env=None):
+        # QProcess's signals (on_stderr below) are delivered through Qt's
+        # event loop like any other -- needs a QApplication to exist, same
+        # requirement as EmbeddedProcessWindow, even though this class
+        # never builds a QWidget of its own.
+        global _app_ref
+        if QtWidgets.QApplication.instance() is None:
+            _app_ref = QtWidgets.QApplication([])
+
+        self.process = QtCore.QProcess()
+        self.process.setProcessChannelMode(QtCore.QProcess.SeparateChannels)
+
+        def on_stderr():
+            # Same surfacing as spawn_and_embed's on_stderr -- a crash
+            # before/without ever showing anything would otherwise be a
+            # silent disappearance.
+            chunk = bytes(self.process.readAllStandardError()).decode(errors="ignore")
+            if chunk:
+                sys.stderr.write(f"[subprocess_embed] viewer stderr: {chunk}")
+                sys.stderr.flush()
+
+        self.process.readyReadStandardError.connect(on_stderr)
+        self.process.setProcessEnvironment(env if env is not None else child_process_environment())
+        self.process.start(cmd[0], cmd[1:])
+
+    def stop(self):
+        if self.process is not None and self.process.state() != QtCore.QProcess.NotRunning:
+            self.process.terminate()
+            if not self.process.waitForFinished(2000):
+                self.process.kill()
+                self.process.waitForFinished(2000)
+
+
 class EmbeddedProcessWindow:
     """.window/.stop()-shaped wrapper (eco's standard Qt-widget-wrapper
     convention -- DisplayQt/AxisPTZStreamQt/CamServerStreamQt/...) around
