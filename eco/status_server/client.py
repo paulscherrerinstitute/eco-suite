@@ -325,7 +325,7 @@ class StatusServerClient:
 
     def capture(self, pgroup, run_number, key="status_run_start",
                 upload=True, wait=False, timeout=600,
-                keep_status=False) -> dict:
+                keep_status=False, client_status=None) -> dict:
         """Have the server snapshot, write status.json and upload it to the
         run - in the background, returning as soon as the job is accepted.
 
@@ -336,9 +336,21 @@ class StatusServerClient:
 
         wait=True blocks until the job finishes, for a standalone call where
         you do want to know it landed.
+
+        client_status : dict, optional
+            ``{"status": {...}, "status_channels": {...}, "status_times":
+            {...}}`` (same shape the server's own snapshot uses) - merged
+            into the server's snapshot before it writes status.json, for
+            values the server structurally cannot see on its own (e.g. a
+            scan's own daq_run_number/initial_values - see
+            eco.acquisition.daq_client.Daq._client_status_for_scan). Merged
+            in, never overwriting the server's own entries wholesale - see
+            the /status/capture handler.
         """
         body = {"pgroup": pgroup, "run_number": int(run_number),
                 "key": key, "upload": upload, "keep_status": keep_status}
+        if client_status:
+            body["client_status"] = client_status
         started = self._post("/status/capture", body, ok_codes=(200, 202))
         if not wait:
             return started

@@ -426,7 +426,11 @@ def test_scan_start_delegates_the_whole_capture_to_the_server(capsys):
 
     assert client.captures == [
         {"pgroup": "p12345", "run_number": 42, "key": "status_run_start",
-         "upload": True, "keep_status": True}
+         "upload": True, "keep_status": True,
+         # None: FakeScan/this bare Daq.__new__() fixture have no
+         # get_status() (Assembly.__init__ never ran) -
+         # _client_status_for_scan degrades to None rather than raising.
+         "client_status": None}
     ]
     # the client neither waits for the values nor uploads the file itself
     assert client.calls == []

@@ -520,6 +520,12 @@ def create_namespace_app(
 
         key = body.get("key", "status_run_start")
         upload = bool(body.get("upload", True))
+        # Client-side status (e.g. a scan's own daq_run_number/
+        # initial_values - see Daq._client_status_for_scan) this server's
+        # own Alias.get_all()-driven snapshot structurally cannot see -
+        # merged into the snapshot below, before it's written, rather than
+        # replacing anything from it.
+        client_status = body.get("client_status") or {}
         # Keep the status values in the job so the caller can collect them
         # afterwards without a second fan-out and without reading the file
         # back over NFS (where they are not visible for some seconds after
@@ -541,6 +547,11 @@ def create_namespace_app(
             try:
                 t0 = time.time()
                 snap = store.snapshot()
+                if client_status:
+                    for k in ("status", "status_channels", "status_times"):
+                        block = client_status.get(k)
+                        if block:
+                            snap.setdefault(k, {}).update(block)
                 rec["snapshot_seconds"] = time.time() - t0
                 rec["n_status"] = len(snap.get("status", {}))
                 with jobs_lock:

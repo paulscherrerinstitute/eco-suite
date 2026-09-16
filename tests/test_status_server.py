@@ -727,6 +727,66 @@ def test_client_push_status_merges_into_a_real_capture_job(live_server, tmp_path
     assert job["status"]["fake.n0"] == "N0"
 
 
+def test_client_status_merges_into_the_written_status_json(live_server, tmp_path):
+    """capture(client_status=...) -- distinct from push_status above, which
+    only ever reaches a transient job read, never status.json on disk (see
+    eco/status_server/namespace_server.py's status_capture route). This is
+    what Daq._client_status_for_scan uses to get a scan's own
+    daq_run_number/initial_values (no CA channel, so the server's own
+    Alias.get_all()-driven snapshot is structurally blind to them) into
+    the actual file."""
+    from eco.status_server.client import StatusServerClient
+
+    url, store, app, _ = live_server
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    client = StatusServerClient(url)
+    client.wait_ready(timeout=30, poll=0.05)
+
+    started = client.capture(
+        pgroup="p1", run_number=6, upload=False,
+        client_status={
+            "status": {
+                "scans.daq_run_number": 6, "scans.initial_values": [0.0]
+            },
+            "status_channels": {"scans.daq_run_number": None},
+            "status_times": {"scans.daq_run_number": 0.0},
+        },
+    )
+    job = client.wait_write_job(started["job_id"], timeout=10)
+    assert job["state"] == "done"
+
+    written = json.loads(open(job["path"]).read())
+    block = written["status_run_start"]
+    assert block["status"]["scans.daq_run_number"] == 6
+    assert block["status"]["scans.initial_values"] == [0.0]
+    # the server's own alias-driven status rides along untouched, not
+    # replaced by the merge.
+    assert block["status"]["fake.n0"] == "N0"
+
+
+def test_client_status_omitted_leaves_status_json_unchanged(live_server, tmp_path):
+    """No client_status given (the common case, e.g. no scan object at
+    hand) -- must behave exactly as before this feature existed."""
+    from eco.status_server.client import StatusServerClient
+
+    url, store, app, _ = live_server
+    app.config["ECO_CONFIG"].data_root_pattern = (
+        str(tmp_path) + "/{pgroup}/run{run_number:04d}/aux"
+    )
+    client = StatusServerClient(url)
+    client.wait_ready(timeout=30, poll=0.05)
+
+    started = client.capture(pgroup="p1", run_number=8, upload=False)
+    job = client.wait_write_job(started["job_id"], timeout=10)
+    assert job["state"] == "done"
+
+    written = json.loads(open(job["path"]).read())
+    assert written["status_run_start"]["status"]["fake.n0"] == "N0"
+    assert not any(k.startswith("scans.") for k in written["status_run_start"]["status"])
+
+
 def test_client_push_status_serializes_datetime_and_numpy_values(live_server):
     """Real bug, hit live on a real test scan: requests.post(json=body)
     serializes with plain stdlib json.dumps, which has no encoder for a

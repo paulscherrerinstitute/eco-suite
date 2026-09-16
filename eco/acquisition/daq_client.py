@@ -1606,6 +1606,45 @@ class Daq(Assembly):
                 pass  # a scan object that will not take an attribute
         return cache
 
+    def _client_status_for_scan(self, scan):
+        """This session's own scan/daq status, handed to the status server
+        to merge into its own alias-driven snapshot before it writes
+        status.json (see _server_status_for_scan/_capture_on_server).
+
+        Needed because neither `scan` (a fresh, per-run StepScan holding
+        e.g. daq_run_number, initial_values, scan_info - see
+        StepScan.__init__/count_run_number_up_and_attach_to_scan) nor
+        `self` (this Daq) is a persistent namespace component the server's
+        own Alias.get_all()-driven walk ever reaches - both live only in
+        this client process, for this one run.
+
+        get_status()'s own Detectors here are all DetectorMemory/
+        DetectorGet - already-known Python values, no CA reads - so this
+        is cheap even though get_status() is generically threaded for the
+        case where it is not. `self.get_status()` (Daq's own) is currently
+        always empty (nothing is appended to Daq's own status_collection
+        yet) - included anyway so anything appended there later (e.g.
+        channel lists) starts flowing through with no further change here.
+
+        Returns {"status": {...}, "status_channels": {...},
+        "status_times": {...}} (same shape as the server's own snapshot),
+        keys prefixed "scans."/"daq." - or None on any failure, so the
+        caller falls back to a plain server-only capture, exactly as
+        before this existed.
+        """
+        try:
+            scan_status = scan.get_status(raise_on_incomplete=False)
+            daq_status = self.get_status(raise_on_incomplete=False)
+        except Exception:
+            traceback.print_exc()
+            return None
+        merged = {"status": {}, "status_channels": {}, "status_times": {}}
+        for prefix, block in (("scans", scan_status), ("daq", daq_status)):
+            for k in merged:
+                for name, value in (block.get(k) or {}).items():
+                    merged[k][f"{prefix}.{name}"] = value
+        return merged
+
     def _server_status_for_scan(self, scan, key, runno, pgroup):
         """Ask the server for this run's status block. True if it took care
         of it, False to fall back to the local path.
@@ -1621,7 +1660,8 @@ class Daq(Assembly):
             # table fills itself from, and holding the values for a block
             # nobody collects would just be memory sitting on the server.
             job = self._capture_on_server(
-                key, runno, pgroup, keep_status=(key == "status_run_start")
+                key, runno, pgroup, keep_status=(key == "status_run_start"),
+                client_status=self._client_status_for_scan(scan),
             )
             if job is None:
                 return False
@@ -1644,14 +1684,15 @@ class Daq(Assembly):
             self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
         return True
 
-    def _capture_on_server(self, key, runno, pgroup, keep_status=False):
+    def _capture_on_server(self, key, runno, pgroup, keep_status=False,
+                            client_status=None):
         """Fire-and-forget: the server snapshots, writes status.json and
         uploads it to the run. Returns the job description, or None on
         failure (so the caller can fall back)."""
         try:
             return self.status_client.capture(
                 pgroup=pgroup, run_number=runno, key=key, upload=True,
-                keep_status=keep_status,
+                keep_status=keep_status, client_status=client_status,
             )
         except Exception as exc:
             return self._status_server_failed(f"capture for {key}", exc)
