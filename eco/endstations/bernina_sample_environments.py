@@ -1,6 +1,7 @@
 from eco.xoptics.attenuator_safety_bernina import AttenuatorSafetyBernina
 from scipy import constants
 from eco.devices_general.powersockets import MpodChannel, NEW_MpodChannel
+from eco.devices_general.vacuum import VacuumGauge
 from eco.devices_general.wago import AnalogOutput
 from eco.devices_general.cameras_swissfel import CameraBasler
 from eco.epics_utils.detector import DetectorPvDataStream
@@ -1783,6 +1784,13 @@ class GrazingIncidenceLowTemperatureChamber(Assembly):
             AttenuatorSafetyBernina,
             xp=xp,
             name="attenuator_safety",
+            is_display="recursive",
+        )
+
+        self._append(
+            VacuumGauge,
+            "SARES21-VMFR143-600",
+            name="gauge",
             is_display="recursive",
         )
 
