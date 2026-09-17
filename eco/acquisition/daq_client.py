@@ -2,6 +2,7 @@ import json
 import pickle
 import shutil
 import subprocess
+import sys
 from datetime import datetime
 from itertools import count
 from threading import Thread, Lock, Event, Timer
@@ -38,6 +39,27 @@ from os.path import relpath
 _SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
 _SOUND_CHECKER_UNHAPPY = _SOUNDS_DIR / "cowbell.wav"
 _SOUND_CHECKER_RESUMED = _SOUNDS_DIR / "posthorn.wav"
+
+
+def _live_parse_cache_supported():
+    """Whether the installed escape-fel has the live parse-cache-warming
+    feature (escape.swissfel.live_reduce's `daq_cache_writer`, per "
+    "Integrating live parse-cache warming into the DAQ client") - checked
+    by the actual implementing attribute, not just module presence, so an
+    escape-fel predating this feature (import escape.swissfel.live_reduce
+    already works today for unrelated reasons) is correctly treated as
+    unsupported rather than crashing _launch_live_parse_cache. Checked at
+    launch time rather than once at Daq construction: the whole point of
+    this being a soft dependency is that turning Daq.live_parse_cache on
+    ahead of the escape-fel release that adds it should be a harmless
+    no-op, not something that has to be re-toggled once escape-fel
+    actually ships it.
+    """
+    try:
+        import escape.swissfel.live_reduce as live_reduce
+    except Exception:
+        return False
+    return hasattr(live_reduce, "daq_cache_writer")
 
 
 class Daq(Assembly):
@@ -161,6 +183,13 @@ class Daq(Assembly):
         use_running_status_server=True,
         speak_run_number=False,
         sound_alerts=False,
+        live_parse_cache=False,
+        live_parse_cache_python=None,
+        live_parse_cache_poll_interval=None,
+        live_parse_cache_idle_polls=None,
+        live_parse_cache_max_polls=None,
+        live_parse_cache_parse_version=None,
+        live_parse_cache_log_dir=None,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -290,6 +319,21 @@ class Daq(Assembly):
         # both _play_sound calls in check_checker_before_step (cowbell on
         # going unhappy, posthorn on resuming), live-toggleable.
         self.sound_alerts = sound_alerts
+        # Off by default: launches escape-fel's optional live parse-cache
+        # warmer (escape.swissfel.live_reduce --mode daq-cache) as a child
+        # of this process once per scan - see _launch_live_parse_cache's own
+        # docstring. Live-toggleable like the others above; also a no-op
+        # regardless of this flag until the installed escape-fel actually
+        # has the feature (checked at launch time, not here, since the
+        # installed escape-fel could change between Daq construction and a
+        # given scan).
+        self.live_parse_cache = live_parse_cache
+        self.live_parse_cache_python = live_parse_cache_python
+        self.live_parse_cache_poll_interval = live_parse_cache_poll_interval
+        self.live_parse_cache_idle_polls = live_parse_cache_idle_polls
+        self.live_parse_cache_max_polls = live_parse_cache_max_polls
+        self.live_parse_cache_parse_version = live_parse_cache_parse_version
+        self.live_parse_cache_log_dir = live_parse_cache_log_dir
         # Short timeout for /health and the admin routes (so an unreachable
         # server fails fast), long one for a snapshot - a full get_status()
         # fan-out over ~14k bernina channels takes 10-20 s.
@@ -1407,6 +1451,79 @@ class Daq(Assembly):
         except Exception:
             pass
 
+    def _launch_live_parse_cache(self, scan, pgroup, run_number):
+        """Launch escape-fel's optional live parse-cache warmer
+        (`python -m escape.swissfel.live_reduce --mode daq-cache`) as a
+        genuine child of this process, once per scan - see escape-fel's own
+        "Integrating live parse-cache warming into the DAQ client" doc for
+        what it does and why.
+
+        Deliberately a plain subprocess.Popen from *this* process, never a
+        separate script and never su/sudo to a different account: the
+        child needs to inherit whatever account this Daq/session runs as,
+        because that determines whether it can actually write the cache
+        file into the run's aux/ directory at all - a different account,
+        even one in the same pgroup, can fail there outright (see that
+        doc's own verified GPFS example). If it can't write, escape's own
+        writer logs one line per attempt and otherwise does nothing
+        harmful - never something this method needs to detect or handle.
+
+        Opt-in (self.live_parse_cache) and a no-op on any escape-fel
+        without the feature yet (_live_parse_cache_supported), so turning
+        this on ahead of that escape-fel release is safe. At most one
+        child per scan: reuses (and does not re-launch over) a still-
+        running one from an earlier call this same scan - copy_scan_info_
+        to_raw, the natural call site (see its own docstring), fires once
+        per step plus once at scan end, not just once at scan start.
+        """
+        if not self.live_parse_cache:
+            return None
+        scratch = scan.counter_scratch(self.name)
+        existing = scratch.get("live_parse_cache_proc")
+        if existing is not None and existing.poll() is None:
+            return existing
+        if not _live_parse_cache_supported():
+            return None
+        cmd = [
+            self.live_parse_cache_python or sys.executable,
+            "-m", "escape.swissfel.live_reduce",
+            "--mode", "daq-cache",
+            "--run-number", str(run_number),
+            "--pgroup", pgroup,
+            "--instrument", self.instrument or "bernina",
+        ]
+        if self.live_parse_cache_poll_interval is not None:
+            cmd += ["--poll-interval", str(self.live_parse_cache_poll_interval)]
+        if self.live_parse_cache_idle_polls is not None:
+            cmd += ["--idle-polls-before-final-pass",
+                    str(self.live_parse_cache_idle_polls)]
+        if self.live_parse_cache_max_polls is not None:
+            cmd += ["--max-polls", str(self.live_parse_cache_max_polls)]
+        if self.live_parse_cache_parse_version is not None:
+            cmd += ["--parse-version", str(self.live_parse_cache_parse_version)]
+
+        log = None
+        if self.live_parse_cache_log_dir is not None:
+            try:
+                log_dir = Path(self.live_parse_cache_log_dir)
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log = open(log_dir / f"run{run_number:04d}_cache_writer.log", "w")
+            except Exception:
+                log = None
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log or subprocess.DEVNULL,
+                stderr=subprocess.STDOUT if log else subprocess.DEVNULL,
+            )
+        except Exception:
+            return None
+        finally:
+            if log is not None:
+                log.close()
+        scratch["live_parse_cache_proc"] = proc
+        return proc
+
     # get/set_dap_settings and get/set_detector_settings are NOT dead here by
     # accident -- they're implemented and used, just per-detector rather than
     # per-Daq: see eco.detector.jungfrau.Jungfrau.get_dap_settings/
@@ -2161,6 +2278,14 @@ class Daq(Assembly):
         if not scaninfofile.group() == scaninfofile.parent.group():
             shutil.chown(scaninfofile, group=scaninfofile.parent.group())
         # print(f"Copying info file to run {runno} to the raw directory of {pgroup}.")
+
+        # scan_info_rel.json now exists - the earliest point escape-fel's
+        # live parse-cache warmer can do anything useful (see
+        # _launch_live_parse_cache's own docstring). Safe to call on every
+        # copy_scan_info_to_raw invocation (once per step, once at scan
+        # end): it only ever launches once per scan, reusing whatever it
+        # already started.
+        self._launch_live_parse_cache(scan, pgroup, runno)
 
         scan.remaining_tasks.append(
             self._debounced_append_aux(

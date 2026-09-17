@@ -101,12 +101,17 @@ if _status_server:
 # interval, max element size, ...) as real, inspectable AdjustableMemory
 # children - see eco.status_server.namespace_component's module docstring.
 # Always built, even if this session is not itself using the server for
-# status (_status_server is None) - the server keeps running regardless of
-# any one session's ECO_STATUS_SERVER choice, and staying able to look at
-# it/restart it is useful either way.
+# status (_status_server is None, e.g. ECO_STATUS_SERVER=off) - the server
+# keeps running regardless of any one session's ECO_STATUS_SERVER choice,
+# and staying able to look at it/restart it is useful either way. Points at
+# _status_server (the same env var Daq above reads) when that names an
+# actual URL - e.g. ECO_STATUS_SERVER=http://saresb-vcons-03:8092 to inspect
+# a test server instead of production - and falls back to the production
+# default only when ECO_STATUS_SERVER is unset/off, so "off" (meaning "don't
+# use one for status") doesn't also mean "point this object at nothing".
 namespace.append_obj(
     "StatusServer",
-    _ECO_STATUS_SERVER_DEFAULT,
+    _status_server or _ECO_STATUS_SERVER_DEFAULT,
     module_name="eco.status_server.namespace_component",
     lazy=True,
     name="status_server",
