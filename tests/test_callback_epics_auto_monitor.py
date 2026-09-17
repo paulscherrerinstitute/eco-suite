@@ -14,6 +14,17 @@ from eco.epics_utils.utilities_epics import CallbackEpics
 
 
 class FakePV:
+    # Deliberately unhashable, matching the real epics.PV - a first version
+    # of the fix used a plain PV-keyed dict (WeakKeyDictionary) and passed
+    # every test here anyway, because a default/hashable-by-identity fake
+    # doesn't exercise that constraint at all. Only caught live, against a
+    # real connected PV: pv.add_callback() had already registered the real
+    # callback (already collecting data) by the time the *next* line raised
+    # TypeError: unhashable type: 'PV' - which the caller (RecordingSession)
+    # counted as an ordinary attach failure, silently leaking the callback
+    # it never knew existed. __hash__ = None reproduces that here.
+    __hash__ = None
+
     def __init__(self, pvname="fake:pv", value=0.0):
         self.pvname = pvname
         self.auto_monitor = False
@@ -37,6 +48,14 @@ class FakePV:
 
 def _cb(pv):
     return CallbackEpics(pv, func="latest")
+
+
+def test_fakepv_is_unhashable_like_the_real_thing():
+    import pytest
+
+    pv = FakePV()
+    with pytest.raises(TypeError):
+        hash(pv)
 
 
 def test_single_callback_restores_the_original_auto_monitor_on_stop():

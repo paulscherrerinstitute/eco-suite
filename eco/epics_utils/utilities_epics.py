@@ -1,5 +1,4 @@
 import threading
-import weakref
 from epics import PV
 from copy import copy
 from time import sleep, time
@@ -73,23 +72,39 @@ class MonitorAccumulator:
 
 # Per-PV auto_monitor reference count, shared by every CallbackEpics instance
 # regardless of who created it (a status-server baseline monitor, one
-# RecordingSession, several overlapping RecordingSessions, ...). Keyed by the
-# pyepics PV object itself (identity - PV doesn't override __hash__/__eq__),
-# WeakKeyDictionary so an entry disappears with the PV rather than leaking.
+# RecordingSession, several overlapping RecordingSessions, ...). Keyed by
+# id(pv), NOT the PV object itself: a real epics.PV is not hashable (no
+# __hash__), so it cannot be a dict key at all, weak or otherwise - found
+# live, the hard way: pv.add_callback() had already registered the real
+# callback (so it was already collecting data) by the time
+# `_auto_monitor_refs.get(self.pv)` raised `TypeError: unhashable type:
+# 'PV'`, which RecordingSession's per-channel except Exception then counted
+# as an ordinary attach failure - except the callback was never actually
+# torn down, since the exception meant self._monitors[name] never got set
+# either, so stop() never reached it. A leaked, permanently-running
+# callback per channel, for nearly every channel, the first time this ran
+# against real PVs (fakes in the unit tests are plain objects and hashable
+# by default, which is exactly why they didn't catch this). id(pv) is safe
+# to use here without weak-reference cleanup: every CallbackEpics using a
+# given PV holds a live, strong reference to it (self.pv) for as long as
+# its entry exists, and the entry is removed the moment the count reaches
+# zero (see stop() below) - so an id() already in this dict is never a
+# stale/reused one.
 #
-# Why this exists: start()/stop() used to snapshot self.pv.auto_monitor at
-# start() and blindly write it back at stop() - correct for exactly one
-# concurrent CallbackEpics per PV, wrong for two. With two overlapping
-# RecordingSessions (or one RecordingSession over the status server's own
-# permanent baseline monitor - see NamespaceMonitorStore._build_index/
-# self._monitors, which is already a second, independent CallbackEpics on
-# top of any RecordingSession's) the one that stops *first* would restore
-# auto_monitor to whatever *it* saw at its own start - potentially clobbering
-# whatever the still-running one needs, silently, mid-flight. Only turning
-# auto_monitor on for the first attacher and restoring it for the last
-# detacher (a plain reference count) makes stop() order-independent.
+# Why the refcount exists at all: start()/stop() used to snapshot
+# self.pv.auto_monitor at start() and blindly write it back at stop() -
+# correct for exactly one concurrent CallbackEpics per PV, wrong for two.
+# With two overlapping RecordingSessions (or one RecordingSession over the
+# status server's own permanent baseline monitor - see
+# NamespaceMonitorStore._build_index/self._monitors, which is already a
+# second, independent CallbackEpics on top of any RecordingSession's) the
+# one that stops *first* would restore auto_monitor to whatever *it* saw at
+# its own start - potentially clobbering whatever the still-running one
+# needs, silently, mid-flight. Only turning auto_monitor on for the first
+# attacher and restoring it for the last detacher (a plain reference count)
+# makes stop() order-independent.
 _auto_monitor_lock = threading.Lock()
-_auto_monitor_refs = weakref.WeakKeyDictionary()
+_auto_monitor_refs = {}
 
 
 class CallbackEpics:
@@ -168,10 +183,11 @@ class CallbackEpics:
         # attacher should change auto_monitor, only the *last* detacher
         # should put it back.
         with _auto_monitor_lock:
-            entry = _auto_monitor_refs.get(self.pv)
+            key = id(self.pv)
+            entry = _auto_monitor_refs.get(key)
             if entry is None:
                 entry = {"count": 0, "baseline": self.pv.auto_monitor}
-                _auto_monitor_refs[self.pv] = entry
+                _auto_monitor_refs[key] = entry
             entry["count"] += 1
             self._auto_monitor_entry = entry
             self.pv.auto_monitor = auto_monitor
@@ -188,7 +204,7 @@ class CallbackEpics:
                     entry["count"] -= 1
                     if entry["count"] <= 0:
                         self.pv.auto_monitor = entry["baseline"]
-                        _auto_monitor_refs.pop(self.pv, None)
+                        _auto_monitor_refs.pop(id(self.pv), None)
                 self._auto_monitor_entry = None
 
     def __enter__(self):
