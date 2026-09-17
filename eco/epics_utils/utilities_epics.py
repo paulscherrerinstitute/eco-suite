@@ -1,3 +1,5 @@
+import threading
+import weakref
 from epics import PV
 from copy import copy
 from time import sleep, time
@@ -69,6 +71,27 @@ class MonitorAccumulator:
         return d
 
 
+# Per-PV auto_monitor reference count, shared by every CallbackEpics instance
+# regardless of who created it (a status-server baseline monitor, one
+# RecordingSession, several overlapping RecordingSessions, ...). Keyed by the
+# pyepics PV object itself (identity - PV doesn't override __hash__/__eq__),
+# WeakKeyDictionary so an entry disappears with the PV rather than leaking.
+#
+# Why this exists: start()/stop() used to snapshot self.pv.auto_monitor at
+# start() and blindly write it back at stop() - correct for exactly one
+# concurrent CallbackEpics per PV, wrong for two. With two overlapping
+# RecordingSessions (or one RecordingSession over the status server's own
+# permanent baseline monitor - see NamespaceMonitorStore._build_index/
+# self._monitors, which is already a second, independent CallbackEpics on
+# top of any RecordingSession's) the one that stops *first* would restore
+# auto_monitor to whatever *it* saw at its own start - potentially clobbering
+# whatever the still-running one needs, silently, mid-flight. Only turning
+# auto_monitor on for the first attacher and restoring it for the last
+# detacher (a plain reference count) makes stop() order-independent.
+_auto_monitor_lock = threading.Lock()
+_auto_monitor_refs = weakref.WeakKeyDictionary()
+
+
 class CallbackEpics:
     """set_current_value_callback() implementation for a single PV, shared
     by every PV-backed Detector/Adjustable class (eco.epics_utils.detector,
@@ -138,8 +161,20 @@ class CallbackEpics:
             run_once=True,
             with_ctrlvars=with_ctrlvars,
         )
-        self.auto_monitor_state = self.pv.auto_monitor
-        self.pv.auto_monitor = auto_monitor
+        # Reference-counted, not a plain snapshot/restore - see
+        # _auto_monitor_refs' own docstring for why: this PV may already
+        # have another CallbackEpics on it (a permanent baseline monitor, a
+        # different overlapping recording, ...), and only the *first*
+        # attacher should change auto_monitor, only the *last* detacher
+        # should put it back.
+        with _auto_monitor_lock:
+            entry = _auto_monitor_refs.get(self.pv)
+            if entry is None:
+                entry = {"count": 0, "baseline": self.pv.auto_monitor}
+                _auto_monitor_refs[self.pv] = entry
+            entry["count"] += 1
+            self._auto_monitor_entry = entry
+            self.pv.auto_monitor = auto_monitor
 
     def is_running(self):
         return hasattr(self, "cb_index") and self.cb_index in self.pv.callbacks.keys()
@@ -147,7 +182,14 @@ class CallbackEpics:
     def stop(self):
         if self.is_running():
             self.pv.remove_callback(self.cb_index)
-            self.pv.auto_monitor = self.auto_monitor_state
+            entry = getattr(self, "_auto_monitor_entry", None)
+            if entry is not None:
+                with _auto_monitor_lock:
+                    entry["count"] -= 1
+                    if entry["count"] <= 0:
+                        self.pv.auto_monitor = entry["baseline"]
+                        _auto_monitor_refs.pop(self.pv, None)
+                self._auto_monitor_entry = None
 
     def __enter__(self):
         self.start()

@@ -2394,3 +2394,88 @@ def test_the_client_stays_quiet_when_no_recording_required_channel_failed(capsys
     assert warn_recording_failed_required({"failed_required": []}) == []
     assert warn_recording_failed_required({}) == []
     assert capsys.readouterr().out == ""
+
+
+# --------------------------------------------------------------------------
+# overlapping recordings: a second recording_id can start while a first is
+# still running (start_recording only refuses reusing the *same* id) - the
+# later one backfills its own buffer for any shared channel from whatever
+# the earlier one already collected, a one-time list copy at start() rather
+# than the two ever sharing a live buffer or a CA subscription.
+
+
+def test_a_later_recording_backfills_from_an_earlier_running_one(recording_store):
+    recording_store.start_recording("r1")
+    mon_m1, mon_m2 = FakeMonitor.instances
+    mon_m1.push(1.0)
+    mon_m1.push(2.0)
+    mon_m2.push(9.0)
+
+    second = recording_store.start_recording("r2")
+    assert second.n_seeded_from_sibling == 2  # both fake.m1 and fake.m2
+
+    # r2 keeps collecting independently after backfill - its own separate
+    # FakeMonitor instances, appended at the end of FakeMonitor.instances
+    mon_m1_r2, mon_m2_r2 = FakeMonitor.instances[2:]
+    mon_m1_r2.push(3.0)
+
+    stopped = recording_store.stop_recording("r2")
+    assert stopped["data"]["fake.m1"]["values"] == [1.0, 2.0, 3.0]
+    assert stopped["data"]["fake.m2"]["values"] == [9.0]
+
+    # r1 is untouched - still running, still has only its own two points
+    r1_report = recording_store.recording_report("r1")
+    assert r1_report["n_stored"] == 3  # 2 for m1 + 1 for m2, still live
+
+
+def test_a_solo_recording_backfills_nothing(recording_store):
+    result = recording_store.start_recording("r1")
+    assert result.n_seeded_from_sibling == 0
+
+
+def test_backfill_is_a_copy_not_a_live_share(recording_store):
+    """Pushing to r1 after r2 started must not retroactively show up in r2 -
+    the backfill is a one-time snapshot taken at r2's start()."""
+    recording_store.start_recording("r1")
+    mon_m1, _ = FakeMonitor.instances
+    mon_m1.push(1.0)
+
+    recording_store.start_recording("r2")
+    mon_m1.push(2.0)  # r1 keeps going after r2 already backfilled
+
+    stopped = recording_store.stop_recording("r2")
+    assert stopped["data"]["fake.m1"]["values"] == [1.0]  # not 2.0 too
+
+    r1_stopped = recording_store.stop_recording("r1")
+    assert r1_stopped["data"]["fake.m1"]["values"] == [1.0, 2.0]
+
+
+def test_backfill_respects_the_new_recordings_max_points_per_channel(recording_store):
+    recording_store.start_recording("r1", names=["fake.m1"])
+    mon_m1 = FakeMonitor.instances[0]
+    for v in range(10):
+        mon_m1.push(float(v))
+
+    recording_store.start_recording("r2", names=["fake.m1"],
+                                    max_points_per_channel=3)
+    stopped = recording_store.stop_recording("r2")
+    # only the most recent 3 of r1's 10 points carried over
+    assert stopped["data"]["fake.m1"]["values"] == [7.0, 8.0, 9.0]
+
+
+def test_stopping_the_earlier_recording_does_not_affect_the_later_one(recording_store):
+    """Structural independence: each RecordingSession only ever stops its
+    own monitors/buffers - the actual auto_monitor-clobbering hazard this
+    guards against at the CallbackEpics level has its own dedicated test in
+    test_callback_epics_auto_monitor.py."""
+    recording_store.start_recording("r1")
+    recording_store.start_recording("r2")
+    mon_m1_r1, mon_m2_r1, mon_m1_r2, mon_m2_r2 = FakeMonitor.instances
+
+    recording_store.stop_recording("r1")
+    assert mon_m1_r1.stopped and mon_m2_r1.stopped
+    assert not mon_m1_r2.stopped and not mon_m2_r2.stopped
+
+    mon_m1_r2.push(5.0)
+    stopped = recording_store.stop_recording("r2")
+    assert stopped["data"]["fake.m1"]["values"] == [5.0]

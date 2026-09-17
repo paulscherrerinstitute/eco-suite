@@ -724,6 +724,15 @@ class NamespaceMonitorStore:
                 logger.debug("could not read required_names() for recording %s",
                              recording_id, exc_info=True)
                 required_component_names = set()
+            # Other recordings already running right now, for start()'s
+            # per-channel backfill (see RecordingSession._seed_buffer_from_
+            # siblings): overlapping recordings are otherwise structurally
+            # independent (own detach-and-attach-again CallbackEpics per
+            # channel, no shared state) - this is the one place that ties
+            # them together, and only as a one-time list copy at start.
+            running_siblings = [
+                s for s in self._recordings.values() if s.is_running
+            ]
             session = RecordingSession(
                 recording_id,
                 detectors,
@@ -737,7 +746,7 @@ class NamespaceMonitorStore:
                 run_number=run_number,
                 required_component_names=required_component_names,
             )
-            session.start()
+            session.start(seed_from=running_siblings)
             self._recordings[recording_id] = session
             return session
 
@@ -1098,6 +1107,11 @@ class RecordingSession:
         self.n_attached = 0
         self.n_seeded = 0
         self.n_backfilled = 0
+        # Distinct from n_backfilled above (that one is backfill_from_status'
+        # one-value-per-channel fill from an opportunistic status snapshot):
+        # this counts channels seeded from an already-running *sibling*
+        # RecordingSession's own buffer at start() - see seed_from below.
+        self.n_seeded_from_sibling = 0
         # Names (not just a count) of channels that failed to attach - kept
         # so NamespaceMonitorStore.start_recording can classify them against
         # namespace.required_names(), same as /health's failed_required.
@@ -1105,10 +1119,34 @@ class RecordingSession:
 
     # -- lifecycle ---------------------------------------------------------
 
-    def start(self):
+    def _seed_buffer_from_siblings(self, name, siblings):
+        """A plain, one-time list copy (not a live share) of whatever an
+        already-running sibling RecordingSession has already buffered for
+        `name`, truncated to this session's own max_points_per_channel - the
+        overlap-window backfill for two overlapping recordings: the later
+        one's history for a shared channel doesn't have to start empty just
+        because its own CA callback wasn't attached yet for that window.
+        First sibling with any data for this name wins; siblings are cheap
+        in-memory list copies, not CA reads, so trying more than one costs
+        nothing worth guarding against.
+        """
+        for sib in siblings:
+            with sib._lock:
+                sib_buf = sib._buffers.get(name)
+                if not sib_buf or not sib_buf["values"]:
+                    continue
+                values = list(sib_buf["values"][-self.max_points_per_channel:])
+                timestamps = list(sib_buf["timestamps"][-self.max_points_per_channel:])
+            self.n_seeded_from_sibling += 1
+            return values, timestamps
+        return [], []
+
+    def start(self, seed_from=None):
         self.started_at = time.time()
+        siblings = [s for s in (seed_from or []) if s is not self]
         for name, obj, _ in self.detectors:
-            self._buffers[name] = {"values": [], "timestamps": []}
+            values, timestamps = self._seed_buffer_from_siblings(name, siblings)
+            self._buffers[name] = {"values": values, "timestamps": timestamps}
             try:
                 mon = obj.set_current_value_callback(func=self._make_callback(name))
                 if mon is None:
@@ -1437,6 +1475,7 @@ class RecordingSession:
             "n_failed_required": len(failed_required),
             "n_seeded": self.n_seeded,
             "n_backfilled": self.n_backfilled,
+            "n_seeded_from_sibling": self.n_seeded_from_sibling,
             "n_updates": self.n_updates,
             "n_stored": n_points,
             "n_dropped_throttle": self.n_dropped_throttle,
