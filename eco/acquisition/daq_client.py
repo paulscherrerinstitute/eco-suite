@@ -2333,8 +2333,8 @@ class Daq(Assembly):
     # the per-session cost the status server exists to avoid. If there is no
     # server (or it is not in use for this scan), these are no-ops - so a
     # scan run without a status server simply gets no
-    # aux/namespace_monitor.h5, same as it already gets no server-backed
-    # aliases.json/status.json.
+    # aux/namespace_monitor.ixp.h5, same as it already gets no server-
+    # backed aliases.json/status.json.
 
     def start_scan_monitoring(self, scan, pgroup=None, mode="throttle",
                               min_interval=0.1, names=None, **kwargs):
@@ -2429,14 +2429,14 @@ class Daq(Assembly):
         try:
             job = self.status_client.capture_recording(
                 recording_id, pgroup, runno, upload=upload,
-                filename="namespace_monitor.h5",
+                filename="namespace_monitor.ixp.h5",
             )
         except Exception as exc:
             return self._status_server_failed("end monitoring", exc)
         scan.counter_scratch(self.name).setdefault("status_jobs", {})[
             "recording"
         ] = job
-        scan.set_scan_parameter("monitors", "aux/namespace_monitor.h5")
+        scan.set_scan_parameter("monitors", "aux/namespace_monitor.ixp.h5")
         print(
             f"monitoring: recording '{recording_id}' stopped, capture job "
             f"{job.get('job_id')} -> {job.get('path')}"

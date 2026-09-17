@@ -629,7 +629,7 @@ def test_compare_channels_prints_a_summary_by_default(capsys):
 # - so these only ever do anything for a server-backed, daq-counter scan
 # (any scan that runs this Daq's callbacks at all already implies "daq is a
 # counter"); a scan with no status server configured gets no
-# namespace_monitor.h5, the same way it already gets no server-backed
+# namespace_monitor.ixp.h5, the same way it already gets no server-backed
 # aliases.json/status.json.
 
 
@@ -734,7 +734,8 @@ def test_end_scan_monitoring_captures_the_recording_started_for_this_scan():
 
     assert client.recording_captures == [
         {"recording_id": "p12345_run0042", "pgroup": "p12345",
-         "run_number": 42, "upload": True, "filename": "namespace_monitor.h5"}
+         "run_number": 42, "upload": True,
+         "filename": "namespace_monitor.ixp.h5"}
     ]
     assert job["job_id"] == "j3"
     assert (
@@ -742,7 +743,7 @@ def test_end_scan_monitoring_captures_the_recording_started_for_this_scan():
     )
     # registered the same way copy_aliases_to_scan/append_start_status_to_scan
     # register "aliases"/"status", so scan_info_rel.json carries it too
-    assert scan.scan_parameters["monitors"] == "aux/namespace_monitor.h5"
+    assert scan.scan_parameters["monitors"] == "aux/namespace_monitor.ixp.h5"
 
 
 def test_end_scan_monitoring_failure_does_not_raise(capsys):

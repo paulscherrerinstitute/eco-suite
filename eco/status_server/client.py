@@ -110,7 +110,7 @@ def warn_recording_failed_required(result):
         flush=True,
     )
     print(
-        f"{red}    This run's namespace_monitor.h5 will be missing them - see "
+        f"{red}    This run's namespace_monitor.ixp.h5 will be missing them - see "
         f"client.recording(recording_id).{reset}",
         flush=True,
     )

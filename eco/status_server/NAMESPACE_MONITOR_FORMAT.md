@@ -1,4 +1,4 @@
-# `namespace_monitor.h5` — format and escape integration
+# `namespace_monitor.ixp.h5` — format and escape integration
 
 Handoff note for whoever extends `escape_fel` to load this file. Written from
 the eco (status-server) side; the escape-side integration described below
@@ -24,14 +24,14 @@ own aux directory as part of the run, the same way `aliases.json` and
   (`eco/acquisition/daq_client.py`) — **not yet wired into a real scan's
   callbacks** as of this writing, so no run has one yet; this document
   describes the format ahead of that.
-- Location: `<pgroup>/res/run_data/daq/run<NNNN>/aux/namespace_monitor.h5`,
+- Location: `<pgroup>/res/run_data/daq/run<NNNN>/aux/namespace_monitor.ixp.h5`,
   next to `status.json`/`aliases.json`/`scan_info_rel.json`.
 - **Only exists when a status server was in use for the run.** Unlike
   status/aliases, there is deliberately no local-namespace fallback — a
   local recording would need the scanning session's own namespace holding a
   live CA monitor per channel for the run's whole duration, which is exactly
   the per-session cost the status server exists to avoid. A run without a
-  status server simply has no `namespace_monitor.h5` and nothing should
+  status server simply has no `namespace_monitor.ixp.h5` and nothing should
   treat that as an error.
 
 ## File format
@@ -95,7 +95,7 @@ Same mechanism `aliases.json`/`status.json` already use
 `Daq.end_scan_monitoring()` calls:
 
 ```python
-scan.set_scan_parameter("monitors", "aux/namespace_monitor.h5")
+scan.set_scan_parameter("monitors", "aux/namespace_monitor.ixp.h5")
 ```
 
 right after dispatching the (async) capture job, the same "register the
