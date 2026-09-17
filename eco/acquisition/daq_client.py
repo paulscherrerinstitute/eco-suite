@@ -1,6 +1,7 @@
 import json
 import pickle
 import shutil
+import subprocess
 from datetime import datetime
 from itertools import count
 from threading import Thread, Lock, Event, Timer
@@ -29,6 +30,14 @@ from ..utilities.path_alias import PathAlias
 import inputimeout
 from IPython import get_ipython
 from os.path import relpath
+
+# Opt-in checker audio alerts (see speak_run_number for the same pattern):
+# synthesized placeholders, not recordings - see eco/acquisition/sounds/
+# for how/why. Swap the files at these paths for real ones without
+# touching this module.
+_SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
+_SOUND_CHECKER_UNHAPPY = _SOUNDS_DIR / "cowbell.wav"
+_SOUND_CHECKER_RESUMED = _SOUNDS_DIR / "posthorn.wav"
 
 
 class Daq(Assembly):
@@ -151,6 +160,7 @@ class Daq(Assembly):
         scan_monitoring=True,
         use_running_status_server=True,
         speak_run_number=False,
+        sound_alerts=False,
     ):
         super().__init__(name=name)
         self.channels = {}
@@ -276,6 +286,10 @@ class Daq(Assembly):
         # number via pyttsx3 on every scan end), not something every Daq
         # user wants. Live-toggleable like use_running_status_server above.
         self.speak_run_number = speak_run_number
+        # Off by default, same reasoning as speak_run_number above: gates
+        # both _play_sound calls in check_checker_before_step (cowbell on
+        # going unhappy, posthorn on resuming), live-toggleable.
+        self.sound_alerts = sound_alerts
         # Short timeout for /health and the admin routes (so an unreachable
         # server fails fast), long one for a snapshot - a full get_status()
         # fan-out over ~14k bernina channels takes 10-20 s.
@@ -1372,6 +1386,27 @@ class Daq(Assembly):
         except Exception:
             pass
 
+    def _play_sound(self, path):
+        """
+        Fire-and-forget wav playback via aplay (present on the RHEL9
+        control-room consoles this runs on; ALSA, not PulseAudio, so no
+        paplay dependency). Opt-in (self.sound_alerts) and best-effort, same
+        reasoning as announce_run_number: Popen rather than run so a slow or
+        stuck sound device can never stall check_checker_before_step's retry
+        loop, and any failure (aplay missing, no sound card, bad path, ...)
+        is swallowed rather than interrupting a scan.
+        """
+        if not self.sound_alerts:
+            return
+        try:
+            subprocess.Popen(
+                ["aplay", "-q", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
     # get/set_dap_settings and get/set_detector_settings are NOT dead here by
     # accident -- they're implemented and used, just per-detector rather than
     # per-Daq: see eco.detector.jungfrau.Jungfrau.get_dap_settings/
@@ -2217,6 +2252,9 @@ class Daq(Assembly):
             checker_unhappy = False
             print("")
             while not self.checker.check_now():
+                if not checker_unhappy:
+                    # once per unhappy spell, not once per 1 s retry
+                    self._play_sound(_SOUND_CHECKER_UNHAPPY)
                 print(
                     colorama.Fore.RED
                     + f"Condition checker is not happy, waiting for OK conditions since {time.time()-first_check:5.1f} seconds."
@@ -2232,6 +2270,7 @@ class Daq(Assembly):
                     + f"Condition checker was not happy and waiting for {time.time()-first_check:5.1f} seconds."
                     + colorama.Fore.RESET
                 )
+                self._play_sound(_SOUND_CHECKER_RESUMED)
             self.checker.clear_and_start_counting()
 
     def check_checker_after_step(self, scan, **kwargs):
