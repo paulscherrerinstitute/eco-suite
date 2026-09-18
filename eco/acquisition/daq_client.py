@@ -2703,7 +2703,7 @@ class Daq(Assembly):
         if pgroup is None:
             pgroup = self.pgroup
 
-        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno}/aux")
+        tmpdir = Path(f"/sf/bernina/data/{pgroup}/res/run_data/daq/run{runno:04d}/aux")
         ensure_dir(tmpdir)
         scanmonitorfile = tmpdir / Path("scan_monitor.pkl")
         if not Path(scanmonitorfile).exists():
