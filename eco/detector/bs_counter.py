@@ -605,7 +605,11 @@ class BsStreamCounter:
         handling), just scoped to this one counter's channels rather than
         a whole scan's monitors.
 
-        Sets ``self.stored_filename`` to the resulting path. No-op if
+        Sets ``self.stored_filename`` to the resulting path; leaves
+        ``self.last_arrays`` itself as the plain in-memory arrays already
+        built by ``_build_arrays`` (unlike ``CounterValue.store_arrays``,
+        this does not reload/replace them with file-backed handles after
+        writing -- see the comment below for why not). No-op if
         ``self.last_arrays`` is empty (nothing to store).
         """
         if not self.last_arrays:
@@ -640,13 +644,19 @@ class BsStreamCounter:
         self.stored_filename = path.resolve().as_posix()
         print(f"{self.name}: stored filename {self.stored_filename}")
 
-        # Re-open read-back handles (same as CounterValue.store_arrays) so
-        # self.last_arrays keeps working after this method returns rather
-        # than referencing data tied to the now-closed results_file.
-        d = DataSet.load_from_result_file(path)
-        for k in names:
-            self.last_arrays[k] = d.datasets[k]
-        d.results_file.close()
+        # Deliberately does NOT re-open/replace self.last_arrays[k] with a
+        # freshly reloaded, file-backed handle the way
+        # CounterValue.store_arrays does for its own ArrayTimestamps
+        # objects: escape.Array's own dataset wrapper (ArrayH5Dataset) is
+        # lazy for at least some attributes even past load_from_result_file
+        # (default lazy_loading=False notwithstanding), so a *second*
+        # load-then-close round-trip here left self.last_arrays holding
+        # objects tied to an already-closed h5py.File - any later access
+        # (e.g. arr._scan_parameter) raised deep inside h5py rather than
+        # working, found by actually reading last_arrays back after a real
+        # scan. The arrays already in self.last_arrays (from _build_arrays)
+        # are plain in-memory numpy-backed Array objects with no file
+        # dependency at all, so there is nothing to refresh - keep them.
 
     def close(self):
         """Unsubscribe every channel for good (the one deliberate use of
