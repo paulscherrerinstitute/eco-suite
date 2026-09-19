@@ -46,6 +46,7 @@ def _daq(**overrides):
     daq.live_parse_cache_max_polls = None
     daq.live_parse_cache_parse_version = None
     daq.live_parse_cache_log_dir = None
+    daq.broker_address_aux = None
     for k, v in overrides.items():
         setattr(daq, k, v)
     return daq
@@ -152,6 +153,16 @@ def test_launches_with_the_expected_command(fake_escape_supported, monkeypatch):
     assert "--run-number" in cmd and "42" in cmd
     assert "--pgroup" in cmd and "p12345" in cmd
     assert "--instrument" in cmd and "bernina" in cmd
+    # metadata-file always points at the writable res/ tree copy, zero-padded,
+    # never the default raw/-first search order (see _launch_live_parse_cache's
+    # docstring: raw/ is read-only for this account).
+    assert "--metadata-file" in cmd
+    metadata_file = cmd[cmd.index("--metadata-file") + 1]
+    assert metadata_file == (
+        "/sf/bernina/data/p12345/res/run_data/daq/run0042/aux/scan_info_rel.json"
+    )
+    # broker_address_aux defaults to None on a bare Daq.__new__ -> no flag
+    assert "--broker-address-aux" not in cmd
     # none of the optional knobs were set -> none of their flags appear
     assert "--poll-interval" not in cmd
     assert "--idle-polls-before-final-pass" not in cmd
@@ -180,6 +191,38 @@ def test_optional_knobs_are_passed_through_when_set(fake_escape_supported, monke
     assert "--idle-polls-before-final-pass" in cmd and "3" in cmd
     assert "--max-polls" in cmd and "100" in cmd
     assert "--parse-version" in cmd and "2" in cmd
+
+
+def test_broker_address_aux_is_forwarded_when_set(fake_escape_supported, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "eco.acquisition.daq_client.subprocess.Popen",
+        lambda cmd, **kw: captured.setdefault("cmd", cmd) or FakeProc(cmd),
+    )
+    daq = _daq(broker_address_aux="http://sf-daq:10003")
+    daq._launch_live_parse_cache(FakeScan(), "p12345", 42)
+
+    cmd = captured["cmd"]
+    assert "--broker-address-aux" in cmd
+    assert cmd[cmd.index("--broker-address-aux") + 1] == "http://sf-daq:10003"
+
+
+def test_metadata_file_run_number_is_zero_padded(fake_escape_supported, monkeypatch):
+    # Regression guard for the same class of bug fixed in end_scan_monitors
+    # (see test_daq_scan_monitors.py): every writable-path builder here must
+    # use the run{run_number:04d} convention, or the child looks for
+    # scan_info_rel.json in a directory eco never wrote it into.
+    captured = {}
+    monkeypatch.setattr(
+        "eco.acquisition.daq_client.subprocess.Popen",
+        lambda cmd, **kw: captured.setdefault("cmd", cmd) or FakeProc(cmd),
+    )
+    daq = _daq()
+    daq._launch_live_parse_cache(FakeScan(runno=7), "p12345", 7)
+
+    metadata_file = captured["cmd"][captured["cmd"].index("--metadata-file") + 1]
+    assert "run0007" in metadata_file
+    assert "/run7/" not in metadata_file
 
 
 def test_a_second_call_reuses_the_still_running_process(fake_escape_supported, monkeypatch):

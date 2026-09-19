@@ -1462,11 +1462,19 @@ class Daq(Assembly):
         separate script and never su/sudo to a different account: the
         child needs to inherit whatever account this Daq/session runs as,
         because that determines whether it can actually write the cache
-        file into the run's aux/ directory at all - a different account,
-        even one in the same pgroup, can fail there outright (see that
-        doc's own verified GPFS example). If it can't write, escape's own
-        writer logs one line per attempt and otherwise does nothing
-        harmful - never something this method needs to detect or handle.
+        file at all - a different account, even one in the same pgroup,
+        can fail there outright (see that doc's own verified GPFS
+        example). If it can't write, escape's own writer logs one line
+        per attempt and otherwise does nothing harmful - never something
+        this method needs to detect or handle.
+
+        Always passes an explicit --metadata-file pointing at the
+        writable res/run_data/daq/run<N>/aux/scan_info_rel.json copy
+        (never the raw/ tree's copy, which is read-only for this
+        account - see escape's daq_cache_writer docstring for the
+        OSError this used to hit), and --broker-address-aux (when set)
+        so the child uploads its cache file into raw/aux/ itself
+        afterward, the same copy_user_files call append_aux makes.
 
         Opt-in (self.live_parse_cache) and a no-op on any escape-fel
         without the feature yet (_live_parse_cache_supported), so turning
@@ -1484,6 +1492,18 @@ class Daq(Assembly):
             return existing
         if not _live_parse_cache_supported():
             return None
+        # Point the child at the writable res/run_data/daq/... copy of
+        # scan_info_rel.json (same convention _write_status_locally uses),
+        # never the default raw/-first search order: raw/ is a read-only
+        # GPFS mount for this account, and checknstore_parsing_result=
+        # "same_directory" writes its cache file right next to whichever
+        # scan_info file it was given. broker_address_aux lets the child
+        # upload that cache file into the run's raw/.../aux/ afterward,
+        # the same copy_user_files call append_aux makes.
+        metadata_file = (
+            f"/sf/{self.instrument or 'bernina'}/data/{pgroup}"
+            f"/res/run_data/daq/run{run_number:04d}/aux/scan_info_rel.json"
+        )
         cmd = [
             self.live_parse_cache_python or sys.executable,
             "-m", "escape.swissfel.live_reduce",
@@ -1491,7 +1511,10 @@ class Daq(Assembly):
             "--run-number", str(run_number),
             "--pgroup", pgroup,
             "--instrument", self.instrument or "bernina",
+            "--metadata-file", metadata_file,
         ]
+        if self.broker_address_aux:
+            cmd += ["--broker-address-aux", self.broker_address_aux]
         if self.live_parse_cache_poll_interval is not None:
             cmd += ["--poll-interval", str(self.live_parse_cache_poll_interval)]
         if self.live_parse_cache_idle_polls is not None:
