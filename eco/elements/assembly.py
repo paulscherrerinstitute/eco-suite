@@ -1128,7 +1128,7 @@ class Assembly:
             stat = self.get_status()
             tmppath = Path("/tmp")
             filepath = tmppath / Path(
-                f"status_{self.alias.get_full_name}_{datetime.now().isoformat()}.json"
+                f"status_{self.alias.get_full_name()}_{datetime.now().isoformat()}.json"
             )
             with open(filepath, "w") as f:
                 # json.dump(stat, f, cls=NumpyEncoder, indent=4)

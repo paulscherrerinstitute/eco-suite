@@ -33,6 +33,16 @@ namespace.append_obj(
 namespace.append_obj(
     "Elog",
     "https://elog-gfa.psi.ch/Bernina",
+    # The gopass-stored password (bernina/elog/elog-password) belongs to
+    # the shared gac-bernina account, not individual personal PSI
+    # accounts - getDefaultElogInstance defaults user to the current OS
+    # user (whoami), which pairs a real password with the wrong username
+    # and always fails auth (server just returns its login page, which
+    # the installed elog package's outdated `type=password` check doesn't
+    # even recognize as an auth error - see LogbookInvalidMessageID).
+    # Pin it explicitly for now; this classic PSI/GFA elog is expected to
+    # be deprecated soon in favor of scilog, so not worth a deeper fix.
+    user="gac-bernina",
     screenshot_directory="/tmp",
     name="elog_gfa",
     module_name="eco.utilities.elog",
