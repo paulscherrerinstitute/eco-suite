@@ -183,7 +183,7 @@ class Daq(Assembly):
         use_running_status_server=True,
         speak_run_number=False,
         sound_alerts=False,
-        live_parse_cache=False,
+        live_parse_cache=True,
         live_parse_cache_python=None,
         live_parse_cache_poll_interval=None,
         live_parse_cache_idle_polls=None,
@@ -319,14 +319,17 @@ class Daq(Assembly):
         # both _play_sound calls in check_checker_before_step (cowbell on
         # going unhappy, posthorn on resuming), live-toggleable.
         self.sound_alerts = sound_alerts
-        # Off by default: launches escape-fel's optional live parse-cache
-        # warmer (escape.swissfel.live_reduce --mode daq-cache) as a child
-        # of this process once per scan - see _launch_live_parse_cache's own
-        # docstring. Live-toggleable like the others above; also a no-op
-        # regardless of this flag until the installed escape-fel actually
-        # has the feature (checked at launch time, not here, since the
-        # installed escape-fel could change between Daq construction and a
-        # given scan).
+        # On by default (2026-09-19, this checkout only - not yet the
+        # production default): launches escape-fel's optional live
+        # parse-cache warmer (escape.swissfel.live_reduce --mode
+        # daq-cache) as a child of this process once per scan - see
+        # _launch_live_parse_cache's own docstring. Live-toggleable like
+        # the others above; also a no-op regardless of this flag until
+        # the installed escape-fel actually has the feature (checked at
+        # launch time, not here, since the installed escape-fel could
+        # change between Daq construction and a given scan) - so turning
+        # this on is safe even against an escape-fel checkout that
+        # predates the feature.
         self.live_parse_cache = live_parse_cache
         self.live_parse_cache_python = live_parse_cache_python
         self.live_parse_cache_poll_interval = live_parse_cache_poll_interval
