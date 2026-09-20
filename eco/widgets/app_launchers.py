@@ -50,6 +50,7 @@ def _calling_namespace():
 
 def start_desktop(
     theme=None,
+    touch=None,
     link_terminal=True,
     scope=None,
     lazy=True,
@@ -87,6 +88,11 @@ def start_desktop(
     workspace), just without the browsable panel taking up screen space.
     Both the Console and Namespace docks are also closable at any time from
     their own title bar, if you only want to drop one mid-session.
+
+    touch=True (or ECO_QT_TOUCH=1 in the environment): wider dock/splitter
+    grab handles and bigger buttons/checkboxes/scrollbars, for touch-screen
+    use -- layers on top of `theme` (including theme=None/native), doesn't
+    change colors. See eco.widgets.qt_theme.apply_modern_theme.
     """
     from eco.widgets.desktop_app import EcoDesktopApp, build_namespace
 
@@ -98,6 +104,7 @@ def start_desktop(
     return EcoDesktopApp(
         namespace,
         theme=theme,
+        touch=touch,
         link_terminal=link_terminal,
         auto_start=True,
         scope=scope,

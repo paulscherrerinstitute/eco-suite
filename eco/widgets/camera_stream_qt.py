@@ -28,6 +28,8 @@ import threading
 
 from qtpy import QtCore, QtGui, QtWidgets
 
+from .camserver_stream_qt import compute_fit_scale
+
 _app_ref = None  # keep a strong reference to any QApplication we create ourselves
 
 
@@ -42,10 +44,15 @@ _ZOOM_OUT_STEP = 67  # ~100/150, so wheel-in then wheel-out roughly cancels
 
 class _StreamLabel(QtWidgets.QLabel):
     """QLabel that reports clicks, drag-rectangles and zoom gestures in its
-    own (unscaled) pixel coordinates -- since the label is never scaled
-    relative to the pixmap it displays, those map 1:1 onto the source video
-    frame. Left click/drag zoom in (see clicked/dragged); the wheel and
-    right-click are the only way to zoom back out (see zoomed)."""
+    own pixel coordinates -- always the coordinate space of whatever
+    pixmap is currently displayed (see AxisPTZStreamQt._render_tick,
+    which keeps the label's size exactly matched to that pixmap), not
+    necessarily the raw video frame's own resolution. AxisPTZStreamQt's
+    _on_click/_on_drag/_on_zoom pass the matching displayed size through
+    to AxisPTZ, which only uses it proportionally, so this stays correct
+    at any display scale. Left click/drag zoom in (see clicked/dragged);
+    the wheel and right-click are the only way to zoom back out (see
+    zoomed)."""
 
     clicked = QtCore.Signal(int, int)
     dragged = QtCore.Signal(int, int, int, int)
@@ -104,6 +111,12 @@ class _StreamLabel(QtWidgets.QLabel):
 class AxisPTZStreamQt:
     """Live-video Qt window for one AxisPTZ camera. See module docstring."""
 
+    #: how often _render_tick redraws the latest frame at the window's
+    #: *current* size -- independent of the stream's own fps (see
+    #: _render_tick), so dragging the window border rescales smoothly even
+    #: if the camera stream stalls or fps is low.
+    _RENDER_INTERVAL_MS = 100
+
     def __init__(
         self, cam, codec="mjpeg", resolution=None, compression=50, fps=10, auto_start=True
     ):
@@ -113,7 +126,17 @@ class AxisPTZStreamQt:
         self.compression = compression
         self.fps = fps
         self.window = None
-        self._frame_size = None  # (w, h) of the most recent frame
+        self._frame_size = None  # (w, h) of the most recent raw frame
+        # (w, h) of the pixmap actually on screen right now -- the
+        # coordinate space _StreamLabel reports clicks in, and so what
+        # _on_click/_on_drag/_on_zoom must pass as image_width/
+        # image_height (see _render_tick and AxisPTZ._to_sensor_xy's own
+        # docstring: those commands are resolution-independent, just
+        # proportional within whatever (x, y, image_width, image_height)
+        # they're given, so scaling the display doesn't break them as
+        # long as this stays in sync with what's actually drawn)
+        self._displayed_size = None
+        self._last_qimage = None  # most recent raw (unscaled) frame
         self._stop_event = threading.Event()
         self._stream_thread = None
         self._memory_browser = None  # lazily-built "Memories" sub-window
@@ -140,7 +163,19 @@ class AxisPTZStreamQt:
         self._label.clicked.connect(self._on_click)
         self._label.dragged.connect(self._on_drag)
         self._label.zoomed.connect(self._on_zoom)
-        layout.addWidget(self._label)
+
+        # Scrollable viewport, same technique (and same reason) as
+        # eco.widgets.camserver_stream_qt.CamServerStreamQt: the label
+        # itself is kept at a fixed size (see _render_tick) matching
+        # whatever's actually being displayed, so it has to sit in
+        # something whose own size is free to track the window/dock
+        # instead -- .viewport().width()/height() is what _render_tick
+        # fits the image into on every resize, decoupled from the label's
+        # own (fixed) size entirely.
+        self._scroll_area = QtWidgets.QScrollArea()
+        self._scroll_area.setWidget(self._label)
+        self._scroll_area.setWidgetResizable(False)
+        layout.addWidget(self._scroll_area)
 
         controls = QtWidgets.QHBoxLayout()
         home_btn = QtWidgets.QPushButton("Home")
@@ -195,6 +230,14 @@ class AxisPTZStreamQt:
         self._stream_thread = threading.Thread(target=self._stream_loop, daemon=True)
         self._stream_thread.start()
 
+        # Redraws the latest frame at the scroll area's *current* size on
+        # a fixed schedule -- not driven by frame arrival -- so dragging
+        # the window border rescales the image smoothly even between
+        # frames (or if the stream stalls). See _render_tick.
+        self._render_timer = QtCore.QTimer(self.window)
+        self._render_timer.timeout.connect(self._render_tick)
+        self._render_timer.start(self._RENDER_INTERVAL_MS)
+
         self.window.show()
 
     def _stream_loop(self):
@@ -226,19 +269,35 @@ class AxisPTZStreamQt:
                 self._stop_event.wait(2.0)
 
     def _apply_frame(self, payload):
-        # runs on the GUI thread (queued signal) - safe to touch widgets here,
-        # *except* a frame emitted just before stop()/window close can still
-        # be delivered after the window (and self._label's underlying Qt
-        # object) is gone -- both guards below are belt-and-suspenders
-        # against that harmless-but-noisy teardown race
+        # runs on the GUI thread (queued signal) -- just caches the raw
+        # frame; _render_tick (a fixed-schedule QTimer, not this signal)
+        # is what actually draws it, so a resize between frames still
+        # rescales the same last frame instead of waiting for the next one
         if self.window is None:
             return
         qimage, w, h = payload
         self._frame_size = (w, h)
-        pixmap = QtGui.QPixmap.fromImage(qimage)
+        self._last_qimage = qimage
+
+    def _render_tick(self):
+        # *except* this can still fire once just after stop()/window close
+        # (a queued QTimer tick racing the window teardown) -- both guards
+        # below are belt-and-suspenders against that harmless-but-noisy race
+        if self.window is None or self._last_qimage is None:
+            return
+        w, h = self._frame_size
+        viewport = self._scroll_area.viewport()
+        scale = compute_fit_scale(viewport.width(), viewport.height(), w, h)
+        pixmap = QtGui.QPixmap.fromImage(self._last_qimage).scaled(
+            max(1, round(w * scale)),
+            max(1, round(h * scale)),
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
+        )
         try:
             self._label.setPixmap(pixmap)
             self._label.setFixedSize(pixmap.size())
+            self._displayed_size = (pixmap.width(), pixmap.height())
         except RuntimeError:
             pass  # label's underlying Qt object was deleted mid-teardown
 
@@ -255,21 +314,26 @@ class AxisPTZStreamQt:
         threading.Thread(target=fn, args=args, daemon=True).start()
 
     def _on_click(self, x, y):
-        if self._frame_size is None:
+        # x, y come from _StreamLabel in *its own* (displayed, possibly
+        # scaled) pixel space -- pass the matching displayed size, not the
+        # raw frame's, as image_width/image_height. AxisPTZ.click_center
+        # (via _to_sensor_xy) only uses these proportionally, so this is
+        # correct at any display scale (see _render_tick).
+        if self._displayed_size is None:
             return
-        w, h = self._frame_size
+        w, h = self._displayed_size
         self._dispatch(self.cam.click_center, x, y, w, h)
 
     def _on_drag(self, x0, y0, x1, y1):
-        if self._frame_size is None:
+        if self._displayed_size is None:
             return
-        w, h = self._frame_size
+        w, h = self._displayed_size
         self._dispatch(self.cam.zoom_to_rectangle, x0, y0, x1, y1, w, h)
 
     def _on_zoom(self, x, y, z):
-        if self._frame_size is None:
+        if self._displayed_size is None:
             return
-        w, h = self._frame_size
+        w, h = self._displayed_size
         self._dispatch(self.cam.area_zoom, x, y, z, w, h)
 
     def _open_settings(self):
@@ -384,6 +448,12 @@ class AxisPTZStreamQt:
         the same for its own memory browser)."""
         self._stop_event.set()
         self._stream_thread = None
+        render_timer = getattr(self, "_render_timer", None)
+        if render_timer is not None:
+            try:
+                render_timer.stop()
+            except RuntimeError:
+                pass  # underlying Qt object already gone
         if self._memory_browser is not None:
             try:
                 self._memory_browser.window.close()

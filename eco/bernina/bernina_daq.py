@@ -91,10 +91,12 @@ _ECO_STATUS_SERVER_DEFAULT = "http://saresb-cons-04:8091"
 _status_server = os.environ.get("ECO_STATUS_SERVER", _ECO_STATUS_SERVER_DEFAULT)
 if _status_server.strip().lower() in ("", "off", "none", "false", "0"):
     _status_server = None
-if _status_server:
-    print(f"daq: taking run status from status server {_status_server} "
-          "(set ECO_STATUS_SERVER=off in the shell before starting this "
-          "session to always use the local namespace instead)")
+# The "daq: taking run status from status server ..." message itself is
+# printed by Daq.__init__ (eco/acquisition/daq_client.py), not here - this
+# module runs at namespace-build time regardless of Daq's lazy=True below, so
+# printing here would announce the status server on every session (e.g. one
+# that only ever opens camera widgets and never touches bernina.daq) instead
+# of only when Daq is actually instantiated.
 
 # Namespace-level handle for the same server: bernina.status_server.status()/
 # .gui()/.restart()/.reinit(), plus the recording settings (mode, throttle

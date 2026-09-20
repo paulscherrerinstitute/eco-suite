@@ -117,6 +117,16 @@ def get_memory(name):
 
 
 class Memory:
+    # `_log_deadband_sample` keeps only the most recent
+    # `DEADBAND_LOG_MAX_SAMPLES` convergence misses per component (a rolling
+    # window rather than an all-time max, so one freak outlier -- a stalled
+    # motor, a comms glitch -- ages out instead of permanently inflating the
+    # tolerance). `get_deadband` derives the tolerance actually used for
+    # comparisons as `DEADBAND_MULTIPLIER` times the largest sample still in
+    # that window.
+    DEADBAND_LOG_MAX_SAMPLES = 20
+    DEADBAND_MULTIPLIER = 1.5
+
     def __init__(
         self,
         obj,
@@ -174,6 +184,24 @@ class Memory:
         )
         self._presets = AdjustableFS(
             self.dir / Path("presets.json"),
+            default_value={},
+            group_writable=group_writable,
+        )
+        # deadband_log.json: {dotted_name: [abs(readback-target), ...]} --
+        # rolling window of observed post-recall convergence misses, per
+        # component, feeding `get_deadband`. last_recall.json: {dotted_name:
+        # {"value", "date", "memory_date", "message"}} -- the most recent
+        # value `recall()` actually applied to that component, feeding
+        # `recall_status_str`. Both are best-effort (see `_log_deadband_sample`/
+        # `_record_last_recall`): a write failure here must never abort an
+        # otherwise-successful recall.
+        self._deadband_log = AdjustableFS(
+            self.dir / Path("deadband_log.json"),
+            default_value={},
+            group_writable=group_writable,
+        )
+        self._last_recall = AdjustableFS(
+            self.dir / Path("last_recall.json"),
             default_value={},
             group_writable=group_writable,
         )
@@ -734,6 +762,281 @@ class Memory:
             rec.update(mem.get(name, {}))
         return rec
 
+    def get_deadband(self, key, default=0):
+        """Learned comparison tolerance for component `key`: `DEADBAND_MULTIPLIER`
+        times the largest convergence miss recorded for it in the rolling
+        window `_log_deadband_sample` maintains, or `default` (0 -- exact
+        equality only) if nothing has been logged for it yet.
+        """
+        try:
+            self.setup_path()
+            samples = self._deadband_log().get(key, [])
+            if not samples:
+                return default
+            return max(samples) * self.DEADBAND_MULTIPLIER
+        except Exception:
+            return default
+
+    def _compare_to_memory(self, key, present_value, recall_value):
+        """Compare a present value against a memorized one, treating
+        anything within `key`'s learned deadband (`get_deadband`) as
+        unchanged rather than requiring exact equality -- used both for
+        display (`get_memory_difference_str`, `select_from_memory`) and for
+        `recall()`'s own `set_changes_only` skip.
+
+        Returns `(changed, symbol, diff)`:
+        - exact match: `(False, "==", 0)`
+        - within deadband but not exact: `(False, "@", diff)` -- `diff` is
+          `recall_value - present_value`, kept so a caller can still show
+          the residual even though this counts as "unchanged".
+        - genuinely different: `(True, None, diff)`.
+        - not subtractable (e.g. strings/enums): `(True, None, None)` if
+          different, matching the exact-equality-only behavior this had
+          before deadbands existed.
+        """
+        if present_value == recall_value:
+            return False, "==", 0
+        try:
+            diff = recall_value - present_value
+        except TypeError:
+            return True, None, None
+        deadband = self.get_deadband(key)
+        if deadband and abs(diff) <= deadband:
+            return False, "@", diff
+        return True, None, diff
+
+    def _record_last_recall(self, key, value, mem):
+        """Best-effort record of the value `recall()` just applied to
+        component `key`, so `recall_status_str` can later report how close
+        a live readback still is to it. A write failure (e.g. permissions
+        on a shared memory tree) is reported but never raised -- it must
+        not abort an otherwise-successful recall.
+        """
+        try:
+            data = self._last_recall()
+            message = None
+            memory_date = mem.get("date") if isinstance(mem, dict) else None
+            if memory_date:
+                message = self._memories().get(memory_date, {}).get("message")
+            data[key] = {
+                "value": value,
+                "date": datetime.now().isoformat(),
+                "memory_date": memory_date,
+                "message": message,
+            }
+            self._last_recall(data)
+        except Exception as e:
+            print(f"Could not record last-recall value for {key}: {e}")
+
+    def _log_deadband_sample(self, key, diff):
+        """Best-effort append of one observed |readback-target| convergence
+        sample for `key`, capping the kept history at
+        `DEADBAND_LOG_MAX_SAMPLES` most recent samples. Never raises."""
+        try:
+            data = self._deadband_log()
+            samples = data.get(key, [])
+            samples.append(diff)
+            data[key] = samples[-self.DEADBAND_LOG_MAX_SAMPLES :]
+            self._deadband_log(data)
+        except Exception as e:
+            print(f"Could not log deadband sample for {key}: {e}")
+
+    def _log_convergence(self, change_meta):
+        """For every (key, target, adjustable) `recall()` just finished
+        waiting on, compare the final readback to the requested target and
+        log the miss (see `_log_deadband_sample`) -- learning, over repeated
+        recalls, how far off a "successful" move for that specific
+        component actually tends to land. Skipped per-item for anything
+        unreadable or not subtractable; never raises into `recall()`.
+        """
+        for key, target, to in change_meta:
+            try:
+                diff = abs(to.get_current_value() - target)
+            except Exception:
+                continue
+            self._log_deadband_sample(key, diff)
+
+    def _own_recall_status(self, keys=None):
+        """Structured `(key, changed, symbol, diff, label, error)` tuples --
+        one per component of *this* object's own `last_recall` record
+        (`_record_last_recall`) -- comparing its current live value against
+        the value most recently recalled onto it, via `_compare_to_memory`
+        (so the deadband logged for that same key, on this same `Memory`,
+        applies). `error` (a message string) is set instead when the
+        current value can't be read; `symbol`/`diff` are `None`-safe as in
+        `_compare_to_memory`. Never raises. See `recall_status_str` for the
+        public, tree-aware, formatted entry point built on top of this.
+        """
+        self.setup_path()
+        last = self._last_recall()
+        if keys is None:
+            keys = list(last.keys())
+        elif isinstance(keys, str):
+            keys = [keys]
+        out = []
+        for key in keys:
+            entry = last.get(key)
+            if entry is None:
+                continue
+            label = entry.get("message") or entry.get("memory_date") or "?"
+            try:
+                current = name2obj(self.obj_parent(), key).get_current_value()
+            except Exception as e:
+                out.append((key, None, None, None, label, str(e)))
+                continue
+            changed, symbol, diff = self._compare_to_memory(key, current, entry["value"])
+            out.append((key, changed, symbol, diff, label, None))
+        return out
+
+    def _iter_descendant_memories(self):
+        """`(relative_prefix, memory)` for every descendant of this object,
+        at any depth, that has its own `Memory` -- reusing
+        `status_collection.get_list()` (already flattens the whole subtree
+        recursively, the same way `get_status`/`get_failed_components` do)
+        rather than walking `__dict__` by hand. `relative_prefix` is that
+        descendant's dotted name relative to this object
+        (`Alias.get_full_name(base=...)`). Only reaches components actually
+        appended via `Assembly._append` -- same limitation the reused
+        `get_list()` already has. Best-effort: a broken alias/status_collection
+        on one item is skipped rather than aborting the whole walk.
+        """
+        obj = self.obj_parent()
+        try:
+            items = obj.status_collection.get_list()
+        except Exception:
+            return
+        seen = set()
+        for item in items:
+            submem = getattr(item, "memory", None)
+            if submem is None or submem is self or id(submem) in seen:
+                continue
+            seen.add(id(submem))
+            try:
+                prefix = item.alias.get_full_name(base=obj)
+            except Exception:
+                continue
+            yield prefix, submem
+
+    def _ancestor_recall_status(self):
+        """`[[(rel_key, changed, symbol, diff, label, error), ...], ...]`,
+        one inner list per ancestor assembly (`ancestor_memories()`) that
+        has recalled *into this object's own subtree* as part of a bigger,
+        higher-level recall -- e.g. some `beamline.memory.recall(...)`
+        covering many sub-devices, rather than this object's own
+        `.memory.recall(...)`. Slices that ancestor's `last_recall` down to
+        keys prefixed by this object's dotted path under it (mirroring
+        `get_ancestor_recall_dict`'s prefix logic, applied to
+        `last_recall.json` instead of a stored memory entry), and re-keys
+        them relative to this object.
+
+        The comparison (and therefore the deadband used) is done via the
+        *ancestor's* `_compare_to_memory`, keyed by the ancestor-relative
+        name -- that's the `Memory` instance whose `recall()` actually ran
+        and whose deadband log actually has samples for that name; this
+        object's own (likely empty) deadband log for the same component,
+        under its own shorter relative name, is a different key entirely.
+        """
+        obj = self.obj_parent()
+        out = []
+        for ancestor, ancestor_memory in self.ancestor_memories():
+            if ancestor_memory is self:
+                continue
+            try:
+                ancestor_memory.setup_path()
+                anc_last = ancestor_memory._last_recall()
+                prefix = obj.alias.get_full_name(base=ancestor) + "."
+            except Exception:
+                continue
+            entries = []
+            for full_key, entry in anc_last.items():
+                if not full_key.startswith(prefix):
+                    continue
+                rel_key = full_key[len(prefix) :]
+                label = entry.get("message") or entry.get("memory_date") or "?"
+                try:
+                    current = name2obj(obj, rel_key).get_current_value()
+                except Exception as e:
+                    entries.append((rel_key, None, None, None, label, str(e)))
+                    continue
+                changed, symbol, diff = ancestor_memory._compare_to_memory(
+                    full_key, current, entry["value"]
+                )
+                entries.append((rel_key, changed, symbol, diff, label, None))
+            if entries:
+                out.append(entries)
+        return out
+
+    @staticmethod
+    def _format_status_line(key, changed, symbol, diff, label, error):
+        if error is not None:
+            return f"{key}: (could not read current value: {error})"
+        if not changed:
+            return f"{key}: @ memory ({label})"
+        if diff is None:
+            return f"{key}: differs from memory ({label})"
+        return f"{key}: close to memory ({label}), deviating by {diff:+g}"
+
+    def recall_status_str(self, keys=None, include_subassemblies=True, include_parents=True):
+        """Compare current live values against the memory value most
+        recently recalled onto them, using each component's learned
+        deadband (`get_deadband`) to decide whether it's still effectively
+        "at" that memory or has since drifted away from it.
+
+        Looks in three places, so a sub-assembly shows as "at a memory"
+        whether it was recalled through its own `.memory` or as part of a
+        bigger, higher-level assembly's recall:
+        - this object's own `last_recall` record (`_own_recall_status`);
+        - every descendant sub-assembly's own `last_recall` record, at any
+          depth (`_iter_descendant_memories`), prefixed with its relative
+          name;
+        - the slice of any ancestor assembly's `last_recall` record that
+          falls under this object's own subtree (`_ancestor_recall_status`),
+          re-keyed relative to this object.
+        A dotted name that appears in more than one source keeps only the
+        first (own record, then sub-assembly, then ancestor slice -- most
+        specific/direct first).
+
+        keys (str, iterable of str, or None, optional): restrict this to
+            specific dotted component names on *this* object only -- skips
+            the sub-assembly/ancestor walk entirely, same as before those
+            existed. `None` (default) reports on everything found.
+        include_subassemblies / include_parents (bool, optional): opt out
+            of either extra source; both default to True. Ignored (treated
+            as if both False) when `keys` is given.
+
+        Returns one line per component: `"<key>: @ memory (<message>)"` if
+        within deadband (or exactly equal), `"<key>: close to memory
+        (<message>), deviating by <diff>"` otherwise. Components whose
+        current value can't be read are noted rather than skipped; nothing
+        with a recorded last recall anywhere in scope returns
+        `"No recall history recorded."`.
+        """
+        lines = []
+        seen_keys = set()
+
+        def _add(key, changed, symbol, diff, label, error):
+            if key in seen_keys:
+                return
+            seen_keys.add(key)
+            lines.append(self._format_status_line(key, changed, symbol, diff, label, error))
+
+        for key, changed, symbol, diff, label, error in self._own_recall_status(keys):
+            _add(key, changed, symbol, diff, label, error)
+
+        if keys is None:
+            if include_subassemblies:
+                for prefix, submem in self._iter_descendant_memories():
+                    for key, changed, symbol, diff, label, error in submem._own_recall_status():
+                        full_key = f"{prefix}.{key}" if prefix else key
+                        _add(full_key, changed, symbol, diff, label, error)
+
+            if include_parents:
+                for entries in self._ancestor_recall_status():
+                    for rel_key, changed, symbol, diff, label, error in entries:
+                        _add(rel_key, changed, symbol, diff, label, error)
+
+        return "\n".join(lines) if lines else "No recall history recorded."
+
     def recall(
         self,
         memory_index=None,
@@ -782,6 +1085,12 @@ class Memory:
         Returns:
             _type_: _description_
         """
+        # unconditionally (not just via get_memory's own no-input_obj
+        # branch): _record_last_recall/_log_convergence below need
+        # self._last_recall/self._deadband_log set up even when this recall
+        # comes from an input_obj dict/file rather than this object's own
+        # stored memory list.
+        self.setup_path()
         if change_serially is None:
             change_serially = self.change_serially
         # if input_obj:
@@ -832,22 +1141,30 @@ class Memory:
                 return
 
         changes = []
+        change_meta = []  # (key, target, adjustable), parallel to changes
         for sel, (key, val) in zip(select, rec.items()):
             if sel:
                 to = name2obj(self.obj_parent(), key)
+                current = to.get_current_value()
                 if set_changes_only:
-                    if to.get_current_value() == val:
+                    changed, _, _ = self._compare_to_memory(key, current, val)
+                    if not changed:
                         continue
-                print(f"Changing {key} from {to.get_current_value()} to {val}")
+                print(f"Changing {key} from {current} to {val}")
                 if "check" in getargspec(to.set_target_value).args:
                     changes.append(to.set_target_value(val, check=check_limits))
                 else:
                     changes.append(to.set_target_value(val))
+                change_meta.append((key, val, to))
+                self._record_last_recall(key, val, mem)
                 if change_serially:
                     changes[-1].wait()
         if wait:
             for change in changes:
                 change.wait()
+            # only after waiting is the readback meaningful -- see
+            # `_log_convergence`.
+            self._log_convergence(change_meta)
             return
         else:
             return changes
@@ -895,31 +1212,31 @@ class Memory:
                 tselstr = "x"
             else:
                 tselstr = " "
-            if present_value == recall_value:
-                changed = False
+            changed, symbol, diff = self._compare_to_memory(
+                key, present_value, recall_value
+            )
+            if not changed:
+                # "==" exact match, "@" within this component's learned
+                # deadband (get_deadband) -- still shown with the residual
+                # so it's clear it's not a bit-for-bit match.
+                disp = "==" if symbol == "==" else f"@{diff:+g}"
                 if tablefmt == "html":
-                    comp_indicator = "=="
+                    comp_indicator = disp
                 else:
                     comp_indicator = (
                         colorama.Fore.GREEN
                         + colorama.Style.BRIGHT
-                        + "=="
+                        + disp
                         + colorama.Style.RESET_ALL
                     )
             else:
-                changed = True
                 if not tsel:
-                    try:
-                        comp_indicator = (
-                            f"not changed ({recall_value-present_value:+g})"
-                        )
-                    except:
-                        comp_indicator = f"not changed"
+                    if diff is None:
+                        comp_indicator = "not changed"
+                    else:
+                        comp_indicator = f"not changed ({diff:+g})"
                 else:
-                    try:
-                        tdiff = f"{recall_value - present_value:+g}"
-                    except TypeError:
-                        tdiff = "special"
+                    tdiff = f"{diff:+g}" if diff is not None else "special"
                     if tablefmt == "html":
                         comp_indicator = f"{tdiff:s}"
                     else:
@@ -980,15 +1297,24 @@ class Memory:
 
         # rows actually shown, post show_changes_only filtering: (orig
         # index into `names`, name, present, recall_value, changed,
-        # available)
+        # available, symbol, diff) -- symbol/diff from `_compare_to_memory`,
+        # "@" meaning within the component's learned deadband rather than
+        # an exact match.
         rows = []
         for i, (name, recall_value) in enumerate(recall_dict.items()):
             available = name in present_values
             present_value = present_values.get(name)
-            changed = available and present_value != recall_value
+            if available:
+                changed, symbol, diff = self._compare_to_memory(
+                    name, present_value, recall_value
+                )
+            else:
+                changed, symbol, diff = True, None, None
             if show_changes_only and not changed:
                 continue
-            rows.append((i, name, present_value, recall_value, changed, available))
+            rows.append(
+                (i, name, present_value, recall_value, changed, available, symbol, diff)
+            )
 
         if not rows:
             print("No changes compared to memory!")
@@ -997,23 +1323,22 @@ class Memory:
         name_w = max(len(r[1]) for r in rows)
         present_w = max(len(str(r[2])) for r in rows)
 
-        def _row_text(name, present, recall_value, changed, available):
+        def _row_text(name, present, recall_value, changed, available, symbol, diff):
             if not available:
-                diff = "?"
+                diffstr = "?"
             elif not changed:
-                diff = "=="
+                diffstr = "==" if symbol == "==" else f"@{diff:+g}"
             else:
-                try:
-                    diff = f"{recall_value - present:+g}"
-                except TypeError:
-                    diff = "changed"
+                diffstr = f"{diff:+g}" if diff is not None else "changed"
             present_str = str(present) if available else "?"
             return (
                 f"{name:<{name_w}}  present: {present_str:>{present_w}}  "
-                f"diff: {diff:^9}  memory: {recall_value}"
+                f"diff: {diffstr:^9}  memory: {recall_value}"
             )
 
-        entries = [_row_text(r[1], r[2], r[3], r[4], r[5]) for r in rows]
+        entries = [
+            _row_text(r[1], r[2], r[3], r[4], r[5], r[6], r[7]) for r in rows
+        ]
 
         picked = _checklist_menu(
             entries,
@@ -1029,6 +1354,201 @@ class Memory:
         for vis_idx, row in enumerate(rows):
             select[row[0]] = vis_idx in picked
         return select
+
+    def get_memory_status(
+        self, selection=None, top_n=None, max_entries=50, tablefmt="plain"
+    ):
+        """Rank *every* stored memory entry by how close the current live
+        state actually is to it -- unlike `recall_status_str` (which only
+        knows about the value most recently *recalled*), this reads and
+        compares against this object's entire `memorize()` history, so it
+        also finds a good match that was captured but never actually
+        recalled, or notices the live state has drifted onto some other
+        old memory entirely.
+
+        Ranking priority (matching how a human would eyeball "which memory
+        am I basically at right now"):
+        1. most matching values first -- exact or within that component's
+           learned deadband (`get_deadband`/`_compare_to_memory`);
+        2. most recent memory first, among ties on (1);
+        3. smallest aggregate deviation among the *non*-matching values, as
+           the final tiebreak. Each mismatch is scored as `|diff| /
+           deadband` when a deadband has been learned for that component
+           (a dimensionless "how many tolerances off" number, comparable
+           across differently-scaled quantities) or the raw `|diff|`
+           otherwise -- a cruder, unit-mixing fallback used only because
+           nothing better is available yet for that component -- summed
+           per entry.
+
+        selection (optional): passed to `get_recall_dict` for every entry
+            (default `None` -- this object's own `categories["recall"]`,
+            exactly what `recall()` itself would consider; pass `"all"` to
+            also weigh in track/display-only fields a given entry
+            captured).
+        top_n (int, optional): only rank/display this many top rows.
+            Default: every scanned entry (see `max_entries`).
+        max_entries (int or None, optional): only *scan* the `max_entries`
+            most recently written stored entries (default 50), rather than
+            this object's entire memorize() history -- see the cost note
+            below for why. Pass `None` to scan every stored entry
+            regardless of how far back it goes.
+        tablefmt: passed straight to `format_table` (e.g. "html" for the
+            eventual memory-widget use of this; colored ANSI otherwise).
+
+        Returns a table (one row per ranked entry: date, message, "matches
+        m/n" and an aggregate "deviation" score, plus the single biggest
+        remaining miss) -- a summary first, terminal-only for now; per-key
+        detail for any one entry is still `get_memory_difference_str(
+        memory.get_memory(key=...))`.
+
+        Cost note: the dominant cost is one JSON file read per *scanned*
+        entry (bounded by `max_entries`, not by the full history size --
+        a heavily-memorized device like a KB mirror can accumulate
+        hundreds of entries over its lifetime, which made every call scan
+        and reread all of them before `max_entries` existed), plus one
+        concurrent prefetch (`_prefetch_present_values`) of every distinct
+        live value referenced by a scanned entry. Entries already read
+        once by a previous call on this same `Memory` instance are cached
+        (`_entry_full_cache`) for the rest of the process's lifetime --
+        safe because a stored entry's file is never rewritten once
+        `memorize()` has written it -- so only entries not seen before
+        (typically just newly memorized ones) actually cost a file read on
+        a repeat call; those are read concurrently, same idea as
+        `_prefetch_present_values`.
+        """
+        self.setup_path()
+        mem_index = self._memories()
+        if not mem_index:
+            return "No stored memories."
+
+        try:
+            keys = sorted(
+                mem_index.keys(), key=lambda k: datetime.fromisoformat(k), reverse=True
+            )
+        except ValueError:
+            keys = list(reversed(mem_index.keys()))
+        if max_entries:
+            keys = keys[:max_entries]
+
+        if not hasattr(self, "_entry_full_cache"):
+            self._entry_full_cache = {}
+
+        def _load(key):
+            if key in self._entry_full_cache:
+                return self._entry_full_cache[key]
+            try:
+                full = self.get_memory(key=key)
+            except Exception:
+                return None
+            self._entry_full_cache[key] = full
+            return full
+
+        to_fetch = [k for k in keys if k not in self._entry_full_cache]
+        if to_fetch:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=min(8, len(to_fetch))) as ex:
+                list(ex.map(_load, to_fetch))
+
+        loaded = []  # (key, message, recall_dict)
+        for key in keys:
+            full = _load(key)
+            if full is None:
+                continue
+            try:
+                rec = self.get_recall_dict(full, selection=selection)
+            except Exception:
+                continue
+            loaded.append((key, mem_index[key].get("message", "") or "", rec))
+
+        if not loaded:
+            return "No stored memories could be read."
+
+        present_values = self._prefetch_present_values(
+            itertools.chain.from_iterable(rec.keys() for _, _, rec in loaded)
+        )
+
+        ranked = []
+        for key, message, rec in loaded:
+            matches = 0
+            total = 0
+            penalty = 0.0
+            mismatches = []  # (name, diff_or_None, penalty_contribution)
+            for name, recall_value in rec.items():
+                if name not in present_values:
+                    continue
+                total += 1
+                present_value = present_values[name]
+                changed, symbol, diff = self._compare_to_memory(
+                    name, present_value, recall_value
+                )
+                if not changed:
+                    matches += 1
+                    continue
+                if diff is not None:
+                    deadband = self.get_deadband(name)
+                    contribution = abs(diff) / deadband if deadband else abs(diff)
+                else:
+                    contribution = 1.0  # non-numeric mismatch: fixed unit penalty
+                penalty += contribution
+                mismatches.append((name, diff, contribution))
+            try:
+                date = datetime.fromisoformat(key)
+            except ValueError:
+                date = datetime.min
+            ranked.append(
+                {
+                    "date": date,
+                    "message": message,
+                    "matches": matches,
+                    "total": total,
+                    "penalty": penalty,
+                    "mismatches": mismatches,
+                }
+            )
+
+        ranked.sort(key=lambda r: (-r["matches"], -r["date"].timestamp(), r["penalty"]))
+        if top_n:
+            ranked = ranked[:top_n]
+
+        table = []
+        for rank, r in enumerate(ranked):
+            frac = r["matches"] / r["total"] if r["total"] else 0.0
+            match_str = f"{r['matches']}/{r['total']}"
+            if frac == 1.0:
+                color = colorama.Fore.GREEN
+            elif frac >= 0.5:
+                color = colorama.Fore.YELLOW
+            else:
+                color = colorama.Fore.RED
+            if tablefmt != "html":
+                match_str = color + colorama.Style.BRIGHT + match_str + colorama.Style.RESET_ALL
+
+            if r["matches"] == r["total"]:
+                dev_str = "=="
+                biggest_miss = ""
+            else:
+                dev_str = f"{r['penalty']:.3g}"
+                name, diff, _ = max(r["mismatches"], key=lambda m: m[2])
+                biggest_miss = f"{name} ({diff:+g})" if diff is not None else f"{name} (changed)"
+
+            table.append(
+                [
+                    rank + 1,
+                    r["date"].strftime("%Y-%m-%d %a %H:%M"),
+                    r["message"],
+                    match_str,
+                    dev_str,
+                    biggest_miss,
+                ]
+            )
+
+        return format_table(
+            table,
+            headers=["#", "Date", "Message", "matches", "deviation", "biggest miss"],
+            colalign=("center", "left", "left", "center", "decimal", "left"),
+            tablefmt=tablefmt,
+        )
 
     def __repr__(self):
         return self.__str__()

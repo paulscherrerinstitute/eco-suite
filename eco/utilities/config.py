@@ -1609,6 +1609,48 @@ class Namespace(Assembly):
                 init_fn()
 
         first_exception = None
+
+        # Per-IOC locks: components already *known* (from a previous
+        # init_all(check_object_crosstalk=True) pass - see
+        # eco.epics_utils.ioc_topology) to share a physical IOC are not
+        # allowed to build at the same time, even within the same dependency
+        # layer below. Unlike the dependency layering, this is not about
+        # software order, it is about not hitting one small/embedded IOC
+        # (a Moxa-hosted MForce box, say) with simultaneous connection/get
+        # traffic from two unrelated components purely by thread-pool
+        # scheduling luck - suspected contributor to sporadic crashes on
+        # Bernina's moxa-based motion controllers. A name absent from the
+        # cache (the common case until it has been explicitly checked) is
+        # simply left unconstrained, identical to today's behaviour - this
+        # is additive and best-effort, never a reason to fail or slow down
+        # the pass for anything not already known to need it.
+        try:
+            from eco.epics_utils import ioc_topology
+            ioc_of_name = ioc_topology.known_iocs_for(names_to_init)
+        except Exception:
+            logger.debug("could not load the ioc_topology cache", exc_info=True)
+            ioc_of_name = {}
+        ioc_locks = {}
+        ioc_locks_guard = Lock()
+
+        def _ioc_lock(ioc):
+            with ioc_locks_guard:
+                lk = ioc_locks.get(ioc)
+                if lk is None:
+                    lk = Lock()
+                    ioc_locks[ioc] = lk
+                return lk
+
+        def _init_name_serialized_by_ioc(name, **kwargs):
+            locks = [_ioc_lock(ioc) for ioc in sorted(ioc_of_name.get(name, ()))]
+            for lk in locks:
+                lk.acquire()
+            try:
+                return self.init_name(name, **kwargs)
+            finally:
+                for lk in reversed(locks):
+                    lk.release()
+
         # Dependency-ordered: a name is only submitted once everything it
         # declared a NamespaceComponent dependency on has been built, so
         # consumers of a shared component no longer race each other to build
@@ -1634,7 +1676,7 @@ class Namespace(Assembly):
                     cycles_left -= 1
                     futs = {
                         exc.submit(
-                            self.init_name,
+                            _init_name_serialized_by_ioc,
                             name,
                             verbose=verbose,
                             raise_errors=True,
@@ -1705,6 +1747,43 @@ class Namespace(Assembly):
 
         if raise_errors and first_exception is not None:
             raise first_exception
+
+    def _maybe_check_object_crosstalk(self, names_to_init, requested):
+        """Backing implementation for `init_all(check_object_crosstalk=True)`
+        - see that parameter's docstring for what and why.
+
+        Deliberately synchronous and serial (one name at a time, even when
+        the pass itself ran in background=True's own thread): this does real
+        network calls to the iocinfo.psi.ch service, and nobody asked for it
+        to run fast, only for it to run. Best-effort throughout - a failure
+        here must never surface as an init_all() failure.
+        """
+        if not requested:
+            return
+        try:
+            from eco.epics_utils import ioc_topology
+        except Exception:
+            logger.debug("check_object_crosstalk: could not import ioc_topology",
+                         exc_info=True)
+            return
+        checked = 0
+        for name in sorted(self.initialized_names & set(names_to_init)):
+            if ioc_topology.has_been_checked(name):
+                continue
+            try:
+                pvs = ioc_topology.component_pv_names(self.get_obj(name))
+                if not pvs:
+                    continue
+                if ioc_topology.discover_iocs(name, pvs) is not None:
+                    checked += 1
+            except Exception:
+                logger.debug("check_object_crosstalk: could not check %s", name,
+                             exc_info=True)
+        if checked:
+            logger.info(
+                "check_object_crosstalk: resolved IOC(s) for %d new "
+                "component(s) in namespace %s", checked, self.name,
+            )
 
     def _print_init_summary(self, names_to_init, starttime, cap=None):
         """The one thing an init_all() pass always reports, silent or not.
@@ -1791,6 +1870,7 @@ class Namespace(Assembly):
         giveup_failed=True,
         exclude_names=[],
         background=True,
+        check_object_crosstalk=False,
     ):
         """Initialize namespace items.
 
@@ -1872,6 +1952,19 @@ class Namespace(Assembly):
             Maximum number of retry passes over names that reported an
             in-progress initialization (IsInitialisingError). Caps what
             would otherwise be an unbounded loop - see `_run_init_pass`.
+        check_object_crosstalk : bool (default False)
+            On-demand deep check, off by default: after this pass finishes,
+            for every name it just built that has never been checked before,
+            resolve which physical IOC(s) its PVs live on (a live
+            eco.epics_utils.iocinfo lookup) and remember it via
+            eco.epics_utils.ioc_topology - so this and every future
+            init_all() call, on any namespace, can avoid ever scheduling two
+            components known to share an IOC at the same time (see
+            `_run_init_pass`'s per-IOC locks). Does real network calls, one
+            name at a time, so this deliberately never runs unless asked -
+            call it once after adding new components, or occasionally as
+            maintenance, not as part of a routine session/scan-start
+            init_all().
         """
 
         def log(*args, **kwargs):
@@ -1919,6 +2012,9 @@ class Namespace(Assembly):
                     log,
                     N_cycles,
                 )
+                self._maybe_check_object_crosstalk(
+                    names_to_init, check_object_crosstalk
+                )
 
             thread = Thread(
                 target=worker, name=f"init_all_background[{self.name}]", daemon=True
@@ -1947,6 +2043,7 @@ class Namespace(Assembly):
             log,
             N_cycles,
         )
+        self._maybe_check_object_crosstalk(names_to_init, check_object_crosstalk)
         return None
 
     def wait_for_init(self, timeout=None):

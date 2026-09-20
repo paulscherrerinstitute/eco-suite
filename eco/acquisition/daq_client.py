@@ -300,6 +300,10 @@ class Daq(Assembly):
         # None (default) keeps the existing, unchanged local behaviour.
         self._status_server = status_server
         self._status_server_client = None
+        if self._status_server:
+            print(f"daq: taking run status from status server {self._status_server} "
+                  "(set ECO_STATUS_SERVER=off in the shell before starting this "
+                  "session to always use the local namespace instead)")
         # Master on/off switch, independent of _status_server itself: unlike
         # setting _status_server = None, toggling this off and back on again
         # does not lose the configured URL/client - status_client (and so

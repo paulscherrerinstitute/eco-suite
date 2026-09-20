@@ -43,8 +43,8 @@ def test_log_viewer_button_calls_eco_logs_widget_prefer_jupyter(monkeypatch):
     monkeypatch.setattr(eco.logs, "widget", lambda prefer: calls.append(prefer))
 
     dash = make_namespace_dashboard(_FakeNamespace())
-    header, _tray_box = dash.children
-    _launcher, _status, btn_row, log_output = header.children
+    _launcher, main_column = dash.children
+    _status, btn_row, log_output, _tray_box = main_column.children
     _layout_toggle, log_btn = btn_row.children
     # A real ipykernel-backed InteractiveShell.instance() left behind by an
     # earlier, unrelated test in this same pytest process (a real,

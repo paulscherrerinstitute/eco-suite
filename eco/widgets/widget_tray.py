@@ -386,10 +386,29 @@ class NamespaceLauncherWidget(widgets.VBox):
                 grid_template_columns="1fr 90px",
                 grid_gap="2px 8px",
                 align_items="center",
+                # Bounded height + its own scrollbar rather than growing
+                # the page forever -- matches the Qt desktop's own
+                # QDockWidget, which is a fixed-size panel with an internal
+                # scroll area, not something that pushes other docks around
+                # as the namespace grows.
+                max_height="70vh",
+                overflow="auto",
             )
         )
 
-        super().__init__([toolbar, self._grid])
+        # Fixed, narrow width -- a real side panel like the desktop's own
+        # "Namespace" QDockWidget (see EcoDesktopApp._build_window's
+        # QtCore.Qt.LeftDockWidgetArea dock), not a full-page-width table.
+        # In a Voila page, an ipywidgets container with no width of its own
+        # stretches to 100% of the browser width, which is what made this
+        # a full-width bar instead of a side panel (see the layout= this
+        # class is built into in make_namespace_dashboard for the other
+        # half of that fix -- an HBox next to the widget tray, not a VBox
+        # stacked above it).
+        super().__init__(
+            [toolbar, self._grid],
+            layout=widgets.Layout(width="320px", min_width="320px", flex="0 0 auto"),
+        )
         self._render()
 
     def _render(self) -> None:
@@ -469,16 +488,20 @@ class NamespaceLauncherWidget(widgets.VBox):
 # dashboard
 # --------------------------------------------------------------------------- #
 def make_namespace_dashboard(namespace: Any, mode: str = "panels",
-                             cap: int = 6) -> widgets.VBox:
+                             cap: int = 6) -> widgets.HBox:
     """Build the full Voila dashboard for a namespace -- NOT for JupyterLab,
     which has a real Lumino shell to dock into instead (see
     eco.widgets.jupyter_sidecar.open_namespace_dashboard).
 
-    Header: a NamespaceLauncherWidget (Name/Required table -- browse every
+    Left: a NamespaceLauncherWidget (Name/Required table -- browse every
     registered name including still-lazy or failed ones, same as the
-    desktop UI's launcher panel) and a layout toggle (panels / detail).
-    Body: the WidgetTray, everything rendered inline on one flat page --
-    Voila has no docking shell to put a launcher/opened-widgets split into.
+    desktop UI's launcher panel), in a fixed-width side panel -- mirrors
+    the desktop UI's own "Namespace" QDockWidget rather than a full-page-
+    width table (NamespaceLauncherWidget itself carries the fixed width;
+    see its own docstring/layout).
+    Right: the layout toggle (panels / detail), status line, log viewer
+    and the WidgetTray -- everything Voila has no docking shell to put in
+    separate panels, stacked in the remaining page width instead.
     """
     tray = WidgetTray(mode=mode, cap=cap)
     status = widgets.HTML()
@@ -517,5 +540,8 @@ def make_namespace_dashboard(namespace: Any, mode: str = "panels",
 
     log_btn.on_click(_open_log_viewer)
 
-    header = widgets.VBox([launcher, status, widgets.HBox([layout_toggle, log_btn]), log_output])
-    return widgets.VBox([header, tray.box])
+    main_column = widgets.VBox(
+        [status, widgets.HBox([layout_toggle, log_btn]), log_output, tray.box],
+        layout=widgets.Layout(flex="1 1 auto", min_width="0"),
+    )
+    return widgets.HBox([launcher, main_column], layout=widgets.Layout(align_items="flex-start"))

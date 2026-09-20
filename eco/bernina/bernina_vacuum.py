@@ -50,12 +50,12 @@ _prepump_config = {
             "valve_prevac": "SARES21-VVPG142-330",  # TODO: was noted as "...142-330"
             "valve_vent": "SARES21-VVPG143-350",    # TODO: was noted as "...143-350"
         },
-        # "line4": {
-        #     "gauge": None,  # TODO: G4 gauge base
-        #     "valve_prevac": None,  # TODO: not yet noted
-        #     "valve_vent": None,    # TODO: was noted as "...142-340" -- looked
+        "line4": {
+            # "gauge": SARES21-VVPG142-360 ,  # TODO: G4 gauge base
+            "valve_prevac": "SARES21-VVPG142-360",  # TODO: not yet noted
+            "valve_vent": "SARES21-VVPG142-280",    # TODO: was noted as "...142-340" -- looked
         #                            # identical to line1_usd's, double check
-        # },
+        },
         # two more optional slots, not yet cabled:
         # "line5": {"gauge": None, "valve_prevac": None, "valve_vent": None},
         # "line6": {"gauge": None, "valve_prevac": None, "valve_vent": None},

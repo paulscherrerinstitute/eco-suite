@@ -34,26 +34,63 @@ def ioc_finder(*args, **kwargs):
     return make_ioc_finder_qt_window(*args, **kwargs)
 
 
-def start_desktop(*args, **kwargs):
+def start_desktop(
+    theme=None,
+    touch=None,
+    link_terminal=True,
+    scope=None,
+    lazy=True,
+    with_console=True,
+    with_namespace_panel=True,
+):
     """Open the Qt desktop workbench (a Spyder/MATLAB-like window: a
     dockable device-widget launcher, plus by default an embedded IPython
     console) from a running terminal session, for easy testing without
     leaving it.
+
+    with_console=True (default): the desktop window has an embedded
+    console/kernel. False: no console at all -- the calling terminal
+    stays the one and only "master" session; the Namespace panel still
+    works fully (opening a widget never needed the console), you just
+    can't type Python directly into the desktop window itself.
+
+    with_namespace_panel=True (default): the dockable "Namespace" launcher
+    panel is shown. False: it's skipped -- the namespace itself is still
+    built and usable (in the console, and to reopen widgets from a loaded
+    workspace), just without the browsable panel taking up screen space.
+
+    touch=True (or ECO_QT_TOUCH=1 in the environment): wider dock/splitter
+    grab handles and bigger buttons/checkboxes/scrollbars, for touch-screen
+    use -- layers on top of `theme` (including theme=None/native), doesn't
+    change colors. See eco.widgets.qt_theme.apply_modern_theme.
 
     Equivalent to::
 
         from eco.widgets.app_launchers import start_desktop
         start_desktop()
         start_desktop(with_console=False)  # calling terminal stays the only "master" session
+        start_desktop(with_namespace_panel=False)  # console only, no browsable launcher panel
+        start_desktop(touch=True)  # bigger grab handles/buttons/scrollbars
 
-    See eco.widgets.app_launchers.start_desktop for the full signature
-    (theme, link_terminal, scope, lazy, with_console) -- imported lazily,
-    like ioc_finder above, so plain `import eco` doesn't pay for
-    qtconsole/Qt. See also STARTUP_MODES.md.
+    See eco.widgets.app_launchers.start_desktop's own docstring for the
+    rest (link_terminal, scope, lazy) and for how the namespace used is
+    chosen. This wrapper mirrors that function's signature exactly rather
+    than taking *args/**kwargs so tab-completion/`?` on `eco.start_desktop`
+    itself shows every switch, not just "()" -- imported lazily, like
+    ioc_finder above, so plain `import eco` doesn't pay for qtconsole/Qt.
+    See also STARTUP_MODES.md.
     """
     from eco.widgets.app_launchers import start_desktop as _start_desktop
 
-    return _start_desktop(*args, **kwargs)
+    return _start_desktop(
+        theme=theme,
+        touch=touch,
+        link_terminal=link_terminal,
+        scope=scope,
+        lazy=lazy,
+        with_console=with_console,
+        with_namespace_panel=with_namespace_panel,
+    )
 
 
 def start_console(*args, **kwargs):

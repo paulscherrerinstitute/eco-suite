@@ -179,8 +179,12 @@ def _run_desktop(args):
         cmd += ["--no-namespace-panel"]
     if args.theme:
         cmd += ["--theme", args.theme]
+    if args.touch:
+        cmd += ["--touch"]
     if args.workspace:
         cmd += ["--workspace", args.workspace]
+    if args.workspace_json:
+        cmd += ["--workspace-json", args.workspace_json]
     _exec(
         cmd,
         "The desktop UI needs qtconsole and a Qt binding (qtpy + PyQt5/PySide6) "
@@ -745,10 +749,25 @@ def main(argv=None):
         help="modern skin, or 'none' for native OS style (default: dark)",
     )
     p_desktop.add_argument(
+        "--touch", action="store_true", default=None,
+        help="bigger dock/splitter grab handles, buttons, checkboxes and "
+             "scrollbars, for touch-screen use -- layers on top of --theme "
+             "(including 'none'), doesn't change colors",
+    )
+    _workspace_grp = p_desktop.add_mutually_exclusive_group()
+    _workspace_grp.add_argument(
         "--workspace", default=None, metavar="PATH",
         help="load this workspace file on startup (dock layout + which "
              "namespace entries to reopen) -- see the desktop window's "
-             "Workspace menu, 'Save Startup Script...'",
+             "Workspace menu, 'Save Workspace Now'",
+    )
+    _workspace_grp.add_argument(
+        "--workspace-json", default=None, metavar="JSON",
+        help="same as --workspace, but the workspace data is given inline "
+             "as a JSON string instead of a file path -- this is what the "
+             "desktop window's Workspace menu, 'Save Startup Script...', "
+             "generates, embedded in the script itself so it's a single "
+             "self-contained file",
     )
 
     p_webapp = subparsers.add_parser("webapp", help="Voila dashboard (read-only widgets).")

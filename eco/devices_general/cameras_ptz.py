@@ -83,6 +83,15 @@ class AxisPTZ(Assembly):
     # launcher) opens the live-video viewer instead of the generic
     # property grid -- see Assembly._default_widget/_widget_viewer() below.
     _default_widget = "_widget_viewer"
+    # Stays a standalone window unless the caller explicitly opts in with
+    # widget(dock_in=True) (or dock_in="auto") -- docking by default
+    # surprised users starting eco plainly (a viewer they never asked to
+    # dock, docking anyway). dock_in=True/"auto" still gets the shared
+    # EcoDesktopApp workbench auto-created if none is open yet (see
+    # Assembly._maybe_dock -> get_or_create_default_container()). Mirrors
+    # eco.devices_general.cameras_swissfel.CameraBasler._default_dock_in --
+    # same rationale, same convention.
+    _default_dock_in = None
 
     def __init__(
         self,
@@ -345,7 +354,14 @@ class AxisPTZ(Assembly):
         normal pan/tilt/zoom/iris/focus slider display) and a "Help"
         button describing the mouse controls. See show_qt/show_widget for
         the environment-specific versions directly, and show() for the
-        plain terminal snapshot."""
+        plain terminal snapshot.
+
+        The Qt window is resizable -- it rescales the live image to fit
+        whatever size you drag it to, rather than being pinned to the
+        camera's native resolution. It stays a standalone window unless
+        you call widget(dock_in=True) (or dock_in="auto") to dock it into
+        the shared EcoDesktopApp workbench instead -- see
+        AxisPTZ._default_dock_in."""
         if _is_notebook():
             return self.show_widget(
                 codec=codec,

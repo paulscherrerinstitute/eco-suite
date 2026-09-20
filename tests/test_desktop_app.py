@@ -61,11 +61,52 @@ class _FakeItem:
         self.name = name
         self.widget_calls = 0
         self.last_widget = None
+        self.last_kwargs = {}
 
-    def widget(self):
+    def widget(self, **kwargs):
         self.widget_calls += 1
+        self.last_kwargs = kwargs
         self.last_widget = _FakeWidgetWrapper()
         return self.last_widget
+
+
+class _FakeCameraItem(_FakeItem):
+    """A namespace item shaped like a real CameraBasler/CameraPCO: its
+    _default_widget override (_widget_viewer) accepts separate_process --
+    see EcoDesktopApp._open_widget's separate_process=False-during-
+    workspace-restore special case, and _widget_accepts_separate_process,
+    which inspects this method's signature (not just the _default_widget
+    name -- see _FakePTZItem below for why the name alone isn't enough).
+    Note: _widget_viewer itself is never called here -- .widget() (plain
+    _FakeItem.widget, inherited) is what _open_widget actually invokes and
+    what test assertions read back via last_kwargs; _widget_viewer exists
+    purely to give _widget_accepts_separate_process a realistic signature
+    to introspect, mirroring how the real Assembly.widget() dispatches to
+    a separate _default_widget-named method instead of being it."""
+
+    _default_widget = "_widget_viewer"
+
+    def _widget_viewer(self, separate_process=True, dockable=True):
+        raise AssertionError("not meant to be called directly in tests")
+
+
+class _FakePTZItem(_FakeItem):
+    """Mirrors AxisPTZ (eco.devices_general.cameras_ptz): the SAME
+    _default_widget = "_widget_viewer" literal string as _FakeCameraItem,
+    but its _widget_viewer has an incompatible signature -- no
+    separate_process, no **kwargs -- exactly like the real
+    AxisPTZ._widget_viewer(self, codec=..., resolution=..., ...). A
+    workspace restore that keyed off the _default_widget *name* alone
+    crashed here with `TypeError: AxisPTZ._widget_viewer() got an
+    unexpected keyword argument 'separate_process'` (confirmed live
+    against cam_west 2026-09-19, an AxisPTZ camera) --
+    _widget_accepts_separate_process fixes that by inspecting the real
+    signature instead."""
+
+    _default_widget = "_widget_viewer"
+
+    def _widget_viewer(self, codec="mjpeg", resolution=None, compression=50, fps=10, auto_start=True):
+        raise AssertionError("not meant to be called directly in tests")
 
 
 class _FakeNamespace:
@@ -1160,6 +1201,52 @@ def test_load_workspace_missing_file_returns_false(tmp_path):
     assert gui.load_workspace(tmp_path / "does_not_exist.json") is False
 
 
+def test_workspace_restore_opens_camera_items_with_separate_process_false():
+    """A saved workspace's reopen is exactly the scenario with no
+    interactive user present to notice/work around a camera viewer's
+    default separate_process=True X11-embedding a subprocess window --
+    documented as fragile under XWayland (CameraBasler/CameraPCO.
+    _widget_viewer's own docstring) and confirmed to segfault when a
+    startup script reopens more than one camera back to back. Workspace
+    restore asks for separate_process=False instead, but only for the
+    reopen it itself triggered -- a later, ordinary interactive reopen of
+    the same name is unaffected."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    ns._items["cam_west"] = _FakeCameraItem("cam_west")
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui.load_workspace_data({"opened_names": ["cam_west"]})
+        item = ns._items["cam_west"]
+        assert item.widget_calls == 1
+        assert item.last_kwargs == {"separate_process": False}
+
+        gui._open_widget("cam_west")  # an ordinary interactive reopen
+        assert item.last_kwargs == {}
+    finally:
+        gui.stop()
+
+
+def test_workspace_restore_does_not_force_separate_process_onto_incompatible_widget():
+    """The AxisPTZ regression: its _default_widget is also literally
+    "_widget_viewer" (see _FakePTZItem), but its _widget_viewer doesn't
+    accept separate_process at all. Restoring a workspace containing such
+    an item must not raise/crash the reopen by forcing that kwarg on it."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["cam_west"])
+    ns._items["cam_west"] = _FakePTZItem("cam_west")
+    gui = EcoDesktopApp(namespace=ns, auto_start=False)
+    gui._build_window()
+    try:
+        gui.load_workspace_data({"opened_names": ["cam_west"]})
+        item = ns._items["cam_west"]
+        assert item.widget_calls == 1
+        assert item.last_kwargs == {}  # no separate_process forced on it
+    finally:
+        gui.stop()
+
+
 def test_autosave_on_window_close_writes_workspace_file(tmp_path):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(initialized=["cam_west"])
@@ -1286,7 +1373,7 @@ def test_log_viewer_stopped_on_window_close(monkeypatch):
 # namespace gets touched.
 
 
-def test_save_startup_script_writes_executable_sh_and_companion_json(tmp_path):
+def test_save_startup_script_writes_a_single_self_contained_executable_file(tmp_path):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     ns = _FakeNamespace(initialized=["cam_west"])
     gui = EcoDesktopApp(namespace=ns, scope="bernina", lazy=True, auto_start=False)
@@ -1299,16 +1386,20 @@ def test_save_startup_script_writes_executable_sh_and_companion_json(tmp_path):
         assert sh_path.exists()
         assert sh_path.stat().st_mode & 0o111  # executable
 
-        json_path = tmp_path / "my_dashboard.json"
-        assert json_path.exists()
-        import json as _json
-
-        data = _json.loads(json_path.read_text())
-        assert data["opened_names"] == ["cam_west"]
+        # No companion file -- the workspace data is embedded in the script
+        # itself, so this is the only file "Save Startup Script..." writes.
+        assert not (tmp_path / "my_dashboard.json").exists()
+        assert list(tmp_path.iterdir()) == [sh_path]
 
         script = sh_path.read_text()
-        assert "eco desktop -s bernina -l --workspace" in script
-        assert str(json_path) in script
+        assert "eco desktop -s bernina -l --workspace-json" in script
+        assert "<<'EOF'" in script
+
+        import json as _json
+
+        json_text = script.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0]
+        data = _json.loads(json_text)
+        assert data["opened_names"] == ["cam_west"]
     finally:
         gui.stop()
 
@@ -1371,7 +1462,7 @@ def test_main_theme_defaults_to_native(monkeypatch):
     == 'none' else args.theme` translation."""
 
     class _StubApp:
-        def run(self, workspace=None):
+        def run(self, workspace=None, workspace_data=None):
             pass
 
     captured = {}

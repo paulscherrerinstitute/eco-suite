@@ -14,6 +14,15 @@ Usage::
 
     from eco.widgets.qt_theme import apply_modern_theme
     apply_modern_theme("dark")   # or "light", or None to clear
+    apply_modern_theme(touch=True)   # bigger grab handles/buttons/scrollbars,
+                                      # layered on top of any theme (incl. "none")
+
+touch=True is a separate, additive switch, not a fourth theme choice: it
+only widens dock/splitter separators and grows touch-target sizes
+(buttons, checkboxes, scrollbars, form fields), it never changes colors --
+so it composes with "none" (native colors, just bigger hit targets) the
+same way it does with "dark"/"light". See eco.widgets.desktop_app's
+--touch CLI flag / EcoDesktopApp(touch=...).
 
 For eco.widgets.camserver_panel_qt / camserver_stream_qt: pass
 theme="dark"/"light" to make_camserver_panel_qt(...)/make_camserver_stream_qt(...).
@@ -22,13 +31,15 @@ module docstring), the panel's choice is propagated to every spawned
 viewer subprocess via the ECO_QT_THEME environment variable so the whole
 panel-plus-viewers picture stays visually consistent -- apply_modern_theme
 records its resolved choice there, and a subprocess that doesn't get an
-explicit --theme falls back to reading it.
+explicit --theme falls back to reading it. ECO_QT_TOUCH does the same for
+touch=True.
 """
 import os
 
 from qtpy import QtWidgets
 
 ENV_VAR = "ECO_QT_THEME"
+TOUCH_ENV_VAR = "ECO_QT_TOUCH"
 
 # qt-material's default dark/light themes are teal-accented -- these
 # approximate that exact palette so the fallback (no qt-material
@@ -106,6 +117,30 @@ QScrollBar::handle:hover { background: #00897b; }
 
 _QSS = {"dark": _DARK_QSS, "light": _LIGHT_QSS}
 
+# Additive on top of whatever theme (including "none"/no stylesheet at
+# all) -- structural sizing only, no colors changed except the grab-handle
+# hover highlight, so it reads correctly whether layered on native colors,
+# _DARK_QSS or qt-material's own stylesheet. Sizes are rough physical
+# touch-target minimums (~9mm), not just "bigger than default": dock/
+# splitter separators are the specific thing reported hard to grab.
+_TOUCH_QSS = """
+QMainWindow::separator { width: 10px; height: 10px; background: #888888; }
+QMainWindow::separator:hover { background: #00bfa5; }
+QSplitter::handle { background: #888888; }
+QSplitter::handle:horizontal { width: 10px; }
+QSplitter::handle:vertical { height: 10px; }
+QSplitter::handle:hover { background: #00bfa5; }
+QPushButton, QToolButton { min-height: 34px; padding: 8px 16px; }
+QCheckBox::indicator, QRadioButton::indicator { width: 22px; height: 22px; }
+QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox { min-height: 30px; padding: 5px 6px; }
+QScrollBar:vertical { width: 22px; }
+QScrollBar:horizontal { height: 22px; }
+QScrollBar::handle { min-height: 32px; min-width: 32px; border-radius: 6px; }
+QTabBar::tab { padding: 10px 18px; }
+QDockWidget::title { padding: 10px; }
+QAbstractItemView::item { padding: 6px; }
+"""
+
 
 def resolve_theme(theme=None):
     """theme: "dark" | "light" | None -> effective theme name. None means
@@ -118,6 +153,17 @@ def resolve_theme(theme=None):
     return theme if theme in ("dark", "light") else None
 
 
+def resolve_touch(touch=None):
+    """touch: True/False/None -> effective touch-mode bool, mirroring
+    resolve_theme's "defer to the environment" convention: None means
+    "defer to ECO_QT_TOUCH" (so a viewer subprocess spawned by a
+    touch-enabled panel picks up the same choice automatically), falling
+    back to False (off) if that's unset too. Pure function."""
+    if touch is None:
+        return os.environ.get(TOUCH_ENV_VAR) == "1"
+    return bool(touch)
+
+
 def _apply_qt_material(app, theme):
     """Try the real qt-material package first. Returns True if applied."""
     try:
@@ -128,25 +174,39 @@ def _apply_qt_material(app, theme):
     return True
 
 
-def apply_modern_theme(theme=None):
+def apply_modern_theme(theme=None, touch=None):
     """Apply (or, with an unresolvable theme, clear) the skin on the
     current QApplication. Call once, right after creating/obtaining the
     QApplication instance -- a no-op if there isn't one yet. Also records
-    the resolved choice in os.environ[ECO_QT_THEME] so any subprocess
-    this process later spawns inherits the same look by default. Uses the
-    real qt-material package if installed, else a close hand-built
-    approximation of its default teal theme (see module docstring)."""
+    the resolved choices in os.environ[ECO_QT_THEME]/[ECO_QT_TOUCH] so any
+    subprocess this process later spawns inherits the same look by
+    default. Uses the real qt-material package for theme if installed,
+    else a close hand-built approximation of its default teal theme (see
+    module docstring).
+
+    touch=True (or ECO_QT_TOUCH=1 in the environment) layers _TOUCH_QSS
+    (bigger dock/splitter grab handles, buttons, checkboxes, scrollbars --
+    see its own docstring) on top of whatever `theme` resolves to,
+    appended last so it wins on the sizing properties it sets regardless
+    of which base stylesheet (native/hand-built/qt-material) is under it.
+    Still returns just the resolved theme (unchanged contract) -- nothing
+    today reads apply_modern_theme's return value, and resolve_touch is
+    there directly for anything that later needs the touch choice too."""
     resolved = resolve_theme(theme)
+    resolved_touch = resolve_touch(touch)
     os.environ[ENV_VAR] = resolved or ""
+    os.environ[TOUCH_ENV_VAR] = "1" if resolved_touch else ""
 
     app = QtWidgets.QApplication.instance()
     if app is None:
         return resolved
     if resolved is None:
-        app.setStyleSheet("")
+        app.setStyleSheet(_TOUCH_QSS if resolved_touch else "")
         return resolved
     if _apply_qt_material(app, resolved):
+        if resolved_touch:
+            app.setStyleSheet(app.styleSheet() + _TOUCH_QSS)
         return resolved
     app.setStyle("Fusion")
-    app.setStyleSheet(_QSS[resolved])
+    app.setStyleSheet(_QSS[resolved] + (_TOUCH_QSS if resolved_touch else ""))
     return resolved

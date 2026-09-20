@@ -236,3 +236,54 @@ def test_start_jupyterlab_console_spawns_fresh_with_scope_env(monkeypatch, tmp_p
     assert "console_two" in captured["cmd"][2]
     assert captured["env"]["ECO_SCOPE"] == "alignment"
     assert captured["env"]["ECO_LAZY"] == "0"
+
+
+def test_eco_start_desktop_wrapper_signature_matches_the_real_one():
+    """eco.start_desktop (eco/__init__.py) is a lazily-importing wrapper
+    around eco.widgets.app_launchers.start_desktop -- it must spell out
+    the same switches (theme, link_terminal, scope, lazy, with_console,
+    with_namespace_panel) itself rather than a bare *args/**kwargs, so
+    tab-completion/`?` on eco.start_desktop shows them without having to
+    go find the real implementation."""
+    import inspect
+
+    import eco
+
+    wrapper_params = inspect.signature(eco.start_desktop).parameters
+    real_params = inspect.signature(app_launchers.start_desktop).parameters
+    assert wrapper_params.keys() == real_params.keys()
+    for name, param in wrapper_params.items():
+        assert param.default == real_params[name].default, name
+
+
+def test_eco_start_desktop_wrapper_forwards_every_kwarg(monkeypatch):
+    captured = {}
+
+    def fake_start_desktop(**kwargs):
+        captured.update(kwargs)
+        return "the-window"
+
+    monkeypatch.setattr(app_launchers, "start_desktop", fake_start_desktop)
+
+    import eco
+
+    result = eco.start_desktop(
+        theme="dark",
+        touch=True,
+        link_terminal=False,
+        scope="alignment",
+        lazy=False,
+        with_console=False,
+        with_namespace_panel=False,
+    )
+
+    assert result == "the-window"
+    assert captured == {
+        "theme": "dark",
+        "touch": True,
+        "link_terminal": False,
+        "scope": "alignment",
+        "lazy": False,
+        "with_console": False,
+        "with_namespace_panel": False,
+    }

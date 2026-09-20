@@ -84,6 +84,7 @@ display) before relying on it day to day.
 """
 import argparse
 import base64
+import inspect
 import json
 import logging
 import threading
@@ -180,6 +181,36 @@ def _resolve_namespace_item(namespace, name):
         getattr(namespace, "lazy_items", {}).get(name)
         or getattr(namespace, "failed_items", {}).get(name)
         or getattr(namespace, "initialized_items", {}).get(name)
+    )
+
+
+def _widget_accepts_separate_process(item):
+    """Whether `item.widget(separate_process=...)` is actually a valid
+    call for this item, used by _open_widget's workspace-restore safety
+    kwarg. Several unrelated classes share the literal string
+    `_default_widget = "_widget_viewer"` (CameraBasler/CameraPCO in
+    eco.devices_general.cameras_swissfel accept separate_process; AxisPTZ
+    in eco.devices_general.cameras_ptz does NOT -- its own _widget_viewer
+    takes codec/resolution/compression/fps/auto_start instead, so blindly
+    keying off the _default_widget *name* raised
+    `TypeError: AxisPTZ._widget_viewer() got an unexpected keyword
+    argument 'separate_process'`, confirmed live against cam_west
+    2026-09-19). Inspecting the actual bound override's signature (or a
+    **kwargs passthrough, e.g. QioptiqMicroscope._widget_viewer) is the
+    only way to tell these apart without hardcoding a class list here
+    that would silently go stale as new camera-like classes are added."""
+    override_name = getattr(type(item), "_default_widget", None)
+    if not override_name:
+        return False
+    override = getattr(item, override_name, None)
+    if not callable(override):
+        return False
+    try:
+        params = inspect.signature(override).parameters
+    except (TypeError, ValueError):
+        return False
+    return "separate_process" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
     )
 
 
@@ -605,6 +636,7 @@ class EcoDesktopApp:
         self,
         namespace=None,
         theme=None,
+        touch=None,
         link_terminal=True,
         auto_start=True,
         scope="bernina",
@@ -614,6 +646,12 @@ class EcoDesktopApp:
     ):
         self.namespace = namespace
         self.theme = theme
+        # touch=True (or ECO_QT_TOUCH=1 in the environment -- see
+        # eco.widgets.qt_theme.resolve_touch): wider dock/splitter grab
+        # handles and bigger buttons/checkboxes/scrollbars, layered on top
+        # of `theme` (including theme=None/native) rather than being a
+        # theme choice itself -- see apply_modern_theme's own docstring.
+        self.touch = touch
         # link_terminal=True (default): if this is being called from
         # inside an already-running IPython session (the normal case for
         # eco.start_desktop() -- see eco.widgets.app_launchers) AND no
@@ -672,6 +710,15 @@ class EcoDesktopApp:
         # with this empty (nothing auto-restores) -- reloading a past
         # workspace is only ever an explicit menu action.
         self._opened_names = []
+        # Names currently being reopened by load_workspace/load_workspace_data
+        # (populated right before that reopen loop, one-shot-consumed by
+        # _open_widget as each name actually opens -- see both for why: a
+        # workspace reload has no live user present to notice/work around
+        # the known X11-embedding fragility a camera viewer's default
+        # separate_process=True can hit, so those reopens ask for
+        # separate_process=False instead, without changing the interactive
+        # Namespace-panel-click default everyone else gets).
+        self._workspace_restore_names = set()
         # QDockWidgets currently holding an opened device widget (see
         # _open_widget/_dock_widget_object), tiled into the window rather
         # than left as separate top-level windows -- not persisted across
@@ -695,7 +742,7 @@ class EcoDesktopApp:
             _app_ref = QtWidgets.QApplication([])
         from eco.widgets.qt_theme import apply_modern_theme
 
-        apply_modern_theme(self.theme)
+        apply_modern_theme(self.theme, self.touch)
 
         self.window = _DesktopMainWindow(on_close=self._on_window_closing)
         self.window.setWindowTitle("eco desktop")
@@ -802,7 +849,7 @@ class EcoDesktopApp:
     def _on_save_startup_script(self):
         path = self.save_startup_script()
         if path is not None:
-            print(f"eco desktop: wrote startup script {path} (and {path.with_suffix('.json')})")
+            print(f"eco desktop: wrote startup script {path}")
 
     def _on_new_workspace(self):
         self._opened_names = []
@@ -1096,9 +1143,29 @@ class EcoDesktopApp:
         stays a plain standalone window, exactly as before."""
         if name not in self._opened_names:
             self._opened_names.append(name)
+        # One-shot: only the reopen that load_workspace_data itself
+        # triggered for this name counts as "restoring" -- a later manual
+        # reopen of the same name (e.g. closing and reclicking it in the
+        # Namespace panel) goes through the normal interactive path below.
+        restoring = name in self._workspace_restore_names
+        self._workspace_restore_names.discard(name)
         try:
             item = _resolve_namespace_item(self.namespace, name)
-            widget_obj = item.widget()
+            widget_kwargs = {}
+            if restoring and _widget_accepts_separate_process(item):
+                # Camera viewers default to separate_process=True, which
+                # X11-embeds the subprocess's window via QWindow.fromWinId +
+                # createWindowContainer (see CameraBasler/CameraPCO.
+                # _widget_viewer's own docstring) -- documented as fragile
+                # under XWayland (drifting/detached embedded windows), and a
+                # confirmed hard segfault when several cameras restore back
+                # to back with no interactive session present to notice and
+                # work around it. A workspace reload has exactly that
+                # profile, so it asks for separate_process=False instead,
+                # trading the "keeps updating while this session blocks"
+                # benefit for one that always actually opens.
+                widget_kwargs["separate_process"] = False
+            widget_obj = item.widget(**widget_kwargs)
         except Exception:
             logger.exception("opening %r's widget failed", name)
             return
@@ -1263,13 +1330,12 @@ class EcoDesktopApp:
         return True
 
     def load_workspace(self, path=None):
-        """Restore a previously eco.widgets.desktop_app-saved workspace:
-        the dock layout, then reopen every entry that was open (each via
-        the same initialized-open-immediately / lazy-init-then-open path
-        as clicking it in the Namespace panel would). Only ever called
-        explicitly (the Workspace menu's "Reload Last Workspace", or
-        directly) -- a fresh window never auto-restores. Returns True if
-        a workspace file was found and applied."""
+        """Restore a previously eco.widgets.desktop_app-saved workspace
+        from a JSON *file*. Only ever called explicitly (the Workspace
+        menu's "Reload Last Workspace", or directly) -- a fresh window
+        never auto-restores. Returns True if a workspace file was found
+        and applied. See load_workspace_data for the part shared with
+        --workspace-json (no separate file)."""
         path = Path(path) if path else DEFAULT_WORKSPACE_FILE
         if not path.exists():
             print(f"eco desktop: no saved workspace at {path}")
@@ -1279,7 +1345,18 @@ class EcoDesktopApp:
         except Exception:
             logger.exception("failed to read workspace file %s", path)
             return False
+        self.load_workspace_data(data)
+        return True
 
+    def load_workspace_data(self, data):
+        """Apply an already-parsed workspace dict (geometry/state/
+        opened_names, the same shape save_workspace writes): restore the
+        dock layout, then reopen every entry that was open (each via the
+        same initialized-open-immediately / lazy-init-then-open path as
+        clicking it in the Namespace panel would). Shared by load_workspace
+        (reads the dict from a file) and the CLI's --workspace-json (the
+        dict is embedded directly in the startup script, no companion file
+        -- see save_startup_script)."""
         if self.window is not None:
             if data.get("geometry"):
                 self.window.restoreGeometry(_str_to_qbytearray(data["geometry"]))
@@ -1287,23 +1364,27 @@ class EcoDesktopApp:
                 self.window.restoreState(_str_to_qbytearray(data["state"]))
 
         if self._launcher is not None:
-            for name in data.get("opened_names", []):
+            names = data.get("opened_names", [])
+            self._workspace_restore_names.update(names)
+            for name in names:
                 self._launcher.open_by_name(name)
-        return True
 
     def save_startup_script(self, sh_path=None):
-        """Write a standalone, executable shell script that relaunches
-        `eco desktop` with only THIS session's currently-open namespace
-        entries reopened -- everything else in the namespace stays
-        untouched/lazy (see -l below), so the result is a fast, minimal
-        "dashboard" for just those components instead of the full
+        """Write a single, standalone, executable shell script that
+        relaunches `eco desktop` with only THIS session's currently-open
+        namespace entries reopened -- everything else in the namespace
+        stays untouched/lazy (see -l below), so the result is a fast,
+        minimal "dashboard" for just those components instead of the full
         namespace. Prompts for where to save (a file dialog) if `sh_path`
-        isn't given, same as any other "Save As" action. Writes a
-        companion <name>.json workspace file next to the script (the same
-        format/mechanism as save_workspace) and points the script at it
-        via --workspace. Returns the script's path if written, None if
-        the save dialog was cancelled or there's no window yet to save
-        from."""
+        isn't given, same as any other "Save As" action.
+
+        The workspace data (dock layout + opened names, the same shape
+        save_workspace writes) is embedded directly in the script as a
+        heredoc and passed via --workspace-json -- no companion .json
+        file, so there's only one file to move/share/delete instead of two
+        that have to be kept together. Returns the script's path if
+        written, None if the save dialog was cancelled or there's no
+        window yet to save from."""
         if self.window is None:
             return None
         if sh_path is None:
@@ -1321,8 +1402,16 @@ class EcoDesktopApp:
         if sh_path.suffix != ".sh":
             sh_path = sh_path.with_suffix(".sh")
 
-        workspace_path = sh_path.with_suffix(".json")
-        self.save_workspace(workspace_path)
+        workspace_data = {
+            "geometry": _qbytearray_to_str(self.window.saveGeometry()),
+            "state": _qbytearray_to_str(self.window.saveState()),
+            "opened_names": list(self._opened_names),
+        }
+        # A quoted heredoc delimiter ('EOF', not EOF) disables all shell
+        # expansion of its body, so the JSON's own $, `, \, and " are safe
+        # verbatim -- no escaping needed regardless of what's in geometry/
+        # state/opened_names.
+        workspace_json = json.dumps(workspace_data, indent=2)
 
         scope_arg = "-s {} ".format(self.scope) if self.scope else ""
         lazy_flag = "-l" if self.lazy else "--no-lazy"
@@ -1345,9 +1434,12 @@ class EcoDesktopApp:
             "# lazy loading (see -l/--no-lazy below) means nothing else in the\n"
             "# namespace gets touched, so this is a fast, minimal dashboard rather\n"
             "# than the full namespace. Edit freely; re-running the menu action\n"
-            "# overwrites both this file and its companion .json workspace file.\n"
-            'exec eco desktop {}{}{}{} --workspace "{}" "$@"\n'.format(
-                scope_arg, lazy_flag, console_flag, namespace_panel_flag, workspace_path
+            "# overwrites this file (it's self-contained, no companion file).\n"
+            "read -r -d '' ECO_WORKSPACE_JSON <<'EOF'\n"
+            "{}\n"
+            "EOF\n"
+            'exec eco desktop {}{}{}{} --workspace-json "$ECO_WORKSPACE_JSON" "$@"\n'.format(
+                workspace_json, scope_arg, lazy_flag, console_flag, namespace_panel_flag
             )
         )
         sh_path.write_text(script)
@@ -1359,19 +1451,21 @@ class EcoDesktopApp:
 
     # -- lifecycle (mirrors CamServerPanelQt/CamServerStreamQt) -----------
 
-    def run(self, workspace=None):
+    def run(self, workspace=None, workspace_data=None):
         """Build the window (if not already built) and block in
-        QApplication.exec_() until something quits the app. `workspace`,
-        if given, is loaded (see load_workspace) right after the window
-        exists but before exec_() -- callers that need this (the CLI's
-        --workspace) must go through here rather than calling
-        _build_window() themselves first: doing that separately creates
-        the QApplication as a side effect, so by the time run() got to
-        its own "did I create the app" check below it would already be
-        False, and the exec_() call -- along with everything past it --
-        would be skipped entirely. Confirmed for real: `eco desktop`
-        opened its window and then exited immediately, before the CLI's
-        --workspace support restructured this into two separate calls."""
+        QApplication.exec_() until something quits the app. `workspace`
+        (a file path) or `workspace_data` (an already-parsed dict), if
+        given, is loaded (see load_workspace/load_workspace_data) right
+        after the window exists but before exec_() -- callers that need
+        this (the CLI's --workspace/--workspace-json) must go through here
+        rather than calling _build_window() themselves first: doing that
+        separately creates the QApplication as a side effect, so by the
+        time run() got to its own "did I create the app" check below it
+        would already be False, and the exec_() call -- along with
+        everything past it -- would be skipped entirely. Confirmed for
+        real: `eco desktop` opened its window and then exited immediately,
+        before the CLI's --workspace support restructured this into two
+        separate calls."""
         app = QtWidgets.QApplication.instance()
         created_app = app is None
         if created_app:
@@ -1380,6 +1474,8 @@ class EcoDesktopApp:
             self._build_window()
         if workspace:
             self.load_workspace(workspace)
+        if workspace_data:
+            self.load_workspace_data(workspace_data)
         if created_app:
             # This call blocks in app.exec_() below until something quits
             # the app -- but WA_QuitOnClose is set False in _build_window
@@ -1560,13 +1656,35 @@ def _main(argv=None):
              "-- see eco.widgets.qt_theme",
     )
     parser.add_argument(
+        "--touch",
+        action="store_true",
+        default=None,
+        help="bigger dock/splitter grab handles, buttons, checkboxes and "
+             "scrollbars, for touch-screen use -- layers on top of --theme "
+             "(including 'none'), doesn't change colors. Omitting this "
+             "flag defers to ECO_QT_TOUCH in the environment (default: off) "
+             "-- see eco.widgets.qt_theme.resolve_touch",
+    )
+    workspace_grp = parser.add_mutually_exclusive_group()
+    workspace_grp.add_argument(
         "--workspace",
         default=None,
         metavar="PATH",
         help="load this workspace file on startup (dock layout + which "
              "namespace entries to reopen) -- see the Workspace menu's "
-             "'Save Startup Script...', which generates a command exactly "
-             "like this one pointed at its own saved workspace file",
+             "'Save Workspace Now'",
+    )
+    workspace_grp.add_argument(
+        "--workspace-json",
+        default=None,
+        metavar="JSON",
+        help="same as --workspace, but the workspace data (dock layout + "
+             "which namespace entries to reopen) is given inline as a JSON "
+             "string instead of a file path -- this is what the Workspace "
+             "menu's 'Save Startup Script...' generates, embedded in the "
+             "script itself via a heredoc, so the script is a single "
+             "self-contained file rather than needing a companion "
+             "workspace file next to it",
     )
     args = parser.parse_args(argv)
     theme = None if args.theme == "none" else args.theme
@@ -1583,6 +1701,7 @@ def _main(argv=None):
     app = EcoDesktopApp(
         namespace,
         theme=theme,
+        touch=args.touch,
         link_terminal=False,
         auto_start=False,
         scope=args.scope,
@@ -1590,7 +1709,13 @@ def _main(argv=None):
         with_console=args.with_console,
         with_namespace_panel=args.with_namespace_panel,
     )
-    app.run(workspace=args.workspace)
+    workspace_data = None
+    if args.workspace_json:
+        try:
+            workspace_data = json.loads(args.workspace_json)
+        except Exception:
+            logger.exception("failed to parse --workspace-json")
+    app.run(workspace=args.workspace, workspace_data=workspace_data)
 
 
 if __name__ == "__main__":
