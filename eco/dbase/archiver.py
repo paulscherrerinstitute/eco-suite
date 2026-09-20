@@ -14,7 +14,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib import dates as mdates
 from matplotlib.animation import FuncAnimation
-from matplotlib.widgets import Button
+from matplotlib.widgets import Button, CheckButtons
 
 from datahub import Consumer, Daqbuf, Dispatcher, Enum, Epics, Table, pulse_id_to_time
 
@@ -579,12 +579,28 @@ class _StripPlot:
     _TOP_MARGIN = 0.98
 
     def __init__(
-        self, sources, channels, labels, buffer, max_rate, duration, step=True, grid=True
+        self,
+        sources,
+        channels,
+        labels,
+        buffer,
+        max_rate,
+        duration,
+        step=True,
+        grid=True,
+        extra_channels=None,
     ):
         self._sources = [source for source, _ in sources]
         self._buffer = buffer
+        self._duration = duration
         self._stopped = False
         self.dataset = None
+        # (channel_id, channel_type, label) not yet subscribed/plotted -
+        # offered through the "More channels..." picker (`_open_channel_picker`)
+        # rather than monitored from the start; see `readback_only` on the
+        # `strip_plot` Adjustable/Detector/Assembly method.
+        self._extra_channels = list(extra_channels or [])
+        self._picker_fig = None
         self.fig, self.ax = plt.subplots()
         self.fig.subplots_adjust(
             top=self._TOP_MARGIN,
@@ -596,9 +612,9 @@ class _StripPlot:
         # so a step plot (each point the *start*/left edge of its horizontal
         # segment, i.e. drawstyle "steps-post") represents the real signal
         # more faithfully than the default straight-line connection.
-        drawstyle = "steps-post" if step else "default"
+        self._drawstyle = "steps-post" if step else "default"
         for channel, label in zip(channels, labels):
-            (line,) = self.ax.plot([], [], ".-", drawstyle=drawstyle, label=label)
+            (line,) = self.ax.plot([], [], ".-", drawstyle=self._drawstyle, label=label)
             self._lines[channel] = line
         self.ax.grid(grid)
         locator = mdates.AutoDateLocator()
@@ -621,6 +637,8 @@ class _StripPlot:
             ("Window ×2", self._double_window),
             ("Window /2", self._half_window),
         ]
+        if self._extra_channels:
+            buttons.append(("More channels...", self._open_channel_picker))
         left, right, gap = 0.02, 0.98, 0.01
         width = (right - left - gap * (len(buttons) - 1)) / len(buttons)
         self._buttons = []
@@ -729,6 +747,68 @@ class _StripPlot:
     def _half_window(self, event):
         self._buffer.window = max(1.0, self._buffer.window / 2)
 
+    def _open_channel_picker(self, event):
+        """"More channels..." button: a small checkbox window (kept
+        separate from the main plot's own buttons/lines so it can be closed
+        without disturbing them) listing every channel `readback_only` held
+        back from the initial subscription. Checking some and hitting "Add
+        selected" subscribes to them live and adds their lines to this same
+        running plot - see `_add_channels`."""
+        if not self._extra_channels:
+            return
+        if self._picker_fig is not None:
+            _show_figure(self._picker_fig)
+            return
+        labels = [label for _, _, label in self._extra_channels]
+        fig = plt.figure(figsize=(5, 0.35 * len(labels) + 1.3))
+        self._picker_fig = fig
+        check_ax = fig.add_axes([0.05, 0.18, 0.9, 0.78])
+        self._picker_check = CheckButtons(check_ax, labels, [False] * len(labels))
+        apply_ax = fig.add_axes([0.3, 0.03, 0.4, 0.09])
+        self._picker_apply = Button(apply_ax, "Add selected")
+
+        def _on_apply(_event):
+            chosen = {i for i, active in enumerate(self._picker_check.get_status()) if active}
+            to_add = [c for i, c in enumerate(self._extra_channels) if i in chosen]
+            self._extra_channels = [
+                c for i, c in enumerate(self._extra_channels) if i not in chosen
+            ]
+            self._add_channels(to_add)
+            plt.close(fig)
+
+        self._picker_apply.on_clicked(_on_apply)
+        fig.canvas.mpl_connect("close_event", lambda event: setattr(self, "_picker_fig", None))
+        _show_figure(fig)
+
+    def _add_channels(self, entries):
+        """Subscribe to and start plotting `entries` (each a `(channel_id,
+        channel_type, label)` tuple, as held in `self._extra_channels`) on
+        this already-running plot - a fresh `LIVE_SOURCES` connection per
+        channel type involved, mirroring how the initial channels were
+        grouped and requested in `_strip_plot_subprocess_main`, plus one new
+        line per channel."""
+        if not entries:
+            return
+        channel_ids = [c for c, _, _ in entries]
+        channel_types = [t for _, t, _ in entries]
+        label_by_channel = {c: l for c, _, l in entries}
+        groups = _group_by_type(channel_ids, None, channel_types)
+        for channel_type, group_channels in groups.items():
+            source = LIVE_SOURCES[channel_type](time_type="sec")
+            source.add_listener(self._buffer)
+            self._sources.append(source)
+            source.request(
+                dict(channels=group_channels, start=0.0, end=float(self._duration)),
+                background=True,
+            )
+        for channel in channel_ids:
+            (line,) = self.ax.plot(
+                [], [], ".-", drawstyle=self._drawstyle, label=label_by_channel[channel]
+            )
+            self._lines[channel] = line
+        self.ax.legend(loc="upper left")
+        self.fig.canvas.draw_idle()
+
     def record(self, results_file=None):
         """Start accumulating the full history for `to_dataset`/`.dataset`.
         `results_file`: see `_StripBuffer.start_recording` - only matters if
@@ -822,6 +902,7 @@ def _strip_plot_subprocess_main(
     step,
     grid,
     conn,
+    extra_channels=None,
 ):
     """Entry point for the strip-plot subprocess (see `DataHub.strip_plot`).
     Builds the same sources/buffer/window `DataHub.strip_plot` used to build
@@ -853,7 +934,15 @@ def _strip_plot_subprocess_main(
     # Held in `plot` (not discarded) so its FuncAnimation isn't
     # garbage-collected out from under it before plt.show() blocks.
     plot = _StripPlot(
-        sources, channels, labels, buffer, max_rate, duration, step=step, grid=grid
+        sources,
+        channels,
+        labels,
+        buffer,
+        max_rate,
+        duration,
+        step=step,
+        grid=grid,
+        extra_channels=extra_channels,
     )
     plt.show()  # blocks (across all backends) until the window is closed
 
@@ -897,6 +986,7 @@ def _strip_plot_subprocess_bootstrap(fd):
         labels,
         step,
         grid,
+        extra_channels,
     ) = conn.recv()
     _strip_plot_subprocess_main(
         channels,
@@ -909,6 +999,7 @@ def _strip_plot_subprocess_bootstrap(fd):
         step,
         grid,
         conn,
+        extra_channels=extra_channels,
     )
 
 
@@ -1210,6 +1301,7 @@ class DataHub(Assembly):
         labels=None,
         step=True,
         grid=True,
+        extra_channels=None,
     ):
         """Open a live, rolling strip plot for `channels`, streamed from the
         bsread Dispatcher ("BS" channels) and/or directly from EPICS ("CA"
@@ -1225,6 +1317,15 @@ class DataHub(Assembly):
         interpolating towards it - which is how a monitored value actually
         behaves; pass `False` for the plain connect-the-dots line. `grid`
         (default `True`) shows axis gridlines.
+
+        `extra_channels`: optional `(channel_id, channel_type, label)`
+        tuples not monitored from the start - offered instead behind the
+        plot window's "More channels..." button (only shown when this is
+        non-empty), which lets you add any of them live, on request; see
+        `_StripPlot._open_channel_picker`. This is how the Adjustable/
+        Detector/Assembly `strip_plot` method's `readback_only` keeps the
+        rest of an object's channels out of the way without losing access
+        to them.
 
         Runs in its own subprocess, so the plot keeps redrawing live even
         while this session is blocked on something else (e.g. a synchronous
@@ -1264,6 +1365,7 @@ class DataHub(Assembly):
                 labels,
                 step,
                 grid,
+                extra_channels,
             )
         )
         return _StripPlotHandle(process, parent_conn)
