@@ -104,13 +104,23 @@ def _capture_current_input():
         ip = get_ipython()
         if ip is None:
             return None
-        parent = ip.get_parent() or {}
-        code = parent.get("content", {}).get("code")
-        if code:
-            return code
-        hist = list(ip.history_manager.get_range(raw=True))
-        if hist:
-            return hist[-1][2]
+        # `get_parent` only exists on ipykernel's shell; the terminal shell
+        # has no such method, and letting that AttributeError escape used to
+        # skip the history fallback below -- i.e. capture never worked in a
+        # terminal session.
+        get_parent = getattr(ip, "get_parent", None)
+        if get_parent is not None:
+            try:
+                code = (get_parent() or {}).get("content", {}).get("code")
+            except Exception:
+                code = None
+            if code:
+                return code
+        # The cell being executed is already stored in the raw input history
+        # (store_inputs runs before execution), so the last entry is it.
+        hist = ip.history_manager.input_hist_raw
+        if len(hist) > 1 and hist[-1]:
+            return hist[-1]
     except Exception:
         pass
     return None
