@@ -8,30 +8,43 @@ under a real pgroup's data directory.
 recording_id still follows the usual "{pgroup}_run{run_number:04d}"
 convention (informational only - the server's own bookkeeping/backfill
 matching keys off it), but the recording is stopped with save=False: the
-server never writes anything to a pgroup's own directory tree, regardless of
-which pgroup is named. include_data=True brings the raw per-channel buffers
-back to this process instead, and this script writes them into a local tmp
-directory (or --out-dir, if given) as one escape ArrayTimestamps per
-channel - the same file eco.status_server.storage.write_monitor_recording
-would have produced server-side, just written here instead.
+server itself never writes anything to a pgroup's own directory tree,
+regardless of which pgroup is named. include_data=True brings the raw
+per-channel buffers back to this process instead, and this script writes
+them wherever --out-dir points (a fresh tmp directory by default) as one
+escape ArrayTimestamps per channel - the same file
+eco.status_server.storage.write_monitor_recording would have produced
+server-side, just written here instead.
+
+A full-namespace, unfiltered 10-minute recording is genuinely large
+(measured: 570-790 MB, dominated by a handful of waveform/digitizer
+channels) - pick --out-dir with real headroom (a small local /tmp is not
+it) and consider --max-value-elements/--names to shrink files at the
+source, and --keep-last in --repeat-for-hours mode to bound total disk
+usage regardless of how long the loop runs.
 
 Usage:
     python -m eco.status_server.simulate_scan_monitoring \\
-        --url http://saresb-cons-04:8091 --duration 600
+        --url http://saresb-cons-04:8091 --duration 600 \\
+        --out-dir /sf/bernina/exp/itcom/res/testing
 
     # lighter-weight, against production, a handful of channels only:
     python -m eco.status_server.simulate_scan_monitoring \\
         --url http://saresb-cons-04:8091 --duration 60 \\
         --names bernina.mono.energy bernina.izero
 
-    # repeat 10-minute "scans" back to back for 24 hours (soak test):
+    # repeat 10-minute "scans" back to back for 24 hours (soak test),
+    # filtering waveforms and keeping only the last 5 runs on disk:
     python -m eco.status_server.simulate_scan_monitoring \\
-        --url http://saresb-cons-04:8091 --duration 600 --repeat-for-hours 24
+        --url http://saresb-cons-04:8091 --duration 600 --repeat-for-hours 24 \\
+        --out-dir /sf/bernina/exp/itcom/res/testing \\
+        --max-value-elements 100 --keep-last 5
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -52,6 +65,7 @@ def simulate(
     mode="throttle",
     min_interval=0.1,
     names=None,
+    max_value_elements=None,
     poll_interval=30.0,
     out_dir=None,
     filename="namespace_monitor.ixp.h5",
@@ -75,7 +89,7 @@ def simulate(
     t0 = time.time()
     result = client.start_recording(
         recording_id=recording_id, names=names, mode=mode, min_interval=min_interval,
-        pgroup=pgroup, run_number=run_number,
+        max_value_elements=max_value_elements, pgroup=pgroup, run_number=run_number,
     )
     print(
         f"  attached {result.get('n_channels_attached')}/"
@@ -123,9 +137,11 @@ def simulate_loop(
     mode="throttle",
     min_interval=0.1,
     names=None,
+    max_value_elements=None,
     poll_interval=30.0,
     out_dir=None,
     filename="namespace_monitor.ixp.h5",
+    keep_last=5,
 ):
     """Repeat :func:`simulate` back to back - one recording per "scan" -
     until `total_hours` have elapsed, the same start/stop cycle a real
@@ -140,6 +156,15 @@ def simulate_loop(
     transient server hiccup, ...) is logged and skipped rather than ending
     the whole soak test - the point of a 24 h run is to find out whether
     that happens at all, not to die the first time it does.
+
+    keep_last bounds total on-disk footprint regardless of how long the
+    loop runs: after each iteration, only the `keep_last` most recent
+    run<NNNN> subdirectories under `out_dir` are kept, older ones are
+    removed. None (or 0) keeps everything - only sensible if `out_dir` has
+    real headroom and/or `names`/`max_value_elements` already keep each
+    file small (see the ~600 MB/10 min full-namespace measurement this
+    default is guarding against - a 24 h run of 144 unfiltered scans would
+    otherwise be tens of GB).
     """
     run_number = int(
         start_run_number if start_run_number is not None else time.time() % 10_000
@@ -148,7 +173,8 @@ def simulate_loop(
         tempfile.mkdtemp(prefix="namespace_monitor_sim_loop_")
     )
     base_out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"looping {scan_duration:.0f} s scans for {total_hours:.2f} h into {base_out_dir}")
+    print(f"looping {scan_duration:.0f} s scans for {total_hours:.2f} h into {base_out_dir}"
+          + (f" (keeping last {keep_last})" if keep_last else " (keeping all)"))
 
     t_start = time.time()
     deadline = t_start + total_hours * 3600.0
@@ -163,7 +189,7 @@ def simulate_loop(
                 url, pgroup=pgroup, run_number=run_number,
                 duration=min(scan_duration, max(0.0, deadline - time.time())),
                 mode=mode, min_interval=min_interval, names=names,
-                poll_interval=poll_interval,
+                max_value_elements=max_value_elements, poll_interval=poll_interval,
                 out_dir=base_out_dir / f"run{run_number:04d}",
                 filename=filename,
             )
@@ -172,6 +198,16 @@ def simulate_loop(
             n_failed += 1
             print(f"  !!! scan {iteration} (run {run_number:04d}) failed: "
                   f"{type(exc).__name__}: {exc}")
+        if keep_last:
+            run_dirs = sorted(
+                (p for p in base_out_dir.glob("run*") if p.is_dir()),
+                key=lambda p: p.name,
+            )
+            for stale in run_dirs[:-keep_last]:
+                try:
+                    shutil.rmtree(stale)
+                except Exception:
+                    print(f"  (could not remove old {stale})")
         run_number += 1
         remaining = deadline - time.time()
         if remaining <= 0:
@@ -188,8 +224,10 @@ def simulate_loop(
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Simulate one scan's status-server monitoring traffic "
-                    "(start_monitoring/.../stop_monitoring), writing only to a "
-                    "local tmp directory - no pgroup data is ever touched."
+                    "(start_monitoring/.../stop_monitoring). The server is "
+                    "always told save=False, so it never writes anything "
+                    "under any pgroup's own directory itself - the file "
+                    "lands wherever --out-dir points instead."
     )
     parser.add_argument(
         "--url", required=True,
@@ -228,6 +266,14 @@ def main(argv=None):
              "recording the whole namespace",
     )
     parser.add_argument(
+        "--max-value-elements", type=int, default=None,
+        help="drop a channel's update outright if its value has more than "
+             "this many elements - the single biggest lever on file size: "
+             "a handful of waveform/digitizer channels can dominate a "
+             "full-namespace recording by an order of magnitude over every "
+             "scalar channel combined. None (default) keeps everything.",
+    )
+    parser.add_argument(
         "--poll-interval", type=float, default=30.0,
         help="print a progress line this often while waiting; 0 disables "
              "(default: %(default)s)",
@@ -251,6 +297,14 @@ def main(argv=None):
         help="idle seconds between consecutive scans in --repeat-for-hours "
              "mode (default: %(default)s)",
     )
+    parser.add_argument(
+        "--keep-last", type=int, default=5,
+        help="in --repeat-for-hours mode, keep only this many most-recent "
+             "run<NNNN> subdirectories under --out-dir, deleting older ones "
+             "as new ones are written - bounds total disk usage regardless "
+             "of how long the loop runs. 0 keeps everything (default: "
+             "%(default)s)",
+    )
     args = parser.parse_args(argv)
     if args.repeat_for_hours is not None and args.hours is not None:
         parser.error("--hours is not meaningful together with --repeat-for-hours "
@@ -262,15 +316,18 @@ def main(argv=None):
             args.url, pgroup=args.pgroup, start_run_number=args.run_number,
             scan_duration=duration, total_hours=args.repeat_for_hours,
             gap=args.gap, mode=args.mode, min_interval=args.min_interval,
-            names=args.names, poll_interval=args.poll_interval,
+            names=args.names, max_value_elements=args.max_value_elements,
+            poll_interval=args.poll_interval,
             out_dir=args.out_dir, filename=args.filename,
+            keep_last=args.keep_last,
         )
         return
 
     simulate(
         args.url, pgroup=args.pgroup, run_number=args.run_number,
         duration=duration, mode=args.mode, min_interval=args.min_interval,
-        names=args.names, poll_interval=args.poll_interval,
+        names=args.names, max_value_elements=args.max_value_elements,
+        poll_interval=args.poll_interval,
         out_dir=args.out_dir, filename=args.filename,
     )
 
