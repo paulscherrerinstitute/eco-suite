@@ -358,8 +358,38 @@ class HealthClient(FakeStatusClient):
         return self._health_body
 
 
+class FakeStatusServerComponent:
+    """Stand-in for eco.status_server.namespace_component.StatusServer's
+    start_monitoring/stop_monitoring (see Daq.status_server) - mirrors their
+    real logic (recording_id convention, filename default) against the same
+    fake client these tests already use for status_client, so
+    start_scan_monitoring/end_scan_monitoring's routing through
+    self.status_server is what's under test here, not a namespace lookup."""
+
+    def __init__(self, client):
+        self._client = client
+
+    def start_monitoring(self, pgroup, run_number, names=None, mode="throttle",
+                         min_interval=0.1, **kwargs):
+        recording_id = f"{pgroup}_run{int(run_number):04d}"
+        result = self._client.start_recording(
+            recording_id=recording_id, names=names, mode=mode,
+            min_interval=min_interval, pgroup=pgroup, run_number=run_number,
+            **kwargs,
+        )
+        return recording_id, result
+
+    def stop_monitoring(self, recording_id, pgroup, run_number, upload=True,
+                        filename="namespace_monitor.ixp.h5", **kwargs):
+        return self._client.capture_recording(
+            recording_id, pgroup, run_number, upload=upload,
+            filename=filename, **kwargs,
+        )
+
+
 def _daq_fresh(client, **kw):
     daq = _daq(status_server=client, namespace=FakeNamespace())
+    daq._status_server_component = FakeStatusServerComponent(client)
     daq.status_server_max_age = kw.pop("max_age", 12 * 3600)
     daq.status_server_stale_action = kw.pop("stale_action", "ask")
     daq.status_server_stale_timeout = kw.pop("stale_timeout", 0.01)

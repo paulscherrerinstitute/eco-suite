@@ -2,7 +2,12 @@ from concurrent.futures import ThreadPoolExecutor
 import copy
 import logging
 from datetime import datetime
-from inspect import isclass, signature
+from inspect import isclass, isfunction, signature
+import ast
+import builtins
+import importlib
+import sys
+from types import ModuleType
 import json
 from pathlib import Path
 from tkinter import W
@@ -124,6 +129,161 @@ def _capture_current_input():
     except Exception:
         pass
     return None
+
+
+def _bound_and_loaded_names(tree):
+    """(names read, names bound anywhere) in an ast tree. Scopes are ignored
+    on purpose: a name bound *anywhere* in the captured code is treated as
+    defined by it, which can only make us skip an import, never add a wrong
+    one."""
+    loaded, bound = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            (loaded if isinstance(node.ctx, ast.Load) else bound).add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            loaded.add(node.target.id)  # `x += 1` reads x too
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for a in node.names:
+                bound.add((a.asname or a.name).split(".")[0])
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
+    return loaded, bound
+
+
+def _import_line_for(name, obj):
+    """`import`/`from ... import` statement that rebinds `name` to `obj` in a
+    fresh interpreter, or None if there is no such statement we can vouch for
+    (an instance, a class defined in `__main__`/the session, a re-export
+    under another name, ...). Only modules, classes and functions are
+    considered, and only after verifying that importing the statement's
+    target really yields `obj` -- so a wrong guess is never written."""
+    # isinstance/isclass are safe on an unresolved eco lazy Proxy (it reports
+    # a stub __class__); anything else is not touched, so nothing here can
+    # initialise a component as a side effect.
+    if isinstance(obj, ModuleType):
+        mod = obj.__name__
+        return f"import {mod}" if name == mod else f"import {mod} as {name}"
+    if not (isclass(obj) or isfunction(obj)):
+        return None
+    module = getattr(obj, "__module__", None)
+    real = getattr(obj, "__name__", None)
+    if not module or not real or module in ("__main__", "builtins"):
+        return None
+    if module.split(".")[0] in ("IPython", "ipykernel"):
+        return None
+    try:
+        if getattr(importlib.import_module(module), real, None) is not obj:
+            return None
+    except Exception:
+        return None
+    return (
+        f"from {module} import {real}"
+        if name == real
+        else f"from {module} import {real} as {name}"
+    )
+
+
+def _patch_prelude(
+    code, user_ns, history=(), known_names=(), replay=True, transform=None
+):
+    """What a captured `_append(...)` cell needs so it still runs when
+    replayed from a patch file in a fresh session.
+
+    Returns `(imports, cells, notes)`.
+
+    For every name `code` reads that (a) it does not itself bind, (b) is not
+    a builtin, (c) is not in `known_names` (what the patch file's own
+    `from <root_module> import *` already provides) and (d) exists in
+    `user_ns`:
+
+    * if it resolves to something importable (`_import_line_for`), an entry
+      in `imports`;
+    * otherwise it exists only because of something typed earlier in the
+      session (`x = ...`). With `replay=True` the most recent earlier
+      `history` cell that binds it goes into `cells` as `(history_index,
+      code)`, and that cell's own free names are resolved the same way,
+      recursively -- so everything the appended object was built from is
+      re-created, in the original order, ahead of the `_append` line. Cells
+      run *as typed*, side effects included (a cell that moved a motor moves
+      it again); `_append(..., patch_replay_origin=False)` opts out. With
+      `replay=False` the defining cell is only quoted in `notes` as
+      comments.
+
+    `history` is the raw input history with the current cell last (IPython's
+    `input_hist_raw`, so index == execution count); only earlier entries are
+    considered. `transform` (IPython's `transform_cell`) turns magics into
+    plain Python and is applied to everything that is parsed and returned.
+    `notes` also reports names with no defining cell to be found.
+
+    Best-effort: code that does not parse yields `([], [], [])`.
+    """
+    transform = transform or (lambda c: c)
+    history = list(history)
+    known = set(known_names)
+    imports, notes, cells = [], [], {}
+    seen = set()
+    parsed = {}
+
+    def info(i):
+        if i not in parsed:
+            try:
+                parsed[i] = _bound_and_loaded_names(ast.parse(transform(history[i])))
+            except SyntaxError:
+                parsed[i] = None
+        return parsed[i]
+
+    def need(names, limit, soft=()):
+        for name in sorted(names):
+            if (name, limit) in seen:
+                continue
+            seen.add((name, limit))
+            if name in known or hasattr(builtins, name) or name not in user_ns:
+                continue
+            line = _import_line_for(name, user_ns[name])
+            if line:
+                if line not in imports:
+                    imports.append(line)
+                continue
+            idx = next(
+                (
+                    i
+                    for i in range(limit - 1, 0, -1)
+                    if info(i) is not None and name in info(i)[1]
+                ),
+                None,
+            )
+            if idx is None:
+                if name not in soft:
+                    notes.append(
+                        f"# NOTE: '{name}' is not importable and no input "
+                        "defining it was found in the session history."
+                    )
+                continue
+            if not replay:
+                notes.append(
+                    f"# NOTE: '{name}' is not importable (defined in the "
+                    f"interactive session, In[{idx}]):"
+                )
+                notes.extend(f"#     {ln}" for ln in history[idx].rstrip("\n").splitlines())
+                continue
+            if idx in cells:
+                continue
+            cells[idx] = transform(history[idx]).rstrip("\n")
+            loaded_c, bound_c = info(idx)
+            # `x = x + 1` / `x += 1` also need the *previous* definition of x
+            need((loaded_c - bound_c) | ({name} & loaded_c), idx, soft={name})
+
+    try:
+        tree = ast.parse(transform(code))
+    except SyntaxError:
+        return [], [], []
+    loaded, bound = _bound_and_loaded_names(tree)
+    need(loaded - bound, max(len(history) - 1, 0))
+    return imports, sorted(cells.items()), notes
 
 
 class IncompleteInitialisationError(Exception):
@@ -369,6 +529,7 @@ class Assembly:
         overwrite=False,
         optional=None,
         add_patch=False,
+        patch_replay_origin=True,
         **kwargs,
     ):
         """This hidden method appends an object to the assembly. It can take either an object instance, or a class (in which case it will be called with the provided args and kwargs).
@@ -414,7 +575,16 @@ class Assembly:
             non-fatal: no `patch_file` configured, not running interactively,
             or a write failure all just log a warning -- `add_patch` is a
             convenience on top of a successful append, never a reason for
-            the append itself to raise. See `_write_patch`."""
+            the append itself to raise. See `_write_patch`.
+        patch_replay_origin : bool, optional
+            Only used with `add_patch=True`. If True (the default), the
+            earlier inputs of the session that created anything the appended
+            object was built from (`x = ...` cells, recursively) are written
+            into the patch ahead of the `_append` line, so the patch is
+            self-contained -- and replaying it re-runs those inputs, side
+            effects included. If False, they are only quoted as comments.
+            Classes/functions/modules are always imported instead of
+            replayed."""
         if optional is None:
             optional = OPTIONAL_APPEND_DEFAULT
         if overwrite:
@@ -522,6 +692,7 @@ class Assembly:
                 missing,
             )
 
+        self._ensure_alias(obj, name)
         self.__dict__[name] = obj
         self.alias.append(self.__dict__[name].alias)
         _register_parent_assembly(self.__dict__[name], self)
@@ -559,7 +730,71 @@ class Assembly:
                 )
 
         if add_patch:
-            self._write_patch(name)
+            self._write_patch(name, replay=patch_replay_origin)
+
+    def __setitem__(self, name, obj):
+        """`assembly["name"] = obj` is `assembly._append(obj, name="name")`
+        with default flags; use `_append` directly for `is_setting=` etc.
+
+        Assigning to the name of an existing component replaces it
+        (`overwrite=True`). A name that is taken by something that is not a
+        component -- `alias`, `memory`, a method -- raises `KeyError` rather
+        than being clobbered, since `_append`'s overwrite would tear down
+        bookkeeping that object never had.
+        """
+        if not isinstance(name, str):
+            raise TypeError(
+                f"assembly keys must be str, not {type(name).__name__}"
+            )
+        overwrite = False
+        if name in self.__dict__:
+            current = self.__dict__[name]
+            if any(w() is current for w in self.status_collection._list):
+                overwrite = True
+            elif not isinstance(current, FailedComponent):
+                raise KeyError(
+                    f"'{name}' is already an attribute of "
+                    f"'{self.alias.get_full_name()}' and not a component; "
+                    f"refusing to overwrite it"
+                )
+        self._append(obj, name=name, overwrite=overwrite)
+
+    @staticmethod
+    def _ensure_alias(obj, name):
+        """Give `obj` a bare `Alias(name)` if it does not carry one.
+
+        Everything downstream of `_append` (the alias tree, status
+        collections, `get_status`, `get_tree`, ...) addresses a member via
+        its `.alias`, so a component from outside eco's own classes -- a
+        plain object with a `get_current_value`, say -- used to fail the
+        append with an `AttributeError` on `.alias`. Such a member simply
+        gets an alias with no channel and no channeltype: it takes part in
+        the tree and in status/display like any other, it just contributes no
+        channel information. An object that already has an `Alias` is left
+        untouched; one whose `alias` attribute is something else (e.g. a
+        string) is not overwritten, since that could break the object.
+        """
+        existing = getattr(obj, "alias", None)
+        if isinstance(existing, Alias):
+            return
+        if existing is not None:
+            raise TypeError(
+                f"cannot append '{name}': its 'alias' attribute is a "
+                f"{type(existing).__name__}, not an eco Alias"
+            )
+        if name is None:
+            name = getattr(obj, "name", None)
+        if name is None:
+            raise ValueError(
+                "cannot append an object without an alias unless a name is given"
+            )
+        try:
+            obj.alias = Alias(name)
+        except (AttributeError, TypeError) as e:
+            raise TypeError(
+                f"cannot append '{name}': {type(obj).__name__} has no alias "
+                f"and does not accept attributes to attach one ({e})"
+            ) from e
 
     def _resolve_patch_target(self):
         """(patch_file, root_module) from the nearest of `self` and its
@@ -585,7 +820,7 @@ class Assembly:
                 return Path(patch_file), getattr(obj, "root_module", None)
         return None, None
 
-    def _write_patch(self, name):
+    def _write_patch(self, name, replay=True):
         """Append the IPython input that just built `self.__dict__[name]`
         (captured via `_capture_current_input`) to this assembly's
         namespace's patch file (`_resolve_patch_target`) -- see `_append`'s
@@ -611,6 +846,40 @@ class Assembly:
             )
             return
         code = _capture_current_input()
+        imports, cells, notes = [], [], []
+        if code:
+            try:
+                from IPython import get_ipython
+
+                ip = get_ipython()
+                transform = ip.input_transformer_manager.transform_cell
+                known = ()
+                if root_module and root_module in sys.modules:
+                    known = vars(sys.modules[root_module]).keys()
+                imports, cells, notes = _patch_prelude(
+                    code,
+                    ip.user_ns,
+                    ip.history_manager.input_hist_raw,
+                    known,
+                    replay=replay,
+                    transform=transform,
+                )
+                # magics come out as `get_ipython().run_line_magic(...)`
+                code = transform(code)
+                if "get_ipython" in code + "".join(c for _, c in cells):
+                    imports.append("from IPython import get_ipython")
+            except Exception:
+                logger.debug("patch import analysis failed", exc_info=True)
+            for i, c in cells:
+                logger.warning(
+                    "add_patch: also recording In[%d] (%s), which the "
+                    "appended object was built from; it re-runs when the "
+                    "patch is replayed.",
+                    i,
+                    c.splitlines()[0][:60] if c else "",
+                )
+            for n in notes:
+                logger.warning("add_patch: %s", n.lstrip("# "))
         if not code:
             logger.warning(
                 "add_patch=True on '%s.%s' but could not capture the "
@@ -622,6 +891,7 @@ class Assembly:
             return
         try:
             from ..utilities.datafiles import ensure_dir, ensure_group_writable
+            from ..utilities.patchfile import format_entry_header
 
             ensure_dir(patch_file.parent)
             is_new = not patch_file.exists()
@@ -641,10 +911,19 @@ class Assembly:
                 full_name = self.alias.get_full_name()
                 target = f"{full_name}.{name}" if full_name else name
                 f.write(
-                    f"\n# --- patch for {target} "
-                    f"({datetime.now().isoformat(timespec='seconds')}, "
-                    f"{getpass.getuser()}) ---\n"
+                    "\n"
+                    + format_entry_header(
+                        target,
+                        datetime.now().isoformat(timespec="seconds"),
+                        getpass.getuser(),
+                    )
+                    + "\n"
                 )
+                for line in imports + notes:
+                    f.write(line + "\n")
+                for i, c in cells:
+                    f.write(f"# --- In[{i}], replayed: origin of an object used below ---\n")
+                    f.write(c + "\n")
                 f.write(code.rstrip("\n") + "\n")
             ensure_group_writable(patch_file)
         except Exception:

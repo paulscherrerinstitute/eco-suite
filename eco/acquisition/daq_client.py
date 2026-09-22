@@ -300,6 +300,11 @@ class Daq(Assembly):
         # None (default) keeps the existing, unchanged local behaviour.
         self._status_server = status_server
         self._status_server_client = None
+        # Lazily-resolved NamespaceComponent(namespace, "status_server") -
+        # bernina.status_server, the StatusServer Assembly - not the same
+        # thing as _status_server/status_client above (see the status_server
+        # property below for why). None until first accessed.
+        self._status_server_component = None
         if self._status_server:
             print(f"daq: taking run status from status server {self._status_server} "
                   "(set ECO_STATUS_SERVER=off in the shell before starting this "
@@ -1596,6 +1601,29 @@ class Daq(Assembly):
                 self._status_server_client = self._status_server
         return self._status_server_client
 
+    @property
+    def status_server(self):
+        """The namespace's StatusServer Assembly (bernina.status_server),
+        resolved lazily via NamespaceComponent - the same pattern
+        self.pgroup/self.checker/self.run_table already use for their own
+        namespace dependencies (see eco.utilities.config.NamespaceComponent).
+
+        Not the off-switch, and not interchangeable with status_client
+        above: bernina.status_server is always built regardless of
+        ECO_STATUS_SERVER=off (it stays useful for inspecting/restarting the
+        server either way - see eco/bernina/bernina_daq.py), so every caller
+        below still checks status_client/use_running_status_server first,
+        exactly as before, and only reaches this property once that gate has
+        already passed.
+        """
+        if getattr(self, "_status_server_component", None) is None:
+            from eco.utilities.config import NamespaceComponent
+
+            self._status_server_component = NamespaceComponent(
+                self.namespace, "status_server"
+            )
+        return resolve_lazy(self._status_server_component)
+
     def _status_server_failed(self, what, exc):
         """Common handling for a status-server call that did not work:
         re-raise in strict mode, otherwise warn and let the caller fall back
@@ -2559,11 +2587,9 @@ class Daq(Assembly):
             runno = scan.daq_run_number.get_current_value()
         else:
             runno = self.daq.get_last_run_number()
-        recording_id = f"{pgroup}_run{runno:04d}"
         try:
-            result = self.status_client.start_recording(
-                recording_id=recording_id, names=names, mode=mode,
-                min_interval=min_interval, pgroup=pgroup, run_number=runno,
+            recording_id, result = self.status_server.start_monitoring(
+                pgroup, runno, names=names, mode=mode, min_interval=min_interval,
             )
         except Exception as exc:
             return self._status_server_failed("start monitoring", exc)
@@ -2621,9 +2647,8 @@ class Daq(Assembly):
         else:
             runno = self.daq.get_last_run_number()
         try:
-            job = self.status_client.capture_recording(
+            job = self.status_server.stop_monitoring(
                 recording_id, pgroup, runno, upload=upload,
-                filename="namespace_monitor.ixp.h5",
             )
         except Exception as exc:
             return self._status_server_failed("end monitoring", exc)

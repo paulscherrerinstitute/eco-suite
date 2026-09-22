@@ -728,6 +728,23 @@ namespace.mark_beamline(
 #         return 1.0 * val2
 
 
+def _report_pgroup_import_failure(path):
+    """A failing per-pgroup file (bernina_exp.py, patches.py) must not stop
+    the namespace from loading, but it used to be swallowed by the bare
+    `except` below and reported only as "Did not succeed to append an eco
+    folder" -- indistinguishable from the folder itself being unreachable.
+    Print which file failed, the traceback (its line numbers point into that
+    file), and that everything after the failing statement in it did not run.
+    """
+    import traceback
+
+    print(
+        f"eco: importing {path} failed with the error below; the rest of that "
+        f"file was NOT executed (the namespace itself loaded normally):\n"
+        f"{traceback.format_exc()}"
+    )
+
+
 # try to append pgroup folder to path !!!!! This caused eco to run in a timeout without error traceback !!!!!
 # TODO  pgroup non dynamic here!
 try:
@@ -765,7 +782,10 @@ try:
             # pgroup_eco_path is on sys.path (above), so this is a plain
             # top-level module import, not a package-relative one -- the
             # per-pgroup file lives outside the eco package entirely.
-            import bernina_exp
+            try:
+                import bernina_exp
+            except Exception:
+                _report_pgroup_import_failure(pgroup_exp_path)
 
         # Default location for Assembly._append(..., add_patch=True) (see
         # eco.elements.assembly.Assembly._write_patch): same pgroup eco
@@ -774,19 +794,23 @@ try:
         # bernina_exp.py, patches.py is never seeded from a template --
         # it does not exist until the first add_patch=True append actually
         # writes one, so an unused pgroup has no empty patches.py sitting
-        # around. Importing it here (after bernina_exp, so patches can
+        # around. Running it here (after bernina_exp, so patches can
         # build on whatever bernina_exp.py added) replays every patch
         # captured in a previous interactive session.
         pgroup_patch_path = pgroup_eco_path.get_path() / "patches.py"
         namespace.patch_file = pgroup_patch_path
         if pgroup_patch_path.exists():
-            import patches
+            # entry by entry, so one failing patch does not cost the ones
+            # after it; failures are printed with the file's line numbers.
+            from ..utilities.patchfile import run_patch_file
+
+            run_patch_file(pgroup_patch_path)
     else:
         print(
             "Could not access experiment folder, could be due to more systematic file system failure!"
         )
-except:
-    print("Did not succeed to append an eco folder in current pgroup")
+except Exception as e:
+    print(f"Did not succeed to append an eco folder in current pgroup: {type(e).__name__}: {e}")
 
 
 # class Xspect_EH55(Assembly):

@@ -37,12 +37,14 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import colorama
 
 from eco.elements.adjustable import AdjustableFS
 from eco.elements.assembly import Assembly
+from eco.elements.detector import DetectorGet
 
 from .client import StatusServerClient, warn_failed_required
 
@@ -88,6 +90,8 @@ class StatusServer(Assembly):
         self.base_url = base_url
         self._client = StatusServerClient(base_url)
         self._gui_proc = None
+        self._health_cache = None
+        self._stats_cache = None
 
         cfg = Path(config_dir) if config_dir is not None else Path(_DEFAULT_CONFIG_DIR)
         # RecordingSession.__init__'s own accepted modes -- see its
@@ -135,6 +139,121 @@ class StatusServer(Assembly):
             str(cfg / "status_server_recording_max_points_per_channel.json"),
             default_value=100_000, name="recording_max_points_per_channel",
             is_setting=True,
+        )
+
+        # -- diagnostics ------------------------------------------------
+        # Plain Detector children (get_current_value() only, matching the
+        # generic DetectorGet wrapper used the same way in
+        # eco.elements.adj_obj.py) so these show up in .status() and any
+        # generic widget/property-grid layer like any other device's
+        # readings, instead of being reachable only via .health()/.stats()
+        # dicts or __repr__'s printed summary. Values come from
+        # _cached_health()/_cached_stats() below, not straight from
+        # self._client, so reading all five together (e.g. one .status()
+        # sweep) costs at most 2 HTTP calls, not 5.
+        self._append(
+            DetectorGet(lambda: (self._cached_health() or {}).get("n_initialized"),
+                        name="n_initialized"),
+            call_obj=False, name="n_initialized", is_setting=False,
+        )
+        self._append(
+            DetectorGet(lambda: (self._cached_health() or {}).get("n_failed"),
+                        name="n_failed"),
+            call_obj=False, name="n_failed", is_setting=False,
+        )
+        self._append(
+            DetectorGet(lambda: (self._cached_health() or {}).get("failed_names"),
+                        name="failed_names"),
+            call_obj=False, name="failed_names", is_setting=False,
+        )
+        self._append(
+            DetectorGet(self._get_last_namespace_update, name="last_namespace_update"),
+            call_obj=False, name="last_namespace_update", is_setting=False,
+        )
+        self._append(
+            DetectorGet(self._get_last_request, name="last_request"),
+            call_obj=False, name="last_request", is_setting=False,
+        )
+
+    # -- diagnostics ------------------------------------------------------
+
+    def _cached_health(self, ttl=1.0) -> dict | None:
+        """health(), memoized for `ttl` seconds - one namespace-state read
+        shared by n_initialized/n_failed/failed_names/last_namespace_update
+        rather than one HTTP round trip per Detector. Swallows a failed
+        request (server down/unreachable) to None rather than raising, since
+        this backs plain status-reading Detectors, not an action a caller is
+        waiting on."""
+        now = time.time()
+        if self._health_cache is None or now - self._health_cache[0] > ttl:
+            try:
+                self._health_cache = (now, self._client.health())
+            except Exception:
+                self._health_cache = (now, None)
+        return self._health_cache[1]
+
+    def _cached_stats(self, ttl=1.0) -> dict | None:
+        """stats(), memoized for `ttl` seconds - see _cached_health."""
+        now = time.time()
+        if self._stats_cache is None or now - self._stats_cache[0] > ttl:
+            try:
+                self._stats_cache = (now, self._client.stats())
+            except Exception:
+                self._stats_cache = (now, None)
+        return self._stats_cache[1]
+
+    def _get_last_namespace_update(self):
+        """ISO datetime the server's namespace last finished (re)building
+        (health()'s last_init_finished, an epoch-seconds float) - None if it
+        never has, or if the server could not be reached."""
+        health = self._cached_health()
+        finished = health.get("last_init_finished") if health else None
+        return datetime.fromtimestamp(finished).isoformat() if finished else None
+
+    def _get_last_request(self):
+        """The most recent request this server answered and what kind it
+        was: {"kind", "at" (ISO datetime), "duration_s"} - None if it has
+        served nothing yet, or if it could not be reached."""
+        stats = self._cached_stats()
+        summary = stats.get("summary") if stats else None
+        if not summary or not summary.get("n"):
+            return None
+        last_at = summary.get("last_at")
+        return {
+            "kind": summary.get("last_kind"),
+            "at": datetime.fromtimestamp(last_at).isoformat() if last_at else None,
+            "duration_s": summary.get("last_duration_s"),
+        }
+
+    # -- monitoring ---------------------------------------------------------
+
+    def start_monitoring(self, pgroup, run_number, names=None, mode="throttle",
+                         min_interval=0.1, **kwargs) -> tuple[str, dict]:
+        """Start a namespace-wide recording for one run, named by the
+        pgroup/run-number convention every scan-boundary caller uses
+        (`"{pgroup}_run{run_number:04d}"`) - the one place that convention
+        lives, rather than duplicated at each call site. Returns
+        (recording_id, server response); see StatusServerClient.start_recording
+        for what mode/min_interval/**kwargs mean."""
+        recording_id = f"{pgroup}_run{int(run_number):04d}"
+        result = self._client.start_recording(
+            recording_id=recording_id, names=names, mode=mode,
+            min_interval=min_interval, pgroup=pgroup, run_number=run_number,
+            **kwargs,
+        )
+        return recording_id, result
+
+    def stop_monitoring(self, recording_id, pgroup, run_number, upload=True,
+                        filename="namespace_monitor.ixp.h5", **kwargs) -> dict:
+        """Stop+write+upload a recording started with start_monitoring -
+        thin wrapper on capture_recording, same filename convention every
+        caller already uses. The server writes the file into the run's
+        pgroup-specific aux directory (eco.status_server.config.data_dir)
+        and uploads it there in the background; see
+        StatusServerClient.capture_recording."""
+        return self._client.capture_recording(
+            recording_id, pgroup, run_number, upload=upload,
+            filename=filename, **kwargs,
         )
 
     # -- control --------------------------------------------------------

@@ -42,6 +42,7 @@ def server(monkeypatch, tmp_path):
 
         def stats(self, limit=None, kind=None):
             calls["stats"] = {"limit": limit, "kind": kind}
+            calls["stats_n"] = calls.get("stats_n", 0) + 1
             return {
                 "summary": {
                     "n": 42, "n_errors": 0, "last_at": time.time() - 3.5,
@@ -52,6 +53,17 @@ def server(monkeypatch, tmp_path):
 
         def monitor_policy(self):
             return {"max_rate_hz": 10.0, "auto_monitor_default": True}
+
+        def start_recording(self, **kwargs):
+            calls.setdefault("start_recording", []).append(kwargs)
+            return {"n_channels_attached": 100, "n_channels_requested": 120}
+
+        def capture_recording(self, recording_id, pgroup, run_number, **kwargs):
+            calls.setdefault("capture_recording", []).append(
+                {"recording_id": recording_id, "pgroup": pgroup,
+                 "run_number": run_number, **kwargs}
+            )
+            return {"job_id": "j3", "path": "/data/p1/run0042/aux/monitors.esc.h5"}
 
         def restart(self, wait=True, timeout=1800, progress=True):
             calls["restart"] = {"wait": wait, "timeout": timeout, "progress": progress}
@@ -237,3 +249,129 @@ def test_gui_launches_a_detached_subprocess(server, monkeypatch):
     assert proc.pid == 12345
     assert calls[0][-2:] == ["--url", "http://fake:8091"]
     assert "eco.status_server.gui" in calls[0]
+
+
+# --------------------------------------------------------------------------
+# monitoring: start_monitoring/stop_monitoring - the recording_id/filename
+# convention centralized here instead of duplicated in Daq (see
+# eco.acquisition.daq_client.Daq.status_server/start_scan_monitoring)
+
+
+def test_start_monitoring_builds_the_run_recording_id(server):
+    recording_id, result = server.start_monitoring("p12345", 42)
+    assert recording_id == "p12345_run0042"
+    assert result["n_channels_attached"] == 100
+    assert server._calls["start_recording"] == [
+        {"recording_id": "p12345_run0042", "names": None, "mode": "throttle",
+         "min_interval": 0.1, "pgroup": "p12345", "run_number": 42}
+    ]
+
+
+def test_start_monitoring_accepts_names_and_mode(server):
+    server.start_monitoring("p12345", 7, names=["a", "b"], mode="all",
+                             min_interval=0.0)
+    call = server._calls["start_recording"][0]
+    assert call["names"] == ["a", "b"]
+    assert call["mode"] == "all"
+    assert call["recording_id"] == "p12345_run0007"
+
+
+def test_stop_monitoring_uses_the_default_filename(server):
+    job = server.stop_monitoring("p12345_run0042", "p12345", 42)
+    assert job["job_id"] == "j3"
+    assert server._calls["capture_recording"] == [
+        {"recording_id": "p12345_run0042", "pgroup": "p12345",
+         "run_number": 42, "upload": True, "filename": "namespace_monitor.ixp.h5"}
+    ]
+
+
+def test_stop_monitoring_can_skip_the_upload(server):
+    server.stop_monitoring("p12345_run0042", "p12345", 42, upload=False)
+    assert server._calls["capture_recording"][0]["upload"] is False
+
+
+# --------------------------------------------------------------------------
+# diagnostics: plain Detector children (get_current_value() only), backed by
+# health()/stats() data that already exists server-side - see
+# eco.status_server.namespace_store.NamespaceMonitorStore.connection_report
+# and eco.status_server.query_stats.RequestStats.summary
+
+
+def test_n_initialized_and_n_failed_and_failed_names_are_detectors(server):
+    assert server.n_initialized.get_current_value() == 80
+    assert server.n_failed.get_current_value() == 1
+    assert server.failed_names.get_current_value() == ["bad_component"]
+
+
+def test_last_namespace_update_reads_last_init_finished(server):
+    finished = time.time() - 30
+    server._client.health = lambda: {
+        "state": "ready", "ready": True, "n_initialized": 80, "n_target_names": 82,
+        "n_failed": 0, "failed_names": [], "n_monitorable": 9000, "generation": 3,
+        "uptime_s": 120.0, "failed_required": [], "last_init_finished": finished,
+    }
+    from datetime import datetime
+
+    assert (
+        server.last_namespace_update.get_current_value()
+        == datetime.fromtimestamp(finished).isoformat()
+    )
+
+
+def test_last_namespace_update_is_none_when_never_built(server):
+    server._client.health = lambda: {
+        "state": "initializing", "ready": False, "n_initialized": 0,
+        "n_target_names": 82, "n_failed": 0, "failed_names": [],
+        "n_monitorable": 0, "generation": 0, "uptime_s": 1.0,
+        "failed_required": [], "last_init_finished": None,
+    }
+    assert server.last_namespace_update.get_current_value() is None
+
+
+def test_last_request_reports_kind_and_duration(server):
+    value = server.last_request.get_current_value()
+    assert value["kind"] == "snapshot"
+    assert value["duration_s"] == 0.017
+    assert value["at"] is not None
+
+
+def test_last_request_is_none_when_nothing_served_yet(server):
+    server._client.stats = lambda limit=None, kind=None: {
+        "summary": {"n": 0}, "recent": [],
+    }
+    assert server.last_request.get_current_value() is None
+
+
+def test_diagnostics_are_cached_across_reads_within_the_ttl(server, monkeypatch):
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    server.n_initialized.get_current_value()
+    server.n_failed.get_current_value()
+    server.failed_names.get_current_value()
+    # three status-child reads, one shared health() call
+    assert server._calls["health"] == 1
+
+    server.last_request.get_current_value()
+    server.last_request.get_current_value()
+    # two reads of the same stats-backed detector, one shared stats() call
+    assert server._calls["stats_n"] == 1
+
+
+def test_diagnostics_refetch_after_the_ttl_expires(server, monkeypatch):
+    t = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: t[0])
+    server.n_initialized.get_current_value()
+    t[0] += 2.0  # past the 1.0 s cache TTL
+    server.n_initialized.get_current_value()
+    assert server._calls["health"] == 2
+
+
+def test_diagnostics_degrade_to_none_when_the_server_is_unreachable(server):
+    def boom():
+        raise ConnectionError("refused")
+
+    server._client.health = boom
+    server._client.stats = lambda limit=None, kind=None: (_ for _ in ()).throw(
+        ConnectionError("refused")
+    )
+    assert server.n_initialized.get_current_value() is None
+    assert server.last_request.get_current_value() is None
