@@ -430,7 +430,7 @@ class StatusServerClient:
                         max_points_per_channel=100_000,
                         max_value_elements=None,
                         subscription_mask=None,
-                        pgroup=None, run_number=None) -> dict:
+                        pgroup=None, run_number=None, timeout=None) -> dict:
         """Start monitoring every monitorable status channel on the server.
 
         mode:
@@ -456,6 +456,18 @@ class StatusServerClient:
         capture for the same run can opportunistically backfill a channel
         that has not updated on its own yet - see
         NamespaceMonitorStore.backfill_running_recordings.
+
+        This call still blocks until the server has attached (or failed
+        to attach) every requested channel - RecordingSession.start()
+        fans that attach loop out over a thread pool server-side now, but
+        it is not async from this client's point of view. It therefore
+        defaults its own timeout to `snapshot_timeout` (180 s), not the
+        much shorter general-purpose `timeout` (10 s) - the same
+        distinction `stop_recording`/`capture_recording` already make, and
+        the actual root cause of "start monitoring failed ... falling
+        back" against bernina's ~13 000+ channels before this: the call
+        was reliably slower than 10 s even before it started timing out,
+        just not given the timeout that would have covered it.
         """
         body = {
             "recording_id": recording_id,
@@ -469,7 +481,10 @@ class StatusServerClient:
             "pgroup": pgroup,
             "run_number": run_number,
         }
-        return self._post("/recording/start", body, ok_codes=(200, 202))
+        return self._post(
+            "/recording/start", body,
+            timeout=timeout or self.snapshot_timeout, ok_codes=(200, 202),
+        )
 
     def recording(self, recording_id, channels=False, size=False,
                   size_top_n=None) -> dict:

@@ -745,6 +745,7 @@ class NamespaceMonitorStore:
                 pgroup=pgroup,
                 run_number=run_number,
                 required_component_names=required_component_names,
+                attach_workers=self.monitor_workers,
             )
             session.start(seed_from=running_siblings)
             self._recordings[recording_id] = session
@@ -1047,6 +1048,7 @@ class RecordingSession:
         pgroup=None,
         run_number=None,
         required_component_names=None,
+        attach_workers=16,
     ):
         if mode not in ("all", "throttle", "sample"):
             raise ValueError(f"unknown recording mode {mode!r}")
@@ -1079,6 +1081,11 @@ class RecordingSession:
             int(max_value_elements) if max_value_elements else None
         )
         self.subscription_mask = subscription_mask
+        # How many channels start() attaches concurrently - see start()'s
+        # docstring note on why the attach loop is fanned out the same way
+        # _build_monitors()/snapshot() already fan out their own per-channel
+        # CA work.
+        self.attach_workers = int(attach_workers)
 
         self.started_at = None
         self.stopped_at = None
@@ -1142,70 +1149,106 @@ class RecordingSession:
         return [], []
 
     def start(self, seed_from=None):
+        """Attach a CA monitor to every requested channel.
+
+        Split into two passes on purpose. Pass 1 (below, sequential):
+        set_current_value_callback() just builds the CallbackEpics wrapper
+        object - no CA traffic - so it stays cheap and in-order. Pass 2
+        (``_attach_one``, fanned out over a ThreadPoolExecutor): ``mon.
+        start()`` is where the actual blocking CA work happens (a get()
+        when seeding, and/or waiting on the PV's own connection) - the part
+        that made a single unthreaded loop over bernina's ~13 000+
+        monitorable channels reliably exceed a caller's request timeout.
+        Fanning out only this half mirrors _build_monitors()/snapshot()'s
+        own pattern for the same reason, without changing when
+        set_current_value_callback() itself runs relative to other
+        channels.
+        """
         self.started_at = time.time()
         siblings = [s for s in (seed_from or []) if s is not self]
+        prepared = []
         for name, obj, _ in self.detectors:
             values, timestamps = self._seed_buffer_from_siblings(name, siblings)
             self._buffers[name] = {"values": values, "timestamps": timestamps}
             try:
                 mon = obj.set_current_value_callback(func=self._make_callback(name))
-                if mon is None:
-                    self.n_attach_failed += 1
-                    self._attach_failed_names.append(name)
-                    continue
+            except Exception:
+                mon = None
+                logger.debug("could not attach a recording monitor to %s", name,
+                             exc_info=True)
+            if mon is None:
+                self.n_attach_failed += 1
+                self._attach_failed_names.append(name)
+                continue
+            # add_current_value, though, only costs a blocking round trip
+            # for a channel that would need one anyway: pyepics'
+            # PV.get_with_metadata() returns the cached last value with
+            # zero network traffic when auto_monitor is already True and
+            # the channel is connected (see ca_tuning's "Resolved
+            # 2026-09-06" note - measured at ~0.017 ms there). That is
+            # true for the large majority of channels under
+            # ca_tuning.make_pv()'s default policy, so seed those for
+            # free rather than leaving every channel's first point to
+            # chance; a demoted "fast" channel or one not yet connected
+            # would make this a real blocking get, so those still get no
+            # seed here - see backfill_from_status for how they can get
+            # one anyway, opportunistically, without new CA traffic.
+            pv = getattr(mon, "pv", None)
+            seed = bool(
+                pv is not None
+                and getattr(pv, "auto_monitor", False)
+                and getattr(pv, "connected", False)
+            )
+            if not seed and isinstance(mon, CallbackComposedValue):
+                # AdjustableVirtual/DetectorVirtual: its seed is a
+                # get_current_value() recompute from its own already-
+                # monitored parents (mon.start() below only reaches
+                # here because set_current_value_callback() already
+                # required every parent to be a MonitorableValueUpdate),
+                # not a CA get of its own - free in the common case. Not
+                # strictly free if a parent happens to be individually
+                # demoted/disconnected right now, but that costs at
+                # most that one parent's own get, bounded by how many
+                # direct parents one computed value has (a handful),
+                # nowhere near the per-channel storm this policy exists
+                # to avoid - simpler to always seed these than to
+                # recurse the same connected/auto_monitor check through
+                # an arbitrary composition tree.
+                seed = True
+            prepared.append((name, mon, seed))
+
+        def _attach_one(item):
+            name, mon, seed = item
+            try:
                 # with_ctrlvars=False always: get_ctrlvars() (units, limits,
                 # precision) is a blocking CA round trip per channel
                 # regardless of monitor state - a get-storm at namespace
                 # scale either way.
-                #
-                # add_current_value, though, only costs that same round trip
-                # for a channel that would need one anyway: pyepics'
-                # PV.get_with_metadata() returns the cached last value with
-                # zero network traffic when auto_monitor is already True and
-                # the channel is connected (see ca_tuning's "Resolved
-                # 2026-09-06" note - measured at ~0.017 ms there). That is
-                # true for the large majority of channels under
-                # ca_tuning.make_pv()'s default policy, so seed those for
-                # free rather than leaving every channel's first point to
-                # chance; a demoted "fast" channel or one not yet connected
-                # would make this a real blocking get, so those still get no
-                # seed here - see backfill_from_status for how they can get
-                # one anyway, opportunistically, without new CA traffic.
-                pv = getattr(mon, "pv", None)
-                seed = bool(
-                    pv is not None
-                    and getattr(pv, "auto_monitor", False)
-                    and getattr(pv, "connected", False)
-                )
-                if not seed and isinstance(mon, CallbackComposedValue):
-                    # AdjustableVirtual/DetectorVirtual: its seed is a
-                    # get_current_value() recompute from its own already-
-                    # monitored parents (mon.start() below only reaches
-                    # here because set_current_value_callback() already
-                    # required every parent to be a MonitorableValueUpdate),
-                    # not a CA get of its own - free in the common case. Not
-                    # strictly free if a parent happens to be individually
-                    # demoted/disconnected right now, but that costs at
-                    # most that one parent's own get, bounded by how many
-                    # direct parents one computed value has (a handful),
-                    # nowhere near the per-channel storm this policy exists
-                    # to avoid - simpler to always seed these than to
-                    # recurse the same connected/auto_monitor check through
-                    # an arbitrary composition tree.
-                    seed = True
                 mon.start(
                     add_current_value=seed,
                     with_ctrlvars=False,
                     auto_monitor=self.subscription_mask,
                 )
-                self._monitors[name] = mon
-                if seed:
-                    self.n_seeded += 1
-            except Exception:
-                self.n_attach_failed += 1
-                self._attach_failed_names.append(name)
-                logger.debug("could not attach a recording monitor to %s", name,
-                             exc_info=True)
+                return name, mon, seed, None
+            except Exception as exc:
+                return name, mon, seed, exc
+
+        if prepared:
+            with ThreadPoolExecutor(
+                max_workers=self.attach_workers, initializer=_ca_initializer
+            ) as pool:
+                for name, mon, seed, exc in pool.map(_attach_one, prepared):
+                    if exc is not None:
+                        self.n_attach_failed += 1
+                        self._attach_failed_names.append(name)
+                        logger.debug(
+                            "could not attach a recording monitor to %s", name,
+                            exc_info=exc,
+                        )
+                        continue
+                    self._monitors[name] = mon
+                    if seed:
+                        self.n_seeded += 1
         if self.mode == "sample":
             self._sampler_stop.clear()
             self._sampler = threading.Thread(
