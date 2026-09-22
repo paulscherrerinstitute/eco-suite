@@ -23,6 +23,10 @@ Usage:
     python -m eco.status_server.simulate_scan_monitoring \\
         --url http://saresb-cons-04:8091 --duration 60 \\
         --names bernina.mono.energy bernina.izero
+
+    # repeat 10-minute "scans" back to back for 24 hours (soak test):
+    python -m eco.status_server.simulate_scan_monitoring \\
+        --url http://saresb-cons-04:8091 --duration 600 --repeat-for-hours 24
 """
 
 from __future__ import annotations
@@ -109,6 +113,78 @@ def simulate(
     return path
 
 
+def simulate_loop(
+    url,
+    pgroup="p19641",
+    start_run_number=None,
+    scan_duration=600.0,
+    total_hours=24.0,
+    gap=5.0,
+    mode="throttle",
+    min_interval=0.1,
+    names=None,
+    poll_interval=30.0,
+    out_dir=None,
+    filename="namespace_monitor.ixp.h5",
+):
+    """Repeat :func:`simulate` back to back - one recording per "scan" -
+    until `total_hours` have elapsed, the same start/stop cycle a real
+    sequence of scans produces rather than one long continuous recording.
+
+    Each iteration gets its own recording_id (run_number incremented by one
+    each time, starting from `start_run_number`) and its own subdirectory
+    under `out_dir`, so nothing overwrites a previous iteration's file and a
+    later failure is easy to line up against which run it happened on.
+
+    A single iteration failing (start_recording/stop_recording raising, a
+    transient server hiccup, ...) is logged and skipped rather than ending
+    the whole soak test - the point of a 24 h run is to find out whether
+    that happens at all, not to die the first time it does.
+    """
+    run_number = int(
+        start_run_number if start_run_number is not None else time.time() % 10_000
+    )
+    base_out_dir = Path(out_dir) if out_dir else Path(
+        tempfile.mkdtemp(prefix="namespace_monitor_sim_loop_")
+    )
+    base_out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"looping {scan_duration:.0f} s scans for {total_hours:.2f} h into {base_out_dir}")
+
+    t_start = time.time()
+    deadline = t_start + total_hours * 3600.0
+    n_ok = n_failed = 0
+    iteration = 0
+    while time.time() < deadline:
+        iteration += 1
+        print(f"\n=== scan {iteration} (run {run_number:04d}, "
+              f"t+{(time.time() - t_start) / 3600.0:.2f} h) ===")
+        try:
+            simulate(
+                url, pgroup=pgroup, run_number=run_number,
+                duration=min(scan_duration, max(0.0, deadline - time.time())),
+                mode=mode, min_interval=min_interval, names=names,
+                poll_interval=poll_interval,
+                out_dir=base_out_dir / f"run{run_number:04d}",
+                filename=filename,
+            )
+            n_ok += 1
+        except Exception as exc:
+            n_failed += 1
+            print(f"  !!! scan {iteration} (run {run_number:04d}) failed: "
+                  f"{type(exc).__name__}: {exc}")
+        run_number += 1
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+        if gap:
+            time.sleep(min(gap, remaining))
+    print(
+        f"\ndone: {n_ok} scan(s) ok, {n_failed} failed, over "
+        f"{(time.time() - t_start) / 3600.0:.2f} h"
+    )
+    return n_ok, n_failed
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Simulate one scan's status-server monitoring traffic "
@@ -158,12 +234,38 @@ def main(argv=None):
     )
     parser.add_argument(
         "--out-dir", default=None,
-        help="where to write the resulting file (default: a fresh directory "
-             "under the system tmp dir)",
+        help="where to write the resulting file(s) (default: a fresh "
+             "directory under the system tmp dir)",
     )
     parser.add_argument("--filename", default="namespace_monitor.ixp.h5")
+    parser.add_argument(
+        "--repeat-for-hours", type=float, default=None,
+        help="instead of one recording, repeat scans of --duration length "
+             "back to back until this many hours have elapsed in total (a "
+             "soak test of many start/stop cycles rather than one long "
+             "recording) - each scan gets its own subdirectory under "
+             "--out-dir",
+    )
+    parser.add_argument(
+        "--gap", type=float, default=5.0,
+        help="idle seconds between consecutive scans in --repeat-for-hours "
+             "mode (default: %(default)s)",
+    )
     args = parser.parse_args(argv)
+    if args.repeat_for_hours is not None and args.hours is not None:
+        parser.error("--hours is not meaningful together with --repeat-for-hours "
+                     "(use --duration for one scan's length there)")
     duration = args.hours * 3600.0 if args.hours is not None else args.duration
+
+    if args.repeat_for_hours is not None:
+        simulate_loop(
+            args.url, pgroup=args.pgroup, start_run_number=args.run_number,
+            scan_duration=duration, total_hours=args.repeat_for_hours,
+            gap=args.gap, mode=args.mode, min_interval=args.min_interval,
+            names=args.names, poll_interval=args.poll_interval,
+            out_dir=args.out_dir, filename=args.filename,
+        )
+        return
 
     simulate(
         args.url, pgroup=args.pgroup, run_number=args.run_number,
