@@ -12,6 +12,15 @@ namespace.append_obj(
 )
 
 namespace.append_obj(
+    "LaserSafetyShutter",
+    pvname_evr="SLAAR21-LTIM01-EVR0",
+    pvname_transport="SLAAR21-LPSYS-ESB",
+    name="sshut_las",
+    module_name="eco.loptics.laser_shutter",
+    lazy=True,
+)
+
+namespace.append_obj(
     "LaserBernina",
     lazy=True,
     name="las",
