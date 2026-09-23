@@ -55,6 +55,7 @@ by testing against the real bernina namespace, not assumed:
 
 from __future__ import annotations
 
+import array
 import importlib
 import logging
 import sys
@@ -1142,11 +1143,15 @@ class RecordingSession:
                 sib_buf = sib._buffers.get(name)
                 if not sib_buf or not sib_buf["values"]:
                     continue
-                values = list(sib_buf["values"][-self.max_points_per_channel:])
-                timestamps = list(sib_buf["timestamps"][-self.max_points_per_channel:])
+                # Slicing an array.array or a list both already copy - no
+                # extra list(...) wrap needed, and wrapping one would throw
+                # away the array.array representation _append maintains
+                # (see its own docstring) for no reason.
+                values = sib_buf["values"][-self.max_points_per_channel:]
+                timestamps = sib_buf["timestamps"][-self.max_points_per_channel:]
             self.n_seeded_from_sibling += 1
             return values, timestamps
-        return [], []
+        return array.array("d"), array.array("d")
 
     def start(self, seed_from=None):
         """Attach a CA monitor to every requested channel.
@@ -1301,6 +1306,29 @@ class RecordingSession:
         return _on_update
 
     def _append(self, buf, value, timestamp):
+        """Store one update for a channel.
+
+        buf["values"] starts life as an ``array.array('d')`` (see start()/
+        _seed_buffer_from_siblings) rather than a plain list: at namespace
+        scale, a scalar-valued channel's history is millions of individually
+        boxed Python floats held for the life of a long recording, and
+        CPython's small-object allocator does not reliably hand that memory
+        back to the OS once freed - a long ``--repeat-for-hours`` soak test
+        showed steadily climbing RSS across many recordings even though
+        every session was correctly stopped and dropped. ``array.array``
+        stores raw C doubles instead, so the memory is actually returned on
+        free.
+
+        Not every channel is a plain scalar float, though - enum/string PVs
+        and (whatever max_value_elements lets through of) waveforms are not
+        representable in an array.array('d'). The first time this happens
+        for a channel, its buffer falls back to a plain list, in place,
+        permanently for the rest of this recording - checked via isinstance
+        rather than a separate per-channel flag, so a channel that turns out
+        to be plain scalars never pays for the check beyond one attribute
+        lookup, and one that isn't only pays the fallback once, not on every
+        update.
+        """
         if len(buf["values"]) >= self.max_points_per_channel:
             self.n_dropped_full += 1
             return
@@ -1314,7 +1342,14 @@ class RecordingSession:
             if n > self.max_value_elements:
                 self.n_dropped_large += 1
                 return
-        buf["values"].append(value)
+        if isinstance(buf["values"], array.array):
+            try:
+                buf["values"].append(value)
+            except (TypeError, ValueError, OverflowError):
+                buf["values"] = list(buf["values"])
+                buf["values"].append(value)
+        else:
+            buf["values"].append(value)
         buf["timestamps"].append(
             timestamp if timestamp is not None else time.time()
         )
@@ -1364,22 +1399,35 @@ class RecordingSession:
                 name: len(b["values"]) for name, b in self._buffers.items()
             }
             buffers, self._buffers = self._buffers, {
-                name: {"values": [], "timestamps": []} for name in self._buffers
+                name: {"values": array.array("d"), "timestamps": array.array("d")}
+                for name in self._buffers
             }
-        # Hand the buffers over rather than copying them: at namespace scale
-        # a copy transiently doubles the memory this recording is holding,
-        # which is the one resource a long recording is short of.
-        #
         # The truncation is not paranoia: a callback that fired between the
         # value append and the timestamp append (or the reverse) leaves the
         # two lists one element apart, and ArrayTimestamps would then pair
         # values with the wrong timestamps. Monitors are stopped just above,
         # so the window is small, but "small" is not "closed".
+        #
+        # list(...) here, even though _append keeps the live buffer as an
+        # array.array('d') where it can (see its own docstring - that is
+        # what keeps a long *running* recording's memory returnable to the
+        # OS): every caller of stop() (tests, /recording/stop's JSON
+        # response, write_monitor_recording's escape.ArrayTimestamps) has
+        # always gotten a plain list back, and array.array fails outright
+        # on a bare `== [...]` comparison against one (it is not "not
+        # copying", it silently returns NotImplemented on both sides and
+        # Python falls back to `is`). Converting once, here, at the end of
+        # one recording - not per update, and not while it was still
+        # running - is a brief, bounded, one-time cost, not the sustained
+        # per-update one this change is aimed at removing.
         out = {}
         for name, b in buffers.items():
             n = min(len(b["values"]), len(b["timestamps"]))
             if n:
-                out[name] = {"values": b["values"][:n], "timestamps": b["timestamps"][:n]}
+                out[name] = {
+                    "values": list(b["values"][:n]),
+                    "timestamps": list(b["timestamps"][:n]),
+                }
         return out
 
     @property
