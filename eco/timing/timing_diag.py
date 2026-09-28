@@ -971,7 +971,7 @@ class TimetoolBerninaUSD(Assembly):
                     pids_stop.append(int(pid.value))
                 retrieving = True
                 i = 1
-                source = dh.Daqbuf()
+                source = dh.DataBuffer()
                 table = dh.Table()
                 source.add_listener(table)
                 while retrieving:

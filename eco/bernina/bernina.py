@@ -362,13 +362,13 @@ class VonHamos(Assembly):
         )
 
 
-namespace.append_obj(
-    VonHamos,
-    lazy=True,
-    name="vhamos",
-    config_jf_adj=config_JFs,
-    pgroup_adj=config_bernina.pgroup,
-)
+#namespace.append_obj(
+#    VonHamos,
+#    lazy=True,
+#    name="vhamos",
+#    config_jf_adj=config_JFs,
+#    pgroup_adj=config_bernina.pgroup,
+#)
 
 
 # namespace.append_obj(
@@ -1007,7 +1007,7 @@ class Tapedrive(Assembly):
         self._append(
             EvrOutput,
             f"SARES20-CVME-01-EVR0:RearUniv0",
-            pulsers=evr.pulsers,
+            pulsers=NamespaceComponent(namespace, "bernina.evr.pulsers"),
             name=f"trigger_patch1_bnc16",
             is_setting=True,
             # is_display="recursive",
@@ -1015,7 +1015,7 @@ class Tapedrive(Assembly):
         self._append(
             EvrOutput,
             f"SARES20-CVME-01-EVR0:RearUniv1",
-            pulsers=evr.pulsers,
+            pulsers=NamespaceComponent(namespace, "bernina.evr.pulsers"),
             name=f"trigger_patch2_bnc16",
             is_setting=True,
             # is_display="recursive",
