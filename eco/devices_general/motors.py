@@ -608,8 +608,7 @@ class SmaractStreamdevice(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
@@ -873,8 +872,7 @@ class PshellMotor(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
 
 class AdjustablePiHex(AdjustablePv):
@@ -1072,8 +1070,7 @@ class SmarActOpenLoopRecord(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
 
 @spec_convenience
@@ -1259,8 +1256,7 @@ class SmarActOpenLoopRecordMCS2(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
 
 @spec_convenience
@@ -1397,8 +1393,7 @@ class ThorlabsPiezoRecord(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
 
 @spec_convenience
@@ -1871,8 +1866,7 @@ class MotorRecord(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
@@ -2504,8 +2498,7 @@ class SmaractRecord(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)
@@ -2910,8 +2903,7 @@ class SmaractRecord_old(Assembly):
         return s
 
     def __repr__(self):
-        print(str(self))
-        return object.__repr__(self)
+        return str(self)
 
     def __call__(self, value):
         self._currentChange = self.set_target_value(value)

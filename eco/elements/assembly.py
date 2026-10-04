@@ -1902,7 +1902,7 @@ class Assembly:
                 return
             except Exception as e:
                 print(f"Could not build widget for {self.alias.get_full_name()}: {e}")
-        print(repr(self))
+        print(self)
 
     def show(self, exclude_group_ids=None, live=False, dock_in=None,
              sidecar_anchor=None, backend=None):
