@@ -199,7 +199,7 @@ namespace.append_obj(
 
 namespace.append_obj(
     "SolidTargetDetectorBerninaUSD",
-    "SARES20-MCS1:MOT_12",
+    "SARES20-MCS3:MOT_1",
     channel_xpos="SARES21-PBPS141:XPOS",
     channel_ypos="SARES21-PBPS141:YPOS",
     channel_intensity="SARES21-PBPS141:INTENSITY",
