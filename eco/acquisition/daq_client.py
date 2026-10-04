@@ -1615,6 +1615,23 @@ class Daq(Assembly):
         below still checks status_client/use_running_status_server first,
         exactly as before, and only reaches this property once that gate has
         already passed.
+
+        Unlike pgroup/checker/run_table, this NamespaceComponent is built
+        here directly rather than handed in as a constructor argument, so it
+        never goes through config.replace_NamespaceComponents - the step
+        that normally wraps one in Proxy(component.get) before anything
+        calls resolve_lazy on it. resolve_lazy only knows how to unwrap a
+        Proxy (it checks for __resolved__/__wrapped__); handed a bare
+        NamespaceComponent instead, it just returns that same instance
+        unchanged (see its own docstring), so every caller of this property
+        got a NamespaceComponent with no start_monitoring/stop_monitoring of
+        its own - "AttributeError: 'NamespaceComponent' object has no
+        attribute 'start_monitoring'" on every scan, silently swallowed by
+        start_scan_monitoring's own except-and-warn. Calling .get()
+        ourselves (NamespaceComponent.resolve()+namespace.get_obj(), same
+        work replace_NamespaceComponents would have triggered through the
+        Proxy) and resolving *that* is the fix - still looping through
+        resolve_lazy in case the target itself is still a lazy proxy.
         """
         if getattr(self, "_status_server_component", None) is None:
             from eco.utilities.config import NamespaceComponent
@@ -1622,7 +1639,7 @@ class Daq(Assembly):
             self._status_server_component = NamespaceComponent(
                 self.namespace, "status_server"
             )
-        return resolve_lazy(self._status_server_component)
+        return resolve_lazy(self._status_server_component.get())
 
     def _status_server_failed(self, what, exc):
         """Common handling for a status-server call that did not work:

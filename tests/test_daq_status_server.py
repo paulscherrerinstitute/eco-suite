@@ -364,10 +364,20 @@ class FakeStatusServerComponent:
     real logic (recording_id convention, filename default) against the same
     fake client these tests already use for status_client, so
     start_scan_monitoring/end_scan_monitoring's routing through
-    self.status_server is what's under test here, not a namespace lookup."""
+    self.status_server is what's under test here, not a namespace lookup.
+
+    get() returning self stands in for NamespaceComponent.get() returning
+    the already-built real object - Daq.status_server calls .get() on
+    whatever _status_server_component holds before resolve_lazy()'ing it
+    (see that property's own docstring for the AttributeError this fixed),
+    so a fake standing in for an already-resolved component needs one too.
+    """
 
     def __init__(self, client):
         self._client = client
+
+    def get(self):
+        return self
 
     def start_monitoring(self, pgroup, run_number, names=None, mode="throttle",
                          min_interval=0.1, **kwargs):
