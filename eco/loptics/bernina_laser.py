@@ -84,6 +84,7 @@ class IncouplingCleanBernina(Assembly):
             is_display=True,
         )
 
+
 class THzWork(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
@@ -93,11 +94,23 @@ class THzWork(Assembly):
             name="delaystage_ftir",
             is_setting=True,
         )
-
         self._append(
             DelayTime,
             self.delaystage_ftir,
             name="delay_ftir",
+            is_setting=True,
+        )
+        self._append(
+            SmaractRecord,
+            "SLAAR21-LMTS-SMAR1:MOT_0",
+            name="delaystage_lno_eos",
+            is_setting=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_lno_eos,
+            name="delay_lno_eos",
             is_setting=True,
         )
         self._append(
@@ -112,6 +125,36 @@ class THzWork(Assembly):
             name="dfg_pos",
             is_setting=True,
         )
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M532:MOT",
+            name="compressor_35fs",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            "SLAAR21-LMOT-M547:MOT",
+            name="compressor_100fs",
+            is_setting=True,
+        )
+        self.motor_configuration_thorlabs = {
+            "beam_1": {
+                "pvname": "SLAAR21-LMOT-ELL2",
+            },
+            "beam_2": {
+                "pvname": "SLAAR21-LMOT-ELL5",
+            },
+        }
+
+        ### thorlabs piezo motors ###
+        for name, config in self.motor_configuration_thorlabs.items():
+            self._append(
+                ThorlabsPiezoRecord,
+                pvname=config["pvname"],
+                name=name,
+                is_setting=True,
+            )
+
 
 class MIRVirtualStages(Assembly):
     def __init__(self, name=None, nx=None, nz=None, mx=None, mz=None):
@@ -672,8 +715,11 @@ class FilterWheel(Assembly):
         # offsetMirrors_new/swissfel/motors do (see AdjustablePvEnum._resolve()),
         # instead of treating .RBV and .VAL as two independent, unrelated enums.
         self._append(
-            AdjustablePvEnum, f"{pvname}.RBV", pvname_set=f"{pvname}.VAL",
-            name="_val", is_setting=True,
+            AdjustablePvEnum,
+            f"{pvname}.RBV",
+            pvname_set=f"{pvname}.VAL",
+            name="_val",
+            is_setting=True,
         )
         # Separate, untranslated handle onto raw .VAL indices for the
         # home/remote/manual controller commands below (native codes 6/7/8):
@@ -1219,7 +1265,16 @@ class LaserBernina(Assembly):
 
         # Table 2, Bernina hutch
         self._append(
-            MotorRecord, self.pvname + "-M532:MOT", name="compressor", is_setting=True
+            MotorRecord,
+            self.pvname + "-M532:MOT",
+            name="compressor_35fs",
+            is_setting=True,
+        )
+        self._append(
+            MotorRecord,
+            self.pvname + "-M547:MOT",
+            name="compressor_100fs",
+            is_setting=True,
         )
 
         self._append(
@@ -1460,7 +1515,7 @@ class LaserBernina(Assembly):
                 print("spectrum_in spectrometer not configured!")
                 time.sleep(0.5)
 
-    def fluence(self, a,b,energy, alpha=5):
+    def fluence(self, a, b, energy, alpha=5):
         """This function calculates the fluence on the sample, taking spot size elongation into account.
 
         Args:
@@ -1472,7 +1527,8 @@ class LaserBernina(Assembly):
         Returns:
             fluence in mJ/cm2
         """
-        return energy/(a/2*b/2*np.pi)*1e3/1e4*np.sin(np.deg2rad(alpha))
+        return energy / (a / 2 * b / 2 * np.pi) * 1e3 / 1e4 * np.sin(np.deg2rad(alpha))
+
 
 from eco.epics_utils.adjustable import AdjustablePvString
 

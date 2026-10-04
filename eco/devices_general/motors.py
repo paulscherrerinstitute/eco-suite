@@ -35,7 +35,10 @@ from .detectors import DetectorVirtual
 from ..epics_utils.detector import DetectorPvData
 import json
 from .powerbrick import PowerBrickChannelPars
-from .schneider_settings import SchneiderMotorSettings, SETTINGS_SELECTION as SCHNEIDER_SETTINGS_SELECTION
+from .schneider_settings import (
+    SchneiderMotorSettings,
+    SETTINGS_SELECTION as SCHNEIDER_SETTINGS_SELECTION,
+)
 from time import sleep
 
 if hasattr(global_config, "elog"):
@@ -1699,7 +1702,13 @@ class MotorRecord(Assembly):
             # duplication), just an additional selection tag so a
             # SelectionCatalog("schneider_motor_settings") entry captures
             # them together with schneider_settings' own items.
-            for attr_name in ("description", "unit", "direction", "speed", "acceleration_time"):
+            for attr_name in (
+                "description",
+                "unit",
+                "direction",
+                "speed",
+                "acceleration_time",
+            ):
                 self.status_collection.append(
                     self.__dict__[attr_name], selection=SCHNEIDER_SETTINGS_SELECTION
                 )
