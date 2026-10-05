@@ -6,81 +6,98 @@ import eco
 _logger = logging.getLogger(__name__)
 
 
-def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls=True):
-    def _archiver_channels(self):
-        """All channels of this object (ids, types and labels), from its
-        aliases, falling back to the single `attribute_name` channel.
+def get_archiver_channels(obj, attribute_name="pvname"):
+    """All channels of `obj` (ids, types and labels), from its aliases,
+    falling back to the single `attribute_name` channel.
 
-        A sibling "unit" sub-component - whether it's an in-memory string
-        with no channel of its own, or a real channel such as a ".EGU" PV -
-        is never itself included as a channel to plot; it's metadata, not a
-        value, and would just show up as an empty/noisy legend entry. Its
-        current string is read once instead and appended to the label(s) of
-        the channel(s) it belongs alongside, e.g. "readback (SATES...)
-        [mbar]".
+    A sibling "unit" sub-component - whether it's an in-memory string
+    with no channel of its own, or a real channel such as a ".EGU" PV -
+    is never itself included as a channel to plot; it's metadata, not a
+    value, and would just show up as an empty/noisy legend entry. Its
+    current string is read once instead and appended to the label(s) of
+    the channel(s) it belongs alongside, e.g. "readback (SATES...)
+    [mbar]".
 
-        Also returns each channel's own leaf attribute name (e.g.
-        "readback", "speed", "direction") alongside its id/type/label -
-        `strip_plot`'s `readback_only` uses it to tell "the" value apart
-        from everything else an Assembly happens to expose as its own
-        channel."""
+    Labels carry each channel's *full* alias, through all the parents up to
+    the top-level object ("prof_kb.target_stages.x.offset (SARES20-...)"),
+    not just the path below `obj` - for a leaf such as the `offset` of one
+    stage that would be a bare "offset", the same for all three stages.
 
-        def _owner(path):
-            obj = self
-            for part in path[1:-1]:
-                obj = getattr(obj, part)
-            return obj
+    Also returns each channel's own leaf attribute name (e.g.
+    "readback", "speed", "direction") alongside its id/type/label -
+    `strip_plot`'s `readback_only` uses it to tell "the" value apart
+    from everything else an Assembly happens to expose as its own
+    channel."""
 
-        try:
-            channels = self.alias.get_all()
-            parsed = [(c, c["alias"].split(".")) for c in channels]
-            value_entries = [(c, path) for c, path in parsed if path[-1] != "unit"]
-            unit_entries = [(c, path) for c, path in parsed if path[-1] == "unit"]
+    def _owner(path):
+        owner = obj
+        for part in path[1:-1]:
+            owner = getattr(owner, part)
+        return owner
 
-            units = {}
-            for c, path in unit_entries:
-                try:
-                    units[".".join(path[1:-1])] = getattr(
-                        _owner(path), "unit"
-                    ).get_current_value()
-                except Exception:
-                    pass
-            for c, path in value_entries:
-                key = ".".join(path[1:-1])
-                if key in units:
-                    continue
-                try:
-                    unit_obj = getattr(_owner(path), "unit", None)
-                    if unit_obj is not None and hasattr(unit_obj, "get_current_value"):
-                        units[key] = unit_obj.get_current_value()
-                except Exception:
-                    pass
+    try:
+        channels = obj.alias.get_all()
+        parsed = [(c, c["alias"].split(".")) for c in channels]
+        value_entries = [(c, path) for c, path in parsed if path[-1] != "unit"]
+        unit_entries = [(c, path) for c, path in parsed if path[-1] == "unit"]
 
-            channel_ids = [c["channel"] for c, _ in value_entries]
-            channel_types = [c.get("channeltype") for c, _ in value_entries]
-            leaf_names = [path[-1] for _, path in value_entries]
-            labels = []
-            for c, path in value_entries:
-                label = f'{c["alias"]} ({c["channel"]})'
-                unit = units.get(".".join(path[1:-1]))
-                if unit:
-                    label += f" [{unit}]"
-                labels.append(label)
-        except:
-            channel_ids = [self.__dict__[attribute_name]]
-            channel_types = None
-            leaf_names = [attribute_name]
-            label = f"{self.alias.get_full_name()} ({channel_ids[0]})"
+        units = {}
+        for c, path in unit_entries:
             try:
-                unit_obj = getattr(self, "unit", None)
-                if unit_obj is not None and hasattr(unit_obj, "get_current_value"):
-                    unit = unit_obj.get_current_value()
-                    if unit:
-                        label += f" [{unit}]"
+                units[".".join(path[1:-1])] = getattr(
+                    _owner(path), "unit"
+                ).get_current_value()
             except Exception:
                 pass
-            labels = [label]
-        return channel_ids, channel_types, labels, leaf_names
+        for c, path in value_entries:
+            key = ".".join(path[1:-1])
+            if key in units:
+                continue
+            try:
+                unit_obj = getattr(_owner(path), "unit", None)
+                if unit_obj is not None and hasattr(unit_obj, "get_current_value"):
+                    units[key] = unit_obj.get_current_value()
+            except Exception:
+                pass
+
+        channel_ids = [c["channel"] for c, _ in value_entries]
+        channel_types = [c.get("channeltype") for c, _ in value_entries]
+        leaf_names = [path[-1] for _, path in value_entries]
+        try:
+            own_name = obj.alias.alias
+            full_name = obj.alias.get_full_name()  # this object's name, parents included
+        except Exception:
+            own_name = full_name = None
+        labels = []
+        for c, path in value_entries:
+            alias = c["alias"]  # "<own name>.<path below obj>"
+            if full_name is not None and alias.startswith(own_name):
+                alias = full_name + alias[len(own_name) :]
+            label = f'{alias} ({c["channel"]})'
+            unit = units.get(".".join(path[1:-1]))
+            if unit:
+                label += f" [{unit}]"
+            labels.append(label)
+    except Exception:
+        channel_ids = [obj.__dict__[attribute_name]]
+        channel_types = None
+        leaf_names = [attribute_name]
+        label = f"{obj.alias.get_full_name()} ({channel_ids[0]})"
+        try:
+            unit_obj = getattr(obj, "unit", None)
+            if unit_obj is not None and hasattr(unit_obj, "get_current_value"):
+                unit = unit_obj.get_current_value()
+                if unit:
+                    label += f" [{unit}]"
+        except Exception:
+            pass
+        labels = [label]
+    return channel_ids, channel_types, labels, leaf_names
+
+
+def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls=True):
+    def _archiver_channels(self):
+        return get_archiver_channels(self, attribute_name)
 
     def _select_channels(channel_ids, channel_types, labels, select_names, leaf_names=None):
         """Narrow the channel/type/label(/leaf_name) lists down to
@@ -131,15 +148,50 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
     def get_archiver_time_range(
         self, start=None, end=None, force_type=force_type, plot=True, **kwargs
     ):
-        """Try to retrieve data within timerange from archiver. A time delta from now is assumed if end time is missing."""
+        """Retrieve archived data of all channels of this object as a pandas
+        DataFrame (UTC timestamp index, one column per channel id), or None.
+
+        `start` / `end` define the time range; `end` defaults to now:
+            obj.get_archiver_time_range(start=-3600)             # last hour
+            obj.get_archiver_time_range(start=-60*60*24*300)     # last 300 days
+            obj.get_archiver_time_range(start=dict(days=-2))     # last 2 days
+            obj.get_archiver_time_range(start=dict(hours=-6))    # last 6 hours
+            obj.get_archiver_time_range(start="2026-10-01 08:00",
+                                        end="2026-10-01 09:30")  # local time
+            obj.get_archiver_time_range(start=-600,
+                                        end="2026-10-01 09:00")  # 08:50-09:00
+        A negative number, timedelta or dict means "back in time from `end`",
+        like start=-3600; the sign is actually ignored, so dict(days=2) or
+        hours=6 (shortcut keywords instead of `start`) mean the same. Naive
+        absolute times are local time, a trailing "Z" or a tz-aware datetime
+        is taken as given.
+
+        `plot`: also plot the result. `force_type` "CA"/"BS": query one
+        backend for all channels instead of using each channel's own type.
+        `verbose` (default True): print the exact UTC range sent to the
+        archiver and, per channel, whether data came back or why not (no
+        events in the range - with the last value before it - or not archived
+        at all). `column_names="alias"` (or "label") names the columns by
+        alias instead of channel id; `bins=` downsamples on the server (long
+        ranges of BS channels!) and `last_before=True` adds each channel's
+        value at the start of the window. Remaining kwargs go to
+        `DataHub.get_data_time_range`, which also takes several objects at
+        once: `archiver.get_data_time_range(obj1, obj2, start=-3600)`.
+
+        Channels without any data in the range are dropped from the result
+        (`remove_nulls`) and listed in a printed notice."""
+        from ..dbase.archiver import COLUMN_NAME_MODES
+
+        column_names = kwargs.pop("column_names", "channel")
+        if column_names not in COLUMN_NAME_MODES:
+            raise ValueError(f"column_names must be one of {COLUMN_NAME_MODES}")
         channel_ids, channel_types, labels, _leaf_names = _archiver_channels(self)
-        channels = channel_ids
 
         data = eco.defaults.ARCHIVER.get_data_time_range(
             channels=channel_ids,
             start=start,
             end=end,
-            plot=plot,
+            plot=False,
             force_type=force_type,
             channel_types=None if force_type else channel_types,
             labels=labels,
@@ -147,17 +199,20 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
         )
         if data is None:
             return data
+        if remove_nulls and not kwargs.get("bins"):  # empty bins are NaN by design
+            data = data.dropna(how="all").dropna(how="all", axis=1)
+            dropped = [c for c in channel_ids if c not in data.keys()]
+            if dropped and kwargs.get("verbose", True):
+                print(f"  dropped (no data): {', '.join(dropped)}")
+        if plot and not data.empty:
+            from ..dbase.archiver import _plot_dataframe
 
-        channel_ids_found = [_ for _ in channel_ids if _ in data.keys()]
-        channels_found = filter(lambda x: x in channel_ids_found, channels)
-        if remove_nulls:
-            data = data.dropna(how='all').dropna(how='all', axis=1)
-            channel_ids_missing = [_ for _ in channel_ids if _ not in data.keys()]
-            channels_missing = filter(lambda x: x in channel_ids_missing, channels)
+            _plot_dataframe(data, channel_ids, labels)
+        if column_names != "channel":
+            from ..dbase.archiver import _display_names, _rename_columns
 
-
-
-        return data#.rename(columns={channelname: "data"})
+            data = _rename_columns(data, _display_names(channel_ids, labels, column_names))
+        return data
 
     def strip_plot(
         self,

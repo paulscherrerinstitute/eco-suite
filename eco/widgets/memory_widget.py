@@ -36,6 +36,15 @@ checked items are passed on to `Memory.memorize(pick_items=[...])`. Same
 idea as the terminal's own `memorize(pick_items=True)`, just via an inline
 GUI checklist instead of a `simple_term_menu` prompt, since a terminal menu
 can't run inside a GUI event loop.
+
+A memory can optionally be tagged as a named preset (`Memory.memorize`'s
+`preset_varname`, reachable afterwards as `<assembly>.memory.presets.<name>`)
+-- an optional "preset name" field next to Save does this at creation time;
+an existing stored entry's tag can also be set, changed, or removed
+afterwards (`Memory.set_preset_name`) via the "Preset tag" field shown once
+that entry is loaded from the overview list. Tagged entries show their
+preset name in the overview list like any other field -- a preset is just a
+regular memory entry with that one extra tag, never a separate store.
 """
 import itertools
 import traceback
@@ -81,6 +90,7 @@ def _overview_rows(memory):
                 "date": date,
                 "message": content.get("message", ""),
                 "groups": groups,
+                "presetname": content.get("presetname") or "",
             }
         )
     rows.reverse()
@@ -348,8 +358,11 @@ class MemoryBrowserQt:
         overview_filter_row.addStretch(1)
         outer.addLayout(overview_filter_row)
 
-        self.list = QtWidgets.QListWidget()
+        self.list = QtWidgets.QTreeWidget()
         self.list.setMaximumHeight(160)
+        self.list.setHeaderLabels(["Date", "Message", "Groups", "Preset"])
+        self.list.setRootIsDecorated(False)
+        self.list.setAlternatingRowColors(True)
         self.list.itemClicked.connect(self._on_pick_stored)
         outer.addWidget(self.list)
 
@@ -365,7 +378,30 @@ class MemoryBrowserQt:
         load_row.addWidget(load_file_btn)
         load_row.addWidget(refresh_btn)
         load_row.addStretch(1)
+        delete_entry_btn = QtWidgets.QPushButton("Delete this memory entry…")
+        delete_entry_btn.setStyleSheet("color: #c62828;")
+        delete_entry_btn.setToolTip(
+            "permanently remove the WHOLE loaded memory entry -- every "
+            "value it captured, not just its preset tag"
+        )
+        delete_entry_btn.clicked.connect(self._on_delete_entry)
+        load_row.addWidget(delete_entry_btn)
         outer.addLayout(load_row)
+
+        preset_tag_row = QtWidgets.QHBoxLayout()
+        preset_tag_row.addWidget(QtWidgets.QLabel("Preset tag (for loaded entry):"))
+        self.preset_tag_edit = QtWidgets.QLineEdit()
+        self.preset_tag_edit.setPlaceholderText("empty clears the tag")
+        preset_tag_row.addWidget(self.preset_tag_edit)
+        apply_preset_btn = QtWidgets.QPushButton("Apply")
+        apply_preset_btn.setToolTip(
+            "set/change/clear just the preset name tag on the loaded entry "
+            "-- does not touch its captured values or delete it"
+        )
+        apply_preset_btn.clicked.connect(self._on_apply_preset_name)
+        preset_tag_row.addWidget(apply_preset_btn)
+        preset_tag_row.addStretch(1)
+        outer.addLayout(preset_tag_row)
 
         # --- filters ---------------------------------------------------
         self.filter_box = QtWidgets.QGroupBox("Filters (within an opened memory)")
@@ -391,20 +427,16 @@ class MemoryBrowserQt:
         select_all_btn.clicked.connect(lambda: self._set_all_checked(True))
         select_none_btn = QtWidgets.QPushButton("select none")
         select_none_btn.clicked.connect(lambda: self._set_all_checked(False))
-        select_row.addWidget(select_all_btn)
-        select_row.addWidget(select_none_btn)
-        select_row.addStretch(1)
-        outer.addLayout(select_row)
-
-        action_row = QtWidgets.QHBoxLayout()
         recall_btn = QtWidgets.QPushButton("Recall selected values")
         recall_btn.clicked.connect(self._on_recall)
         export_btn = QtWidgets.QPushButton("Export to file…")
         export_btn.clicked.connect(self._on_export)
-        action_row.addWidget(recall_btn)
-        action_row.addWidget(export_btn)
-        action_row.addStretch(1)
-        outer.addLayout(action_row)
+        select_row.addWidget(select_all_btn)
+        select_row.addWidget(select_none_btn)
+        select_row.addWidget(recall_btn)
+        select_row.addWidget(export_btn)
+        select_row.addStretch(1)
+        outer.addLayout(select_row)
 
         # --- save new memory ---------------------------------------------
         save_box = QtWidgets.QGroupBox("Save current state as a new memory")
@@ -431,6 +463,19 @@ class MemoryBrowserQt:
         save_layout.addWidget(self.elog_cb)
         save_layout.addWidget(save_btn)
         save_vbox.addLayout(save_layout)
+
+        preset_layout = QtWidgets.QHBoxLayout()
+        preset_layout.addWidget(QtWidgets.QLabel("preset name:"))
+        self.save_preset_edit = QtWidgets.QLineEdit()
+        self.save_preset_edit.setPlaceholderText("optional -- leave empty for a plain memory")
+        self.save_preset_edit.setToolTip(
+            "tag this memory as a named preset, reachable afterwards as "
+            "<assembly>.memory.presets.<name>(). Reusing an existing name "
+            "redirects that preset to this new entry; the old entry stays "
+            "around as a plain memory."
+        )
+        preset_layout.addWidget(self.save_preset_edit)
+        save_vbox.addLayout(preset_layout)
 
         # opt-in, non-default item picker: unchecked, this row/list stays
         # hidden and Save captures everything the selection resolves to,
@@ -512,14 +557,19 @@ class MemoryBrowserQt:
         for row in self._overview:
             date_str = row["date"].strftime("%Y-%m-%d %H:%M") if row["date"] else "?"
             groups = ",".join(row["groups"])
-            label = f"{date_str}   {row['message']}   [{groups}]"
+            message = row["message"]
             ancestor_name = row.get("ancestor_name")
             if ancestor_name:
-                label = f"[{ancestor_name}] {label}"
-            item = QtWidgets.QListWidgetItem(label)
+                message = f"[{ancestor_name}] {message}"
+            item = QtWidgets.QTreeWidgetItem(
+                [date_str, message, groups, row.get("presetname") or ""]
+            )
             if ancestor_name:
-                item.setBackground(QtGui.QColor(color_map[ancestor_name]))
-            self.list.addItem(item)
+                for col in range(4):
+                    item.setBackground(col, QtGui.QColor(color_map[ancestor_name]))
+            self.list.addTopLevelItem(item)
+        for col in range(4):
+            self.list.resizeColumnToContents(col)
 
         if color_map:
             self.legend_label.setText(
@@ -531,8 +581,8 @@ class MemoryBrowserQt:
         else:
             self.legend_label.setText("")
 
-    def _on_pick_stored(self, item):
-        idx = self.list.row(item)
+    def _on_pick_stored(self, item, column=0):
+        idx = self.list.indexOfTopLevelItem(item)
         row = self._overview[idx]
         ancestor = row.get("ancestor")
         try:
@@ -545,9 +595,11 @@ class MemoryBrowserQt:
                     {"settings": sliced}, key=None, path=None,
                     source_ancestor_name=row["ancestor_name"],
                 )
+                self.preset_tag_edit.setText("")
             else:
                 mem = self.memory.get_memory(key=row["key"])
                 self._load_mem(mem, key=row["key"], path=None)
+                self.preset_tag_edit.setText(row.get("presetname") or "")
         except Exception as e:
             self._set_status(f"could not load memory: {e}", error=True)
 
@@ -565,6 +617,61 @@ class MemoryBrowserQt:
             self._set_status(f"could not load {path}: {e}", error=True)
             return
         self._load_mem(mem, key=None, path=path)
+        self.preset_tag_edit.setText("")
+
+    def _on_apply_preset_name(self):
+        key = self._state.get("key")
+        if key is None:
+            self._set_status(
+                "select a stored memory from the list above first "
+                "(not a file-loaded or parent-sourced one)", error=True,
+            )
+            return
+        name = self.preset_tag_edit.text().strip() or None
+        try:
+            self.memory.set_preset_name(key=key, name=name)
+            self._set_status(f"preset tag {'set to ' + name if name else 'cleared'} for {key}")
+            self._refresh_overview()
+        except Exception as e:
+            self._set_status(f"could not update preset tag: {e}", error=True)
+
+    def _on_delete_entry(self):
+        from qtpy import QtWidgets
+
+        key = self._state.get("key")
+        if key is None:
+            self._set_status(
+                "select a stored memory from the list above first "
+                "(not a file-loaded or parent-sourced one)", error=True,
+            )
+            return
+        reply = QtWidgets.QMessageBox.question(
+            self.window,
+            "Confirm delete",
+            f"Permanently remove this stored memory entry ({key})? "
+            "This cannot be undone from here.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            self.memory.clear_memory(key=key)
+        except Exception as e:
+            self._set_status(f"delete failed: {e}", error=True)
+            return
+        self._state = {
+            "key": None, "path": None, "mem": None, "rows": [], "checked": {},
+            "source_ancestor_name": None,
+        }
+        self.tree.clear()
+        while self.group_row.count() > 1:
+            child = self.group_row.takeAt(1)
+            if child.widget():
+                child.widget().deleteLater()
+        self._group_checks = {}
+        self.preset_tag_edit.setText("")
+        self._set_status(f"deleted stored memory {key}")
+        self._refresh_overview()
 
     def _load_mem(self, mem, key, path, source_ancestor_name=None):
         self._state = {
@@ -778,12 +885,14 @@ class MemoryBrowserQt:
                 self._set_status("no items selected -- uncheck 'choose items' to save everything, or check at least one", error=True)
                 return
             kwargs["pick_items"] = names
+        preset_name = self.save_preset_edit.text().strip() or None
         try:
             self.memory.memorize(
                 message=message, force_message=False, to_elog=self.elog_cb.isChecked(),
-                selection=selection, **kwargs,
+                selection=selection, preset_varname=preset_name, **kwargs,
             )
             self.message_edit.clear()
+            self.save_preset_edit.clear()
             self._set_status("saved new memory")
             self._refresh_overview()
         except Exception as e:
@@ -834,6 +943,20 @@ def make_memory_browser_ipywidgets(assembly):
     )
     load_file_btn = widgets.Button(description="Load from file")
 
+    preset_tag_text = widgets.Text(
+        placeholder="preset name for the loaded entry (empty clears it)",
+        layout=widgets.Layout(width="50%"),
+    )
+    apply_preset_btn = widgets.Button(description="Apply preset tag")
+    delete_entry_btn = widgets.Button(
+        description="Delete entry", button_style="danger",
+        tooltip=(
+            "permanently remove this stored memory entry (not the whole "
+            "device's memory -- just this one loaded snapshot)"
+        ),
+    )
+    _delete_armed = {"key": None}
+
     group_filter_box = widgets.HBox([widgets.Label("Keyword groups:")])
     changed_only_cb = widgets.Checkbox(value=True, description="show changed only")
 
@@ -867,6 +990,16 @@ def make_memory_browser_ipywidgets(assembly):
     )
     elog_cb = widgets.Checkbox(value=True, description="post to elog")
     save_btn = widgets.Button(description="Save new memory", button_style="success")
+    save_preset_text = widgets.Text(
+        placeholder="preset name (optional) -- leave empty for a plain memory",
+        layout=widgets.Layout(width="60%"),
+        tooltip=(
+            "tag this memory as a named preset, reachable afterwards as "
+            "<assembly>.memory.presets.<name>(). Reusing an existing name "
+            "redirects that preset to this new entry; the old entry stays "
+            "around as a plain memory."
+        ),
+    )
 
     # opt-in, non-default item picker: unchecked, this box stays empty and
     # Save captures everything the selection resolves to, exactly as
@@ -890,6 +1023,10 @@ def make_memory_browser_ipywidgets(assembly):
         color = "#c62828" if error else "#2e7d32"
         status_html.value = f"<span style='color:{color}'>{text}</span>"
 
+    def _reset_delete_arm():
+        _delete_armed["key"] = None
+        delete_entry_btn.description = "Delete entry"
+
     def _load_row(row):
         ancestor = row.get("ancestor")
         try:
@@ -900,11 +1037,60 @@ def make_memory_browser_ipywidgets(assembly):
                     {"settings": sliced}, key=None, path=None,
                     source_ancestor_name=row["ancestor_name"],
                 )
+                preset_tag_text.value = ""
             else:
                 mem = memory.get_memory(key=row["key"])
                 _load_mem(mem, key=row["key"], path=None)
+                preset_tag_text.value = row.get("presetname") or ""
+            _reset_delete_arm()
         except Exception as e:
             _set_status(f"could not load memory: {e}", error=True)
+
+    def _on_apply_preset_name(_b):
+        key = state.get("key")
+        if key is None:
+            _set_status(
+                "select a stored memory from the list above first "
+                "(not a file-loaded or parent-sourced one)", error=True,
+            )
+            return
+        name = preset_tag_text.value.strip() or None
+        try:
+            memory.set_preset_name(key=key, name=name)
+            _set_status(f"preset tag {'set to ' + name if name else 'cleared'} for {key}")
+            _refresh_overview()
+        except Exception as e:
+            _set_status(f"could not update preset tag: {e}", error=True)
+
+    def _on_delete_entry(_b):
+        key = state.get("key")
+        if key is None:
+            _set_status(
+                "select a stored memory from the list above first "
+                "(not a file-loaded or parent-sourced one)", error=True,
+            )
+            return
+        if _delete_armed["key"] != key:
+            _delete_armed["key"] = key
+            delete_entry_btn.description = "Click again to confirm delete"
+            _set_status(f"click 'Delete entry' again to permanently remove {key}", error=True)
+            return
+        try:
+            memory.clear_memory(key=key)
+        except Exception as e:
+            _set_status(f"delete failed: {e}", error=True)
+            return
+        state.update({
+            "key": None, "path": None, "mem": None, "checked": {},
+            "source_ancestor_name": None,
+        })
+        detail_box.children = ()
+        group_filter_box.children = (widgets.Label("Keyword groups:"),)
+        group_checks.clear()
+        preset_tag_text.value = ""
+        _reset_delete_arm()
+        _set_status(f"deleted stored memory {key}")
+        _refresh_overview()
 
     def _refresh_overview(_b=None):
         own_rows = _overview_rows(memory)
@@ -924,6 +1110,8 @@ def make_memory_browser_ipywidgets(assembly):
             groups = ",".join(row["groups"])
             ancestor_name = row.get("ancestor_name")
             label = f"{date_str}   {row['message']}   [{groups}]"
+            if row.get("presetname"):
+                label += f"   ★ {row['presetname']}"
             if ancestor_name:
                 label = f"[{ancestor_name}] {label}"
             btn = widgets.Button(
@@ -1044,6 +1232,8 @@ def make_memory_browser_ipywidgets(assembly):
             _set_status(f"could not load {path}: {e}", error=True)
             return
         _load_mem(mem, key=None, path=path)
+        preset_tag_text.value = ""
+        _reset_delete_arm()
 
     def _select_all(_b):
         for r in state.get("rows", []):
@@ -1142,12 +1332,14 @@ def make_memory_browser_ipywidgets(assembly):
                 )
                 return
             kwargs["pick_items"] = names
+        preset_name = save_preset_text.value.strip() or None
         try:
             memory.memorize(
                 message=message, force_message=False, to_elog=elog_cb.value,
-                selection=selection, **kwargs,
+                selection=selection, preset_varname=preset_name, **kwargs,
             )
             message_text.value = ""
+            save_preset_text.value = ""
             _set_status("saved new memory")
             _refresh_overview()
         except Exception as e:
@@ -1157,6 +1349,8 @@ def make_memory_browser_ipywidgets(assembly):
     show_parents_cb.observe(_refresh_overview, names="value")
     refresh_btn.on_click(_refresh_overview)
     load_file_btn.on_click(_on_load_file)
+    apply_preset_btn.on_click(_on_apply_preset_name)
+    delete_entry_btn.on_click(_on_delete_entry)
     changed_only_cb.observe(_refresh_detail, names="value")
     select_all_btn.on_click(_select_all)
     select_none_btn.on_click(_select_none)
@@ -1179,6 +1373,7 @@ def make_memory_browser_ipywidgets(assembly):
             overview_box,
             legend_html,
             widgets.HBox([refresh_btn, load_path_text, load_file_btn]),
+            widgets.HBox([preset_tag_text, apply_preset_btn, delete_entry_btn]),
             group_filter_box,
             changed_only_cb,
             widgets.HTML("<b>Details</b> (checkbox selects for recall)"),
@@ -1187,6 +1382,7 @@ def make_memory_browser_ipywidgets(assembly):
             widgets.HBox([recall_btn, export_path_text, export_btn]),
             widgets.HTML("<b>Save current state as a new memory</b>"),
             widgets.HBox([message_text, save_selection_combo, elog_cb, save_btn]),
+            widgets.HBox([save_preset_text]),
             widgets.HBox([
                 pick_items_cb, refresh_items_btn, pick_all_items_btn, pick_none_items_btn,
             ]),
@@ -1267,6 +1463,20 @@ class MemoryBrowserTk:
             side="left", padx=(4, 0)
         )
 
+        preset_tag_row = ttk.Frame(self.top)
+        preset_tag_row.pack(fill="x", padx=4, pady=2)
+        ttk.Label(preset_tag_row, text="Preset tag (for loaded entry):").pack(side="left")
+        self.preset_tag_var = tk.StringVar()
+        ttk.Entry(preset_tag_row, textvariable=self.preset_tag_var, width=20).pack(
+            side="left", padx=(4, 4)
+        )
+        ttk.Button(
+            preset_tag_row, text="Apply", command=self._on_apply_preset_name
+        ).pack(side="left")
+        ttk.Button(
+            preset_tag_row, text="Delete entry", command=self._on_delete_entry
+        ).pack(side="left", padx=(8, 0))
+
         filter_box = ttk.LabelFrame(self.top, text="Filters (within an opened memory)")
         filter_box.pack(fill="x", padx=4, pady=4)
         self.group_row = ttk.Frame(filter_box)
@@ -1336,6 +1546,11 @@ class MemoryBrowserTk:
         ttk.Checkbutton(save_box, text="post to elog", variable=self.elog_var).pack(
             side="left", padx=4
         )
+        ttk.Label(save_box, text="preset:").pack(side="left", padx=(8, 0))
+        self.save_preset_var = tk.StringVar()
+        ttk.Entry(save_box, textvariable=self.save_preset_var, width=16).pack(
+            side="left", padx=(2, 4)
+        )
         ttk.Button(save_box, text="Save", command=self._on_save).pack(side="left", padx=4)
 
         self.status_label = ttk.Label(self.top, text="")
@@ -1363,6 +1578,8 @@ class MemoryBrowserTk:
             groups = ",".join(row["groups"])
             ancestor_name = row.get("ancestor_name")
             label = f"{date_str}   {row['message']}   [{groups}]"
+            if row.get("presetname"):
+                label += f"   ★ {row['presetname']}"
             if ancestor_name:
                 label = f"[{ancestor_name}] {label}"
             self.overview_list.insert("end", label)
@@ -1393,9 +1610,11 @@ class MemoryBrowserTk:
                     {"settings": sliced}, key=None, path=None,
                     source_ancestor_name=row["ancestor_name"],
                 )
+                self.preset_tag_var.set("")
             else:
                 mem = self.memory.get_memory(key=row["key"])
                 self._load_mem(mem, key=row["key"], path=None)
+                self.preset_tag_var.set(row.get("presetname") or "")
         except Exception as e:
             self._set_status(f"could not load memory: {e}", error=True)
 
@@ -1413,6 +1632,58 @@ class MemoryBrowserTk:
             self._set_status(f"could not load {path}: {e}", error=True)
             return
         self._load_mem(mem, key=None, path=path)
+        self.preset_tag_var.set("")
+
+    def _on_apply_preset_name(self):
+        key = self._state.get("key")
+        if key is None:
+            self._set_status(
+                "select a stored memory from the list above first "
+                "(not a file-loaded or parent-sourced one)", error=True,
+            )
+            return
+        name = self.preset_tag_var.get().strip() or None
+        try:
+            self.memory.set_preset_name(key=key, name=name)
+            self._set_status(f"preset tag {'set to ' + name if name else 'cleared'} for {key}")
+            self._refresh_overview()
+        except Exception as e:
+            self._set_status(f"could not update preset tag: {e}", error=True)
+
+    def _on_delete_entry(self):
+        from tkinter import messagebox
+
+        key = self._state.get("key")
+        if key is None:
+            self._set_status(
+                "select a stored memory from the list above first "
+                "(not a file-loaded or parent-sourced one)", error=True,
+            )
+            return
+        if not messagebox.askyesno(
+            "Confirm delete",
+            f"Permanently remove this stored memory entry ({key})? "
+            "This cannot be undone from here.",
+            parent=self.top,
+        ):
+            return
+        try:
+            self.memory.clear_memory(key=key)
+        except Exception as e:
+            self._set_status(f"delete failed: {e}", error=True)
+            return
+        self._state = {
+            "key": None, "path": None, "mem": None, "rows": [], "checked": {},
+            "source_ancestor_name": None,
+        }
+        for child in self.detail_inner.winfo_children():
+            child.destroy()
+        for child in self.group_row.winfo_children()[1:]:
+            child.destroy()
+        self._group_vars = {}
+        self.preset_tag_var.set("")
+        self._set_status(f"deleted stored memory {key}")
+        self._refresh_overview()
 
     def _load_mem(self, mem, key, path, source_ancestor_name=None):
         import tkinter as tk
@@ -1568,12 +1839,14 @@ class MemoryBrowserTk:
             self._set_status("enter a message before saving", error=True)
             return
         selection = self.save_selection_var.get().strip() or "settings"
+        preset_name = self.save_preset_var.get().strip() or None
         try:
             self.memory.memorize(
                 message=message, force_message=False, to_elog=self.elog_var.get(),
-                selection=selection,
+                selection=selection, preset_varname=preset_name,
             )
             self.message_var.set("")
+            self.save_preset_var.set("")
             self._set_status("saved new memory")
             self._refresh_overview()
         except Exception as e:

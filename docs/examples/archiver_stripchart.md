@@ -47,9 +47,10 @@ df = archiver.get_data_time_range(
 )
 
 # Relative starts: a number of seconds, a timedelta, or a dict of timedelta
-# kwargs — all relative to `end` (which defaults to now):
+# kwargs — all counted back from `end` (which defaults to now). Negative reads
+# naturally, but the sign is ignored: 1800 and {"minutes": 30} mean the same.
 df = archiver.get_data_time_range(channels=[chan], start=-1800)          # last 30 min
-df = archiver.get_data_time_range(channels=[chan], start={"minutes": 30})
+df = archiver.get_data_time_range(channels=[chan], start={"minutes": -30})
 ```
 
 Useful options:
@@ -59,6 +60,82 @@ Useful options:
   channel individually.
 - `convert_timezone=True` converts the index from UTC to `Europe/Zurich`.
 - `labels=[...]` sets nicer legend labels for the plot.
+
+Each call prints the range it actually asked the archiver for (UTC and local)
+and, per channel, whether data came back or why not (`verbose=False` silences
+this and skips the extra requests below). A CA channel is only stored when it
+changes, so a quiet one has no events in a short window. One extra request per
+such channel tells you which case you are in:
+
+```
+target_stages.x.offset (SARES20-MF2:MOT_1.OFF): no events in range; last before it: 8.3875 (set 2026-10-05 13:03:37 UTC)
+target_stages.x.velocity (SARES20-MF2:MOT_1.VELO): not found in sf-archiver (not archived under this name)
+```
+
+The first exists and was simply quiet (the value it had is shown); the second
+is not archived at all.
+
+### Several eco objects at once
+
+Instead of channel names you can pass eco objects — an Assembly, an adjustable,
+a detector. Every archived channel below the object's alias is retrieved.
+Objects, plain channel ids and lists of both can be mixed, and a channel that
+several objects share is fetched once:
+
+```python
+df = archiver.get_data_time_range(prof_kb.target_stages, mon_opt, start=-1e5)
+
+# extra channels: plain ids are read from the DataBuffer (BS) unless you say
+# otherwise, either per channel ...
+df = archiver.get_data_time_range(
+    prof_kb.target_stages,
+    channels=["SARES20-MF1:MOT_1.RBV"], channel_types=["CA"],
+    start=-3600,
+)
+# ... or for everything at once with force_type=
+```
+
+Objects bring their own channel types and legend labels, so leave `force_type`
+unset when passing them. Legend labels carry each channel's full alias
+(`prof_kb.target_stages.x.offset (SARES20-MF2:MOT_1.OFF)`). The start (and end)
+may also follow the objects positionally if it is a number, timedelta, dict or
+datetime — `archiver.get_data_time_range(prof_kb.target_stages, -3600)`; a date
+*string* must be passed as `start=`, since it could as well be a channel id.
+
+By default the DataFrame columns are channel ids, in the order you asked.
+`column_names="alias"` names them by the full alias instead
+(`prof_kb.target_stages.x.offset`), `column_names="label"` by the whole legend
+label.
+
+### Long ranges of BS channels: `bins`
+
+A BS channel runs at up to 100 Hz: a day of one channel is 8.6 million
+samples, roughly 20 s to fetch. A warning (with that estimate) is printed
+whenever a request would be that big. Downsample **on the server** instead:
+
+```python
+# a bin count (the server rounds to a sensible bin width) ...
+df = archiver.get_data_time_range(gasmon, start=-86400, bins=500)
+# ... or a bin width: "10s", "1m", "1h", ...
+df = archiver.get_data_time_range(gasmon, start=-86400, bins="10m")
+```
+
+Each channel comes as its bin average plus `<channel> min`, `<channel> max` and
+`<channel> count` columns, stamped at the bin centre; empty bins are NaN.
+`bins` works for CA channels and for `get_data_pulse_id_range` too.
+
+### The value at the start of the window: `last_before`
+
+A quiet CA channel has no events in a short window, and a step plot of it has
+no starting value. `last_before=True` also fetches each channel's last event
+before the window (the archiver's "one before range") and puts it *at* the
+start of the window:
+
+```python
+df = archiver.get_data_time_range(prof_kb.target_stages, start=-600, last_before=True)
+```
+
+It cannot be combined with `bins`.
 
 ### Finding channel names
 
@@ -79,6 +156,12 @@ For beam-synchronous channels you can query a pulse-id range instead. With no
 df = archiver.get_data_pulse_id_range(channels=[chan], start=-1000)
 ```
 
+It takes everything `get_data_time_range` does — eco objects, `bins`,
+`last_before`, `column_names` — and positional `start`/`end`:
+`archiver.get_data_pulse_id_range(gasmon, 28549932558, 28549938558)`. A negative
+`start` is an offset back from `end`. (Pulse ids are mapped to times with the
+service's own map; datahub's built-in linear formula was days off.)
+
 ## Getting archiver data into a plot
 
 Every retrieval method takes `plot=True`, which draws the returned DataFrame as
@@ -95,6 +178,13 @@ archiver.get_data_time_range(
     plot=True,
 )
 ```
+
+With many curves, the figure window's toolbar has a **Select curves** button
+(right after *Save*, Qt backends): it opens a window with a checkbox per curve,
+a filter box and All/None, and hides or shows curves immediately — the legend
+and the y-range follow. The button comes from escape (`escape >= 0.2.14`,
+`escape.plot_utilities.attach_select_button`, which also covers the Jupyter
+widget backend); with an older escape a built-in Qt-only version is used.
 
 Since you also get the DataFrame back, you can just as easily plot or analyse it
 yourself with pandas/matplotlib.

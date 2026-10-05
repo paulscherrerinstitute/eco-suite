@@ -257,9 +257,10 @@ class Memory:
             t = datetime.fromisoformat(key)
             row.append(t.strftime("%Y-%m-%d: %a %-H:%M"))
             row.append(content["message"])
+            row.append(content.get("presetname") or "")
             a.append(row)
 
-        return format_table(a, headers=["Index", "Time", "Message"])
+        return format_table(a, headers=["Index", "Time", "Message", "Preset"])
 
     def __call__(self, index=None, include_parents=False, **kwargs):
         """Interactive terminal picker over stored memories -- recalls
@@ -295,6 +296,8 @@ class Memory:
             for n, (key, content) in enumerate(mem.items()):
                 t = datetime.fromisoformat(key)
                 row = t.strftime("%Y-%m-%d: %a %H:%M") + "   " + content["message"]
+                if content.get("presetname"):
+                    row += f"   [preset: {content['presetname']}]"
                 a.append(row)
                 try:
                     recall_dicts[n] = self.get_recall_dict(self.get_memory(key=key))
@@ -726,6 +729,37 @@ class Memory:
             raise Exception("memory key or index to be deleted needs to be specified!")
         mem = self._memories.get_current_value()
         mem.pop(key)
+        self._memories.set_target_value(mem).wait()
+
+    def set_preset_name(self, index=None, key=None, name=None):
+        """Set (`name` given) or remove (`name=None`/falsy, the default)
+        the `"presetname"` tag on an *already-stored* memory entry --
+        without touching its captured values, and without deleting the
+        entry itself (see `clear_memory` for that). The entry keeps
+        existing as a plain memory either way; this only changes whether
+        `Presets`/`.presets.<name>` can reach it.
+
+        Tagging after the fact this way, or re-tagging an entry that
+        already has a (possibly different) `presetname`, is exactly
+        equivalent to having passed `preset_varname=name` to `memorize()`
+        when it was first saved -- including when `name` collides with
+        another entry's: nothing here enforces uniqueness, so whichever
+        tagged entry was written or re-tagged most recently is the one
+        `Presets._setup_presets()` resolves `.presets.<name>` to (see its
+        own docstring/comments) -- the earlier one stays a plain memory,
+        just no longer reachable by that name.
+        """
+        if index is not None:
+            key = list(self._memories().keys())[index]
+        if key is None:
+            raise ValueError("memory key or index needs to be specified")
+        mem = self._memories.get_current_value()
+        if key not in mem:
+            raise KeyError(f"no stored memory entry {key!r}")
+        if name:
+            mem[key]["presetname"] = name
+        else:
+            mem[key].pop("presetname", None)
         self._memories.set_target_value(mem).wait()
 
     def get_recall_dict(self, mem, selection=None):
@@ -1459,17 +1493,24 @@ class Memory:
                 rec = self.get_recall_dict(full, selection=selection)
             except Exception:
                 continue
-            loaded.append((key, mem_index[key].get("message", "") or "", rec))
+            loaded.append(
+                (
+                    key,
+                    mem_index[key].get("message", "") or "",
+                    mem_index[key].get("presetname") or "",
+                    rec,
+                )
+            )
 
         if not loaded:
             return "No stored memories could be read."
 
         present_values = self._prefetch_present_values(
-            itertools.chain.from_iterable(rec.keys() for _, _, rec in loaded)
+            itertools.chain.from_iterable(rec.keys() for _, _, _, rec in loaded)
         )
 
         ranked = []
-        for key, message, rec in loaded:
+        for key, message, presetname, rec in loaded:
             matches = 0
             total = 0
             penalty = 0.0
@@ -1500,6 +1541,7 @@ class Memory:
                 {
                     "date": date,
                     "message": message,
+                    "presetname": presetname,
                     "matches": matches,
                     "total": total,
                     "penalty": penalty,
@@ -1537,6 +1579,7 @@ class Memory:
                     rank + 1,
                     r["date"].strftime("%Y-%m-%d %a %H:%M"),
                     r["message"],
+                    r["presetname"],
                     match_str,
                     dev_str,
                     biggest_miss,
@@ -1545,8 +1588,8 @@ class Memory:
 
         return format_table(
             table,
-            headers=["#", "Date", "Message", "matches", "deviation", "biggest miss"],
-            colalign=("center", "left", "left", "center", "decimal", "left"),
+            headers=["#", "Date", "Message", "Preset", "matches", "deviation", "biggest miss"],
+            colalign=("center", "left", "left", "left", "center", "decimal", "left"),
             tablefmt=tablefmt,
         )
 
@@ -1620,7 +1663,8 @@ class Preset:
     def __str__(self):
         s = f"Preset {self._name} - saved values compared to the present status\n"
         tmem = self._memory.get_memory(key=self._key)
-        s += self._memory.get_memory_difference_str(tmem)
+        rec = self._memory.get_recall_dict(tmem)
+        s += self._memory.get_memory_difference_str(rec)
         return s
 
     def __repr__(self):
