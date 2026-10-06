@@ -26,6 +26,7 @@ from ..elements.adjustable import AdjustableMemory, DummyAdjustable
 from IPython import get_ipython
 from .daq_client import Daq
 from .counter_protocol import Counter
+from .utilities import as_numeric_array
 from eco.elements.assembly import Assembly
 from rich.progress import Progress
 import inputimeout
@@ -1721,10 +1722,13 @@ class Scans(Assembly):
         # pulse interpolated position (from the move's own timing) would
         # be the real fix, left for when this is more than a test.
         parameter = {adj_name: {"values": [start_pos]}}
+        # numpy arrays, not the monitors' growing lists: escape >= 0.2.13's
+        # ArrayTimestamps keeps `data` as passed and its h5 storage only
+        # writes numpy/dask data (see CounterValue.create_arrays)
         ctx.monitor_scan_arrays = {
             monname: ArrayTimestamps(
-                data=copy.copy(mon.data["values"]),
-                timestamps=mon.data["timestamps"],
+                data=as_numeric_array(list(mon.data["values"])),
+                timestamps=np.asarray(list(mon.data["timestamps"])),
                 timestamp_intervals=ctx.timestamp_intervals,
                 parameter=parameter,
                 name=monname,

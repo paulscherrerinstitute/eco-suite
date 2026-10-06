@@ -1,7 +1,9 @@
-import copy
 import time
+import traceback
 import weakref
-from eco.acquisition.utilities import Acquisition
+import numpy as np
+from eco.acquisition.utilities import Acquisition, as_numeric_array
+from eco.acquisition import peak_analysis as _peak
 from eco.elements.protocols import Detector, MonitorableValueUpdate, resolve_lazy
 from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from collections import namedtuple
@@ -19,15 +21,34 @@ StepTime = namedtuple("StepTime", "start stop")
 
 
 class CounterValue:
-    def __init__(self, *detectors, name="value_counter"):
+    """Counter for the plain (EPICS-monitor / polled) detectors.
+
+    peak_analysis : True, False or dict, default True
+        Run escape's `find_peak` on the per-step medians of a 1-D scan after
+        every step (and once more at the end) and keep the result in
+        `scan.peak_analysis` -- see `eco.acquisition.peak_analysis` for the
+        fields and for what is not analysed (n-d scans, several channels).
+        A dict passes `n_bg`, `bg_model`, `fixed_offset` and/or `mode` on to
+        `find_peak`.
+    """
+
+    def __init__(self, *detectors, name="value_counter", peak_analysis=True):
         self.detectors = []
         self.detector_values = []
         self.monitorables = []
         self.append_detectors(*detectors)
+        self._peak_settings = _peak.parse_settings(peak_analysis)
         self.callbacks_start_scan = [self.start_scan]
         self.callbacks_start_step = []
         self.callbacks_step_counting = []
-        self.callbacks_end_step = [self.create_arrays, self.plot_arrays]
+        # before plot_arrays: it is the plot that shows the same data, and
+        # the analysis must not depend on a figure existing (headless, or
+        # its animation stopped by a toolbar button)
+        self.callbacks_end_step = [
+            self.create_arrays,
+            self.update_peak_analysis,
+            self.plot_arrays,
+        ]
 
         # Stopping the animation is the one step here that must never be
         # skipped -- a still-running FuncAnimation timer keeps firing after
@@ -41,6 +62,7 @@ class CounterValue:
         self.callbacks_end_scan = [
             self.stop_animation,
             self.create_arrays,
+            self.finish_peak_analysis,
             self.stop_monitoring,
             self.clear_detectors,
             self.store_arrays,
@@ -104,6 +126,9 @@ class CounterValue:
         self.start_monitoring(scan=scan)
         scan.timestamp_intervals = []
         # scan.moniitorable_names = self.get_monitorable_names()
+        _peak.attach(
+            scan, self.name, self._peak_settings, n_channels=len(scan.monitors)
+        )
 
     def start_monitoring(self, scan=None, **kwargs):
         if hasattr(scan, "monitors"):
@@ -208,15 +233,59 @@ class CounterValue:
     def create_arrays(self, scan, **kwargs):
         scan.monitor_scan_arrays = {}
         for monname, mon in scan.monitors.items():
-            tdata = copy.copy(mon.data["values"]) # needed for array data, apparently 
+            # Snapshot of the still-growing monitor lists (the CA callback
+            # appends timestamp then value, so the two can differ by one),
+            # as numpy arrays: escape >= 0.2.13's ArrayTimestamps keeps
+            # `data` as passed, and its h5 storage only writes numpy/dask
+            # data -- given a list, `.store()` silently wrote just the
+            # timestamps and left a file with no `data_0000` (unreadable,
+            # "Corrupt escape ArrayH5Dataset", and `.store()` itself then
+            # failed with KeyError: data_0000).
+            values = list(mon.data["values"])
+            timestamps = list(mon.data["timestamps"])
+            n = min(len(values), len(timestamps))
             scan.monitor_scan_arrays[monname] = ArrayTimestamps(
-                data=tdata,
-                timestamps=mon.data["timestamps"],
+                data=as_numeric_array(values[:n]),
+                timestamps=np.asarray(timestamps[:n]),
                 timestamp_intervals=scan.timestamp_intervals,
                 parameter=parameter_from_scan(scan),
                 name=monname,
             )
 
+    def update_peak_analysis(self, scan, **kwargs):
+        """Re-run the peak/step analysis on the steps taken so far, from the
+        per-step medians of the (single) monitor -- the same numbers
+        `scan.plot` draws -- against the scan variable's own values. Result
+        in `scan.peak_analysis`, see `eco.acquisition.peak_analysis`.
+
+        Not in the plot's redraw: that runs off a GUI timer (stopped by the
+        toolbar buttons, absent headless), this runs with the data. Never
+        raises, so a problem here cannot cost a scan.
+        """
+        analysis = _peak.get_attached(scan, self.name)
+        arrays = getattr(scan, "monitor_scan_arrays", {})
+        if analysis is None or len(arrays) != 1:
+            return analysis
+        try:
+            (array,) = arrays.values()
+            y = _peak.step_medians(
+                array.timestamps, array.data, scan.timestamp_intervals
+            )
+            x = _peak.scan_positions(scan)
+            n = min(len(x), len(y))
+            analysis.update(x[:n], y[:n])
+        except Exception as exc:
+            _peak.note_once(
+                f"counter_failed_{type(exc).__name__}",
+                f"{self.name}: peak analysis failed: {type(exc).__name__}: {exc}",
+            )
+        return analysis
+
+    def finish_peak_analysis(self, scan, **kwargs):
+        """Last pass at the end of the scan, and the one-line result."""
+        analysis = self.update_peak_analysis(scan)
+        if analysis is not None and analysis.summary():
+            print(analysis.summary())
 
     def plot_arrays(self, scan, **kwargs):
         if not hasattr(scan, "animation"):
@@ -295,58 +364,141 @@ class CounterValue:
 
         if filename == "auto":
             filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".esc.h5"
+        else:
+            # escape's DataSet refuses any other name ("Expecting esc suffix
+            # in filename"), so a plain `filename="myfile"` used to complete
+            # the whole scan and then store nothing. A name without any
+            # escape suffix is completed silently; an incomplete one
+            # (".h5", ".esc", ".zarr") says what it was completed to, the
+            # same rule escape's own DataSet applies.
+            esc_filename = _with_esc_suffix(filename)
+            if esc_filename != str(filename) and {".esc", ".h5", ".zarr"} & set(
+                Path(filename).suffixes
+            ):
+                print(
+                    f"Note: dataset filename '{filename}' has an incomplete "
+                    f"escape suffix ('.esc.h5' expected), storing as "
+                    f"'{esc_filename}'."
+                )
+            filename = esc_filename
 
+        filepath = Path(directory) / Path(filename)
+        stored = False
+        refused = False  # file exists and was deliberately not overwritten
+        d = None
+        # which step is running, so a failure can say where it happened
+        stage = "creating the file"
         try:
-            d = DataSet.create_with_new_result_file(
-                Path(directory) / Path(filename), force_overwrite=False
-            )
+            d = DataSet.create_with_new_result_file(filepath, force_overwrite=False)
+            if d is None:
+                # escape asked "...would you like to overwrite? (y/n)" and got "n"
+                raise FileExistsError(f"{filepath} exists and overwriting was declined")
             names = []
             for k, v in scan.monitor_scan_arrays.items():
                 names.append(k)
+                stage = f"appending '{k}' to the dataset"
                 d.append(v, name=k)
+                stage = f"writing '{k}' ({type(v).__name__})"
                 v.store()
+            stage = "closing the file"
             d.results_file.close()
             # the h5 comes from escape's DataSet, i.e. created with the umask
             # (0o644); the pgroup has to be able to rewrite it too
-            ensure_group_writable(Path(directory) / Path(filename))
-            scan.stored_filename = (
-                (Path(directory) / Path(filename)).resolve().as_posix()
-            )
-            print(
-                f"Stored filename {(Path(directory) / Path(filename)).resolve().as_posix()}"
-            )
+            stage = "setting group permissions"
+            ensure_group_writable(filepath)
+            scan.stored_filename = filepath.resolve().as_posix()
+            stored = True
+            print(f"Stored filename {scan.stored_filename}")
 
-            d = DataSet.load_from_result_file(Path(directory) / Path(filename))
+            stage = "reloading the stored file"
+            d = DataSet.load_from_result_file(filepath)
             for name in names:
-                scan.monitor_scan_arrays[name] = d.datasets[name]
+                array = d.datasets[name]
+                # escape >= 0.2.13 loads lazily: without pulling the numbers
+                # into memory while the file is still open, every later access
+                # (`.data`, `.timestamps`, `.scan.plot`) hits the closed h5
+                # file and raises a ValueError deep inside h5py.
+                array.data = np.asarray(array.data)
+                array.timestamps
+                scan.monitor_scan_arrays[name] = array
             d.results_file.close()
-        except:
-            print("Could not create dataset file!")
+        except Exception as exc:
+            # A failure after the file was opened must not leave it open:
+            # h5py then keeps a half-written, unflushed file that other
+            # readers see as corrupt until this process exits.
+            try:
+                d.results_file.close()
+            except Exception:
+                pass
+            print(
+                f"{self.name}: dataset file {filepath} "
+                + (
+                    f"was written, but {stage} failed"
+                    if stored
+                    else f"NOT stored - failed while {stage}"
+                )
+                + f": {type(exc).__name__}: {exc}"
+            )
+            # An OSError (permissions, missing directory, existing file, ...)
+            # already says what is wrong; anything else is unexpected and
+            # gets its full traceback.
+            if not isinstance(exc, OSError):
+                traceback.print_exc()
+            if stored:
+                print(f"{self.name}: the in-memory arrays of this scan are kept.")
+            elif isinstance(exc, FileExistsError):
+                refused = True
+                print(f"{self.name}: the existing file was left untouched.")
+            elif filepath.exists():
+                print(
+                    f"{self.name}: {filepath} exists on disk but is probably "
+                    f"incomplete."
+                )
+            else:
+                print(f"{self.name}: no file was written to {filepath}.")
 
         files = []
+        plotfilename = Path(directory) / Path(
+            Path(filename).stem.split(".")[0] + ".png"
+        )
         try:
             # import mpld3
 
-            plotfilename = Path(directory) / Path(
-                Path(filename).stem.split(".")[0] + ".png"
-            )
-            scan.fig.savefig(
-                plotfilename.as_posix(),
-            )
-            ensure_group_writable(plotfilename)  # savefig also uses the umask
-            files.append(plotfilename)
+            if refused:
+                # the plot shares its name with the existing data file: leave
+                # it too, or it would show a scan whose data was not kept
+                print(f"{self.name}: not writing {plotfilename} either.")
+            else:
+                scan.fig.savefig(
+                    plotfilename.as_posix(),
+                )
+                ensure_group_writable(plotfilename)  # savefig also uses the umask
+                files.append(plotfilename)
             # print(plotfilename, plotfilename.as_posix())
 
-        except Exception:
-            pass
+        except Exception as exc:
+            print(
+                f"{self.name}: could not save plot {plotfilename}: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
-        files.append(Path(directory) / Path(filename))
+        # only attach the dataset if it was actually written
+        if stored:
+            files.append(filepath)
 
         if elog:
             if elog == True:
                 elog = None
+            analysis = _peak.get_attached(scan, self.name)
+            summary = analysis.summary() if analysis is not None else ""
             scan.status_to_elog(
-                text=f"### Quick scan: {scan.description()}\nData stored in {filename}.",
+                text=f"### Quick scan: {scan.description()}\n"
+                + (
+                    f"Data stored in {filename}."
+                    if stored
+                    else f"Data NOT stored ({filename}, see console)."
+                )
+                + (f"\n\n{summary}" if summary else ""),
                 auto_title=False,
                 elog=elog,
                 files=files,
@@ -358,6 +510,25 @@ class CounterValue:
 
     def stop(self):
         pass
+
+
+def _with_esc_suffix(filename):
+    """`filename` as an escape results filename, which needs both `.esc` and
+    `.h5`/`.zarr` in its suffixes. Only a trailing, partial escape suffix is
+    replaced (`run`, `run.h5`, `run.esc` -> `run.esc.h5`); any other dot in
+    the name is part of it (`scan_0.5V` -> `scan_0.5V.esc.h5`)."""
+    p = Path(filename)
+    if ".esc" in p.suffixes and (".h5" in p.suffixes or ".zarr" in p.suffixes):
+        return str(filename)
+    name = p.name
+    stripped = True
+    while stripped:
+        stripped = False
+        for ext in (".h5", ".zarr", ".esc"):
+            if name.endswith(ext):
+                name = name[: -len(ext)]
+                stripped = True
+    return str(p.with_name(name + ".esc.h5"))
 
 
 def parameter_from_scan(scan):

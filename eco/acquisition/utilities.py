@@ -1,6 +1,24 @@
 from ..utilities import PropagatingThread
 from epics import PV
 from asyncio import Future
+import numpy as np
+
+
+def as_numeric_array(values):
+    """Monitor samples (a list, as accumulated by the CA callbacks) as a numpy
+    array, which is what escape's ArrayTimestamps needs for its data: escape
+    >= 0.2.13 keeps a list as it is, and its h5 storage then writes only the
+    timestamps. A sample that is `None` (the seeding `pv.get()` of a PV that
+    was not connected yet) would make this an object array that cannot be
+    stored; those become NaN. Anything that still cannot be converted is
+    returned as the (object) array it is, so the store step reports it."""
+    arr = np.asarray(values)
+    if arr.dtype == object:
+        try:
+            arr = np.asarray(values, dtype=float)
+        except (TypeError, ValueError):
+            pass
+    return arr
 
 
 class Acquisition:

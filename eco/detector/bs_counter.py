@@ -124,6 +124,7 @@ from time import time as _time
 
 import numpy as np
 
+from eco.acquisition import peak_analysis as _peak
 from eco.acquisition.utilities import Acquisition
 from eco.aliases import Alias
 
@@ -153,6 +154,55 @@ class _StepIndexSource:
 
     def _getEventData(self):
         return self.value
+
+
+_scan_in_scan_units_class = None
+
+
+def _scan_in_scan_units(escape_stream):
+    """``escape_stream.Scan`` subclass whose single parameter reads as the
+    scan's own values (motor positions) instead of the bin key.
+
+    The bins stay keyed on the step index (see ``_StepIndexSource`` and the
+    module docstring for why), but everything escape draws or derives from
+    ``scan[parameter]`` -- ``Stream.plot_med`` and its peak overlay, and
+    ``Stream.to_array``'s default parameter -- then speaks in the units of
+    what is being scanned. ``step_values`` maps step index -> value and is
+    filled by ``BsStreamCounter._advance_step``, *before* the bin key moves to
+    that step, so the mapping is there by the time the bin exists; a step
+    without an entry reads as its index, as before.
+
+    Built on first use rather than at import, like every other
+    ``escape.stream`` import in this module.
+    """
+    global _scan_in_scan_units_class
+    if _scan_in_scan_units_class is None:
+
+        class ScanInScanUnits(escape_stream.Scan):
+            def __init__(self, *args, step_values=None, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._step_values = {} if step_values is None else step_values
+
+            def __getitem__(self, item):
+                values = super().__getitem__(item)
+                names = self._parameterNames or []
+                if len(names) == 1 and len(values) and (item == 0 or item == names[0]):
+                    return np.asarray(
+                        [self._step_values.get(int(round(s)), s) for s in values],
+                        dtype=float,
+                    )
+                return values
+
+            def copy(self):
+                return ScanInScanUnits(
+                    parameters=self._parameters,
+                    values=list(self._values),
+                    precision=self._precision,
+                    step_values=self._step_values,
+                )
+
+        _scan_in_scan_units_class = ScanInScanUnits
+    return _scan_in_scan_units_class
 
 
 def _get_grid_specs(scan):
@@ -328,6 +378,16 @@ class BsStreamCounter:
         matching ``eco.acquisition.counters.DEFAULT_STORAGE_DIR``; a
         callable is called with no arguments to get the path). Ignored if
         ``store`` is ``False``.
+    peak_analysis : True, False or dict, default True
+        After every step of a 1-D scan (and at its end), run escape's
+        ``find_peak`` on the per-step medians against the scan variable's own
+        values, and keep the result in ``scan.peak_analysis`` -- see
+        ``eco.acquisition.peak_analysis`` for the fields and for what is not
+        analysed (n-d/grid scans, several channels). A dict passes
+        ``n_bg``, ``bg_model``, ``fixed_offset`` and/or ``mode`` on to
+        ``find_peak``. The overlay of the live plot (``live_plot``) is
+        escape's own and keeps its own settings (the Peak-params panel), so
+        with non-default settings here the two can differ.
 
     Usage
     -----
@@ -344,7 +404,7 @@ class BsStreamCounter:
 
     def __init__(
         self, sources, name=None, reduction=np.mean, timeout=10, eventworker=None,
-        live_plot=True, store=True, storage_dir="auto",
+        live_plot=True, store=True, storage_dir="auto", peak_analysis=True,
     ):
         sources = sources if isinstance(sources, (list, tuple)) else [sources]
         self._raw = {}
@@ -359,6 +419,11 @@ class BsStreamCounter:
         self._plot = None
         self.store = store
         self.storage_dir = storage_dir
+        self._peak_settings = _peak.parse_settings(peak_analysis)
+        # step index -> the scan's own value at that step (see
+        # _scan_in_scan_units); a new dict per scan, so the one a finished
+        # scan's bins still refer to is never touched again
+        self._step_values = {}
         # Snapshot of the most recently *completed* scan's channels as real
         # escape.Array objects (see _build_arrays) -- {channel_name: Array},
         # and the file they were last written to (_store_arrays), if any.
@@ -402,7 +467,7 @@ class BsStreamCounter:
         self.callbacks_start_scan = [self._on_scan_start]
         self.callbacks_start_step = []
         self.callbacks_step_counting = []
-        self.callbacks_end_step = []
+        self.callbacks_end_step = [self._update_peak_analysis]
         self.callbacks_end_scan = [self._on_scan_end]
 
     # -- (re)building the shared per-step bin structure ---------------------
@@ -430,7 +495,13 @@ class BsStreamCounter:
         """
         from escape import stream as escape_stream
 
-        self._scan = escape_stream.Scan(parameters=list(self._step_sources))
+        if len(self._step_sources) == 1:
+            # one dimension: bins keyed on the step index, read in scan units
+            self._scan = _scan_in_scan_units(escape_stream)(
+                parameters=list(self._step_sources), step_values=self._step_values
+            )
+        else:
+            self._scan = escape_stream.Scan(parameters=list(self._step_sources))
         for src in self._step_sources:
             src.value = 0.0
         self._step_index = 0
@@ -482,11 +553,78 @@ class BsStreamCounter:
             else [_StepIndexSource(f"step_index_{d}") for d in range(ndim)]
         )
         self._grid_specs = grid_specs  # None for an ordinary scan -- see grid()
+        self._step_values = {}
+        if ndim <= 1:
+            self._label_step_source(scan)
         self._scan_running = True
         self._teardown_bins()
         self._build_bins()
         self.step_pulse_ids = {}
         self._start_live_plot(ndim)
+        # n-d scans, several channels, or another analysing counter: no-op
+        _peak.attach(scan, self.name, self._peak_settings, n_channels=len(self._raw))
+
+    def _label_step_source(self, scan):
+        """Name the (single) step source after the scanned adjustable, with
+        its unit, so escape's axis label (``"<name> / <unit>"``, see
+        ``Plot.plot``) reads e.g. "motor / mm" rather than "step_index / step".
+        Left alone for a scan object that does not say what it scans."""
+        scan_parameters = (getattr(scan, "scan_info", None) or {}).get("scan_parameters")
+        names = (scan_parameters or {}).get("name") or []
+        if len(names) == 1:
+            self._step_sources[0].name = str(names[0])
+            self._step_sources[0].unit = _peak.adjustable_unit(scan)
+
+    def _scan_value_at(self, scan):
+        """The scanned adjustable's target value for the step now being
+        acquired, or None if *scan* does not say (``values_current_step`` is
+        set by ``StepScan.do_next_step`` before the move)."""
+        try:
+            return float(scan.values_current_step[0])
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return None
+
+    def _update_peak_analysis(self, scan=None, **kwargs):
+        """Re-run the peak/step analysis on the steps finished so far: the
+        per-step medians of the (single) channel against the scan variable's
+        own values -- in scan units, unlike the step-index axis the bins are
+        keyed on. Result in ``scan.peak_analysis``, see
+        ``eco.acquisition.peak_analysis``. Never raises."""
+        analysis = _peak.get_attached(scan, self.name)
+        if analysis is None or len(self._channels) != 1:
+            return analysis
+        try:
+            (channel,) = self._channels.values()
+            bins = list(channel._dataManager._data)
+            # one key per bin, in creation order; a step that produced no
+            # sample never got a bin, so the key -- not the position -- says
+            # which step a bin is
+            keys = list(self._scan._values)
+            positions = _peak.scan_positions(scan)
+            n = min(len(bins), len(keys))
+            x = np.full(n, np.nan)
+            y = np.full(n, np.nan)
+            for j in range(n):
+                step = int(round(keys[j][0]))
+                if step < len(positions):
+                    x[j] = positions[step]
+                samples = np.asarray(list(bins[j]), dtype=float)
+                samples = samples[np.isfinite(samples)] if samples.ndim == 1 else []
+                if len(samples):
+                    y[j] = np.median(samples)
+            analysis.update(x, y)
+        except Exception as exc:
+            _peak.note_once(
+                f"bs_counter_failed_{type(exc).__name__}",
+                f"{self.name}: peak analysis failed: {type(exc).__name__}: {exc}",
+            )
+        return analysis
+
+    def _finish_peak_analysis(self, scan=None):
+        """Last pass at the end of the scan, and the one-line result."""
+        analysis = self._update_peak_analysis(scan)
+        if analysis is not None and analysis.summary():
+            print(analysis.summary())
 
     def _start_live_plot(self, ndim):
         self._plot = None
@@ -517,6 +655,7 @@ class BsStreamCounter:
         # even before grid() existed (fine for last_value(s), which are
         # already-extracted plain values, not fine for anything reading
         # the bins themselves after the fact).
+        self._finish_peak_analysis(scan)  # needs this scan's bins, so first
         self._last_channels = dict(self._channels)
         self._last_scan = self._scan
         self._last_grid_specs = self._grid_specs
@@ -586,11 +725,13 @@ class BsStreamCounter:
                 # bin (see _build_bins()'s open-ended-Scan docstring) --
                 # the real scan values wouldn't line up against this
                 # channel's shorter bin list, so fall back to to_array()'s
-                # own synthetic step_index rather than mislabel steps.
+                # own parameter: that of the channel's scan, which reads each
+                # bin that exists by its own step's value (see
+                # _scan_in_scan_units) rather than by its position.
                 print(
                     f"{self.name}: {name} has {n_bins} bins but the scan "
-                    f"took {n_steps} steps -- keeping the synthetic "
-                    "step_index parameter instead of the real scan values."
+                    f"took {n_steps} steps -- using the scan values of the "
+                    "bins that exist instead of one per step."
                 )
                 arrays[name] = channel.to_array()
         self.last_arrays = arrays
@@ -822,6 +963,11 @@ class BsStreamCounter:
             for src, idx in zip(self._step_sources, grid_index):
                 src.value = float(idx)
         else:
+            # the mapping first: the bin for this step comes into being on the
+            # first event after the key moves (see _scan_in_scan_units)
+            value = self._scan_value_at(scan)
+            if value is not None:
+                self._step_values[step_index] = value
             self._step_sources[0].value = float(step_index)
         ew = next(iter(self._channels.values()))._source.eventWorker
         start_pid = ew.event.getEventId() if ew.event is not None else None
