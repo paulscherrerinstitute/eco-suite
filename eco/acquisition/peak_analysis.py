@@ -39,11 +39,14 @@ cannot be in the display without being in the status.)
     gradient   peak: slope of the baseline (0 for bg_model="offset");
                step: None
     snr        |height| over a robust noise estimate of the trace (median
-               absolute deviation of its point-to-point differences, so a
-               smooth peak or step does not count as noise); None for
-               noise-free data (no noise to compare to). Advisory:
-               `mode="auto"` reports a "peak" or "step" for almost any trace
-               with variation, this tells a real one from scatter
+               absolute deviation of its second differences, so a smooth peak
+               or step hardly counts as noise); None for exactly noise-free
+               data. Advisory: `mode="auto"` reports a "peak" or "step" for
+               almost any trace with variation, this tells a real one from
+               scatter -- a trace that is only scatter reads below ~3, a
+               noisy but well-sampled peak is estimated about right, and on a
+               coarse scan the curvature of a sharp peak leaks into the
+               estimate, so a clean peak reads ~30-40 at most
     n_points   steps with a finite value that went into the analysis
     parameter  name of the scan variable (`x`, in its units)
     n_bg, bg_model, mode   the `find_peak` settings used ("fixed" as bg_model
@@ -194,8 +197,11 @@ def analyze_trace(x, y, settings=None, parameter=""):
 
     xs, ys = x[finite], y[finite]
     ys = ys[np.argsort(xs, kind="stable")]
-    d = np.diff(ys)
-    noise = 1.4826 * np.median(np.abs(d - np.median(d))) / np.sqrt(2)
+    # second differences: white noise of sigma gives sqrt(6) * sigma, a
+    # smooth peak or step hardly any (and the median ignores the few points
+    # where it does)
+    d = np.diff(ys, n=2)
+    noise = 1.4826 * np.median(np.abs(d - np.median(d))) / np.sqrt(6)
     snr = abs(height) / noise if noise > 0 else float("inf")
 
     result.update(
