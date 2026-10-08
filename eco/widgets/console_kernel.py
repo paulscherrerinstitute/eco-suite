@@ -141,6 +141,9 @@ def _subprocess_env():
     import sys
 
     env = dict(os.environ)
+    # a qtconsole can't render ipywidgets: lets interactive code (e.g.
+    # eco.widgets.tweak_panel.frontend) pick a Qt window instead
+    env["ECO_QTCONSOLE_KERNEL"] = "1"
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = os.pathsep.join(sys.path) + (os.pathsep + existing if existing else "")
     return env

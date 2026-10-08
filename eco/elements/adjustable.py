@@ -53,11 +53,21 @@ class AdjustableError(Exception):
 
 
 def tweak_option(Obj):
-    def tweak(self, interval, *args, **kwargs):
-        self._tweak_instance = Tweak((self, interval))
-        self._tweak_instance.single_adjustable_tweak()
+    def tweak(self, interval, *args, detectors=None, **kwargs):
+        """Interactive tweak; `detectors` (a Detector or a list) are recorded
+        and plotted along the tweak, see Tweak."""
+        self._tweak_instance = Tweak((self, interval), detectors=detectors)
+        self._tweak_instance._recorder_label = f"{self.name}._tweak_instance.recorder"
+        self._tweak_instance.tweak()
+
+    def _widget_tweak(self, interval=1.0, backend=None, display=False, detectors=None):
+        """Tweak panel (Qt or ipywidgets) with keypress control, see
+        eco.widgets.tweak_panel."""
+        self._tweak_instance = Tweak((self, interval), detectors=detectors)
+        return self._tweak_instance.widget(backend=backend, display=display)
 
     Obj.tweak = tweak
+    Obj._widget_tweak = _widget_tweak
     return Obj
 
 
@@ -1190,8 +1200,16 @@ class AdjustableEnum:
         return self._base.set_target_value(value, hold=hold)
 
 class Tweak:
-    def __init__(self, *args):
-        """usage: Tweak((adj0,startstepsize0),(adj1,startstepsize1))"""
+    def __init__(self, *args, detectors=None):
+        """usage: Tweak((adj0,startstepsize0),(adj1,startstepsize1))
+
+        detectors: optional Detector or list of Detectors. Their values are
+        recorded for every tweak step (averaged while the positions stay
+        constant) and live-plotted -- against the position for one
+        adjustable, as a stack over the step number for several (see
+        eco.widgets.tweak_recorder). The data stays in .recorder."""
+        self.detectors = detectors
+        self.recorder = None
         self.adjs = []
         startsteps = []
         for adj, startstep in args:
@@ -1246,14 +1264,8 @@ class Tweak:
         if len(self.adjs) != 2:
             raise AdjustableError("xy_adjustable_tweak requires exactly two adjustables")
 
-        if _is_notebook():
-            try:
-                return self._xy_adjustable_tweak_notebook()
-            except Exception as exc:
-                print(
-                    "Notebook tweak UI failed; falling back to terminal mode:",
-                    exc,
-                )
+        if self._open_panel_instead():
+            return
 
         x_adj, y_adj = self.adjs
         i_x, i_y = 0, 1
@@ -1333,12 +1345,169 @@ class Tweak:
 
             k.waitkey()
 
+    # Keyboard rows for stacked_adjustable_tweak, bottom to top. Within a row
+    # the keys mirror the arrow layout of the single tweak:
+    # (left = neg dir, up = step*2, down = step/2, right = pos dir).
+    STACKED_KEY_ROWS = (
+        ("m", ",", ".", "/"),
+        ("j", "k", "l", ";"),
+        ("u", "i", "o", "p"),
+        ("7", "8", "9", "0"),
+    )
+
+    def tweak(self, stacked=None):
+        """Interactive keyboard tweak of all adjustables of this Tweak.
+
+        1 adjustable: arrow keys, 2: arrow keys in x/y, 3-4: stacked keyboard
+        rows (see stacked_adjustable_tweak). stacked=True forces the stacked
+        rows for 1 or 2 adjustables too. Outside a terminal (notebook, eco
+        desktop console) this opens the tweak panel instead."""
+        n = len(self.adjs)
+        if stacked is None:
+            stacked = n > 2
+        if self._open_panel_instead(stacked=stacked):
+            return
+        if not stacked and n > 2:
+            raise AdjustableError(f"cannot tweak {n} adjustables without stacked keys")
+        from eco.widgets.tweak_panel import axes_from_tweak
+        from eco.widgets.tweak_recorder import terminal_recording
+
+        with terminal_recording(
+            axes_from_tweak(self) if self.detectors else [],
+            self.detectors,
+            label=getattr(self, "_recorder_label", "<tweak>.recorder"),
+        ) as recorder:
+            if recorder is not None:
+                self.recorder = recorder
+            if stacked:
+                return self.stacked_adjustable_tweak()
+            if n == 1:
+                return self.single_adjustable_tweak()
+            return self.xy_adjustable_tweak()
+
+    def widget(self, stacked=None, backend=None, display=False, **kwargs):
+        """Tweak panel for these adjustables (Qt or ipywidgets), with the same
+        keys as the terminal tweak under "keypress control" -- see
+        eco.widgets.tweak_panel."""
+        from eco.widgets.tweak_panel import axes_from_tweak, tweak_panel
+
+        panel = tweak_panel(
+            axes_from_tweak(self),
+            stacked=stacked,
+            backend=backend,
+            display=display,
+            detectors=self.detectors,
+            **kwargs,
+        )
+        if getattr(panel, "recorder", None) is not None:
+            self.recorder = panel.recorder
+        return panel
+
+    def _open_panel_instead(self, stacked=None):
+        """Where there is no terminal to read keys from (notebook, eco desktop
+        console), show the tweak panel instead. True if it did."""
+        from eco.widgets.tweak_panel import frontend
+
+        if frontend() == "terminal":
+            return False
+        self._panel = self.widget(stacked=stacked, display=True)
+        return True
+
+    def _stacked_key_rows(self):
+        n = len(self.adjs)
+        if not 1 <= n <= len(self.STACKED_KEY_ROWS):
+            raise AdjustableError(
+                f"stacked tweak supports 1 to {len(self.STACKED_KEY_ROWS)} adjustables, got {n}"
+            )
+        rows = self.STACKED_KEY_ROWS
+        return list(rows[:4] if n == 4 else rows[1 : 1 + n])
+
+    def stacked_adjustable_tweak(self):
+        """Tweak up to 4 adjustables, one keyboard row per adjustable.
+
+        Per row: 1st key = neg dir, 2nd = step*2, 3rd = step/2, 4th = pos dir.
+        Rows used: 1 -> j k l ;   2 -> + u i o p   3 -> + 7 8 9 0
+        4 -> m , . /  j k l ;  u i o p  7 8 9 0 (first adjustable lowest)."""
+        rows = self._stacked_key_rows()
+        keymap = {}
+        for i_adj, (neg, dbl, half, pos) in enumerate(rows):
+            keymap[neg] = (i_adj, "move", -1)
+            keymap[dbl] = (i_adj, "step", 2.0)
+            keymap[half] = (i_adj, "step", 0.5)
+            keymap[pos] = (i_adj, "move", +1)
+
+        names = [str(getattr(adj, "name", adj)) for adj in self.adjs]
+        width = max(len(name) for name in names)
+        print("tweaking " + ", ".join(names))
+        print("q = exit; s = all axes back to start values")
+        for i_adj in reversed(range(len(rows))):
+            neg, dbl, half, pos = rows[i_adj]
+            print(
+                f"  {names[i_adj]:<{width}} :  {neg} = neg dir, {dbl} = step*2, "
+                f"{half} = step/2, {pos} = pos dir"
+            )
+        print(
+            "Starting at "
+            + ", ".join(
+                f"{name}={value}" for name, value in zip(names, self.target_positions[0])
+            )
+        )
+        k = KeyPress()
+        cll = colorama.ansi.clear_line()
+
+        def _fmt(value):
+            try:
+                return f"{value:1.5g}"
+            except Exception:
+                return str(value)
+
+        class Printer:
+            def __init__(self, tweak=self):
+                self.tweak = tweak
+                self.thread = None
+
+            def print(self):
+                if self.thread and self.thread.is_alive():
+                    return
+                else:
+                    self.thread = Thread(target=self.print_foo)
+                    self.thread.daemon = True
+                    self.thread.start()
+
+            def _line(self, values):
+                return "; ".join(
+                    f"{name}: {_fmt(value)} (step {_fmt(step)})"
+                    for name, value, step in zip(names, values, self.tweak.step_sizes)
+                )
+
+            def print_foo(self, **kwargs):
+                if self.tweak._changers:
+                    print(cll + "changing ...", end="\r")
+                self.tweak.wait()
+                print(cll + self._line(self.tweak.get_current_values()), end="\r")
+
+        p = Printer()
+        print(" ")
+        p.print()
+        while k.isq() is False:
+            action = keymap.get(k.last_key)
+            if action is not None:
+                i_adj, kind, factor = action
+                if kind == "step":
+                    self.set_step_size((i_adj, self.step_sizes[i_adj] * factor))
+                else:
+                    self.set_target_step_increment((i_adj, factor))
+                p.print()
+            elif k.iskey("s"):
+                self.change_to_targets(self.startpositions)
+                p.print()
+
+            k.waitkey()
+        print("")
+
     def wait(self, sleeptime=0.02):
         if self._changers:
-            changing = True
-            while changing:
-                for changer in self._changers:
-                    changing = changer.is_alive()
+            while any(changer.is_alive() for changer in self._changers):
                 time.sleep(sleeptime)
 
     def set_step_size(self, *args):
@@ -1356,413 +1525,9 @@ class Tweak:
             new_steps[index] = stepsize
         self.step_sizes = new_steps
 
-    def _single_adjustable_tweak_notebook(self):
-        try:
-            from IPython.display import display, Javascript
-            import ipywidgets as widgets
-        except Exception as exc:
-            raise RuntimeError(
-                "Notebook tweak mode requires IPython and ipywidgets."
-            ) from exc
-
-        i_adj = 0
-        adj = self.adjs[i_adj]
-
-        def _format_value(value):
-            try:
-                return f"{value:1.6g}"
-            except Exception:
-                return str(value)
-
-        current_value = adj.get_current_value()
-        step_value = self.step_sizes[i_adj]
-        current_label = widgets.HTML(
-            value=f"<b>Current position:</b> {_format_value(current_value)}"
-        )
-        status_label = widgets.HTML(
-            value=f"<b>Step size:</b> {_format_value(step_value)}"
-        )
-        help_label = widgets.HTML(
-            value=(
-                "<b>Controls:</b> Stepsize *2, Stepsize /2, Down, Up, Go abs, Reset offset, Exit"
-            )
-        )
-        step_input = widgets.FloatText(
-            value=step_value,
-            description="Step:",
-            layout=widgets.Layout(width="220px"),
-        )
-        go_input = widgets.FloatText(
-            value=current_value,
-            description="Go:",
-            layout=widgets.Layout(width="220px"),
-        )
-        set_input = widgets.FloatText(
-            value=current_value,
-            description="Set:",
-            layout=widgets.Layout(width="220px"),
-        )
-
-        def _refresh_current(value=None):
-            if value is None:
-                value = adj.get_current_value()
-            current_label.value = f"<b>Current position:</b> {_format_value(value)}"
-            status_label.value = f"<b>Step size:</b> {_format_value(step_input.value)}"
-            go_input.value = value
-            set_input.value = value
-
-        def _update_callback(**kwargs):
-            if "value" in kwargs:
-                _refresh_current(kwargs["value"])
-            else:
-                _refresh_current()
-
-        callback_id = None
-        if hasattr(adj, "add_value_callback"):
-            try:
-                callback_id = adj.add_value_callback(_update_callback)
-            except Exception:
-                callback_id = None
-
-        def _set_step(factor):
-            new_step = float(step_input.value) * factor
-            step_input.value = new_step
-            self.set_step_size((adj, new_step))
-            status_label.value = f"<b>Step size:</b> {_format_value(new_step)}"
-
-        def _click_up(_):
-            _set_step(2.0)
-
-        def _click_down(_):
-            _set_step(0.5)
-
-        def _click_left(_):
-            self.set_target_step_increment((adj, -1))
-            _refresh_current()
-
-        def _click_right(_):
-            self.set_target_step_increment((adj, +1))
-            _refresh_current()
-
-        def _click_go(_):
-            try:
-                value = float(go_input.value)
-                changer = adj.set_target_value(value)
-                if hasattr(changer, "wait"):
-                    changer.wait()
-                _refresh_current(value)
-            except Exception as exc:
-                status_label.value = f"<b>Error:</b> {exc}"
-
-        def _click_set(_):
-            try:
-                value = float(set_input.value)
-                if hasattr(adj, "reset_current_value_to"):
-                    adj.reset_current_value_to(value)
-                else:
-                    changer = adj.set_target_value(value)
-                    if hasattr(changer, "wait"):
-                        changer.wait()
-                _refresh_current(value)
-            except Exception as exc:
-                status_label.value = f"<b>Error:</b> {exc}"
-
-        def _shutdown(_=None):
-            if callback_id is not None and hasattr(adj, "clear_value_callback"):
-                try:
-                    adj.clear_value_callback(index=callback_id)
-                except TypeError:
-                    adj.clear_value_callback()
-                except Exception:
-                    pass
-            for ctl in [
-                step_input,
-                go_input,
-                set_input,
-                btn_up,
-                btn_down,
-                btn_left,
-                btn_right,
-                btn_go,
-                btn_set,
-                btn_exit,
-            ]:
-                ctl.disabled = True
-            status_label.value = "<b>Tweak UI closed.</b>"
-
-        btn_up = widgets.Button(description="Stepsize *2", button_style="success")
-        btn_down = widgets.Button(description="Stepsize /2", button_style="warning")
-        btn_left = widgets.Button(description="Down", button_style="info")
-        btn_right = widgets.Button(description="Up", button_style="info")
-        btn_go = widgets.Button(description="Go abs", button_style="primary")
-        btn_set = widgets.Button(description="Reset offset", button_style="primary")
-        btn_exit = widgets.Button(description="Exit", button_style="danger")
-
-        btn_up.on_click(_click_up)
-        btn_down.on_click(_click_down)
-        btn_left.on_click(_click_left)
-        btn_right.on_click(_click_right)
-        btn_go.on_click(_click_go)
-        btn_set.on_click(_click_set)
-        btn_exit.on_click(_shutdown)
-
-        controls = widgets.HBox(
-            [btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit]
-        )
-        inputs = widgets.HBox([step_input, go_input, set_input])
-        ui = widgets.VBox([current_label, status_label, help_label, inputs, controls])
-
-        js = f"""
-(function() {{
-  const mapping = {{
-    u: '{btn_up._model_id}',
-    d: '{btn_down._model_id}',
-    l: '{btn_left._model_id}',
-    r: '{btn_right._model_id}',
-    g: '{btn_go._model_id}',
-    s: '{btn_set._model_id}',
-    q: '{btn_exit._model_id}'
-  }};
-  window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
-  window.__eco_tweak_keys = Object.assign(window.__eco_tweak_keys, mapping);
-  if (!window.__eco_tweak_key_handler) {{
-    window.__eco_tweak_key_handler = function(event) {{
-      const key = event.key.toLowerCase();
-      const targetId = window.__eco_tweak_keys[key];
-      if (!targetId) return;
-      const root = document.querySelector('[data-widget-id="' + targetId + '"]');
-      if (!root) return;
-      const btn = root.querySelector('button');
-      if (btn && !btn.disabled) {{
-        btn.click();
-        event.preventDefault();
-      }}
-    }};
-    document.addEventListener('keydown', window.__eco_tweak_key_handler);
-  }}
-}})();
-"""
-        display(ui)
-        display(Javascript(js))
-        return ui
-
-    def _xy_adjustable_tweak_notebook(self):
-        try:
-            from IPython.display import display, Javascript
-            import ipywidgets as widgets
-        except Exception as exc:
-            raise RuntimeError(
-                "Notebook tweak mode requires IPython and ipywidgets."
-            ) from exc
-
-        x_adj, y_adj = self.adjs
-        i_x, i_y = 0, 1
-
-        def _format_value(value):
-            try:
-                return f"{value:1.6g}"
-            except Exception:
-                return str(value)
-
-        def _refresh_current(value=None):
-            if value is None:
-                current = self.get_current_values()
-            else:
-                current = value
-            x_current = current[i_x]
-            y_current = current[i_y]
-            x_label.value = f"<b>x ({x_adj.name}):</b> {_format_value(x_current)}"
-            y_label.value = f"<b>y ({y_adj.name}):</b> {_format_value(y_current)}"
-            status_label.value = (
-                f"<b>Step sizes:</b> x={_format_value(x_step_input.value)}, y={_format_value(y_step_input.value)}"
-            )
-
-        def _update_callback(**kwargs):
-            _refresh_current()
-
-        callback_id_x = None
-        callback_id_y = None
-        if hasattr(x_adj, "add_value_callback"):
-            try:
-                callback_id_x = x_adj.add_value_callback(_update_callback)
-            except Exception:
-                callback_id_x = None
-        if hasattr(y_adj, "add_value_callback"):
-            try:
-                callback_id_y = y_adj.add_value_callback(_update_callback)
-            except Exception:
-                callback_id_y = None
-
-        x_step_input = widgets.FloatText(
-            value=self.step_sizes[i_x],
-            description="X step:",
-            layout=widgets.Layout(width="220px"),
-        )
-        y_step_input = widgets.FloatText(
-            value=self.step_sizes[i_y],
-            description="Y step:",
-            layout=widgets.Layout(width="220px"),
-        )
-
-        x_label = widgets.HTML(
-            value=f"<b>x ({x_adj.name}):</b> {_format_value(x_adj.get_current_value())}"
-        )
-        y_label = widgets.HTML(
-            value=f"<b>y ({y_adj.name}):</b> {_format_value(y_adj.get_current_value())}"
-        )
-        status_label = widgets.HTML(
-            value=(
-                f"<b>Step sizes:</b> x={_format_value(x_step_input.value)}, y={_format_value(y_step_input.value)}"
-            )
-        )
-        help_label = widgets.HTML(
-            value=(
-                "<b>Controls:</b> x-/x+, y-/y+, X step *2, X step /2, Y step *2, Y step /2, Reset origin, Exit"
-            )
-        )
-
-        def _set_step(adj, index, factor, ctl):
-            new_step = float(ctl.value) * factor
-            ctl.value = new_step
-            self.set_step_size((adj, new_step))
-            status_label.value = (
-                f"<b>Step sizes:</b> x={_format_value(x_step_input.value)}, y={_format_value(y_step_input.value)}"
-            )
-
-        def _click_x_minus(_):
-            self.set_target_step_increment((x_adj, -1))
-            _refresh_current()
-
-        def _click_x_plus(_):
-            self.set_target_step_increment((x_adj, +1))
-            _refresh_current()
-
-        def _click_y_minus(_):
-            self.set_target_step_increment((y_adj, -1))
-            _refresh_current()
-
-        def _click_y_plus(_):
-            self.set_target_step_increment((y_adj, +1))
-            _refresh_current()
-
-        def _click_x_step_up(_):
-            _set_step(x_adj, i_x, 2.0, x_step_input)
-
-        def _click_x_step_down(_):
-            _set_step(x_adj, i_x, 0.5, x_step_input)
-
-        def _click_y_step_up(_):
-            _set_step(y_adj, i_y, 2.0, y_step_input)
-
-        def _click_y_step_down(_):
-            _set_step(y_adj, i_y, 0.5, y_step_input)
-
-        def _click_origin(_):
-            self.change_to_targets(self.startpositions)
-            _refresh_current()
-
-        def _shutdown(_=None):
-            if callback_id_x is not None and hasattr(x_adj, "clear_value_callback"):
-                try:
-                    x_adj.clear_value_callback(index=callback_id_x)
-                except TypeError:
-                    x_adj.clear_value_callback()
-                except Exception:
-                    pass
-            if callback_id_y is not None and hasattr(y_adj, "clear_value_callback"):
-                try:
-                    y_adj.clear_value_callback(index=callback_id_y)
-                except TypeError:
-                    y_adj.clear_value_callback()
-                except Exception:
-                    pass
-            for ctl in [
-                x_step_input,
-                y_step_input,
-                btn_x_minus,
-                btn_x_plus,
-                btn_y_minus,
-                btn_y_plus,
-                btn_x_step_up,
-                btn_x_step_down,
-                    btn_y_step_up,
-                btn_y_step_down,
-                btn_origin,
-                btn_exit,
-            ]:
-                ctl.disabled = True
-            status_label.value = "<b>Tweak UI closed.</b>"
-
-        btn_x_minus = widgets.Button(description="X -", button_style="info")
-        btn_x_plus = widgets.Button(description="X +", button_style="info")
-        btn_y_minus = widgets.Button(description="Y -", button_style="info")
-        btn_y_plus = widgets.Button(description="Y +", button_style="info")
-        btn_x_step_up = widgets.Button(description="X step *2", button_style="success")
-        btn_x_step_down = widgets.Button(description="X step /2", button_style="warning")
-        btn_y_step_up = widgets.Button(description="Y step *2", button_style="success")
-        btn_y_step_down = widgets.Button(description="Y step /2", button_style="warning")
-        btn_origin = widgets.Button(description="Reset origin", button_style="primary")
-        btn_exit = widgets.Button(description="Exit", button_style="danger")
-
-        btn_x_minus.on_click(_click_x_minus)
-        btn_x_plus.on_click(_click_x_plus)
-        btn_y_minus.on_click(_click_y_minus)
-        btn_y_plus.on_click(_click_y_plus)
-        btn_x_step_up.on_click(_click_x_step_up)
-        btn_x_step_down.on_click(_click_x_step_down)
-        btn_y_step_up.on_click(_click_y_step_up)
-        btn_y_step_down.on_click(_click_y_step_down)
-        btn_origin.on_click(_click_origin)
-        btn_exit.on_click(_shutdown)
-
-        row1 = widgets.HBox([btn_x_minus, btn_x_plus, btn_y_minus, btn_y_plus])
-        row2 = widgets.HBox([btn_x_step_up, btn_x_step_down, btn_y_step_up, btn_y_step_down])
-        row3 = widgets.HBox([btn_origin, btn_exit])
-        inputs = widgets.HBox([x_step_input, y_step_input])
-        ui = widgets.VBox([x_label, y_label, status_label, help_label, inputs, row1, row2, row3])
-
-        js = f"""
-(function() {{
-  const mapping = {{
-    l: '{btn_x_minus._model_id}',
-    r: '{btn_x_plus._model_id}',
-    u: '{btn_y_plus._model_id}',
-    d: '{btn_y_minus._model_id}',
-    s: '{btn_origin._model_id}',
-    q: '{btn_exit._model_id}'
-  }};
-  window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
-  window.__eco_tweak_keys = Object.assign(window.__eco_tweak_keys, mapping);
-  if (!window.__eco_tweak_key_handler) {{
-    window.__eco_tweak_key_handler = function(event) {{
-      const key = event.key.toLowerCase();
-      const targetId = window.__eco_tweak_keys[key];
-      if (!targetId) return;
-      const root = document.querySelector('[data-widget-id="' + targetId + '"]');
-      if (!root) return;
-      const btn = root.querySelector('button');
-      if (btn && !btn.disabled) {{
-        btn.click();
-        event.preventDefault();
-      }}
-    }};
-    document.addEventListener('keydown', window.__eco_tweak_key_handler);
-  }}
-}})();
-"""
-        display(ui)
-        display(Javascript(js))
-        return ui
-
     def single_adjustable_tweak(self):
-        if _is_notebook():
-            try:
-                return self._single_adjustable_tweak_notebook()
-            except Exception as exc:
-                print(
-                    "Notebook tweak UI failed; falling back to terminal mode:",
-                    exc,
-                )
+        if self._open_panel_instead():
+            return
         i_adj = 0
         adj = self.adjs[i_adj]
         # step_value = float(self.step_sizes[0])

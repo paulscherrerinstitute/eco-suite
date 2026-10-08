@@ -145,185 +145,59 @@ def _is_notebook():
         return False
 
 
-def _tweak_ioc_notebook(self, step_value=None):
-    try:
-        from IPython.display import display, Javascript
-        import ipywidgets as widgets
-    except Exception as exc:
-        raise RuntimeError(
-            "Notebook tweak mode requires IPython and ipywidgets."
-        ) from exc
+def _widget_tweak_ioc(
+    self, step_value=None, backend=None, display=False, detectors=None
+):
+    """Tweak panel (Qt or ipywidgets) driving the motor record's own tweak
+    fields (TWV/TWF/TWR), with the same keys as the terminal tweak under
+    "keypress control" -- see eco.widgets.tweak_panel. `detectors` are
+    recorded and plotted along the tweak (eco.widgets.tweak_recorder)."""
+    from eco.widgets.tweak_panel import IocTweakAxis, tweak_panel
 
-    if hasattr(self, "_motor") and hasattr(self._motor, "get_pv"):
-        pv = self._motor.get_pv("TWV")
-        pvf = self._motor.get_pv("TWF")
-        pvr = self._motor.get_pv("TWR")
-    else:
-        pv = PV(self.pvname + ":TWV")
-        pvf = PV(self.pvname + ":TWF.PROC")
-        pvr = PV(self.pvname + ":TWR.PROC")
-    if step_value is None:
-        step_value = pv.get()
-    try:
-        step_value = float(step_value)
-    except Exception:
-        step_value = 1.0
-
-    def _format_value(value):
-        try:
-            return f"{value:1.6g}"
-        except Exception:
-            return str(value)
-
-    target_value = self.get_current_value()
-    current_label = widgets.HTML(
-        value=f"<b>Current position:</b> {_format_value(target_value)}"
+    return tweak_panel(
+        [IocTweakAxis(self, step_value, go_to_current_value_first=True)],
+        backend=backend,
+        display=display,
+        detectors=detectors,
     )
-    status_label = widgets.HTML(value=f"<b>Step size:</b> {_format_value(step_value)}")
-    help_label = widgets.HTML(
-        value=(
-            "<b>Controls:</b> Stepsize *2, Stepsize /2, Down, Up, Go abs, Reset offset, Exit"
+
+
+def _tweak_ioc_entry(self, *args, detectors=None, **kwargs):
+    """Interactive tweak through the motor record's tweak fields.
+
+    detectors: optional Detector or list of Detectors, recorded for every
+    tweak step (averaged while the position stays constant) and plotted
+    against the position; the data stays in ._tweak_recorder."""
+    if detectors is None:
+        return self._tweak_ioc(*args, **kwargs)
+    from eco.widgets.tweak_panel import IocTweakAxis, frontend
+    from eco.widgets.tweak_recorder import terminal_recording
+
+    step_value = args[0] if args else kwargs.get("step_value")
+    if frontend() != "terminal":
+        self._tweak_panel = _widget_tweak_ioc(
+            self, step_value, display=True, detectors=detectors
         )
-    )
-    step_input = widgets.FloatText(
-        value=step_value,
-        description="Step:",
-        layout=widgets.Layout(width="220px"),
-    )
-    go_input = widgets.FloatText(
-        value=target_value,
-        description="Go:",
-        layout=widgets.Layout(width="220px"),
-    )
-    set_input = widgets.FloatText(
-        value=target_value,
-        description="Set:",
-        layout=widgets.Layout(width="220px"),
-    )
+        self._tweak_recorder = self._tweak_panel.recorder
+        return
+    with terminal_recording(
+        [IocTweakAxis(self, step_value)],
+        detectors,
+        owner=self,
+        label=f"{self.name}._tweak_recorder",
+    ):
+        return self._tweak_ioc(*args, **kwargs)
 
-    def _refresh_current(value=None):
-        if value is None:
-            value = self.get_current_value()
-        current_label.value = f"<b>Current position:</b> {_format_value(value)}"
-        status_label.value = f"<b>Step size:</b> {_format_value(step_input.value)}"
 
-    def _update_callback(**kwargs):
-        if "value" in kwargs:
-            _refresh_current(kwargs["value"])
-        else:
-            _refresh_current()
+def _tweak_panel_instead(self, step_value):
+    """Where there is no terminal to read keys from (notebook, eco desktop
+    console), show the tweak panel instead. True if it did."""
+    from eco.widgets.tweak_panel import frontend
 
-    callback_id = self.add_value_callback(_update_callback)
-
-    def _set_step(factor):
-        step_input.value = float(step_input.value) * factor
-        pv.put(step_input.value)
-        status_label.value = f"<b>Step size:</b> {_format_value(step_input.value)}"
-
-    def _click_up(_):
-        _set_step(2.0)
-
-    def _click_down(_):
-        _set_step(0.5)
-
-    def _click_left(_):
-        pvr.put(1)
-        status_label.value = "<b>Command:</b> left"
-
-    def _click_right(_):
-        pvf.put(1)
-        status_label.value = "<b>Command:</b> right"
-
-    def _click_go(_):
-        try:
-            self.set_target_value(float(go_input.value), check=True).wait()
-            _refresh_current()
-            status_label.value = f"<b>Moved to:</b> {_format_value(go_input.value)}"
-        except Exception as exc:
-            status_label.value = f"<b>Error:</b> {exc}"
-
-    def _click_set(_):
-        try:
-            self.reset_current_value_to(float(set_input.value))
-            _refresh_current()
-            status_label.value = (
-                f"<b>Offset reset to:</b> {_format_value(set_input.value)}"
-            )
-        except Exception as exc:
-            status_label.value = f"<b>Error:</b> {exc}"
-
-    def _shutdown(_=None):
-        self.clear_value_callback(index=callback_id)
-        for ctl in [
-            step_input,
-            go_input,
-            set_input,
-            btn_up,
-            btn_down,
-            btn_left,
-            btn_right,
-            btn_go,
-            btn_set,
-            btn_exit,
-        ]:
-            ctl.disabled = True
-        status_label.value = "<b>Tweak UI closed.</b>"
-
-    btn_up = widgets.Button(description="Stepsize *2", button_style="success")
-    btn_down = widgets.Button(description="Stepsize /2", button_style="warning")
-    btn_left = widgets.Button(description="Down", button_style="info")
-    btn_right = widgets.Button(description="Up", button_style="info")
-    btn_go = widgets.Button(description="Go abs", button_style="primary")
-    btn_set = widgets.Button(description="Reset offset", button_style="primary")
-    btn_exit = widgets.Button(description="Exit", button_style="danger")
-
-    btn_up.on_click(_click_up)
-    btn_down.on_click(_click_down)
-    btn_left.on_click(_click_left)
-    btn_right.on_click(_click_right)
-    btn_go.on_click(_click_go)
-    btn_set.on_click(_click_set)
-    btn_exit.on_click(_shutdown)
-
-    controls = widgets.HBox(
-        [btn_up, btn_down, btn_left, btn_right, btn_go, btn_set, btn_exit]
-    )
-    inputs = widgets.HBox([step_input, go_input, set_input])
-    ui = widgets.VBox([current_label, status_label, help_label, inputs, controls])
-
-    js = f"""
-(function() {{
-  const mapping = {{
-    u: '{btn_up._model_id}',
-    d: '{btn_down._model_id}',
-    l: '{btn_left._model_id}',
-    r: '{btn_right._model_id}',
-    g: '{btn_go._model_id}',
-    s: '{btn_set._model_id}',
-    q: '{btn_exit._model_id}'
-  }};
-  window.__eco_tweak_keys = window.__eco_tweak_keys || {{}};
-  window.__eco_tweak_keys = Object.assign(window.__eco_tweak_keys, mapping);
-  if (!window.__eco_tweak_key_handler) {{
-    window.__eco_tweak_key_handler = function(event) {{
-      const key = event.key.toLowerCase();
-      const targetId = window.__eco_tweak_keys[key];
-      if (!targetId) return;
-      const root = document.querySelector('[data-widget-id="' + targetId + '"]');
-      if (!root) return;
-      const btn = root.querySelector('button');
-      if (btn && !btn.disabled) {{
-        btn.click();
-        event.preventDefault();
-      }}
-    }};
-    document.addEventListener('keydown', window.__eco_tweak_key_handler);
-  }}
-}})();
-"""
-    display(ui)
-    display(Javascript(js))
-    return ui
+    if frontend() == "terminal":
+        return False
+    self._tweak_panel = _widget_tweak_ioc(self, step_value, display=True)
+    return True
 
 
 @spec_convenience
@@ -614,14 +488,8 @@ class SmaractStreamdevice(Assembly):
         self._currentChange = self.set_target_value(value)
 
     def _tweak_ioc(self, step_value=None):
-        if _is_notebook():
-            try:
-                return _tweak_ioc_notebook(self, step_value=step_value)
-            except Exception as exc:
-                print(
-                    "Notebook tweak UI failed; falling back to terminal mode:",
-                    exc,
-                )
+        if _tweak_panel_instead(self, step_value):
+            return
 
         pv = PV(self.pvname + ":TWV")
         pvf = PV(self.pvname + ":TWF.PROC")
@@ -700,8 +568,8 @@ class SmaractStreamdevice(Assembly):
         print(f"final position: {self.get_current_value()}")
         print(f"final tweak step: {pv.get()}")
 
-    def tweak(self, *args, **kwargs):
-        return self._tweak_ioc(*args, **kwargs)
+    tweak = _tweak_ioc_entry
+    _widget_tweak = _widget_tweak_ioc
 
     def gui(self):
         num = ""
@@ -1874,14 +1742,8 @@ class MotorRecord(Assembly):
     def _tweak_ioc(self, step_value=None, go_to_current_value_first=True):
         if go_to_current_value_first:
             self.set_target_value(self.get_current_value()).wait()
-        if _is_notebook():
-            try:
-                return _tweak_ioc_notebook(self, step_value=step_value)
-            except Exception as exc:
-                print(
-                    "Notebook tweak UI failed; falling back to terminal mode:",
-                    exc,
-                )
+        if _tweak_panel_instead(self, step_value):
+            return
 
         pv = self._motor.get_pv("TWV")
         pvf = self._motor.get_pv("TWF")
@@ -1965,8 +1827,8 @@ class MotorRecord(Assembly):
         print(f"final tweak step: {pv.get()}")
         # print('\033[K',"the info",sep='',flush=True)
 
-    def tweak(self, *args, **kwargs):
-        return self._tweak_ioc(*args, **kwargs)
+    tweak = _tweak_ioc_entry
+    _widget_tweak = _widget_tweak_ioc
 
 
 MotorRecord = MotorRecord
@@ -2506,14 +2368,8 @@ class SmaractRecord(Assembly):
     def _tweak_ioc(self, step_value=None, go_to_current_value_first=True):
         if go_to_current_value_first:
             self.set_target_value(self.get_current_value()).wait()
-        if _is_notebook():
-            try:
-                return _tweak_ioc_notebook(self, step_value=step_value)
-            except Exception as exc:
-                print(
-                    "Notebook tweak UI failed; falling back to terminal mode:",
-                    exc,
-                )
+        if _tweak_panel_instead(self, step_value):
+            return
 
         pv = self._motor.get_pv("TWV")
         pvf = self._motor.get_pv("TWF")
@@ -2589,8 +2445,8 @@ class SmaractRecord(Assembly):
         print(f"final position: {self.get_current_value()}")
         print(f"final tweak step: {pv.get()}")
 
-    def tweak(self, *args, **kwargs):
-        return self._tweak_ioc(*args, **kwargs)
+    tweak = _tweak_ioc_entry
+    _widget_tweak = _widget_tweak_ioc
 
 
 @spec_convenience
@@ -2909,6 +2765,8 @@ class SmaractRecord_old(Assembly):
         self._currentChange = self.set_target_value(value)
 
     def _tweak_ioc(self, step_value=None):
+        if _tweak_panel_instead(self, step_value):
+            return
         pv = self._motor.get_pv("TWV")
         pvf = self._motor.get_pv("TWF")
         pvr = self._motor.get_pv("TWR")
@@ -2983,8 +2841,8 @@ class SmaractRecord_old(Assembly):
         print(f"final position: {self.get_current_value()}")
         print(f"final tweak step: {pv.get()}")
 
-    def tweak(self, *args, **kwargs):
-        return self._tweak_ioc(*args, **kwargs)
+    tweak = _tweak_ioc_entry
+    _widget_tweak = _widget_tweak_ioc
 
 
 flag_names_smaract_record = {
