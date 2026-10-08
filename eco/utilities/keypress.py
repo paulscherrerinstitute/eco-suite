@@ -3,6 +3,7 @@ import select
 import tty
 import termios
 import time
+import threading
 
 arrow_up = "\x1b[A"
 arrow_UP = "\x1b[2A"
@@ -36,14 +37,82 @@ def getc():
     return c
 
 
+class _InputHookContext:
+    """Minimal stand-in for prompt_toolkit's InputHookContext, which is all
+    IPython's GUI input hooks (qt, tk, gtk, ...) look at."""
+
+    def __init__(self, fd):
+        self._fd = fd
+
+    def fileno(self):
+        return self._fd
+
+    def input_is_ready(self):
+        return select.select([self._fd], [], [], 0)[0] != []
+
+
+def _gui_input_hook():
+    """The input hook IPython runs while it waits at the prompt (set by
+    ``%gui qt`` / ``%matplotlib qt`` / eco's startup), or None.
+
+    Only usable from the main thread of a terminal IPython session."""
+    if threading.current_thread() is not threading.main_thread():
+        return None
+    try:
+        from IPython import get_ipython
+
+        shell = get_ipython()
+    except Exception:
+        return None
+    if shell is None or getattr(shell, "_inputhook", None) is None:
+        return None
+    hook = getattr(shell, "inputhook", None)
+    return hook if callable(hook) else None
+
+
+def _qt_app():
+    if threading.current_thread() is not threading.main_thread():
+        return None
+    qtw = sys.modules.get("qtpy.QtWidgets") or sys.modules.get("PyQt5.QtWidgets")
+    if qtw is None:
+        return None
+    try:
+        return qtw.QApplication.instance()
+    except Exception:
+        return None
+
+
+def _wait_for_stdin():
+    """Block until stdin is readable, but keep GUI event loops running.
+
+    A plain select/sleep loop here starves the Qt event loop for as long as a
+    tweak runs, freezing every live plot / camera viewer. Instead we do what
+    IPython itself does at the prompt: run the active GUI input hook, which
+    spins the GUI event loop until a key arrives (zero CPU for qt). Without a
+    hook but with a QApplication around, pump it every 20 ms."""
+    fd = sys.stdin.fileno()
+    hook = _gui_input_hook()
+    if hook is not None:
+        ctx = _InputHookContext(fd)
+        try:
+            while not ctx.input_is_ready():
+                hook(ctx)
+            return
+        except Exception:
+            pass  # fall through to the plain wait below
+    app = _qt_app()
+    while not select.select([fd], [], [], 0.02 if app is not None else 1)[0]:
+        if app is not None:
+            app.processEvents()
+
+
 def wait_input():
     """wait for a character and returns it"""
     old_settings = termios.tcgetattr(sys.stdin)
     c = None
     try:
         tty.setcbreak(sys.stdin.fileno())
-        while not isData():
-            time.sleep(0.001)
+        _wait_for_stdin()
         c = sys.stdin.read(1)
         if c == "\x1b":
             cc = sys.stdin.read(2)
