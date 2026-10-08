@@ -120,6 +120,7 @@ scientific Python libraries.
 
    widget_views
    widget_containers
+   terminal_plots
 
 .. toctree::
    :maxdepth: 2
