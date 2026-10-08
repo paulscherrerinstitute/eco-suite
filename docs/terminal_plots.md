@@ -15,7 +15,12 @@ Checked against uniplot 0.23.2 (2026-10), and sufficient for now:
 - Log axes (`x_as_log`, `y_as_log`), units (`x_unit`, `y_unit`), gridlines, fixed ranges (`x_min` ... `y_max`).
 - Character sets `BLOCK` (2x2 quadrants, the default, renders cleanly in every font), `BRAILLE` (2x4, finer, but gaps in some fonts) and `ASCII`.
 
-Plan: wrap uniplot behind a small eco module (proposed name `eco.utilities.termplot`) shaped around eco's own plots: stacked panels, strip charts, counters, archiver traces, the tweak recorder. Callers depend on that module, not on uniplot. If the gaps below start to hurt, replace the renderer with an own copy (MIT allows it; keep the copyright notice) without touching the callers.
+uniplot sits behind `eco.utilities.termplot`, an eco-shaped layer that callers use instead of uniplot directly:
+
+- `panel_stack()` stacks plots over a shared x range, with x tick labels only under the last one.
+- `LiveRegion` / `LivePlotter` keep a plot just above the current terminal line and redraw it in place. Other code can keep rewriting a status line with `\r` meanwhile, as the terminal tweaks do. While active, `LiveRegion` replaces `sys.stdout` with a proxy so it can tell whether anything else printed a newline. If so, it prints a fresh copy and restores the status line under it.
+
+First user: the terminal tweak's detector plot when there is no display (`ECO_NO_X=1` or plain ssh, see `eco.widgets.tweak_recorder.terminal_plot_text`). Strip charts, counters and archiver traces are meant to follow. If the gaps below start to hurt, replace the renderer with an own copy (MIT allows it; keep the copyright notice) without touching the callers.
 
 ## Shortcomings to address in an own copy
 

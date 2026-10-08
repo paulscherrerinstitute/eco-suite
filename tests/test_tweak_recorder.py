@@ -238,3 +238,24 @@ def test_ipy_panel_renders_the_plot_as_png():
         assert bytes(panel.plot.value[:4]) == b"\x89PNG"
     finally:
         panel.close()
+
+
+def test_terminal_plot_text_has_the_panel_layout(monkeypatch):
+    pytest.importorskip("uniplot")
+    import os
+
+    from eco.utilities import termplot
+    from eco.widgets.tweak_recorder import terminal_plot_text
+
+    monkeypatch.setattr(termplot, "terminal_size", lambda: os.terminal_size((80, 40)))
+    x = Axis("mirror")
+    rec = TweakRecorder([x], [Det("diode", range(9)), Det("cam", range(9))], settle_samples=1)
+    rec.sample()
+    text = terminal_plot_text(rec)
+    assert "diode vs mirror" in text and "cam vs mirror" in text
+    rec2 = TweakRecorder([Axis("x"), Axis("y")], Det("d", range(9)), settle_samples=1)
+    rec2.sample()
+    text = terminal_plot_text(rec2)
+    titles = [l.strip() for l in text.split("\n") if l.strip() in ("d", "x", "y   (x: step)")]
+    assert titles == ["d", "x", "y   (x: step)"]
+    assert len(text.split("\n")) <= 40 - 12

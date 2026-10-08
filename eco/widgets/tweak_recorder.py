@@ -234,6 +234,43 @@ def draw_tweak_plot(fig, recorder):
     fig.tight_layout()
 
 
+def terminal_plot_text(recorder, width=None, reserve_rows=12):
+    """The recorder's plot as text (eco.utilities.termplot): the same layout
+    as draw_tweak_plot, sized to the terminal, leaving `reserve_rows` for
+    the tweak's help and status lines."""
+    from eco.utilities import termplot
+
+    steps, pos, val = recorder.arrays()
+    if len(recorder.axes) == 1:
+        x = pos[:, 0] if len(steps) else []
+        panels = [
+            {
+                "title": f"{name} vs {recorder.axis_names[0]}",
+                "xs": x,
+                "ys": val[:, i] if len(steps) else [],
+                "highlight_last": True,
+            }
+            for i, name in enumerate(recorder.detector_names)
+        ]
+    else:
+        series = [(n, val[:, i]) for i, n in enumerate(recorder.detector_names)]
+        series += [(n, pos[:, i]) for i, n in enumerate(recorder.axis_names)]
+        panels = [
+            {
+                "title": name,
+                "xs": steps,
+                "ys": y if len(steps) else [],
+                "highlight_last": True,
+            }
+            for name, y in series
+        ]
+        panels[-1]["title"] += "   (x: step)"
+    # per panel: title + 2 frame lines + height; x labels once at the bottom
+    rows = termplot.terminal_size().lines - reserve_rows
+    height = max(2, min(8, (rows - 1) // max(1, len(panels)) - 3))
+    return termplot.panel_stack(panels, width=width, height=height)
+
+
 def figure_size(recorder):
     return (5.0, max(2.8, 1.7 * plot_rows(recorder)))
 
@@ -262,6 +299,24 @@ def display_available():
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
+def _start_text_plot(recorder):
+    """Live text plot above the terminal tweak's status line, or None (with
+    a message) where that isn't possible."""
+    import sys
+
+    from eco.utilities import termplot
+
+    if not termplot.available():
+        print("tweak: no display and no uniplot for a text plot; still recording")
+        return None
+    if not getattr(sys.stdout, "isatty", lambda: False)():
+        print("tweak: output is not a terminal, no text plot; still recording")
+        return None
+    return termplot.LivePlotter(
+        lambda: terminal_plot_text(recorder), lambda: recorder.version
+    ).start()
+
+
 @contextlib.contextmanager
 def terminal_recording(axes, detectors, owner=None, label=None):
     """Record (and, where a display is available, live-plot in a Qt window)
@@ -278,6 +333,7 @@ def terminal_recording(axes, detectors, owner=None, label=None):
             owner._tweak_recorder = recorder
         except Exception:
             pass
+    text_plotter = None
     if display_available():
         try:
             from eco.widgets.tweak_panel_qt import show_tweak_plot_qt
@@ -286,11 +342,13 @@ def terminal_recording(axes, detectors, owner=None, label=None):
         except Exception as exc:
             print(f"tweak: no live plot ({exc}); still recording")
     else:
-        print("tweak: no display for a live plot; still recording")
+        text_plotter = _start_text_plot(recorder)
     try:
         yield recorder
     finally:
         recorder.stop()
+        if text_plotter is not None:
+            text_plotter.stop()
         print(
             f"\ntweak recorded {len(recorder.points)} points "
             f"({label or 'recorder'}.to_dataframe() for the data)"
