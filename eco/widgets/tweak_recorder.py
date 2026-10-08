@@ -238,12 +238,23 @@ def figure_size(recorder):
     return (5.0, max(2.8, 1.7 * plot_rows(recorder)))
 
 
+def no_x():
+    """True if ECO_NO_X is set (to anything but '', '0', 'false', 'no'):
+    tweaks then never open Qt windows, see eco.widgets.tweak_panel.frontend."""
+    import os
+
+    return os.environ.get("ECO_NO_X", "").strip().lower() not in ("", "0", "false", "no")
+
+
 def display_available():
     """False where creating a QApplication would abort the process (no X /
-    Wayland display, e.g. a plain ssh session)."""
+    Wayland display, e.g. a plain ssh session), or where Qt windows are
+    switched off with ECO_NO_X=1."""
     import os
     import sys
 
+    if no_x():
+        return False
     if os.environ.get("QT_QPA_PLATFORM"):
         return True
     if not sys.platform.startswith("linux"):

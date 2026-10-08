@@ -53,12 +53,13 @@ class AdjustableError(Exception):
 
 
 def tweak_option(Obj):
-    def tweak(self, interval, *args, detectors=None, **kwargs):
+    def tweak(self, interval, *args, detectors=None, ui=None, **kwargs):
         """Interactive tweak; `detectors` (a Detector or a list) are recorded
-        and plotted along the tweak, see Tweak."""
+        and plotted along the tweak, see Tweak. ui: 'terminal', 'qt' or
+        'ipy' forces that front-end (default: chosen automatically)."""
         self._tweak_instance = Tweak((self, interval), detectors=detectors)
         self._tweak_instance._recorder_label = f"{self.name}._tweak_instance.recorder"
-        self._tweak_instance.tweak()
+        self._tweak_instance.tweak(ui=ui)
 
     def _widget_tweak(self, interval=1.0, backend=None, display=False, detectors=None):
         """Tweak panel (Qt or ipywidgets) with keypress control, see
@@ -1355,13 +1356,20 @@ class Tweak:
         ("7", "8", "9", "0"),
     )
 
-    def tweak(self, stacked=None):
+    def tweak(self, stacked=None, ui=None):
         """Interactive keyboard tweak of all adjustables of this Tweak.
 
         1 adjustable: arrow keys, 2: arrow keys in x/y, 3-4: stacked keyboard
         rows (see stacked_adjustable_tweak). stacked=True forces the stacked
         rows for 1 or 2 adjustables too. Outside a terminal (notebook, eco
-        desktop console) this opens the tweak panel instead."""
+        desktop console) this opens the tweak panel instead; ui='terminal',
+        'qt' or 'ipy' forces a front-end."""
+        from eco.widgets.tweak_panel import forced_frontend
+
+        with forced_frontend(ui):
+            return self._tweak(stacked)
+
+    def _tweak(self, stacked):
         n = len(self.adjs)
         if stacked is None:
             stacked = n > 2

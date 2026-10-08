@@ -27,6 +27,7 @@ Two kinds of axis, same interface:
   MotorRecord/Smaract _tweak_ioc terminal tweaks do.
 """
 
+import contextlib
 import threading
 
 
@@ -392,8 +393,29 @@ def axes_from_tweak(tweak):
 # >>> front-end selection >>>
 
 
+_forced_frontend = threading.local()
+
+
+@contextlib.contextmanager
+def forced_frontend(ui):
+    """Within this block frontend() returns `ui` ('terminal', 'qt', 'ipy');
+    None leaves the automatic choice. Backs the ui= keyword of the tweak
+    entry points."""
+    if ui not in (None, "terminal", "qt", "ipy"):
+        raise ValueError(f"ui must be 'terminal', 'qt' or 'ipy', not {ui!r}")
+    previous = getattr(_forced_frontend, "ui", None)
+    _forced_frontend.ui = ui if ui is not None else previous
+    try:
+        yield
+    finally:
+        _forced_frontend.ui = previous
+
+
 def frontend():
     """'qt', 'ipy' or 'terminal': where an interactive tweak should show up.
+
+    Overridden by forced_frontend() (the tweaks' ui= keyword). ECO_NO_X=1
+    turns every automatic 'qt' into 'terminal'. Otherwise:
 
     - eco desktop console, in-process kernel (InProcessInteractiveShell; the
       terminal KeyPress loop has no tty there) -> 'qt'
@@ -404,18 +426,25 @@ def frontend():
     - terminal IPython / plain python -> 'terminal'"""
     import os
 
+    forced = getattr(_forced_frontend, "ui", None)
+    if forced is not None:
+        return forced
     try:
         from IPython import get_ipython
 
         shell = get_ipython()
     except Exception:
         shell = None
+    from eco.widgets.tweak_recorder import no_x
+
     cls = shell.__class__.__name__ if shell is not None else ""
     if cls == "InProcessInteractiveShell":
-        return "qt"
-    if cls == "ZMQInteractiveShell":
-        return "qt" if os.environ.get("ECO_QTCONSOLE_KERNEL") else "ipy"
-    return "terminal"
+        choice = "qt"
+    elif cls == "ZMQInteractiveShell":
+        choice = "qt" if os.environ.get("ECO_QTCONSOLE_KERNEL") else "ipy"
+    else:
+        choice = "terminal"
+    return "terminal" if choice == "qt" and no_x() else choice
 
 
 def tweak_panel(axes, stacked=None, backend=None, display=False, detectors=None, **kwargs):

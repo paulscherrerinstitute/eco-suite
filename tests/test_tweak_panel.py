@@ -327,3 +327,35 @@ def test_ipy_keys_and_buttons():
         assert a[0].value == 1
     finally:
         panel.close()
+
+
+def test_ui_keyword_and_eco_no_x(monkeypatch):
+    import IPython
+
+    class ZMQInteractiveShell:
+        pass
+
+    monkeypatch.setattr(IPython, "get_ipython", lambda: ZMQInteractiveShell())
+    monkeypatch.setenv("ECO_QTCONSOLE_KERNEL", "1")
+    monkeypatch.delenv("ECO_NO_X", raising=False)
+    assert tp.frontend() == "qt"
+    with tp.forced_frontend("terminal"):
+        assert tp.frontend() == "terminal"
+        with tp.forced_frontend(None):  # None keeps the outer override
+            assert tp.frontend() == "terminal"
+    assert tp.frontend() == "qt"
+    with pytest.raises(ValueError):
+        with tp.forced_frontend("x11"):
+            pass
+
+    from eco.widgets.tweak_recorder import display_available
+
+    monkeypatch.setenv("ECO_NO_X", "1")
+    assert tp.frontend() == "terminal" and not display_available()
+    with tp.forced_frontend("qt"):  # explicit ui= still wins
+        assert tp.frontend() == "qt"
+    monkeypatch.setenv("ECO_NO_X", "0")
+    assert tp.frontend() == "qt"
+    monkeypatch.delenv("ECO_QTCONSOLE_KERNEL")
+    monkeypatch.setenv("ECO_NO_X", "1")
+    assert tp.frontend() == "ipy"  # notebooks are not affected

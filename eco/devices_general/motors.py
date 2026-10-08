@@ -162,12 +162,21 @@ def _widget_tweak_ioc(
     )
 
 
-def _tweak_ioc_entry(self, *args, detectors=None, **kwargs):
+def _tweak_ioc_entry(self, *args, detectors=None, ui=None, **kwargs):
     """Interactive tweak through the motor record's tweak fields.
 
     detectors: optional Detector or list of Detectors, recorded for every
     tweak step (averaged while the position stays constant) and plotted
-    against the position; the data stays in ._tweak_recorder."""
+    against the position; the data stays in ._tweak_recorder.
+    ui: 'terminal', 'qt' or 'ipy' forces that front-end (default: chosen
+    automatically)."""
+    from eco.widgets.tweak_panel import forced_frontend
+
+    with forced_frontend(ui):
+        return _tweak_ioc_run(self, args, kwargs, detectors)
+
+
+def _tweak_ioc_run(self, args, kwargs, detectors):
     if detectors is None:
         return self._tweak_ioc(*args, **kwargs)
     from eco.widgets.tweak_panel import IocTweakAxis, frontend
