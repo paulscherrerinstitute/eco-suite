@@ -482,7 +482,7 @@ class ArrayH5Dataset:
             lock = get_lock()
         n_new = len(self._n_t)
         timestamps_stored = self.timestamps
-        in_previous_timestamps = np.in1d(timestamps, timestamps_stored)
+        in_previous_timestamps = np.isin(timestamps, timestamps_stored)
         if ~in_previous_timestamps.any():
             # real appending data
             new_timestamps = timestamps
@@ -642,7 +642,7 @@ class ArrayH5File:
         """
         n_new = len(self._n_t)
         ids_stored = self.timestamps
-        in_previous_timestamps = np.in1d(timestamps, ids_stored)
+        in_previous_timestamps = np.isin(timestamps, ids_stored)
         if ~in_previous_timestamps.any():
             # real appending data
             new_timestamps = timestamps

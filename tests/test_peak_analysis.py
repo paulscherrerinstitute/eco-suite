@@ -9,10 +9,7 @@ import json
 import math
 import types
 
-import matplotlib
-
-matplotlib.use("Agg")
-
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -21,6 +18,23 @@ pytest.importorskip("escape._peak_analysis")
 from escape import ArrayTimestamps
 
 from eco.acquisition import peak_analysis as pa
+
+
+@pytest.fixture(autouse=True, scope="module")
+def headless_matplotlib():
+    """CounterValue opens a figure; draw it without a display, and leave the
+    backend as found for the other test modules."""
+    previous = matplotlib_backend()
+    plt.switch_backend("Agg")
+    yield
+    plt.close("all")
+    plt.switch_backend(previous)
+
+
+def matplotlib_backend():
+    import matplotlib
+
+    return matplotlib.get_backend()
 
 
 def gaussian(x, center=0.2, sigma=0.25, height=5.0, offset=0.3, gradient=0.0):

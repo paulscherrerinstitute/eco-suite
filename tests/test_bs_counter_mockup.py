@@ -355,3 +355,29 @@ def test_peak_analysis_off_or_several_channels_is_not_attached(bs_worker):
         ctr.close()
     with pytest.raises(TypeError):
         BsStreamCounter("i0", eventworker=bs_worker, peak_analysis={"nope": 1}).close()
+
+
+def test_live_plot_axis_is_the_scan_variable_in_its_unit(bs_worker):
+    # escape's own Stream.plot_med draws the median against scan[0] and labels
+    # the x axis "<parameter name> / <unit>": check what it really drew
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    previous = matplotlib.get_backend()
+    plt.switch_backend("Agg")
+    try:
+        adj_values = [-1.0, -0.5, 0.0, 0.5, 1.0]
+        ctr = BsStreamCounter("i0", eventworker=bs_worker, timeout=5, live_plot=True, store=False)
+        scan = FakeStepScan(len(adj_values), "dummy_adjustable")
+        _run_scan(ctr, scan, adj_values)
+        assert ctr._plot is not None
+        ctr._plot.replot()
+        ax = ctr._plot.axes
+        assert ax.get_xlabel() == "dummy_adjustable / mm"
+        assert list(ax.lines[0].get_xdata()) == adj_values
+        for cb in ctr.callbacks_end_scan:
+            cb(scan=scan)
+        ctr.close()
+    finally:
+        plt.close("all")
+        plt.switch_backend(previous)

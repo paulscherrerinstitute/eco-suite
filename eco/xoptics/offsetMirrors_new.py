@@ -81,7 +81,9 @@ class OffsetMirrorsBernina(Assembly):
         return adj0.get_current_value() + df, adj1.get_current_value() + df
 
     def _set_diff_2adj(self, val, adj0, adj1):
-        df = val - np.diff([adj0.get_current_value(), adj1.get_current_value()])
+        # adj1 - adj0 as a plain float; np.diff(...) is a 1-element array, which
+        # would end up as the target of the motors (float() of it fails in numpy 2.5)
+        df = val - float(adj1.get_current_value() - adj0.get_current_value())
         return (
             adj0.get_current_value() - df / 2,
             adj1.get_current_value() + df / 2,

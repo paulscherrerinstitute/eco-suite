@@ -114,9 +114,9 @@ class KbVer(Assembly):
         return self.bend1.get_current_value() + df, self.bend2.get_current_value() + df
 
     def _get_bend_diff(self):
-        return float(
-            np.diff([self.bend1.get_current_value(), self.bend2.get_current_value()])
-        )
+        # bend2 - bend1 as a plain float; float(np.diff(...)) converts a 1-d
+        # array and raises TypeError since numpy 2.5
+        return float(self.bend2.get_current_value() - self.bend1.get_current_value())
 
     def _get_benders_set_diff(self, val):
         df = val - self._get_bend_diff()
@@ -234,9 +234,9 @@ class KbHor(Assembly):
         return self.bend1.get_current_value() + df, self.bend2.get_current_value() + df
 
     def _get_bend_diff(self):
-        return float(
-            np.diff([self.bend1.get_current_value(), self.bend2.get_current_value()])
-        )
+        # bend2 - bend1 as a plain float; float(np.diff(...)) converts a 1-d
+        # array and raises TypeError since numpy 2.5
+        return float(self.bend2.get_current_value() - self.bend1.get_current_value())
 
     def _get_benders_set_diff(self, val):
         df = val - self._get_bend_diff()
