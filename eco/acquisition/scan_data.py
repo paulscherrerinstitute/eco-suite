@@ -1,7 +1,6 @@
 from numbers import Number
 import os
 from pathlib import Path
-from escape.swissfel import load_dataset_from_scan
 
 # from eco.elements.assembly import Assembly
 import json
@@ -41,6 +40,17 @@ class RunData:
         return runs
 
     def load_run(self, run_number, **kwargs):
+        # Deferred: escape.swissfel eagerly imports dask/pandas/scipy/
+        # IPython/xarray (~14s on a cold NFS-mounted env), and this module
+        # is reached from eco.elements.assembly - i.e. from `import eco`
+        # itself - so a module-level import here made that cost mandatory
+        # for literally every eco import, not just the one RunData method
+        # that actually loads a dataset. See eco.status_server.gui, whose
+        # own docstring claims "no eco namespace import... starts in under
+        # a second" - not true before this, since `from .client import
+        # StatusServerClient` still runs eco/__init__.py first regardless.
+        from escape.swissfel import load_dataset_from_scan
+
         if run_number < 0:
             run_number = self.get_available_run_numbers()[run_number]
             print(f"Loading run number {run_number}")
