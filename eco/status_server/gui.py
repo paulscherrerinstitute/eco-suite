@@ -156,6 +156,15 @@ class StatusServerMonitor(QtWidgets.QWidget):
         f.setPointSize(f.pointSize() + 3)
         f.setBold(True)
         self.state_label.setFont(f)
+        # Unlike required_banner/other_failed_label below, this one never
+        # had setWordWrap - a QLabel without it sizes to its text's full
+        # single-line width, and once that exceeds the window's current
+        # width, Qt has to grow the window to meet it (a window can never
+        # be narrower than its layout's minimum size). With a few-point-
+        # larger bold font, the "state (generation N, up M min)" text is
+        # wide enough to trigger this, and the window stays at the grown
+        # size afterward instead of shrinking back.
+        self.state_label.setWordWrap(True)
         layout.addWidget(self.state_label)
 
         self.progress = QtWidgets.QProgressBar()
