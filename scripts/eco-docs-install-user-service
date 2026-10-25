@@ -71,15 +71,21 @@ cat > "$UNIT_DIR/eco-docs.service" <<EOF
 Description=eco documentation site (static HTTP server)
 After=network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=600
-StartLimitBurst=5
+# Never give up restarting: a docs site that stays down after a hiccup
+# helps nobody, and a restart costs nothing.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 EnvironmentFile=$ENV_FILE
+# The launcher usually lives on /sf (NFS), which can still be missing when
+# user services start at boot; exec'ing it then fails with 203/EXEC and the
+# unit gives up after its start limit. Wait for it instead (up to 10 min).
+ExecStartPre=/usr/bin/timeout 600 /bin/sh -c 'until [ -x "$LAUNCHER" ]; do sleep 5; done'
+TimeoutStartSec=11min
 ExecStart=$LAUNCHER serve
 Restart=on-failure
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=default.target
@@ -94,6 +100,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=$ENV_FILE
+# The launcher usually lives on /sf (NFS), which can still be missing when
+# user services start at boot; exec'ing it then fails with 203/EXEC and the
+# unit gives up after its start limit. Wait for it instead (up to 10 min).
+ExecStartPre=/usr/bin/timeout 600 /bin/sh -c 'until [ -x "$LAUNCHER" ]; do sleep 5; done'
+TimeoutStartSec=11min
 ExecStart=$LAUNCHER build
 # A full build takes a minute or two; be gentle on a shared console.
 Nice=10

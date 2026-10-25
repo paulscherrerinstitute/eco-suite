@@ -29,6 +29,17 @@ SRC="$ROOT/src"
 BUILDS="$ROOT/builds"
 CURRENT="$ROOT/current"
 
+# A local checkout as the source (e.g. the shared gac-bernina one) is usually
+# owned by another account, which git refuses ("dubious ownership") unless
+# told otherwise. Allow exactly that one directory, for these commands only,
+# and use the real transport (--no-local) rather than hardlinking its files.
+GIT=(git)
+CLONE_OPTS=()
+if [ -d "$REPO" ]; then
+    GIT=(git -c "safe.directory=$(readlink -f "$REPO")")
+    CLONE_OPTS=(--no-local)
+fi
+
 usage() {
     cat <<EOF
 usage: $(basename "$0") <command> [options]
@@ -74,9 +85,9 @@ update_source() {
         [ -n "$REPO" ] || { echo "no repository: set ECO_DOCS_REPO" >&2; exit 1; }
         log "cloning $REPO ($BRANCH)"
         mkdir -p "$ROOT"
-        git clone --quiet --branch "$BRANCH" "$REPO" "$SRC"
+        "${GIT[@]}" clone --quiet "${CLONE_OPTS[@]}" --branch "$BRANCH" "$REPO" "$SRC"
     else
-        git -C "$SRC" fetch --quiet origin "$BRANCH"
+        "${GIT[@]}" -C "$SRC" fetch --quiet origin "$BRANCH"
         git -C "$SRC" reset --quiet --hard "origin/$BRANCH"
     fi
 }
