@@ -67,8 +67,12 @@ def _ensure_bs_event_worker():
     # command, so this is the earliest safe point to guarantee every
     # escape.stream.Stream instance already has `.scans` available.
     from eco.detector.bs_counter import install_stream_scans
+    from eco.detector.stream_plots import install_stream_plot_windows
 
     install_stream_scans()
+    # Named, refresh-in-place windows for Stream.plot_hist()/plot_med()/... --
+    # same "first DetectorBsStream of the session" reasoning as above.
+    install_stream_plot_windows()
     return _bs_event_worker
 
 
