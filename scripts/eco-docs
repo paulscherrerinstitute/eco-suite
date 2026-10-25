@@ -1,0 +1,153 @@
+#!/bin/bash
+# Build and serve eco's Sphinx documentation on this host.
+#
+# Kept as its own small job rather than a route inside the status server: the
+# docs must stay up while the status server restarts (minutes of init_all()),
+# and the status server should not grow code for something unrelated to it.
+#
+# Layout under $ECO_DOCS_ROOT (default ~/.eco/docs_site):
+#   src/              own clone of the repository - never a shared checkout,
+#                     since every build does `git reset --hard` on it
+#   builds/<stamp>/   one finished build each, the last few kept
+#   current -> builds/<stamp>   what is served; swapped atomically, so a
+#                     failing build never replaces a working site
+#
+# `serve` follows the `current` symlink on every request, so a new build is
+# live the moment `build` swaps it - no restart needed.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+ROOT="${ECO_DOCS_ROOT:-$HOME/.eco/docs_site}"
+REPO="${ECO_DOCS_REPO:-$(git -C "$SELF_DIR/.." remote get-url origin 2>/dev/null || true)}"
+BRANCH="${ECO_DOCS_BRANCH:-master}"
+PYTHON="${ECO_DOCS_PYTHON:-/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python}"
+PORT="${ECO_DOCS_PORT:-8095}"
+BIND="${ECO_DOCS_BIND:-0.0.0.0}"
+KEEP="${ECO_DOCS_KEEP:-3}"
+
+SRC="$ROOT/src"
+BUILDS="$ROOT/builds"
+CURRENT="$ROOT/current"
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") <command> [options]
+
+  build [-f]      fetch $BRANCH, rebuild if it changed (-f: always), and
+                  make the new build current only if sphinx-build succeeded
+  serve           serve the current build on http://$BIND:$PORT (foreground)
+  check           verify the python has everything sphinx-build needs
+  status          show source revision, current build and server state
+  config          print the resolved configuration
+
+Settings come from the environment (see eco-docs-install-user-service):
+  ECO_DOCS_ROOT=$ROOT
+  ECO_DOCS_REPO=$REPO
+  ECO_DOCS_BRANCH=$BRANCH
+  ECO_DOCS_PYTHON=$PYTHON
+  ECO_DOCS_PORT=$PORT  ECO_DOCS_BIND=$BIND  ECO_DOCS_KEEP=$KEEP
+EOF
+}
+
+log() { echo "[eco-docs $(date '+%F %T')] $*"; }
+
+cmd_check() {
+    "$PYTHON" - <<'EOF'
+import importlib, sys
+missing = []
+for mod in ("sphinx", "furo", "myst_parser", "sphinx_copybutton", "sphinx_design"):
+    try:
+        importlib.import_module(mod)
+    except ImportError:
+        missing.append(mod)
+print(sys.executable, sys.version.split()[0])
+if missing:
+    print("missing:", ", ".join(missing))
+    print("install them with: <python> -m pip install -r docs/requirements.txt")
+    sys.exit(1)
+print("ok: everything sphinx-build needs is importable")
+EOF
+}
+
+update_source() {
+    if [ ! -d "$SRC/.git" ]; then
+        [ -n "$REPO" ] || { echo "no repository: set ECO_DOCS_REPO" >&2; exit 1; }
+        log "cloning $REPO ($BRANCH)"
+        mkdir -p "$ROOT"
+        git clone --quiet --branch "$BRANCH" "$REPO" "$SRC"
+    else
+        git -C "$SRC" fetch --quiet origin "$BRANCH"
+        git -C "$SRC" reset --quiet --hard "origin/$BRANCH"
+    fi
+}
+
+cmd_build() {
+    local force=0
+    [ "${1:-}" = "-f" ] && force=1
+    update_source
+    local rev built=""
+    rev="$(git -C "$SRC" rev-parse --short HEAD)"
+    [ -e "$CURRENT/.revision" ] && built="$(cat "$CURRENT/.revision")"
+    if [ "$force" -eq 0 ] && [ "$rev" = "$built" ]; then
+        log "already built $rev, nothing to do"
+        return 0
+    fi
+
+    mkdir -p "$BUILDS"
+    local out="$BUILDS/$(date '+%Y%m%d-%H%M%S')-$rev"
+    log "building $rev into $out"
+    # -E: fresh environment each time, so a removed page does not linger.
+    if ! "$PYTHON" -m sphinx -b html -E -q "$SRC/docs" "$out" > "$out.log" 2>&1; then
+        log "sphinx-build FAILED, keeping the current site - see $out.log"
+        tail -n 20 "$out.log" >&2
+        rm -rf "$out"
+        exit 1
+    fi
+    echo "$rev" > "$out/.revision"
+    mv "$out.log" "$out/.build.log"
+
+    # Atomic swap: rename a fresh symlink over the old one.
+    ln -sfn "$out" "$ROOT/current.new"
+    mv -T "$ROOT/current.new" "$CURRENT"
+    log "now serving $rev"
+
+    # Keep the newest $KEEP builds (the current one is always among them).
+    ls -1d "$BUILDS"/*/ 2>/dev/null | sort -r | tail -n +"$((KEEP + 1))" | xargs -r rm -rf
+    rm -f "$BUILDS"/*.log
+}
+
+cmd_serve() {
+    [ -e "$CURRENT" ] || { echo "nothing built yet - run: $(basename "$0") build" >&2; exit 1; }
+    log "serving $CURRENT on http://$BIND:$PORT"
+    exec "$PYTHON" -m http.server "$PORT" --bind "$BIND" --directory "$CURRENT"
+}
+
+cmd_status() {
+    echo "source : $( [ -d "$SRC/.git" ] && git -C "$SRC" log -1 --format='%h %ad %s' --date=short || echo 'not cloned yet')"
+    echo "current: $( [ -e "$CURRENT" ] && echo "$(readlink "$CURRENT") ($(cat "$CURRENT/.revision" 2>/dev/null))" || echo 'nothing built yet')"
+    if command -v curl > /dev/null; then
+        local code
+        code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:$PORT/" || true)"
+        echo "server : http://$(hostname -f):$PORT/ -> HTTP ${code:-no answer}"
+    fi
+}
+
+cmd_config() {
+    echo "ECO_DOCS_ROOT=$ROOT"
+    echo "ECO_DOCS_REPO=$REPO"
+    echo "ECO_DOCS_BRANCH=$BRANCH"
+    echo "ECO_DOCS_PYTHON=$PYTHON"
+    echo "ECO_DOCS_PORT=$PORT"
+    echo "ECO_DOCS_BIND=$BIND"
+    echo "ECO_DOCS_KEEP=$KEEP"
+}
+
+case "${1:-}" in
+    build)   shift; cmd_build "$@" ;;
+    serve)   cmd_serve ;;
+    check)   cmd_check ;;
+    status)  cmd_status ;;
+    config)  cmd_config ;;
+    -h|--help|"") usage ;;
+    *) echo "unknown command: $1" >&2; usage; exit 2 ;;
+esac

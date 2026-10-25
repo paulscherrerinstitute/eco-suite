@@ -1,0 +1,135 @@
+#!/bin/bash
+# Install the eco documentation site as *user* systemd units on this host:
+#
+#   eco-docs.service        serves the current build (python -m http.server)
+#   eco-docs-build.service  one rebuild (fetch, sphinx-build, atomic swap)
+#   eco-docs-build.timer    runs that rebuild periodically
+#
+# Same approach as eco-status-server-install-user-service: no root needed,
+# runs as the invoking account (whose git credentials fetch the repository).
+# Both units just call `eco-docs`, so the interactive command and the
+# service run exactly the same thing.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LAUNCHER="${ECO_DOCS_LAUNCHER:-$SELF_DIR/eco-docs}"
+UNIT_DIR="$HOME/.config/systemd/user"
+ENV_FILE="${ECO_DOCS_ENV:-$HOME/.config/eco-docs.env}"
+INTERVAL="15min"
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") [--launcher PATH] [--env-file PATH] [--interval 15min] [--force]
+
+Writes:
+  $UNIT_DIR/eco-docs.service
+  $UNIT_DIR/eco-docs-build.service
+  $UNIT_DIR/eco-docs-build.timer
+and, if it does not exist yet, a template environment file at
+  $ENV_FILE
+
+Then prints the commands to do the first build and start everything.
+EOF
+}
+
+FORCE=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --launcher)  LAUNCHER="$2"; shift 2 ;;
+        --env-file)  ENV_FILE="$2"; shift 2 ;;
+        --interval)  INTERVAL="$2"; shift 2 ;;
+        --force)     FORCE=1; shift ;;
+        -h|--help)   usage; exit 0 ;;
+        *) echo "unknown option: $1" >&2; usage; exit 2 ;;
+    esac
+done
+
+[ -x "$LAUNCHER" ] || { echo "launcher not executable: $LAUNCHER" >&2; exit 1; }
+
+mkdir -p "$UNIT_DIR" "$(dirname "$ENV_FILE")"
+
+if [ ! -e "$ENV_FILE" ]; then
+    {
+        echo "# Environment for the eco docs site (systemd EnvironmentFile"
+        echo "# syntax: KEY=value, no export, no shell expansion). Edit to taste."
+        "$LAUNCHER" config
+    } > "$ENV_FILE"
+    echo "wrote template $ENV_FILE - check it before starting the services"
+else
+    echo "keeping existing $ENV_FILE"
+fi
+
+for unit in eco-docs.service eco-docs-build.service eco-docs-build.timer; do
+    if [ -e "$UNIT_DIR/$unit" ] && [ "$FORCE" -eq 0 ]; then
+        echo "$UNIT_DIR/$unit already exists; re-run with --force to overwrite" >&2
+        exit 1
+    fi
+done
+
+cat > "$UNIT_DIR/eco-docs.service" <<EOF
+[Unit]
+Description=eco documentation site (static HTTP server)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+ExecStart=$LAUNCHER serve
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+cat > "$UNIT_DIR/eco-docs-build.service" <<EOF
+[Unit]
+Description=eco documentation site: fetch and rebuild if changed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=$ENV_FILE
+ExecStart=$LAUNCHER build
+# A full build takes a minute or two; be gentle on a shared console.
+Nice=10
+EOF
+
+cat > "$UNIT_DIR/eco-docs-build.timer" <<EOF
+[Unit]
+Description=eco documentation site: periodic rebuild
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=$INTERVAL
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+echo "wrote eco-docs.service, eco-docs-build.service, eco-docs-build.timer in $UNIT_DIR"
+cat <<EOF
+
+Next steps:
+
+  # let the services keep running when you are not logged in
+  loginctl enable-linger $USER
+
+  # sphinx & co. present in the configured python? (else: pip install -r docs/requirements.txt)
+  $LAUNCHER check
+
+  # first build by hand, so problems show up right here
+  $LAUNCHER build
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now eco-docs.service eco-docs-build.timer
+  $LAUNCHER status
+
+  # logs
+  journalctl --user -u eco-docs -u eco-docs-build -f
+EOF

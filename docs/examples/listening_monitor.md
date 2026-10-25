@@ -79,4 +79,4 @@ mm.clear()   # trim every channel's history to its latest point
 | Record every update to one channel from now on           | `Monitor`                             |
 | Record several channels and align them in time           | `MultiMonitor`                        |
 | Retrieve *past* data (before you started listening)      | `DataHub` — see {doc}`archiver_stripchart` |
-| Watch values live in a scrolling window                  | `DataHub.strip_chart` — see {doc}`archiver_stripchart` |
+| Watch values live in a scrolling window                  | `archiver.strip_plot` / `<device>.strip_plot()` — see {doc}`archiver_stripchart` |

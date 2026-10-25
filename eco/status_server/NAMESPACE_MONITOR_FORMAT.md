@@ -21,9 +21,9 @@ own aux directory as part of the run, the same way `aliases.json` and
 - Produced end-to-end (start recording → stop, write, upload) by: `POST
   /recording/capture` (`eco/status_server/namespace_server.py`), driven by
   `Daq.start_scan_monitoring()` / `Daq.end_scan_monitoring()`
-  (`eco/acquisition/daq_client.py`) — **not yet wired into a real scan's
-  callbacks** as of this writing, so no run has one yet; this document
-  describes the format ahead of that.
+  (`eco/acquisition/daq_client.py`), which are part of `Daq`'s
+  start/end-of-scan callbacks since 2026-09-09 (switch off live with
+  `daq.scan_monitoring = False`).
 - Location: `<pgroup>/res/run_data/daq/run<NNNN>/aux/namespace_monitor.ixp.h5`,
   next to `status.json`/`aliases.json`/`scan_info_rel.json`.
 - **Only exists when a status server was in use for the run.** Unlike

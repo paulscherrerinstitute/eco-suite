@@ -191,23 +191,44 @@ yourself with pandas/matplotlib.
 
 ## A live strip chart
 
-`strip_chart` opens a **continuously updating** window fed straight from the
+`strip_plot` opens a **continuously updating** window fed straight from the
 live source — the bsread Dispatcher for BS channels (default) or EPICS for CA
-channels. It returns a handle so you can stop it later:
+channels. It runs in its own process, so it keeps redrawing while your session
+is busy (e.g. blocked in a `umv`). It returns a handle so you can stop it later:
 
 ```python
-sc = archiver.strip_chart(
+sc = archiver.strip_plot(
     channels=[
         "SARFE10-PBPG050:HAMP-INTENSITY-CAL",
         "SARFE10-PBIG050-EVR0:CALCI",
     ],
+    window=120,        # seconds of history shown (default 60)
 )
 
 # ... watch it update live ...
 
+sc.record()        # same as the window's "Record" button
+sc.to_dataset()    # what was recorded, as a dataset
 sc.stop()          # end the chart (or simply close the plot window)
 sc.is_running()    # -> False once stopped
 ```
+
+(Not to be confused with the namespace object `strip_chart`, which launches
+the separate external strip-chart program.)
+
+### Strip plot of any device
+
+Every Adjustable, Detector and Assembly has the same method, which works out
+the channels for you:
+
+```python
+mot.strip_plot()                                       # readback only
+mot.strip_plot(mon_opt.intensity, select_names=True)  # add other objects, pick channels interactively
+```
+
+By default (`readback_only=True`) only the readback channels are plotted; the
+plot window's **More channels...** button adds any of the object's other
+channels live.
 
 For a fixed-duration capture rather than an open-ended chart, use
 `get_live_data(channels=[...], duration=10)`, which records a set number of

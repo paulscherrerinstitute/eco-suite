@@ -24,6 +24,13 @@ scientific Python libraries.
 
       Install eco and open your first interactive session.
 
+   .. grid-item-card:: :octicon:`megaphone` Did you know?
+      :link: did_you_know/index
+      :link-type: doc
+
+      Short tips on recent features: one call, what it gains you, and
+      where to read more.
+
    .. grid-item-card:: :octicon:`light-bulb` Concepts
       :link: concepts
       :link-type: doc
@@ -93,7 +100,22 @@ scientific Python libraries.
    :hidden:
 
    installation
+   launching
    concepts
+   did_you_know/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Using eco
+   :hidden:
+
+   scanning
+   queues
+   tweak
+   command_history
+   tab_completion
+   status_server
+   shared_files
 
 .. toctree::
    :maxdepth: 2
@@ -112,6 +134,7 @@ scientific Python libraries.
    :hidden:
 
    deltatau_servo
+   channel_access
 
 .. toctree::
    :maxdepth: 2
@@ -120,6 +143,8 @@ scientific Python libraries.
 
    widget_views
    widget_containers
+   schematic_panels
+   live_gui
    terminal_plots
 
 .. toctree::
