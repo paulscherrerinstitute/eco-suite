@@ -36,7 +36,9 @@ CURRENT="$ROOT/current"
 GIT=(git)
 CLONE_OPTS=()
 if [ -d "$REPO" ]; then
-    GIT=(git -c "safe.directory=$(readlink -f "$REPO")")
+    # Both spellings: a clone checks the .git directory itself.
+    GIT=(git -c "safe.directory=$(readlink -f "$REPO")"
+             -c "safe.directory=$(readlink -f "$REPO")/.git")
     CLONE_OPTS=(--no-local)
 fi
 
