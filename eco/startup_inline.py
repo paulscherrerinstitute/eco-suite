@@ -191,3 +191,13 @@ if scope:
         )
         _ipymagic_root = eval(scope)
     ipymagic.start(_ipymagic_root)
+
+# One "Did you know?" tip per session start, with a pointer to eco.tip()
+# for more in a window (eco.utilities.tips). ECO_NO_TIP=1 turns it off.
+if not os.environ.get("ECO_NO_TIP"):
+    try:
+        from eco.utilities import tips as _tips
+
+        _tips.print_tip(startup=True)
+    except Exception as _exc:
+        print(f"(no startup tip: {_exc})")

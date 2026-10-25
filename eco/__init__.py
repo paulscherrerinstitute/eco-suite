@@ -136,3 +136,13 @@ def start_webapp(*args, **kwargs):
 
     return _start_webapp(*args, **kwargs)
 
+
+
+def tip(*args, **kwargs):
+    """Show a "Did you know?" tip about an eco feature: in a small window
+    with Back / Next (tips already seen in this session, then new random
+    ones), or printed here where there is no display. `tip("picker")` shows
+    a given one. See eco.utilities.tips."""
+    from eco.utilities.tips import tip as _tip
+
+    return _tip(*args, **kwargs)

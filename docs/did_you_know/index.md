@@ -4,6 +4,11 @@ Short tips on eco features, newest first. Each one gives the main usage and
 what you gain from it, with a link to the full documentation where there is
 one. The collection so far covers features added since May 2026.
 
+In an eco session, one tip is printed at startup (`ECO_NO_TIP=1` turns that
+off), and `eco.tip()` opens a small window where **Back** / **Next** go
+through the tips you have seen in this session and then on to new random
+ones. Without a display, `eco.tip()` prints the next tip instead.
+
 ```{toctree}
 :glob:
 :reversed:
