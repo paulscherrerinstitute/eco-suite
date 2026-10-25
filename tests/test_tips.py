@@ -78,10 +78,10 @@ def test_history_back_and_forth(tip_dir):
 
 
 def test_print_tip_records_in_history(tip_dir, capsys):
-    shown = tips.print_tip(startup=True)
+    shown = tips.print_tip()
     out = capsys.readouterr().out
     assert "Did you know?" in out and shown.title in out
-    assert "eco.tip()" in out and "ECO_NO_TIP" in out
+    assert "eco.tip()" in out
     assert tips.history.current.name == shown.name
 
 
@@ -106,7 +106,7 @@ def test_window_navigation(tip_dir, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from eco.widgets import tip_qt
 
-    tips.print_tip()  # the "startup" tip comes first
+    tips.print_tip()  # a tip printed earlier comes first
     startup = tips.history.current
     handle = tips.tip(window=True)
     try:

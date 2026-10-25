@@ -4,10 +4,10 @@ The tips are the Markdown files in ``docs/did_you_know/`` (one per feature,
 ``<date>-<slug>.md`` with a small front matter, see that folder's
 ``index.md``) -- the same files the Sphinx docs show. Here they are:
 
-- printed in the terminal, one at session start (``eco/startup_inline.py``;
-  ``ECO_NO_TIP=1`` turns that off), with a pointer to ``eco.tip()``;
 - shown in a small Qt window by ``eco.tip()`` (eco.widgets.tip_qt), or
-  printed again where there is no display.
+  printed in the terminal where there is no display. The session start
+  (``eco/startup_inline.py``) only prints links to the docs site and its
+  random-tip page.
 
 Links to other docs pages (``{doc}`../scanning``` in a tip) point at the
 docs site, ``ECO_DOCS_URL`` (default: the server on saresb-cons-04).
@@ -127,7 +127,7 @@ def get_tip(name):
 
 class TipHistory:
     """The tips shown in this session, in order, and where in that list we
-    are -- shared by the startup tip, ``eco.tip()`` and the window's
+    are -- shared by ``eco.tip()`` (printed or in the window) and the window's
     Back / Next buttons, like a browser history.
 
     `next()` first walks forward through tips already shown (after going
@@ -238,7 +238,7 @@ def as_text(tip, width=None, color=None):
     return "\n".join(out)
 
 
-def print_tip(tip=None, startup=False):
+def print_tip(tip=None):
     """Print `tip` (default: the next one in this session's history, see
     TipHistory) in the terminal, framed as a "Did you know?" with a pointer
     to the window version."""
@@ -250,8 +250,6 @@ def print_tip(tip=None, startup=False):
     print(f"{accent}Did you know?{reset}")
     print(textwrap.indent(as_text(tip, color=color), "  "))
     hint = "eco.tip() shows more tips in a window"
-    if startup:
-        hint += " (ECO_NO_TIP=1 hides this at startup)"
     print(f"{accent}-> {hint}{reset}\n")
     return tip
 
@@ -262,7 +260,7 @@ def tip(name=None, window=None):
     e.g. "picker"); `window=True/False` forces the choice.
 
     The window opens on the tip last shown in this session (e.g. the one
-    printed at startup), so its Back / Next buttons continue that history.
+    printed without a window), so its Back / Next buttons continue that history.
     Printing without a window moves on to the next tip.
 
     Returns the window handle (``.next()``, ``.back()``, ``.stop()``) or the

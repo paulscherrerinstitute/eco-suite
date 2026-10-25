@@ -75,8 +75,13 @@ if arguments.scopes_available:
 
 
 print(
-    "                       ___ _______\n                      / -_) __/ _ \ \n Experiment Control   \__/\__/\___/ \n\n"
+    "                       ___ _______\n                      / -_) __/ _ \ \n Experiment Control   \__/\__/\___/ \n"
 )
+# Docs site and its "Did you know?" feature tips (eco.utilities.tips;
+# eco.tip() shows them in a window from the session).
+_docs_url = os.environ.get("ECO_DOCS_URL", "http://saresb-cons-04.psi.ch:8095/").rstrip("/")
+print(f" docs:     {_docs_url}/")
+print(f" features: {_docs_url}/did_you_know/random.html   (or eco.tip())\n")
 
 term = Terminal(scope=scope)
 
@@ -191,13 +196,3 @@ if scope:
         )
         _ipymagic_root = eval(scope)
     ipymagic.start(_ipymagic_root)
-
-# One "Did you know?" tip per session start, with a pointer to eco.tip()
-# for more in a window (eco.utilities.tips). ECO_NO_TIP=1 turns it off.
-if not os.environ.get("ECO_NO_TIP"):
-    try:
-        from eco.utilities import tips as _tips
-
-        _tips.print_tip(startup=True)
-    except Exception as _exc:
-        print(f"(no startup tip: {_exc})")
