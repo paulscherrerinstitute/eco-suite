@@ -172,9 +172,11 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
         archiver and, per channel, whether data came back or why not (no
         events in the range - with the last value before it - or not archived
         at all). `column_names="alias"` (or "label") names the columns by
-        alias instead of channel id; `bins=` downsamples on the server (long
-        ranges of BS channels!) and `last_before=True` adds each channel's
-        value at the start of the window. Remaining kwargs go to
+        alias instead of channel id; `bins=` downsamples on the server and
+        `last_before=True` adds each channel's value at the start of the
+        window. With more than `max_bins` (default 100000) events in the range
+        a channel is binned automatically, with a warning (`max_bins=None`:
+        always raw; see `DataHub.get_data_time_range`). Remaining kwargs go to
         `DataHub.get_data_time_range`, which also takes several objects at
         once: `archiver.get_data_time_range(obj1, obj2, start=-3600)`.
 
@@ -199,7 +201,8 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
         )
         if data is None:
             return data
-        if remove_nulls and not kwargs.get("bins"):  # empty bins are NaN by design
+        binned = bool(kwargs.get("bins")) or any(c.endswith(" count") for c in data.columns)
+        if remove_nulls and not binned:  # empty bins are NaN by design
             data = data.dropna(how="all").dropna(how="all", axis=1)
             dropped = [c for c in channel_ids if c not in data.keys()]
             if dropped and kwargs.get("verbose", True):

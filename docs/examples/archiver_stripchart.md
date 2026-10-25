@@ -107,22 +107,39 @@ By default the DataFrame columns are channel ids, in the order you asked.
 (`prof_kb.target_stages.x.offset`), `column_names="label"` by the whole legend
 label.
 
-### Long ranges of BS channels: `bins`
+### Long ranges of BS channels: `max_bins` and `bins`
 
-A BS channel runs at up to 100 Hz: a day of one channel is 8.6 million
-samples, roughly 20 s to fetch. A warning (with that estimate) is printed
-whenever a request would be that big. Downsample **on the server** instead:
+A BS channel runs at up to 100 Hz: a day of one channel is 8.6 million events.
+Retrieved raw that takes about 23 s and 3 GB of memory (datahub keeps a Python
+dict per event), and the plot another 30 s and 1 GB, with every full-range
+redraw taking 8 s. So requests are **binned on the server automatically** when
+they are that big, the way databoard.psi.ch does it: a channel with more than
+`max_bins` events in the range (default 100 000) comes as at most that many
+bins, one with fewer comes raw. 24 h of `mon_mono.intensity` is 86 401 one-second
+bins in about 5 s.
 
 ```python
-# a bin count (the server rounds to a sensible bin width) ...
+df = archiver.get_data_time_range(mon_mono.intensity, start=-86400)   # auto-binned
+df = archiver.get_data_time_range(mon_mono.intensity, start=-86400, max_bins=1000)  # coarser
+df = archiver.get_data_time_range(mon_mono.intensity, start=-3600, max_bins=None)   # always raw
+```
+
+Nothing is binned silently: a warning names the channels and says what controls
+it. To choose the binning yourself, use `bins=` (it then replaces `max_bins`): a
+count (the server rounds it to a round bin width and returns up to 2× as many
+rows) or a bin width such as `"10s"`, `"1m"`, `"1h"`, `"1d"`:
+
+```python
 df = archiver.get_data_time_range(gasmon, start=-86400, bins=500)
-# ... or a bin width: "10s", "1m", "1h", ...
 df = archiver.get_data_time_range(gasmon, start=-86400, bins="10m")
 ```
 
-Each channel comes as its bin average plus `<channel> min`, `<channel> max` and
-`<channel> count` columns, stamped at the bin centre; empty bins are NaN.
-`bins` works for CA channels and for `get_data_pulse_id_range` too.
+A binned channel comes as its bin average plus `<channel> min`, `<channel> max`
+and `<channel> count` columns, stamped at the bin centre; empty bins are NaN.
+This works for CA channels, for `get_data_pulse_id_range` and for the
+per-object `obj.get_archiver_time_range(...)` too. Note that the average of an
+event-driven (CA) channel or of an enum is not a time-weighted value; the
+default threshold is high enough that such channels normally stay raw.
 
 ### The value at the start of the window: `last_before`
 
@@ -135,7 +152,7 @@ start of the window:
 df = archiver.get_data_time_range(prof_kb.target_stages, start=-600, last_before=True)
 ```
 
-It cannot be combined with `bins`.
+It cannot be combined with an explicit `bins`; with the automatic binning, channels that stay raw get their opening value, binned ones do not.
 
 ### Finding channel names
 

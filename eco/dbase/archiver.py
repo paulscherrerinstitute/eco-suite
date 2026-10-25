@@ -58,6 +58,15 @@ RETRY_DELAY = 1.5
 BS_RATE_HZ = 100
 BS_LARGE_ROWS = 5_000_000
 BS_ROWS_PER_SECOND = 4e5  # raw retrieval speed measured against data-api.psi.ch
+# datahub's Table keeps one Python dict per event: measured 2026-10-16, 24 h of one
+# 100 Hz channel (8.6M events) took +3.2 GB to retrieve plus +1.1 GB to plot
+BS_BYTES_PER_ROW = 370
+
+# Above this many events in the requested range a channel is binned on the
+# server instead of retrieved raw (see `DataHub.get_data_time_range`): 100k
+# points still plot in about a second, 8.6M (24 h of one BS channel) take 30 s
+# to build and 8 s per full-range redraw.
+MAX_BINS_DEFAULT = 100_000
 
 NO_DATA = "no data in the requested range"
 COLUMN_NAME_MODES = ("channel", "alias", "label")
@@ -352,6 +361,30 @@ def _mute_channel_not_found():
         threading.excepthook = original
 
 
+# Round bin widths [s] the data API accepts ("100ms", "10s", "15m", "3h", "7d").
+_BIN_WIDTHS = (
+    0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5,
+    1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800,
+    3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800,
+    1209600, 2592000, 7776000, 31536000,  # 14 d, 30 d, 90 d, 365 d
+)
+
+
+def _bin_width(span_seconds, max_bins):
+    """The smallest round bin width, as the "10s"/"1m"/"1h" string datahub
+    takes, that keeps `span_seconds` within `max_bins` bins (the ends of the
+    range can add up to two partial ones). A bin *count* would not cap the size:
+    the server rounds it up to a round width and returns 1.4-2.2x as many."""
+    need = span_seconds / max(max_bins - 2, 1)
+    width = next((w for w in _BIN_WIDTHS if w >= need), _BIN_WIDTHS[-1])
+    if width < 1:
+        return f"{round(width * 1000)}ms"
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if width % size == 0:
+            return f"{int(width // size)}{unit}"
+    return f"{int(width)}s"
+
+
 def _alias_from_label(label, channel):
     """The alias part of an object channel's label ("alias (channel) [unit]"),
     or the channel id itself for a plain channel id, whose label has none."""
@@ -427,12 +460,17 @@ def _ts_text(ns):
     return pd.Timestamp(ns, tz="UTC").strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-def _carry_in(table, start_ns):
+def _carry_in(table, start_ns, skip=()):
     """Reduce each channel's events before `start_ns` (what a `last` request
     adds) to the latest one, moved *to* `start_ns`: the state the window opens
-    with. Returns {channel: (original timestamp ns, value, has events in range)}."""
+    with. Returns {channel: (original timestamp ns, value, has events in range)}.
+    Binned channels (`skip`) are left alone: their first bin may be centred
+    before `start_ns`, and that is not a carried-in value."""
     carried = {}
+    skip = {key for ch in skip for key in (ch, f"{ch} max", f"{ch} min", f"{ch} count")}
     for name, records in table.data.items():
+        if name in skip:
+            continue
         before = [r for r in records if r[Table.TIMESTAMP] < start_ns]
         if not before:
             continue
@@ -1683,6 +1721,8 @@ class DataHub(Assembly):
         status=None,
         bins=None,
         last_before=False,
+        max_bins=None,
+        auto_binned=None,
     ):
         """Raw retrieval behind `get_data_time_range` / `get_data_pulse_id_range`:
         a DataFrame on the Table's own (nanosecond) timestamp index, or None.
@@ -1693,10 +1733,15 @@ class DataHub(Assembly):
         "<channel> count" columns, stamped at the bin centre (empty bins are
         NaN). `last_before`: also fetch each channel's last event before
         `start` and put it *at* `start` - the state the window opens with.
-        `status`, if a dict, is filled with {channel: "ok" | why there is no
-        data}."""
+        `max_bins` (without `bins`): a channel with more events in the range
+        than this is binned on the server to at most that many bins, one with
+        fewer is retrieved raw; the binned ones are appended to the list
+        `auto_binned`. `status`, if a dict, is filled with {channel: "ok" | why
+        there is no data}."""
         if status is None:
             status = {}
+        auto = bool(max_bins) and not bins
+        binned_auto = []
         extra = {}
         if bins:
             extra["bins"] = bins
@@ -1714,12 +1759,45 @@ class DataHub(Assembly):
             # frequent outcome there (the channel just hasn't changed) and is
             # not retried.
             retry = backend == DEFAULT_HISTORY_BACKEND and _is_recent(end)
+            if auto:
+                # Like databoard: ask for binned data first - the bin counts say
+                # how many events there are - and keep it for a channel with more
+                # than `max_bins`; the others are retrieved raw below.
+                width = _bin_width(
+                    (pd.Timestamp(end) - pd.Timestamp(start)).total_seconds(), max_bins
+                )
+                probe = Table()
+                self._request_into(
+                    source, group_channels, start, end, probe, False, status, {"bins": width}
+                )
+                small = []
+                for channel in group_channels:
+                    if channel in status:  # failed
+                        continue
+                    events = sum(
+                        r[f"{channel} count"] for r in probe.data.get(f"{channel} count", [])
+                    )
+                    if events > max_bins:
+                        for key in (channel, f"{channel} max", f"{channel} min", f"{channel} count"):
+                            table.data[key] = probe.data[key]
+                        binned_auto.append(channel)
+                    else:
+                        small.append(channel)
+                group_channels = small
+                if not group_channels:
+                    continue
             self._request_into(
                 source, group_channels, start, end, table, retry, status, extra
             )
-        carried = _carry_in(table, _iso_to_ns(start)) if last_before else {}
+        carried = (
+            _carry_in(table, _iso_to_ns(start), skip=binned_auto) if last_before else {}
+        )
         if bins:
             _mask_empty_bins(table, channels)
+        if binned_auto:
+            _mask_empty_bins(table, binned_auto)
+            if auto_binned is not None:
+                auto_binned.extend(binned_auto)
         for channel in channels:
             if channel in status:  # failed
                 continue
@@ -1829,6 +1907,7 @@ class DataHub(Assembly):
         bins,
         last_before,
         column_names,
+        max_bins,
     ):
         """What `get_data_time_range` and `get_data_pulse_id_range` share, once
         they have turned their kind of range into `start_utc`/`end_utc`."""
@@ -1838,6 +1917,8 @@ class DataHub(Assembly):
             )
         if bins and last_before:
             raise ValueError("bins (downsampling) and last_before cannot be combined")
+        if max_bins is not None and max_bins < 10:
+            raise ValueError("max_bins must be at least 10 (or None for raw events)")
         channel_ids, ctypes, names, empty = _resolve_targets(
             targets, channels, channel_types, labels
         )
@@ -1856,14 +1937,14 @@ class DataHub(Assembly):
                 print(f"  no archiver channels found under: {', '.join(empty)}")
         n_bs = sum(_channel_type(t, force_type) == "BS" for t in ctypes)
         rows = n_bs * span.total_seconds() * BS_RATE_HZ
-        if n_bs and not bins and rows > BS_LARGE_ROWS:
+        if n_bs and not bins and not max_bins and rows > BS_LARGE_ROWS:
             message = (
                 f"{n_bs} DataBuffer (BS) channel(s) over {span} can mean up to "
-                f"{rows:.1e} samples (~{rows * 8 / 1e9:.1f} GB as float64, roughly "
+                f"{rows:.1e} samples (~{rows * BS_BYTES_PER_ROW / 1e9:.1f} GB of memory, roughly "
                 f"{rows / BS_ROWS_PER_SECOND:.0f} s to fetch): "
                 "beam-synchronous data comes at up to 100 Hz. Consider a "
                 "shorter range, or downsample on the server with bins=<number "
-                'of bins, or a width such as "10s">'
+                'of bins, or a width such as "10s"> (or max_bins=<n>)'
             )
             if verbose:
                 print(f"  warning: {message}")
@@ -1875,6 +1956,7 @@ class DataHub(Assembly):
             return None
 
         status = {}
+        auto_binned = []
         data = self.get_data(
             channel_ids,
             start=start_iso,
@@ -1884,7 +1966,28 @@ class DataHub(Assembly):
             status=status,
             bins=bins,
             last_before=last_before,
+            max_bins=max_bins,
+            auto_binned=auto_binned,
         )
+        if auto_binned:
+            label_of = dict(zip(channel_ids, names))
+            shown = ", ".join(label_of[c] for c in auto_binned[:5])
+            shown += f", ... ({len(auto_binned)} in all)" if len(auto_binned) > 5 else ""
+            message = (
+                f"{len(auto_binned)} of {len(channel_ids)} channel(s) have more than "
+                f"max_bins={max_bins:,} events in this range and were binned on the "
+                f"server (bin width {_bin_width(span.total_seconds(), max_bins)}) "
+                f"without being asked: {shown}. Each comes as the bin average plus "
+                "'<channel> min', '<channel> max' and '<channel> count' columns. "
+                "Control it with bins=<count, or width such as '10s'> to choose the "
+                f"binning yourself, max_bins=<n> to move the threshold (default "
+                f"{MAX_BINS_DEFAULT:,}), or max_bins=None for raw events (about "
+                f"{BS_BYTES_PER_ROW} bytes of memory each)."
+            )
+            if verbose:
+                print(f"  warning: {message}")
+            else:
+                _logger.warning(message)
         if verbose:
             if any(reason == NO_DATA for reason in status.values()):
                 self._probe_missing(status, channel_ids, ctypes, force_type, start_iso, end_iso)
@@ -1936,6 +2039,7 @@ class DataHub(Assembly):
         bins=None,
         last_before=False,
         column_names="channel",
+        max_bins=MAX_BINS_DEFAULT,
         **kwargs,
     ):
         """Retrieve historical data as a DataFrame indexed by UTC timestamp,
@@ -1984,6 +2088,14 @@ class DataHub(Assembly):
             at the bin centre, empty bins NaN. Use it for long ranges of BS
             channels (100 Hz!). The server picks round bin widths, so the
             number of bins is only approximately what you asked for.
+          - `max_bins` (default 100000) is the automatic version: without `bins`,
+            a channel with more events in the range than `max_bins` is binned
+            on the server to at most that many bins (bin width chosen from
+            round values), a channel with fewer comes raw. This is how
+            databoard.psi.ch gets 24 h of a 100 Hz channel in 4 s. A warning
+            names the channels that were binned and the keywords that control
+            it. `max_bins=None` always retrieves raw events - about 370 bytes
+            of memory per event, so 3 GB for 24 h of one BS channel.
           - `last_before=True` also fetches each channel's last event before
             `start` and places it *at* `start`: the value the channel had when
             the window opened - for a slowly changing channel (CA) the state to
@@ -2020,6 +2132,7 @@ class DataHub(Assembly):
             bins=bins,
             last_before=last_before,
             column_names=column_names,
+            max_bins=max_bins,
         )
 
     def get_data_pulse_id_range(
@@ -2037,6 +2150,7 @@ class DataHub(Assembly):
         bins=None,
         last_before=False,
         column_names="channel",
+        max_bins=MAX_BINS_DEFAULT,
     ):
         """Retrieve historical data between pulse ids `start` and `end`. If
         `end` is not given, it defaults to the current pulse id (from this
@@ -2105,6 +2219,7 @@ class DataHub(Assembly):
             bins=bins,
             last_before=last_before,
             column_names=column_names,
+            max_bins=max_bins,
         )
 
     def get_live_data(
