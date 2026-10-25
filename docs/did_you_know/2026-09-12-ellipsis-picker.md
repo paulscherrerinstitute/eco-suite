@@ -7,8 +7,8 @@ details: command_history
 # Type `...` and Tab to pick a device instead of typing its path
 
 ```text
-In [1]: (1 / ...<TAB>        -> Recent, Recommended (most used) and the whole namespace
-In [1]: ...h<TAB>            -> your previous commands
+In [1]: (1 / ...<TAB>    # recent, most used, namespace
+In [1]: ...h<TAB>        # your previous commands
 ```
 
 The pick is inserted at the cursor and nothing runs until you press Enter. A

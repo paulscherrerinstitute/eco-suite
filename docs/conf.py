@@ -141,3 +141,33 @@ html_theme_options = {
         "color-brand-content": "#4aa8e0",
     },
 }
+
+
+# -- "Did you know?" random-tip page -----------------------------------------
+
+def _write_random_tip_page(app, exception):
+    """Write did_you_know/random.html: one random tip with no sidebar, for a
+    small browser window. The page itself is _templates/random_tip.html; the
+    list of tips is filled in here because it changes with every new file."""
+    if exception is not None or app.builder.format != "html":
+        return
+    import json
+
+    tips = [
+        {
+            "page": docname.split("/", 1)[1] + app.builder.out_suffix,
+            "title": app.env.titles[docname].astext(),
+        }
+        for docname in sorted(app.env.found_docs)
+        if docname.startswith("did_you_know/20")
+    ]
+    with open(os.path.join(app.confdir, "_templates", "random_tip.html")) as f:
+        page = f.read().replace("__TIPS__", json.dumps(tips, indent=1))
+    out_dir = os.path.join(app.outdir, "did_you_know")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "random.html"), "w") as f:
+        f.write(page)
+
+
+def setup(app):
+    app.connect("build-finished", _write_random_tip_page)

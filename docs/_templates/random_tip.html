@@ -1,0 +1,93 @@
+<!doctype html>
+<!-- Template for did_you_know/random.html, written after each html build by
+     docs/conf.py (_write_random_tip_page). __TIPS__ is replaced by the list
+     of tips. Shows one tip with no sidebar or header, for a small window:
+       chromium --app=http://<host>:8095/did_you_know/random.html --window-size=560,460
+     ?tip=<file name without .html> shows that one tip instead. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eco: did you know?</title>
+<link rel="stylesheet" href="../_static/pygments.css">
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --accent: #0071bc;
+          --code-bg: #f6f8fa; --border: #d0d7de; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181c; --fg: #e6e6e6; --muted: #9aa0a6; --accent: #4aa8e0;
+            --code-bg: #202329; --border: #33363d; }
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         padding: 14px 18px 64px; }
+  .kicker { color: var(--accent); font-weight: 600; font-size: 13px;
+            letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+  h1 { font-size: 19px; line-height: 1.3; margin: 0 0 10px; }
+  a { color: var(--accent); }
+  p { margin: 0 0 10px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+        padding: 8px 10px; overflow-x: auto; font-size: 13px; margin: 0 0 10px; }
+  code { font-size: 90%; }
+  .headerlink, .copybtn { display: none; }
+  .highlight { background: none; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px;
+        align-items: center; padding: 10px 18px; background: var(--bg);
+        border-top: 1px solid var(--border); font-size: 13px; }
+  nav .count { color: var(--muted); margin-right: auto; }
+  button, nav a.button { font: inherit; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+        border: 1px solid var(--border); background: var(--code-bg); color: var(--fg);
+        text-decoration: none; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+<div class="kicker">Did you know?</div>
+<main id="tip">Loading…</main>
+<nav>
+  <span class="count" id="count"></span>
+  <a class="button" id="full" href="index.html" target="_blank">All tips</a>
+  <button class="primary" id="next">Another tip</button>
+</nav>
+<script>
+const TIPS = __TIPS__;   // [{"page": "2026-09-12-ellipsis-picker.html", "title": "..."}]
+let current = -1;
+
+function pick() {
+  const wanted = new URLSearchParams(location.search).get("tip");
+  if (wanted && current < 0) {
+    const i = TIPS.findIndex(t => t.page === wanted + ".html" || t.page === wanted);
+    if (i >= 0) return i;
+  }
+  if (TIPS.length < 2) return 0;
+  let i;
+  do { i = Math.floor(Math.random() * TIPS.length); } while (i === current);
+  return i;
+}
+
+async function show(i) {
+  current = i;
+  const tip = TIPS[i];
+  const box = document.getElementById("tip");
+  try {
+    const html = await (await fetch(tip.page)).text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const article = doc.querySelector("article") || doc.body;
+    // links in a tip are relative to its own page, which sits next to this one;
+    // open them in the normal browser, not in this small window
+    article.querySelectorAll("a[href]").forEach(a => {
+      if (!a.classList.contains("headerlink")) a.target = "_blank";
+    });
+    box.innerHTML = article.innerHTML;
+  } catch (e) {
+    box.innerHTML = `<h1>${tip.title}</h1><p><a href="${tip.page}" target="_blank">Open this tip</a></p>`;
+  }
+  document.getElementById("full").href = tip.page;
+  document.getElementById("full").textContent = "Open in docs";
+  document.getElementById("count").textContent = `${i + 1} of ${TIPS.length}`;
+}
+
+document.getElementById("next").onclick = () => show(pick());
+show(pick());
+</script>
+</body>
+</html>
