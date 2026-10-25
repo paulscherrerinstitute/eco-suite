@@ -119,6 +119,7 @@ it the way this module now does.
 
 from datetime import datetime
 from pathlib import Path
+import threading
 from threading import Event
 from time import time as _time
 
@@ -126,6 +127,7 @@ import numpy as np
 
 from eco.acquisition import peak_analysis as _peak
 from eco.acquisition.utilities import Acquisition
+from eco.utilities import mainthread
 from eco.aliases import Alias
 
 
@@ -626,6 +628,9 @@ class BsStreamCounter:
         if analysis is not None and analysis.summary():
             print(analysis.summary())
 
+    # the live plot (and its redraw QTimer) lives on the main thread, also
+    # when the scan runs on a queue's worker thread
+    @mainthread.on_main
     def _start_live_plot(self, ndim):
         self._plot = None
         if not self.live_plot or ndim != 1 or len(self._channels) != 1:
@@ -667,11 +672,7 @@ class BsStreamCounter:
             # scan's final result stays visible instead of continuing to
             # "update" against the fresh, empty standalone bins
             # _build_bins() is about to create.
-            try:
-                self._plot.replot()  # one last redraw with the true final data
-                self._plot.stop()
-            except Exception:
-                pass
+            self._stop_live_plot()
         self._teardown_bins()
         self._build_bins()
 
@@ -856,6 +857,14 @@ class BsStreamCounter:
             self._new_data.wait(timeout=0.05)
             self._new_data.clear()
 
+    @mainthread.on_main
+    def _stop_live_plot(self):
+        try:
+            self._plot.replot()  # one last redraw with the true final data
+            self._plot.stop()
+        except Exception:
+            pass
+
     def _flush_live_plot(self):
         """Process this counter's live-plot figure's pending GUI events
         (paints, and its own redraw ``QTimer``'s callback).
@@ -882,8 +891,8 @@ class BsStreamCounter:
         catch up once the scan call returns and control is handed back to
         the normal event loop.
         """
-        if self._plot is None:
-            return
+        if self._plot is None or threading.current_thread() is not threading.main_thread():
+            return  # off the main thread (a queue): the heartbeat services Qt
         try:
             self._plot.fig.canvas.flush_events()
         except Exception:

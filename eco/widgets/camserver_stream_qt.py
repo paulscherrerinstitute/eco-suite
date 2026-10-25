@@ -42,6 +42,13 @@ Feature set (one instance = one camera/pipeline):
     pipeline); a built-in --kind demo source with --demo-color can
     generate a synthetic color test stream on demand with no cam_server
     dependency, for exercising this path without a real color camera
+  - state readable from the session: cursor/marker/ROI in raw-frame
+    pixels, the pipeline's own scalar outputs (center of mass, FWHM, fit
+    parameters, ... -- whatever arrives with the image), and center of
+    mass/FWHM of what is shown inside the ROI; as state() or as
+    Detector-protocol readout(key)s for scans and strip plots. An
+    in-process viewer keeps all of it current while the session is busy
+    (see eco.utilities.mainthread)
 
 The render-pipeline core (FrameProcessor, normalize_to_uint8,
 array_to_qimage, compute_roi_from_drag) is plain numpy, Qt- and
@@ -773,8 +780,61 @@ class ScreenpanelAnalysis:
         self._live.stop()
 
 
+def scalar_fields(data, image_channel="image"):
+    """{name: value} for every scalar (0-d) channel of one bsread message's
+    data dict besides the image -- for a "_sp"/processing pipeline that is
+    its analysis output (x/y_center_of_mass, x/y_fwhm, x/y_fit_*, x/y_rms,
+    intensity, ...), sent on the same message as the image."""
+    fields = {}
+    for name, value in data.items():
+        if name == image_channel or value is None or value.value is None:
+            continue
+        if np.ndim(value.value) == 0:
+            fields[name] = value.value
+    return fields
+
+
+def projection_stats(values):
+    """Center of mass and FWHM of the two projections of a 2-D array, in its
+    own pixel coordinates: {"x_com", "y_com", "x_fwhm", "y_fwhm", "sum"}.
+    Each projection's minimum is taken as its background. The FWHM is the
+    distance between the outermost half-maximum crossings, linearly
+    interpolated; None where it is undefined (flat or empty projection)."""
+    values = np.asarray(values, dtype=np.float64)
+    if values.ndim != 2 or values.size == 0:
+        return {"x_com": None, "y_com": None, "x_fwhm": None, "y_fwhm": None, "sum": None}
+    stats = {"sum": float(values.sum())}
+    for axis, key in ((0, "x"), (1, "y")):
+        profile = values.sum(axis=axis)
+        profile = profile - profile.min()
+        total = profile.sum()
+        if total <= 0:
+            stats[f"{key}_com"] = stats[f"{key}_fwhm"] = None
+            continue
+        stats[f"{key}_com"] = float((profile * np.arange(profile.size)).sum() / total)
+        stats[f"{key}_fwhm"] = _fwhm(profile)
+    return stats
+
+
+def _fwhm(profile):
+    half = profile.max() / 2.0
+    above = np.nonzero(profile >= half)[0]
+    if above.size == 0 or profile.max() <= 0:
+        return None
+    first, last = above[0], above[-1]
+
+    def crossing(i_out, i_in):
+        # linear interpolation between an index below and one at/above half max
+        y_out, y_in = profile[i_out], profile[i_in]
+        return i_in + (i_out - i_in) * (y_in - half) / (y_in - y_out) if y_in != y_out else float(i_in)
+
+    left = crossing(first - 1, first) if first > 0 else float(first)
+    right = crossing(last + 1, last) if last < profile.size - 1 else float(last)
+    return float(right - left)
+
+
 class _StreamBridge(QtCore.QObject):
-    frame_ready = QtCore.Signal(object)  # (array, pulse_id)
+    frame_ready = QtCore.Signal(object)  # (array, pulse_id, scalar fields dict)
     status = QtCore.Signal(str)
     error = QtCore.Signal(str)
 
@@ -838,10 +898,13 @@ class _StreamWorker(threading.Thread):
                     message = source.receive()
                     if message is None:
                         continue
-                    value = message.data.data.get(self.image_channel)
+                    data = message.data.data
+                    value = data.get(self.image_channel)
                     if value is None or value.value is None:
                         continue
-                    self.bridge.frame_ready.emit((value.value, message.data.pulse_id))
+                    self.bridge.frame_ready.emit(
+                        (value.value, message.data.pulse_id, scalar_fields(data, self.image_channel))
+                    )
         except Exception as exc:
             if not self._stop_event.is_set():
                 self.bridge.error.emit(str(exc))
@@ -896,7 +959,9 @@ class _DemoWorker(threading.Thread):
                 frame = np.clip(rgb / 60000 * 255, 0, 255).astype(np.uint8)
             pulse_id += 1
             t += 1
-            self.bridge.frame_ready.emit((frame, pulse_id))
+            # what a "_sp" pipeline would publish alongside the image
+            fields = {"x_center_of_mass": float(cx), "y_center_of_mass": float(cy)}
+            self.bridge.frame_ready.emit((frame, pulse_id, fields))
             self._stop_event.wait(interval)
 
 
@@ -1351,6 +1416,8 @@ class CamServerStreamQt:
         self._worker = None
         self._processor = FrameProcessor()
         self._latest_payload = None
+        self._pulse_id = None
+        self._pipeline_fields = {}  # the stream's own scalar channels, see scalar_fields()
         self._last_display_array = None
         self._last_values_array = None  # pre-colormap values, for the cursor readout
         self._last_stats = None  # for the "Fix range" button
@@ -1392,6 +1459,12 @@ class CamServerStreamQt:
         from eco.widgets.qt_theme import apply_modern_theme
 
         apply_modern_theme(self.theme)
+
+        # keep rendering while the session's main thread is busy (a move, a
+        # scan, ...) -- see eco.utilities.mainthread
+        from eco.utilities import mainthread
+
+        mainthread.install_qt()
 
         # QMainWindow (not a bare QWidget) on purpose: it's what gives us
         # a real, overflow-capable QToolBar (a row of stacked QPushButtons
@@ -2270,6 +2343,99 @@ class CamServerStreamQt:
     def _on_hover(self, x, y):
         self._hover_pos = (x, y)
 
+    # -- state readable from the session -------------------------------------
+    # Plain attributes the render tick writes on the main thread, which is
+    # also the session's own thread for an in-process viewer: reading them
+    # needs no locking, and with eco.utilities.mainthread they keep updating
+    # while the session is busy. Coordinates are raw-frame pixels (the
+    # displayed image may be ROI-cropped; the offset is added back here).
+
+    def _to_raw(self, pos):
+        if pos is None:
+            return None
+        roi = self._processor.roi
+        if roi is None:
+            return pos
+        return pos[0] + roi[0], pos[1] + roi[1]
+
+    @property
+    def cursor(self):
+        """(x, y) raw-frame pixel under the mouse pointer, or None."""
+        return self._to_raw(self._hover_pos)
+
+    @property
+    def marker(self):
+        """(x, y) raw-frame pixel of the placed marker, or None."""
+        return self._to_raw(self._marker_pos)
+
+    @property
+    def roi(self):
+        """(x, y, width, height) of the client-side ROI in raw-frame pixels,
+        or None for the full frame."""
+        return self._processor.roi
+
+    @property
+    def pipeline_fields(self):
+        """The stream's own scalar channels for the frame shown last -- for a
+        "_sp"/processing pipeline its analysis output: x/y_center_of_mass,
+        x/y_fwhm, x/y_fit_*, x/y_rms, intensity, ... (empty for a plain
+        pipeline, see ScreenpanelAnalysis's CAVEAT)."""
+        return dict(self._pipeline_fields)
+
+    def roi_stats(self):
+        """Center of mass and FWHM of what the viewer currently shows (inside
+        the ROI, after averaging/background subtraction), computed here from
+        the displayed values rather than by the pipeline: {"x_com", "y_com",
+        "x_fwhm", "y_fwhm", "sum"}, com in raw-frame pixels. None for color
+        frames or before the first frame."""
+        stats = self._last_stats
+        values = self._last_values_array
+        if stats is None or values is None or stats.get("color"):
+            return None
+        result = projection_stats(values)
+        ox, oy = (self.roi or (0, 0, 0, 0))[:2]
+        if result["x_com"] is not None:
+            result["x_com"] += ox
+        if result["y_com"] is not None:
+            result["y_com"] += oy
+        return result
+
+    def state(self, roi_stats=True):
+        """Everything above in one dict, plus the frame's pulse_id/shape/
+        min/max, the value under the cursor, the render rate and the
+        calibration (scale per raw pixel and unit; "px" = uncalibrated).
+        roi_stats=False skips computing roi_stats() (a few ms on a large
+        ROI)."""
+        stats = self._last_stats or {}
+        cursor_value = None
+        if self._hover_pos is not None and self._last_values_array is not None:
+            hx, hy = self._hover_pos
+            arr = self._last_values_array
+            if 0 <= hy < arr.shape[0] and 0 <= hx < arr.shape[1] and arr.ndim == 2:
+                cursor_value = float(arr[hy, hx])
+        return {
+            "pulse_id": self._pulse_id,
+            "fps": self._last_fps,
+            "shape": stats.get("shape"),
+            "min": stats.get("min"),
+            "max": stats.get("max"),
+            "cursor": self.cursor,
+            "cursor_value": cursor_value,
+            "marker": self.marker,
+            "roi": self.roi,
+            "roi_stats": self.roi_stats() if roi_stats else None,
+            "calibration": (self._cal_scale_x, self._cal_scale_y, self._cal_unit),
+            "pipeline_fields": self.pipeline_fields,
+        }
+
+    def readout(self, key):
+        """A Detector (get_current_value()) for one value of this viewer, for
+        use in a scan, a strip plot or as a tweak detector: a key of
+        state() ("cursor", "max", ...), of roi_stats() ("x_com", "x_fwhm",
+        ...), or of pipeline_fields ("x_center_of_mass", "intensity", ...).
+        Reads None while the value is not available."""
+        return _ViewerReadout(self, key)
+
     # -- rendering ---------------------------------------------------------
 
     def _on_frame_ready(self, payload):
@@ -2278,7 +2444,9 @@ class CamServerStreamQt:
     def _render_tick(self):
         if self.window is None or self._latest_payload is None:
             return
-        array, pulse_id = self._latest_payload
+        array, pulse_id, fields = self._latest_payload
+        self._pulse_id = pulse_id
+        self._pipeline_fields = fields
         try:
             display, stats = self._processor.process(array)
             qimage = array_to_qimage(display).copy()
@@ -2494,6 +2662,27 @@ class CamServerStreamQt:
             except Exception:
                 pass
             self.window = None
+
+
+class _ViewerReadout:
+    """See CamServerStreamQt.readout(). `.name` labels strip-plot traces."""
+
+    def __init__(self, viewer, key):
+        self._viewer = viewer
+        self.key = key
+        self.name = f"{viewer.eco_name or viewer.name}.{key}"
+
+    def get_current_value(self):
+        viewer = self._viewer
+        if self.key in viewer._pipeline_fields:
+            return viewer._pipeline_fields[self.key]
+        if self.key in ("x_com", "y_com", "x_fwhm", "y_fwhm", "sum"):
+            stats = viewer.roi_stats()
+            return None if stats is None else stats[self.key]
+        return viewer.state(roi_stats=self.key == "roi_stats").get(self.key)
+
+    def __repr__(self):
+        return f"<viewer readout {self.name!r}>"
 
 
 def make_camserver_stream_qt(

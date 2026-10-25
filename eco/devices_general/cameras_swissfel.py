@@ -334,14 +334,12 @@ def _spawn_separate_process_viewer(
     embedding" project memory. Prefer this whenever you don't need docking
     and have seen that class of glitch.
 
-    Why a separate process at all (either way): Qt's event loop is only
-    pumped between IPython prompts (via the terminal's GUI-integration
-    hook, same as eco.utilities.strip_plot's own module docstring explains
-    for exactly this reason). A viewer built in-process therefore freezes
-    -- both its live image updates and the whole window's responsiveness
-    -- for the duration of any single blocking statement in this session
-    (a synchronous motor move, a long scan, ...). A separate-process viewer
-    has its own independent event loop untouched by that.
+    Why a separate process at all (either way): it is no longer needed to
+    keep the viewer live while this session blocks -- the in-process
+    default is serviced by eco.utilities.mainthread's heartbeat then. What
+    a separate process still buys is isolation: its own CPU, its own event
+    loop untouched even by a long C call on this session's main thread,
+    and a Qt crash that can't take the session down with it.
 
     `name`: the eco device's own alias name (e.g. "bernina.cam1", NOT the
     same as `pvname`) -- used for the window title and passed through as
@@ -540,8 +538,8 @@ class CameraBasler(Assembly):
     # property grid -- mirrors eco.devices_general.cameras_ptz.AxisPTZ. See
     # Assembly._default_widget/_widget_viewer() below.
     _default_widget = "_widget_viewer"
-    # The viewer runs in a separate process by default (see
-    # _widget_viewer's separate_process=True default), but stays standalone
+    # The viewer runs in this process by default (see _widget_viewer's
+    # separate_process=False default), and stays standalone
     # unless the caller explicitly opts in with widget(dock_in=True) --
     # docking by default surprised users starting eco plainly (a viewer
     # they never asked to dock, docking anyway). dock_in=True still gets
@@ -889,19 +887,30 @@ class CameraBasler(Assembly):
         rate_hz=10.0,
         theme=None,
         auto_start=True,
-        separate_process=True,
+        separate_process=False,
         dockable=True,
     ):
         """Open the live cam_server viewer for this camera's own default
         processing pipeline (resolved automatically from self.pvname).
 
-        separate_process=True (the default): runs in its own OS process, so
-        it keeps updating/responding even while this session is blocked
-        (a motor move, a scan, ...). Costs ~10-15s to start (a fresh process
-        importing eco) and its "Camera Settings" button opens an
-        independent camera object talking directly to EPICS/cam_server --
-        not this one, so e.g. camera.screenpanel_ana state set here isn't
-        reflected there.
+        separate_process=False (the default): builds the viewer in this
+        process -- starts instantly, docks natively into the eco desktop,
+        and `cam=self` is the exact same object (screenpanel_ana etc. all
+        tied to it; the viewer's state is readable directly from the
+        session). It keeps updating and responding while this session is
+        busy (a synchronous motor move, a scan, ...) because
+        eco.utilities.mainthread's heartbeat services the Qt event loop
+        then; only a single long C call on the main thread (a large numpy
+        operation) still pauses it until that call returns. With the
+        heartbeat disabled (ECO_NO_HEARTBEAT=1) it freezes for the duration
+        of any blocking statement, as it used to.
+
+        separate_process=True: runs in its own OS process, fully isolated
+        from this session (its own CPU, a Qt crash can't take the session
+        down). Costs ~10-15s to start (a fresh process importing eco) and
+        its "Camera Settings" button opens an independent camera object
+        talking directly to EPICS/cam_server -- not this one, so e.g.
+        camera.screenpanel_ana state set here isn't reflected there.
 
           dockable=True (the default): standalone window unless you pass
           widget(dock_in=True) to dock it into the shared EcoDesktopApp
@@ -917,18 +926,8 @@ class CameraBasler(Assembly):
           independent, WM-managed top-level window that can never be
           dockable (widget(dock_in=True) then silently no-ops), but immune
           to the reparenting glitches above. Prefer this if you've hit that
-          class of display bug and don't need docking; separate_process=
-          False (below) is the other way around it, if you don't need a
-          separate process either.
-
-        separate_process=False: builds the viewer in this process instead --
-        starts instantly, no subprocess/X11-embedding involved so no risk
-        of the display glitches above, and `cam=self` is the exact same
-        object (screenpanel_ana etc. all tied to it). Trade-off: the viewer
-        freezes (no repaint, no clicks) for the duration of any blocking
-        statement in this session (a synchronous motor move, a long scan,
-        ...) -- prefer this whenever you're just looking at the image and
-        not about to run something long alongside it."""
+          class of display bug and don't need docking; the in-process
+          default is the other way around it."""
         alias = getattr(self, "alias", None)
         name = alias.get_full_name() if alias is not None else None
 
@@ -1171,7 +1170,7 @@ class CameraPCO(Assembly):
         rate_hz=10.0,
         theme=None,
         auto_start=True,
-        separate_process=True,
+        separate_process=False,
         dockable=True,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's

@@ -102,6 +102,8 @@ class FakeScan:
 
 
 class FakeQueue:
+    """Stands in for eco.utilities.task_queue.TaskQueue."""
+
     def __init__(self, name="default"):
         self.name = name
         self.pause_calls = 0
@@ -111,26 +113,25 @@ class FakeQueue:
         self.stop_current_calls = 0
         self.saved = []
         self.resume_from_file_calls = []
-        self._status = {"name": name, "paused": False, "current": None, "pending": []}
-
-    def status(self):
-        return dict(self._status, pending=list(self._status["pending"]))
+        self.current = None
+        self.pending = []
+        self.paused = False
 
     def pause(self):
         self.pause_calls += 1
-        self._status["paused"] = True
+        self.paused = True
 
     def resume(self):
         self.resume_calls += 1
-        self._status["paused"] = False
+        self.paused = False
 
-    def pause_current(self):
+    def pause_running_task(self):
         self.pause_current_calls += 1
 
-    def resume_current(self):
+    def resume_running_task(self):
         self.resume_current_calls += 1
 
-    def stop_current(self):
+    def stop_running_task(self):
         self.stop_current_calls += 1
 
     def save_paused(self, item, path):
@@ -456,7 +457,7 @@ def test_scan_queue_panel_poll_updates_status_and_progress(qapp):
         scan = FakeScan(total=5, done=2, readbacks=[[0.0], [0.5]], adjustables=[motor])
         item = FakeQueueItem(state="running", scan=scan)
         panel.track_item(item)
-        queue._status["current"] = repr(item)
+        queue.current = item
         panel._poll()
         assert panel.progress.maximum() == 5
         assert panel.progress.value() == 2
@@ -584,7 +585,7 @@ def test_scan_launcher_qt_run_submits_through_queue(qapp):
         name, args, kwargs = scans.calls[0]
         assert name == "ascan"
         assert args[0] is motor
-        assert kwargs["scan_queue"] == "default"
+        assert kwargs["queue"] == "default"
         assert len(launcher.queue_panel._tracked) == 1
         assert "Submitted" in launcher.status_label.text()
     finally:

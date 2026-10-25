@@ -372,9 +372,10 @@ def test_stream_worker_emits_decoded_frames_and_stops_cleanly(monkeypatch):
 
     assert not worker.is_alive()
     assert len(bridge.frame_ready.calls) >= 3
-    array, pulse_id = bridge.frame_ready.calls[0]
+    array, pulse_id, fields = bridge.frame_ready.calls[0]
     assert array.shape == (2, 2)
     assert pulse_id == 1
+    assert fields == {}
     assert FakeSource.instances[0].host == "fake-host"
     assert FakeSource.instances[0].port == 1234
     assert bridge.status.calls == ["connected to tcp://fake-host:1234"]
@@ -1358,3 +1359,74 @@ def test_load_camera_calibration_skipped_when_no_camera():
         assert gui._reticle_center is None
     finally:
         gui.stop()
+
+
+# -- viewer state readable from the session (cursor/ROI/COM/FWHM, pipeline fields) --
+
+
+def test_scalar_fields_keeps_scalars_and_drops_the_image_and_arrays():
+    from eco.widgets.camserver_stream_qt import scalar_fields
+
+    class V:
+        def __init__(self, value):
+            self.value = value
+
+    data = {
+        "image": V(np.zeros((3, 3))),
+        "x_center_of_mass": V(12.5),
+        "x_profile": V(np.arange(5)),
+        "intensity": V(np.float64(3.0)),
+        "missing": V(None),
+        "processing_parameters": V("{}"),
+    }
+    assert scalar_fields(data) == {
+        "x_center_of_mass": 12.5,
+        "intensity": 3.0,
+        "processing_parameters": "{}",
+    }
+
+
+def test_projection_stats_of_a_gaussian():
+    from eco.widgets.camserver_stream_qt import projection_stats
+
+    yy, xx = np.mgrid[0:200, 0:300]
+    sigma_x, sigma_y = 10.0, 6.0
+    image = 1000 * np.exp(-((xx - 120.0) ** 2 / (2 * sigma_x**2) + (yy - 70.0) ** 2 / (2 * sigma_y**2)))
+    stats = projection_stats(image)
+    assert stats["x_com"] == pytest.approx(120.0, abs=0.05)
+    assert stats["y_com"] == pytest.approx(70.0, abs=0.05)
+    assert stats["x_fwhm"] == pytest.approx(2.3548 * sigma_x, rel=0.01)
+    assert stats["y_fwhm"] == pytest.approx(2.3548 * sigma_y, rel=0.01)
+
+
+def test_projection_stats_of_a_flat_image_is_undefined():
+    from eco.widgets.camserver_stream_qt import projection_stats
+
+    stats = projection_stats(np.ones((10, 10)))
+    assert stats["x_com"] is None and stats["x_fwhm"] is None
+    assert stats["sum"] == 100.0
+
+
+def test_viewer_state_reports_raw_frame_coordinates_and_readouts():
+    pytest.importorskip("qtpy")
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False)
+    image = np.zeros((100, 200))
+    image[40:60, 120:140] = 10.0
+    gui._last_values_array = image[30:80, 100:180]  # what the viewer shows inside the ROI
+    gui._last_stats = {"color": False, "shape": image.shape, "min": 0.0, "max": 10.0}
+    gui._processor.set_roi((100, 30, 80, 50))
+    gui._hover_pos = (5, 7)
+    gui._marker_pos = (20, 10)
+    gui._pipeline_fields = {"x_center_of_mass": 129.5}
+
+    state = gui.state()
+    assert state["cursor"] == (105, 37)
+    assert state["marker"] == (120, 40)
+    assert state["roi"] == (100, 30, 80, 50)
+    assert state["cursor_value"] == 0.0
+    assert state["roi_stats"]["x_com"] == pytest.approx(129.5)
+    assert state["roi_stats"]["y_com"] == pytest.approx(49.5)
+    assert gui.readout("x_center_of_mass").get_current_value() == 129.5
+    assert gui.readout("x_fwhm").get_current_value() == pytest.approx(20.0, abs=1.0)
+    assert gui.readout("marker").get_current_value() == (120, 40)
+    assert gui.readout("not_there").get_current_value() is None

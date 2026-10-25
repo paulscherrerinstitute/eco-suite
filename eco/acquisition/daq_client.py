@@ -29,6 +29,7 @@ from ..utilities.path_alias import PathAlias
 
 # from ..acquisition.decorators import scannable
 import inputimeout
+from eco.utilities import user_input
 from IPython import get_ipython
 from os.path import relpath
 
@@ -1294,7 +1295,7 @@ class Daq(Assembly):
             if nam in channels_to_check:
                 print(f"{nam}  :  {chs.get_current_value()}")
         try:
-            o = inputimeout.inputimeout(
+            o = user_input.input_timeout(
                 prompt=f"Press Ctrl-c to abort, Return to continue, or wait {channels_check_timeout} seconds",
                 timeout=channels_check_timeout,
             )
@@ -1736,7 +1737,7 @@ class Daq(Assembly):
             timeout = self.status_server_stale_timeout
             print(colorama.Fore.YELLOW + msg + colorama.Fore.RESET)
             try:
-                answer = inputimeout.inputimeout(
+                answer = user_input.input_timeout(
                     prompt=(
                         f"Restart it now and wait (a few minutes), or use this "
                         f"session's namespace? [R/l] "

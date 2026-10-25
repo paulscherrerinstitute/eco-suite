@@ -1,6 +1,6 @@
 """
 Qt scan launcher: build and submit eco.acquisition.scan.Scans scans through
-eco.acquisition.scan_queue.ScanQueue, from a Qt form with device pickers --
+a named eco.utilities.task_queue.TaskQueue, from a Qt form with device pickers --
 the desktop/dashboard counterpart of eco.widgets.scan_widget.ScanWidget
 (its ipywidgets/Jupyter equivalent).
 
@@ -13,9 +13,9 @@ ComponentSelectorQt (eco.widgets.component_selector_qt) via a compact
 eco.widgets.component_picker_widget.ComponentPickerWidget's compact-field
 trick yet, only the always-expanded browse panel.
 
-Unlike ScanWidget, Run always submits through a named ScanQueue (default
-"default") rather than calling the scan method directly -- every method
-here is called with scan_queue=<name>, so the queue panel (pause/resume the
+Unlike ScanWidget, Run always submits through a named TaskQueue (default
+"default", the same queues %queue uses) rather than calling the scan method
+directly -- every method here is called with queue=<name>, so the queue panel (pause/resume the
 queue itself, pause/resume/stop the item currently running, save a paused
 item's remaining work to disk and resume it later from a picked-counters
 dialog) is always meaningful for whatever Run just launched, not a
@@ -864,14 +864,13 @@ def _build_generic_form_qt(method):
 
 
 class ScanQueuePanel(QtWidgets.QWidget):
-    """Status + controls for one ScanQueue: pause/resume the queue itself
+    """Status + controls for one TaskQueue: pause/resume the queue itself
     (don't start the next item), pause/resume/stop whatever's running right
     now, save a paused item's remaining work to disk and resume it later,
     and a live progress bar + per-step readback plot for whatever this
-    panel most recently submitted. Polls queue.status() (and, for anything
-    finer-grained than status()'s repr strings, the tracked QueueItems
-    themselves) on a QTimer -- ScanQueue has no push/callback channel for
-    this today."""
+    panel most recently submitted. Polls the queue's current/pending tasks
+    (and the tracked Tasks themselves) on a QTimer -- TaskQueue has no
+    push/callback channel for this today."""
 
     POLL_INTERVAL_MS = 500
 
@@ -881,7 +880,7 @@ class ScanQueuePanel(QtWidgets.QWidget):
         self.root = root
         self.bookmarks = bookmarks
         self.recent = recent
-        self._tracked: List[Any] = []  # QueueItems submitted via this panel
+        self._tracked: List[Any] = []  # Tasks submitted via this panel
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel(f"<b>Queue: {queue.name}</b>"))
@@ -908,10 +907,10 @@ class ScanQueuePanel(QtWidgets.QWidget):
         # lesson learned the hard way in camserver_stream_qt.py's toolbar,
         # which had the analogous bug)
         pause_current_btn = QtWidgets.QPushButton("Pause current")
-        pause_current_btn.clicked.connect(self.queue.pause_current)
+        pause_current_btn.clicked.connect(self.queue.pause_running_task)
         layout.addWidget(pause_current_btn)
         resume_current_btn = QtWidgets.QPushButton("Resume current")
-        resume_current_btn.clicked.connect(self.queue.resume_current)
+        resume_current_btn.clicked.connect(self.queue.resume_running_task)
         layout.addWidget(resume_current_btn)
         stop_current_btn = QtWidgets.QPushButton("Stop current")
         stop_current_btn.clicked.connect(self._on_stop_current)
@@ -957,9 +956,8 @@ class ScanQueuePanel(QtWidgets.QWidget):
         self._poll()
 
     def track_item(self, item):
-        """Register a QueueItem this panel submitted, so progress/plot/save
-        can find it -- ScanQueue.status() only exposes repr strings, not the
-        item objects themselves."""
+        """Register a Task this panel submitted, so progress/plot/save can
+        find it among everything else the queue may hold."""
         self._tracked.append(item)
         del self._tracked[:-20]  # bounded history
 
@@ -989,7 +987,7 @@ class ScanQueuePanel(QtWidgets.QWidget):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
         )
         if reply == QtWidgets.QMessageBox.Yes:
-            self.queue.stop_current()
+            self.queue.stop_running_task()
 
     def _paused_item_for_save(self):
         for item in reversed(self._tracked):
@@ -1059,9 +1057,10 @@ class ScanQueuePanel(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Resume from file", f"Failed: {exc}")
 
     def _poll(self):
-        status = self.queue.status()
-        self.current_label.setText(f"Current: {status['current'] or '(idle)'}")
-        pending = status["pending"]
+        current = self.queue.current
+        pending = [repr(task) for task in self.queue.pending]
+        paused = " (queue paused)" if self.queue.paused else ""
+        self.current_label.setText(f"Current: {repr(current) if current is not None else '(idle)'}{paused}")
         self.pending_label.setText(f"Pending: {len(pending)}")
         self.pending_list.clear()
         self.pending_list.addItems(pending)
@@ -1149,7 +1148,7 @@ class _CurrentPageStackedWidget(QtWidgets.QStackedWidget):
 class ScanLauncherQt(QtWidgets.QWidget):
     """Build-and-submit form for eco.acquisition.scan.Scans, plus a
     ScanQueuePanel for the queue it submits into. Every Run goes through
-    scan_queue=<queue_name> (default "default") -- never a direct
+    queue=<queue_name> (default "default") -- never a direct
     synchronous call -- so the queue panel's pause/resume/stop/save/resume
     controls are always meaningful for whatever was just launched here."""
 
@@ -1258,7 +1257,7 @@ class ScanLauncherQt(QtWidgets.QWidget):
             return
         try:
             args, kwargs = self._get_call()
-            kwargs["scan_queue"] = self.queue_name
+            kwargs["queue"] = self.queue_name
             item = method(*args, **kwargs)
         except Exception as exc:
             self.status_label.setText(f"Error: {exc}")

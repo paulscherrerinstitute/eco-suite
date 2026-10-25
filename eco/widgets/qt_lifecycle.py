@@ -48,12 +48,17 @@ def close_calls_stop(window, stop_fn):
     original_close_event = window.closeEvent
 
     def _close_event(event):
-        if not state["called"]:
-            state["called"] = True
-            try:
-                stop_fn()
-            except Exception:
-                logger.exception("close-triggered stop() failed")
-        original_close_event(event)
+        from eco.utilities import mainthread
+
+        # no heartbeat ticks while tearing down: a tick here would deliver
+        # events to this half-closed window (see eco.utilities.mainthread)
+        with mainthread.hold():
+            if not state["called"]:
+                state["called"] = True
+                try:
+                    stop_fn()
+                except Exception:
+                    logger.exception("close-triggered stop() failed")
+            original_close_event(event)
 
     window.closeEvent = _close_event

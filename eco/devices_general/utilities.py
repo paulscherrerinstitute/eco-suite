@@ -1,3 +1,4 @@
+import sys
 from threading import Thread
 from ..utilities import PropagatingThread
 
@@ -24,6 +25,24 @@ def _access_gate(parent):
         pass
 
 
+def _claim_gate(parent):
+    """Don't move what a running queue task is using: a write from anywhere
+    else to an adjustable claimed by that task raises
+    eco.utilities.task_queue.MoveBlocked here, before anything moves (its
+    message says how to force the move anyway). Same contract as
+    _access_gate: only the block itself is raised, any other problem in the
+    check is swallowed."""
+    task_queue = sys.modules.get("eco.utilities.task_queue")
+    if task_queue is None or parent is None:
+        return  # no queue in this session: nothing can be claimed
+    try:
+        task_queue.check_claim(parent)
+    except PermissionError:
+        raise
+    except Exception:
+        pass
+
+
 def _recent_gate(parent):
     """Record `parent` as a recently-used component (eco.elements.recent),
     reusing the same write chokepoint as _access_gate -- so the component
@@ -44,6 +63,7 @@ def _recent_gate(parent):
 
 class Changer:
     def __init__(self, target=None, parent=None, changer=None, hold=True, stopper=None):
+        _claim_gate(parent)
         _access_gate(parent)
         _recent_gate(parent)
         self.target = target

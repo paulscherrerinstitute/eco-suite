@@ -110,6 +110,18 @@ def build_inprocess_kernel(kind, label=None, shared_user_ns=None, push_vars=None
     kernel = kernel_manager.kernel
     kernel.gui = "qt"
 
+    # this kernel's cells run on the Qt main thread: let the heartbeat keep
+    # the GUI (this console included) alive while one runs
+    from eco.utilities import mainthread, task_queue, user_input
+
+    mainthread.watch_shell(kernel.shell)
+    # %queue here too, and input() from a queue's worker thread asked on this
+    # (the Qt main) thread instead of through the kernel's stdin channel
+    task_queue.register_magics(kernel.shell)
+    task_queue.send_output_to(kernel.stdout, kernel.stderr)
+    user_input.route_kernel_input(kernel)
+    user_input.install_input_routing()
+
     if shared_user_ns is not None:
         kernel.shell.user_ns = shared_user_ns
     elif push_vars:
@@ -225,12 +237,39 @@ def build_console_widget(kernel_manager, kernel_client, session, banner="", star
     console.kernel_manager = kernel_manager
     console.kernel_client = kernel_client
     console.banner = banner
+    if _is_inprocess(kernel_manager):
+        _wire_inprocess_interrupt(console)
     console.execute("get_ipython().Completer.use_jedi = False", hidden=True)
     console.execute(GUARDED_EVAL_PROXY_PATCH_CODE, hidden=True)
     console.execute(LAZY_COMPLETION_GATE_CODE, hidden=True)
     if startup_code:
         console.execute(startup_code)
     return console
+
+
+def _is_inprocess(kernel_manager):
+    from qtconsole.inprocess import QtInProcessKernelManager
+
+    return isinstance(kernel_manager, QtInProcessKernelManager)
+
+
+def _wire_inprocess_interrupt(console):
+    """Make Ctrl-C (and the console's Interrupt action) interrupt a running
+    cell of an in-process kernel. qtconsole's own path calls
+    kernel_manager.interrupt_kernel(), which an in-process kernel doesn't
+    implement -- and the keypress couldn't even be delivered while the cell
+    blocks the Qt main thread. With eco.utilities.mainthread's heartbeat the
+    keypress *is* delivered, from a tick inside the running cell;
+    _thread.interrupt_main() then raises KeyboardInterrupt in the cell's
+    code once that tick returns (the heartbeat defers SIGINT for exactly
+    this)."""
+    import _thread
+
+    from eco.utilities import mainthread
+
+    mainthread.install_qt()
+    console.custom_interrupt = True
+    console.custom_interrupt_requested.connect(_thread.interrupt_main)
 
 
 def _kernel_process_pid(kernel_manager):

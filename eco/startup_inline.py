@@ -134,6 +134,23 @@ from eco.utilities.lazy_completion import install_lazy_completion_gate
 
 install_lazy_completion_gate()
 
+# Keep Qt windows (camera viewers, plots, the desktop) alive while this
+# session's main thread is busy in a blocking statement -- see
+# eco.utilities.mainthread. ECO_NO_HEARTBEAT=1 turns it off.
+from eco.utilities import mainthread
+
+mainthread.install()
+
+# %queue / %%queue (eco.utilities.task_queue), and input() questions asked
+# from a queue's worker thread shown here on the main thread
+# (eco.utilities.user_input).
+from eco.utilities import task_queue, user_input
+
+user_input.install_input_routing()
+task_queue.register_magics(_ipy)
+queues = task_queue.queues
+forced = task_queue.forced  # `with forced(): mot.mv(...)` -- see task_queue.check_claim
+
 from eco.widgets import kernel_registry
 
 kernel_registry.install_shell_logger(kind="console", label=scope or "console")

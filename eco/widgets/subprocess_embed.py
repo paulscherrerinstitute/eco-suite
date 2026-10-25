@@ -43,10 +43,9 @@ EMBED_TIMEOUT_S = 30.0
 STARTING_NOTE_TEXT = (
     "Starting viewer subprocess...\n"
     "(eco's first import in a fresh process can take ~10-15s)\n\n"
-    "To skip this wait, pass separate_process=False to build the viewer "
-    "in this process instead -- it will then freeze for the duration of "
-    "any blocking call in this session (a synchronous motor move, a long "
-    "scan, ...), which is why that isn't the default."
+    "To skip this wait, leave out separate_process=True: the default "
+    "in-process viewer starts instantly and keeps running during blocking "
+    "calls in this session (see eco.utilities.mainthread)."
 )
 
 

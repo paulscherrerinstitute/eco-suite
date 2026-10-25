@@ -6,6 +6,7 @@ from eco.acquisition.utilities import Acquisition, as_numeric_array
 from eco.acquisition import peak_analysis as _peak
 from eco.elements.protocols import Detector, MonitorableValueUpdate, resolve_lazy
 from eco.utilities.datafiles import ensure_dir, ensure_group_writable
+from eco.utilities import mainthread
 from collections import namedtuple
 from escape import ArrayTimestamps
 from matplotlib.animation import FuncAnimation
@@ -69,6 +70,7 @@ class CounterValue:
         ]
         self.name = name
 
+    @mainthread.on_main  # the animation's timer lives on the main thread
     def stop_animation(self, scan=None, **kwargs):
         """Stop `scan.animation`'s timer for good, without ever raising.
 
@@ -287,6 +289,9 @@ class CounterValue:
         if analysis is not None and analysis.summary():
             print(analysis.summary())
 
+    # figures are created/drawn on the main thread, also when the scan runs
+    # on a queue's worker thread (see eco.utilities.task_queue)
+    @mainthread.on_main
     def plot_arrays(self, scan, **kwargs):
         if not hasattr(scan, "animation"):
 
@@ -469,9 +474,7 @@ class CounterValue:
                 # it too, or it would show a scan whose data was not kept
                 print(f"{self.name}: not writing {plotfilename} either.")
             else:
-                scan.fig.savefig(
-                    plotfilename.as_posix(),
-                )
+                mainthread.on_main(scan.fig.savefig)(plotfilename.as_posix())
                 ensure_group_writable(plotfilename)  # savefig also uses the umask
                 files.append(plotfilename)
             # print(plotfilename, plotfilename.as_posix())

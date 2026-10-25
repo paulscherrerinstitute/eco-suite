@@ -15,6 +15,7 @@ import colorama
 from eco.elements.protocols import Adjustable, is_adjustable, resolve_lazy
 from eco.epics_utils import ca_tuning
 from eco.utilities.datafiles import open_group_writable
+from eco.utilities import mainthread, task_queue, user_input
 from eco.utilities.utilities import (
     NumpyEncoder,
     PropagatingThread,
@@ -40,80 +41,19 @@ ScanNameError = Exception(
 )
 
 
-def _flush_open_figures():
-    """Process pending GUI events (paints, redraw timers) on every currently
-    open matplotlib figure. Cheap no-op if matplotlib/pyplot was never
-    imported (nothing to flush) or a given figure's canvas doesn't support
-    it (a non-interactive backend)."""
-    import sys
-
-    plt = sys.modules.get("matplotlib.pyplot")
-    if plt is None:
-        return
-    for num in plt.get_fignums():
-        try:
-            plt.figure(num).canvas.flush_events()
-        except Exception:
-            pass
-
-
 def _inputimeout_nonblocking(prompt, timeout):
-    """Like ``inputimeout.inputimeout(prompt=, timeout=)``, but doesn't
-    block the calling thread's GUI event loop for the whole wait.
-
-    ``inputimeout`` itself already runs in its own thread here -- what it
-    doesn't do is let *this* (the calling) thread do anything else while it
-    waits, and this is normally called from the interactive session's own
-    main thread, the same one any live-plot window's GUI event loop runs
-    on. A plain blocking call there freezes every open plot window for the
-    whole timeout after every scan, the same class of bug fixed for
-    per-step counter acquisition by ``eco.acquisition.utilities.Acquisition``'s
-    ``on_tick`` -- this mirrors that: poll the read with short joins
-    instead of one blocking wait, flushing every open figure's GUI events
-    between them.
-
-    Raises ``inputimeout.TimeoutOccurred`` on timeout, same as
-    ``inputimeout.inputimeout``.
-    """
-    result = {}
-
-    def _read():
-        try:
-            result["value"] = inputimeout.inputimeout(prompt=prompt, timeout=timeout)
-        except BaseException as e:
-            result["error"] = e
-
-    reader = PropagatingThread(target=_read)
-    reader.start()
-    while reader.is_alive():
-        _flush_open_figures()
-        reader.join(timeout=0.05)
-    if "error" in result:
-        raise result["error"]
-    return result["value"]
+    """The end-of-scan timed question, via eco.utilities.user_input.
+    input_timeout: asked on the main thread with Qt kept alive (a dialog in
+    the desktop); from a queue's worker thread the default is taken at once.
+    Raises ``inputimeout.TimeoutOccurred`` (an InputTimeout) on timeout and
+    KeyboardInterrupt (a QuestionCancelled) on Ctrl-C, as before."""
+    return user_input.input_timeout(prompt, timeout)
 
 
 def _input_nonblocking(prompt):
-    """Like the builtin ``input(prompt)``, but doesn't block the calling
-    thread's GUI event loop while waiting -- same reasoning and mechanism
-    as :func:`_inputimeout_nonblocking`, just without a timeout (the
-    background thread runs until an answer actually arrives)."""
-    result = {}
-
-    def _read():
-        try:
-            result["value"] = input(prompt)
-        except BaseException as e:
-            result["error"] = e
-
-    reader = PropagatingThread(target=_read)
-    reader.start()
-    while reader.is_alive():
-        _flush_open_figures()
-        reader.join(timeout=0.05)
-    if "error" in result:
-        raise result["error"]
-    return result["value"]
+    """A plain question, via eco.utilities.user_input.ask: on the main
+    thread, also when the scan runs on a queue's worker thread."""
+    return user_input.ask(prompt)
 
 
 class RunList(Assembly):
@@ -153,7 +93,7 @@ class StepScan(Assembly):
         super().__init__(name=name)
         self._append(
             DetectorMemory,
-            datetime.now().strftime("%Y-%M-%d %H:%M:%S"),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             name="start_time",
         )
         self._description = description
@@ -182,10 +122,14 @@ class StepScan(Assembly):
         )
 
         self._append(DetectorMemory, len(values), name="number_of_steps")
-        try:
-            scan_command = get_ipython().user_ns["In"][-1]
-        except:
-            scan_command = "unknown"
+        task = task_queue.current_task()
+        if task is not None:  # run from a queue: the prompt's last input is unrelated
+            scan_command = task.source
+        else:
+            try:
+                scan_command = get_ipython().user_ns["In"][-1]
+            except:
+                scan_command = "unknown"
         self._append(DetectorMemory, scan_command, name="scan_command")
 
         # TODO: make Npulses and pulses_per_step general counter arguments that are eihter interpreted by the counter or that are replaced by counter depedent kwargs.
@@ -580,7 +524,7 @@ class StepScan(Assembly):
     def snapshot_remaining(self):
         """A JSON-serializable description of the *not-yet-done* part of
         this scan -- enough to reconstruct a StepScan that finishes it
-        elsewhere (see ``eco.acquisition.scan_queue`` store/resume).
+        elsewhere.
 
         Deliberately does not attempt to capture live counter/adjustable
         state (open CA monitors, in-flight acquisitions, ...) -- resuming
@@ -726,15 +670,20 @@ class StepScan(Assembly):
         if not self._have_run_callbacks_start_scan:
             self.run_callbacks_start_scan()
             self._have_run_callbacks_start_scan = True
+        task_queue.register_scan(self)
         done = False
         steps_remaining = len(self._values_todo)
-        with Progress() as self._progress:
+        # no live progress bar from a queue's worker thread: it would redraw
+        # over the prompt the user is typing at
+        with Progress(disable=task_queue.in_queue()) as self._progress:
             pr_task = self._progress.add_task(
                 "[green]Scanning...", total=steps_remaining
             )
             try:
                 while not done:
-                    self._pause_event.wait()
+                    # sliced while paused, so open Qt windows stay alive (see
+                    # eco.utilities.mainthread.wait_event)
+                    mainthread.wait_event(self._pause_event)
                     if self._stop_requested:
                         break
                     done = not self.do_next_step(step_info=step_info)
@@ -750,7 +699,7 @@ class StepScan(Assembly):
                 self.run_callbacks_end_scan()
 
                 if self.return_at_end == "question":
-                    if _input_nonblocking("Change back to initial values? (y/n)")[0] == "y":
+                    if _input_nonblocking("Change back to initial values? (y/n)").strip()[:1] == "y":
                         chs = self.changeToInitialValues()
                         print("Changing back to value(s) before scan.")
                         for ch in chs:
@@ -854,7 +803,6 @@ class Scans(Assembly):
         # self.checker = checker
         # self._scan_directories = scan_directories
         # self._elog = elog
-        self._queues_container = None
         self._augment_docstrings()
 
     _DOCUMENTED_SCAN_METHODS = (
@@ -944,34 +892,39 @@ class Scans(Assembly):
 
     @property
     def queues(self):
-        """This ``Scans`` instance's own, private named queues --
-        ``scans.queues.default``, ``scans.queues.alignment``, etc, each with
-        its own worker thread (so two different lanes, or two different
-        ``Scans`` instances, run concurrently). See
-        ``eco.acquisition.scan_queue.ScanQueueContainer``. Every scan method
-        also accepts ``scan_queue=`` to route a single call through here
-        without touching ``.queues`` directly -- see ``_route_to_queue``."""
-        if self._queues_container is None:
-            from eco.acquisition.scan_queue import ScanQueueContainer
+        """The session's named task queues (``scans.queues["default"]``, ...)
+        -- the same ones ``%queue`` uses, see eco.utilities.task_queue.
+        Every scan method also accepts ``queue=`` to append itself to one
+        instead of running right away -- see ``_route_to_queue``."""
+        from eco.utilities.task_queue import queues
 
-            self._queues_container = ScanQueueContainer()
-        return self._queues_container
+        return queues
 
-    def _route_to_queue(self, scan_queue, method_name, args, kwargs):
-        """Called at the top of every queueable Scans method. Returns a
-        QueueItem (the caller should return it immediately) if `scan_queue`
+    def _route_to_queue(self, queue, method_name, args, kwargs):
+        """Called at the top of every queueable Scans method. Returns the
+        queued Task (the caller should return it immediately) if `queue`
         requests queuing, or None if the caller should just run normally.
 
-        `scan_queue`: None -> run normally (today's behaviour, unchanged).
-        True or 1 -> the "default" lane. Any other value -> that named lane
-        (auto-created via .queues)."""
-        if scan_queue is None:
+        `queue`: None -> run normally. True or 1 -> the "default" queue. Any
+        other value -> the queue of that name. The scan is test-built
+        (start_immediately=False) and its positions checked against the
+        limits before it is queued -- see TaskQueue.append."""
+        if queue is None:
             return None
-        if scan_queue is True or scan_queue == 1:
-            scan_queue = "default"
-        q = self.queues[scan_queue]
+        if queue is True or queue == 1:
+            queue = "default"
         method = getattr(self, method_name)
-        return q.submit(method, *args, **kwargs)
+        return self.queues[queue].append(method, *args, **kwargs)
+
+    def _set_acquiring_scan(self, scan, **kwargs):
+        """Make `scan` this instance's ``acquiring_scan``. Skipped while a
+        queue's test run builds a scan (start_immediately=False) to check it
+        -- that must not replace the scan that is actually running."""
+        from eco.utilities.task_queue import test_building
+
+        if test_building():
+            return
+        self._append(scan, name="acquiring_scan", overwrite=True, delete_old=True, **kwargs)
 
     def _get_counter_names(self):
         """Get the names of the default counters."""
@@ -1049,11 +1002,11 @@ class Scans(Assembly):
         settling_time=0,
         return_at_end=True,
         step_info=None,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "acquire",
             (N_pulses,),
             dict(
@@ -1095,7 +1048,7 @@ class Scans(Assembly):
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        self._set_acquiring_scan(s)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -1114,11 +1067,11 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         repetitions=1,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "ascan",
             (adjustable, start_pos, end_pos, N_intervals, N_pulses),
             dict(
@@ -1157,7 +1110,7 @@ class Scans(Assembly):
             repetitions=repetitions,
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        self._set_acquiring_scan(s)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -1176,11 +1129,11 @@ class Scans(Assembly):
         return_at_end="timeout",
         name="acquiring_scan",
         repetitions=1,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "ascan_position_list",
             (adjustable, position_list, N_pulses),
             dict(
@@ -1221,7 +1174,7 @@ class Scans(Assembly):
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        self._set_acquiring_scan(s)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -1240,12 +1193,12 @@ class Scans(Assembly):
         step_info=None,
         return_at_end="timeout",
         repetitions=1,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         """Differential scan, i.e. the adjustable is moved to the start position and then moved in steps of the interval size."""
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "dscan",
             (adjustable, start_pos, end_pos, N_intervals, N_pulses),
             dict(
@@ -1286,9 +1239,7 @@ class Scans(Assembly):
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(
-            s, name="acquiring_scan", overwrite=True, status=True, delete_old=True
-        )
+        self._set_acquiring_scan(s, status=True)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -1307,11 +1258,11 @@ class Scans(Assembly):
         step_info=None,
         return_at_end="timeout",
         repetitions=1,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "snakescan",
             (adjustable_slow, step_interval, Nrows, adjustable_fast, interval),
             dict(
@@ -1371,7 +1322,7 @@ class Scans(Assembly):
             name="acquiring_scan",
             **kwargs_callbacks,
         )
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        self._set_acquiring_scan(s)
         if start_immediately:
             s.scan_all(step_info=step_info)
         return s
@@ -1386,6 +1337,7 @@ class Scans(Assembly):
         end1_pos,
         N_intervals,
         N_pulses,
+        start_immediately=True,
         **kwargs_callbacks,
     ):
         """Two adjustables moved simultaneously over the same number of steps.
@@ -1399,6 +1351,7 @@ class Scans(Assembly):
                 (adjustable1, start1_pos, end1_pos, N_intervals),
             ],
             N_pulses=N_pulses,
+            start_immediately=start_immediately,
             **kwargs_callbacks,
         )
 
@@ -1414,7 +1367,7 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         repetitions=1,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         """
@@ -1422,7 +1375,7 @@ class Scans(Assembly):
         The scanning order can be changed by setting the `scanning_order` parameter.
         """
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "meshscan",
             adj_specs,
             dict(
@@ -1458,7 +1411,7 @@ class Scans(Assembly):
 
         if scanning_order == "last_fastest":
             index_plan = list(product(*[range(n) for n in shape]))
-        elif scanning_order == "fist_fastst":
+        elif scanning_order == "first_fastest":
             index_plan = [tc[::-1] for tc in product(*[range(n) for n in shape][::-1])]
 
         values = []
@@ -1494,7 +1447,7 @@ class Scans(Assembly):
             **kwargs_callbacks,
         )
 
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        self._set_acquiring_scan(s)
         if start_immediately:
             s.scan_all(step_info=step_info)
 
@@ -1512,7 +1465,7 @@ class Scans(Assembly):
         settling_time=0,
         step_info=None,
         repetitions=1,
-        scan_queue=None,
+        queue=None,
         **kwargs_callbacks,
     ):
         """
@@ -1530,13 +1483,13 @@ class Scans(Assembly):
 
         ``*step_spec`` is anything understood by ``interpret_step_specification``.
 
-        ``scan_queue``: None (default) runs synchronously as above and returns the
-        StepScan, unchanged from before. Any other value (True/1 for the "default"
-        lane, or a name) routes this call through ``self.queues`` instead and returns
-        a ``QueueItem`` -- see ``eco.acquisition.scan_queue``.
+        ``queue``: None (default) runs synchronously as above and returns the
+        StepScan. Any other value (True/1 for the "default" queue, or a name)
+        appends this call to that queue instead (after test-building it) and
+        returns the Task -- see ``eco.utilities.task_queue``.
         """
         queued = self._route_to_queue(
-            scan_queue,
+            queue,
             "scan",
             adj_specs,
             dict(
@@ -1639,7 +1592,7 @@ class Scans(Assembly):
             **kwargs_callbacks,
         )
 
-        self._append(s, name="acquiring_scan", overwrite=True, delete_old=True)
+        self._set_acquiring_scan(s)
         if start_immediately:
             s.scan_all(step_info=step_info)
 

@@ -1,7 +1,7 @@
 import json
 from time import sleep, time
 import sys, select
-from threading import Thread
+from threading import Thread, current_thread, main_thread
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
@@ -112,10 +112,25 @@ class TimeoutPath:
         return str(self._path)
 
 
+def _queue_thread_context():
+    """The creating thread's queue context (task, forced moves), or None --
+    see eco.utilities.task_queue.thread_context."""
+    task_queue = sys.modules.get("eco.utilities.task_queue")
+    return task_queue.thread_context() if task_queue is not None else None
+
+
 class PropagatingThread(Thread):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # a move started by a queue task runs here: it still belongs to that
+        # task (its claims, its output), see eco.utilities.task_queue
+        self._queue_context = _queue_thread_context()
+
     def run(self):
         run_start = time()
         self.exc = None
+        if self._queue_context is not None:
+            sys.modules["eco.utilities.task_queue"].set_thread_context(self._queue_context)
         try:
             if hasattr(self, "_Thread__target"):
                 # Thread uses name mangling prior to Python 3.
@@ -129,6 +144,13 @@ class PropagatingThread(Thread):
             self.exc = e
 
     def join(self, **kwargs):
+        # An untimed join on the main thread waits in slices: the main-thread
+        # heartbeat's signal (eco.utilities.mainthread, installed with
+        # SA_RESTART) does not interrupt an untimed lock wait, so every open
+        # Qt window would freeze for as long as e.g. a Changer.wait() lasts.
+        if kwargs.get("timeout") is None and current_thread() is main_thread():
+            while self.is_alive():
+                super(PropagatingThread, self).join(timeout=0.05)
         super(PropagatingThread, self).join(**kwargs)
         if self.is_alive():
             # A timeout was given and the thread hasn't finished yet --

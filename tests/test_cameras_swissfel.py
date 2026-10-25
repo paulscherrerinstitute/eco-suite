@@ -113,7 +113,7 @@ def test_camera_basler_viewer_passes_through_rate_and_theme(monkeypatch):
     assert calls["auto_start"] is False
 
 
-# -- separate_process=True: escapes this session's own event-loop freezes --
+# -- separate_process=True: an isolated viewer process (opt-in) --
 
 
 def test_camera_basler_default_dock_in_is_none():
@@ -126,23 +126,24 @@ def test_camera_pco_default_dock_in_is_none():
     assert CameraPCO._default_dock_in is None
 
 
-def test_camera_basler_separate_process_is_the_default(monkeypatch):
-    """separate_process now defaults to True -- calling _widget_viewer()
-    with no separate_process= at all must take the subprocess path, not
-    the in-process one."""
+def test_camera_basler_in_process_is_the_default(monkeypatch):
+    """separate_process defaults to False since eco.utilities.mainthread
+    keeps an in-process viewer live while the session blocks -- calling
+    _widget_viewer() with no separate_process= at all must build the
+    viewer in this process, not spawn one."""
     monkeypatch.setattr(
         "eco.devices_general.cameras_swissfel._spawn_separate_process_viewer",
-        lambda *a, **k: "the subprocess handle",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not spawn a subprocess")),
     )
     monkeypatch.setattr(
         "eco.widgets.camserver_stream_qt.make_camserver_stream_qt",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not build an in-process viewer")),
+        lambda *a, **k: "the in-process viewer",
     )
 
     fake_self = _FakeCameraSelf(BASLER_PVNAME)
     result = CameraBasler._widget_viewer(fake_self)
 
-    assert result == "the subprocess handle"
+    assert result == "the in-process viewer"
 
 
 def test_camera_basler_viewer_separate_process_spawns_subprocess_instead(monkeypatch):
@@ -196,7 +197,7 @@ def test_camera_basler_viewer_dockable_false_is_passed_through(monkeypatch):
     )
 
     fake_self = _FakeCameraSelf(BASLER_PVNAME)
-    result = CameraBasler._widget_viewer(fake_self, dockable=False)
+    result = CameraBasler._widget_viewer(fake_self, separate_process=True, dockable=False)
 
     assert result == "the subprocess handle"
     assert calls["dockable"] is False

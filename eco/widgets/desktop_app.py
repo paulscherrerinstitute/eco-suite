@@ -618,11 +618,16 @@ class _DesktopMainWindow(QtWidgets.QMainWindow):
         self._on_close = on_close
 
     def closeEvent(self, event):
-        try:
-            self._on_close()
-        except Exception:
-            logger.exception("workspace autosave on close failed")
-        super().closeEvent(event)
+        from eco.utilities import mainthread
+
+        # no heartbeat ticks while tearing down (see mainthread.hold) -- a
+        # tick here would deliver events to this half-closed window
+        with mainthread.hold():
+            try:
+                self._on_close()
+            except Exception:
+                logger.exception("workspace autosave on close failed")
+            super().closeEvent(event)
 
 
 class EcoDesktopApp:
@@ -714,10 +719,10 @@ class EcoDesktopApp:
         # (populated right before that reopen loop, one-shot-consumed by
         # _open_widget as each name actually opens -- see both for why: a
         # workspace reload has no live user present to notice/work around
-        # the known X11-embedding fragility a camera viewer's default
-        # separate_process=True can hit, so those reopens ask for
-        # separate_process=False instead, without changing the interactive
-        # Namespace-panel-click default everyone else gets).
+        # the known X11-embedding fragility a camera viewer's
+        # separate_process=True can hit, so those reopens always ask for
+        # separate_process=False -- since the heartbeat (eco.utilities.
+        # mainthread) that is also the interactive default).
         self._workspace_restore_names = set()
         # QDockWidgets currently holding an opened device widget (see
         # _open_widget/_dock_widget_object), tiled into the window rather
@@ -743,6 +748,13 @@ class EcoDesktopApp:
         from eco.widgets.qt_theme import apply_modern_theme
 
         apply_modern_theme(self.theme, self.touch)
+
+        # keeps this whole window (console output, docked viewers, the
+        # Namespace panel) alive while a cell or the calling session's main
+        # thread is busy -- see eco.utilities.mainthread
+        from eco.utilities import mainthread
+
+        mainthread.install_qt()
 
         self.window = _DesktopMainWindow(on_close=self._on_window_closing)
         self.window.setWindowTitle("eco desktop")
@@ -1153,7 +1165,7 @@ class EcoDesktopApp:
             item = _resolve_namespace_item(self.namespace, name)
             widget_kwargs = {}
             if restoring and _widget_accepts_separate_process(item):
-                # Camera viewers default to separate_process=True, which
+                # A camera viewer with separate_process=True
                 # X11-embeds the subprocess's window via QWindow.fromWinId +
                 # createWindowContainer (see CameraBasler/CameraPCO.
                 # _widget_viewer's own docstring) -- documented as fragile
@@ -1161,9 +1173,9 @@ class EcoDesktopApp:
                 # confirmed hard segfault when several cameras restore back
                 # to back with no interactive session present to notice and
                 # work around it. A workspace reload has exactly that
-                # profile, so it asks for separate_process=False instead,
-                # trading the "keeps updating while this session blocks"
-                # benefit for one that always actually opens.
+                # profile, so it asks for separate_process=False explicitly
+                # (the default by now anyway, see eco.utilities.mainthread),
+                # in case a caller's default ever changes back.
                 widget_kwargs["separate_process"] = False
             widget_obj = item.widget(**widget_kwargs)
         except Exception:
