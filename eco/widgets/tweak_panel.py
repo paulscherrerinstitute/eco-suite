@@ -157,21 +157,30 @@ class SoftTweakAxis(_AxisBase):
         self._record_target(value)
 
 
+def has_ioc_tweak(obj):
+    """Whether `obj` is a motor record with its own tweak fields (TWV/TWF/
+    TWR) -- the classes that implement ``_tweak_ioc`` (MotorRecord,
+    SmaractRecord, SmaractStreamdevice, ...)."""
+    return hasattr(obj, "_tweak_ioc")
+
+
+def ioc_tweak_pvs(motor):
+    """(step TWV, forward TWF, reverse TWR) channels of a motor record --
+    the record's own fields if eco wraps it as an eco_epics Motor, else the
+    ``<pvname>:TWV``-style records of the SmarAct IOCs."""
+    if hasattr(motor, "_motor") and hasattr(motor._motor, "get_pv"):
+        return motor._motor.get_pv("TWV"), motor._motor.get_pv("TWF"), motor._motor.get_pv("TWR")
+    from epics import PV
+
+    return PV(motor.pvname + ":TWV"), PV(motor.pvname + ":TWF.PROC"), PV(motor.pvname + ":TWR.PROC")
+
+
 class IocTweakAxis(_AxisBase):
     """A motor record (MotorRecord, SmaractRecord, SmaractStreamdevice, ...)
     tweaked through its own TWV/TWF/TWR fields."""
 
     def __init__(self, motor, step=None, go_to_current_value_first=False):
-        if hasattr(motor, "_motor") and hasattr(motor._motor, "get_pv"):
-            self._pv_step = motor._motor.get_pv("TWV")
-            self._pv_fwd = motor._motor.get_pv("TWF")
-            self._pv_rev = motor._motor.get_pv("TWR")
-        else:
-            from epics import PV
-
-            self._pv_step = PV(motor.pvname + ":TWV")
-            self._pv_fwd = PV(motor.pvname + ":TWF.PROC")
-            self._pv_rev = PV(motor.pvname + ":TWR.PROC")
+        self._pv_step, self._pv_fwd, self._pv_rev = ioc_tweak_pvs(motor)
         if not step:
             step = self._pv_step.get()
         try:

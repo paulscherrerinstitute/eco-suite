@@ -57,6 +57,36 @@ def _format_boot(m: IocMatch) -> str:
     return "\n".join(lines)
 
 
+# Workers are deliberately not children of the widget: closing the window
+# while one runs (a search, the 2 s console read) would destroy a running
+# QThread with it, which aborts the whole process ("QThread: Destroyed while
+# thread is still running"). They are kept alive here until they finish; their
+# results go to bound methods of the widget, which Qt disconnects when the
+# widget is deleted.
+_running_workers = set()
+
+
+def _guard(slot):
+    """A result handler for a worker that may finish after the window is
+    gone (only bound methods of the widget are disconnected automatically):
+    touching the deleted widgets raises RuntimeError, which in a Qt slot
+    would abort the process."""
+
+    def guarded(*args):
+        try:
+            slot(*args)
+        except RuntimeError:
+            pass
+
+    return guarded
+
+
+def _start_worker(worker):
+    _running_workers.add(worker)
+    worker.finished.connect(lambda w=worker: _running_workers.discard(w))
+    worker.start()
+
+
 class _SearchWorker(QtCore.QThread):
     done = QtCore.Signal(list, str)
 
@@ -205,9 +235,9 @@ class IocFinderQt(QtWidgets.QWidget):
         self.detail_text.setPlainText("")
         self.search_btn.setEnabled(False)
 
-        self._search_thread = _SearchWorker(pattern, parent=self)
+        self._search_thread = _SearchWorker(pattern)
         self._search_thread.done.connect(self._on_search_done)
-        self._search_thread.start()
+        _start_worker(self._search_thread)
 
     def _on_search_done(self, matches: list, error: str) -> None:
         self.search_btn.setEnabled(True)
@@ -293,9 +323,9 @@ class IocFinderQt(QtWidgets.QWidget):
         m = self._selected
         self.console_status_label.setText("checking...")
         self.check_status_btn.setEnabled(False)
-        self._status_thread = _StatusWorker(m.console_host, m.console_port, parent=self)
-        self._status_thread.done.connect(lambda ok, m=m: self._on_status_done(ok, m))
-        self._status_thread.start()
+        self._status_thread = _StatusWorker(m.console_host, m.console_port)
+        self._status_thread.done.connect(_guard(lambda ok, m=m: self._on_status_done(ok, m)))
+        _start_worker(self._status_thread)
 
     def _on_status_done(self, ok: bool, m: IocMatch) -> None:
         self.check_status_btn.setEnabled(True)
@@ -324,7 +354,7 @@ class IocFinderQt(QtWidgets.QWidget):
         close_btn.clicked.connect(dlg.accept)
         dlg_layout.addWidget(close_btn)
 
-        self._output_thread = _ConsoleOutputWorker(m.console_host, m.console_port, parent=self)
+        self._output_thread = _ConsoleOutputWorker(m.console_host, m.console_port)
 
         def _done(out: str, error: str) -> None:
             self.output_btn.setEnabled(True)
@@ -333,8 +363,8 @@ class IocFinderQt(QtWidgets.QWidget):
             else:
                 text.setPlainText(out if out else "(no output received)")
 
-        self._output_thread.done.connect(_done)
-        self._output_thread.start()
+        self._output_thread.done.connect(_guard(_done))
+        _start_worker(self._output_thread)
         dlg.exec_()
 
     # -- restart (gated by confirmation dialog) -----------------------------------
@@ -355,9 +385,9 @@ class IocFinderQt(QtWidgets.QWidget):
             return
         self.restart_btn.setEnabled(False)
         self.console_status_label.setText(f"sending restart to {m.console_host}:{m.console_port}...")
-        self._restart_thread = _RestartWorker(m.console_host, m.console_port, parent=self)
-        self._restart_thread.done.connect(lambda error, m=m: self._on_restart_done(error, m))
-        self._restart_thread.start()
+        self._restart_thread = _RestartWorker(m.console_host, m.console_port)
+        self._restart_thread.done.connect(_guard(lambda error, m=m: self._on_restart_done(error, m)))
+        _start_worker(self._restart_thread)
 
     def _on_restart_done(self, error: str, m: IocMatch) -> None:
         self.restart_btn.setEnabled(True)

@@ -24,22 +24,66 @@ that same loop instead of fighting it. If no loop is active yet, it enables
 one via `ip.enable_gui("qt")`. If a *different*, incompatible loop is active
 (e.g. `tk`), a non-blocking window isn't possible, so it falls back to a
 blocking `run()`.
+
+Responsiveness rules (each one fixed a way the window used to freeze or
+leave you guessing):
+
+- **Nothing that talks to hardware runs on the GUI thread.** Every write
+  (tweak, absolute entry, enum selection, reset, stop) runs on a background
+  thread; the row's status dot shows what is going on -- grey: waiting for
+  the first value (connecting), orange: sending / moving, green: connected
+  and updated by a monitor, blue: connected and polled, red: not connected,
+  failed, or blocked (e.g. claimed by a running queue task) with the reason
+  as tooltip. Stop stays clickable while a move runs. Before, a click
+  blocked the whole window for up to 5 s (``changer.wait(timeout=5)`` in
+  the Qt slot) -- including the Stop button of that very move.
+- **Monitorable items are monitored**: anything with
+  ``add_value_callback`` (motor records, SmarAct, ...) or
+  ``set_current_value_callback`` (PV-backed adjustables/detectors, virtual
+  adjustables whose parents are) pushes "value changed", and the row
+  re-reads at once (``get_current_value()``, a cached lookup for a
+  monitored channel -- so enums/conversions show exactly as when polled),
+  coalesced to at most 1/MIN_READ_INTERVAL per second per row. Polling
+  stays as a slow safety net for those, and as the normal path for the
+  rest.
+- **Reads run in parallel** (a small thread pool), so one slow or absent
+  channel no longer delays every row behind it; a slow item is still polled
+  less often (adaptive back-off, as before).
+- **Opening is bounded**: initial values are read concurrently with a
+  deadline; a row whose value hasn't arrived shows "connecting..." and
+  gets its controls once it does.
+- **Tweak step**: for a motor record with its own tweak fields (see
+  eco.widgets.tweak_panel.has_ioc_tweak) the step field starts from the
+  IOC's TWV and editing it writes TWV back (as caQtDM's motor panel does);
+  otherwise from the adjustable's own tweak step if one was set up
+  (eco.manual_control.step_store.tweak_step_size), else 1 / 0.1.
+
+The reading/writing machinery is toolkit-independent and shared with the
+ipywidgets (display_widget) and Tk (display_tk) grids: see
+eco.widgets.live_values. The window also stays live while the session's main
+thread is busy -- see eco.utilities.mainthread.
 """
+import collections
 import enum
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 from qtpy import QtWidgets, QtCore
 from typing import Any
 
+from eco.widgets import live_values
+from eco.widgets.live_values import (  # the toolkit-independent part, shared with display_widget/display_tk
+    LiveReader,
+    PENDING as _PENDING,
+    PREFETCH_ERROR as _PREFETCH_ERROR,
+    default_step_for as _default_step_for,
+    describe as _describe,
+    format_value as _format_value,
+    initial_step as _initial_step,
+    prefetch_values as _prefetch_values,
+)
 
-def _format_value(value):
-    """Show enum-valued readbacks by their label (describer) rather than the
-    underlying integer."""
-    if isinstance(value, enum.Enum):
-        return value.name
-    return str(value)
+FLUSH_MS = 100  # GUI refresh of new values
 
 
 def _enum_options(item, cur):
@@ -66,46 +110,11 @@ def _enum_options(item, cur):
 
 _app_ref = None  # keep a strong reference to any QApplication we create ourselves
 
-_PREFETCH_ERROR = object()  # sentinel: a prefetched read raised
-
-
-def _prefetch_values(items, max_workers=8):
-    """Read all initial values concurrently so building the window for a large
-    assembly is bounded by the slowest single readback rather than their sum.
-    Returns {id(item): value_or__PREFETCH_ERROR}. Never raises."""
-    values = {}
-    items = list(items)
-    if not items:
-        return values
-
-    def _read(it):
-        return it.get_current_value()
-
-    try:
-        with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as ex:
-            futures = {ex.submit(_read, it): it for it in items}
-            for fut, it in futures.items():
-                try:
-                    values[id(it)] = fut.result()
-                except Exception:
-                    values[id(it)] = _PREFETCH_ERROR
-    except Exception:
-        pass
-    return values
-
-# Adaptive polling: an item whose get_current_value() is slow to respond gets
-# polled less often, so slow/blocking readbacks don't starve the GUI and the
-# fast items. An item's poll interval becomes ~ max(base, duration * FACTOR),
-# capped at MAX_INTERVAL. Fast items stay at the base interval. On Qt the poll
-# also runs off the GUI thread, so a slow readback never freezes the window.
-_POLL_SLOWDOWN_FACTOR = 10.0
-_POLL_MAX_INTERVAL = 30.0
-
 
 class _PollBridge(QtCore.QObject):
-    """Marshals value updates from the background poll thread to the GUI
-    thread (emitting a Qt signal across threads is thread-safe; the connected
-    slot then runs on the GUI thread where widgets may be touched)."""
+    """Marshals updates from background threads to the GUI thread (emitting
+    a Qt signal across threads is thread-safe; the connected slot then runs
+    on the GUI thread where widgets may be touched)."""
 
     result = QtCore.Signal(int, str)
     trigger_failed = QtCore.Signal(object)  # the button widget to flash
@@ -162,26 +171,131 @@ def _coerce_like(value: Any, reference: Any):
     return value
 
 
-def _default_step_for(value: Any):
-    if isinstance(value, int) and not isinstance(value, bool):
-        return 1
-    return 0.1
-
-
 def _is_tweakable(value: Any) -> bool:
     """Only plain numeric values support +/- step tweaking; e.g. strings don't."""
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _flash_error(widget):
+    def _unflash():
+        # the widget may be gone by now (window closed): an exception raised
+        # in a Qt timer callback would abort the whole process under PyQt
+        try:
+            widget.setStyleSheet("")
+        except RuntimeError:
+            pass
+
     try:
         widget.setStyleSheet("background-color: #ffb3b3;")
-        QtCore.QTimer.singleShot(1200, lambda: widget.setStyleSheet(""))
+        QtCore.QTimer.singleShot(1200, _unflash)
     except Exception:
         pass
 
 
-def _build_item_controls_qt(item, value_label, cur):
+# -- one row: writes off the GUI thread, and its status dot ------------------------
+
+
+class _RowController(QtCore.QObject):
+    """What one row does to its item, never on the GUI thread (see
+    eco.widgets.live_values), and the status dot that shows it (see the
+    module docstring for the colours). Results come back through signals,
+    so the dot is only ever touched on the GUI thread."""
+
+    state_changed = QtCore.Signal(str, str)  # state, message
+    read_requested = QtCore.Signal()  # a write finished: re-read the value now
+    step_loaded = QtCore.Signal(str)  # IOC tweak step arrived
+    _flash = QtCore.Signal(object)  # a widget to flash red
+
+    def __init__(self, item, parent=None):
+        super().__init__(parent)
+        self.item = item
+        self._holder = {}  # "changer" of the latest write
+        self.dot = QtWidgets.QLabel("●")
+        self.dot.setFixedWidth(16)
+        self._read_state = ("waiting", "")
+        self._writing = 0  # moves in progress
+        self._writing_lock = threading.Lock()
+        self.state_changed.connect(self._show)
+        self._show("waiting", "")
+
+    @property
+    def changer(self):
+        return self._holder.get("changer")
+
+    def _show(self, state, message):
+        color, tooltip = live_values.dot_state(state, message, self._read_state)
+        try:
+            self.dot.setStyleSheet(f"color: {color};")
+            self.dot.setToolTip(tooltip)
+        except RuntimeError:  # the row's widgets are gone (window closed)
+            pass
+
+    # -- reads (called on the GUI thread) --------------------------------------
+
+    def read_ok(self, monitor_state):
+        """monitor_state: LiveReader.monitor_state() ("live"/"subscribed"/None)."""
+        self._read_state = (monitor_state or "polled", "")
+        if not self._writing:
+            self._show(*self._read_state)
+
+    def read_failed(self, message):
+        self._read_state = ("error", message)
+        if not self._writing:
+            self._show(*self._read_state)
+
+    # -- writes ----------------------------------------------------------------
+
+    def write(self, target_fn, flash=None):
+        """Run ``set_target_value(target_fn())`` in a background thread and
+        follow the move (live_values.start_write). `flash` (a widget)
+        flashes red on failure."""
+        with self._writing_lock:
+            self._writing += 1
+        self._show("busy", "")
+
+        def on_state(state, message):
+            if state in ("idle", "error"):
+                with self._writing_lock:
+                    self._writing -= 1
+            self.state_changed.emit(state, message)
+            if state == "error" and flash is not None:
+                self._flash.emit(flash)
+
+        live_values.start_write(
+            self.item, target_fn, on_state, on_finished=self.read_requested.emit, holder=self._holder
+        )
+
+    def stop(self):
+        """Stop the move this row started (or the item itself)."""
+        live_values.stop_move(self.item, self.changer, self.state_changed.emit)
+
+    # -- IOC tweak step ----------------------------------------------------------
+
+    def attach_ioc_step(self, step_edit):
+        """Fill `step_edit` from the IOC's TWV (in the background) and write
+        edits back to it."""
+        step_edit.setToolTip("tweak step, from the IOC (TWV) -- editing it sets TWV")
+
+        def apply(text):
+            try:
+                if not step_edit.hasFocus():
+                    step_edit.setText(text)
+            except RuntimeError:  # closed meanwhile
+                pass
+
+        def store():
+            try:
+                value = float(step_edit.text())
+            except (ValueError, RuntimeError):
+                return
+            live_values.store_ioc_step(holder, value)
+
+        self.step_loaded.connect(apply)
+        step_edit.editingFinished.connect(store)
+        holder = live_values.load_ioc_step(self.item, lambda value: self.step_loaded.emit(f"{value:g}"))
+
+
+def _build_item_controls_qt(item, value_label, cur, controller=None):
     """Build the control area (everything right of name/value) for one
     item -- the exact branch logic DisplayQt._build_row applies per item
     in the assembly grid (Detector-read-only / Adjustable-enum /
@@ -190,20 +304,26 @@ def _build_item_controls_qt(item, value_label, cur):
     eco.widgets.containers.adjustable_control/detector_indicator) as well
     as from the grid itself -- not a second implementation.
 
-    `value_label` is the QLabel the caller already built for the current
-    value -- writes made from here (tweak/absolute-set/enum-select/reset)
-    update it directly, exactly as before; reading it back (polling) is
-    the caller's job.
+    Every write goes through `controller` (a _RowController; one is made if
+    not given), i.e. off the GUI thread; the new value shows through the
+    caller's reads (polling/monitoring), which the controller asks for when
+    a write finishes. Its status dot is the first widget of the controls.
 
     Returns (controls: QWidget, combo: QComboBox|None) -- `controls`
     wraps everything in one QHBoxLayout (zero margins, so it looks
     identical to the same widgets living directly in the caller's own row
-    layout); `combo`, if not None, is what a caller polling `item` needs
-    to keep in sync with new readings (see _apply_value_label_update)."""
+    layout) and carries the controller as ``controls.controller``; `combo`,
+    if not None, is what a caller polling `item` needs to keep in sync with
+    new readings (see _apply_value_label_update)."""
     controls = QtWidgets.QWidget()
     row = QtWidgets.QHBoxLayout(controls)
     row.setContentsMargins(0, 0, 0, 0)
     combo = None
+    if controller is None:
+        controller = _RowController(item, parent=controls)
+    controller._flash.connect(_flash_error)
+    controls.controller = controller
+    row.addWidget(controller.dot)
 
     # Detector (non-Adjustable): read-only
     if isinstance(item, Detector) and not isinstance(item, Adjustable):
@@ -213,7 +333,6 @@ def _build_item_controls_qt(item, value_label, cur):
     elif isinstance(item, Adjustable):
         original_value = cur
         enum_opts = _enum_options(item, cur)
-        changer_ref = {"changer": None}
 
         if enum_opts is not None:
             # ENUM adjustable: dropdown selector, current readback preselected
@@ -224,53 +343,19 @@ def _build_item_controls_qt(item, value_label, cur):
                 combo.setCurrentText(cur_label)
             combo.setFixedWidth(140)
 
-            def _enum_set(label):
-                try:
-                    r = item.set_target_value(label)
-                    changer_ref["changer"] = r
-                    try:
-                        if hasattr(r, "wait"):
-                            r.wait(timeout=5)
-                    except Exception:
-                        pass
-                    try:
-                        new_cur = item.get_current_value()
-                    except Exception:
-                        new_cur = None
-                    if new_cur is not None:
-                        lbl = _format_value(new_cur)
-                        value_label.setText(lbl)
-                        idx = combo.findText(lbl)
-                        if idx >= 0:
-                            combo.blockSignals(True)
-                            combo.setCurrentIndex(idx)
-                            combo.blockSignals(False)
-                except Exception:
-                    _flash_error(combo)
-
             def _on_activated(index=0):
-                _enum_set(combo.currentText())
-
-            def _on_stop(checked=False):
-                changer = changer_ref.get("changer")
-                if changer is not None and hasattr(changer, "stop"):
-                    try:
-                        changer.stop()
-                    except Exception:
-                        pass
+                label = combo.currentText()
+                controller.write(lambda: label, flash=combo)
 
             def _on_reset(checked=False):
-                _enum_set(
-                    original_value.name
-                    if isinstance(original_value, enum.Enum)
-                    else original_value
-                )
+                target = original_value.name if isinstance(original_value, enum.Enum) else original_value
+                controller.write(lambda: target, flash=combo)
 
             combo.activated.connect(_on_activated)
             stop_btn = QtWidgets.QPushButton("🛑")
             stop_btn.setFixedWidth(30)
             stop_btn.setToolTip("Stop the current move")
-            stop_btn.clicked.connect(_on_stop)
+            stop_btn.clicked.connect(lambda checked=False: controller.stop())
             reset_btn = QtWidgets.QPushButton("↺")
             reset_btn.setFixedWidth(30)
             reset_btn.setToolTip("Reset to the value from when this widget was opened")
@@ -289,30 +374,23 @@ def _build_item_controls_qt(item, value_label, cur):
             tweakable = _is_tweakable(cur)
 
             if tweakable:
-                step_edit = QtWidgets.QLineEdit(str(_default_step_for(cur)))
+                step_edit = QtWidgets.QLineEdit(str(_initial_step(item, cur)))
                 step_edit.setFixedWidth(60)
                 row.addWidget(step_edit)
+                if live_values.has_ioc_step(item):
+                    controller.attach_ioc_step(step_edit)
 
             if is_plain_scalar:
                 input_edit = QtWidgets.QLineEdit(str(cur))
                 input_edit.setFixedWidth(100)
 
-                def _apply_absolute(it=item, vl=value_label, ie=input_edit, ref=cur,
-                                     cref=changer_ref):
+                def _apply_absolute(ie=input_edit, ref=cur):
                     try:
-                        newval = _coerce_like(ie.text(), ref)
-                        r = it.set_target_value(newval)
-                        cref["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        new_current = it.get_current_value()
-                        vl.setText(_format_value(new_current))
-                        ie.setText(str(new_current))
+                        target = _coerce_like(ie.text(), ref)
                     except Exception:
                         _flash_error(ie)
+                        return
+                    controller.write(lambda: target, flash=ie)
 
                 input_edit.editingFinished.connect(_apply_absolute)
             else:
@@ -320,26 +398,17 @@ def _build_item_controls_qt(item, value_label, cur):
                 input_edit.setFixedWidth(100)
 
             if tweakable:
-                def _make_tweak(sign, it=item, vl=value_label, se=step_edit,
-                                 ie=input_edit, plain=is_plain_scalar, cref=changer_ref):
+
+                def _make_tweak(sign, se=step_edit, ie=input_edit):
                     def _on_click():
                         try:
                             step = _coerce_like(se.text(), _default_step_for(cur))
-                            base = it.get_current_value()
-                            newval = base + sign * step
-                            r = it.set_target_value(newval)
-                            cref["changer"] = r
-                            try:
-                                if hasattr(r, "wait"):
-                                    r.wait(timeout=5)
-                            except Exception:
-                                pass
-                            new_current = it.get_current_value()
-                            vl.setText(_format_value(new_current))
-                            if plain:
-                                ie.setText(str(new_current))
                         except Exception:
-                            _flash_error(ie if isinstance(ie, QtWidgets.QLineEdit) else vl)
+                            _flash_error(se)
+                            return
+                        flash = ie if isinstance(ie, QtWidgets.QLineEdit) else se
+                        # relative to the real current value, read in the background
+                        controller.write(lambda: item.get_current_value() + sign * step, flash=flash)
 
                     return _on_click
 
@@ -354,36 +423,14 @@ def _build_item_controls_qt(item, value_label, cur):
 
             row.addWidget(input_edit)
 
-            def _on_stop(checked=False, it=item, cref=changer_ref):
-                changer = cref.get("changer")
-                if changer is not None and hasattr(changer, "stop"):
-                    try:
-                        changer.stop()
-                    except Exception:
-                        pass
-
-            def _on_reset(checked=False, it=item, vl=value_label, ie=input_edit,
-                          plain=is_plain_scalar, ref=original_value, cref=changer_ref):
-                try:
-                    r = it.set_target_value(ref)
-                    cref["changer"] = r
-                    try:
-                        if hasattr(r, "wait"):
-                            r.wait(timeout=5)
-                    except Exception:
-                        pass
-                    new_current = it.get_current_value()
-                    vl.setText(_format_value(new_current))
-                    if plain:
-                        ie.setText(str(new_current))
-                except Exception:
-                    if isinstance(ie, QtWidgets.QLineEdit):
-                        _flash_error(ie)
+            def _on_reset(checked=False, ie=input_edit, ref=original_value):
+                flash = ie if isinstance(ie, QtWidgets.QLineEdit) else None
+                controller.write(lambda: ref, flash=flash)
 
             stop_btn = QtWidgets.QPushButton("🛑")
             stop_btn.setFixedWidth(30)
             stop_btn.setToolTip("Stop the current move")
-            stop_btn.clicked.connect(_on_stop)
+            stop_btn.clicked.connect(lambda checked=False: controller.stop())
             reset_btn = QtWidgets.QPushButton("↺")
             reset_btn.setFixedWidth(30)
             reset_btn.setToolTip("Reset to the value from when this widget was opened")
@@ -399,20 +446,13 @@ def _build_item_controls_qt(item, value_label, cur):
     ):
         input_edit = QtWidgets.QLineEdit(str(cur))
 
-        def _apply(it=item, vl=value_label, ie=input_edit, ref=cur):
+        def _apply(ie=input_edit, ref=cur):
             try:
-                newval = _coerce_like(ie.text(), ref)
-                r = it.set_target_value(newval)
-                try:
-                    if hasattr(r, "wait"):
-                        r.wait(timeout=5)
-                except Exception:
-                    pass
-                new_current = it.get_current_value()
-                vl.setText(str(new_current))
-                ie.setText(str(new_current))
+                target = _coerce_like(ie.text(), ref)
             except Exception:
                 _flash_error(ie)
+                return
+            controller.write(lambda: target, flash=ie)
 
         input_edit.editingFinished.connect(_apply)
         row.addWidget(input_edit)
@@ -445,12 +485,10 @@ def _apply_value_label_update(value_label, combo, text):
 
 
 class _StandaloneItemBridge(QtCore.QObject):
-    """Marshals one item's polled value from the background thread to the
-    GUI thread -- same pattern as _PollBridge, just for a single
-    standalone control (see build_adjustable_control_qt) rather than a
-    whole assembly grid's shared poll thread."""
+    """Marshals one item's read from the background thread to the GUI
+    thread -- the single-row counterpart of DisplayQt's own flushing."""
 
-    result = QtCore.Signal(str)
+    result = QtCore.Signal(bool, object)  # ok, value | message
 
 
 def build_adjustable_control_qt(item, poll_interval=1.0, title=None):
@@ -459,9 +497,11 @@ def build_adjustable_control_qt(item, poll_interval=1.0, title=None):
     the normal assembly grid, e.g. via
     eco.widgets.containers.adjustable_control()/detector_indicator() (the
     same function serves both -- _build_item_controls_qt already renders
-    read-only for a plain, non-Adjustable Detector). Returns an object
-    with `.window` (QWidget) and `.stop()`, matching eco's usual Qt
-    widget-wrapper convention (see EcoDesktopApp._dock_widget_object)."""
+    read-only for a plain, non-Adjustable Detector). Monitored where the
+    item supports it, polled otherwise, writes off the GUI thread -- same
+    rules as the grid. Returns an object with `.window` (QWidget) and
+    `.stop()`, matching eco's usual Qt widget-wrapper convention (see
+    EcoDesktopApp._dock_widget_object)."""
     from eco.widgets.qt_lifecycle import close_calls_stop
 
     name = title or _label_of(item)
@@ -482,31 +522,33 @@ def build_adjustable_control_qt(item, poll_interval=1.0, title=None):
     row.addWidget(value_label)
 
     controls, combo = _build_item_controls_qt(item, value_label, cur)
+    controller = controls.controller
     row.addWidget(controls)
 
     bridge = _StandaloneItemBridge()
-    bridge.result.connect(lambda text: _apply_value_label_update(value_label, combo, text))
+    reader = LiveReader(lambda index, ok, payload: bridge.result.emit(ok, payload), poll_interval=poll_interval, workers=1)
+    reader.add(item)
 
-    stop_event = threading.Event()
+    def _on_result(ok, payload):
+        try:
+            if ok:
+                _apply_value_label_update(value_label, combo, _format_value(payload))
+                controller.read_ok(reader.monitor_state(0))
+            else:
+                controller.read_failed(payload)
+        except RuntimeError:  # a read that arrived after the control was closed
+            pass
 
-    def _poll_loop():
-        while not stop_event.is_set():
-            try:
-                text = _format_value(item.get_current_value())
-            except Exception:
-                text = "<error>"
-            bridge.result.emit(text)
-            stop_event.wait(poll_interval)
-
-    poll_thread = threading.Thread(target=_poll_loop, daemon=True)
-    poll_thread.start()
+    bridge.result.connect(_on_result)
+    controller.read_requested.connect(lambda: reader.request_read(0))
+    reader.start()
 
     class _StandaloneControl:
         def __init__(self):
             self.window = window
 
         def stop(self):
-            stop_event.set()
+            reader.stop()
             if self.window is not None:
                 self.window.close()
                 self.window = None
@@ -528,11 +570,11 @@ class DisplayQt:
         self.poll_interval = poll_interval
         self.show_hidden = show_hidden
         self.window = None
-        self._entries = []  # list of dicts: item, value_label, active, interval, next_due
+        self._entries = []  # one dict per polled row, see _build_row
         self._child_windows = {}  # id(child_assembly) -> DisplayQt shown in its own window
         self._bridge = None
-        self._poll_thread = None
-        self._stop_event = threading.Event()
+        self._reader = None  # live_values.LiveReader, see _build_window
+        self._results = collections.deque()  # (idx, ok, value | message) from reader threads
         self._prefetched = {}
         self._memory_browser = None  # lazily-built "memories" sub-window, see _open_memory_browser
 
@@ -629,22 +671,39 @@ class DisplayQt:
         name_label.setFixedWidth(200)
         row.addWidget(name_label)
 
-        value_label = QtWidgets.QLabel(_format_value(cur))
+        pending = cur is _PENDING
+        value_label = QtWidgets.QLabel("…" if pending else _format_value(cur))
         value_label.setFixedWidth(140)
         row.addWidget(value_label)
 
-        controls, combo = _build_item_controls_qt(item, value_label, cur)
+        controller = _RowController(item, parent=self.window)
+        if pending:
+            # no value yet, so no way to tell which controls fit (enum?
+            # numeric?): built when the first value arrives, see _flush
+            controls, combo = QtWidgets.QLabel("connecting…"), None
+            placeholder = QtWidgets.QWidget()
+            placeholder_row = QtWidgets.QHBoxLayout(placeholder)
+            placeholder_row.setContentsMargins(0, 0, 0, 0)
+            placeholder_row.addWidget(controller.dot)
+            placeholder_row.addWidget(controls)
+            placeholder_row.addStretch(1)
+            controls = placeholder
+        else:
+            controls, combo = _build_item_controls_qt(item, value_label, cur, controller=controller)
         row.addWidget(controls)
 
         layout.addLayout(row)
+        index = self._reader.add(item, active=active)  # same index as in self._entries
+        controller.read_requested.connect(lambda i=index: self._reader.request_read(i))
         self._entries.append(
             {
                 "item": item,
                 "value_label": value_label,
                 "combo": combo,
-                "active": active,
-                "interval": self.poll_interval,
-                "next_due": 0.0,  # monotonic time; 0 => poll on first pass
+                "controller": controller,
+                "controls": controls,
+                "row": row,
+                "needs_controls": pending,
             }
         )
 
@@ -654,6 +713,9 @@ class DisplayQt:
             # should normally already exist (created by IPython's qt inputhook,
             # or by run() below), but guard against it missing regardless
             _app_ref = QtWidgets.QApplication([])
+        from eco.utilities import mainthread
+
+        mainthread.install_qt()  # stays live while the session is busy
 
         self.window = QtWidgets.QWidget()
         self.window.setWindowTitle(
@@ -692,10 +754,17 @@ class DisplayQt:
         display_items = self._get_display_items()
         hidden_items = self._get_hidden_items()
         # read every initial value concurrently up front, so opening a large
-        # assembly is bounded by the slowest single readback, not their sum
-        self._prefetched = _prefetch_values(list(display_items) + list(hidden_items))
+        # assembly is bounded by the slowest single readback, not their sum --
+        # and by PREFETCH_DEADLINE at most (a late row shows "connecting...")
+        self._prefetched = _prefetch_values(
+            list(display_items) + list(hidden_items), deadline=live_values.PREFETCH_DEADLINE
+        )
 
         self._entries = []
+        self._reader = LiveReader(
+            lambda index, ok, payload: self._results.append((index, ok, payload)),
+            poll_interval=self.poll_interval,
+        )
         for item in display_items:
             self._build_row(item, content_layout)
 
@@ -722,16 +791,14 @@ class DisplayQt:
 
             def _toggle_hidden(
                 checked=False, btn=toggle_btn, box=hidden_container,
-                entries=hidden_entries,
+                entries=hidden_entries, start=hidden_start,
             ):
                 showing = box.isVisible()
                 box.setVisible(not showing)
                 btn.setText("expand hidden" if showing else "hide hidden")
-                # only poll expanded items, so hidden ones don't consume resources
-                for ent in entries:
-                    ent["active"] = not showing
-                    if not showing:
-                        ent["next_due"] = 0.0  # refresh immediately on expand
+                # only read/monitor expanded items, so hidden ones don't consume resources
+                for index in range(start, start + len(entries)):
+                    self._reader.set_active(index, not showing)
 
             toggle_btn.clicked.connect(_toggle_hidden)
 
@@ -760,11 +827,15 @@ class DisplayQt:
 
         close_calls_stop(self.window, self.stop)
 
-        # poll off the GUI thread so a slow readback never freezes the window;
-        # results are marshalled back to the GUI thread via the bridge signal
-        self._stop_event = threading.Event()
-        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
-        self._poll_thread.start()
+        # new values reach the widgets here, on the GUI thread, at most every
+        # FLUSH_MS -- a fast monitored channel can't flood the event loop
+        self._flush_timer = QtCore.QTimer(self.window)
+        self._flush_timer.timeout.connect(self._flush)
+        self._flush_timer.start(FLUSH_MS)
+
+        # reads and monitor subscriptions run off the GUI thread; results
+        # come back through self._results (see _flush)
+        self._reader.start()
 
         self._cap_window_size()
         self.window.show()
@@ -810,48 +881,44 @@ class DisplayQt:
 
         self._memory_browser = make_memory_browser_qt(self.assembly, parent=None)
 
+    # -- values: read off the GUI thread, shown on it --------------------------
+
     def _apply_update(self, idx, text):
-        # runs on the GUI thread (queued signal) - safe to touch widgets here
+        # runs on the GUI thread - safe to touch widgets here
         try:
             entry = self._entries[idx]
             _apply_value_label_update(entry["value_label"], entry.get("combo"), text)
         except Exception:
             pass
 
-    def _poll_loop(self):
-        # background thread: poll each active item only when due, backing off
-        # items whose readback is slow so they don't starve the GUI / fast items
-        base = self.poll_interval
-        entries = self._entries
-        while not self._stop_event.is_set():
-            now = time.monotonic()
-            next_wakeup = now + base
-            for idx, ent in enumerate(entries):
-                if self._stop_event.is_set():
-                    break
-                if not ent.get("active", True):
-                    continue
-                if now < ent["next_due"]:
-                    next_wakeup = min(next_wakeup, ent["next_due"])
-                    continue
-                t0 = time.monotonic()
-                text = None
-                try:
-                    text = _format_value(ent["item"].get_current_value())
-                except Exception:
-                    text = None
-                duration = time.monotonic() - t0
-                ent["interval"] = min(
-                    _POLL_MAX_INTERVAL,
-                    max(base, duration * _POLL_SLOWDOWN_FACTOR),
-                )
-                ent["next_due"] = time.monotonic() + ent["interval"]
-                if text is not None:
-                    self._bridge.result.emit(idx, text)
-                next_wakeup = min(next_wakeup, ent["next_due"])
-            sleep_for = max(0.05, next_wakeup - time.monotonic())
-            if self._stop_event.wait(sleep_for):
-                break
+    def _flush(self):
+        """GUI thread: show what the reads brought in."""
+        latest = {}
+        while self._results:
+            idx, ok, payload = self._results.popleft()
+            latest[idx] = (ok, payload)
+        for idx, (ok, payload) in latest.items():
+            ent = self._entries[idx]
+            controller = ent["controller"]
+            if not ok:
+                if ent["needs_controls"]:
+                    ent["value_label"].setText("—")
+                controller.read_failed(payload)
+                continue
+            if ent["needs_controls"]:
+                self._build_late_controls(ent, payload)
+            _apply_value_label_update(ent["value_label"], ent.get("combo"), _format_value(payload))
+            controller.read_ok(self._reader.monitor_state(idx))
+
+    def _build_late_controls(self, ent, value):
+        """The first value of a row that had none at opening arrived: now
+        its controls (enum? numeric?) can be built."""
+        controls, combo = _build_item_controls_qt(
+            ent["item"], ent["value_label"], value, controller=ent["controller"]
+        )
+        ent["row"].replaceWidget(ent["controls"], controls)
+        ent["controls"].deleteLater()
+        ent["controls"], ent["combo"], ent["needs_controls"] = controls, combo, False
 
     def run(self):
         """Build and run the window with a blocking Qt event loop. Use this
@@ -923,10 +990,11 @@ class DisplayQt:
             except Exception:
                 pass
             self._memory_browser = None
-        # signal the daemon poll thread to exit (no join: it may be mid-readback,
-        # and we don't want to block the GUI thread waiting on it)
-        self._stop_event.set()
-        self._poll_thread = None
+        # stop reading (no join: a read may be in flight, and we don't want
+        # to block the GUI thread waiting on it); monitors are removed in
+        # the background
+        if self._reader is not None:
+            self._reader.stop()
         if self.window is not None:
             try:
                 self.window.close()

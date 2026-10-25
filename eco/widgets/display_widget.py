@@ -16,17 +16,37 @@ terminal `rich` table look (`eco.utilities.tables.section_row_styles`, also
 used by `Assembly.get_display_str()`/`Beamline.diagram()`) so an assembly
 looks the same whether you're in a terminal or a notebook -- see
 `_section_css_classes`/`_state_css_class` below for how each is derived here.
+
+Same responsiveness rules as the Qt grid (see eco.widgets.display_qt's module
+docstring and eco.widgets.live_values, which both share): a click never
+blocks the kernel -- before, it ran ``set_target_value`` + ``wait(timeout=5)``
+in the widget callback, so the kernel handled no other widget message
+(including that row's Stop) until the move ended; writes now run in a
+background thread and a status dot per row shows connecting / moving /
+monitored / polled / error (hover for the reason). Monitorable items are
+monitored, the rest polled in parallel; opening waits at most
+PREFETCH_DEADLINE for initial values; the tweak step of a motor record starts
+from the IOC's TWV (edits write it back). Widget values may be set from any
+thread (the change goes out as a comm message), which is what lets updates
+reach the browser -- also in Voila -- while a cell is running.
 """
 import enum
+import html
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
 
 import ipywidgets as widgets
 from IPython.display import display
 
 from eco.utilities.tables import section_row_styles
+from eco.widgets import live_values
+from eco.widgets.live_values import (  # the toolkit-independent part, shared with display_qt/display_tk
+    LiveReader,
+    PENDING as _PENDING,
+    PREFETCH_ERROR as _PREFETCH_ERROR,
+    initial_step as _initial_step,
+)
 
 
 def _format_value(value: Any) -> str:
@@ -145,14 +165,6 @@ def _state_css_class(item, value):
     return None
 
 
-# Adaptive polling: an item whose get_current_value() is slow to respond gets
-# polled less often, so slow/blocking readbacks don't starve the GUI and the
-# fast items. An item's poll interval becomes ~ max(base, duration * FACTOR),
-# capped at MAX_INTERVAL. Fast items stay at the base interval.
-_POLL_SLOWDOWN_FACTOR = 10.0
-_POLL_MAX_INTERVAL = 30.0
-
-_PREFETCH_ERROR = object()  # sentinel: a prefetched read raised
 
 
 # Responsive layout: columns use flexbox with a preferred basis + min-width and
@@ -188,29 +200,9 @@ def _action_group(stop_btn, reset_btn):
     return widgets.HBox([stop_btn, reset_btn], layout=widgets.Layout(margin="0 0 0 auto"))
 
 
-def _prefetch_values(items, max_workers=8):
-    """Read all initial values concurrently so building the widget for a large
-    assembly is bounded by the slowest single readback rather than their sum.
-    Returns {id(item): value_or__PREFETCH_ERROR}. Never raises."""
-    values = {}
-    items = list(items)
-    if not items:
-        return values
-
-    def _read(it):
-        return it.get_current_value()
-
-    try:
-        with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as ex:
-            futures = {ex.submit(_read, it): it for it in items}
-            for fut, it in futures.items():
-                try:
-                    values[id(it)] = fut.result()
-                except Exception:
-                    values[id(it)] = _PREFETCH_ERROR
-    except Exception:
-        pass
-    return values
+def _prefetch_values(items, max_workers=8, deadline=None):
+    """See eco.widgets.live_values.prefetch_values."""
+    return live_values.prefetch_values(items, max_workers=max_workers, deadline=deadline)
 
 # Try to import types for isinstance checks if available.
 try:
@@ -253,16 +245,16 @@ def _make_input_widget_for_value(value: Any):
     return w, reader
 
 
-def _make_step_widget_for_value(value: Any):
-    """Create step-size input suitable for numeric types."""
-    if isinstance(value, int) and not isinstance(value, bool):
-        step_w = widgets.IntText(value=1, layout=widgets.Layout(width="80px"))
+def _make_step_widget_for_value(value: Any, step=None):
+    """Create step-size input suitable for numeric types, starting at `step`
+    (default: 1 for ints, 0.1 for floats)."""
+    if isinstance(value, int) and not isinstance(value, bool) and (step is None or float(step).is_integer()):
+        step_w = widgets.IntText(value=int(step or 1), layout=widgets.Layout(width="80px"))
         reader = lambda: int(step_w.value)
     else:
-        step_w = widgets.FloatText(
-            value=0.1 if isinstance(value, float) else 1.0,
-            layout=widgets.Layout(width="80px"),
-        )
+        if step is None:
+            step = 0.1 if isinstance(value, float) else 1.0
+        step_w = widgets.FloatText(value=float(step), layout=widgets.Layout(width="80px"))
         reader = lambda: float(step_w.value)
     return step_w, reader
 
@@ -285,7 +277,109 @@ def _flash_button_error(btn):
     threading.Thread(target=_reset, daemon=True).start()
 
 
-def _build_item_controls_widget(item, value_w, cur):
+def _flash_widget_error(widget):
+    """A failed write: a button shows "Err", anything else a red border,
+    for 1.2 s."""
+    if widget is None:
+        return
+    if isinstance(widget, widgets.Button):
+        _flash_button_error(widget)
+        return
+    try:
+        old = widget.layout.border
+        widget.layout.border = "1px solid red"
+
+        def _reset(o=old):
+            time.sleep(1.2)
+            widget.layout.border = o
+
+        threading.Thread(target=_reset, daemon=True).start()
+    except Exception:
+        pass
+
+
+class _RowState:
+    """ipywidgets counterpart of display_qt._RowController: writes go
+    through eco.widgets.live_values in background threads, and an HTML
+    status dot shows what the row is doing (hover for the reason). Widget
+    values may be set from any thread, so results are applied directly.
+    ``on_finished`` (set by the grid) runs after every write -- it requests
+    a re-read."""
+
+    def __init__(self, item):
+        self.item = item
+        self.holder = {}  # "changer" of the latest write
+        self.dot = widgets.HTML(layout=widgets.Layout(width="18px", min_width="18px"))
+        self.on_finished = None
+        self._read_state = ("waiting", "")
+        self._writing = 0
+        self._writing_lock = threading.Lock()
+        self.show("waiting", "")
+
+    def show(self, state, message):
+        color, tooltip = live_values.dot_state(state, message, self._read_state)
+        self.dot.value = (
+            f'<span title="{html.escape(tooltip, quote=True)}" '
+            f'style="color:{color}; font-size:16px; cursor:default">●</span>'
+        )
+
+    def read_ok(self, monitor_state):
+        """monitor_state: LiveReader.monitor_state() ("live"/"subscribed"/None)."""
+        self._read_state = (monitor_state or "polled", "")
+        if not self._writing:
+            self.show(*self._read_state)
+
+    def read_failed(self, message):
+        self._read_state = ("error", message)
+        if not self._writing:
+            self.show(*self._read_state)
+
+    def write(self, target_fn, flash=None):
+        with self._writing_lock:
+            self._writing += 1
+        self.show("busy", "")
+
+        def on_state(state, message):
+            if state in ("idle", "error"):
+                with self._writing_lock:
+                    self._writing -= 1
+            self.show(state, message)
+            if state == "error":
+                _flash_widget_error(flash)
+
+        def on_finished():
+            if self.on_finished is not None:
+                self.on_finished()
+
+        live_values.start_write(self.item, target_fn, on_state, on_finished=on_finished, holder=self.holder)
+
+    def stop(self):
+        live_values.stop_move(self.item, self.holder.get("changer"), self.show)
+
+    def attach_ioc_step(self, step_w):
+        """Fill `step_w` from the IOC's TWV and write edits back to it."""
+        suppress = [False]
+        step_w.description_tooltip = "tweak step, from the IOC (TWV) -- editing it sets TWV"
+
+        def on_step(value):
+            suppress[0] = True
+            try:
+                step_w.value = type(step_w.value)(value)
+            except Exception:
+                pass
+            finally:
+                suppress[0] = False
+
+        holder = live_values.load_ioc_step(self.item, on_step)
+
+        def on_change(change):
+            if not suppress[0]:
+                live_values.store_ioc_step(holder, change["new"])
+
+        step_w.observe(on_change, names="value")
+
+
+def _build_item_controls_widget(item, value_w, cur, row_state=None):
     """Build the control area for one item -- the exact branch logic
     make_assembly_widget's _build_row applies per item in the assembly
     grid (Detector-read-only / Adjustable-enum / Adjustable-tweakable-or-
@@ -295,27 +389,29 @@ def _build_item_controls_widget(item, value_w, cur):
     as from the grid itself -- not a second implementation. Qt equivalent:
     eco.widgets.display_qt._build_item_controls_qt.
 
-    `value_w` is the Label the caller already built for the current value
-    -- writes made from here (tweak/absolute-set/enum-select/reset) update
-    it directly, exactly as before; reading it back (polling) is the
-    caller's job, via _apply_item_update below.
+    Every write goes through `row_state` (a _RowState; one is made if not
+    given), i.e. off the kernel's message thread; the new value shows
+    through the caller's reads (_apply_result), which the row state asks
+    for when a write finishes. Its status dot is the first widget of the
+    control box.
 
     Returns (control_box: widgets.HBox, poll_state: dict) -- `poll_state`
-    bundles whatever _apply_item_update needs beyond item/value_widget
+    bundles whatever _apply_result needs beyond item/value_widget
     (input_widget/enum_opts/dd_suppress, for keeping an enum dropdown in
-    sync with polled readings); merge it into an item_entries-shaped dict
-    alongside "item"/"value_widget" for a poll loop (the grid's shared
-    one, or a standalone one -- see build_adjustable_control_widget) to
-    drive."""
+    sync with polled readings, and the row_state); merge it into an
+    item_entries-shaped dict alongside "item"/"value_widget"."""
+    if row_state is None:
+        row_state = _RowState(item)
     control_box = widgets.HBox(layout=_control_layout())
     input_widget = None
     reader = None
     enum_opts = None
     suppress_dd = None
+    children = [row_state.dot]
 
     # If it's a Detector and NOT Adjustable -> no control widget (readonly)
     if isinstance(item, Detector) and not isinstance(item, Adjustable):
-        control_box.children = (widgets.Label("read-only (Detector)"),)
+        children.append(widgets.Label("read-only (Detector)"))
 
     # If it's Adjustable -> show tweak widget (step, up, down) or, for
     # enum-enabled adjustables, a dropdown of the enum options
@@ -331,7 +427,7 @@ def _build_item_controls_widget(item, value_w, cur):
             description="↺", layout=widgets.Layout(width="40px"),
             tooltip="Reset to the value from when this widget was opened",
         )
-        last_changer = {"changer": None}
+        stop_btn.on_click(lambda b: row_state.stop())
 
         if enum_opts is not None:
             # ENUM adjustable: dropdown selector, current readback preselected
@@ -342,55 +438,22 @@ def _build_item_controls_widget(item, value_w, cur):
                 layout=widgets.Layout(width="150px"),
             )
             input_widget = dropdown
-            reader = None
             suppress_dd = [False]
-
-            def _enum_set(label, b=None):
-                try:
-                    r = item.set_target_value(label)
-                    last_changer["changer"] = r
-                    try:
-                        if hasattr(r, "wait"):
-                            r.wait(timeout=5)
-                    except Exception:
-                        pass
-                    try:
-                        new_cur = item.get_current_value()
-                    except Exception:
-                        new_cur = None
-                    if new_cur is not None:
-                        lbl = _format_value(new_cur)
-                        value_w.value = lbl
-                        if lbl in enum_opts:
-                            suppress_dd[0] = True
-                            try:
-                                dropdown.value = lbl
-                            finally:
-                                suppress_dd[0] = False
-                except Exception:
-                    _flash_button_error(b)
 
             def _on_dd_change(change):
                 if suppress_dd[0] or change.get("name") != "value":
                     return
-                _enum_set(change["new"])
+                label = change["new"]
+                row_state.write(lambda: label, flash=dropdown)
 
             def _on_enum_reset(b=None):
                 orig = original_value
-                _enum_set(orig.name if isinstance(orig, enum.Enum) else orig, b)
-
-            def _on_enum_stop(b=None):
-                changer = last_changer.get("changer")
-                if changer is not None and hasattr(changer, "stop"):
-                    try:
-                        changer.stop()
-                    except Exception:
-                        _flash_button_error(b)
+                target = orig.name if isinstance(orig, enum.Enum) else orig
+                row_state.write(lambda: target, flash=b)
 
             dropdown.observe(_on_dd_change, names="value")
-            stop_btn.on_click(_on_enum_stop)
             reset_btn.on_click(_on_enum_reset)
-            control_box.children = (dropdown, _action_group(stop_btn, reset_btn))
+            children += [dropdown, _action_group(stop_btn, reset_btn)]
 
         else:
             tweakable = _is_tweakable(cur)
@@ -405,81 +468,31 @@ def _build_item_controls_widget(item, value_w, cur):
                 input_widget = widgets.Label("n/a", layout=widgets.Layout(width="80px"))
                 reader = None
 
-            def make_handlers(it, val_widget, inp_widget, inp_reader, changer_ref):
-                # guards recursive triggering of the input's on-change handler
-                # when we update inp_widget.value ourselves after a move
-                suppress_input_event = [False]
-
-                def _sync_input_widget(value):
-                    if inp_reader is None:
-                        return
-                    suppress_input_event[0] = True
-                    try:
-                        inp_widget.value = value
-                    except Exception:
-                        pass
-                    finally:
-                        suppress_input_event[0] = False
-
-                def _do_set(newval, btn=None):
-                    try:
-                        r = it.set_target_value(newval)
-                        changer_ref["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        try:
-                            new_current = it.get_current_value()
-                        except Exception:
-                            new_current = newval
-                        try:
-                            val_widget.value = str(new_current)
-                        except Exception:
-                            pass
-                        # always reflect the real current value, so the next
-                        # tweak/move starts from where the device actually is
-                        _sync_input_widget(new_current)
-                    except Exception:
-                        _flash_button_error(btn)
-
-                def _on_input_change(change):
-                    if suppress_input_event[0] or inp_reader is None:
-                        return
-                    if change.get("name") != "value":
-                        return
-                    _do_set(inp_reader(), None)
-
-                def _on_stop(b=None):
-                    changer = changer_ref.get("changer")
-                    if changer is not None and hasattr(changer, "stop"):
-                        try:
-                            changer.stop()
-                        except Exception:
-                            _flash_button_error(b)
-
-                def _on_reset(b=None):
-                    _do_set(original_value, b)
-
-                return _do_set, _on_input_change, _on_stop, _on_reset
-
-            do_set, on_input_change, on_stop, on_reset = make_handlers(
-                item, value_w, input_widget, reader, last_changer
-            )
             # set the value as soon as a new one is entered (on Enter/blur,
             # not per keystroke) instead of requiring a separate "Set" button
             if reader is not None:
                 if hasattr(input_widget, "continuous_update"):
                     input_widget.continuous_update = False
-                input_widget.observe(on_input_change, names="value")
-            stop_btn.on_click(on_stop)
-            reset_btn.on_click(on_reset)
 
-            control_children = []
+                def _on_input_change(change, rd=reader, inp=input_widget):
+                    if change.get("name") != "value":
+                        return
+                    try:
+                        target = rd()
+                    except Exception:
+                        _flash_widget_error(inp)
+                        return
+                    row_state.write(lambda: target, flash=inp)
+
+                input_widget.observe(_on_input_change, names="value")
+
+            reset_btn.on_click(lambda b, ref=original_value: row_state.write(lambda: ref, flash=b))
+
             if tweakable:
                 # only plain numbers support +/- step tweaking (e.g. not strings)
-                step_w, step_reader = _make_step_widget_for_value(cur)
+                step_w, step_reader = _make_step_widget_for_value(cur, _initial_step(item, cur))
+                if live_values.has_ioc_step(item):
+                    row_state.attach_ioc_step(step_w)
                 up_btn = widgets.Button(
                     description="▲", layout=widgets.Layout(width="40px")
                 )
@@ -487,26 +500,23 @@ def _build_item_controls_widget(item, value_w, cur):
                     description="▼", layout=widgets.Layout(width="40px")
                 )
 
-                def make_tweak(sign, it=item, sr=step_reader, ds=do_set):
+                def make_tweak(sign, it=item, sr=step_reader):
                     def _on_click(b=None):
                         try:
                             step = sr()
-                            base = it.get_current_value()
-                            newval = base + sign * step
                         except Exception:
                             _flash_button_error(b)
                             return
-                        ds(newval, b)
+                        # relative to the real current value, read in the background
+                        row_state.write(lambda: it.get_current_value() + sign * step, flash=b)
 
                     return _on_click
 
                 up_btn.on_click(make_tweak(1))
                 down_btn.on_click(make_tweak(-1))
-                control_children.extend([step_w, up_btn, down_btn])
+                children += [step_w, up_btn, down_btn]
 
-            control_children.append(input_widget)
-            control_children.append(_action_group(stop_btn, reset_btn))
-            control_box.children = tuple(control_children)
+            children += [input_widget, _action_group(stop_btn, reset_btn)]
 
     # Fallback: if item has set_target_value (callable) but wasn't captured above, allow simple set
     elif hasattr(item, "set_target_value") and callable(
@@ -515,116 +525,107 @@ def _build_item_controls_widget(item, value_w, cur):
         # create input widget based on current value
         input_widget, reader = _make_input_widget_for_value(cur)
         input_widget.layout.margin = "0 6px 0 0"
-
-        def make_on_set(it, rw, vw, inp):
-            def _on_set(change):
-                if change.get("name") != "value":
-                    return
-                try:
-                    val = rw()
-                    r = it.set_target_value(val)
-                    try:
-                        if hasattr(r, "wait"):
-                            r.wait(timeout=5)
-                    except Exception:
-                        pass
-                    try:
-                        vw.value = _format_value(it.get_current_value())
-                    except Exception:
-                        pass
-                except Exception:
-                    old_border = inp.layout.border
-                    inp.layout.border = "1px solid red"
-
-                    def _reset(o=old_border):
-                        time.sleep(1.2)
-                        inp.layout.border = o
-
-                    threading.Thread(target=_reset, daemon=True).start()
-
-            return _on_set
-
-        # set the value as soon as a new one is entered (on Enter/blur,
-        # not per keystroke) instead of requiring a separate "Set" button
         if hasattr(input_widget, "continuous_update"):
             input_widget.continuous_update = False
-        input_widget.observe(
-            make_on_set(item, reader, value_w, input_widget), names="value"
-        )
-        control_box.children = (input_widget,)
+
+        def _on_set(change, rd=reader, inp=input_widget):
+            if change.get("name") != "value":
+                return
+            try:
+                target = rd()
+            except Exception:
+                _flash_widget_error(inp)
+                return
+            row_state.write(lambda: target, flash=inp)
+
+        input_widget.observe(_on_set, names="value")
+        children.append(input_widget)
 
     else:
-        control_box.children = (
-            widgets.Label("—", layout=widgets.Layout(margin="0 0 0 6px")),
-        )
+        children.append(widgets.Label("—", layout=widgets.Layout(margin="0 0 0 6px")))
 
+    control_box.children = tuple(children)
     poll_state = {
         "input_widget": input_widget,
         "reader": reader,
         "enum_opts": enum_opts,
         "dd_suppress": suppress_dd,
+        "row_state": row_state,
     }
     return control_box, poll_state
 
 
-def _apply_item_update(entry):
-    """Read `entry["item"]`'s current value and refresh its row's widgets
-    (value label, enum-dropdown sync, state-class re-colouring) -- the
-    per-entry body _update_loop already runs for every active row each
-    tick, extracted so a standalone control (build_adjustable_control_widget)
-    can reuse the exact same update logic outside the assembly grid's own
-    item_entries/poll-loop bookkeeping.
+def _apply_result(entry, ok, payload, monitor_state=None):
+    """Show one read of `entry["item"]` -- `payload` is the value, or (not
+    ok) why there is none: value label, enum-dropdown sync, state-class
+    re-colouring and the row's status dot. Called from reader threads
+    (widget values may be set from any thread)."""
+    row_state = entry.get("row_state")
+    if not ok:
+        if row_state is not None:
+            row_state.read_failed(payload)
+        return
+    val = payload
+    text = _format_value(val)
+    entry["value_widget"].value = text
+    # keep the dropdown selection tracking the readback (e.g. a valve
+    # settling from a stale/mismatched selection to its true OPEN/CLOSED
+    # state); dd_suppress stops this from looping back into the dropdown's
+    # change handler and issuing a spurious write.
+    enum_opts = entry.get("enum_opts")
+    dd_suppress = entry.get("dd_suppress")
+    if enum_opts and dd_suppress is not None and text in enum_opts:
+        dd = entry["input_widget"]
+        if dd.value != text:
+            dd_suppress[0] = True
+            try:
+                dd.value = text
+            finally:
+                dd_suppress[0] = False
+    # live green/red re-colouring -- open/closed and alarm severity can
+    # change between reads, so this must track the value, not just be set
+    # once at build time.
+    new_class = _state_css_class(entry["item"], val)
+    if new_class != entry.get("state_class"):
+        for cls in _STATE_CSS.values():
+            entry["value_widget"].remove_class(cls)
+        if new_class:
+            entry["value_widget"].add_class(new_class)
+        entry["state_class"] = new_class
+    if row_state is not None:
+        row_state.read_ok(monitor_state)
 
-    Returns the elapsed read duration in seconds -- computed whether or
-    not the read raised, matching the existing scheduler's behaviour of
-    backing off a slow *failing* read the same as a slow successful one
-    (see _update_loop's own adaptive-interval comment)."""
+
+def _apply_item_update(entry):
+    """Read `entry["item"]`'s current value here and show it (see
+    _apply_result). Returns the elapsed read duration in seconds."""
     t0 = time.monotonic()
     try:
-        val = entry["item"].get_current_value()
-        text = _format_value(val)
-        entry["value_widget"].value = text
-        # keep the dropdown selection tracking the readback (e.g. a valve
-        # settling from a stale/mismatched selection to its true
-        # OPEN/CLOSED state); dd_suppress (the same flag _enum_set uses
-        # after a real user-driven set) stops this from looping back into
-        # _on_dd_change and issuing a spurious write.
-        enum_opts = entry.get("enum_opts")
-        dd_suppress = entry.get("dd_suppress")
-        if enum_opts and dd_suppress is not None and text in enum_opts:
-            dd = entry["input_widget"]
-            if dd.value != text:
-                dd_suppress[0] = True
-                try:
-                    dd.value = text
-                finally:
-                    dd_suppress[0] = False
-        # live green/red re-colouring -- open/closed and alarm severity can
-        # change between polls, so this must track the value, not just be
-        # set once at build time.
-        new_class = _state_css_class(entry["item"], val)
-        if new_class != entry.get("state_class"):
-            for cls in _STATE_CSS.values():
-                entry["value_widget"].remove_class(cls)
-            if new_class:
-                entry["value_widget"].add_class(new_class)
-            entry["state_class"] = new_class
-    except Exception:
-        pass
+        value = entry["item"].get_current_value()
+        if value is None:
+            _apply_result(entry, False, "no value (not connected?)")
+        else:
+            _apply_result(entry, True, value)
+    except Exception as exc:
+        try:
+            _apply_result(entry, False, live_values.describe(exc))
+        except Exception:
+            pass
     return time.monotonic() - t0
 
 
 def build_adjustable_control_widget(item, poll_interval=1.0, title=None):
-    """Standalone, self-polling version of one make_assembly_widget row
+    """Standalone, self-updating version of one make_assembly_widget row
     (name/value/controls) -- for use as a eco.widgets.containers.stack()
     child outside the normal assembly grid, e.g. via
     eco.widgets.containers.adjustable_control()/detector_indicator() (the
     same function serves both -- _build_item_controls_widget already
-    renders read-only for a plain, non-Adjustable Detector). Returns a
-    plain ipywidgets.HBox with its own `.stop()` attached directly -- no
-    wrapper object needed, since eco.widgets.widget_tray.teardown_widget
-    already calls `.stop()` if present before closing a widget's
-    subtree."""
+    renders read-only for a plain, non-Adjustable Detector). Monitored where
+    the item supports it, polled otherwise, writes off the kernel thread --
+    same rules as the grid. Returns a plain ipywidgets.HBox with its own
+    `.stop()` attached directly -- no wrapper object needed, since
+    eco.widgets.widget_tray.teardown_widget already calls `.stop()` if
+    present before closing a widget's subtree."""
     name = title or (
         item.alias.get_full_name()
         if hasattr(item, "alias")
@@ -644,33 +645,17 @@ def build_adjustable_control_widget(item, poll_interval=1.0, title=None):
     control_box, poll_state = _build_item_controls_widget(item, value_w, cur)
     row = widgets.HBox([name_w, value_w, control_box], layout=_row_layout())
 
-    entry = {
-        "item": item,
-        "value_widget": value_w,
-        "active": True,
-        "interval": poll_interval,
-        "next_due": 0.0,
-        "state_class": state_class,
-        **poll_state,
-    }
+    entry = {"item": item, "value_widget": value_w, "state_class": state_class, **poll_state}
+    reader = LiveReader(
+        lambda index, ok, payload: _apply_result(entry, ok, payload, reader.monitor_state(0)),
+        poll_interval=poll_interval,
+        workers=1,
+    )
+    reader.add(item)
+    poll_state["row_state"].on_finished = lambda: reader.request_read(0)
+    reader.start()
 
-    stop_event = threading.Event()
-
-    def _poll_loop():
-        while not stop_event.is_set():
-            duration = _apply_item_update(entry)
-            interval = min(
-                _POLL_MAX_INTERVAL, max(poll_interval, duration * _POLL_SLOWDOWN_FACTOR)
-            )
-            if stop_event.wait(interval):
-                break
-
-    threading.Thread(target=_poll_loop, daemon=True).start()
-
-    def stop():
-        stop_event.set()
-
-    row.stop = stop
+    row.stop = reader.stop
     return row
 
 
@@ -711,8 +696,30 @@ def make_assembly_widget(
     hidden_items = [it for it in all_items if it not in display_items]
 
     # read every initial value concurrently up front, so opening a large
-    # assembly is bounded by the slowest single readback, not their sum
-    prefetched = _prefetch_values(list(display_items) + hidden_items)
+    # assembly is bounded by the slowest single readback, not their sum --
+    # and by PREFETCH_DEADLINE at most (a late row shows "connecting...")
+    prefetched = _prefetch_values(
+        list(display_items) + hidden_items, deadline=live_values.PREFETCH_DEADLINE
+    )
+
+    # results of the reads arrive here, from reader threads (see _apply_result)
+    def _on_result(index, ok, payload):
+        entry = item_entries[index]
+        if ok and entry.get("needs_controls"):
+            _build_late_controls(entry, payload)
+        _apply_result(entry, ok, payload, reader.monitor_state(index))
+
+    def _build_late_controls(entry, value):
+        """The first value of a row that had none at opening arrived: now its
+        controls (enum? numeric?) can be built."""
+        entry["needs_controls"] = False
+        control_box, poll_state = _build_item_controls_widget(
+            entry["item"], entry["value_widget"], value, entry["row_state"]
+        )
+        entry.update(poll_state)
+        entry["row"].children = (entry["row"].children[0], entry["value_widget"], control_box)
+
+    reader = LiveReader(_on_result, poll_interval=poll_interval)
 
     header = widgets.HBox(
         [
@@ -783,6 +790,8 @@ def make_assembly_widget(
             except Exception:
                 cur = "<error>"
 
+        pending = cur is _PENDING
+
         # child assemblies get a clickable name that expands/collapses their
         # own widget directly below this row; everything else is a plain label
         is_child_assembly = isinstance(item, Assembly)
@@ -798,24 +807,34 @@ def make_assembly_widget(
             name_w.style.button_color = "#f5f5f5"
         else:
             name_w = widgets.Label(str(name), layout=_name_layout())
-        value_w = widgets.Label(_format_value(cur), layout=_value_layout())
-        state_class = _state_css_class(item, cur)
+        value_w = widgets.Label("…" if pending else _format_value(cur), layout=_value_layout())
+        state_class = None if pending else _state_css_class(item, cur)
         if state_class:
             value_w.add_class(state_class)
 
-        control_box, poll_state = _build_item_controls_widget(item, value_w, cur)
+        row_state = _RowState(item)
+        if pending:
+            # no value yet, so no way to tell which controls fit (enum?
+            # numeric?): built when the first value arrives (_build_late_controls)
+            control_box = widgets.HBox(
+                [row_state.dot, widgets.Label("connecting…")], layout=_control_layout()
+            )
+            poll_state = {"row_state": row_state}
+        else:
+            control_box, poll_state = _build_item_controls_widget(item, value_w, cur, row_state)
 
         row = widgets.HBox([name_w, value_w, control_box], layout=_row_layout())
         if section_class:
             row.add_class(section_class)
         elements.append(row)
+        index = reader.add(item, active=active)  # same index as in item_entries
+        row_state.on_finished = lambda i=index: reader.request_read(i)
         item_entries.append(
             {
                 "item": item,
                 "value_widget": value_w,
-                "active": active,
-                "interval": poll_interval,
-                "next_due": 0.0,  # monotonic time; 0 => poll on first pass
+                "row": row,
+                "needs_controls": pending,
                 "state_class": state_class,  # seeded from the initial build
                 **poll_state,
             }
@@ -889,20 +908,13 @@ def make_assembly_widget(
             layout=widgets.Layout(width="150px"),
         )
 
-        def _toggle_hidden(b, box=hidden_container, entries=hidden_entries):
+        def _toggle_hidden(b, box=hidden_container, start=hidden_entry_start, count=len(hidden_entries)):
             showing = box.layout.display != "none"
-            if showing:
-                box.layout.display = "none"
-                b.description = "expand hidden"
-                # stop polling collapsed items so they don't consume resources
-                for ent in entries:
-                    ent["active"] = False
-            else:
-                box.layout.display = None
-                b.description = "hide hidden"
-                for ent in entries:
-                    ent["active"] = True
-                    ent["next_due"] = 0.0  # refresh immediately on expand
+            box.layout.display = "none" if showing else None
+            b.description = "expand hidden" if showing else "hide hidden"
+            # only read/monitor expanded items, so collapsed ones don't consume resources
+            for index in range(start, start + count):
+                reader.set_active(index, not showing)
 
         toggle_btn.on_click(_toggle_hidden)
         final_children.append(toggle_btn)
@@ -933,45 +945,12 @@ def make_assembly_widget(
 
     vbox = widgets.VBox(final_children)
 
-    # background updater
-    stop_event = threading.Event()
-    updater_thread = None
-
-    def _update_loop():
-        # adaptive scheduler: poll each active item only when it is due, and
-        # back off items whose readback is slow so they don't stall the rest
-        while not stop_event.is_set():
-            now = time.monotonic()
-            next_wakeup = now + poll_interval
-            for ent in item_entries:
-                if stop_event.is_set():
-                    break
-                if not ent.get("active", True):
-                    continue
-                if now < ent["next_due"]:
-                    next_wakeup = min(next_wakeup, ent["next_due"])
-                    continue
-                duration = _apply_item_update(ent)
-                ent["interval"] = min(
-                    _POLL_MAX_INTERVAL,
-                    max(poll_interval, duration * _POLL_SLOWDOWN_FACTOR),
-                )
-                ent["next_due"] = time.monotonic() + ent["interval"]
-                next_wakeup = min(next_wakeup, ent["next_due"])
-            sleep_for = max(0.05, next_wakeup - time.monotonic())
-            if stop_event.wait(sleep_for):
-                break
-
+    # reads and monitors run off the kernel thread (see live_values.LiveReader)
     def start():
-        nonlocal updater_thread
-        if updater_thread and updater_thread.is_alive():
-            return
-        stop_event.clear()
-        updater_thread = threading.Thread(target=_update_loop, daemon=True)
-        updater_thread.start()
+        reader.start()
 
     def stop():
-        stop_event.set()
+        reader.stop()
         for state in child_states:
             child_widget = state.get("widget")
             if child_widget is not None:
@@ -982,7 +961,7 @@ def make_assembly_widget(
 
     vbox.start = start
     vbox.stop = stop
-    vbox._stop_event = stop_event
+    vbox._reader = reader
 
     if auto_start:
         start()

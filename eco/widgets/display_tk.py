@@ -20,12 +20,33 @@ this) the window is never driven from a background thread. Inside IPython,
 `start()` uses IPython's own Tk event-loop integration (the same mechanism
 `%matplotlib tk` relies on) to pump the window between prompts on the main
 thread; outside of IPython it falls back to a blocking mainloop.
+
+Same responsiveness rules as the Qt grid (eco.widgets.display_qt; the shared
+machinery is eco.widgets.live_values): reads run in a background pool --
+monitored where the item supports it, polled otherwise -- and writes in
+background threads, so the window never blocks on hardware (before, every
+poll read all rows *on the Tk thread*, and every click waited up to 5 s for
+its move). Since Tk is not thread-safe, everything those threads report goes
+through a queue that the Tk thread drains every FLUSH_MS (see _post/_drain).
+A status dot per row shows connecting / moving / monitored / polled / error;
+hovering over it shows the reason in the status line at the bottom.
 """
+import collections
 import enum
+import threading
 import tkinter as tk
 from tkinter import ttk
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
+
+from eco.widgets import live_values
+from eco.widgets.live_values import (  # the toolkit-independent part, shared with display_qt/display_widget
+    LiveReader,
+    PENDING as _PENDING,
+    PREFETCH_ERROR as _PREFETCH_ERROR,
+    initial_step as _initial_step,
+)
+
+FLUSH_MS = 100  # how often the Tk thread shows what the background threads reported
 
 # Try to import types for isinstance checks if available.
 try:
@@ -45,7 +66,6 @@ except Exception:
 
     Assembly = object
 
-_PREFETCH_ERROR = object()  # sentinel: a prefetched read raised
 
 
 def _format_value(value):
@@ -79,29 +99,9 @@ def _enum_options(item, cur):
     return None
 
 
-def _prefetch_values(items, max_workers=8):
-    """Read all initial values concurrently so building the window for a large
-    assembly is bounded by the slowest single readback rather than their sum.
-    Returns {id(item): value_or__PREFETCH_ERROR}. Never raises."""
-    values = {}
-    items = list(items)
-    if not items:
-        return values
-
-    def _read(it):
-        return it.get_current_value()
-
-    try:
-        with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as ex:
-            futures = {ex.submit(_read, it): it for it in items}
-            for fut, it in futures.items():
-                try:
-                    values[id(it)] = fut.result()
-                except Exception:
-                    values[id(it)] = _PREFETCH_ERROR
-    except Exception:
-        pass
-    return values
+def _prefetch_values(items, max_workers=8, deadline=None):
+    """See eco.widgets.live_values.prefetch_values."""
+    return live_values.prefetch_values(items, max_workers=max_workers, deadline=deadline)
 
 
 def _label_of(item: Any, assembly=None) -> str:
@@ -144,6 +144,70 @@ def _is_tweakable(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+class _TkRowState:
+    """Tk counterpart of display_qt._RowController: writes go through
+    eco.widgets.live_values in background threads; their reports are
+    posted to the window's queue and applied on the Tk thread."""
+
+    def __init__(self, display, item, dot):
+        self.display = display
+        self.item = item
+        self.dot = dot
+        self.holder = {}  # "changer" of the latest write
+        self.tooltip = ""
+        self.index = None  # the item's index in the window's reader
+        self._read_state = ("waiting", "")
+        self._writing = 0
+        dot.bind("<Enter>", lambda _evt: display._status_var.set(self.tooltip))
+        dot.bind("<Leave>", lambda _evt: display._status_var.set(""))
+        self.show("waiting", "")
+
+    def show(self, state, message):  # Tk thread only
+        color, self.tooltip = live_values.dot_state(state, message, self._read_state)
+        try:
+            self.dot.configure(foreground=color)
+        except tk.TclError:  # the window is gone
+            pass
+
+    def read_ok(self, monitor_state):
+        """monitor_state: LiveReader.monitor_state() ("live"/"subscribed"/None)."""
+        self._read_state = (monitor_state or "polled", "")
+        if not self._writing:
+            self.show(*self._read_state)
+
+    def read_failed(self, message):
+        self._read_state = ("error", message)
+        if not self._writing:
+            self.show(*self._read_state)
+
+    def write(self, target_fn, flash=None):
+        self._writing += 1
+        self.show("busy", "")
+
+        def on_state(state, message):  # a background thread
+            self.display._post(lambda: self._on_state(state, message, flash))
+
+        def on_finished():
+            if self.index is not None and self.display._reader is not None:
+                self.display._reader.request_read(self.index)
+
+        live_values.start_write(self.item, target_fn, on_state, on_finished=on_finished, holder=self.holder)
+
+    def _on_state(self, state, message, flash):
+        if state in ("idle", "error"):
+            self._writing -= 1
+        self.show(state, message)
+        if state == "error" and flash is not None:
+            self.display._flash_error(flash)
+
+    def stop(self):
+        live_values.stop_move(
+            self.item,
+            self.holder.get("changer"),
+            lambda state, message: self.display._post(lambda: self.show(state, message)),
+        )
+
+
 class DisplayTk:
     def __init__(
         self,
@@ -158,9 +222,12 @@ class DisplayTk:
         self.root = None
         self._entries = []  # list of dicts: item, value_var, input_widget/var, reader
         self._child_windows = {}  # id(child_assembly) -> DisplayTk shown in a Toplevel
-        self._poll_after_id = None
+        self._poll_after_id = None  # the pending after() of _drain
         self._prefetched = {}
         self._memory_browser = None  # lazily-built "memories" sub-window, see _open_memory_browser
+        self._reader = None  # live_values.LiveReader, see _build_layout
+        self._queue = collections.deque()  # callables posted from background threads, see _post
+        self._status_var = None
 
         if auto_start:
             self.start()
@@ -257,13 +324,17 @@ class DisplayTk:
         except Exception:
             pass
 
-    def _toggle_hidden(self, btn, box):
-        if box.winfo_ismapped():
+    def _toggle_hidden(self, btn, box, indices=()):
+        showing = box.winfo_ismapped()
+        if showing:
             box.pack_forget()
             btn.config(text="expand hidden")
         else:
             box.pack(fill="x", padx=4, pady=(0, 4))
             btn.config(text="hide hidden")
+        # only read/monitor shown items, so collapsed ones don't consume resources
+        for index in indices:
+            self._reader.set_active(index, not showing)
 
     def _build_layout(self):
         root = self.root
@@ -285,8 +356,15 @@ class DisplayTk:
         display_items = self._get_display_items()
         hidden_items = self._get_hidden_items()
         # read every initial value concurrently up front, so opening a large
-        # assembly is bounded by the slowest single readback, not their sum
-        self._prefetched = _prefetch_values(list(display_items) + list(hidden_items))
+        # assembly is bounded by the slowest single readback, not their sum --
+        # and by PREFETCH_DEADLINE at most (a late row shows "connecting...")
+        self._prefetched = _prefetch_values(
+            list(display_items) + list(hidden_items), deadline=live_values.PREFETCH_DEADLINE
+        )
+        self._reader = LiveReader(
+            lambda index, ok, payload: self._post(lambda: self._apply(index, ok, payload)),
+            poll_interval=self.poll_interval,
+        )
 
         for item in display_items:
             self._build_item_row(scroll_area, item)
@@ -299,18 +377,22 @@ class DisplayTk:
                 toggle_row,
                 text="hide hidden" if self.show_hidden else "expand hidden",
             )
-            toggle_btn.config(
-                command=lambda b=toggle_btn, box=hidden_box: self._toggle_hidden(b, box)
-            )
             toggle_btn.pack(side="left")
 
+            hidden_start = len(self._entries)
             for item in hidden_items:
-                self._build_item_row(hidden_box, item)
+                self._build_item_row(hidden_box, item, active=self.show_hidden)
+            hidden_indices = [e["state"].index for e in self._entries[hidden_start:]]
+            toggle_btn.config(
+                command=lambda b=toggle_btn, box=hidden_box, ix=hidden_indices: self._toggle_hidden(b, box, ix)
+            )
 
             if self.show_hidden:
                 hidden_box.pack(fill="x", padx=4, pady=(0, 4))
 
         ttk.Separator(root).pack(fill="x", padx=4, pady=(4, 0))
+        # what the status dot under the mouse means (Tk has no tooltips)
+        ttk.Label(root, textvariable=self._status_var, foreground="#555555").pack(fill="x", padx=4)
         close_row = ttk.Frame(root)
         close_row.pack(fill="x", padx=4, pady=4)
         ttk.Button(close_row, text="Close", command=self._on_close).pack(side="left")
@@ -319,7 +401,7 @@ class DisplayTk:
                 close_row, text="memories", command=self._open_memory_browser
             ).pack(side="left", padx=(4, 0))
 
-    def _build_item_row(self, parent, item):
+    def _build_item_row(self, parent, item, active=True):
         name = _label_of(item, assembly=self.assembly)
         prefetched = getattr(self, "_prefetched", {})
         if id(item) in prefetched:
@@ -331,6 +413,7 @@ class DisplayTk:
                 cur = item.get_current_value()
             except Exception:
                 cur = "<error>"
+        pending = cur is _PENDING
 
         row = ttk.Frame(parent)
         row.pack(fill="x", padx=4, pady=2)
@@ -344,12 +427,27 @@ class DisplayTk:
             )
         else:
             ttk.Label(row, text=name, width=28).pack(side="left")
-        value_var = tk.StringVar(value=_format_value(cur))
+        value_var = tk.StringVar(value="…" if pending else _format_value(cur))
         ttk.Label(row, textvariable=value_var, width=20).pack(side="left")
+        dot = ttk.Label(row, text="●", width=2)
+        dot.pack(side="left")
         control = ttk.Frame(row)
         control.pack(side="left", fill="x", expand=True)
 
-        entry = {"item": item, "value_var": value_var, "reader": None}
+        state = _TkRowState(self, item, dot)
+        entry = {"item": item, "value_var": value_var, "reader": None, "state": state,
+                 "control": control, "needs_controls": pending}
+        if pending:
+            # no value yet, so no way to tell which controls fit (enum?
+            # numeric?): built when the first value arrives, see _apply
+            ttk.Label(control, text="connecting…").pack(side="left")
+        else:
+            self._build_controls(entry, cur)
+        state.index = self._reader.add(item, active=active)  # same index as in self._entries
+        self._entries.append(entry)
+
+    def _build_controls(self, entry, cur):
+        item, value_var, control, state = entry["item"], entry["value_var"], entry["control"], entry["state"]
 
         # Detector (non-Adjustable): read-only
         if isinstance(item, Detector) and not isinstance(item, Adjustable):
@@ -359,8 +457,7 @@ class DisplayTk:
         elif isinstance(item, Adjustable):
             original_value = cur
             enum_opts = _enum_options(item, cur)
-            changer_ref = {"changer": None}
-            entry["changer_ref"] = changer_ref
+            stop_btn_kwargs = dict(text="\U0001f6d1", width=3, command=state.stop)
 
             if enum_opts is not None:
                 # ENUM adjustable: dropdown selector, current readback preselected
@@ -378,58 +475,29 @@ class DisplayTk:
                 entry["combo_var"] = combo_var
                 entry["enum_opts"] = enum_opts
 
-                def _enum_set(label, cvar=combo_var, vv=value_var, it=item,
-                              cref=changer_ref):
-                    try:
-                        r = it.set_target_value(label)
-                        cref["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        try:
-                            new_cur = it.get_current_value()
-                        except Exception:
-                            new_cur = None
-                        if new_cur is not None:
-                            lbl = _format_value(new_cur)
-                            vv.set(lbl)
-                            if lbl in enum_opts:
-                                cvar.set(lbl)
-                    except Exception:
-                        pass
-
                 def _on_combo_selected(_evt=None, cvar=combo_var):
-                    _enum_set(cvar.get())
+                    label = cvar.get()
+                    state.write(lambda: label)
 
                 combo.bind("<<ComboboxSelected>>", _on_combo_selected)
 
-                def _on_stop(it=item, cref=changer_ref):
-                    changer = cref.get("changer")
-                    if changer is not None and hasattr(changer, "stop"):
-                        try:
-                            changer.stop()
-                        except Exception:
-                            pass
-
                 def _on_reset(ref=original_value):
-                    _enum_set(ref.name if isinstance(ref, enum.Enum) else ref)
+                    target = ref.name if isinstance(ref, enum.Enum) else ref
+                    state.write(lambda: target)
 
-                stop_btn = ttk.Button(control, text="\U0001f6d1", width=3,
-                                      command=_on_stop)
-                stop_btn.pack(side="left", padx=(4, 0))
-                reset_btn = ttk.Button(control, text="↺", width=3, command=_on_reset)
-                reset_btn.pack(side="left")
+                ttk.Button(control, **stop_btn_kwargs).pack(side="left", padx=(4, 0))
+                ttk.Button(control, text="↺", width=3, command=_on_reset).pack(side="left")
 
             else:
                 is_plain_scalar = not isinstance(cur, (list, dict, bytes, bytearray))
                 tweakable = _is_tweakable(cur)
 
                 if tweakable:
-                    step_var = tk.StringVar(value=str(_default_step_for(cur)))
+                    step_var = tk.StringVar(value=str(_initial_step(item, cur)))
                     step_entry = ttk.Entry(control, textvariable=step_var, width=8)
                     step_entry.pack(side="left", padx=(0, 4))
+                    if live_values.has_ioc_step(item):
+                        self._attach_ioc_step(item, step_var, step_entry)
 
                 if is_plain_scalar:
                     input_var = tk.StringVar(value=str(cur))
@@ -437,29 +505,13 @@ class DisplayTk:
                     input_widget.pack(side="left", padx=(0, 4))
                     entry["reader"] = lambda iv=input_var: iv.get()
 
-                    def _apply_absolute(
-                        _evt=None,
-                        it=item,
-                        vv=value_var,
-                        iv=input_var,
-                        iw=input_widget,
-                        ref=cur,
-                        cref=changer_ref,
-                    ):
+                    def _apply_absolute(_evt=None, iv=input_var, iw=input_widget, ref=cur):
                         try:
-                            newval = _coerce_like(iv.get(), ref)
-                            r = it.set_target_value(newval)
-                            cref["changer"] = r
-                            try:
-                                if hasattr(r, "wait"):
-                                    r.wait(timeout=5)
-                            except Exception:
-                                pass
-                            new_current = it.get_current_value()
-                            vv.set(_format_value(new_current))
-                            iv.set(str(new_current))
+                            target = _coerce_like(iv.get(), ref)
                         except Exception:
                             self._flash_error(iw)
+                            return
+                        state.write(lambda: target, flash=iw)
 
                     input_widget.bind("<Return>", _apply_absolute)
                     input_widget.bind("<FocusOut>", _apply_absolute)
@@ -468,73 +520,26 @@ class DisplayTk:
                     input_widget.pack(side="left", padx=(0, 4))
 
                 if tweakable:
-                    # base is always read fresh from the device, and the absolute
-                    # entry is resynced to the real current value after every move
-                    def make_tweak_handler(sign, it=item, vv=value_var, sv=step_var,
-                                            iw=input_widget, cref=changer_ref,
-                                            input_var=(input_var if is_plain_scalar else None)):
+                    # relative to the real current value, read in the background
+                    def make_tweak_handler(sign, sv=step_var, iw=input_widget, it=item):
                         def _on_click():
                             try:
                                 step = _coerce_like(sv.get(), _default_step_for(cur))
-                                base = it.get_current_value()
-                                newval = base + sign * step
-                                r = it.set_target_value(newval)
-                                cref["changer"] = r
-                                try:
-                                    if hasattr(r, "wait"):
-                                        r.wait(timeout=5)
-                                except Exception:
-                                    pass
-                                new_current = it.get_current_value()
-                                vv.set(_format_value(new_current))
-                                if input_var is not None:
-                                    input_var.set(str(new_current))
                             except Exception:
-                                self._flash_error(iw)
+                                self._flash_error(step_entry)
+                                return
+                            state.write(lambda: it.get_current_value() + sign * step, flash=iw)
 
                         return _on_click
 
-                    up_btn = ttk.Button(control, text="▲", width=3,
-                                         command=make_tweak_handler(1))
-                    up_btn.pack(side="left")
-                    down_btn = ttk.Button(control, text="▼", width=3,
-                                          command=make_tweak_handler(-1))
-                    down_btn.pack(side="left")
+                    ttk.Button(control, text="▲", width=3, command=make_tweak_handler(1)).pack(side="left")
+                    ttk.Button(control, text="▼", width=3, command=make_tweak_handler(-1)).pack(side="left")
 
-                def _on_stop(it=item, cref=changer_ref):
-                    changer = cref.get("changer")
-                    if changer is not None and hasattr(changer, "stop"):
-                        try:
-                            changer.stop()
-                        except Exception:
-                            pass
+                def _on_reset(ref=original_value, iw=input_widget if is_plain_scalar else None):
+                    state.write(lambda: ref, flash=iw)
 
-                def _on_reset(
-                    it=item, vv=value_var,
-                    iw=input_widget if is_plain_scalar else None,
-                    input_var=(input_var if is_plain_scalar else None),
-                    ref=original_value, cref=changer_ref,
-                ):
-                    try:
-                        r = it.set_target_value(ref)
-                        cref["changer"] = r
-                        try:
-                            if hasattr(r, "wait"):
-                                r.wait(timeout=5)
-                        except Exception:
-                            pass
-                        new_current = it.get_current_value()
-                        vv.set(_format_value(new_current))
-                        if input_var is not None:
-                            input_var.set(str(new_current))
-                    except Exception:
-                        if iw is not None:
-                            self._flash_error(iw)
-
-                stop_btn = ttk.Button(control, text="🛑", width=3, command=_on_stop)
-                stop_btn.pack(side="left", padx=(4, 0))
-                reset_btn = ttk.Button(control, text="↺", width=3, command=_on_reset)
-                reset_btn.pack(side="left")
+                ttk.Button(control, **stop_btn_kwargs).pack(side="left", padx=(4, 0))
+                ttk.Button(control, text="↺", width=3, command=_on_reset).pack(side="left")
 
         # Fallback: has set_target_value but not recognized as Adjustable
         elif hasattr(item, "set_target_value") and callable(
@@ -545,27 +550,13 @@ class DisplayTk:
             input_widget.pack(side="left")
             entry["reader"] = lambda iv=input_var: iv.get()
 
-            def _apply(
-                _evt=None,
-                it=item,
-                vv=value_var,
-                iv=input_var,
-                iw=input_widget,
-                ref=cur,
-            ):
+            def _apply(_evt=None, iv=input_var, iw=input_widget, ref=cur):
                 try:
-                    newval = _coerce_like(iv.get(), ref)
-                    r = it.set_target_value(newval)
-                    try:
-                        if hasattr(r, "wait"):
-                            r.wait(timeout=5)
-                    except Exception:
-                        pass
-                    new_current = it.get_current_value()
-                    vv.set(str(new_current))
-                    iv.set(str(new_current))
+                    target = _coerce_like(iv.get(), ref)
                 except Exception:
                     self._flash_error(iw)
+                    return
+                state.write(lambda: target, flash=iw)
 
             input_widget.bind("<Return>", _apply)
             input_widget.bind("<FocusOut>", _apply)
@@ -573,30 +564,74 @@ class DisplayTk:
         else:
             ttk.Label(control, text="—").pack(side="left")
 
-        self._entries.append(entry)
+    def _attach_ioc_step(self, item, step_var, step_entry):
+        """Fill the step field from the IOC's TWV and write edits back."""
 
-    def _poll(self):
+        def on_step(value):  # a background thread
+            def show():
+                try:
+                    if self.root is not None and self.root.focus_get() is not step_entry:
+                        step_var.set(f"{value:g}")
+                except (tk.TclError, KeyError):
+                    pass
+
+            self._post(show)
+
+        holder = live_values.load_ioc_step(item, on_step)
+
+        def store(_evt=None):
+            try:
+                live_values.store_ioc_step(holder, float(step_var.get()))
+            except ValueError:
+                pass
+
+        step_entry.bind("<Return>", store)
+        step_entry.bind("<FocusOut>", store)
+
+    # -- what the background threads report, on the Tk thread --------------------
+
+    def _post(self, fn):
+        """Run `fn` on the Tk thread soon (from any thread)."""
+        self._queue.append(fn)
+
+    def _drain(self):
         if self.root is None:
             return
-        for ent in self._entries:
+        while self._queue:
+            fn = self._queue.popleft()
             try:
-                val = ent["item"].get_current_value()
-                text = _format_value(val)
-                ent["value_var"].set(text)
-                combo_var = ent.get("combo_var")
-                # keep the dropdown selection tracking the readback (e.g. a
-                # valve settling from a stale/mismatched selection to its
-                # true OPEN/CLOSED state); setting the StringVar directly
-                # does not fire <<ComboboxSelected>>, so this can't loop back
-                # into _enum_set and issue a spurious write.
-                if combo_var is not None and text in ent.get("enum_opts", ()):
-                    combo_var.set(text)
+                fn()
+            except tk.TclError:  # a widget went away meanwhile
+                pass
             except Exception:
                 pass
         if self.root is not None:
-            self._poll_after_id = self.root.after(
-                int(self.poll_interval * 1000), self._poll
-            )
+            self._poll_after_id = self.root.after(FLUSH_MS, self._drain)
+
+    def _apply(self, index, ok, payload):
+        """Show one read (Tk thread)."""
+        ent = self._entries[index]
+        state = ent["state"]
+        if not ok:
+            if ent["needs_controls"]:
+                ent["value_var"].set("—")
+            state.read_failed(payload)
+            return
+        if ent["needs_controls"]:
+            for child in ent["control"].winfo_children():
+                child.destroy()
+            ent["needs_controls"] = False
+            self._build_controls(ent, payload)
+        text = _format_value(payload)
+        ent["value_var"].set(text)
+        combo_var = ent.get("combo_var")
+        # keep the dropdown selection tracking the readback (e.g. a valve
+        # settling from a stale/mismatched selection to its true OPEN/CLOSED
+        # state); setting the StringVar directly does not fire
+        # <<ComboboxSelected>>, so this can't loop back into a write.
+        if combo_var is not None and text in ent.get("enum_opts", ()):
+            combo_var.set(text)
+        state.read_ok(self._reader.monitor_state(index))
 
     def _on_close(self):
         self.stop()
@@ -635,10 +670,10 @@ class DisplayTk:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._entries = []
         self._poll_after_id = None
+        self._status_var = tk.StringVar(value="")
         self._build_layout()
-        self._poll_after_id = self.root.after(
-            int(self.poll_interval * 1000), self._poll
-        )
+        self._reader.start()
+        self._poll_after_id = self.root.after(FLUSH_MS, self._drain)
         self._cap_window_height()
 
     def run(self):
@@ -694,6 +729,8 @@ class DisplayTk:
             except Exception:
                 pass
             self._memory_browser = None
+        if self._reader is not None:
+            self._reader.stop()
         if self.root is not None:
             if getattr(self, "_poll_after_id", None) is not None:
                 try:

@@ -111,8 +111,18 @@ def _start_poll(widget, get_value, render, poll_interval, stop_event):
     the widget does -- a local-only QObject with a connected signal can
     otherwise be garbage-collected out from under the connection."""
     bridge = _PollBridge()
-    bridge.updated.connect(render)
+
+    def _render(value):
+        # a reading may arrive after the widget is gone: an exception in this
+        # slot would abort the whole process under PyQt -- stop reading instead
+        try:
+            render(value)
+        except RuntimeError:
+            stop_event.set()
+
+    bridge.updated.connect(_render)
     widget._bridge = bridge
+    widget.destroyed.connect(lambda *args: stop_event.set())
 
     def _loop():
         while not stop_event.is_set():

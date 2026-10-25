@@ -40,22 +40,21 @@ def _safe_get_value(obj: Any):
 
 
 def _safe_set_value(obj: Any, val):
-    """Try a few common setters used in eco for adjustables."""
-    # try common setter names
-    for fn in ("set_target_value", "mv", "mvr", "set", "set_value", "put", "write"):
-        try:
-            fnobj = getattr(obj, fn)
-            if callable(fnobj):
-                return fnobj(val)
-        except Exception:
-            pass
+    """Set an absolute target with the first setter `obj` has.
+
+    The first setter found is the one used, and its error is raised: this
+    used to swallow it and try the next name, so a set_target_value()
+    refused for a good reason (limits, a move blocked by a running queue
+    task) fell through to mv() and then to mvr() -- a *relative* move by the
+    absolute value."""
+    for fn in ("set_target_value", "set", "set_value", "put", "write"):
+        fnobj = getattr(obj, fn, None)
+        if callable(fnobj):
+            return fnobj(val)
     # try attribute assignment if has property 'value'
     if hasattr(obj, "value"):
-        try:
-            setattr(obj, "value", val)
-            return True
-        except Exception:
-            pass
+        setattr(obj, "value", val)
+        return True
     raise RuntimeError("No known setter found on object")
 
 
@@ -140,13 +139,18 @@ class _ItemWidget:
                     v = txt
         except Exception:
             v = txt
-        try:
-            _safe_set_value(self.obj, v)
-            # auto refresh after set
-            time.sleep(0.01)
-            self.refresh()
-        except Exception as e:
-            self.value_label.value = f"Set failed: {e}"
+        # off the kernel thread: a move must not block other widget messages
+        def _set():
+            try:
+                changer = _safe_set_value(self.obj, v)
+                self.value_label.value = f"setting {v!r}..."
+                if hasattr(changer, "wait"):
+                    changer.wait()
+                self.refresh()
+            except Exception as e:
+                self.value_label.value = f"Set failed: {e}"
+
+        threading.Thread(target=_set, daemon=True).start()
 
     def refresh(self):
         try:

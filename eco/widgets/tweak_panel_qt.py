@@ -331,7 +331,17 @@ class TweakPanelQt(QtWidgets.QFrame):
 
     def _show_message(self, text):
         self.status.setText(text)
-        QtCore.QTimer.singleShot(8000, lambda: self.status.setText(""))
+
+        def _clear():
+            # only this message (not a newer one), and only while the panel
+            # exists: an exception in a timer callback aborts under PyQt
+            try:
+                if self.status.text() == text:
+                    self.status.setText("")
+            except RuntimeError:
+                pass
+
+        QtCore.QTimer.singleShot(8000, _clear)
 
     def closeEvent(self, event):
         self._stop_event.set()

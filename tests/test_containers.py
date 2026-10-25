@@ -286,9 +286,18 @@ def test_build_item_controls_qt_adjustable_stop_reset():
     stop_btn = next(b for b in buttons if b.text() == "🛑")
     reset_btn = next(b for b in buttons if b.text() == "↺")
 
+    # writes run off the GUI thread now (see display_qt's module docstring)
+    def wait_for_calls(n):
+        deadline = time.monotonic() + 2.0
+        while len(item.set_calls) < n and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.01)
+
     up_btn.click()
+    wait_for_calls(1)
     assert item.set_calls == [2]  # base 1 + step 1
     reset_btn.click()
+    wait_for_calls(2)
     assert item.set_calls[-1] == 1  # back to the value the control opened with
     stop_btn.click()  # no changer with .stop() attached here -- just shouldn't raise
 

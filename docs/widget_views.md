@@ -13,7 +13,9 @@ two independent implementations with different capabilities, described below.
 
 The desktop app's dockable property grid ({py:class}`~eco.widgets.display_qt.DisplayQt`,
 also used standalone via `make_assembly_qt_window`) shows a **name / current /
-control** row per item, polled on a background thread:
+control** row per item. Items that can push updates (motor records, PV-backed
+adjustables and detectors) are monitored and show changes at once; the rest
+are polled in parallel on background threads:
 
 ![Default Qt property-grid rows for a numeric Adjustable ("energy"), an enum Adjustable ("shutter"), and a read-only Detector ("intensity"). The numeric row has a step field, up/down tweak buttons, an absolute-value entry (commits on Enter/focus-out), and Stop/Reset buttons; the enum row is a dropdown with the same Stop/Reset pair; the Detector row is plain read-only text.](images/widget_default_row_qt.png)
 
@@ -25,7 +27,28 @@ control** row per item, polled on a background thread:
 - **Enum-valued Adjustables** (anything exposing `enum_strs`, e.g.
   `AdjustablePvEnum`) get a dropdown instead of step/absolute controls, same
   Stop/Reset pair.
+- The **tweak step** of a motor record (and the SmarAct records) starts from
+  the IOC's own tweak value (TWV), and editing it sets TWV. For other
+  adjustables it starts from the adjustable's own tweak step if one was set
+  up, else 1 or 0.1.
+- A **status dot** at the start of the controls shows what the row is doing:
+  grey — no value yet (connecting); orange — sending or moving; green —
+  connected and monitored; blue — connected and polled; red — not connected,
+  failed, or blocked (e.g. the adjustable is used by a running queue task).
+  Hover over it for the reason.
+- **Writes never block the window**: a click starts the move in the
+  background, so the window stays responsive and 🛑 Stop works during the
+  move. Opening waits at most 2 s for initial values; a row still connecting
+  gets its controls when its value arrives.
 - Right-clicking a name label opens **"Add indicator"** — see below.
+
+In JupyterLab and Voila, a device's `.widget()` is the ipywidgets version of
+the same grid (`eco.widgets.display_widget`). It follows the same rules:
+- the same status dot (hover for the reason);
+- monitored rows;
+- the tweak step from TWV;
+- clicks that never block the kernel, so 🛑 Stop works during a move;
+- values that keep updating in the browser while a cell runs.
 
 ### ipywidgets (`eco.widgets.assembly_browser`)
 
