@@ -280,3 +280,20 @@ def tip(name=None, window=None):
     elif history.current is None:
         history.next()
     return show_tip_window()
+
+
+def docs(page=None):
+    """Open the eco documentation (ECO_DOCS_URL) in the web browser, or a
+    given page of it (``docs("scanning")``); without a display, print the
+    URL instead. Returns the URL."""
+    url = doc_url(page) if page else DOCS_URL
+    from eco.widgets.tweak_recorder import display_available
+
+    if display_available():
+        import webbrowser
+
+        if webbrowser.open(url):
+            print(f"opened {url}")
+            return url
+    print(url)
+    return url

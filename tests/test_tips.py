@@ -126,3 +126,20 @@ def test_window_navigation(tip_dir, monkeypatch):
     finally:
         handle.stop()
     assert tip_qt._open_window is None
+
+
+def test_docs_without_display_prints_url(monkeypatch, capsys):
+    monkeypatch.setenv("ECO_NO_X", "1")
+    monkeypatch.setattr(tips, "DOCS_URL", "http://host:8095/")
+    assert tips.docs() == "http://host:8095/"
+    assert tips.docs("../scanning") == "http://host:8095/scanning.html"
+    assert capsys.readouterr().out.split() == ["http://host:8095/", "http://host:8095/scanning.html"]
+
+
+def test_features_is_the_tip_window(tip_dir, monkeypatch, capsys):
+    import eco
+
+    monkeypatch.setenv("ECO_NO_X", "1")
+    shown = eco.features("tip2")
+    assert shown.title == "Third tip"
+    assert "Third tip" in capsys.readouterr().out

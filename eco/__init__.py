@@ -146,3 +146,20 @@ def tip(*args, **kwargs):
     from eco.utilities.tips import tip as _tip
 
     return _tip(*args, **kwargs)
+
+
+def features(*args, **kwargs):
+    """What eco can do: "Did you know?" tips about its features, in a small
+    window (Back / Next), or printed where there is no display. Same as
+    eco.tip()."""
+    from eco.utilities.tips import tip as _tip
+
+    return _tip(*args, **kwargs)
+
+
+def docs(page=None):
+    """Open the eco documentation in the web browser; `docs("scanning")`
+    opens that page. Without a display, prints the URL."""
+    from eco.utilities.tips import docs as _docs
+
+    return _docs(page)

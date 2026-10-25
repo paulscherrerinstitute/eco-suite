@@ -77,11 +77,8 @@ if arguments.scopes_available:
 print(
     "                       ___ _______\n                      / -_) __/ _ \ \n Experiment Control   \__/\__/\___/ \n"
 )
-# Docs site and its "Did you know?" feature tips (eco.utilities.tips;
-# eco.tip() shows them in a window from the session).
-_docs_url = os.environ.get("ECO_DOCS_URL", "http://saresb-cons-04.psi.ch:8095/").rstrip("/")
-print(f" docs:     {_docs_url}/")
-print(f" features: {_docs_url}/did_you_know/random.html   (or eco.tip())\n")
+# features() / docs() are imported into the session below (eco.utilities.tips).
+print(" features()  what eco can do        docs()  the documentation\n")
 
 term = Terminal(scope=scope)
 
@@ -92,6 +89,11 @@ if scope:
     exec(f"from eco.{scope} import *")
 
 term.set_title()
+
+# features(): "Did you know?" tips in a small window; docs(): the docs site
+# in the browser (eco.utilities.tips). Imported after the scope's star import
+# so a component of the same name could not silently replace them.
+from eco import features, docs
 from IPython import get_ipython
 
 _ipy = get_ipython()
