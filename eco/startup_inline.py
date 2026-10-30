@@ -157,6 +157,12 @@ task_queue.register_magics(_ipy)
 queues = task_queue.queues
 forced = task_queue.forced  # `with forced(): mot.mv(...)` -- see task_queue.check_claim
 
+# %ei: ask eco -- answers from eco's docs/API and the command history, by a
+# language model (eco.ei)
+from eco import ei as _ei
+
+_ei.register_magic(_ipy)
+
 from eco.widgets import kernel_registry
 
 kernel_registry.install_shell_logger(kind="console", label=scope or "console")

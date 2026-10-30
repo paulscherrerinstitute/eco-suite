@@ -686,6 +686,7 @@ def test_build_console_falls_back_to_subprocess_kernel_when_shell_conflict(monke
         "ecocnf.startup_lazy = True\n"
         "import eco.bernina as bernina\n"
         "from eco.bernina import *\n"
+        + console_kernel.EI_MAGIC_CODE
     )
     assert "already has a running IPython shell" in app._console.banner
 
@@ -1274,6 +1275,35 @@ def test_new_workspace_action_clears_opened_names():
         assert gui._opened_names == ["cam_west"]
         gui._on_new_workspace()
         assert gui._opened_names == []
+    finally:
+        gui.stop()
+
+
+# -- Ask menu: eco.ei -----------------------------------------------------
+
+
+def test_ask_menu_opens_one_panel_and_switches_model(monkeypatch, tmp_path):
+    import eco.ei
+
+    monkeypatch.setattr(eco.ei, "CONFIG_PATH", tmp_path / "ei.json")
+    monkeypatch.setattr(eco.ei, "_assistants", {})
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+    try:
+        menus = {a.text(): a.menu() for a in gui.window.menuBar().actions()}
+        assert "&Ask" in menus
+        texts = [a.text() for a in menus["&Ask"].actions()]
+        assert texts[:2] == ["Ask eco... (%ei)", "Model"]
+        gui._open_ei_panel()
+        panel, dock = gui._ei_panel, gui._ei_dock
+        gui._open_ei_panel()  # raises the same one
+        assert gui._ei_panel is panel and gui._ei_dock is dock
+        gui._fill_ei_model_menu()
+        models = [a.text() for a in gui._ei_model_menu.actions()]
+        assert "openai/gpt-oss-120b" in models
+        gui._set_ei_model("openai/gpt-oss-120b")
+        assert gui._ei_assistant().model == panel.model_box.currentText() == "openai/gpt-oss-120b"
     finally:
         gui.stop()
 

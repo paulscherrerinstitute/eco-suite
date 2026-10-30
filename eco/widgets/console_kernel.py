@@ -72,6 +72,10 @@ LAZY_COMPLETION_GATE_CODE = (
     "    install_lazy_completion_gate()"
 )
 
+# %ei (eco.ei) in a subprocess kernel; an in-process one gets it from
+# build_inprocess_kernel. Run as part of the desktop's startup code.
+EI_MAGIC_CODE = "from eco import ei as _eco_ei\n_eco_ei.register_magic(get_ipython())\n"
+
 
 def can_use_inprocess_kernel():
     """False if this process already has a running IPython shell (a
@@ -118,6 +122,9 @@ def build_inprocess_kernel(kind, label=None, shared_user_ns=None, push_vars=None
     # %queue here too, and input() from a queue's worker thread asked on this
     # (the Qt main) thread instead of through the kernel's stdin channel
     task_queue.register_magics(kernel.shell)
+    from eco import ei
+
+    ei.register_magic(kernel.shell)
     task_queue.send_output_to(kernel.stdout, kernel.stderr)
     user_input.route_kernel_input(kernel)
     user_input.install_input_routing()

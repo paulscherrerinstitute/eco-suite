@@ -191,7 +191,7 @@ def test_warnings_mark_commands_and_command_outcomes(tmp_path):
         {"t": 6.1, "event": "result", "text": "0.1"},
     ])
     db = tmp_path / "idx.sqlite"
-    la.build_index(db, log_dir=logs, doc_dirs=[])
+    la.build_index(db, log_dir=logs, doc_dirs=[], src_dirs=())
     status = {h.text: (h.status, h.flags) for h in la.search("mono daq att", k=20, db_path=db, kinds=("command",))}
     assert status["mono.mv(8000)"] == ("ok", "")
     assert status["mono.mv(9000)"][0] == "warning" and "soft limit" in status["mono.mv(9000)"][1]

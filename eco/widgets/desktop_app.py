@@ -822,6 +822,7 @@ class EcoDesktopApp:
 
         self._build_workspace_menu()
         self._build_tools_menu()
+        self._build_ask_menu()
 
         self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
         self.window.resize(1200, 800)
@@ -900,6 +901,116 @@ class EcoDesktopApp:
             "back out."
         )
         tabify_action.triggered.connect(self._on_combine_into_tabs)
+
+    def _build_ask_menu(self):
+        """"Ask" pulldown: eco.ei (the %ei magic) as a docked panel, the
+        model to use, and the index updates."""
+        menu = self.window.menuBar().addMenu("&Ask")
+        ask_action = menu.addAction("Ask eco... (%ei)")
+        ask_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+A"))
+        ask_action.setToolTip(
+            "Questions about using eco, answered by a language model from eco's "
+            "docs and API, the command history, SciLog and notes (eco.ei)"
+        )
+        ask_action.triggered.connect(self._open_ei_panel)
+
+        self._ei_model_menu = menu.addMenu("Model")
+        self._ei_model_menu.aboutToShow.connect(self._fill_ei_model_menu)
+
+        menu.addSeparator()
+        menu.addAction("Update Search Index").triggered.connect(lambda: self._ei_background("index"))
+        menu.addAction("Index SciLog Posts (current pgroup)").triggered.connect(lambda: self._ei_background("scilog"))
+        menu.addAction("Index Notes Folder...").triggered.connect(self._on_ei_index_notes)
+
+    def _ei_assistant(self):
+        from eco import ei
+
+        return ei.assistant(self.namespace)
+
+    def _fill_ei_model_menu(self):
+        try:
+            menu = self._ei_model_menu
+            menu.clear()
+            asst = self._ei_assistant()
+            group = QtWidgets.QActionGroup(menu)
+            models = list(dict.fromkeys([asst.model, *asst.config.get("model_options", {})]))
+            for model in models:
+                action = menu.addAction(model)
+                action.setCheckable(True)
+                action.setChecked(model == asst.model)
+                group.addAction(action)
+                action.triggered.connect(lambda _=False, m=model: self._set_ei_model(m))
+        except Exception:
+            logger.exception("filling the Ask -> Model menu failed")
+
+    def _set_ei_model(self, model):
+        try:
+            self._ei_assistant().set_model(model)
+            if getattr(self, "_ei_panel", None) is not None:
+                self._ei_panel.sync_model()
+        except Exception:
+            logger.exception("setting the eco.ei model failed")
+
+    def _ei_background(self, what, arg=None):
+        """Index updates on a worker thread (they read many files, and
+        SciLog over the network); results are printed to the console."""
+        from eco import logs_ask
+
+        asst = self._ei_assistant()
+
+        def run():
+            try:
+                if what == "index":
+                    asst.refresh_index(force=True)
+                elif what == "scilog":
+                    r = logs_ask.index_scilog(db_path=asst.db_path)
+                    print(f"eco.ei: {r['new_posts']} new SciLog posts indexed")
+                elif what == "notes":
+                    r = logs_ask.index_documents(arg, db_path=asst.db_path)
+                    print(f"eco.ei: {r['files_indexed']} files from {arg} indexed")
+            except Exception as exc:
+                print(f"eco.ei: {what} indexing failed: {type(exc).__name__}: {exc}")
+
+        threading.Thread(target=run, name=f"eco-ei-{what}", daemon=True).start()
+
+    def _on_ei_index_notes(self):
+        try:
+            path = QtWidgets.QFileDialog.getExistingDirectory(self.window, "Folder with notes (.txt/.md/.pdf)")
+            if path:
+                self._ei_background("notes", path)
+        except Exception:
+            logger.exception("choosing a notes folder failed")
+
+    def _open_ei_panel(self):
+        """The Ask panel, docked right; a second click just raises it.
+        A Qt slot: nothing may escape (see _open_log_viewer)."""
+        try:
+            dock = getattr(self, "_ei_dock", None)
+            if dock is not None:
+                dock.show()
+                dock.raise_()
+                self._ei_panel.focus_question()
+                return
+            from eco.widgets.ei_qt import EiPanel
+
+            self._ei_panel = EiPanel(self._ei_assistant(), insert_code=self._insert_into_console)
+            dock = QtWidgets.QDockWidget("Ask eco", self.window)
+            dock.setObjectName("eco_ei_ask")
+            dock.setWidget(self._ei_panel)
+            self.window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
+            self._ei_dock = dock
+            self._ei_panel.focus_question()
+        except Exception:
+            logger.exception("opening the Ask panel failed")
+
+    def _insert_into_console(self, code):
+        """Put `code` at the console prompt -- not executed; the user reads
+        and runs it."""
+        if self._console is None:
+            return False
+        self._console.input_buffer = code
+        self._console.setFocus()
+        return True
 
     def _open_dock_panels(self):
         """name -> QDockWidget for every currently open, dockable panel
@@ -1101,6 +1212,9 @@ class EcoDesktopApp:
                 )
             # else: no scope given -- plain console, nothing to preload
             # (startup_code stays None, set above)
+            from eco.widgets.console_kernel import EI_MAGIC_CODE
+
+            startup_code = (startup_code or "") + EI_MAGIC_CODE
             self._kernel_manager, self._kernel_client, self._kernel_session = build_subprocess_kernel(
                 kind="desktop", label=self.scope
             )

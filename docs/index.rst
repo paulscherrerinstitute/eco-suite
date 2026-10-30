@@ -120,6 +120,7 @@ scientific Python libraries.
    queues
    tweak
    command_history
+   ask_eco
    tab_completion
    recspace
    status_server

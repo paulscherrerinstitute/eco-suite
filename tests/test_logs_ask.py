@@ -38,7 +38,7 @@ def _setup(tmp_path):
 def test_index_and_search(tmp_path):
     logs, docs = _setup(tmp_path)
     db = tmp_path / "idx.sqlite"
-    assert la.build_index(db, log_dir=logs, doc_dirs=[docs])["files_indexed"] == 2
+    assert la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())["files_indexed"] == 2
     hits = la.search("transmission", db_path=db)
     assert [h.text for h in hits if h.kind == "command"] == ["att.set_transmission(0.1)"]  # deduplicated
     assert la.search("mesh scan", db_path=db)[0].kind == "doc"
@@ -49,12 +49,12 @@ def test_index_and_search(tmp_path):
 def test_index_is_incremental(tmp_path):
     logs, docs = _setup(tmp_path)
     db = tmp_path / "idx.sqlite"
-    la.build_index(db, log_dir=logs, doc_dirs=[docs])
-    assert la.build_index(db, log_dir=logs, doc_dirs=[docs])["files_indexed"] == 0
+    la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())
+    assert la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())["files_indexed"] == 0
     p = next(logs.glob("*.jsonl"))
     with open(p, "a") as f:
         f.write(json.dumps({"t": 9.0, "event": "input", "code": "mono.mv(8000)"}) + "\n")
-    r = la.build_index(db, log_dir=logs, doc_dirs=[docs])
+    r = la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())
     assert r["files_indexed"] == 1
     assert la.search("mono", db_path=db)[0].text == "mono.mv(8000)"
 
@@ -62,7 +62,7 @@ def test_index_is_incremental(tmp_path):
 def test_query_syntax_never_raises(tmp_path):
     logs, docs = _setup(tmp_path)
     db = tmp_path / "idx.sqlite"
-    la.build_index(db, log_dir=logs, doc_dirs=[docs])
+    la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())
     for q in ['"', "AND OR NOT", "a(b", "*", "", "att.set_transmission("]:
         la.search(q, db_path=db)
 
@@ -79,7 +79,7 @@ class _FakeBackend:
 def test_ask_with_and_without_backend(tmp_path):
     logs, docs = _setup(tmp_path)
     db = tmp_path / "idx.sqlite"
-    la.build_index(db, log_dir=logs, doc_dirs=[docs])
+    la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())
     plain = la.ask("how to set the transmission", db_path=db)
     assert "att.set_transmission(0.1)" in plain
     fake = _FakeBackend()

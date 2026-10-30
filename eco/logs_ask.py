@@ -6,6 +6,9 @@ Sources, all in one SQLite FTS5 full-text index (standard library only):
   kernel logs   every command typed in an eco console, with what came back
                 and an outcome: "ok", "warning" or "error" (see below)
   docs/*.md     eco's own documentation, split by heading
+  api           eco's classes and functions: signature and first
+                docstring paragraph, read from the source with `ast`
+                (nothing is imported)
   scilog        paragraph posts of a pgroup's logbook (index_scilog)
   documents     personal logs as .txt/.md/.pdf, scanned or photographed
                 notes via a pluggable OCR (index_documents); every chunk is
@@ -35,10 +38,12 @@ called) and an explicitly configured OpenAICompatibleBackend.
     ask.ask("how do I do a mesh scan?")
     ask.command_outcomes("att.set_transmission")
 """
+import ast
 import json
 import re
 import time
 import sqlite3
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +52,8 @@ from eco.widgets import kernel_registry
 
 DEFAULT_DB = Path.home() / ".eco" / "history_index.sqlite"
 DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
+SRC_DIR = Path(__file__).resolve().parent
+_SRC_SKIP = ("textual test", "__pycache__")
 _MAX_OUTCOME = 400  # chars of result/error/output kept per command
 _SCHEMA_VERSION = 2
 
@@ -71,7 +78,7 @@ _STATUS_ORDER = {"ok": 0, "warning": 1, "error": 2}
 
 @dataclass
 class Hit:
-    kind: str  # "command" | "doc" | "scilog" | "note" | "note_command"
+    kind: str  # "command" | "doc" | "api" | "scilog" | "note" | "note_command"
     text: str  # the command, or the text chunk
     context: str  # command: what came back; doc: "file > heading"; scilog/note: author/file
     status: str  # "ok" | "warning" | "error" (commands); "ok" otherwise
@@ -90,6 +97,8 @@ class Hit:
             return f"[{when} {self.source}]"
         if self.kind == "doc":
             return f"[doc {self.context}]"
+        if self.kind == "api":
+            return f"[api {self.context}]"
         if self.kind == "scilog":
             return f"[scilog {when} {self.context}]"
         return f"[note {when} {Path(self.source).name}]"
@@ -131,6 +140,11 @@ def classify_output(event, rec):
     return "ok", ""
 
 
+#: commands not indexed: the assistant's own questions (their printed
+#: answers would otherwise come back as "what that command returned")
+_SKIP_COMMANDS = re.compile(r"^(%%?ei\b|get_ipython\(\)\.run_(line|cell)_magic\(['\"]ei['\"])")
+
+
 def _command_episodes(path):
     """(code, outcome, status, flags, t, session_label) per input/
     widget_control record of one kernel log: outcome and status come from
@@ -149,7 +163,7 @@ def _command_episodes(path):
             if cur:
                 episodes.append(cur)
             code = str(rec.get("code", "")).strip()
-            cur = [code, "", "ok", "", t, session] if code else None
+            cur = [code, "", "ok", "", t, session] if code and not _SKIP_COMMANDS.match(code) else None
         elif cur is not None and event not in ("session_end",):
             status, flag = classify_output(event, rec)
             if _STATUS_ORDER[status] > _STATUS_ORDER[cur[2]]:
@@ -185,6 +199,59 @@ def _doc_chunks(path):
     return chunks
 
 
+def _first_paragraph(doc, limit=600):
+    doc = (doc or "").strip()
+    return doc.split("\n\n")[0].strip()[:limit]
+
+
+def _signature(node):
+    """`(a, b=1, *args, c=None, **kw)` of a def, defaults abbreviated."""
+    try:
+        sig = ast.unparse(node.args)
+    except Exception:
+        return "(...)"
+    return f"({sig[:200]})"
+
+
+def _api_chunks(path, src_root=SRC_DIR):
+    """(qualified name, text) per public class and function of one source
+    file: signature plus first docstring paragraph; a class also lists its
+    public methods, so "what can `att` do" finds them."""
+    try:
+        module = "eco." + ".".join(path.relative_to(src_root).with_suffix("").parts)
+    except ValueError:
+        module = path.stem
+    module = module.removesuffix(".__init__")
+    with warnings.catch_warnings():  # old files' invalid escape sequences
+        warnings.simplefilter("ignore", SyntaxWarning)
+        tree = ast.parse(path.read_text(errors="replace"))
+    chunks = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+            bases = ", ".join(ast.unparse(b) for b in node.bases)[:120]
+            methods, init_sig = [], ""
+            for item in node.body:
+                if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if item.name == "__init__":
+                    init_sig = _signature(item).replace("(self, ", "(").replace("(self)", "()")
+                elif not item.name.startswith("_") or item.name.startswith("_widget_"):
+                    methods.append(item.name)
+                    doc = _first_paragraph(ast.get_docstring(item))
+                    if doc:
+                        sig = _signature(item).replace("(self, ", "(").replace("(self)", "()")
+                        chunks.append((f"{module}.{node.name}.{item.name}", f"{node.name}.{item.name}{sig}: {doc}"))
+            text = f"class {node.name}({bases}){init_sig and ' ' + node.name + init_sig}: {_first_paragraph(ast.get_docstring(node))}"
+            if methods:
+                text += "\nmethods: " + ", ".join(methods)[:800]
+            chunks.append((f"{module}.{node.name}", text))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
+            doc = _first_paragraph(ast.get_docstring(node))
+            if doc:
+                chunks.append((f"{module}.{node.name}", f"{node.name}{_signature(node)}: {doc}"))
+    return chunks
+
+
 def _index_files(con, sources, rows_for):
     """Shared incremental loop: (re)index each (path, what) whose mtime/size
     changed; rows_for(path, what) -> rows. Returns (n_indexed, notes)."""
@@ -212,15 +279,21 @@ def _index_files(con, sources, rows_for):
     return n, notes
 
 
-def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,)):
-    """Add new/changed kernel logs and docs to the index; unchanged files
-    (same mtime and size) are skipped, so re-running is cheap. Returns
-    {"files_indexed": n, "items": total}."""
+def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs=(SRC_DIR,)):
+    """Add new/changed kernel logs, docs and eco source files (api) to the
+    index; unchanged files (same mtime and size) are skipped, so re-running
+    is cheap. Returns {"files_indexed": n, "items": total}."""
     con = _connect(db_path)
     sources = [(p, "log") for p in kernel_registry.find_all_logs(log_dir)]
     for d in doc_dirs:
         if d and Path(d).exists():
-            sources += [(p, "doc") for p in sorted(Path(d).rglob("*.md"))]
+            sources += [(p, "doc") for p in sorted(Path(d).rglob("*.md")) if "_build" not in p.parts]
+    for d in src_dirs:
+        if d and Path(d).exists():
+            sources += [
+                (p, "api") for p in sorted(Path(d).rglob("*.py"))
+                if not any(skip in p.parts for skip in _SRC_SKIP)
+            ]
 
     def rows_for(path, what):
         if what == "log":
@@ -228,6 +301,8 @@ def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,)):
                 (code, out, "command", status, flags, t, sess, str(path))
                 for code, out, status, flags, t, sess in _command_episodes(path)
             ], ""
+        if what == "api":
+            return [(text, where, "api", "ok", "", 0.0, str(path), str(path)) for where, text in _api_chunks(path)], ""
         return [(text, where, "doc", "ok", "", 0.0, str(path), str(path)) for where, text in _doc_chunks(path)], ""
 
     n, _notes = _index_files(con, sources, rows_for)
@@ -311,14 +386,22 @@ def index_scilog(pgroup=None, db_path=DEFAULT_DB, client=None, limit=500):
 # -- querying -----------------------------------------------------------------------
 
 
+#: question words that match everything and rank nothing
+STOPWORDS = frozenset(
+    "a an and are as at be by can could do does did for from has have how i if in into is it its me my "
+    "of on or our should so that the their them then there these this to use used using was we were "
+    "what when where which who why will with would you your please want need eco".split()
+)
+
+
 def _fts_query(text):
     # same split as FTS5's unicode61 tokenizer: "att.set_transmission(0.1)"
     # -> att, set, transmission, 0, 1
-    words = [w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1]
-    return " OR ".join(f'"{w}"*' for w in words)
+    words = [w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1 and w not in STOPWORDS]
+    return " OR ".join(f'"{w}"*' for w in dict.fromkeys(words))
 
 
-ALL_KINDS = ("command", "doc", "scilog", "note", "note_command")
+ALL_KINDS = ("command", "doc", "api", "scilog", "note", "note_command")
 
 
 def search(query, k=10, db_path=DEFAULT_DB, kinds=ALL_KINDS, only_ok=False, since=None, until=None):
@@ -328,11 +411,12 @@ def search(query, k=10, db_path=DEFAULT_DB, kinds=ALL_KINDS, only_ok=False, sinc
     q = _fts_query(query)
     if not q:
         return []
+    kinds = tuple(kinds)
     con = _connect(db_path)
     rows = con.execute(
         "SELECT text, context, kind, status, flags, t, source, bm25(items) FROM items"
-        " WHERE items MATCH ? ORDER BY bm25(items) LIMIT ?",
-        (q, k * 10),
+        f" WHERE items MATCH ? AND kind IN ({','.join('?' * len(kinds))}) ORDER BY bm25(items) LIMIT ?",
+        (q, *kinds, k * 10),
     ).fetchall()
     con.close()
     hits, seen = [], set()
@@ -463,21 +547,63 @@ class LlamaCppBackend:
 
 class OpenAICompatibleBackend:
     """Any OpenAI-compatible chat endpoint (llama.cpp's llama-server, vLLM,
-    an institute-hosted service). Standard library only."""
+    an institute-hosted service). Standard library only.
 
-    def __init__(self, base_url, model, api_key=None, timeout=120, max_tokens=600):
+    `options` go into every request body as they are, e.g.
+    {"chat_template_kwargs": {"enable_thinking": False}} for a Qwen model
+    on vLLM, or {"reasoning_effort": "low"}. A reasoning model's thinking
+    ("reasoning"/"reasoning_content" deltas) is dropped, only the answer
+    is returned."""
+
+    def __init__(self, base_url, model, api_key=None, timeout=120, max_tokens=1500, options=None):
         self.base_url, self.model, self.api_key = base_url.rstrip("/"), model, api_key
-        self.timeout, self.max_tokens = timeout, max_tokens
+        self.timeout, self.max_tokens, self.options = timeout, max_tokens, dict(options or {})
 
-    def complete(self, prompt):
+    def _request(self, path, body=None):
         import urllib.request
 
-        body = json.dumps(
-            {"model": self.model, "messages": [{"role": "user", "content": prompt}],
-             "max_tokens": self.max_tokens, "temperature": 0.1}
-        ).encode()
-        req = urllib.request.Request(f"{self.base_url}/chat/completions", data=body, headers={"Content-Type": "application/json"})
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(f"{self.base_url}{path}", data=data, headers={"Content-Type": "application/json"})
         if self.api_key:
             req.add_header("Authorization", f"Bearer {self.api_key}")
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            return json.loads(r.read())["choices"][0]["message"]["content"]
+        return urllib.request.urlopen(req, timeout=self.timeout)
+
+    def models(self):
+        """Model ids the endpoint offers."""
+        with self._request("/models") as r:
+            return [m["id"] for m in json.loads(r.read()).get("data", [])]
+
+    def chat(self, messages, on_delta=None, stop=None):
+        """The answer to `messages` ([{"role", "content"}, ...]). With
+        `on_delta`, the answer is streamed and on_delta(text) is called
+        per piece as it arrives. `stop` (a threading.Event) ends a stream
+        early; the text so far is returned."""
+        body = {"model": self.model, "messages": messages, "max_tokens": self.max_tokens, "temperature": 0.1}
+        body.update(self.options)
+        if on_delta is None:
+            with self._request("/chat/completions", body) as r:
+                return json.loads(r.read())["choices"][0]["message"].get("content") or ""
+        body["stream"] = True
+        parts = []
+        with self._request("/chat/completions", body) as r:
+            for raw in r:
+                if stop is not None and stop.is_set():
+                    break
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    choices = json.loads(data).get("choices") or [{}]
+                except ValueError:
+                    continue
+                piece = (choices[0].get("delta") or {}).get("content")
+                if piece:
+                    parts.append(piece)
+                    on_delta(piece)
+        return "".join(parts)
+
+    def complete(self, prompt):
+        return self.chat([{"role": "user", "content": prompt}])
