@@ -170,7 +170,37 @@ def install_shell_logger(kind, label=None, log_dir=None):
     ip.events.register("pre_run_cell", _pre_run_cell)
     ip.events.register("post_run_cell", _post_run_cell)
     ip._eco_shell_logger_session = session
+    install_warning_capture(session)
     return session
+
+
+def install_warning_capture(session):
+    """Also record Python warnings (warnings.warn) as "warning" events in
+    `session`'s log -- install_shell_logger captures no stdout/stderr, so
+    without this a terminal session's warnings never reach the log, and
+    eco.logs_ask can't tell that a command gave a bad result. The previous
+    warnings.showwarning still runs (nothing changes on screen); a failure
+    to log is swallowed, never raised into user code. Only
+    warnings.warn: logging.warning() from background threads isn't tied to
+    the command that's running and would mostly add noise."""
+    import warnings
+
+    previous = warnings.showwarning
+    if getattr(previous, "_eco_session", None) is session:
+        return
+
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        try:
+            session.log_output(
+                "warning", category=getattr(category, "__name__", str(category)),
+                text=str(message), where=f"{filename}:{lineno}",
+            )
+        except Exception:
+            pass
+        return previous(message, category, filename, lineno, file, line)
+
+    showwarning._eco_session = session
+    warnings.showwarning = showwarning
 
 
 def unregister(session):
