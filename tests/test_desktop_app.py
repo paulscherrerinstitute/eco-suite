@@ -1639,3 +1639,29 @@ def test_native_close_deregisters_self_from_live_desktop_apps():
     assert gui not in desktop_app._live_desktop_apps
     QtCore.QTimer.singleShot(200, app.quit)
     app.exec_()
+
+
+def test_scan_launcher_menu_opens_scans_launcher_docked_here():
+    from types import SimpleNamespace
+
+    calls = []
+    scans = SimpleNamespace(launcher=lambda **kw: calls.append(kw))
+    logged = []
+    namespace = SimpleNamespace(resolve_item=lambda name: {"scans": scans}.get(name))
+    app = SimpleNamespace(
+        namespace=namespace,
+        _kernel_session=SimpleNamespace(log_widget_control=logged.append),
+    )
+    EcoDesktopApp._open_scan_launcher(app)
+    assert calls == [{"root": namespace, "dock_in": app}]
+    assert logged == ["scans.launcher()"]
+
+
+def test_scan_launcher_menu_without_scans_does_nothing(capsys):
+    from types import SimpleNamespace
+
+    app = SimpleNamespace(
+        namespace=SimpleNamespace(resolve_item=lambda name: None), _kernel_session=None
+    )
+    EcoDesktopApp._open_scan_launcher(app)
+    assert "no `scans`" in capsys.readouterr().out

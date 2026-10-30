@@ -900,6 +900,46 @@ class Scans(Assembly):
 
         return queues
 
+    def launcher(self, root=None, queue="default", methods=None, dock_in=None):
+        """A form for building scans with device pickers instead of typing
+        them. In Qt (eco.widgets.scan_launcher_qt) Run appends the scan to
+        the task queue `queue`, the same queues ``%queue`` uses, and the
+        queue panel next to the form pauses/resumes/stops it. In a notebook
+        it is the ipywidgets form (eco.widgets.scan_widget), which runs the
+        scan directly.
+
+        `root` is what the pickers browse: by default the namespace these
+        scans belong to. `dock_in` docks the Qt window into eco desktop,
+        as for ``.widget()``. Returns the window handle (``.stop()``)."""
+        if root is None:
+            root = self._launcher_root()
+        from eco.utilities.utilities import is_notebook
+
+        if is_notebook():
+            from eco.widgets.scan_widget import make_scan_widget
+
+            return make_scan_widget(self, methods=methods, root=root)
+        from eco.widgets.scan_launcher_qt import make_scan_launcher_qt_window
+
+        handle = make_scan_launcher_qt_window(
+            self, root=root, methods=methods, queue_name=queue
+        )
+        return self._maybe_dock(handle, dock_in)
+
+    def _launcher_root(self):
+        """The Namespace this instance was appended to (it has a
+        `root_module`), else the session's `namespace`, else self."""
+        from eco.elements.assembly import iter_ancestor_assemblies
+
+        for ancestor in iter_ancestor_assemblies(self):
+            if getattr(ancestor, "root_module", None):
+                return ancestor
+        ip = get_ipython()
+        namespace = ip.user_ns.get("namespace") if ip is not None else None
+        if getattr(namespace, "root_module", None):
+            return namespace
+        return self
+
     def _route_to_queue(self, queue, method_name, args, kwargs):
         """Called at the top of every queueable Scans method. Returns the
         queued Task (the caller should return it immediately) if `queue`

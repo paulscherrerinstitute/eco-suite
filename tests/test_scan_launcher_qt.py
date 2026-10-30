@@ -639,3 +639,62 @@ def test_scan_launcher_qt_falls_back_to_generic_form_for_unknown_method(qapp):
         ]
     finally:
         launcher.stop()
+
+
+# ---------------------------------------------------------------------------
+# Scans.launcher() -- the entry point
+# ---------------------------------------------------------------------------
+
+
+def _launchable(scans):
+    """FakeScans with the real Scans.launcher/_launcher_root bolted on, and
+    a _maybe_dock that only records what it was asked to dock into."""
+    from eco.acquisition.scan import Scans
+
+    class LaunchableScans(type(scans)):
+        launcher = Scans.launcher
+        _launcher_root = Scans._launcher_root
+
+        def _maybe_dock(self, handle, dock_in):
+            self.docked_in = dock_in
+            return handle
+
+    scans.__class__ = LaunchableScans
+    return scans
+
+
+def test_scans_launcher_opens_a_window_that_submits_through_the_queue(qapp):
+    motor = FakeAdjustable("motor1")
+    root = FakeRoot([motor])
+    scans = _launchable(FakeScans(FakeQueue()))
+    handle = scans.launcher(root=root, methods=["ascan"], queue="beamtime")
+    try:
+        assert isinstance(handle, slq.ScanLauncherQtWindow)
+        assert handle.window.windowTitle() == "Scan launcher"
+        assert scans.docked_in is None
+        launcher = handle.launcher
+        assert launcher.root is root
+        launcher._pages["ascan"][0].findChildren(slq.ComponentPickerQt)[0].value = motor
+        launcher._on_run()
+        assert scans.calls[-1][2]["queue"] == "beamtime"
+    finally:
+        handle.stop()
+
+
+def test_scans_launcher_root_defaults_to_the_namespace_it_belongs_to():
+    import weakref
+
+    class Namespace:
+        root_module = "eco.bernina"
+
+    class Assembly:
+        pass
+
+    namespace, parent = Namespace(), Assembly()
+    parent._parent_assemblies = [weakref.ref(namespace)]
+    scans = _launchable(FakeScans(FakeQueue()))
+    scans._parent_assemblies = [weakref.ref(parent)]
+    assert scans._launcher_root() is namespace
+
+    orphan = _launchable(FakeScans(FakeQueue()))
+    assert orphan._launcher_root() is orphan  # no namespace anywhere: browse itself

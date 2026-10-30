@@ -882,6 +882,13 @@ class EcoDesktopApp:
         )
         log_action.triggered.connect(self._open_log_viewer)
 
+        launcher_action = menu.addAction("Scan Launcher")
+        launcher_action.setToolTip(
+            "Build a scan with device pickers and append it to a task queue "
+            "(scans.launcher()), docked here"
+        )
+        launcher_action.triggered.connect(self._open_scan_launcher)
+
         menu.addSeparator()
         tabify_action = menu.addAction("Combine Panels into Tabs...")
         tabify_action.setToolTip(
@@ -960,6 +967,22 @@ class EcoDesktopApp:
         import eco.logs
 
         self._log_viewer = eco.logs.widget(prefer="qt")
+
+    def _open_scan_launcher(self):
+        """`scans.launcher()` docked into this window, its pickers browsing
+        this window's namespace. Docked like any opened device widget, so
+        closing the dock stops it."""
+        scans = _resolve_namespace_item(self.namespace, "scans")
+        if scans is None:
+            print("eco desktop: this namespace has no `scans`, so there is no scan launcher")
+            return
+        try:
+            scans.launcher(root=self.namespace, dock_in=self)
+        except Exception:
+            logger.exception("opening the scan launcher failed")
+            return
+        if self._kernel_session is not None:
+            self._kernel_session.log_widget_control("scans.launcher()")
 
     def _build_no_console_placeholder(self):
         """Central widget used instead of a console when with_console=False
