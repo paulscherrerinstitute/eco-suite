@@ -39,6 +39,55 @@ def _clean_live_desktop_apps_registry():
     desktop_app._live_desktop_apps.clear()
 
 
+class _FakeKernelPart:
+    """kernel manager / client stand-in: stop_kernel() calls these."""
+
+    def stop_channels(self):
+        pass
+
+    def shutdown_kernel(self):
+        pass
+
+
+class _QtFakeConsoleWidget(QtWidgets.QWidget):
+    """A dockable stand-in for console_kernel.LoggingJupyterWidget, for
+    the tests that build a whole window (see _no_real_kernels)."""
+
+    def __init__(self, session=None):
+        super().__init__()
+        self.session = session
+        self.kernel_manager = self.kernel_client = None
+        self.banner = ""
+        self.executed = []
+        self.input_buffer = ""
+
+    def execute(self, code, hidden=False):
+        self.executed.append(code)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_kernels(monkeypatch, tmp_path_factory):
+    # Every _build_window() builds the console, and without this each of
+    # ~30 tests here started and stopped a real IPython kernel (subprocess
+    # or in-process, sharing one zmq context): slow, and a zmq abort()
+    # once in a while. The session is real, but logs into a temp dir, not
+    # ~/.eco/kernel_logs (which eco.logs and %ei read as real history).
+    # Tests about kernel selection patch these functions themselves,
+    # which overrides this.
+    from eco.widgets import console_kernel, kernel_registry
+
+    log_dir = tmp_path_factory.mktemp("kernel_logs")  # not tmp_path: tests list that
+
+    def fake_kernel(kind, label=None, **kwargs):
+        session = kernel_registry.KernelSession(kind=kind, label=label, log_dir=log_dir)
+        return _FakeKernelPart(), _FakeKernelPart(), kernel_registry.register(session)
+
+    monkeypatch.setattr(console_kernel, "can_use_inprocess_kernel", lambda: False)
+    monkeypatch.setattr(console_kernel, "build_subprocess_kernel", fake_kernel)
+    monkeypatch.setattr(console_kernel, "build_inprocess_kernel", fake_kernel)
+    monkeypatch.setattr(console_kernel, "LoggingJupyterWidget", _QtFakeConsoleWidget)
+
+
 class _FakeWidgetWrapper:
     """Mirrors the .window/.stop() convention every real eco Qt widget
     wrapper follows (DisplayQt, AxisPTZStreamQt, CamServerStreamQt, ...) --

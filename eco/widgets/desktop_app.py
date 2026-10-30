@@ -605,6 +605,26 @@ def _dock_object_name(candidate, existing_names):
     return f"{candidate}_{i}"
 
 
+class _WindowDestroyedWatch(QtCore.QObject):
+    """Sets app.window = None once the window is gone (WA_DeleteOnClose).
+
+    A QObject with a real slot rather than a lambda: Qt calls a decorated
+    slot directly, while a lambda goes through PyQt's internal proxy, and
+    a lambda connected to `destroyed` was a reproducible segfault
+    (3 of 4 runs of tests/test_desktop_app.py, always in the callback,
+    even when the lambda only set a flag). Not parented to the window, so
+    it outlives the destruction it reports; held by the app."""
+
+    def __init__(self, app):
+        super().__init__()
+        self._app = app
+
+    @QtCore.Slot()
+    @QtCore.Slot(QtCore.QObject)
+    def on_destroyed(self, *_):
+        self._app.window = None
+
+
 class _DesktopMainWindow(QtWidgets.QMainWindow):
     """Plain QMainWindow, except closeEvent also runs `on_close` (see
     EcoDesktopApp._on_window_closing) -- workspace autosave (so "Reload
@@ -830,7 +850,9 @@ class EcoDesktopApp:
         if ei.enabled():  # ECO_NO_EI=1: no Ask menu
             self._build_ask_menu()
 
-        self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
+        # not a lambda: see _WindowDestroyedWatch
+        self._window_watch = _WindowDestroyedWatch(self)
+        self.window.destroyed.connect(self._window_watch.on_destroyed)
         self.window.resize(1200, 800)
         self.window.show()
 
