@@ -709,6 +709,9 @@ class EcoDesktopApp:
         # garbage-collected and closed out from under the user; stopped
         # alongside everything else in _on_window_closing.
         self._log_viewer = None
+        # the Ask panel (eco.ei) and its dock, once opened -- see _open_ei_panel
+        self._ei_panel = None
+        self._ei_dock = None
         # names opened via the launcher this session, in open order,
         # de-duplicated -- what "Reload Last Workspace" reopens; see
         # save_workspace/load_workspace. A fresh window always starts
@@ -822,7 +825,10 @@ class EcoDesktopApp:
 
         self._build_workspace_menu()
         self._build_tools_menu()
-        self._build_ask_menu()
+        from eco import ei
+
+        if ei.enabled():  # ECO_NO_EI=1: no Ask menu
+            self._build_ask_menu()
 
         self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
         self.window.resize(1200, 800)
@@ -946,7 +952,7 @@ class EcoDesktopApp:
     def _set_ei_model(self, model):
         try:
             self._ei_assistant().set_model(model)
-            if getattr(self, "_ei_panel", None) is not None:
+            if self._ei_panel is not None:
                 self._ei_panel.sync_model()
         except Exception:
             logger.exception("setting the eco.ei model failed")
@@ -985,7 +991,7 @@ class EcoDesktopApp:
         """The Ask panel, docked right; a second click just raises it.
         A Qt slot: nothing may escape (see _open_log_viewer)."""
         try:
-            dock = getattr(self, "_ei_dock", None)
+            dock = self._ei_dock
             if dock is not None:
                 dock.show()
                 dock.raise_()

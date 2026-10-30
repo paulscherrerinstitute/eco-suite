@@ -8,7 +8,10 @@ Sources, all in one SQLite FTS5 full-text index (standard library only):
   docs/*.md     eco's own documentation, split by heading
   api           eco's classes and functions: signature and first
                 docstring paragraph, read from the source with `ast`
-                (nothing is imported)
+                (nothing is imported); other packages too (src_dirs),
+                e.g. escape
+  examples      code cells of Jupyter notebooks (example_dirs), each with
+                the markdown heading above it: how a library is really used
   scilog        paragraph posts of a pgroup's logbook (index_scilog)
   documents     personal logs as .txt/.md/.pdf, scanned or photographed
                 notes via a pluggable OCR (index_documents); every chunk is
@@ -78,7 +81,7 @@ _STATUS_ORDER = {"ok": 0, "warning": 1, "error": 2}
 
 @dataclass
 class Hit:
-    kind: str  # "command" | "doc" | "api" | "scilog" | "note" | "note_command"
+    kind: str  # "command" | "doc" | "api" | "example" | "scilog" | "note" | "note_command"
     text: str  # the command, or the text chunk
     context: str  # command: what came back; doc: "file > heading"; scilog/note: author/file
     status: str  # "ok" | "warning" | "error" (commands); "ok" otherwise
@@ -99,6 +102,8 @@ class Hit:
             return f"[doc {self.context}]"
         if self.kind == "api":
             return f"[api {self.context}]"
+        if self.kind == "example":
+            return f"[example {self.context}]"
         if self.kind == "scilog":
             return f"[scilog {when} {self.context}]"
         return f"[note {when} {Path(self.source).name}]"
@@ -176,8 +181,9 @@ def _command_episodes(path):
     return episodes
 
 
-def _doc_chunks(path):
-    """(heading path, chunk text) per markdown section."""
+def _doc_chunks(path, label=""):
+    """(heading path, chunk text) per markdown section; `label` prefixes
+    the heading path ("escape: quickstart.md > Loading a run")."""
     chunks, title, heading, buf = [], path.stem, "", []
     text = path.read_text(errors="replace")
     if text.startswith("---\n"):  # YAML front matter (docs/did_you_know)
@@ -187,7 +193,7 @@ def _doc_chunks(path):
         m = re.match(r"^(#{1,3})\s+(.*)", line)
         if m:
             if "".join(buf).strip():
-                chunks.append((f"{path.name} > {heading or title}", "\n".join(buf).strip()))
+                chunks.append((f"{label}{path.name} > {heading or title}", "\n".join(buf).strip()))
             buf = []
             if len(m.group(1)) == 1:
                 title = m.group(2)
@@ -195,7 +201,7 @@ def _doc_chunks(path):
         else:
             buf.append(line)
     if "".join(buf).strip():
-        chunks.append((f"{path.name} > {heading or title}", "\n".join(buf).strip()))
+        chunks.append((f"{label}{path.name} > {heading or title}", "\n".join(buf).strip()))
     return chunks
 
 
@@ -215,10 +221,11 @@ def _signature(node):
 
 def _api_chunks(path, src_root=SRC_DIR):
     """(qualified name, text) per public class and function of one source
-    file: signature plus first docstring paragraph; a class also lists its
+    file of the package in `src_root` (named after that directory):
+    signature plus first docstring paragraph; a class also lists its
     public methods, so "what can `att` do" finds them."""
     try:
-        module = "eco." + ".".join(path.relative_to(src_root).with_suffix("").parts)
+        module = ".".join((Path(src_root).name, *path.relative_to(src_root).with_suffix("").parts))
     except ValueError:
         module = path.stem
     module = module.removesuffix(".__init__")
@@ -252,6 +259,28 @@ def _api_chunks(path, src_root=SRC_DIR):
     return chunks
 
 
+_MAX_CELL = 1500  # chars of one notebook code cell
+
+
+def _notebook_chunks(path):
+    """(where, code) per non-empty code cell of a notebook; `where` is
+    "<notebook> > <nearest markdown heading or line above>"."""
+    nb = json.loads(path.read_text(errors="replace"))
+    cells = nb.get("cells") or [c for ws in nb.get("worksheets", []) for c in ws.get("cells", [])]
+    chunks, heading = [], ""
+    for cell in cells:
+        src = cell.get("source", "")
+        src = "".join(src) if isinstance(src, list) else str(src)
+        if cell.get("cell_type") == "markdown":
+            lines = [ln.strip() for ln in src.splitlines() if ln.strip()]
+            heads = [ln.lstrip("#").strip() for ln in lines if ln.startswith("#")]
+            if heads or lines:
+                heading = (heads[-1] if heads else lines[0])[:120]
+        elif cell.get("cell_type") == "code" and src.strip():
+            chunks.append((f"{path.name} > {heading}" if heading else path.name, src.strip()[:_MAX_CELL]))
+    return chunks
+
+
 def _index_files(con, sources, rows_for):
     """Shared incremental loop: (re)index each (path, what) whose mtime/size
     changed; rows_for(path, what) -> rows. Returns (n_indexed, notes)."""
@@ -279,20 +308,43 @@ def _index_files(con, sources, rows_for):
     return n, notes
 
 
-def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs=(SRC_DIR,)):
-    """Add new/changed kernel logs, docs and eco source files (api) to the
-    index; unchanged files (same mtime and size) are skipped, so re-running
-    is cheap. Returns {"files_indexed": n, "items": total}."""
+def _dir_and_label(entry):
+    return (Path(entry[0]), entry[1]) if isinstance(entry, (tuple, list)) else (Path(entry), "")
+
+
+def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs=(SRC_DIR,), example_dirs=()):
+    """Add new/changed kernel logs, docs, package sources (api) and
+    notebooks (examples) to the index; unchanged files (same mtime and
+    size) are skipped, so re-running is cheap.
+
+    doc_dirs / example_dirs: directories, or (directory, label) pairs --
+    the label prefixes where an item comes from ("escape: "). src_dirs:
+    package directories; their name is the module prefix ("escape").
+    Returns {"files_indexed": n, "items": total}."""
     con = _connect(db_path)
     sources = [(p, "log") for p in kernel_registry.find_all_logs(log_dir)]
-    for d in doc_dirs:
-        if d and Path(d).exists():
-            sources += [(p, "doc") for p in sorted(Path(d).rglob("*.md")) if "_build" not in p.parts]
+    for entry in doc_dirs:
+        if not entry:
+            continue
+        d, label = _dir_and_label(entry)
+        if d.exists():
+            sources += [(p, ("doc", label)) for p in sorted(d.rglob("*.md")) if "_build" not in p.parts]
     for d in src_dirs:
         if d and Path(d).exists():
             sources += [
-                (p, "api") for p in sorted(Path(d).rglob("*.py"))
+                (p, ("api", Path(d))) for p in sorted(Path(d).rglob("*.py"))
                 if not any(skip in p.parts for skip in _SRC_SKIP)
+            ]
+    for entry in example_dirs:
+        if not entry:
+            continue
+        d, label = _dir_and_label(entry)
+        if d.is_file():
+            sources.append((d, ("example", label)))
+        elif d.exists():
+            sources += [
+                (p, ("example", label)) for p in sorted(d.rglob("*.ipynb"))
+                if ".ipynb_checkpoints" not in p.parts
             ]
 
     def rows_for(path, what):
@@ -301,9 +353,16 @@ def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs
                 (code, out, "command", status, flags, t, sess, str(path))
                 for code, out, status, flags, t, sess in _command_episodes(path)
             ], ""
+        what, arg = what
         if what == "api":
-            return [(text, where, "api", "ok", "", 0.0, str(path), str(path)) for where, text in _api_chunks(path)], ""
-        return [(text, where, "doc", "ok", "", 0.0, str(path), str(path)) for where, text in _doc_chunks(path)], ""
+            chunks = _api_chunks(path, src_root=arg)
+        elif what == "example":
+            chunks = [(arg + where, code) for where, code in _notebook_chunks(path)]
+            t = path.stat().st_mtime
+            return [(code, where, "example", "ok", "", t, str(path), str(path)) for where, code in chunks], ""
+        else:
+            chunks = _doc_chunks(path, label=arg)
+        return [(text, where, what, "ok", "", 0.0, str(path), str(path)) for where, text in chunks], ""
 
     n, _notes = _index_files(con, sources, rows_for)
     total = con.execute("SELECT count(*) FROM items").fetchone()[0]
@@ -401,22 +460,36 @@ def _fts_query(text):
     return " OR ".join(f'"{w}"*' for w in dict.fromkeys(words))
 
 
-ALL_KINDS = ("command", "doc", "api", "scilog", "note", "note_command")
+ALL_KINDS = ("command", "doc", "api", "example", "scilog", "note", "note_command")
 
 
-def search(query, k=10, db_path=DEFAULT_DB, kinds=ALL_KINDS, only_ok=False, since=None, until=None):
+def search(
+    query, k=10, db_path=DEFAULT_DB, kinds=ALL_KINDS, only_ok=False, since=None, until=None,
+    context_prefix=None, exclude_prefix=None,
+):
     """Best-matching index items for `query` (plain words, no syntax
-    needed), optionally only between `since`/`until` (epoch seconds).
-    Repeated identical items are collapsed to their latest occurrence."""
+    needed), optionally only between `since`/`until` (epoch seconds), and
+    only items whose context starts (or, exclude_prefix: does not start)
+    with a prefix -- a doc label like "escape: ", or a module like
+    "escape.". Repeated identical items are collapsed to their latest
+    occurrence."""
     q = _fts_query(query)
     if not q:
         return []
     kinds = tuple(kinds)
+    where, params = f"items MATCH ? AND kind IN ({','.join('?' * len(kinds))})", [q, *kinds]
+    if context_prefix is not None:
+        # substr, not LIKE: '_' in a module name is no wildcard here
+        where += " AND substr(context, 1, ?) = ?"
+        params += [len(context_prefix), context_prefix]
+    if exclude_prefix is not None:
+        where += " AND substr(context, 1, ?) != ?"
+        params += [len(exclude_prefix), exclude_prefix]
     con = _connect(db_path)
     rows = con.execute(
         "SELECT text, context, kind, status, flags, t, source, bm25(items) FROM items"
-        f" WHERE items MATCH ? AND kind IN ({','.join('?' * len(kinds))}) ORDER BY bm25(items) LIMIT ?",
-        (q, *kinds, k * 10),
+        f" WHERE {where} ORDER BY bm25(items) LIMIT ?",
+        (*params, k * 10),
     ).fetchall()
     con.close()
     hits, seen = [], set()

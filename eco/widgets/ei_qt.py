@@ -5,6 +5,8 @@ The question runs on a worker thread (index update, search, and the
 model's streamed answer -- seconds to a minute); its pieces reach the
 panel through queued signals, so the GUI never waits. Nothing in an
 answer is executed: "To Console" puts its code at the console prompt.
+Without an API key the panel only searches (docs, API, history), and says
+so; the key lookup itself (gopass may take seconds) runs on a worker too.
 """
 import threading
 
@@ -16,6 +18,7 @@ class _Bridge(QtCore.QObject):
     report = QtCore.Signal(str)
     done = QtCore.Signal(object)
     failed = QtCore.Signal(str)
+    key = QtCore.Signal(bool)
 
 
 class EiPanel(QtWidgets.QWidget):
@@ -36,6 +39,8 @@ class EiPanel(QtWidgets.QWidget):
         self._bridge.report.connect(self._on_report)
         self._bridge.done.connect(self._on_done)
         self._bridge.failed.connect(self._on_failed)
+        self._bridge.key.connect(self._on_key)
+        self._has_key = None  # unknown until the lookup below returns
         self._render_timer = QtCore.QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render)
@@ -94,6 +99,23 @@ class EiPanel(QtWidgets.QWidget):
 
         self.sync_model()
         self._set_busy(False)
+        self.check_key()
+
+    def check_key(self):
+        """Look for the API key on a worker; _on_key adapts the panel."""
+        bridge = self._bridge
+
+        def run():
+            try:
+                found = self.assistant.backend(recheck=True) is not None
+            except Exception:
+                found = False
+            try:
+                bridge.key.emit(found)
+            except RuntimeError:  # panel closed meanwhile
+                pass
+
+        threading.Thread(target=run, name="eco-ei-key", daemon=True).start()
 
     # -- state -------------------------------------------------------------
 
@@ -112,7 +134,7 @@ class EiPanel(QtWidgets.QWidget):
     def _set_busy(self, busy):
         self.ask_button.setEnabled(not busy)
         self.new_button.setEnabled(not busy)
-        self.model_box.setEnabled(not busy)
+        self.model_box.setEnabled(not busy and self._has_key is not False)
         self.stop_button.setEnabled(busy)
         has_code = bool(self._answer is not None and self._answer.code)
         self.console_button.setEnabled(has_code and not busy)
@@ -170,6 +192,23 @@ class EiPanel(QtWidgets.QWidget):
             self.answer.setMarkdown(self._text)
             bar = self.answer.verticalScrollBar()
             bar.setValue(bar.maximum())
+        except RuntimeError:
+            pass
+
+    def _on_key(self, found):
+        try:
+            self._has_key = found
+            if not found:
+                self.search_only.setChecked(True)
+                self.search_only.setEnabled(False)
+                self.model_box.setEnabled(False)
+                self.status.setText(
+                    "No API key for the model: searching only (docs, API, command history). "
+                    "To get answers, add a key from ai.psi.ch -- see `%ei` in the console."
+                )
+            else:
+                self.search_only.setEnabled(True)
+                self._set_busy(self._worker is not None)
         except RuntimeError:
             pass
 

@@ -10,7 +10,12 @@ about past beamtimes, through a language model:
   - SciLog posts and personal notes, once indexed (`%ei --scilog`,
     `%ei --notes PATH`),
   - the running session's namespace: which devices exist and of which
-    class, without initialising anything lazy.
+    class, without initialising anything lazy,
+  - escape (escape-fel), the analysis framework: its API from the
+    installed package, its docs and example notebooks from an escape
+    checkout (config "sources"). A question about analysis is recognised
+    by its words (config "topics") and then gets mostly escape context,
+    plus the primer file ~/.eco/ei_primer_escape.md if it exists.
 
 The search part is eco.logs_ask (a local SQLite full-text index under
 ~/.eco). The best matches of each kind, plus the namespace listing, go to
@@ -32,6 +37,7 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei -m openai/gpt-oss-120b ...          another model (kept)
     %ei --paste     last answer's code to the next prompt
     %ei --bad att   commands like `att...` that gave warnings/errors
+    %ei --examples PATH   index notebooks (code cells) as usage examples
     %ei --index | --scilog [pgroup] | --notes PATH | --models | --config
 
 From Python: `eco.ei.ask("...")`, `eco.ei.assistant()`.
@@ -63,7 +69,40 @@ DEFAULT_CONFIG = {
     "max_tokens": 1500,
     "timeout": 180,
     # how many search hits of each kind go to the model
-    "hits": {"command": 10, "note": 5, "doc": 6, "api": 8},
+    "hits": {"command": 10, "note": 5, "doc": 6, "api": 8, "example": 3},
+    # what is indexed besides eco itself. packages: their API, found
+    # without importing them. repos: checkouts of those packages, the
+    # first existing one is used; its docs/*.md and examples/**/*.ipynb
+    # (plus notebooks inside the package) are indexed with the label.
+    # example_dirs: more notebooks, {label: [paths]}.
+    "sources": {
+        "packages": ["escape"],
+        "repos": {
+            "escape: ": [
+                "~/escape-fel",
+                "~/mypy/escape-fel",
+                "/sf/bernina/config/personal/lemke_h/escape-fel",
+            ],
+        },
+        "example_dirs": {},
+    },
+    # a question with one of these words (or a follow-up to one) is about
+    # that topic: its context comes mainly from items carrying the label
+    # (docs, examples) or the module prefix (api), and the primer file is
+    # added to the instructions
+    "topics": {
+        "escape": {
+            "words": [
+                "escape", "esc", "analysis", "analyse", "analyze", "analysing", "analyzing",
+                "notebook", "binning", "histogram", "dask", "hdf5", "h5", "jungfrau",
+                "pump probe", "pump-probe", "correlation", "exafs", "wavefront",
+                "load run", "load the run", "run data", "raw data", "dataset",
+            ],
+            "label": "escape: ",
+            "module": "escape.",
+            "primer": "~/.eco/ei_primer_escape.md",
+        },
+    },
     # previous question/answer pairs kept for follow-up questions
     "history_turns": 3,
     # rebuild the index at most this often (seconds; incremental, cheap)
@@ -91,6 +130,10 @@ for meshes and co-moving axes. queue=... appends a scan to a task queue \
 (%queue magic) instead of running it.
 - Namespace entries marked [lazy] are not initialised yet: they initialise on \
 first use, which is fine to suggest.
+- Data analysis is done with escape (package escape-fel, `import escape`), \
+usually in a Jupyter notebook, not with eco devices. Context items tagged \
+[api escape...], [doc escape: ...] and [example escape: ...] show its API and \
+real usage; write analysis code in the style of those examples.
 
 Rules:
 - Answer from the context below: eco docs, eco API signatures, and commands \
@@ -191,7 +234,20 @@ Get one at https://ai.psi.ch (Settings -> Account -> API keys), then either
   export ECO_EI_API_KEY=sk-...
 or store it, readable only by you:
   (umask 077; echo sk-... > {KEY_PATH})
-Until then `%ei -s ...` searches without a model."""
+Until then %ei only searches (docs, API, history) without a model.
+Then `%ei --key` to pick it up in this session."""
+
+#: what a question without a key prints after the first time
+NO_KEY_SHORT = "(search only -- no API key for the model; `%ei` says how to add one)"
+
+#: a missing key is looked up again after this many seconds at the
+#: earliest (the gopass lookup alone can take seconds)
+KEY_RETRY_S = 300
+
+
+def enabled():
+    """False when ECO_NO_EI=1: no %ei magic, no Ask menu."""
+    return os.environ.get("ECO_NO_EI", "").strip().lower() not in ("1", "true", "yes", "on")
 
 
 # -- the running session ---------------------------------------------------------
@@ -339,6 +395,8 @@ class Assistant:
         self.history = []  # [(question, answer text)]
         self.last = None
         self._backend = backend
+        self._no_key_until = 0.0  # don't look for a missing key again before
+        self._key_note_shown = False
         self._indexed_at = 0.0
         self._index_lock = threading.Lock()
 
@@ -353,12 +411,16 @@ class Assistant:
         if isinstance(self._backend, logs_ask.OpenAICompatibleBackend):
             self._backend = None
 
-    def backend(self):
-        """The configured backend, or None without an API key."""
+    def backend(self, recheck=False):
+        """The configured backend, or None without an API key. A missing
+        key is looked for again only every KEY_RETRY_S (or with recheck)."""
         if self._backend is None:
+            if not recheck and time.time() < self._no_key_until:
+                return None
             cfg = self.config
             key, _where = api_key(cfg["base_url"])
             if key is None:
+                self._no_key_until = time.time() + KEY_RETRY_S
                 return None
             self._backend = logs_ask.OpenAICompatibleBackend(
                 cfg["base_url"],
@@ -372,6 +434,70 @@ class Assistant:
 
     # index ---------------------------------------------------------------
 
+    def index_sources(self):
+        """build_index() keyword arguments for eco plus the configured
+        packages, repos and example dirs (those that exist)."""
+        import importlib.util
+
+        src = self.config.get("sources", {})
+        topics = self.config.get("topics", {}).values()
+        src_dirs, doc_dirs, example_dirs = [logs_ask.SRC_DIR], [logs_ask.DOCS_DIR], []
+        for package in src.get("packages", []):
+            try:
+                spec = importlib.util.find_spec(package)  # a top-level package: not imported
+            except (ImportError, ValueError):
+                spec = None
+            if spec is not None and spec.submodule_search_locations:
+                pkg_dir = Path(list(spec.submodule_search_locations)[0])
+                src_dirs.append(pkg_dir)
+                # notebooks shipped inside the package, under its topic's label
+                label = next((t.get("label", "") for t in topics if t.get("module") == package + "."), "")
+                example_dirs.append((pkg_dir, label))
+        for label, candidates in src.get("repos", {}).items():
+            repo = next((Path(c).expanduser() for c in candidates if _readable_dir(Path(c).expanduser())), None)
+            if repo is not None:
+                doc_dirs.append((repo / "docs", label))
+                example_dirs.append((repo / "examples", label))
+        for label, paths in src.get("example_dirs", {}).items():
+            example_dirs += [(Path(p).expanduser(), label) for p in paths]
+        return {"src_dirs": src_dirs, "doc_dirs": doc_dirs, "example_dirs": example_dirs}
+
+    #: share of the best doc/api/example matches that must belong to a
+    #: topic for a question without any of its words to count as about it
+    TOPIC_VOTE = 0.6
+
+    def topic(self, question, follow_up=True):
+        """Name of the configured topic the question (or, for a
+        follow-up, the previous question) is about, or None: one of the
+        topic's words, else a majority of the best doc/api/example
+        matches carrying its label or module."""
+        topics = self.config.get("topics", {})
+        texts = [question] + ([self.history[-1][0]] if follow_up and self.history else [])
+        for text in texts:
+            low = " " + " ".join(re.findall(r"[a-z0-9-]+", text.lower())) + " "
+            for name, t in topics.items():
+                if any(f" {w.lower()} " in low for w in t.get("words", [])):
+                    return name
+        try:
+            hits = logs_ask.search(" ".join(texts), k=10, db_path=self.db_path, kinds=("doc", "api", "example"))
+        except Exception:
+            return None
+        for name, t in topics.items():
+            prefixes = tuple(p for p in (t.get("label"), t.get("module")) if p)
+            if hits and prefixes and sum(h.context.startswith(prefixes) for h in hits) >= self.TOPIC_VOTE * len(hits):
+                return name
+        return None
+
+    def primer(self, topic):
+        path = (self.config.get("topics", {}).get(topic) or {}).get("primer")
+        if not path:
+            return ""
+        path = Path(path).expanduser()
+        try:
+            return path.read_text().strip()
+        except OSError:
+            return ""
+
     def refresh_index(self, force=False, report=print):
         """Incremental logs_ask.build_index(), at most every
         reindex_interval seconds unless forced."""
@@ -382,7 +508,7 @@ class Assistant:
             if fresh and report:
                 report("eco.ei: building the search index (docs, eco source, command history) -- the first time takes a while ...")
             t0 = time.time()
-            result = logs_ask.build_index(db_path=self.db_path)
+            result = logs_ask.build_index(db_path=self.db_path, **self.index_sources())
             self._indexed_at = time.time()
             if report and (fresh or force):
                 report(f"eco.ei: index has {result['items']} items ({result['files_indexed']} files updated, {time.time() - t0:.1f} s)")
@@ -398,19 +524,40 @@ class Assistant:
         if expansions:
             query += " " + " ".join(expansions)
         quota = self.config["hits"]
-        groups = [
-            (("command",), quota.get("command", 10)),
-            (("scilog", "note", "note_command"), quota.get("note", 5)),
-            (("doc",), quota.get("doc", 6)),
-            (("api",), quota.get("api", 8)),
-        ]
+        topic = self.topic(question, follow_up=follow_up)
+        t = self.config.get("topics", {}).get(topic) or {}
+        label, module = t.get("label"), t.get("module")
+        # (kinds, how many, context prefix, excluded prefix)
+        if topic:
+            groups = [
+                (("example",), 6, label, None),
+                (("api",), 8, module, None),
+                (("doc",), 5, label, None),
+                (("api",), 2, None, module),
+                (("doc",), 2, None, label),
+                (("command",), 4, None, None),
+                (("scilog", "note", "note_command"), 3, None, None),
+            ]
+        else:
+            # eco questions: the topic packages' API, docs and examples
+            # only through the example quota
+            module_out = [t["module"] for t in self.config.get("topics", {}).values() if t.get("module")]
+            groups = [
+                (("command",), quota.get("command", 10), None, None),
+                (("scilog", "note", "note_command"), quota.get("note", 5), None, None),
+                (("doc",), quota.get("doc", 6), None, None),
+                (("api",), quota.get("api", 8), "eco." if module_out else None, None),
+                (("example",), quota.get("example", 3), None, None),
+            ]
         hits = []
-        for kinds, k in groups:
+        for kinds, k, prefix, exclude in groups:
             if k:
-                found = logs_ask.search(query, k=k, db_path=self.db_path, kinds=kinds)
+                found = logs_ask.search(
+                    query, k=k, db_path=self.db_path, kinds=kinds, context_prefix=prefix, exclude_prefix=exclude
+                )
                 if kinds == ("command",):
                     found.sort(key=lambda h: logs_ask._STATUS_ORDER[h.status])
-                hits += found
+                hits += [h for h in found if h not in hits]
         return hits
 
     # asking --------------------------------------------------------------
@@ -426,6 +573,8 @@ class Assistant:
                 context.append(f"{h.cite()} (from notes, outcome unknown) >>> {h.text[:400]}")
             elif h.kind == "api":
                 context.append(f"{h.cite()} {h.text[:700]}")
+            elif h.kind == "example":
+                context.append(f"{h.cite()}\n```python\n{h.text[:1200]}\n```")
             else:
                 context.append(f"{h.cite()}\n{h.text[:1200]}")
         ns_text = self.namespace.text(question)
@@ -435,7 +584,12 @@ class Assistant:
             + ("\n\n".join(context) if context else "(nothing found)")
             + f"\n\nQuestion: {question}"
         )
-        msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+        system = SYSTEM_PROMPT
+        topic = self.topic(question)
+        primer = self.primer(topic) if topic else ""
+        if primer:
+            system += f"\n{topic} primer (written by its maintainers, authoritative):\n{primer}\n"
+        msgs = [{"role": "system", "content": system}]
         for q, a in self.history[-self.config["history_turns"]:]:
             msgs += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
         msgs.append({"role": "user", "content": user})
@@ -457,7 +611,9 @@ class Assistant:
         backend = None if search_only else self.backend()
         if backend is None:
             if not search_only and report:
-                report(NO_KEY_HELP.format(base_url=self.config["base_url"]))
+                # the full how-to once per session, then a reminder
+                report(NO_KEY_SHORT if self._key_note_shown else NO_KEY_HELP.format(base_url=self.config["base_url"]))
+                self._key_note_shown = True
             text = _listing(hits) or "Nothing in the docs, the eco source, the command history, logbooks or notes matches that."
             # not self.last: that stays the last model answer, for --paste
             return Answer(question, text, hits, "", time.time() - t0)
@@ -468,6 +624,13 @@ class Assistant:
 
     def reset(self):
         self.history = []
+
+
+def _readable_dir(path):
+    try:
+        return path.is_dir() and os.access(path, os.R_OK | os.X_OK)
+    except OSError:
+        return False
 
 
 def _listing(hits):
@@ -546,9 +709,17 @@ def ei_magic(line, cell=None):
     if not text:
         _key, where = api_key(asst.config["base_url"])
         print(_status(asst, where))
+        if where is None:
+            print(NO_KEY_HELP.format(base_url=asst.config["base_url"]))
         return None
     if opt in ("-h", "--help"):
         print(__doc__)
+        return None
+    if opt == "--key":
+        if asst.backend(recheck=True) is None:
+            print(NO_KEY_HELP.format(base_url=asst.config["base_url"]))
+        else:
+            print(f"eco.ei: API key found, answers come from {asst.model}")
         return None
     if opt == "--paste":
         if asst.last is None or not asst.last.code:
@@ -574,6 +745,11 @@ def ei_magic(line, cell=None):
         pgroup = rest or None
         result = logs_ask.index_scilog(pgroup=pgroup, db_path=asst.db_path)
         print(f"eco.ei: {result['new_posts']} new SciLog posts indexed ({pgroup or 'default pgroup'})")
+        return None
+    if opt == "--examples":
+        # for this session; add it to "sources" in ~/.eco/ei.json to keep it
+        asst.config.setdefault("sources", {}).setdefault("example_dirs", {}).setdefault("", []).append(rest)
+        asst.refresh_index(force=True)
         return None
     if opt == "--notes":
         result = logs_ask.index_documents(rest, db_path=asst.db_path)
@@ -604,15 +780,17 @@ def ei_magic(line, cell=None):
 def _status(asst, key_where):
     return (
         f"eco.ei: model {asst.model} at {asst.config['base_url']}, "
-        f"API key {'from ' + key_where if key_where else 'MISSING'}; "
+        f"API key {'from ' + key_where if key_where else 'MISSING -- search only, `%ei --key` once you have one'}; "
         f"{len(asst.history)} earlier question(s) in this conversation.\n"
         "%ei <question> | -n new | -s search only | -m MODEL | --paste | --bad TEXT | "
-        "--index | --scilog [pgroup] | --notes PATH | --models | --config | --help"
+        "--key | --index | --scilog [pgroup] | --notes PATH | --examples PATH | --models | --config | --help"
     )
 
 
 def register_magic(shell):
-    """Register %ei / %%ei on an IPython shell (idempotent)."""
-    if shell is None:
+    """Register %ei / %%ei on an IPython shell (idempotent). Nothing with
+    ECO_NO_EI=1. Cheap: no network, no index, no key lookup until the
+    first question."""
+    if shell is None or not enabled():
         return
     shell.register_magic_function(ei_magic, magic_kind="line_cell", magic_name="ei")

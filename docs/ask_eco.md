@@ -32,11 +32,32 @@ the next prompt, where you can read and edit it first.
 | eco docs | These pages, one item per section. |
 | eco API | Class and function signatures with the first paragraph of their docstrings, read from the source. Nothing is imported for this. |
 | Your namespace | Which top-level devices exist and their classes, plus the components of an initialized device the question names. Lazy devices are listed without being initialized. |
+| escape | The API of the installed escape package, and the docs and example notebooks of an escape checkout. |
+| Notebooks | Code cells of more notebooks, after `%ei --examples PATH`. |
 | SciLog, notes | Only after `%ei --scilog [pgroup]` or `%ei --notes PATH` has indexed them. |
 
 The search index lives in `~/.eco/history_index.sqlite`. It is updated
 before a question at most every ten minutes, and only files that changed are
 read again.
+
+## Analysis questions: escape
+
+Data analysis is done with escape, not with eco devices. `%ei` recognizes an
+analysis question either by its words ("escape", "analysis", "binning",
+"pump-probe", ...) or because most of the best matches come from escape.
+The context then comes mainly from escape's API, docs and example notebooks:
+
+```python
+%ei how do I load a run and bin a detector by the delay?
+```
+
+The answer is only as good as escape's examples: the model copies their
+style, and their mistakes. A short primer in `~/.eco/ei_primer_escape.md`
+(core objects and idioms, written by someone who knows escape) is added to
+the model's instructions for every escape question.
+
+Where the escape docs and examples are read from is set under `"sources"` in
+`~/.eco/ei.json`. The first existing checkout from the list is used.
 
 ## Follow-up questions
 
@@ -62,6 +83,8 @@ read again.
 | `%ei --index` | Update the search index now. |
 | `%ei --scilog [pgroup]` | Index SciLog posts (new ones since the last time). |
 | `%ei --notes PATH` | Index a folder of notes (.txt, .md, .pdf). |
+| `%ei --examples PATH` | Index notebooks (code cells) as usage examples, for this session. |
+| `%ei --key` | Look for the API key again, after adding one. |
 | `%ei --models` | Models the server offers. |
 | `%ei` | Model, where the API key came from, and the options. |
 
@@ -91,7 +114,16 @@ eco looks for it in this order:
 4. the key the VS Code extension Continue uses for the same server
    (`~/.continue/config.yaml`).
 
-Without a key, `%ei` shows the search results and explains how to set one up.
+## Without a key
+
+Not everyone has a key, so the model is optional. Without one, `%ei` still
+searches the docs, the API and the command history and lists what matches.
+It explains once how to add a key, and after that only notes "search only".
+In eco desktop, the Ask panel switches to **Search only** by itself. After
+adding a key, `%ei --key` picks it up without restarting.
+
+`ECO_NO_EI=1` switches the feature off completely: no `%ei` magic and no
+**Ask** menu.
 
 **What leaves the machine:** your question, the matching history, docs and
 log excerpts, and the list of namespace names go to the model server. The

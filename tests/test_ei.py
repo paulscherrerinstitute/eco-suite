@@ -19,7 +19,8 @@ import eco.logs_ask as la
 
 
 def _index(tmp_path):
-    logs, docs, src = tmp_path / "logs", tmp_path / "docs", tmp_path / "src"
+    # the package directory's name is the module prefix: "eco.attenuator"
+    logs, docs, src = tmp_path / "logs", tmp_path / "docs", tmp_path / "eco"
     for d in (logs, docs, src):
         d.mkdir()
     records = [
@@ -43,9 +44,93 @@ def _index(tmp_path):
         "def _hidden():\n    pass\n"
         r'X = "\d"  # an invalid escape: no SyntaxWarning may leak' "\n"
     )
+    # an analysis package with its docs and an example notebook
+    esc, esc_docs, esc_examples = tmp_path / "escape", tmp_path / "escape-docs", tmp_path / "escape-examples"
+    for d in (esc, esc_docs, esc_examples):
+        d.mkdir()
+    (esc / "array.py").write_text(
+        "class Array:\n"
+        '    """Event-indexed data."""\n'
+        "    def digitize(self, bins):\n"
+        '        """Categorize events into bins of this array."""\n'
+    )
+    (esc_docs / "array_operations.md").write_text("# Arrays\n\n## Binning\n\nUse `delay.digitize(bins).categorize(sig)` to bin events.\n")
+    nb = {"cells": [
+        {"cell_type": "markdown", "source": ["# Pump-probe\n", "\n", "## Step 1 - bin by delay\n"]},
+        {"cell_type": "code", "source": ["binned = delay.digitize(bins)\n", "binned.categorize(sig)"]},
+        {"cell_type": "code", "source": ["   "]},
+    ]}
+    (esc_examples / "pump_probe.ipynb").write_text(json.dumps(nb))
+    (esc_examples / ".ipynb_checkpoints").mkdir()
+    (esc_examples / ".ipynb_checkpoints" / "pump_probe-checkpoint.ipynb").write_text(json.dumps(nb))
     db = tmp_path / "idx.sqlite"
-    la.build_index(db_path=db, log_dir=logs, doc_dirs=(docs,), src_dirs=(src,))
+    la.build_index(
+        db_path=db, log_dir=logs,
+        doc_dirs=(docs, (esc_docs, "escape: ")),
+        src_dirs=(src, esc),
+        example_dirs=[(esc_examples, "escape: ")],
+    )
     return db
+
+
+def test_escape_sources_are_indexed_with_their_labels(tmp_path):
+    db = _index(tmp_path)
+    examples = la.search("digitize bins", k=10, db_path=db, kinds=("example",))
+    assert [(h.context, h.text) for h in examples] == [
+        ("escape: pump_probe.ipynb > Step 1 - bin by delay", "binned = delay.digitize(bins)\nbinned.categorize(sig)")
+    ]  # the checkpoint copy and the blank cell are not indexed
+    assert examples[0].cite() == "[example escape: pump_probe.ipynb > Step 1 - bin by delay]"
+    api = la.search("digitize", k=10, db_path=db, kinds=("api",), context_prefix="escape.")
+    assert {h.context for h in api} == {"escape.array.Array", "escape.array.Array.digitize"}
+    assert not la.search("digitize", k=10, db_path=db, kinds=("api",), context_prefix="eco.")
+    docs = la.search("binning", k=10, db_path=db, kinds=("doc",), exclude_prefix="escape: ")
+    assert docs == []
+    assert la.search("binning", k=10, db_path=db, kinds=("doc",))[0].context == "escape: array_operations.md > Binning"
+
+
+def test_escape_questions_get_escape_context_and_the_primer(tmp_path, monkeypatch):
+    backend = _FakeBackend()
+    a = _assistant(tmp_path, backend)
+    primer = tmp_path / "primer.md"
+    primer.write_text("Arrays are indexed by pulse id.")
+    a.config["topics"]["escape"]["primer"] = str(primer)
+    # by a word of the topic, and by the matches (no topic word here)
+    assert a.topic("escape: bin my data") == "escape"
+    assert a.topic("how do I digitize by delay bins?") == "escape"
+    assert a.topic("how do I set the attenuator transmission?") is None
+
+    a.ask("how do I digitize by delay bins?", report=None)
+    system, user = backend.calls[0][0]["content"], backend.calls[0][-1]["content"]
+    assert "escape primer" in system and "indexed by pulse id" in system
+    assert "[example escape: pump_probe.ipynb > Step 1 - bin by delay]\n```python\nbinned = delay.digitize(bins)" in user
+    assert "[api escape.array.Array.digitize]" in user
+    # a follow-up stays on the topic
+    assert a.topic("and with 50 bins?") == "escape"
+
+    a.ask("how do I set the attenuator transmission?", new=True, report=None)
+    system, user = backend.calls[1][0]["content"], backend.calls[1][-1]["content"]
+    assert "escape primer" not in system and "[api escape." not in user and "[api eco.attenuator" in user
+
+
+def test_index_sources_find_packages_without_importing(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+    import types
+
+    pkg = tmp_path / "escape"
+    repo = tmp_path / "escape-fel"
+    for d in (pkg, repo / "docs", repo / "examples"):
+        d.mkdir(parents=True)
+    spec = types.SimpleNamespace(submodule_search_locations=[str(pkg)])
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: spec if name == "escape" else None)
+    cfg = _config()
+    cfg["sources"]["repos"]["escape: "] = [str(tmp_path / "missing"), str(repo)]
+    cfg["sources"]["example_dirs"] = {"mine: ": [str(tmp_path / "nbs")]}
+    src = ei.Assistant(None, config=cfg, db_path=tmp_path / "x.sqlite").index_sources()
+    assert src["src_dirs"] == [la.SRC_DIR, pkg]
+    assert src["doc_dirs"] == [la.DOCS_DIR, (repo / "docs", "escape: ")]
+    assert src["example_dirs"] == [(pkg, "escape: "), (repo / "examples", "escape: "), (tmp_path / "nbs", "mine: ")]
+    assert "escape" not in sys.modules or not isinstance(sys.modules["escape"], types.SimpleNamespace)
 
 
 class _LazyProxy:
@@ -249,6 +334,31 @@ def test_search_only_and_no_key(tmp_path, monkeypatch):
     assert "no API key" in reports[-1] and "scans.scan" in ans.text
 
 
+def test_without_a_key_it_searches_and_says_so_once(tmp_path, monkeypatch):
+    lookups = []
+    monkeypatch.setattr(ei, "api_key", lambda base_url=None: lookups.append(1) or (None, None))
+    a = _assistant(tmp_path, None)
+    reports = []
+    for _ in range(3):
+        ans = a.ask("mesh scan", report=reports.append)
+        assert ans.model == "" and "scans.scan" in ans.text
+    assert "Get one at https://ai.psi.ch" in reports[0]
+    assert reports[1:] == [ei.NO_KEY_SHORT, ei.NO_KEY_SHORT]
+    assert len(lookups) == 1  # not looked up again for every question
+    assert a.backend(recheck=True) is None and len(lookups) == 2
+
+
+def test_eco_no_ei_disables_the_magic(monkeypatch):
+    shell = _Shell()
+    monkeypatch.setenv("ECO_NO_EI", "1")
+    assert not ei.enabled()
+    ei.register_magic(shell)
+    assert shell.magics == {}
+    monkeypatch.setenv("ECO_NO_EI", "0")
+    ei.register_magic(shell)
+    assert "ei" in shell.magics
+
+
 # -- the HTTP backend ---------------------------------------------------------------
 
 
@@ -344,3 +454,11 @@ def test_magic(tmp_path, monkeypatch, capsys):
     ei.ei_magic("--bad att")
     ei.ei_magic("")
     assert "model other-model" in capsys.readouterr().out
+
+    monkeypatch.setattr(ei, "api_key", lambda base_url=None: (None, None))
+    a._backend = None
+    ei.ei_magic("--key")
+    assert "no API key" in capsys.readouterr().out
+    ei.ei_magic("")
+    out = capsys.readouterr().out
+    assert "MISSING -- search only" in out and "Get one at https://ai.psi.ch" in out

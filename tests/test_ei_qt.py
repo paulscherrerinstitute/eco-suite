@@ -17,9 +17,12 @@ from eco.widgets.ei_qt import EiPanel
 
 
 class _FakeAssistant:
-    def __init__(self, fail=False):
+    def __init__(self, fail=False, key=True):
         self.config = {"model": "m1", "model_options": {"m1": {}, "m2": {}}}
-        self.fail, self.calls, self.reset_calls = fail, [], 0
+        self.fail, self.calls, self.reset_calls, self.key = fail, [], 0, key
+
+    def backend(self, recheck=False):
+        return object() if self.key else None
 
     @property
     def model(self):
@@ -50,7 +53,7 @@ def app():
 
 def _wait(app, panel, timeout=5):
     end = time.time() + timeout
-    while panel._worker is not None and time.time() < end:
+    while (panel._worker is not None or panel._has_key is None) and time.time() < end:
         app.processEvents()
         time.sleep(0.01)
     app.processEvents()
@@ -61,6 +64,8 @@ def test_ask_streams_and_offers_code(app):
     inserted = []
     asst = _FakeAssistant()
     panel = EiPanel(asst, insert_code=inserted.append)
+    _wait(app, panel)
+    assert panel._has_key is True and panel.search_only.isEnabled()
     assert [panel.model_box.itemText(i) for i in range(panel.model_box.count())] == ["m1", "m2"]
     assert not panel.console_button.isEnabled()
 
@@ -115,3 +120,17 @@ def test_closing_mid_answer_is_harmless(app):
     for _ in range(5):
         app.processEvents()
     assert not worker.is_alive()
+
+
+def test_without_a_key_the_panel_only_searches(app):
+    asst = _FakeAssistant(key=False)
+    panel = EiPanel(asst)
+    _wait(app, panel)
+    assert panel.search_only.isChecked() and not panel.search_only.isEnabled()
+    assert not panel.model_box.isEnabled()
+    assert "No API key" in panel.status.text()
+    panel.question.setPlainText("x")
+    panel.ask()
+    _wait(app, panel)
+    assert asst.calls == [("x", True)] and not panel.model_box.isEnabled()
+    panel.deleteLater()

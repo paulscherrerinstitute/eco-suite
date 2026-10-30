@@ -1287,6 +1287,7 @@ def test_ask_menu_opens_one_panel_and_switches_model(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eco.ei, "CONFIG_PATH", tmp_path / "ei.json")
     monkeypatch.setattr(eco.ei, "_assistants", {})
+    monkeypatch.setattr(eco.ei, "api_key", lambda base_url=None: ("sk-test", "test"))
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     gui = EcoDesktopApp(namespace=None, auto_start=False)
     gui._build_window()
@@ -1304,6 +1305,17 @@ def test_ask_menu_opens_one_panel_and_switches_model(monkeypatch, tmp_path):
         assert "openai/gpt-oss-120b" in models
         gui._set_ei_model("openai/gpt-oss-120b")
         assert gui._ei_assistant().model == panel.model_box.currentText() == "openai/gpt-oss-120b"
+    finally:
+        gui.stop()
+
+
+def test_no_ask_menu_with_eco_no_ei(monkeypatch):
+    monkeypatch.setenv("ECO_NO_EI", "1")
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = EcoDesktopApp(namespace=None, auto_start=False)
+    gui._build_window()
+    try:
+        assert "&Ask" not in [a.text() for a in gui.window.menuBar().actions()]
     finally:
         gui.stop()
 
