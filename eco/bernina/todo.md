@@ -1,10 +1,10 @@
 # TODO: local verification needed (GUI container/camera-subprocess/SVG-settings work)
 
-Written 2026-09-11 by a Claude Code session that implemented three related
-GUI features (see the session's own summary below) but could not run any of
-it — this sandbox has no Bernina Python environment at all (`pytest`,
+Written 2026-09-11 when three related GUI features were implemented (see
+the summary below) without being able to run any of it — that
+environment had no Bernina Python environment at all (`pytest`,
 `qtpy`, `cam_server`, `escape`, ... none installed, confirmed at the start
-of the session). Everything below is syntax-checked (`ast.parse`) and
+of the work). Everything below is syntax-checked (`ast.parse`) and
 carefully reasoned through, not executed. Please run the checks below
 before trusting it.
 
@@ -54,8 +54,7 @@ QT_QPA_PLATFORM=offscreen PYTHONPATH=/sf/bernina/config/personal/lemke_h/eco:$PY
 ```
 
 Run **per file**, not as one `pytest tests/` invocation (the whole-suite run
-reliably dumps core partway through the Qt+pytest+offscreen interaction --
-see CLAUDE.md).
+reliably dumps core partway through the Qt+pytest+offscreen interaction).
 
 ```
 tests/test_assembly_default_widget.py
@@ -72,8 +71,7 @@ tests/test_svg_interactor.py
 `subprocess_embed.py` module rather than reimplementing it, so this file
 must keep passing **unmodified** for the refactor to be considered safe.
 
-Known-flaky/pre-existing failures to not misattribute to this work (from
-CLAUDE.md): `tests/test_config_lazy_init.py` (2 tests), and
+Known-flaky/pre-existing failures to not misattribute to this work : `tests/test_config_lazy_init.py` (2 tests), and
 `test_desktop_app.py::test_init_all_reconciles_and_unblocks_each_entry_as_it_finishes`
 (a real timing race, ~2-3/5 runs).
 

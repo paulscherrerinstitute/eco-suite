@@ -1,6 +1,6 @@
 """Tab-completion confirmation gate for eco's lazy namespace components.
 
-See CLAUDE.md's "Tab completion" section for the two other mechanisms this
+See docs/tab_completion.md for the two other mechanisms this
 sits on top of (`use_jedi = False`, and the `guarded_eval` allow-list entry
 for `eco.utilities.config.Proxy`). That allow-list entry is what makes
 `prepump.line1_usd.<TAB>` return real completions instead of nothing once

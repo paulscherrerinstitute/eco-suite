@@ -11,6 +11,6 @@ docs/_build/
 build/
 dist/
 
-# kept locally for Claude Code, deliberately not committed (contains
-# internal PSI facility paths/details) -- see MEMORY.md
+# local developer notes, deliberately not committed (contain internal
+# PSI facility paths/details)
 CLAUDE.md

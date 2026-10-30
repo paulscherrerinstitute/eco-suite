@@ -61,7 +61,7 @@ def _table(rts, tmp_path, **kwargs):
 
 def test_save_creates_a_group_writable_setgid_tree(rts, tmp_path):
     """save() used to be mkdir(parents=True) + chmod(0o775) on the leaf only
-    - the CLAUDE.md-documented trap: intermediate levels land at the
+    - the documented trap (eco.utilities.datafiles): intermediate levels land at the
     umask-masked 0o755, and a plain chmod clears setgid if it was ever set."""
     nested = tmp_path / "run_data" / "run_table"
     table = _table(rts, tmp_path, exp_path=str(nested) + "/")

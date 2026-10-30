@@ -111,7 +111,7 @@ _ipy.Completer.use_jedi = False
 
 # use_jedi=False alone is not enough to complete *into* an already-resolved
 # namespace component (e.g. `prepump.line1_usd.<TAB>` after `prepump` has
-# been used) -- see CLAUDE.md's "Tab completion" section for the full
+# been used) -- see docs/tab_completion.md for the full
 # writeup. Short version: IPython's classic completer still evaluates a
 # multi-level dotted expression through `IPython.core.guarded_eval`, which
 # refuses to `getattr()` through any object whose `__getattribute__` isn't
@@ -134,8 +134,7 @@ except Exception:
 
 # The guarded_eval fix above has a side effect: completing *into* a still-
 # unresolved component now silently triggers its real initialisation, with
-# no warning, just from pressing Tab -- see CLAUDE.md's "Tab completion"
-# section. This turns that silent resolve into a two-Tab confirmation
+# no warning, just from pressing Tab -- see docs/tab_completion.md. This turns that silent resolve into a two-Tab confirmation
 # instead (1st Tab: warn, no completions; 2nd Tab: resolve and complete).
 from eco.utilities.lazy_completion import install_lazy_completion_gate
 

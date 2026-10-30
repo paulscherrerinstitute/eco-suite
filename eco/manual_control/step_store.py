@@ -12,8 +12,8 @@ the object itself:
 
 The file is per account (``~/.eco/manual_control_steps.json``) rather than in
 a shared config tree: it is a personal convenience, and keeping it out of
-the group-writable trees avoids the ownership traps documented in
-CLAUDE.md for anything several accounts write to.
+the group-writable trees avoids the ownership traps of anything several
+accounts write to (see eco.utilities.datafiles).
 """
 
 import json

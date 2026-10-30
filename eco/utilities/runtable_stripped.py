@@ -692,7 +692,7 @@ class Run_Table_DataFrame(DataFrame):
         # clears the setgid bit if it was ever set, so files created inside
         # afterwards land in the creator's *primary* group instead of the
         # pgroup - unwritable by anyone else. Both have already happened for
-        # real to a run table on disk (see CLAUDE.md's permissions section).
+        # real to a run table on disk (see eco.utilities.datafiles).
         data_dir = Path(os.path.dirname(self.fname))
         ensure_dir(data_dir)
         pd.DataFrame(self).to_pickle(self.fname + "tmp")

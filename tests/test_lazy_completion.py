@@ -1,5 +1,5 @@
 """Tests for the two-Tab completion-confirmation gate in
-eco.utilities.lazy_completion -- see CLAUDE.md's "Tab completion" section
+eco.utilities.lazy_completion -- see docs/tab_completion.md
 for the full mechanism this sits on top of.
 
 Uses a minimal fake stand-in for IPCompleter (exposing only the attributes

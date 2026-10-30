@@ -65,8 +65,7 @@ absent devices does not become slower.
 
 **This is an experiment and may be reverted** - set
 ``CA_CONNECTION_TIMEOUT`` back to ``0.05`` and everything returns to the
-previous behaviour in one line. See the CLAUDE.md section "CA connection
-timeout (trial)".
+previous behaviour in one line.
 """
 
 import atexit

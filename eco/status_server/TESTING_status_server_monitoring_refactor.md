@@ -69,7 +69,7 @@ PYTHONPATH=<this checkout>:$PYTHONPATH \
   tests/test_daq_scan_monitors.py -q
 ```
 
-Run per-file as usual (CLAUDE.md notes the whole-suite run can dump core
+Run per-file as usual (the whole-suite run can dump core
 partway through under pytest+offscreen Qt — not applicable to these three
 files specifically, but keep the habit).
 

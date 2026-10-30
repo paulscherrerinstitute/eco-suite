@@ -6,7 +6,7 @@ in yet - see that module's `_SOUND_CHECKER_UNHAPPY` / `_SOUND_CHECKER_RESUMED`.
 
 ## Postauto candidate (checker resumes)
 
-- **postauto.mp3** - provided directly (not sourced by Claude this session).
+- **postauto.mp3** - provided directly.
   Source/license unrecorded - fill in here before this ships, especially
   since the real PostAuto three-tone horn is a registered Swiss sound
   trademark: worth confirming this is either a personal recording, used

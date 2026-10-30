@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # guarded_eval allow-list, so the classic (non-jedi) completer can complete
 # *past* an already-resolved Proxy (`prepump.line1_usd.<TAB>`) instead of
 # silently returning nothing -- see build_console_widget's docstring and
-# CLAUDE.md's "Tab completion" section for the full mechanism. Best-effort
+# docs/tab_completion.md for the full mechanism. Best-effort
 # (guarded_eval is an internal, fairly young IPython module): a future
 # IPython that reshapes it should degrade to today's behaviour, not an
 # error in the console. Module-level so tests can assert on it by name
@@ -64,7 +64,7 @@ GUARDED_EVAL_PROXY_PATCH_CODE = (
 # no warning, just from pressing Tab. This installs the two-Tab confirmation
 # gate (see eco.utilities.lazy_completion) that turns that into "1st Tab:
 # warn, no completions; 2nd Tab: resolve and complete" instead -- see
-# CLAUDE.md's "Tab completion" section.
+# docs/tab_completion.md.
 LAZY_COMPLETION_GATE_CODE = (
     "import contextlib as _contextlib\n"
     "with _contextlib.suppress(Exception):\n"
@@ -222,7 +222,7 @@ def build_console_widget(kernel_manager, kernel_client, session, banner="", star
     failing on this dynamic a namespace).
 
     Also registers eco's Proxy with IPython's `guarded_eval` allow-list
-    (see CLAUDE.md's "Tab completion" section, and
+    (see docs/tab_completion.md, and
     eco/startup_inline.py's matching comment): with jedi off, the classic
     completer still refuses to complete *past* an already-resolved Proxy
     (e.g. `prepump.line1_usd.<TAB>`) unless its `__getattribute__` is on

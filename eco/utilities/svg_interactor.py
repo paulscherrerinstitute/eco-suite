@@ -259,7 +259,7 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
     and DOM-swap run entirely inside the browser engine's own JS runtime, in
     its own process, independent of whatever the eco Python process' main
     thread happens to be doing at the time (e.g. blocked inside a running
-    `PrepumpSystem.pump_down()` poll loop) -- see CLAUDE.md if this class of
+    `PrepumpSystem.pump_down()` poll loop) -- see eco.utilities.mainthread if this class of
     "the live panel doesn't update during a running macro" issue comes up
     again for some other panel.
 
@@ -586,7 +586,7 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
     Rather than embedding a frozen snapshot and re-pushing new content into
     it from Python on a `QTimer` (the previous approach here -- removed:
     Qt's own event loop only gets pumped between IPython prompts, see
-    CLAUDE.md, so that timer would never fire while e.g. a `pump_down()` is
+    eco.utilities.mainthread, so that timer would never fire while e.g. a `pump_down()` is
     running, which is the whole reason this exists), this view is instead
     pointed at the *same* background Dash server the plain browser viewer
     uses (`_run_dash_server`, started here for this window specifically).
@@ -846,7 +846,7 @@ def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
     snapshot (see `_build_qt_window`), so the refresh runs entirely inside
     the view's own browser-engine process, independent of whatever the eco
     Python process' main thread happens to be busy doing at the time (e.g.
-    blocked inside a running macro's poll loop -- see CLAUDE.md).
+    blocked inside a running macro's poll loop -- see eco.utilities.mainthread).
 
     dock_in: an EcoDesktopApp instance (native-window backends only) --
     embeds the viewer as a tiled QDockWidget in that window instead of
