@@ -11,6 +11,3 @@ docs/_build/
 build/
 dist/
 
-# local developer notes, deliberately not committed (contain internal
-# PSI facility paths/details)
-CLAUDE.md
