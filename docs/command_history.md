@@ -21,17 +21,33 @@ globallogger.start()          # optional: label="my analysis", log_dir=...
 ## The Log Viewer
 
 ```python
-eco.logs.widget()             # timeline of every session's commands
+eco.logs.widget()             # timeline of the last 30 days, all sessions
+eco.logs.widget(days=None)    # ... of everything on disk (slower)
 eco.logs.tail(20)             # the last 20 entries, as text
 ```
 
 The viewer opens as a Qt window when there is a usable Qt session, renders
 inline in Jupyter, or is written to an HTML file otherwise
-(`prefer="qt"|"html"|"webapp"` forces one). It is zoomable and filterable, can
+(`prefer="qt"|"html"|"webapp"|"subprocess"` forces one). It is zoomable, can
 show several sessions at once, and has **Copy Selected as Script**, which turns
-the entries you select back into runnable code. In the desktop it is also
-under **Tools → Log Viewer**, and the JupyterLab/Voila dashboards have a Log
-Viewer button.
+the entries you select back into runnable code.
+
+Filtering is done with three buttons above the list. Each opens a searchable
+checklist:
+
+- **Kinds**: what an entry is: `input` (a command you typed), `result`,
+  `stream` (printed output), `error`, `widget_control` (a GUI click that
+  changed something), `session` (start and end of a console).
+- **Sources**: which kind of console it came from, such as `desktop:bernina`
+  or `console:bernina`.
+- **Sessions**: one entry per console session (log file), newest first.
+
+An entry is shown when its kind, source and session are all ticked. **Find**
+searches the text of the entries that are shown.
+
+In the desktop the viewer is under **Tools → Log Viewer**. It runs as a
+separate process there, so a problem in the viewer cannot affect the desktop.
+The JupyterLab/Voila dashboards have a Log Viewer button.
 
 ## Recent and frequent commands
 

@@ -10,6 +10,10 @@ import pytest
 pytest.importorskip("qtpy")
 from qtpy import QtCore, QtWidgets
 
+from _light_eco import ensure_eco_importable
+
+ensure_eco_importable()
+
 from eco.widgets.log_timeline_common import TimelineEntry
 from eco.widgets.log_timeline_qt import LogTimelineQt
 
@@ -26,38 +30,28 @@ def _entries():
 
 
 def _select_all_visible(viewer):
-    viewer.list.clearSelection()
-    for i in range(viewer.list.count()):
-        item = viewer.list.item(i)
-        if item.data(QtCore.Qt.UserRole) is not None and not item.isHidden():
-            item.setSelected(True)
+    viewer.select_entries(viewer.visible_entries())
 
 
 def _visible_kinds(viewer):
-    kinds = set()
-    for i in range(viewer.list.count()):
-        item = viewer.list.item(i)
-        e = item.data(QtCore.Qt.UserRole)
-        if e is not None and not item.isHidden():
-            kinds.add(e.kind)
-    return kinds
+    return {e.kind for e in viewer.visible_entries()}
 
 
 def test_filter_checkboxes_cover_every_distinct_kind():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_entries(), title="test")
-    assert set(viewer._kind_checkboxes.keys()) == {
+    assert set(viewer.kind_filter.popup.items) == {
         "input", "result", "widget_control", "stream", "error",
     }
-    assert all(cb.isChecked() for cb in viewer._kind_checkboxes.values())
+    assert viewer.kind_filter.popup.checked() == set(viewer.kind_filter.popup.items)
 
 
 def test_unchecking_a_kind_hides_only_its_rows():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_entries(), title="test")
 
-    viewer._kind_checkboxes["stream"].setChecked(False)
-    viewer._kind_checkboxes["result"].setChecked(False)
+    viewer.set_kind_visible("stream", False)
+    viewer.set_kind_visible("result", False)
 
     assert _visible_kinds(viewer) == {"input", "widget_control", "error"}
 
@@ -67,7 +61,8 @@ def test_session_row_absent_without_any_per_entry_session():
     filter by, so the Stream row shouldn't be built."""
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_entries(), title="test")
-    assert viewer._session_checkboxes == {}
+    assert viewer.session_filter.popup.items == {}
+    assert viewer.session_filter.isHidden()
 
 
 def _multi_stream_entries():
@@ -82,8 +77,8 @@ def _multi_stream_entries():
 def test_session_row_covers_every_distinct_stream():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_multi_stream_entries(), title="test")
-    assert set(viewer._session_checkboxes.keys()) == {"desktop:bernina", "console:bernina"}
-    assert all(cb.isChecked() for cb in viewer._session_checkboxes.values())
+    assert set(viewer.session_filter.popup.items) == {"desktop:bernina", "console:bernina"}
+    assert viewer.session_filter.popup.checked() == set(viewer.session_filter.popup.items)
 
 
 def test_unchecking_a_stream_hides_only_its_rows_and_combines_with_kind_filter():
@@ -92,12 +87,8 @@ def test_unchecking_a_stream_hides_only_its_rows_and_combines_with_kind_filter()
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_multi_stream_entries(), title="test")
 
-    viewer._session_checkboxes["desktop:bernina"].setChecked(False)
-    visible_sessions = {
-        viewer.list.item(i).data(QtCore.Qt.UserRole).session
-        for i in range(viewer.list.count())
-        if viewer.list.item(i).data(QtCore.Qt.UserRole) is not None and not viewer.list.item(i).isHidden()
-    }
+    viewer.set_session_visible("desktop:bernina", False)
+    visible_sessions = {e.session for e in viewer.visible_entries()}
     assert visible_sessions == {"console:bernina"}
     # console:bernina has both "input" and "stream" entries -- both kinds
     # still checked, so both are still visible once the desktop stream is
@@ -106,7 +97,7 @@ def test_unchecking_a_stream_hides_only_its_rows_and_combines_with_kind_filter()
 
     # AND-combine: also uncheck the "stream" kind -- only console's
     # "input" row should remain visible.
-    viewer._kind_checkboxes["stream"].setChecked(False)
+    viewer.set_kind_visible("stream", False)
     assert _visible_kinds(viewer) == {"input"}
 
 
@@ -114,9 +105,9 @@ def test_rechecking_shows_rows_again():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_entries(), title="test")
 
-    viewer._kind_checkboxes["error"].setChecked(False)
+    viewer.set_kind_visible("error", False)
     assert "error" not in _visible_kinds(viewer)
-    viewer._kind_checkboxes["error"].setChecked(True)
+    viewer.set_kind_visible("error", True)
     assert "error" in _visible_kinds(viewer)
 
 
@@ -164,17 +155,14 @@ def test_copy_selected_as_script_with_timing_inserts_real_gaps():
 
 
 def test_copy_selected_as_script_only_uses_visible_selection():
-    """Hidden (filtered-out) rows can still technically be "selected" in
-    Qt's own model even while hidden -- must not leak into the script."""
+    """Filtered-out entries must not leak into the script (they aren't
+    rows of the model at all, so they can't be selected)."""
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     viewer = LogTimelineQt(_entries(), title="test")
-    viewer._kind_checkboxes["error"].setChecked(False)  # hide the error row
+    viewer.set_kind_visible("error", False)  # hide the error row
 
-    # select everything in the model, hidden or not
-    for i in range(viewer.list.count()):
-        item = viewer.list.item(i)
-        if item.data(QtCore.Qt.UserRole) is not None:
-            item.setSelected(True)
+    # try to select every entry, hidden or not
+    viewer.select_entries(viewer.entries)
     viewer.timing_checkbox.setChecked(False)
 
     viewer._copy_selected_as_script()

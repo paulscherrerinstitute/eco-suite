@@ -71,25 +71,75 @@ def _session_label_for_file(path, lines):
     return path.stem
 
 
-def _kernel_entries(session=None, log_dir=None):
+class LoadReport:
+    """What one kernel-log load read and what it had to skip -- shown in the
+    viewer's status line, so a damaged log file is visible instead of either
+    silently dropped or (as before) fatal to the whole eco desktop."""
+
+    def __init__(self):
+        self.files_read = 0
+        self.files_skipped_old = 0
+        self.files_failed = []  # [(path, "ExcType: message")]
+        self.bad_lines = 0
+
+    def summary(self):
+        parts = [f"{self.files_read} session files"]
+        if self.files_skipped_old:
+            parts.append(f"{self.files_skipped_old} older ones not loaded")
+        if self.bad_lines:
+            parts.append(f"{self.bad_lines} unreadable lines skipped")
+        if self.files_failed:
+            parts.append(f"{len(self.files_failed)} files failed")
+        return ", ".join(parts)
+
+    def __repr__(self):
+        return f"<LoadReport {self.summary()}>"
+
+
+def load_kernel_entries(session=None, log_dir=None, days=None, report=None):
+    """(entries, report) for every kernel log on disk, or just `session`.
+
+    Never raises for bad *data*: an unreadable file or a malformed line
+    (non-JSON, non-dict, a non-numeric "t", ...) is counted in `report`
+    and skipped. Before this, one such line raised out of a Qt slot in
+    eco desktop, which PyQt turns into abort() of the whole process.
+
+    `days`: only entries from the last `days` days (None = everything).
+    Files are pre-filtered on their mtime (a session file's newest line
+    can't be newer than the file), so months of old sessions cost one
+    stat() each, not a full read + parse."""
+    report = report if report is not None else LoadReport()
     paths = [Path(session)] if session is not None else kernel_registry.find_all_logs(log_dir)
+    since = None if days is None else datetime.datetime.now().timestamp() - float(days) * 86400
     entries = []
     for path in paths:
         path = Path(path)
-        if not path.exists():
+        try:
+            if since is not None and path.stat().st_mtime < since:
+                report.files_skipped_old += 1
+                continue
+            lines = path.read_text(errors="replace").splitlines()
+        except Exception as exc:
+            report.files_failed.append((str(path), f"{type(exc).__name__}: {exc}"))
             continue
-        lines = path.read_text().splitlines()
+        report.files_read += 1
         session_label = _session_label_for_file(path, lines)
         for line in lines:
-            try:
-                rec = json.loads(line)
-            except Exception:
+            if not line.strip():
                 continue
-            entry = _kernel_record_to_entry(rec, session_label)
-            if entry is not None:
+            try:
+                entry = _kernel_record_to_entry(json.loads(line), session_label)
+            except Exception:
+                report.bad_lines += 1
+                continue
+            if entry is not None and (since is None or entry.t >= since):
                 entries.append(entry)
     entries.sort(key=lambda e: e.t)
-    return entries
+    return entries, report
+
+
+def _kernel_entries(session=None, log_dir=None, days=None):
+    return load_kernel_entries(session=session, log_dir=log_dir, days=days)[0]
 
 
 def tail(n=20, session=None):
@@ -142,18 +192,60 @@ def frequent_commands(n=200, max_scan=5000):
     return ranked[:n]
 
 
-def widget(session=None, prefer="auto", title=None):
+#: how far back eco.logs.widget() looks by default. Months of history
+#: (hundreds of session files, 100k+ lines) are what made the viewer take
+#: many seconds to open; pass days=None for everything.
+DEFAULT_DAYS = 30
+
+
+def kernel_loader(session=None, days=DEFAULT_DAYS):
+    """A zero-argument callable returning (entries, status_text) -- what
+    LogTimelineQtWindow runs on its background thread."""
+
+    def load():
+        entries, report = load_kernel_entries(session=session, days=days)
+        scope = Path(session).name if session else "all sessions"
+        if days is not None and session is None:
+            scope += f", last {days:g} days"
+        return entries, f"{len(entries)} entries · {scope} · {report.summary()}"
+
+    return load
+
+
+def widget(session=None, prefer="auto", title=None, days=DEFAULT_DAYS, parent=None):
     """Open the kernel-log timeline. `session` is a specific .jsonl path
-    (see logs.sessions()); by default every session on disk is merged
-    into one timeline. `prefer`: "auto" (Qt if usable, else inline in
-    Jupyter, else a written-to-disk HTML file), or force one of "qt" /
-    "html" (alias "jupyter") / "webapp"."""
-    entries = _kernel_entries(session=session)
-    subtitle = f"{len(entries)} entries"
-    subtitle += f" · {Path(session).name}" if session else " · all sessions"
-    return _open_timeline(
-        entries, title=title or "Kernel log timeline", subtitle=subtitle, prefer=prefer
-    )
+    (see logs.sessions()); by default every session from the last `days`
+    days is merged into one timeline (days=None: all of them).
+
+    `prefer`: "auto" (Qt if usable, else inline in Jupyter, else a
+    written-to-disk HTML file), or force one of "qt" / "html" (alias
+    "jupyter") / "webapp" / "sidecar" / "subprocess" (a Qt window in its own
+    process -- see eco.widgets.log_viewer_app; what eco desktop uses).
+    `parent`: a QWidget the Qt window's initial size is derived from."""
+    title = title or "Kernel log timeline"
+    if prefer == "subprocess":
+        from eco.widgets.log_viewer_app import launch_subprocess
+
+        size = None
+        if parent is not None:
+            from eco.widgets.log_timeline_qt import initial_window_size
+
+            size = initial_window_size(parent.window())
+        return launch_subprocess(days=days, session=session, title=title, size=size)
+
+    loader = kernel_loader(session=session, days=days)
+    if prefer == "qt" or (prefer == "auto" and not _in_jupyter()):
+        try:
+            from eco.widgets.log_timeline_qt import make_log_timeline_qt_window
+
+            return make_log_timeline_qt_window(None, title=title, loader=loader, parent=parent)
+        except Exception as exc:
+            if prefer == "qt":
+                raise
+            print(f"eco.logs: Qt window unavailable ({exc}); writing an HTML file instead")
+            prefer = "webapp"
+    entries, subtitle = loader()
+    return _open_timeline(entries, title=title, subtitle=subtitle, prefer=prefer)
 
 
 # -- scilog ---------------------------------------------------------------------
@@ -232,10 +324,14 @@ def open_scilog(snippet_id):
 
 
 def _kernel_record_to_entry(rec, session_label):
+    """None for a record that isn't a timeline point; raises (ValueError/
+    TypeError/AttributeError) for one that is malformed -- callers that read
+    from disk go through load_kernel_entries, which counts and skips those."""
     event = rec.get("event")
     t = rec.get("t")
     if t is None or event is None:
         return None
+    t = float(t)
     if event in ("session_start", "session_end", "session_start_subprocess"):
         kind = "session"
         text = f"{event} — {rec.get('kind', '')}:{rec.get('label', session_label)} (pid {rec.get('pid')})"
@@ -249,6 +345,9 @@ def _kernel_record_to_entry(rec, session_label):
         kind, text = "widget_control", rec.get("code", "")
     elif event == "error":
         kind, text = "error", f"{rec.get('ename', '')}: {rec.get('evalue', '')}"
+    elif event == "warning":
+        # see kernel_registry.install_warning_capture
+        kind, text = "warning", f"{rec.get('category', 'Warning')}: {rec.get('text', '')}"
     elif event == "result":
         kind, text = "result", rec.get("text") or ""
     elif event == "stream":
@@ -257,7 +356,7 @@ def _kernel_record_to_entry(rec, session_label):
         kind = event
         text = json.dumps({k: v for k, v in rec.items() if k not in ("t", "event")})
     return TimelineEntry(
-        t=float(t), kind=kind, text=text.rstrip("\n"), is_error=(kind == "error"), session=session_label
+        t=t, kind=kind, text=str(text).rstrip("\n"), is_error=(kind == "error"), session=session_label
     )
 
 
@@ -286,9 +385,9 @@ def _in_jupyter():
 
 
 def _open_timeline(entries, title, subtitle, prefer="auto", on_open=None):
-    if prefer not in ("auto", "qt", "html", "jupyter", "webapp", "sidecar"):
+    if prefer not in ("auto", "qt", "html", "jupyter", "webapp", "sidecar", "subprocess"):
         raise ValueError(
-            f"prefer must be one of auto/qt/html/jupyter/webapp/sidecar, got {prefer!r}"
+            f"prefer must be one of auto/qt/html/jupyter/webapp/sidecar/subprocess, got {prefer!r}"
         )
 
     if prefer == "sidecar":

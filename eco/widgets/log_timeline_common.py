@@ -71,3 +71,28 @@ def nearest_entry(entries, t):
         return entries[-1]
     before, after = entries[i - 1], entries[i]
     return before if (t - before.t) <= (after.t - t) else after
+
+
+def bucket_density_sorted(ts, error_ts, t0, t1, n_buckets=140):
+    """Same result as bucket_density(), but from pre-sorted timestamp lists
+    (`ts` for every entry, `error_ts` for the is_error ones) via bisect --
+    O(n_buckets * log n) instead of O(n) per call. The Qt minimap repaints
+    on every scroll step, and a linear pass over a few hundred thousand
+    entries per paint is what made scrolling a long history stutter."""
+    span = (t1 - t0) or 1.0
+    edges = [t0 + span * i / n_buckets for i in range(n_buckets)] + [t1]
+    idx = [bisect.bisect_left(ts, edge) for edge in edges[:-1]] + [bisect.bisect_right(ts, t1)]
+    eidx = [bisect.bisect_left(error_ts, edge) for edge in edges[:-1]] + [
+        bisect.bisect_right(error_ts, t1)
+    ]
+    counts = [idx[i + 1] - idx[i] for i in range(n_buckets)]
+    errors = [eidx[i + 1] > eidx[i] for i in range(n_buckets)]
+    return counts, errors
+
+
+def stream_group(session):
+    """The "kind:label" part of a stream label ("desktop:bernina · 084826-1a2b"
+    -> "desktop:bernina") -- a handful of distinct values however many
+    session files there are, so it is what a coarse stream filter offers;
+    the full per-session label stays available for the fine-grained one."""
+    return session.split(" · ", 1)[0]

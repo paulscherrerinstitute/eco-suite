@@ -952,21 +952,48 @@ class EcoDesktopApp:
         first.show()
         first.raise_()
 
+    #: "subprocess" (default): the viewer runs as its own process (see
+    #: eco.widgets.log_viewer_app), so nothing it does can freeze or kill
+    #: this window. "qt": in this process, as before (fallback if the
+    #: subprocess can't be started).
+    LOG_VIEWER_MODE = "subprocess"
+
     def _open_log_viewer(self):
-        """eco.logs.widget(prefer="qt") -- see that module for what it
-        shows (kernel console history merged across sessions, on a
-        timeline). Kept referenced on self._log_viewer, both so it isn't
-        garbage-collected out from under the user and so a second click
-        replaces (rather than piles up alongside) the previous one."""
+        """eco.logs.widget() -- see that module for what it shows (kernel
+        console history merged across sessions, on a timeline). Kept
+        referenced on self._log_viewer, both so it isn't garbage-collected
+        out from under the user and so a second click replaces (rather
+        than piles up alongside) the previous one.
+
+        This is a Qt slot: an exception escaping it makes PyQt call
+        qFatal(), i.e. abort() the whole desktop. Hence the catch-all --
+        the viewer failing to open must never cost the user their session."""
         if self._log_viewer is not None:
             try:
                 self._log_viewer.stop()
             except Exception:
                 logger.exception("closing the previous log viewer failed")
             self._log_viewer = None
-        import eco.logs
+        try:
+            import eco.logs
 
-        self._log_viewer = eco.logs.widget(prefer="qt")
+            modes = [self.LOG_VIEWER_MODE] + (["qt"] if self.LOG_VIEWER_MODE != "qt" else [])
+            last_exc = None
+            for mode in modes:
+                try:
+                    self._log_viewer = eco.logs.widget(prefer=mode, parent=self.window)
+                    return
+                except Exception as exc:
+                    logger.exception("opening the log viewer (%s) failed", mode)
+                    last_exc = exc
+            raise last_exc
+        except Exception as exc:
+            try:
+                QtWidgets.QMessageBox.warning(
+                    self.window, "Log Viewer", f"The log viewer could not be opened:\n\n{type(exc).__name__}: {exc}"
+                )
+            except Exception:
+                pass
 
     def _open_scan_launcher(self):
         """`scans.launcher()` docked into this window, its pickers browsing

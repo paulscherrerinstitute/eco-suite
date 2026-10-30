@@ -1303,11 +1303,13 @@ def test_open_log_viewer_opens_and_stores_a_reference(monkeypatch):
             self.stop_calls += 1
 
     fake = _FakeLogViewer()
-    monkeypatch.setattr("eco.logs.widget", lambda prefer: fake)
+    calls = []
+    monkeypatch.setattr("eco.logs.widget", lambda prefer, **kw: calls.append(prefer) or fake)
 
     try:
         gui._open_log_viewer()
         assert gui._log_viewer is fake
+        assert calls == ["subprocess"]  # its own process, so it can't take the desktop down
     finally:
         gui.stop()
 
@@ -1326,7 +1328,7 @@ def test_open_log_viewer_again_replaces_not_piles_up(monkeypatch):
 
     made = []
 
-    def fake_widget(prefer):
+    def fake_widget(prefer, **kw):
         v = _FakeLogViewer()
         made.append(v)
         return v
@@ -1356,7 +1358,7 @@ def test_log_viewer_stopped_on_window_close(monkeypatch):
             self.stop_calls += 1
 
     fake = _FakeLogViewer()
-    monkeypatch.setattr("eco.logs.widget", lambda prefer: fake)
+    monkeypatch.setattr("eco.logs.widget", lambda prefer, **kw: fake)
     gui._open_log_viewer()
 
     gui.stop()
