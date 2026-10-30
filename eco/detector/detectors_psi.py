@@ -28,38 +28,31 @@ _bs_event_worker = None
 
 
 def _ensure_bs_event_worker():
-    """Lazily create the one shared `escape.stream.EventWorker` every
-    `DetectorBsStream.stream` needs, and register it as escape.stream's
-    module-global fallback (`EventWorker(make_default=True)`).
+    """The one shared `escape.stream.EventWorker` every
+    `DetectorBsStream.stream` needs: escape's module default
+    (`stream.get_default_eventworker()`), created on first use. Creating it
+    is offline -- no thread or connection until a channel is registered.
 
     Must run *before* `stream.EventSource(channel, None)` is constructed
-    below: `EventSource.__init__` only checks for that global fallback once,
-    at construction time - it is not a live/deferred lookup. Previously
-    nothing in eco ever called this ahead of device construction - the
-    `bs_worker` lazy namespace entry in eco/bernina/bernina.py only got
-    touched, if at all, from inside `timetool_data_monitor()`, long after
-    the `DetectorBsStream` devices it was meant to serve were already built
-    - so every `DetectorBsStream.stream.eventWorker` was permanently `None`
-    and `.stream.accumulate()` failed with `AttributeError: 'NoneType'
-    object has no attribute 'registerSource'`. Idempotent: only the first
-    call actually builds a worker, so every `DetectorBsStream` in a session
-    shares the same one.
+    below: `EventSource.__init__` only checks for the default worker once,
+    at construction time - it is not a live/deferred lookup. Before eco
+    called this ahead of device construction, every
+    `DetectorBsStream.stream.eventWorker` was permanently `None` and
+    `.stream.accumulate()` failed with `AttributeError: 'NoneType' object
+    has no attribute 'registerSource'`. Idempotent: every
+    `DetectorBsStream` in a session shares the same worker, and so does
+    any other code that asks escape for its default.
 
-    NOTE: `bs_worker` (eco/bernina/bernina.py) is now redundant - by the
-    time anything could touch it, some `DetectorBsStream` has essentially
-    always already called this and registered the shared worker - and is
-    also a live footgun: touching it calls `EventWorker(make_default=True)`
-    a *second* time, which unconditionally overwrites escape.stream's global
-    fallback with a fresh, empty instance, silently orphaning every
-    `DetectorBsStream.stream` already built against the first one (they keep
-    their own reference and keep working, but nothing new picks up their
-    worker - e.g. a fresh device built afterwards would get the new, empty
-    one instead). Left untouched here deliberately (a separate, more central
-    file) - flagged for a follow-up rather than changed unilaterally.
+    A wedged worker can be restarted in place, keeping every existing
+    stream valid, with `escape.stream.reset_default_eventworker()`
+    (escape-fel >= 0.2.16).
     """
     global _bs_event_worker
     if _bs_event_worker is None:
-        _bs_event_worker = stream.EventWorker(make_default=True)
+        if hasattr(stream, "get_default_eventworker"):
+            _bs_event_worker = stream.get_default_eventworker()
+        else:  # escape-fel < 0.2.15
+            _bs_event_worker = stream.EventWorker(make_default=True)
     # Idempotent, cheap -- see eco.detector.bs_counter.install_stream_scans()
     # for why this lives here: DetectorBsStream construction is the single
     # most reliable "this session touches bs streams" signal, happening for

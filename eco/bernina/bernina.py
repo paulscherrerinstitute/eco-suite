@@ -1261,7 +1261,9 @@ from eco.utilities import linlog_intervals, roundto
 
 
 def timetool_data_monitor(warning_threshold=1000, loopsleep=5):
-    dir(bs_worker)
+    from eco.detector.detectors_psi import _ensure_bs_event_worker
+
+    _ensure_bs_event_worker()
 
     tt_kb.spectrum_signal.stream.accumulate(do_accumulate=True)
     print("Monitoring timetool data ...")
