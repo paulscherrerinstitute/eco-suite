@@ -121,6 +121,7 @@ scientific Python libraries.
    tweak
    command_history
    tab_completion
+   recspace
    status_server
    shared_files
 

@@ -422,6 +422,12 @@ namespace.append_obj(
     name="diffcalc",
     lazy=True,
 )
+namespace.append_obj(
+    "RecSpace",
+    module_name="eco.utilities.recspace_hklforge",
+    name="recspace",
+    lazy=True,
+)
 
 
 

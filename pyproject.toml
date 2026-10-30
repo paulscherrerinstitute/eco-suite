@@ -71,6 +71,7 @@ dependencies = [
     "lazy-object-proxy",
     "numpy-stl",
     "diffcalc-core",
+    "hklforge",
     "IPython",
     # eco/elements/assembly.py unconditionally imports eco.acquisition.scan_data,
     # which imports escape.swissfel -- so these two are load-bearing for a bare
@@ -184,6 +185,7 @@ include-package-data = false
 eco = ["voila_app.ipynb", "jupyterlab_app.ipynb"]
 "eco.aliases" = ["namespaces/*.json"]
 "eco.bernina" = ["beamline_interact.svg"]
+"eco.utilities" = ["diffractometer_3d.html"]
 
 # setuptools-scm's file-finder otherwise sweeps every git-tracked file under a
 # package dir into the wheel. Keep the stray vendored experiment and *bak

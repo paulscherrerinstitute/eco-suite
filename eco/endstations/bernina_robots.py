@@ -205,6 +205,15 @@ class StaeubliTx200(Assembly):
             except Exception as e:
                 print("Adding diffractometer for diffcalc calculation failed with:")
                 print(e)
+            try:
+                if robot_config.diffcalc():
+                    from .bernina_diffractometers import append_recspace
+
+                    self.configuration = ["robot", robot_config.goniometer()]
+                    append_recspace(self, self.configuration + ["diffcalc"])
+            except Exception as e:
+                print("Adding recspace failed with:")
+                print(e)
         if recspace_conv is not None:
             module_name, Conv_name = recspace_conv.split(":")
             Conv = getattr(import_module(module_name), Conv_name)

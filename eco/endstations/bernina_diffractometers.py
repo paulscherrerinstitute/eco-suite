@@ -443,6 +443,32 @@ def append_diffractometer_modules(obj, configuration):
         obj.delta_robot = rob.spherical.delta
 
 
+def append_recspace(obj, configuration):
+    """Append the hklforge-based ``recspace`` next to ``diffcalc``.
+
+    Runs in parallel to diffcalc for now: on whenever diffcalc is configured,
+    unless the configuration has its own ``recspace`` flag. Optional, so a
+    missing hklforge (or any other failure) leaves the diffractometer intact.
+    """
+    from ..utilities.recspace_hklforge import _config_flag
+
+    if not _config_flag(configuration, "recspace", default=_config_flag(configuration, "diffcalc")):
+        return
+    try:
+        from ..utilities.recspace_hklforge import RecSpace
+    except ImportError as e:
+        print(f"recspace not added (hklforge not available: {e})")
+        return
+    obj._append(
+        RecSpace,
+        diffractometer_you=obj,
+        name="recspace",
+        is_setting=False,
+        is_display=False,
+        optional=True,
+    )
+
+
 @get_from_archive
 class GPS(Assembly):
     def __init__(
@@ -508,6 +534,7 @@ class GPS(Assembly):
                 is_setting=False,
                 is_display=False,
             )
+        append_recspace(self, configuration)
 
         if recspace_conv is not None:
             module_name, Conv_name = recspace_conv.split(":")
@@ -675,6 +702,7 @@ class XRDYou(Assembly):
                 is_setting=False,
                 is_display=False,
             )
+        append_recspace(self, configuration)
         for jf_id, jf_name in configuration.jfs():
             self._append(
                 Jungfrau,

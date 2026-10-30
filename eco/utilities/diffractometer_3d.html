@@ -172,7 +172,7 @@
       <label class="chk"><input type="checkbox" id="show-hkl-cell"> label Q with hkl + cell around it</label>
       <label class="chk"><input type="checkbox" id="show-ewald"> show Ewald sphere (radius |k|)</label>
       <label class="chk"><input type="checkbox" id="show-det-patch"> show detector cut of the Ewald sphere</label>
-      <label class="chk"><input type="checkbox" id="show-angle-controls"> show angle controls</label>
+      <label class="chk"><input type="checkbox" id="show-angle-controls" checked> show angle controls</label>
       <label class="chk"><input type="checkbox" id="controls-below" checked> controls under the plot</label>
       <div class="angle-row" style="margin-top:8px;">
         <label><span>reciprocal scale &mdash; 1 &Aring;<sup>&minus;1</sup> drawn as</span><span id="rec-scale-val">5 cm</span></label>
@@ -1803,6 +1803,27 @@
         }
       }
 
+      // Target reflections (two-reflection mode): a node at UB.h, hung in the
+      // sample frame so it turns with the circles, plus a thin line from the
+      // Ewald sphere's centre to it - that line is the node's own k', and it
+      // is |k| long exactly when the node sits on the sphere.
+      if (recipState.targets && recipState.targets.length && recipState.ub && recipState.kMag) {
+        const css = ["#0a8f6a", "#b5179e"];
+        const hex = [0x0a8f6a, 0xb5179e];
+        phiGroup.updateMatrixWorld(true);
+        recipState.targets.forEach((h, i) => {
+          const node = mul3(recipState.ub, new THREE.Vector3(h[0], h[1], h[2])).multiplyScalar(s);
+          const dot = new THREE.Mesh(new THREE.SphereGeometry(Math.max(len * 0.025, 0.04), 16, 12),
+                                     new THREE.MeshBasicMaterial({ color: hex[i % 2] }));
+          dot.position.copy(node);
+          cellGroup.add(dot);
+          cellGroup.add(labelAt("(" + h.map((v) => Math.round(v * 100) / 100).join(" ") + ")",
+                                node, css[i % 2], new THREE.Vector3(0.2, 0.2, 0)));
+          const world = phiGroup.localToWorld(node.clone());
+          recipGroup.add(thinLine(kStart, world, hex[i % 2]));
+        });
+      }
+
       if ((recipState.showCell || (recipState.showHklCell && lastMeasuredHkl)) && recipState.ub) {
         const U = recipState.ub;   // columns are a*, b*, c* in the phi frame
         const col = (j) => new THREE.Vector3(U[0][j], U[1][j], U[2][j]).multiplyScalar(s);
@@ -1923,6 +1944,15 @@
           ? { width_along_SF_x: lastDetectorMesh.geometry.parameters.depth,
               height_along_SF_y: lastDetectorMesh.geometry.parameters.width } : null,
         arcSweeps: Object.keys(circles).reduce((o, n) => (o[n] = circles[n].angle, o), {}),
+        // |node - Ewald centre| / |k| per target: exactly 1 in Bragg condition
+        targetsOnSphere: (recipState.targets || []).map((h) => {
+          if (!recipState.ub || !recipState.kMag) return null;
+          phiGroup.updateMatrixWorld(true);
+          const node = phiGroup.localToWorld(
+            mul3(recipState.ub, new THREE.Vector3(h[0], h[1], h[2])).multiplyScalar(recScale()));
+          const centre = new THREE.Vector3(0, -recipState.kMag * recScale(), 0);
+          return node.distanceTo(centre) / (recipState.kMag * recScale());
+        }),
       };
     }
 
@@ -2022,8 +2052,11 @@
     });
   }
 
-  // The angle sliders are noise when the notebook is driving the view, so they
-  // start hidden; the checkbox brings them back for standalone use.
+  // The angle sliders are what a standalone page is driven by, so they start
+  // shown; once a notebook starts pushing angles they are noise, and the first
+  // push hides them - unless the user has already set the checkbox themselves.
+  let angleCtrlTouched = false;
+  showAngleCtrlEl.addEventListener("change", () => { angleCtrlTouched = true; });
   function refreshAngleControls() {
     const show = showAngleCtrlEl.checked;
     for (const id of ["sample-circles-section", "detector-circles-section"]) {
@@ -2059,6 +2092,58 @@
     refreshRecip();
   });
 
+  // --- display settings, for the notebook's store/recall config -------
+  const displayChecks = {
+    showCircles: showCirclesEl, showRecip: showRecipEl, showCell: showCellEl,
+    showHklCell: showHklCellEl, showEwald: showEwaldEl, showDetPatch: showDetPatchEl,
+    showAngleControls: showAngleCtrlEl, controlsBelow: controlsBelowEl,
+  };
+
+  function getDisplay() {
+    const d = {};
+    for (const [key, el] of Object.entries(displayChecks)) d[key] = el.checked;
+    d.recScale = parseFloat(recScaleEl.value);
+    d.tdet = tdet;
+    d.detW = parseFloat(detWEl.value);
+    d.detH = parseFloat(detHEl.value);
+    return d;
+  }
+
+  // Missing keys are left alone, so a partial block only sets what it names.
+  function applyDisplay(d) {
+    for (const [key, el] of Object.entries(displayChecks)) {
+      if (typeof d[key] === "boolean") el.checked = d[key];
+    }
+    if (typeof d.recScale === "number") {
+      recScaleEl.value = d.recScale;
+      recScaleNumEl.value = d.recScale;
+    }
+    if (typeof d.detW === "number") detWEl.value = d.detW;
+    if (typeof d.detH === "number") detHEl.value = d.detH;
+    if (typeof d.tdet === "number") tdet = d.tdet;
+    app.setShowCircles(showCirclesEl.checked);
+    refreshTdet();
+    refreshRecip();
+    refreshAngleControls();
+    refreshLayout();
+  }
+
+  // The notebook cannot read this page, so the page completes the notebook's
+  // config download instead: the link carries the notebook's part of the
+  // config (base64 JSON in data-cfg), and its href is kept rewritten to that
+  // plus the current display settings.
+  function utf8ToB64(s) { return btoa(unescape(encodeURIComponent(s))); }
+  function b64ToUtf8(s) { return decodeURIComponent(escape(atob(s))); }
+
+  function syncDownload(doc) {
+    const a = doc.getElementById("diff3d-config-download");
+    if (!a || !a.dataset.cfg) return;
+    const cfg = JSON.parse(b64ToUtf8(a.dataset.cfg));
+    cfg.display = getDisplay();
+    const href = "data:application/json;base64," + utf8ToB64(JSON.stringify(cfg, null, 2));
+    if (a.getAttribute("href") !== href) a.setAttribute("href", href);
+  }
+
   // --- state pushed in by the notebook --------------------------------
   // The page is embedded with <iframe srcdoc>, which inherits the parent
   // document's origin, so it can simply read a hidden element the notebook
@@ -2070,13 +2155,31 @@
   function pollParent() {
     try {
       const doc = window.parent && window.parent !== window ? window.parent.document : null;
-      const el = doc ? doc.getElementById("diff3d-payload") : null;
+      if (!doc) return;
+      syncDownload(doc);
+      const el = doc.getElementById("diff3d-payload");
       if (!el) return;
       const raw = el.textContent || "";
       if (!raw || raw === lastPayload) return;
+      if (lastPayload === null && !angleCtrlTouched) {
+        showAngleCtrlEl.checked = false;
+        refreshAngleControls();
+      }
       lastPayload = raw;
       const msg = JSON.parse(raw);
 
+      // sent once, by a config load; later pushes omit it so the user's
+      // own toggles are not overwritten
+      if (msg.display) applyDisplay(msg.display);
+      // the notebook sizes the view without rebuilding the iframe (which would
+      // reset the camera): a srcdoc frame may restyle its own frame element
+      if (typeof msg.frameHeight === "number" && window.frameElement) {
+        const h = msg.frameHeight + "px";
+        if (window.frameElement.style.height !== h) {
+          window.frameElement.style.height = h;
+          setTimeout(() => app.resize(), 0);
+        }
+      }
       if (msg.angles) {
         for (const n of names) {
           if (typeof msg.angles[n] === "number") state[n] = msg.angles[n];
@@ -2088,6 +2191,7 @@
       const opts = {};
       if (typeof msg.kMag === "number") opts.kMag = msg.kMag;
       if (msg.ub) opts.ub = msg.ub;
+      if (Array.isArray(msg.targets)) opts.targets = msg.targets;
       if (msg.nPhi) app.setSurfaceNormal(msg.nPhi);
       if (Object.keys(opts).length) app.setRecip(opts);
 
