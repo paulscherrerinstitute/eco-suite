@@ -1040,7 +1040,13 @@ class Assembly:
 
         sel_dict = {}
         for selection_name in selections:
-            sel = self.status_collection.get_names(selection=selection_name)
+            # named like the status keys, i.e. relative to `base` -
+            # get_names() is relative to self, so with base=None (the run
+            # status writers) nothing matched and every selection was empty
+            sel = [
+                item.alias.get_full_name(base=base)
+                for item in self.status_collection.get_list(selection=selection_name)
+            ]
             sel_dict[selection_name] = {
                 tname: status[tname] for tname in sel if tname in status.keys()
             }
@@ -1103,11 +1109,11 @@ class Assembly:
             print(s)
 
     def settings(self, get_string=False):
-        stat = self.get_status()
+        stat = self.get_status(selections=["settings"])
         s = format_table(
             [
                 [colorama.Style.BRIGHT + name + colorama.Style.RESET_ALL, value]
-                for name, value in stat["settings"].items()
+                for name, value in stat["selections"]["settings"].items()
             ]
         )
         if get_string:
@@ -1116,10 +1122,12 @@ class Assembly:
             print(s)
 
     def get_status_str(self, base=None, stat_fields=["settings"]):
-        stat = self.get_status(base=base)
+        stat = self.get_status(
+            base=base, selections=[f for f in stat_fields if f != "status"]
+        )
         stat_filt = {}
         for stat_field in stat_fields:
-            tstat = stat[stat_field]
+            tstat = stat[stat_field] if stat_field == "status" else stat["selections"][stat_field]
             for to in self.view_toplevel_only:
                 tname = to.alias.get_full_name(base=base)
                 tstat = filter_names(tname, tstat)

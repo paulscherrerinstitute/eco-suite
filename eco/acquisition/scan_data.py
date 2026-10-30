@@ -705,6 +705,39 @@ class RunStatusAccessor:
         )
 
 
+def _block_values(obj, block, par_type, nam):
+    """{full name: value} of `par_type` from one status block of a run's
+    status.json (e.g. its "status_run_start").
+
+    "settings" has had three layouts on disk:
+    - before the collection rework (files up to 2025-11): a top-level
+      "settings" dict next to "status";
+    - get_status(selections=["settings"]) output: under
+      "selections"["settings"];
+    - since then, in practice: only "status". Which status items are
+      settings is a property of the assembly (`is_setting=True` puts them
+      in its status_collection's "settings" selection), so the live
+      object picks them out of the run's "status" - the same membership
+      `Memory` uses.
+    """
+    if par_type != "settings":
+        return block[par_type]
+    if block.get("settings"):
+        return block["settings"]
+    stored = (block.get("selections") or {}).get("settings")
+    if stored:
+        return stored
+    status = block.get("status") or {}
+    if not hasattr(obj, "status_collection"):
+        return {}
+    full = {}
+    for name in obj.status_collection.get_names(selection="settings"):
+        key = f"{nam}.{name}"
+        if key in status:
+            full[key] = status[key]
+    return full
+
+
 def run_status_convenience(Obj):
     # if not hasattr(Obj, "alias"):
     #     return Obj
@@ -732,13 +765,18 @@ def run_status_convenience(Obj):
             if runno < 0:
                 runno = STATUS_DATA[pgroup].get_available_run_numbers()[runno]
             if force_reload:
-                dic = STATUS_DATA[pgroup].load_run_status(runno)[status_type][par_type]
+                block = STATUS_DATA[pgroup].load_run_status(runno)[status_type]
             else:
-                dic = STATUS_DATA[pgroup].get_run_status(runno)[status_type][par_type]
+                block = STATUS_DATA[pgroup].get_run_status(runno)[status_type]
+            dic = _block_values(self, block, par_type, nam)
+            # the object's own value (an AdjustableVirtual's) under "", its
+            # children relative to it; "bernina.mono" must not pick up
+            # "bernina.mono2.*", which used to land on "" and overwrite it
+            prefix = nam + "."
             dic = {
-                "".join(k.split(nam + ".")[1:]): v
+                ("" if k == nam else k[len(prefix):]): v
                 for k, v in dic.items()
-                if k.startswith(nam)
+                if k == nam or k.startswith(prefix)
             }
             stat[runno] = dic
 
