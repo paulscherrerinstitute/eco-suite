@@ -807,16 +807,16 @@ def test_build_cam_from_argv_constructs_the_named_class(monkeypatch):
     calls = []
 
     class _FakeCam:
-        def __init__(self, pvname):
-            calls.append(pvname)
+        def __init__(self, pvname, name=None):
+            calls.append((pvname, name))
 
     fake_module = types.SimpleNamespace(FakeCam=_FakeCam)
     monkeypatch.setitem(sys.modules, "eco_test_fake_cam_module", fake_module)
 
-    result = _build_cam_from_argv("eco_test_fake_cam_module.FakeCam", "PVNAME")
+    result = _build_cam_from_argv("eco_test_fake_cam_module.FakeCam", "PVNAME", eco_name="cam_x")
 
     assert isinstance(result, _FakeCam)
-    assert calls == ["PVNAME"]
+    assert calls == [("PVNAME", "cam_x")]
 
 
 def test_build_cam_from_argv_falls_back_to_none_on_construction_failure(monkeypatch):
