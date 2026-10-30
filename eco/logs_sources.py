@@ -15,11 +15,21 @@ disk and without an OCR engine:
   scilog_snippets(client, ..) -> scilog paragraph posts newer than a time
 
 OCR is never bundled: pass `ocr=callable(PIL.Image) -> str` (printed text:
-e.g. tesseract or rapidocr; handwriting needs a vision-language model).
+e.g. tesseract or rapidocr; handwriting needs a vision-language model --
+VisionTranscriber asks any OpenAI-compatible one that accepts images).
+
+PDFs: pypdf / pypdfium2 if installed, otherwise poppler's pdftotext /
+pdftoppm command line tools (present on the beamline consoles).
 """
+import base64
 import datetime
 import html.parser
+import io
+import json
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 TEXT_SUFFIXES = {".txt", ".md", ".log", ".rst", ".text", ".csv"}
@@ -169,22 +179,17 @@ def document_text(path, ocr=None):
     if suffix in TEXT_SUFFIXES:
         return path.read_text(errors="replace"), ""
     if suffix == ".pdf":
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            return "", "pypdf not installed"
-        pages = [(p.extract_text() or "") for p in PdfReader(str(path)).pages]
-        text = "\n\n".join(pages)
+        text = _pdf_text(path)
+        if text is None:
+            return "", "neither pypdf nor pdftotext available"
         if text.strip():
             return text, ""
         if ocr is None:
             return "", "PDF has no text layer and no OCR configured"
-        try:
-            import pypdfium2
-        except ImportError:
-            return "", "scanned PDF needs pypdfium2 for OCR"
-        doc = pypdfium2.PdfDocument(str(path))
-        return "\n\n".join(ocr(page.render(scale=2).to_pil()) for page in doc), "OCR"
+        pages = _pdf_page_images(path)
+        if pages is None:
+            return "", "scanned PDF needs pypdfium2 or pdftoppm for OCR"
+        return "\n\n".join(ocr(page) for page in pages), "OCR"
     if suffix in IMAGE_SUFFIXES:
         if ocr is None:
             return "", "image and no OCR configured"
@@ -193,6 +198,114 @@ def document_text(path, ocr=None):
         with Image.open(path) as img:
             return ocr(img), "OCR"
     return "", f"unsupported file type {suffix}"
+
+
+def _pdf_text(path):
+    """Text layer of a PDF (pages separated by blank lines), or None if
+    there is no way to read it."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        if not shutil.which("pdftotext"):
+            return None
+        out = subprocess.run(["pdftotext", "-layout", str(path), "-"], capture_output=True, timeout=120)
+        return out.stdout.decode(errors="replace").replace("\f", "\n\n")
+    return "\n\n".join((p.extract_text() or "") for p in PdfReader(str(path)).pages)
+
+
+def _pdf_page_images(path, dpi=150):
+    """PIL images of a PDF's pages, or None if it can't be rendered."""
+    try:
+        import pypdfium2
+    except ImportError:
+        if not shutil.which("pdftoppm"):
+            return None
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["pdftoppm", "-r", str(dpi), "-png", str(path), f"{tmp}/page"], check=True, timeout=600)
+            pages = []
+            for png in sorted(Path(tmp).glob("page*.png"), key=lambda p: int(re.sub(r"\D", "", p.stem) or 0)):
+                with Image.open(png) as img:
+                    pages.append(img.copy())
+            return pages
+    return [page.render(scale=dpi / 72).to_pil() for page in pypdfium2.PdfDocument(str(path))]
+
+
+TRANSCRIBE_PROMPT = (
+    "Transcribe all handwritten and printed text in this image verbatim, line by line. "
+    "Keep dates, numbers, units and anything that looks like code or a command exactly as written; "
+    "write [illegible] where you cannot read something instead of guessing. "
+    "Then, for every sketch, diagram or hand-drawn plot, add a line starting with 'FIGURE:' "
+    "describing what it shows (axes and their labels, units, curve shapes, marked values). "
+    "Do not add anything that is not in the image. If there is no text and no figure, answer "
+    "'[no text]'."
+)
+
+
+class VisionTranscriber:
+    """An `ocr=` callable, PIL.Image -> text, asking an OpenAI-compatible
+    chat endpoint that accepts images (e.g. a Qwen-VL class model).
+    Standard library plus Pillow. Phone and webcam pictures are scaled
+    down to `max_side` pixels first; `options` go into the request body as
+    they are (e.g. {"chat_template_kwargs": {"enable_thinking": False}})."""
+
+    def __init__(
+        self, base_url, model, api_key=None, prompt=TRANSCRIBE_PROMPT, max_side=1600,
+        timeout=300, max_tokens=2000, options=None,
+    ):
+        self.base_url, self.model, self.api_key, self.prompt = base_url.rstrip("/"), model, api_key, prompt
+        self.max_side, self.timeout, self.max_tokens = max_side, timeout, max_tokens
+        self.options = dict(options or {})
+
+    def data_url(self, image):
+        img = image.convert("RGB")
+        img.thumbnail((self.max_side, self.max_side))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    def __call__(self, image):
+        import urllib.request
+
+        body = {
+            "model": self.model, "temperature": 0, "max_tokens": self.max_tokens,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": self.prompt},
+                {"type": "image_url", "image_url": {"url": self.data_url(image)}},
+            ]}],
+        }
+        body.update(self.options)
+        req = urllib.request.Request(
+            f"{self.base_url}/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
+        )
+        if self.api_key:
+            req.add_header("Authorization", f"Bearer {self.api_key}")
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            return json.loads(r.read())["choices"][0]["message"].get("content") or ""
+
+
+def to_pil(image):
+    """PIL image from a PIL image, a numpy array (a camera frame: 2-D
+    grey or HxWx3/4, any dtype -- scaled to 0..255) or image file bytes."""
+    from PIL import Image
+
+    if isinstance(image, Image.Image):
+        return image
+    if isinstance(image, (bytes, bytearray)):
+        with Image.open(io.BytesIO(image)) as img:
+            return img.copy()
+    import numpy as np
+
+    arr = np.asarray(image)
+    if arr.dtype != np.uint8:
+        arr = arr.astype(float)
+        finite = arr[np.isfinite(arr)]
+        lo, hi = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
+        arr = np.nan_to_num((arr - lo) / ((hi - lo) or 1.0) * 255).clip(0, 255).astype(np.uint8)
+    if arr.ndim == 3 and arr.shape[2] == 1:
+        arr = arr[:, :, 0]
+    return Image.fromarray(arr)
 
 
 def scilog_snippets(client, after_iso=None, limit=500):

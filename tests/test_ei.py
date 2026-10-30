@@ -462,3 +462,178 @@ def test_magic(tmp_path, monkeypatch, capsys):
     ei.ei_magic("")
     out = capsys.readouterr().out
     assert "MISSING -- search only" in out and "Get one at https://ai.psi.ch" in out
+
+
+# -- notes on paper -------------------------------------------------------------------
+
+
+def test_to_pil_accepts_camera_frames():
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("PIL")
+    from eco import logs_sources as ls
+
+    frame = np.linspace(-5.0, 1000.0, 12 * 8).reshape(8, 12)  # float, any range
+    img = ls.to_pil(frame)
+    assert img.size == (12, 8) and img.mode == "L" and img.getextrema() == (0, 255)
+    rgb = ls.to_pil(np.zeros((4, 6, 3), dtype=np.uint8))
+    assert rgb.mode == "RGB" and ls.to_pil(rgb) is rgb
+
+
+def test_vision_transcriber_sends_a_scaled_image():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from eco import logs_sources as ls
+
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            seen.append((self.headers.get("Authorization"), json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"choices": [{"message": {"content": "14.10.26 shift notes"}}]}).encode())
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        t = ls.VisionTranscriber(f"http://127.0.0.1:{server.server_port}/api", "vl", api_key="sk-x",
+                                 max_side=400, options={"chat_template_kwargs": {"enable_thinking": False}})
+        assert t(Image.new("RGB", (4000, 3000), "white")) == "14.10.26 shift notes"
+    finally:
+        server.shutdown()
+    auth, body = seen[0]
+    assert auth == "Bearer sk-x" and body["model"] == "vl" and body["chat_template_kwargs"]
+    text, image = body["messages"][0]["content"]
+    assert "verbatim" in text["text"] and "FIGURE:" in text["text"]
+    import base64
+    import io
+
+    sent = Image.open(io.BytesIO(base64.b64decode(image["image_url"]["url"].split(",", 1)[1])))
+    assert sent.size == (400, 300)
+
+
+def _pdf(tmp_path, with_text):
+    pytest.importorskip("PIL")
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (600, 200), "white")
+    ImageDraw.Draw(img).text((20, 80), "a scanned page", fill="black")
+    if not with_text:
+        path = tmp_path / "scan.pdf"
+        img.save(path)  # image only: no text layer
+        return path
+    mpl = pytest.importorskip("matplotlib")
+    mpl.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(4, 2))
+    fig.text(0.1, 0.5, "29.10.2026 att.set_transmission(0.2) worked")
+    path = tmp_path / "typed.pdf"
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+def test_pdfs_without_pypdf_use_poppler(tmp_path, monkeypatch):
+    import shutil
+    import sys
+
+    from eco import logs_sources as ls
+
+    if not (shutil.which("pdftotext") and shutil.which("pdftoppm")):
+        pytest.skip("poppler not installed")
+    monkeypatch.setitem(sys.modules, "pypdf", None)  # import fails: the fallback is tested
+    monkeypatch.setitem(sys.modules, "pypdfium2", None)
+    text, note = ls.document_text(_pdf(tmp_path, True))
+    assert "att.set_transmission(0.2)" in text and note == ""
+    scanned = _pdf(tmp_path, False)
+    assert ls.document_text(scanned) == ("", "PDF has no text layer and no OCR configured")
+    pages = []
+    text, note = ls.document_text(scanned, ocr=lambda img: pages.append(img.size) or "page text")
+    assert (text, note) == ("page text", "OCR") and len(pages) == 1
+
+
+class _FakeTranscriber:
+    def __init__(self, text="29.10.2026\nlxt scan, t0 at 1.37 ps\natt.set_transmission(0.05)"):
+        self.text, self.images = text, []
+
+    def __call__(self, image):
+        self.images.append(image.size)
+        return self.text
+
+
+def test_scan_image_keeps_transcribes_and_indexes(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    a = _assistant(tmp_path, _FakeBackend())
+    a.config["scan_dir"] = str(tmp_path / "scans")
+    fake = _FakeTranscriber()
+    monkeypatch.setattr(a, "transcriber", lambda: fake)
+    path, text = a.scan_image(np.zeros((30, 40)), label="cam north", report=None)
+    assert path.parent == tmp_path / "scans" and path.name.endswith("_cam_north.png") and path.exists()
+    assert (path.parent.stat().st_mode & 0o777) == 0o700
+    assert text == fake.text and fake.images == [(40, 30)]
+    notes = la.search("t0 lxt", k=5, db_path=a.db_path, kinds=("note",))
+    assert notes and "1.37 ps" in notes[0].text
+    cmds = la.search("transmission", k=5, db_path=a.db_path, kinds=("note_command",))
+    assert [h.text for h in cmds] == ["att.set_transmission(0.05)"]
+    assert time_of(cmds[0]) == "2026-10-29"  # dated by what is written on it
+
+
+def time_of(hit):
+    import time as _time
+
+    return _time.strftime("%Y-%m-%d", _time.localtime(hit.t))
+
+
+def test_scanning_needs_a_model(tmp_path, monkeypatch, capsys):
+    pytest.importorskip("IPython")
+    import IPython
+
+    monkeypatch.setattr(ei, "api_key", lambda base_url=None: (None, None))
+    a = _assistant(tmp_path, None)
+    a.config["scan_dir"] = str(tmp_path / "scans")
+    with pytest.raises(ei.NoModel):
+        a.scan_image(b"not even an image")
+    with pytest.raises(ei.NoModel):
+        a.scan([tmp_path])
+    assert not (tmp_path / "scans").exists()  # nothing written without a model
+
+    shell = _Shell()
+    monkeypatch.setattr(IPython, "get_ipython", lambda: shell)
+    monkeypatch.setitem(ei._assistants, id(None), a)
+    for opt in ("--scan x.png", "--scan-image img", "--webcam"):
+        ei.ei_magic(opt)
+        assert "needs the model" in capsys.readouterr().out
+
+
+def test_scan_magic_with_a_model(tmp_path, monkeypatch, capsys):
+    pytest.importorskip("IPython")
+    pytest.importorskip("PIL")
+    import IPython
+    from PIL import Image
+
+    a = _assistant(tmp_path, _FakeBackend())
+    a.config["scan_dir"] = str(tmp_path / "scans")
+    fake = _FakeTranscriber("whiteboard: KB bender drift ~3 um/h")
+    monkeypatch.setattr(a, "transcriber", lambda: fake)
+    shell = _Shell()
+    shell.user_ns["img"] = Image.new("L", (50, 20))
+    monkeypatch.setattr(IPython, "get_ipython", lambda: shell)
+    monkeypatch.setitem(ei._assistants, id(None), a)
+
+    ei.ei_magic("--scan-image img")
+    assert "drift ~3 um/h" in capsys.readouterr().out
+    ei.ei_magic("--scan-image nothing")
+    assert "no variable 'nothing'" in capsys.readouterr().out
+
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    Image.new("RGB", (80, 60)).save(photos / "page1.jpg")
+    (photos / "typed.txt").write_text("plain notes")
+    ei.ei_magic(f"--scan {photos}")
+    out = capsys.readouterr().out
+    assert "2 files indexed, 1 pictures transcribed" in out and "KB bender" in out

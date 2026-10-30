@@ -7,10 +7,50 @@ panel through queued signals, so the GUI never waits. Nothing in an
 answer is executed: "To Console" puts its code at the console prompt.
 Without an API key the panel only searches (docs, API, history), and says
 so; the key lookup itself (gopass may take seconds) runs on a worker too.
+
+With a model, notes on paper can be added: "Scan..." (images, PDFs) and
+"Webcam..." (WebcamDialog: a picture from a camera attached to the machine
+eco runs on). Both transcribe on a worker and show the text.
 """
+import io
+import socket
 import threading
 
 from qtpy import QtCore, QtGui, QtWidgets
+
+IMAGE_FILTER = "Notes (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp *.pdf *.txt *.md);;All files (*)"
+
+
+def qimage_to_pil(qimage):
+    """PIL image of a QImage (through PNG bytes: no format juggling)."""
+    from PIL import Image
+
+    buf = QtCore.QBuffer()
+    buf.open(QtCore.QIODevice.WriteOnly)
+    qimage.save(buf, "PNG")
+    with Image.open(io.BytesIO(bytes(buf.data()))) as img:
+        return img.copy()
+
+
+def _run_in_worker(fn, bridge, name):
+    """fn() on a daemon thread; its result or error through bridge.done /
+    bridge.failed (queued to the GUI thread)."""
+
+    def run():
+        try:
+            result = fn()
+        except Exception as exc:
+            try:
+                bridge.failed.emit(f"{type(exc).__name__}: {exc}")
+            except RuntimeError:  # widget closed meanwhile
+                pass
+            return
+        try:
+            bridge.done.emit(result)
+        except RuntimeError:
+            pass
+
+    threading.Thread(target=run, name=name, daemon=True).start()
 
 
 class _Bridge(QtCore.QObject):
@@ -19,6 +59,159 @@ class _Bridge(QtCore.QObject):
     done = QtCore.Signal(object)
     failed = QtCore.Signal(str)
     key = QtCore.Signal(bool)
+
+
+class _ScanBridge(QtCore.QObject):
+    done = QtCore.Signal(object)
+    failed = QtCore.Signal(str)
+
+
+class WebcamDialog(QtWidgets.QDialog):
+    """Live picture of a webcam; "Capture" keeps a still, transcribes it
+    with the assistant's vision model and adds it to the index
+    (Assistant.scan_image). Qt 5 QtMultimedia. The camera is the one of
+    the machine eco runs on -- over SSH that is the console, not your own
+    computer."""
+
+    def __init__(self, assistant, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Ask eco -- notes from the webcam")
+        self.assistant = assistant
+        self.camera = self.capture = None
+        self._busy = False
+        self._bridge = _ScanBridge(self)
+        self._bridge.done.connect(self._on_done)
+        self._bridge.failed.connect(self._on_failed)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        self.camera_box = QtWidgets.QComboBox()
+        layout.addWidget(self.camera_box)
+        self.status = QtWidgets.QLabel("")
+        self.status.setWordWrap(True)
+        try:
+            from qtpy import QtMultimedia, QtMultimediaWidgets
+
+            self._mm = QtMultimedia
+            self.cameras = list(QtMultimedia.QCameraInfo.availableCameras())
+            self.viewfinder = QtMultimediaWidgets.QCameraViewfinder()
+        except Exception as exc:  # no QtMultimedia, or Qt 6 (other API)
+            self._mm, self.cameras, self.viewfinder = None, [], None
+            self.status.setText(f"No camera support in this Qt: {type(exc).__name__}: {exc}")
+        for info in self.cameras:
+            self.camera_box.addItem(info.description() or info.deviceName())
+        self.camera_box.currentIndexChanged.connect(self._start_camera)
+        if self.viewfinder is not None:
+            self.viewfinder.setMinimumSize(480, 360)
+            layout.addWidget(self.viewfinder, 1)
+        layout.addWidget(self.status)
+        self.transcript = QtWidgets.QPlainTextEdit()
+        self.transcript.setReadOnly(True)
+        self.transcript.setPlaceholderText("The transcribed text appears here.")
+        self.transcript.setMaximumHeight(160)
+        layout.addWidget(self.transcript)
+        row = QtWidgets.QHBoxLayout()
+        self.capture_button = QtWidgets.QPushButton("Capture && Transcribe")
+        self.capture_button.clicked.connect(self.take_picture)
+        close = QtWidgets.QPushButton("Close")
+        close.clicked.connect(self.reject)
+        row.addWidget(self.capture_button)
+        row.addStretch(1)
+        row.addWidget(close)
+        layout.addLayout(row)
+
+        if self._mm is not None and not self.cameras:
+            self.status.setText(
+                f"No camera found on {socket.gethostname()}. The webcam has to be attached to the "
+                "machine eco runs on -- over SSH, your own computer's camera isn't visible here. "
+                "Photos can be added with Scan... instead."
+            )
+        self.capture_button.setEnabled(False)
+        if self.cameras:
+            self._start_camera(0)
+
+    def _start_camera(self, index):
+        try:
+            self._stop_camera()
+            QtMultimedia = self._mm
+            self.camera = QtMultimedia.QCamera(self.cameras[index])
+            self.camera.setViewfinder(self.viewfinder)
+            self.camera.setCaptureMode(QtMultimedia.QCamera.CaptureStillImage)
+            self.capture = QtMultimedia.QCameraImageCapture(self.camera)
+            self.capture.setCaptureDestination(QtMultimedia.QCameraImageCapture.CaptureToBuffer)
+            self.capture.imageCaptured.connect(self._on_captured)
+            self.capture.error.connect(lambda _id, _err, text: self._on_failed(f"capture: {text}"))
+            # a camera takes seconds to start; capturing before fails
+            self.capture.readyForCaptureChanged.connect(self._on_ready)
+            self.capture_button.setEnabled(False)
+            self.status.setText("starting the camera ...")
+            self.camera.start()
+        except Exception as exc:
+            self.status.setText(f"Camera failed: {type(exc).__name__}: {exc}")
+
+    def _on_ready(self, ready):
+        try:
+            if ready and not self._busy:
+                self.status.setText("Hold the note in front of the camera, then Capture.")
+            self.capture_button.setEnabled(bool(ready) and not self._busy)
+        except RuntimeError:
+            pass
+
+    def _stop_camera(self):
+        if self.camera is not None:
+            try:
+                self.camera.stop()
+            except RuntimeError:
+                pass
+            self.camera = self.capture = None
+
+    def take_picture(self):
+        if self.capture is None or self._busy:
+            return
+        self._busy = True
+        self.capture_button.setEnabled(False)
+        self.status.setText("capturing ...")
+        self.capture.capture()
+
+    def _on_captured(self, _id, qimage):
+        try:
+            image = qimage_to_pil(qimage)
+            self.status.setText(f"transcribing a {image.width}x{image.height} picture ...")
+            _run_in_worker(lambda: self.assistant.scan_image(image, label="webcam", report=None), self._bridge, "eco-ei-webcam")
+        except RuntimeError:
+            pass
+        except Exception as exc:
+            self._on_failed(f"{type(exc).__name__}: {exc}")
+
+    def _on_done(self, result):
+        try:
+            path, text = result
+            self.transcript.setPlainText(text.strip())
+            self.status.setText(f"Indexed: {path}. Capture again for the next page.")
+            self._busy = False
+            self.capture_button.setEnabled(self.capture is not None and self.capture.isReadyForCapture())
+        except RuntimeError:
+            pass
+
+    def _on_failed(self, message):
+        try:
+            self.status.setText(f"failed: {message}")
+            self._busy = False
+            self.capture_button.setEnabled(self.capture is not None and self.capture.isReadyForCapture())
+        except RuntimeError:
+            pass
+
+    def done(self, result):
+        self._stop_camera()
+        super().done(result)
+
+
+def run_webcam_dialog(assistant, parent=None):
+    """WebcamDialog, modal (what `%ei --webcam` opens; creates the
+    QApplication in a plain terminal session)."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])  # noqa: F841
+    dialog = WebcamDialog(assistant, parent)
+    dialog.resize(680, 720)
+    return dialog.exec_()
 
 
 class EiPanel(QtWidgets.QWidget):
@@ -84,10 +277,22 @@ class EiPanel(QtWidgets.QWidget):
         self.copy_button.clicked.connect(self._on_copy)
         self.stop_button = QtWidgets.QPushButton("Stop")
         self.stop_button.clicked.connect(self._on_stop)
+        self.scan_button = QtWidgets.QPushButton("Scan...")
+        self.scan_button.setToolTip("Add notes from pictures or PDFs: transcribed by the model, then searchable")
+        self.scan_button.clicked.connect(self.choose_scan_files)
+        self.webcam_button = QtWidgets.QPushButton("Webcam...")
+        self.webcam_button.setToolTip("Add a note from a webcam picture (camera of the machine eco runs on)")
+        self.webcam_button.clicked.connect(self.open_webcam)
+        self._scan_bridge = _ScanBridge(self)
+        self._scan_bridge.done.connect(self._on_scanned)
+        self._scan_bridge.failed.connect(self._on_scan_failed)
+        self._scanning = False
         bottom = QtWidgets.QHBoxLayout()
         bottom.addWidget(self.console_button)
         bottom.addWidget(self.copy_button)
         bottom.addStretch(1)
+        bottom.addWidget(self.scan_button)
+        bottom.addWidget(self.webcam_button)
         bottom.addWidget(self.stop_button)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -139,6 +344,10 @@ class EiPanel(QtWidgets.QWidget):
         has_code = bool(self._answer is not None and self._answer.code)
         self.console_button.setEnabled(has_code and not busy)
         self.copy_button.setEnabled(has_code and not busy)
+        # pictures need the model
+        model = self._has_key is True
+        self.scan_button.setEnabled(model and not busy and not self._scanning)
+        self.webcam_button.setEnabled(model and not busy)
 
     # -- asking --------------------------------------------------------------
 
@@ -208,7 +417,7 @@ class EiPanel(QtWidgets.QWidget):
                 )
             else:
                 self.search_only.setEnabled(True)
-                self._set_busy(self._worker is not None)
+            self._set_busy(self._worker is not None)
         except RuntimeError:
             pass
 
@@ -232,6 +441,57 @@ class EiPanel(QtWidgets.QWidget):
             self._set_busy(False)
         except RuntimeError:
             pass
+
+    # -- notes on paper -------------------------------------------------------
+
+    def choose_scan_files(self):
+        try:
+            paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Notes to add (pictures, PDFs)", "", IMAGE_FILTER)
+        except RuntimeError:
+            return
+        if paths:
+            self.scan_files(paths)
+
+    def scan_files(self, paths):
+        """Transcribe/read `paths` on a worker and add them to the index."""
+        if self._scanning or self._has_key is not True:
+            return
+        self._scanning = True
+        self._set_busy(self._worker is not None)
+        self.status.setText(f"reading {len(paths)} file(s) -- pictures are transcribed by the model ...")
+        _run_in_worker(lambda: self.assistant.scan(paths, report=None), self._scan_bridge, "eco-ei-scan")
+
+    def _on_scanned(self, result):
+        try:
+            self._scanning = False
+            texts = result.get("transcripts", [])
+            problems = {p: n for p, n in result.get("notes", {}).items() if n != "OCR"}
+            self.answer.setPlainText(
+                "\n\n---\n\n".join(t.strip() for t in texts)
+                + ("\n\n" if texts and problems else "")
+                + "\n".join(f"{p}: {n}" for p, n in problems.items())
+            )
+            self.status.setText(f"{result['files_indexed']} file(s) indexed, {len(texts)} picture(s) transcribed")
+            self._set_busy(self._worker is not None)
+        except RuntimeError:
+            pass
+
+    def _on_scan_failed(self, message):
+        try:
+            self._scanning = False
+            self.status.setText(f"scan failed: {message}")
+            self._set_busy(self._worker is not None)
+        except RuntimeError:
+            pass
+
+    def open_webcam(self):
+        try:
+            dialog = WebcamDialog(self.assistant, self)
+            dialog.resize(680, 720)
+            dialog.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+            dialog.show()
+        except Exception as exc:
+            self.status.setText(f"webcam: {type(exc).__name__}: {exc}")
 
     def _on_failed(self, message):
         try:

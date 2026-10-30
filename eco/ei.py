@@ -40,7 +40,20 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei --examples PATH   index notebooks (code cells) as usage examples
     %ei --index | --scilog [pgroup] | --notes PATH | --models | --config
 
-From Python: `eco.ei.ask("...")`, `eco.ei.assistant()`.
+Notes on paper -- photos, scanned PDFs, a webcam picture -- are transcribed
+by the (vision) model once and then searched like everything else. Only
+with a model connected:
+
+    %ei --scan FILE_OR_DIR ...   images / PDFs / text files
+    %ei --scan-image VAR         an image already in the session, e.g. a
+                                 camera frame (numpy array) or PIL image
+    %ei --webcam                 take a picture with a webcam attached to
+                                 the machine eco runs on (Qt dialog)
+
+Scanned and captured pictures are kept in ~/.eco/ei_scans (private).
+
+From Python: `eco.ei.ask("...")`, `eco.ei.assistant()`, `.scan(paths)`,
+`.scan_image(img)`.
 """
 import json
 import os
@@ -52,7 +65,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from eco import logs_ask
+from eco import logs_ask, logs_sources
 
 CONFIG_PATH = Path.home() / ".eco" / "ei.json"
 KEY_PATH = Path.home() / ".eco" / "ei_api_key"
@@ -66,6 +79,10 @@ DEFAULT_CONFIG = {
         "Qwen3.8-27B": {"chat_template_kwargs": {"enable_thinking": False}},
         "openai/gpt-oss-120b": {"reasoning_effort": "low"},
     },
+    # reads images (photos, scans, webcam) for indexing; must accept images
+    "vision_model": "Qwen3.8-27B",
+    # where scanned and captured pictures are kept (mode 700)
+    "scan_dir": "~/.eco/ei_scans",
     "max_tokens": 1500,
     "timeout": 180,
     # how many search hits of each kind go to the model
@@ -208,8 +225,10 @@ def _gopass_key():
         return None
 
 
-def api_key(base_url=DEFAULT_CONFIG["base_url"]):
-    """(key, where it came from), or (None, None)."""
+def api_key(base_url=DEFAULT_CONFIG["base_url"], gopass=True):
+    """(key, where it came from), or (None, None). gopass=False skips the
+    gopass lookup (a subprocess, up to seconds) -- what a GUI thread may
+    afford: environment and small files only."""
     key = os.environ.get("ECO_EI_API_KEY")
     if key:
         return key.strip(), "$ECO_EI_API_KEY"
@@ -220,7 +239,7 @@ def api_key(base_url=DEFAULT_CONFIG["base_url"]):
         key = KEY_PATH.read_text().strip()
         if key:
             return key, str(KEY_PATH)
-    key = _gopass_key()
+    key = _gopass_key() if gopass else None
     if key:
         return key.strip(), f"gopass {GOPASS_KEY}"
     key = _continue_key(base_url)
@@ -243,6 +262,15 @@ NO_KEY_SHORT = "(search only -- no API key for the model; `%ei` says how to add 
 #: a missing key is looked up again after this many seconds at the
 #: earliest (the gopass lookup alone can take seconds)
 KEY_RETRY_S = 300
+
+
+NO_MODEL_FOR_SCAN = (
+    "eco.ei: reading notes from pictures needs the model (an API key) -- `%ei` says how to add one."
+)
+
+
+class NoModel(RuntimeError):
+    """Raised by Assistant.scan*/transcriber() without a connected model."""
 
 
 def enabled():
@@ -411,16 +439,18 @@ class Assistant:
         if isinstance(self._backend, logs_ask.OpenAICompatibleBackend):
             self._backend = None
 
-    def backend(self, recheck=False):
+    def backend(self, recheck=False, gopass=True):
         """The configured backend, or None without an API key. A missing
-        key is looked for again only every KEY_RETRY_S (or with recheck)."""
+        key is looked for again only every KEY_RETRY_S (or with recheck).
+        gopass=False: see api_key (a miss is then not remembered)."""
         if self._backend is None:
             if not recheck and time.time() < self._no_key_until:
                 return None
             cfg = self.config
-            key, _where = api_key(cfg["base_url"])
+            key, _where = api_key(cfg["base_url"]) if gopass else api_key(cfg["base_url"], gopass=False)
             if key is None:
-                self._no_key_until = time.time() + KEY_RETRY_S
+                if gopass:
+                    self._no_key_until = time.time() + KEY_RETRY_S
                 return None
             self._backend = logs_ask.OpenAICompatibleBackend(
                 cfg["base_url"],
@@ -431,6 +461,69 @@ class Assistant:
                 options=cfg.get("model_options", {}).get(cfg["model"], {}),
             )
         return self._backend
+
+    def model_available(self):
+        """True once a backend is set up, without looking anything up --
+        for enabling GUI actions (call backend() on a worker first)."""
+        return self._backend is not None
+
+    # notes on paper ----------------------------------------------------------
+
+    def transcriber(self):
+        """A logs_sources.VisionTranscriber on the configured endpoint, or
+        NoModel without a key."""
+        backend = self.backend()
+        if backend is None:
+            raise NoModel(NO_MODEL_FOR_SCAN)
+        cfg = self.config
+        model = cfg.get("vision_model") or cfg["model"]
+        return logs_sources.VisionTranscriber(
+            cfg["base_url"], model, api_key=getattr(backend, "api_key", None),
+            timeout=cfg["timeout"], options=cfg.get("model_options", {}).get(model, {}),
+        )
+
+    def scan(self, paths, report=print):
+        """Transcribe (images, scanned PDFs) or read (text, PDFs with
+        text) the given files or directories and add them to the index,
+        dated by the dates written in them. Files already indexed and
+        unchanged are skipped. Returns {"files_indexed", "items", "notes",
+        "transcripts": [text per transcribed picture/page]}."""
+        transcribe = self.transcriber()
+        transcripts = []
+
+        def ocr(image):
+            text = transcribe(image)
+            transcripts.append(text)
+            if report:
+                report(f"eco.ei: transcribed a picture ({len(text)} characters)")
+            return text
+
+        result = logs_ask.index_documents(paths, db_path=self.db_path, ocr=ocr)
+        result["transcripts"] = transcripts
+        return result
+
+    def scan_dir(self):
+        path = Path(self.config.get("scan_dir") or "~/.eco/ei_scans").expanduser()
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.chmod(0o700)  # pictures of notes are private
+        except OSError:
+            pass
+        return path
+
+    def scan_image(self, image, label="image", report=print):
+        """Keep `image` (PIL image, numpy array e.g. a camera frame, or
+        image file bytes) as a PNG in the scan directory, transcribe it and
+        add it to the index. Returns (path, transcript)."""
+        self.transcriber()  # NoModel before anything is written
+        img = logs_sources.to_pil(image)
+        name = re.sub(r"[^A-Za-z0-9_-]+", "_", label)[:40] or "image"
+        path = self.scan_dir() / f"{time.strftime('%Y%m%d_%H%M%S')}_{name}.png"
+        img.save(path)
+        result = self.scan([path], report=report)
+        if str(path) in result["notes"] and not result["transcripts"]:
+            raise RuntimeError(f"transcribing {path.name} failed: {result['notes'][str(path)]}")
+        return path, "\n".join(result["transcripts"])
 
     # index ---------------------------------------------------------------
 
@@ -715,6 +808,32 @@ def ei_magic(line, cell=None):
     if opt in ("-h", "--help"):
         print(__doc__)
         return None
+    if opt in ("--scan", "--scan-image", "--webcam"):
+        if asst.backend() is None:
+            print(NO_MODEL_FOR_SCAN)
+            return None
+        try:
+            if opt == "--scan":
+                result = asst.scan(shlex.split(rest) or ["."])
+                print(f"eco.ei: {result['files_indexed']} files indexed, {len(result['transcripts'])} pictures transcribed")
+                for path, note in result["notes"].items():
+                    if note != "OCR":
+                        print(f"  {path}: {note}")
+                for text in result["transcripts"][:3]:
+                    print("---\n" + text.strip()[:600])
+            elif opt == "--scan-image":
+                if rest not in shell.user_ns:
+                    print(f"eco.ei: no variable {rest!r} -- e.g. `img = cam.get_image()` first, then `%ei --scan-image img`")
+                    return None
+                path, text = asst.scan_image(shell.user_ns[rest], label=rest)
+                print(f"eco.ei: {path} indexed:\n{text.strip()}")
+            else:
+                from eco.widgets.ei_qt import run_webcam_dialog
+
+                run_webcam_dialog(asst)
+        except Exception as exc:
+            print(f"eco.ei: {opt} failed: {type(exc).__name__}: {exc}")
+        return None
     if opt == "--key":
         if asst.backend(recheck=True) is None:
             print(NO_KEY_HELP.format(base_url=asst.config["base_url"]))
@@ -783,7 +902,8 @@ def _status(asst, key_where):
         f"API key {'from ' + key_where if key_where else 'MISSING -- search only, `%ei --key` once you have one'}; "
         f"{len(asst.history)} earlier question(s) in this conversation.\n"
         "%ei <question> | -n new | -s search only | -m MODEL | --paste | --bad TEXT | "
-        "--key | --index | --scilog [pgroup] | --notes PATH | --examples PATH | --models | --config | --help"
+        "--scan FILES | --scan-image VAR | --webcam | --key | --index | --scilog [pgroup] | --notes PATH | "
+        "--examples PATH | --models | --config | --help"
     )
 
 

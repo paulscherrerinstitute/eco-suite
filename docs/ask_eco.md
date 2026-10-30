@@ -59,6 +59,32 @@ the model's instructions for every escape question.
 Where the escape docs and examples are read from is set under `"sources"` in
 `~/.eco/ei.json`. The first existing checkout from the list is used.
 
+## Notes on paper: photos, scans, webcam
+
+Shift notes, notebook pages and whiteboards can be added to what `%ei`
+searches. The model reads each picture once (handwriting included), and the
+text is stored in the index, dated by the date written on the note and with
+its command lines picked out. After that the note is found like everything
+else, also without a key. This needs a model connected, so it is only
+offered when there is one.
+
+```python
+%ei --scan ~/photos/shift_2026-10-14/      # pictures, PDFs (also scanned), text files
+img = cam_north.get_image()                # any image in the session: a camera frame, a PIL image
+%ei --scan-image img
+%ei --webcam                               # take pictures with a webcam
+```
+
+In eco desktop: **Ask → Add Notes from Pictures/PDFs...** and **Add Notes
+from Webcam...**, or **Scan...** and **Webcam...** in the Ask panel.
+
+The webcam is the one attached to the computer eco runs on. In a session
+opened over SSH, that is the console, not your laptop. To add a note from
+your own computer, take a photo and scan the file instead. Pictures are
+kept in `~/.eco/ei_scans`, readable only by you, and they are sent to the
+model server to be read. A hand-drawn plot is described (axes, units, marked
+values), but its data points are not read off.
+
 ## Follow-up questions
 
 `%ei` keeps the conversation going, so a short follow-up works:
@@ -84,6 +110,9 @@ Where the escape docs and examples are read from is set under `"sources"` in
 | `%ei --scilog [pgroup]` | Index SciLog posts (new ones since the last time). |
 | `%ei --notes PATH` | Index a folder of notes (.txt, .md, .pdf). |
 | `%ei --examples PATH` | Index notebooks (code cells) as usage examples, for this session. |
+| `%ei --scan PATH ...` | Add notes from pictures, PDFs and text files (needs the model). |
+| `%ei --scan-image VAR` | Add a note from an image in the session (needs the model). |
+| `%ei --webcam` | Add notes from webcam pictures (needs the model). |
 | `%ei --key` | Look for the API key again, after adding one. |
 | `%ei --models` | Models the server offers. |
 | `%ei` | Model, where the API key came from, and the options. |

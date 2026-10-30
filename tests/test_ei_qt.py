@@ -134,3 +134,59 @@ def test_without_a_key_the_panel_only_searches(app):
     _wait(app, panel)
     assert asst.calls == [("x", True)] and not panel.model_box.isEnabled()
     panel.deleteLater()
+
+
+def test_scan_buttons_need_the_model(app):
+    panel = EiPanel(_FakeAssistant(key=False))
+    _wait(app, panel)
+    assert not panel.scan_button.isEnabled() and not panel.webcam_button.isEnabled()
+    panel.scan_files(["x.png"])  # ignored without a model
+    assert not panel._scanning
+    panel.deleteLater()
+
+
+def test_scan_files_shows_the_transcripts(app):
+    asst = _FakeAssistant()
+    asst.scan = lambda paths, report=None: {
+        "files_indexed": len(paths), "items": 3, "notes": {"b.pdf": "scanned PDF needs pypdfium2 or pdftoppm for OCR"},
+        "transcripts": ["page one text"],
+    }
+    panel = EiPanel(asst)
+    _wait(app, panel)
+    assert panel.scan_button.isEnabled() and panel.webcam_button.isEnabled()
+    panel.scan_files(["a.png", "b.pdf"])
+    end = time.time() + 5
+    while panel._scanning and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    assert "page one text" in panel.answer.toPlainText() and "b.pdf: scanned PDF" in panel.answer.toPlainText()
+    assert panel.status.text() == "2 file(s) indexed, 1 picture(s) transcribed"
+    panel.deleteLater()
+
+
+def test_webcam_dialog_without_camera_and_a_capture(app, monkeypatch):
+    pytest.importorskip("PIL")
+    from qtpy import QtGui
+
+    from eco.widgets.ei_qt import WebcamDialog
+
+    calls = []
+    asst = _FakeAssistant()
+    asst.scan_image = lambda image, label="image", report=None: calls.append((image.size, label)) or ("/x/w.png", "a note")
+    dialog = WebcamDialog(asst)
+    dialog.cameras = []  # whatever the test machine has
+    if dialog._mm is not None:
+        assert "camera" in dialog.status.text().lower() or dialog.capture is not None
+    # what a capture delivers
+    qimage = QtGui.QImage(64, 48, QtGui.QImage.Format_RGB32)
+    qimage.fill(QtGui.QColor("white"))
+    dialog._busy = True
+    dialog._on_captured(1, qimage)
+    end = time.time() + 5
+    while dialog._busy and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    assert calls == [((64, 48), "webcam")]
+    assert dialog.transcript.toPlainText() == "a note" and "Indexed: /x/w.png" in dialog.status.text()
+    dialog.done(0)
+    dialog.deleteLater()

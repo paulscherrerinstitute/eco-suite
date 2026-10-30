@@ -923,6 +923,18 @@ class EcoDesktopApp:
         self._ei_model_menu = menu.addMenu("Model")
         self._ei_model_menu.aboutToShow.connect(self._fill_ei_model_menu)
 
+        # notes on paper: only with a model. aboutToShow looks for the key
+        # in the environment and small files (no gopass on the GUI thread;
+        # the Ask panel's own lookup on a worker includes gopass)
+        self._ei_scan_action = menu.addAction("Add Notes from Pictures/PDFs...")
+        self._ei_scan_action.setToolTip("Transcribed by the model, then searchable like everything else (needs an API key)")
+        self._ei_scan_action.triggered.connect(self._on_ei_scan_files)
+        self._ei_webcam_action = menu.addAction("Add Notes from Webcam...")
+        self._ei_webcam_action.setToolTip("A webcam picture of a note, transcribed (needs an API key)")
+        self._ei_webcam_action.triggered.connect(self._on_ei_webcam)
+        menu.aboutToShow.connect(self._update_ei_menu)
+        self._update_ei_menu()
+
         menu.addSeparator()
         menu.addAction("Update Search Index").triggered.connect(lambda: self._ei_background("index"))
         menu.addAction("Index SciLog Posts (current pgroup)").triggered.connect(lambda: self._ei_background("scilog"))
@@ -978,6 +990,42 @@ class EcoDesktopApp:
                 print(f"eco.ei: {what} indexing failed: {type(exc).__name__}: {exc}")
 
         threading.Thread(target=run, name=f"eco-ei-{what}", daemon=True).start()
+
+    def _update_ei_menu(self):
+        try:
+            asst = self._ei_assistant()
+            if not asst.model_available():
+                asst.backend(recheck=True, gopass=False)
+            available = asst.model_available()
+            for action in (self._ei_scan_action, self._ei_webcam_action):
+                action.setEnabled(available)
+        except Exception:
+            logger.exception("updating the Ask menu failed")
+
+    def _ei_panel_with_model(self):
+        """The Ask panel (opened if needed), told that the model is there --
+        these actions are only enabled once it is."""
+        self._open_ei_panel()
+        panel = self._ei_panel
+        if panel is not None:
+            panel._on_key(True)
+        return panel
+
+    def _on_ei_scan_files(self):
+        try:
+            panel = self._ei_panel_with_model()
+            if panel is not None:
+                panel.choose_scan_files()
+        except Exception:
+            logger.exception("adding notes from files failed")
+
+    def _on_ei_webcam(self):
+        try:
+            panel = self._ei_panel_with_model()
+            if panel is not None:
+                panel.open_webcam()
+        except Exception:
+            logger.exception("opening the webcam dialog failed")
 
     def _on_ei_index_notes(self):
         try:

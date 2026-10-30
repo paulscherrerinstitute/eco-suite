@@ -1287,7 +1287,7 @@ def test_ask_menu_opens_one_panel_and_switches_model(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eco.ei, "CONFIG_PATH", tmp_path / "ei.json")
     monkeypatch.setattr(eco.ei, "_assistants", {})
-    monkeypatch.setattr(eco.ei, "api_key", lambda base_url=None: ("sk-test", "test"))
+    monkeypatch.setattr(eco.ei, "api_key", lambda base_url=None, gopass=True: ("sk-test", "test"))
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     gui = EcoDesktopApp(namespace=None, auto_start=False)
     gui._build_window()
@@ -1305,6 +1305,17 @@ def test_ask_menu_opens_one_panel_and_switches_model(monkeypatch, tmp_path):
         assert "openai/gpt-oss-120b" in models
         gui._set_ei_model("openai/gpt-oss-120b")
         assert gui._ei_assistant().model == panel.model_box.currentText() == "openai/gpt-oss-120b"
+        # picture actions follow the model's availability; the menu looks
+        # without gopass (no subprocess on the GUI thread)
+        lookups = []
+        monkeypatch.setattr(eco.ei, "api_key", lambda base_url=None, gopass=True: lookups.append(gopass) or (None, None))
+        gui._ei_assistant()._backend = None
+        gui._update_ei_menu()
+        assert not gui._ei_scan_action.isEnabled() and not gui._ei_webcam_action.isEnabled()
+        assert lookups == [False]
+        monkeypatch.setattr(eco.ei, "api_key", lambda base_url=None, gopass=True: ("sk-test", "test"))
+        gui._update_ei_menu()
+        assert gui._ei_scan_action.isEnabled() and gui._ei_webcam_action.isEnabled()
     finally:
         gui.stop()
 
