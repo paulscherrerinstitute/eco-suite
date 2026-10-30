@@ -77,6 +77,24 @@ in-process (shares your namespace) when that is possible. When you call
 `start_desktop()` from a terminal IPython session it can't be, so the console
 falls back to a subprocess kernel; the banner says which case you are in.
 
+## Desktop workspaces and dashboard scripts
+
+eco desktop saves its dock layout and the list of open widgets when its window
+closes. A new window always starts empty; the **Workspace** menu brings the
+last one back:
+
+- **Reload Last Workspace**: restore the dock layout and reopen the widgets.
+- **Save Workspace Now**: save mid-session, not only on close.
+- **Save Startup Script...**: write one standalone `.sh` that starts
+  `eco desktop` with just this session's open widgets. The layout is embedded
+  in the script (`--workspace-json`), so there is one file to share. With lazy
+  loading, nothing else in the namespace is initialized: a fast, minimal
+  dashboard, e.g. for a control-room screen.
+
+**Tools → Combine Panels into Tabs...** stacks two or more open panels as tabs
+in one spot, the same as dropping one panel's title bar on another's. Drag a
+tab off the tab bar to split it out again.
+
 ## See also
 
 - {doc}`command_history`: every one of these consoles logs its input and

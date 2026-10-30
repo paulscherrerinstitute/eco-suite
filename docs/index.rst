@@ -38,6 +38,13 @@ scientific Python libraries.
       Why eco exists, its basic elements (Adjustable, Detector, Assembly)
       and the Bernina namespace.
 
+   .. grid-item-card:: :octicon:`list-ordered` Queues
+      :link: queues
+      :link-type: doc
+
+      Queue scans and commands with ``%queue``: each one test-run when
+      queued, run one after another while the prompt stays free.
+
    .. grid-item-card:: :octicon:`pulse` Listening monitor
       :link: examples/listening_monitor
       :link-type: doc
