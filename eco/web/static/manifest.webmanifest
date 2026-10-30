@@ -1,0 +1,13 @@
+{
+  "name": "eco",
+  "short_name": "eco",
+  "description": "eco beamline control - web client",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#1d3557",
+  "icons": [
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

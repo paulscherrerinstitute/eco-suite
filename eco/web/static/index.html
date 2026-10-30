@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d3557">
+  <title>eco</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="bar">
+    <button id="back" class="icon" aria-label="Back" hidden>‹</button>
+    <h1 id="title">eco</h1>
+    <span id="mode" class="badge"></span>
+    <span id="conn" class="conn" title="connecting">●</span>
+  </header>
+  <div id="banner" hidden></div>
+  <main id="main"></main>
+  <div id="toast" hidden></div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
