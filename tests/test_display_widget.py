@@ -176,7 +176,7 @@ def test_grid_opens_fast_monitors_and_builds_late_controls(monkeypatch):
     grid = display_widget.make_assembly_widget(FakeAssembly([monitored, slow]), poll_interval=30.0)
     try:
         assert time.monotonic() - t0 < 1.5
-        rows = [w for w in grid.children if isinstance(w, widgets.HBox) and len(w.children) == 3]
+        rows = [w for w in grid.children if isinstance(w, widgets.HBox) and len(w.children) >= 3]
         slow_row = next(r for r in rows if r.children[0].value == "slow")
         monitored_row = next(r for r in rows if r.children[0].value == "monitored")
         assert slow_row.children[1].value == "…"

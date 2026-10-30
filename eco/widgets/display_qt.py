@@ -1,9 +1,11 @@
 """
 Qt based window to view display items and (where supported) set targets.
 This is the non-notebook counterpart of eco.widgets.display_widget: same
-layout and behavior (up/down tweak buttons relative to the real current
-value, absolute-value entry committed on Enter/focus-out, no separate "Set"
-button), shown in a Qt window instead of an ipywidgets box.
+layout and behavior (the absolute-value entry right after the readback,
+committed on Enter/focus-out, no separate "Set" button; then up/down tweak
+buttons relative to the real current value; each row closing with the "⋯"
+item menu of eco.widgets.item_menu_qt), shown in a Qt window instead of an
+ipywidgets box.
 
 Uses qtpy so it works with whichever Qt binding is installed (PyQt5/PyQt6/
 PySide2/PySide6).
@@ -67,6 +69,7 @@ import collections
 import enum
 import threading
 import time
+import weakref
 
 from qtpy import QtWidgets, QtCore
 from typing import Any
@@ -373,16 +376,12 @@ def _build_item_controls_qt(item, value_label, cur, controller=None):
             is_plain_scalar = not isinstance(cur, (list, dict, bytes, bytearray))
             tweakable = _is_tweakable(cur)
 
-            if tweakable:
-                step_edit = QtWidgets.QLineEdit(str(_initial_step(item, cur)))
-                step_edit.setFixedWidth(60)
-                row.addWidget(step_edit)
-                if live_values.has_ioc_step(item):
-                    controller.attach_ioc_step(step_edit)
-
+            # the setpoint comes first, right next to the readback; the
+            # tweak controls follow it
             if is_plain_scalar:
                 input_edit = QtWidgets.QLineEdit(str(cur))
                 input_edit.setFixedWidth(100)
+                input_edit.setToolTip("new value -- moves on Enter")
 
                 def _apply_absolute(ie=input_edit, ref=cur):
                     try:
@@ -396,8 +395,17 @@ def _build_item_controls_qt(item, value_label, cur, controller=None):
             else:
                 input_edit = QtWidgets.QLabel("n/a")
                 input_edit.setFixedWidth(100)
+            input_edit.setObjectName("setpoint")
+            row.addWidget(input_edit)
 
             if tweakable:
+                step_edit = QtWidgets.QLineEdit(str(_initial_step(item, cur)))
+                step_edit.setObjectName("step")
+                step_edit.setFixedWidth(60)
+                step_edit.setToolTip("tweak step")
+                row.addWidget(step_edit)
+                if live_values.has_ioc_step(item):
+                    controller.attach_ioc_step(step_edit)
 
                 def _make_tweak(sign, se=step_edit, ie=input_edit):
                     def _on_click():
@@ -420,8 +428,6 @@ def _build_item_controls_qt(item, value_label, cur, controller=None):
                 down_btn.clicked.connect(_make_tweak(-1))
                 row.addWidget(up_btn)
                 row.addWidget(down_btn)
-
-            row.addWidget(input_edit)
 
             def _on_reset(checked=False, ie=input_edit, ref=original_value):
                 flash = ie if isinstance(ie, QtWidgets.QLineEdit) else None
@@ -461,6 +467,20 @@ def _build_item_controls_qt(item, value_label, cur, controller=None):
         row.addWidget(QtWidgets.QLabel("—"))
 
     return controls, combo
+
+
+def _menu_button(item, get_container=None):
+    """The "⋯" button closing a row: views, strip chart, history,
+    indicators, details for `item` (eco.widgets.item_menu_qt). A blank of
+    the same width if that can't be built, so the columns stay aligned."""
+    try:
+        from eco.widgets import item_menu_qt
+
+        return item_menu_qt.make_menu_button(item, _label_of(item), get_container)
+    except Exception:
+        spacer = QtWidgets.QWidget()
+        spacer.setFixedWidth(26)
+        return spacer
 
 
 def _apply_value_label_update(value_label, combo, text):
@@ -524,6 +544,7 @@ def build_adjustable_control_qt(item, poll_interval=1.0, title=None):
     controls, combo = _build_item_controls_qt(item, value_label, cur)
     controller = controls.controller
     row.addWidget(controls)
+    row.addWidget(_menu_button(item))
 
     bridge = _StandaloneItemBridge()
     reader = LiveReader(lambda index, ok, payload: bridge.result.emit(ok, payload), poll_interval=poll_interval, workers=1)
@@ -656,18 +677,15 @@ class DisplayQt:
             )
         else:
             name_label = QtWidgets.QLabel(name)
-            # right-click a parameter's name for "Add indicator" -- a
-            # zero-visual-footprint way to pull a live gadget (LED/gauge/
-            # strip chart/...) out onto a dashboard; see
-            # eco.widgets.indicator_widgets. Best-effort: never let a
-            # problem here (e.g. the module missing) affect the normal
-            # property-grid view.
-            try:
-                from eco.widgets.indicator_widgets import attach_indicator_menu
+        # right-click the name for the same menu as the row's "⋯" button
+        # (eco.widgets.item_menu_qt). Best-effort: never let a problem
+        # there affect the normal property-grid view.
+        try:
+            from eco.widgets import item_menu_qt
 
-                attach_indicator_menu(name_label, item, name)
-            except Exception:
-                pass
+            item_menu_qt.attach_context_menu(name_label, item, _label_of(item), self._get_container)
+        except Exception:
+            pass
         name_label.setFixedWidth(200)
         row.addWidget(name_label)
 
@@ -691,6 +709,7 @@ class DisplayQt:
         else:
             controls, combo = _build_item_controls_qt(item, value_label, cur, controller=controller)
         row.addWidget(controls)
+        row.addWidget(_menu_button(item, self._get_container))
 
         layout.addLayout(row)
         index = self._reader.add(item, active=active)  # same index as in self._entries
@@ -706,6 +725,16 @@ class DisplayQt:
                 "needs_controls": pending,
             }
         )
+
+    @property
+    def _get_container(self):
+        """A function returning the eco desktop this grid is docked in
+        (views opened from a row's menu dock next to it), or None. Holds
+        the grid weakly: the rows' menus keep it, and a cycle through Qt
+        signal connections would be torn down at exit after the
+        QApplication -- a segfault."""
+        ref = weakref.ref(self)
+        return lambda: getattr(ref(), "_eco_container", None)
 
     def _build_window(self):
         global _app_ref

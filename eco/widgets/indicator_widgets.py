@@ -6,11 +6,9 @@ property-grid view (eco.widgets.display_qt) and dropped onto a
 eco.widgets.dashboard_qt.Dashboard to build a custom live-value board,
 rather than living permanently in the property grid itself.
 
-Discovery is deliberately minimal-footprint: right-click a parameter's
-name in an assembly's Qt widget (see attach_indicator_menu, wired into
-eco.widgets.display_qt.DisplayQt._build_row with a two-line hook) for an
-"Add indicator" submenu -- no permanently-visible button clutters the
-normal view.
+Discovery: the "Add indicator" submenu of each property-grid row's "⋯"
+item menu (also on right-click of the name; eco.widgets.item_menu_qt).
+attach_indicator_menu below is the older stand-alone right-click hook.
 
 All gadgets share _IndicatorBase: a bold title label (so a gadget
 dragged out onto a dashboard full of others still says what it is), a

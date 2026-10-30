@@ -862,6 +862,21 @@ def _plot_dataframe(data, channels, labels=None):
     # the tick labels showing that bogus range's raw internal day-numbers
     # instead of the actual dates.
     fig, ah = plt.subplots()
+    lines = _plot_dataframe_on(ah, data, channels, labels)
+    plt.xticks(rotation=30)
+    plt.legend()
+    plt.tight_layout()
+    plt.xlabel(data.index.name)
+    ah.figure.tight_layout()
+    _attach_select_curves(fig, ah, lines)
+    _show_figure(ah.figure)
+
+
+def _plot_dataframe_on(ah, data, channels, labels=None):
+    """Draw `data`'s `channels` onto the axes `ah` as step lines with a
+    concise date axis -- the plotting part of _plot_dataframe, without
+    pyplot, so a widget can draw into its own figure (see
+    eco.widgets.item_menu.plot_history). Returns the lines drawn."""
     if not labels:
         labels = channels
     plotted = False
@@ -887,13 +902,7 @@ def _plot_dataframe(data, channels, labels=None):
         locator = mdates.AutoDateLocator()
         ah.xaxis.set_major_locator(locator)
         ah.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
-    plt.xticks(rotation=30)
-    plt.legend()
-    plt.tight_layout()
-    plt.xlabel(data.index.name)
-    ah.figure.tight_layout()
-    _attach_select_curves(fig, ah, lines)
-    _show_figure(ah.figure)
+    return lines
 
 
 def _read_flushed_channel(flushed_file, channel):

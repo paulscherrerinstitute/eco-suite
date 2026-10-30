@@ -20,9 +20,10 @@ are polled in parallel on background threads:
 ![Default Qt property-grid rows for a numeric Adjustable ("energy"), an enum Adjustable ("shutter"), and a read-only Detector ("intensity"). The numeric row has a step field, up/down tweak buttons, an absolute-value entry (commits on Enter/focus-out), and Stop/Reset buttons; the enum row is a dropdown with the same Stop/Reset pair; the Detector row is plain read-only text.](images/widget_default_row_qt.png)
 
 - **Detector-only** items are read-only text — no controls.
-- **Numeric Adjustables** get a step-size field, ▲/▼ tweak buttons (move
-  relative to the *live* current value, not the last-displayed one), an
-  absolute-value entry, and 🛑 Stop / ↺ Reset (back to the value from when the
+- **Numeric Adjustables** get, from left to right: the absolute-value
+  entry (the setpoint, right next to the readback), a step-size field, ▲/▼
+  tweak buttons (move relative to the *live* current value, not the
+  last-displayed one), and 🛑 Stop / ↺ Reset (back to the value from when the
   row was built).
 - **Enum-valued Adjustables** (anything exposing `enum_strs`, e.g.
   `AdjustablePvEnum`) get a dropdown instead of step/absolute controls, same
@@ -40,7 +41,8 @@ are polled in parallel on background threads:
   background, so the window stays responsive and 🛑 Stop works during the
   move. Opening waits at most 2 s for initial values; a row still connecting
   gets its controls when its value arrives.
-- Right-clicking a name label opens **"Add indicator"** — see below.
+- Every row ends in a small **⋯ menu** (also on right-click of the name) —
+  see [the item menu](#the-item-menu) below.
 
 In JupyterLab and Voila, a device's `.widget()` is the ipywidgets version of
 the same grid (`eco.widgets.display_widget`). It follows the same rules:
@@ -49,6 +51,31 @@ the same grid (`eco.widgets.display_widget`). It follows the same rules:
 - the tweak step from TWV;
 - clicks that never block the kernel, so 🛑 Stop works during a move;
 - values that keep updating in the browser while a cell runs.
+
+### The item menu
+
+Every row of both grids — Adjustable, Detector or sub-assembly — ends in a
+**⋯** button with what makes sense for that item
+(`eco.widgets.item_menu`; Qt: `item_menu_qt`, ipywidgets: `item_menu_ipy`).
+Entries only appear when the item supports them:
+
+| Entry | What it does |
+|---|---|
+| **Open** | every `_widget_*` view of the item (property grid, tweak panel, viewer, SVG panel, …), the `widget()` default first |
+| **Live strip chart** | a rolling time plot of `get_current_value()`, monitored where possible, polled otherwise; window 30 s – 1 h, pause, clear. Works for anything readable, EPICS or not |
+| **Strip plot window (archiver)** | the archiver's `strip_plot()` in its own process — full dispatcher/EPICS rate, record, save. Qt, or a notebook kernel with a display |
+| **History (archiver)** | `get_archiver_time_range()` for the last 10 min / 1 h / 12 h / 2 days / 7 days, fetched in the background |
+| **Add indicator** | an LED / gauge / tile / … gadget (see below) — onto the dashboard in Qt, below the row in a notebook |
+| **Memories** | the item's own memory browser, if it has one |
+| **Details** | full name, class, value, unit, limits, states, channels (PV names), views, doc |
+| **Copy name / Copy PV names / Find IOC** | Qt only |
+
+In eco desktop, what the menu opens docks next to the grid it came from;
+otherwise it gets its own window. In JupyterLab/Voila it appears as a
+closable panel right below the row, in the same page — closing it stops its
+reads. The menu is built from class-level lookups only, so it costs nothing
+for rows nobody clicks; whatever needs hardware or the archiver runs in the
+background.
 
 ### ipywidgets (`eco.widgets.assembly_browser`)
 

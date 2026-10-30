@@ -127,7 +127,7 @@ class FakeMotorRecord(SlowAdjustable):
 def test_the_tweak_step_comes_from_the_ioc_and_edits_go_back(app):
     item = FakeMotorRecord()
     controls, _ = display_qt._build_item_controls_qt(item, QtWidgets.QLabel("3.0"), 3.0)
-    step = controls.findChildren(QtWidgets.QLineEdit)[0]
+    step = controls.findChild(QtWidgets.QLineEdit, "step")
     assert pump(app, 2, until=lambda: step.text() == "0.25")
     step.setText("0.5")
     step.editingFinished.emit()
@@ -138,7 +138,7 @@ def test_the_tweak_step_falls_back_to_the_adjustables_own_tweak(app):
     item = SlowAdjustable(value=3.0)
     item._tweak_instance = type("T", (), {"step_sizes": [0.05]})()
     controls, _ = display_qt._build_item_controls_qt(item, QtWidgets.QLabel("3.0"), 3.0)
-    assert controls.findChildren(QtWidgets.QLineEdit)[0].text() == "0.05"
+    assert controls.findChild(QtWidgets.QLineEdit, "step").text() == "0.05"
 
 
 # -- the whole window --------------------------------------------------------------

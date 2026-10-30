@@ -200,6 +200,29 @@ def _action_group(stop_btn, reset_btn):
     return widgets.HBox([stop_btn, reset_btn], layout=widgets.Layout(margin="0 0 0 auto"))
 
 
+def _item_menu(item, name):
+    """The "⋯" menu closing a row and the box below the row where what it
+    opens appears (eco.widgets.item_menu_ipy) -- both row children; an
+    empty list if the menu can't be built, so the row still works."""
+    try:
+        from eco.widgets import item_menu_ipy
+
+        panels = item_menu_ipy.ItemPanels()
+        return [item_menu_ipy.make_menu(item, name, panels), panels]
+    except Exception:
+        return []
+
+
+def _stop_item_panels(row):
+    for child in row.children[3:]:
+        stop = getattr(child, "stop", None)
+        if callable(stop):
+            try:
+                stop()
+            except Exception:
+                pass
+
+
 def _prefetch_values(items, max_workers=8, deadline=None):
     """See eco.widgets.live_values.prefetch_values."""
     return live_values.prefetch_values(items, max_workers=max_workers, deadline=deadline)
@@ -514,9 +537,13 @@ def _build_item_controls_widget(item, value_w, cur, row_state=None):
 
                 up_btn.on_click(make_tweak(1))
                 down_btn.on_click(make_tweak(-1))
-                children += [step_w, up_btn, down_btn]
+                # the setpoint comes first, right next to the readback; the
+                # tweak controls follow it
+                children += [input_widget, step_w, up_btn, down_btn]
+            else:
+                children.append(input_widget)
 
-            children += [input_widget, _action_group(stop_btn, reset_btn)]
+            children.append(_action_group(stop_btn, reset_btn))
 
     # Fallback: if item has set_target_value (callable) but wasn't captured above, allow simple set
     elif hasattr(item, "set_target_value") and callable(
@@ -643,7 +670,7 @@ def build_adjustable_control_widget(item, poll_interval=1.0, title=None):
         value_w.add_class(state_class)
 
     control_box, poll_state = _build_item_controls_widget(item, value_w, cur)
-    row = widgets.HBox([name_w, value_w, control_box], layout=_row_layout())
+    row = widgets.HBox([name_w, value_w, control_box] + _item_menu(item, str(name)), layout=_row_layout())
 
     entry = {"item": item, "value_widget": value_w, "state_class": state_class, **poll_state}
     reader = LiveReader(
@@ -655,7 +682,11 @@ def build_adjustable_control_widget(item, poll_interval=1.0, title=None):
     poll_state["row_state"].on_finished = lambda: reader.request_read(0)
     reader.start()
 
-    row.stop = reader.stop
+    def stop():
+        reader.stop()
+        _stop_item_panels(row)
+
+    row.stop = stop
     return row
 
 
@@ -717,7 +748,8 @@ def make_assembly_widget(
             entry["item"], entry["value_widget"], value, entry["row_state"]
         )
         entry.update(poll_state)
-        entry["row"].children = (entry["row"].children[0], entry["value_widget"], control_box)
+        children = entry["row"].children
+        entry["row"].children = (children[0], entry["value_widget"], control_box) + children[3:]
 
     reader = LiveReader(_on_result, poll_interval=poll_interval)
 
@@ -823,7 +855,10 @@ def make_assembly_widget(
         else:
             control_box, poll_state = _build_item_controls_widget(item, value_w, cur, row_state)
 
-        row = widgets.HBox([name_w, value_w, control_box], layout=_row_layout())
+        full_name = item.alias.get_full_name() if hasattr(item, "alias") else str(name)
+        row = widgets.HBox(
+            [name_w, value_w, control_box] + _item_menu(item, full_name), layout=_row_layout()
+        )
         if section_class:
             row.add_class(section_class)
         elements.append(row)
@@ -951,6 +986,8 @@ def make_assembly_widget(
 
     def stop():
         reader.stop()
+        for entry in item_entries:
+            _stop_item_panels(entry["row"])
         for state in child_states:
             child_widget = state.get("widget")
             if child_widget is not None:
