@@ -91,6 +91,9 @@ last one back:
   loading, nothing else in the namespace is initialized: a fast, minimal
   dashboard, e.g. for a control-room screen.
 
+**Tools → Scan Launcher** docks a form for building scans and appending them to
+a task queue (see {doc}`queues`). **Tools → Log Viewer** opens the command
+timeline (see {doc}`command_history`).
 **Tools → Combine Panels into Tabs...** stacks two or more open panels as tabs
 in one spot, the same as dropping one panel's title bar on another's. Drag a
 tab off the tab bar to split it out again.

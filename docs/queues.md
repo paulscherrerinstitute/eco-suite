@@ -87,6 +87,23 @@ q.test_run()
 scans.ascan(mot, 0, 1, 50, 0.1, queue=True)        # same as appending it
 ```
 
+## From a form: the scan launcher
+
+```python
+scans.launcher()                  # queue="default"; in eco desktop: Tools -> Scan Launcher
+```
+
+A form for the common scans (`ascan`, `dscan`, `ascan_position_list`,
+`snakescan`, `a2scan`, `meshscan`, `scan`, `acquire`; any other method gets a
+form built from its signature). Adjustables and counters are chosen with a
+device picker that browses the namespace, with your bookmarks and recent picks.
+**Run** appends the scan to the queue, test-run like any other task. The panel
+next to the form shows the progress of what you launched, and pauses, resumes
+or stops it.
+
+In a notebook, `scans.launcher()` is the ipywidgets version of the form. It
+runs the scan directly instead of through a queue.
+
 ## Questions from queued tasks
 
 - **A plain question** (`input()`, a `(y/n)` confirmation) blocks the task
