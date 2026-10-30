@@ -156,6 +156,13 @@ scientific Python libraries.
 
 .. toctree::
    :maxdepth: 2
+   :caption: Development
+   :hidden:
+
+   developer_notes
+
+.. toctree::
+   :maxdepth: 2
    :caption: Reference
    :hidden:
 

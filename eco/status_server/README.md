@@ -384,15 +384,20 @@ to answer them with.
 | route | purpose |
 | --- | --- |
 | `GET /health` | state, readiness, generation, init progress, failures, cpu/rss/threads |
+| `GET /stats` | recent snapshot/capture/write-job operations and a summary, i.e. whether requests are being served well (`?limit=`, `?kind=`) |
+| `GET /monitor_policy` | what `ca_tuning`'s adaptive monitor policy believes in this process: rate threshold, monitored / known-fast channels, sensitive period |
 | `GET /names` | target / all / initialized / failed / lazy / currently-initializing names |
 | `GET /failures` | per-name exception for everything that failed to initialize |
+| `GET /channels/compare` | the namespace's initialized channels against the DAQ's recorded-channel lists (`channels_JF`/`channels_BS`/`channels_BSCAM`, `?list=` to restrict); what `Daq.compare_channels()` uses. No CA traffic |
 | `POST /status/snapshot` | a `get_status(base=None)` result; `save`+`pgroup`+`run_number`+`key` also write `status.json`, `write_async` returns a job id |
 | `POST /status/capture` | snapshot **+** write **+** upload to the run, all in the background; answers immediately with a job id. `keep_status` keeps the values for one `GET /status/job/<id>?include_status=1` |
 | `GET /aliases` | this namespace's current alias list, `namespace.alias.get_all()` verbatim — no CA traffic, so this answers fast |
 | `POST /aliases/capture` | compute **+** write **+** upload `aliases.json` to the run, in the background — the alias equivalent of `/status/capture`, same job id space |
+| `POST /status/push` | merge a small client-supplied dict into the next `/status/job` read for the same pgroup/run/key, for values the server cannot poll itself (e.g. `scans.acquiring_scan`) |
 | `GET /status/job/<id>` | state of an async write (shared by `/status/capture` and `/aliases/capture`) |
 | `GET /recording`, `GET /recording/<id>` | list / live counters |
 | `POST /recording/start`, `POST /recording/stop` | start; stop and (by default) write `monitors.esc.h5` |
+| `POST /recording/capture` | stop a recording, then write it and upload it to the run in the background (job id); what a scan's end uses, writing `namespace_monitor.ixp.h5` |
 | `POST /admin/reinit` | `mode` = `failed` / `names` / `full` / `init` / `reimport` |
 | `POST /admin/restart` | re-exec the process |
 

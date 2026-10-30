@@ -34,6 +34,21 @@ own aux directory as part of the run, the same way `aliases.json` and
   status server simply has no `namespace_monitor.ixp.h5` and nothing should
   treat that as an error.
 
+## Two monitor files per run
+
+A run recorded with a status server gets two independent monitor files:
+
+| File | Written by | Covers | Needs the status server |
+|---|---|---|---|
+| `aux/scan_monitor.pkl` | `Daq.append_scan_monitors` / `Daq.end_scan_monitors` | the scan's own adjustables | no |
+| `aux/namespace_monitor.ixp.h5` | `Daq.start_scan_monitoring` / `Daq.end_scan_monitoring` | every monitorable channel of the namespace | yes |
+
+The namespace recording is still new and not yet reliable enough to depend
+on. `scan_monitor.pkl` stays in any case, as the fallback that works without
+a server. Planned: store it in the same escape `DataSet` form
+(`ArrayTimestamps` per channel) instead of a pickle, so escape can load both
+files the same way.
+
 ## File format
 
 One `escape.ArrayTimestamps` per channel, in one HDF5 file
@@ -132,8 +147,9 @@ already produces a `DataSet` whose own attributes are the correctly nested
 needed at all. This is a materially cleaner integration than the existing
 **"monitor data hack"** in `escape/swissfel/parse.py:609-634`, which:
 
-- reads a **pickle** file (`aux/scan_monitor.pkl`) that nothing in eco's
-  current status-server work produces (a different, older mechanism),
+- reads a **pickle** file (`aux/scan_monitor.pkl`), which eco writes for
+  every scan independently of the status server (the older mechanism, kept
+  as the fallback - see "Two monitor files per run" above),
 - wraps each channel by hand in a `MonitorData` object
   (`escape/swissfel/parse.py:642-653`) rather than a real
   `escape.ArrayTimestamps`, so it doesn't get any of `Array`'s own
