@@ -42,6 +42,8 @@ class SessionBackend:
         self.namespace = namespace
         self.label = label or getattr(namespace, "name", None) or "eco"
         self._init_lock = threading.Lock()
+        self._index_lock = threading.Lock()
+        self._index = None  # (initialized names, entries) -- see search_index
 
     def names(self):
         ns = self.namespace
@@ -86,6 +88,43 @@ class SessionBackend:
         if isinstance(obj, Proxy):
             obj = obj.__wrapped__
         return obj
+
+    def search_index(self):
+        """[(full name, kind, object)] of every adjustable/detector in the
+        initialized components, rebuilt when that set changes. Shared by all
+        clients; walking a big namespace takes a moment, done once."""
+        from eco.web.viewmodels import kind_of
+
+        initialized = frozenset(getattr(self.namespace, "initialized_names", set()))
+        with self._index_lock:
+            if self._index is not None and self._index[0] == initialized:
+                return self._index[1]
+            entries, seen = [], set()
+
+            def consider(item):
+                kind = kind_of(item)
+                name = full_name(item)
+                if kind in ("adjustable", "detector") and name not in seen:
+                    seen.add(name)
+                    entries.append((name, kind, item))
+
+            for top in sorted(initialized):
+                try:
+                    obj = self.resolve(top)
+                except Exception:
+                    continue
+                consider(obj)
+                try:
+                    items = obj.status_collection.get_list()
+                except Exception:
+                    items = []
+                for item in items:
+                    try:
+                        consider(item)
+                    except Exception:
+                        pass
+            self._index = (initialized, entries)
+            return entries
 
     def svg(self, obj, live=True):
         """The SVG panel of `obj` as text, plus the prefix its click markers

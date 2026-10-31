@@ -83,9 +83,28 @@ def test_unknown_op_and_bad_arguments_are_errors(client):
     assert not reply["ok"] and reply["error"]["type"] == "ProtocolError"
 
 
-def test_subscribe_needs_a_described_name(client):
-    reply = client.call("subscribe", names=["mono.energy"])
+def test_subscribe_resolves_names_not_seen_yet(client):
+    # a pinned item after a page reload: never described in this session
+    assert client.call("subscribe", names=["mono.energy"])["ok"]
+    assert client.values("mono.energy")["num"] == 7.0
+    reply = client.call("subscribe", names=["mono.nothing"])
     assert not reply["ok"] and reply["error"]["type"] == "NotFound"
+
+
+def test_search_finds_readable_items_of_initialized_components(client):
+    hits = client.call("search", query="energy")["data"]["hits"]
+    assert {"name": "mono.energy", "kind": "adjustable"} in hits
+    names = [h["name"] for h in client.call("search", query="mono pitch")["data"]["hits"]]
+    assert names == ["mono.pitch_rbv"]
+    everything = [h["name"] for h in client.call("search", query="", limit=500)["data"]["hits"]]
+    assert "lxt" in everything and not any(n.startswith("vacuum.") for n in everything)  # lazy: not searched
+    assert client.call("subscribe", names=["mono.pitch_rbv"])["ok"]  # a hit can be watched at once
+
+
+def test_details_reuse_the_grids_item_menu(client):
+    rows = dict(client.call("details", name="mono.energy")["data"]["rows"])
+    assert rows["name"] == "mono.energy" and rows["kind"] == "Adjustable"
+    assert rows["unit"] == "keV" and "SimMotor" in rows["class"]
 
 
 def test_values_arrive_coalesced_after_subscribe(client):

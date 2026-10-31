@@ -1,22 +1,31 @@
 // eco web client -- talks web_frontend/PROTOCOL.md (v0) to eco.web.gateway.
-// Plain ES module, no build step, no dependencies. DOM is built with
+// Plain ES modules, no build step, no dependencies. DOM is built with
 // textContent only (never innerHTML from server data); SVG panels are
 // sanitized before insertion (sanitizeSvg).
 
-const VERSION = "0.1";
+import * as strip from "./strip.js";
+
+const VERSION = "0.2";
 const STALE_AFTER = 35; // s without a fresh read -> greyed (monitored items are re-read at least every 10 s)
 const SHOW_AGE_AFTER = 12; // s
 const SVG_REFRESH = 3000; // ms
 const PING_EVERY = 15000; // ms -- a dropped network sends no close frame; only a missing reply shows it
 const PING_TIMEOUT = 8000; // ms
+const CHART_REDRAW = 500; // ms
 const DOT = { waiting: "var(--wait)", live: "var(--ok)", subscribed: "var(--ok)", polled: "var(--polled)",
   busy: "var(--busy)", moving: "var(--busy)", error: "var(--err)" };
 
 const S = {
   ws: null, nextId: 0, pending: new Map(), hello: null, retry: 0, retryTimer: null,
-  offset: 0,           // client clock - gateway clock, s
-  view: null,          // current view: {kind, name, subscribed: [], rows: Map, timers: []}
+  offset: 0,              // client clock - gateway clock, s
+  view: null,             // current view: {kind, name, wanted: [], unlisten: [], refs: Set, timers: []}
   filter: "",
+  subs: new Map(),        // name -> how many places want its values (view rows, folds, pins)
+  listeners: new Map(),   // name -> Set of {value(v), write(w)}
+  last: new Map(),        // name -> last value event (a new row shows it at once)
+  series: new Map(),      // name -> strip.Series, for pinned items
+  pins: loadPins(),       // [{name, window, avg}]
+  unfolded: new Set(),    // assembly names unfolded inline (kept while navigating)
 };
 
 // ---- small DOM helpers ------------------------------------------------------------
@@ -70,17 +79,28 @@ function setConn(state) {
   dot.title = { up: "connected", down: "disconnected", "": "connecting" }[state] ?? state;
 }
 
-function clientId() {
+function stored(key, fallback) {
   try {
-    let id = localStorage.getItem("eco-web-client");
-    if (!id) {
-      id = Math.random().toString(36).slice(2, 10);
-      localStorage.setItem("eco-web-client", id);
-    }
-    return id;
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : JSON.parse(v);
   } catch {
-    return "anon";
+    return fallback;
   }
+}
+
+function store(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function clientId() {
+  let id = stored("eco-web-client", null);
+  if (!id) {
+    id = Math.random().toString(36).slice(2, 10);
+    store("eco-web-client", id);
+  }
+  return id;
 }
 
 function formatNum(n) {
@@ -88,6 +108,22 @@ function formatNum(n) {
   const a = Math.abs(n);
   if (a !== 0 && (a < 1e-3 || a >= 1e6)) return n.toExponential(4);
   return String(+n.toPrecision(7));
+}
+
+function valueText(v) {
+  return typeof v.num === "number" ? formatNum(v.num) : v.text;
+}
+
+/** A plottable number for a value event, or null (item_menu.numeric: enums by their index). */
+function numeric(v) {
+  if (!v || v.error !== undefined) return null;
+  if (typeof v.num === "number") return v.num;
+  if (typeof v.bool === "boolean") return v.bool ? 1 : 0;
+  if (v.enum) {
+    const i = v.enum.indexOf(v.text);
+    return i >= 0 ? i : null;
+  }
+  return null;
 }
 
 // ---- connection ------------------------------------------------------------------------
@@ -120,6 +156,9 @@ function connect() {
     const mode = document.getElementById("mode");
     mode.textContent = S.hello.writes ? "writes on" : "read-only";
     mode.className = "badge" + (S.hello.writes ? " writes" : "");
+    // a new connection is a new server session: subscribe everything that is wanted again
+    const names = [...S.subs.keys()];
+    if (names.length) request("subscribe", { names }).catch((e) => toast(`subscribe failed: ${e.message}`, true));
     route();
   };
   ws.onmessage = (event) => {
@@ -145,6 +184,7 @@ function connect() {
 function lost(ws, event) {
   if (S.ws !== ws) return;
   S.ws = null;
+  S.hello = null; // nothing is sent until the next connection's hello (which subscribes S.subs again)
   clearInterval(S.pingTimer);
   setConn("down");
   for (const waiter of S.pending.values()) waiter.reject(new Error("disconnected"));
@@ -175,14 +215,56 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// ---- events -------------------------------------------------------------------------------
+// ---- subscriptions and value fan-out ---------------------------------------------------
+
+/** Values of `names` are wanted (by a row, a fold, a pin); subscribes the new ones. */
+function want(names) {
+  const fresh = [];
+  for (const name of names) {
+    const n = S.subs.get(name) || 0;
+    S.subs.set(name, n + 1);
+    if (!n) fresh.push(name);
+  }
+  if (fresh.length && S.hello) request("subscribe", { names: fresh }).catch((e) => toast(`${fresh[0]}: ${e.message}`, true));
+}
+
+function release(names) {
+  const gone = [];
+  for (const name of names) {
+    const n = (S.subs.get(name) || 0) - 1;
+    if (n > 0) S.subs.set(name, n);
+    else {
+      S.subs.delete(name);
+      S.last.delete(name);
+      gone.push(name);
+    }
+  }
+  if (gone.length && S.hello) request("unsubscribe", { names: gone }).catch(() => {});
+}
+
+/** Calls handler.value(v) / handler.write(w) for `name`; returns the unlisten function. */
+function listen(name, handler) {
+  if (!S.listeners.has(name)) S.listeners.set(name, new Set());
+  S.listeners.get(name).add(handler);
+  const last = S.last.get(name);
+  if (last && handler.value) handler.value(last);
+  return () => S.listeners.get(name)?.delete(handler);
+}
 
 function onEvent(message) {
   if (message.ev === "values") {
     if (typeof message.now === "number") S.offset = Date.now() / 1000 - message.now;
-    for (const [name, value] of Object.entries(message.data)) applyValue(name, value);
+    for (const [name, value] of Object.entries(message.data)) {
+      S.last.set(name, value);
+      const series = S.series.get(name);
+      const y = numeric(value);
+      if (series && y !== null) series.add(value.t, y);
+      for (const h of S.listeners.get(name) || []) h.value?.(value);
+    }
   } else if (message.ev === "write") {
-    applyWrite(message.data);
+    const w = message.data;
+    if (w.state === "error") toast(`${w.name}: ${w.message}`, true);
+    for (const h of S.listeners.get(w.name) || []) h.write?.(w);
   }
 }
 
@@ -197,7 +279,9 @@ function leaveView() {
   S.view = null;
   if (!view) return;
   view.timers.forEach(clearInterval);
-  if (view.subscribed.length) request("unsubscribe", { names: view.subscribed }).catch(() => {});
+  view.cleanup?.();
+  view.unlisten.forEach((u) => u());
+  release(view.wanted);
 }
 
 function route() {
@@ -206,6 +290,7 @@ function route() {
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash.startsWith("/d/")) showDevice(hash.slice(3));
   else if (hash.startsWith("/svg/")) showSvg(hash.slice(5));
+  else if (hash.startsWith("/tweak/")) showTweak(hash.slice(7));
   else showHome();
 }
 
@@ -216,7 +301,7 @@ document.getElementById("back").addEventListener("click", () => {
 });
 
 function newView(kind, name) {
-  S.view = { kind, name, subscribed: [], rows: new Map(), timers: [] };
+  S.view = { kind, name, wanted: [], unlisten: [], refs: new Set(), timers: [] };
   return S.view;
 }
 
@@ -274,69 +359,136 @@ async function showDevice(name) {
   if (S.view !== view) return;
 
   const toolbar = el("div", { class: "toolbar" });
-  if (desc.svg) toolbar.append(el("a", { class: "btn primary", href: `#/svg/${encodeURIComponent(name)}`, style: "display:inline-flex;align-items:center;text-decoration:none" }, "Panel"));
-  const visible = desc.rows.filter((r) => !r.hidden);
-  const hidden = desc.rows.filter((r) => r.hidden);
-  const list = el("div", { class: "list" }, visible.map((r) => buildRow(view, r)));
+  if (desc.svg) toolbar.append(el("a", { class: "btn primary link-btn", href: `#/svg/${encodeURIComponent(name)}` }, "Panel"));
   const parts = [];
   if (toolbar.childElementCount) parts.push(toolbar);
   if (desc.doc) parts.push(el("p", { class: "doc", text: desc.doc }));
-  parts.push(visible.length ? list : el("div", { class: "empty", text: "no display items" }));
+  parts.push(rowsBlock(view, desc.rows, view, "no display items"));
+  setMain(...parts);
+  view.timers.push(setInterval(() => refreshAges(view), 1000));
+}
+
+/**
+ * The rows of a description: visible ones in a list (sub-assembly items shown
+ * inline under a small group header), the rest behind "N more items". `owner`
+ * collects the subscriptions/listeners (the view, or an unfolded row).
+ */
+function rowsBlock(view, rows, owner, emptyText) {
+  const visible = rows.filter((r) => !r.hidden);
+  const hidden = rows.filter((r) => r.hidden);
+  const box = el("div", { class: "rows" });
+  box.append(visible.length ? el("div", { class: "list" }, groupedRows(view, visible, owner)) :
+    el("div", { class: "empty small", text: emptyText }));
   if (hidden.length) {
     const hiddenList = el("div", { class: "list" });
     const details = el("details", { class: "hidden-items" }, el("summary", { text: `${hidden.length} more items` }), hiddenList);
     details.addEventListener("toggle", () => {
-      if (details.open && !hiddenList.childElementCount) {
-        hiddenList.append(...hidden.map((r) => buildRow(view, r)));
-        subscribe(view, hidden);
-      }
+      if (details.open && !hiddenList.childElementCount) hiddenList.append(...groupedRows(view, hidden, owner));
     });
-    parts.push(details);
+    box.append(details);
   }
-  setMain(...parts);
-  subscribe(view, visible);
-  view.timers.push(setInterval(() => refreshAges(view), 1000));
+  return box;
 }
 
-function subscribe(view, rows) {
-  const names = rows.filter((r) => r.kind !== "assembly" && r.kind !== "trigger").map((r) => r.name);
-  if (!names.length) return;
-  view.subscribed.push(...names);
-  request("subscribe", { names }).catch((e) => toast(`subscribe failed: ${e.message}`, true));
+/** Rows, with a header above each run of 2+ rows from the same sub-assembly ("cryo.setpoint", "cryo.temperature"). */
+function groupedRows(view, rows, owner) {
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    const dot = rows[i].label.indexOf(".");
+    const group = dot > 0 ? rows[i].label.slice(0, dot) : null;
+    let j = i + 1;
+    while (group && j < rows.length && rows[j].label.startsWith(group + ".")) j++;
+    if (group && j - i >= 2) {
+      out.push(el("div", { class: "group-head", text: group }));
+      for (const r of rows.slice(i, j)) out.push(buildRow(view, r, owner, r.label.slice(group.length + 1)));
+    } else {
+      for (const r of rows.slice(i, j)) out.push(buildRow(view, r, owner));
+    }
+    i = j;
+  }
+  return out;
 }
 
-function buildRow(view, row) {
-  const refs = { row, value: null, last: null, readState: "waiting", writing: false, ctlBuilt: false, step: null };
+function buildRow(view, row, owner, label = row.label) {
+  const refs = { row, value: null, readState: "waiting", writing: false, ctlBuilt: false, step: null };
   const node = el("div", { class: "row" });
-  if (row.group) node.style.borderLeftColor = row.group;
   refs.node = node;
 
-  if (row.kind === "assembly") {
-    node.append(
-      el("div", { class: "label" }, el("a", { href: `#/d/${encodeURIComponent(row.name)}`, text: `${row.label} ›` })),
-    );
-    return node;
-  }
+  if (row.kind === "assembly") return assemblyRow(view, row, owner, label);
   if (row.kind === "trigger") {
     const btn = el("button", { class: "btn", text: row.button, title: row.doc || "", disabled: !row.writable,
       onclick: () => confirmDialog(`Trigger ${row.name}?`, row.doc || "", () =>
         request("trigger", { name: row.name }).catch((e) => toast(e.message, true))) });
     refs.dot = el("span", { class: "dot", text: "●", style: "color:var(--wait)" });
-    node.append(el("div", { class: "label", text: row.label }), el("div", { class: "value" }), el("div", { class: "ctl" }, refs.dot, btn));
-    view.rows.set(row.name, refs);
+    node.append(el("div", { class: "label", text: label }), el("div", { class: "value" }), el("div", { class: "ctl" }, refs.dot, btn));
+    owner.unlisten.push(listen(row.name, { write: (w) => applyWrite(refs, w) }));
     return node;
   }
   refs.dot = el("span", { class: "dot", text: "●", style: `color:${DOT.waiting}`, title: "waiting for the first value" });
   refs.valueEl = el("div", { class: "value", text: "…" });
   refs.ctl = el("div", { class: "ctl" }, refs.dot);
-  node.append(el("div", { class: "label", text: row.label }), refs.valueEl, refs.ctl);
-  view.rows.set(row.name, refs);
+  const menu = el("button", { class: "btn menu", text: "⋯", title: "More", "aria-label": `more for ${row.name}`,
+    onclick: () => rowMenu(row, refs) });
+  node.append(el("div", { class: "label", text: label }), refs.valueEl, el("div", { class: "ctl-wrap" }, refs.ctl, menu));
+  view.refs.add(refs);
+  owner.unlisten.push(listen(row.name, { value: (v) => applyValue(refs, v), write: (w) => applyWrite(refs, w) }));
+  owner.wanted.push(row.name);
+  want([row.name]);
   return node;
 }
 
-function applyValue(name, value) {
-  const refs = S.view?.rows.get(name);
-  if (!refs || !refs.valueEl) return;
+/** A sub-assembly row: ▸ unfolds its rows in place (▾ folds them again), › opens it as its own view. */
+function assemblyRow(view, row, owner, label) {
+  const node = el("div", { class: "row assembly" });
+  const inner = el("div", { class: "fold-body", hidden: true });
+  const toggle = el("button", { class: "btn fold", text: "▸", "aria-label": `unfold ${row.name}`, "aria-expanded": "false" });
+  let fold = null; // {wanted, unlisten} while unfolded
+
+  // forget: folded by the user (else only because its view goes away -- it unfolds again next time)
+  const close = (forget) => {
+    if (!fold) return;
+    fold.unlisten.forEach((u) => u());
+    release(fold.wanted);
+    fold = null;
+    inner.replaceChildren();
+    inner.hidden = true;
+    for (const r of [...view.refs]) if (!r.valueEl?.isConnected) view.refs.delete(r);
+    toggle.textContent = "▸";
+    toggle.setAttribute("aria-expanded", "false");
+    if (forget) S.unfolded.delete(row.name);
+  };
+  const open = async () => {
+    if (fold) return;
+    fold = { wanted: [], unlisten: [] };
+    const mine = fold;
+    toggle.textContent = "▾";
+    toggle.setAttribute("aria-expanded", "true");
+    S.unfolded.add(row.name);
+    inner.hidden = false;
+    inner.replaceChildren(el("div", { class: "loading small", text: "loading…" }));
+    let desc;
+    try {
+      desc = await request("describe", { name: row.name });
+    } catch (e) {
+      if (fold === mine) inner.replaceChildren(el("div", { class: "empty small", text: e.message }));
+      return;
+    }
+    if (fold !== mine || S.view !== view) return;
+    inner.replaceChildren(rowsBlock(view, desc.rows, mine, "nothing to show"));
+  };
+  toggle.addEventListener("click", () => (fold ? close(true) : open()));
+  owner.unlisten.push(() => close(false)); // folding the parent (or leaving the view) folds this too
+
+  node.append(
+    el("div", { class: "label" }, toggle,
+      el("a", { href: `#/d/${encodeURIComponent(row.name)}`, title: `open ${row.name} as its own view`, text: `${label} ›` })),
+  );
+  if (S.unfolded.has(row.name)) open();
+  return el("div", { class: "assembly-wrap" }, node, inner);
+}
+
+function applyValue(refs, value) {
   refs.t = value.t;
   if (value.error !== undefined) {
     refs.readState = "error";
@@ -347,9 +499,8 @@ function applyValue(name, value) {
     refs.value = value;
     refs.readState = value.state || "polled";
     refs.readMessage = "";
-    const text = typeof value.num === "number" ? formatNum(value.num) : value.text;
     refs.valueEl.className = "value" + (value.cls ? ` ${value.cls}` : "") + (refs.row.writable ? " settable" : "");
-    refs.valueEl.replaceChildren(text, refs.row.unit ? el("span", { class: "unit", text: refs.row.unit }) : "", el("span", { class: "age" }));
+    refs.valueEl.replaceChildren(valueText(value), refs.row.unit ? el("span", { class: "unit", text: refs.row.unit }) : "", el("span", { class: "age" }));
     if (!refs.ctlBuilt) buildControls(refs);
     if (refs.select && !refs.select.matches(":focus")) refs.select.value = value.text;
   }
@@ -362,10 +513,7 @@ function showDot(refs, state, message) {
   refs.dot.title = message ? `${state}: ${message}` : state;
 }
 
-function applyWrite({ name, state, message }) {
-  const refs = S.view?.rows.get(name);
-  if (state === "error") toast(`${name}: ${message}`, true);
-  if (!refs) return;
+function applyWrite(refs, { state, message }) {
   refs.writing = state === "busy" || state === "moving";
   if (refs.writing || state === "error") showDot(refs, state, message);
   else showDot(refs, refs.readState, refs.readMessage);
@@ -373,7 +521,7 @@ function applyWrite({ name, state, message }) {
 
 function refreshAges(view) {
   const now = serverNow();
-  for (const refs of view.rows.values()) {
+  for (const refs of view.refs) {
     if (!refs.t || !refs.valueEl) continue;
     const age = now - refs.t;
     refs.valueEl.classList.toggle("stale", age > STALE_AFTER);
@@ -408,22 +556,23 @@ function buildControls(refs) {
   }
   refs.ctl.append(el("button", { class: "btn stop", text: "■", title: "Stop", "aria-label": "stop",
     onclick: () => request("stop", { name }).catch((e) => toast(e.message, true)) }));
-  if (!labels) {
-    refs.valueEl.addEventListener("click", () => {
-      const current = refs.value ? (typeof refs.value.num === "number" ? String(refs.value.num) : refs.value.text) : "";
-      inputDialog(`Move ${name}`, `currently ${current}${row.unit ? " " + row.unit : ""}`, current, (target) =>
-        request("set", { name, value: target }).catch((e) => toast(e.message, true)));
-    });
-  }
+  if (!labels) refs.valueEl.addEventListener("click", () => moveDialog(name, row.unit));
 }
 
-function inputDialog(title, note, initial, onOk) {
+function moveDialog(name, unit) {
+  const v = S.last.get(name);
+  const current = v && v.error === undefined ? (typeof v.num === "number" ? String(v.num) : v.text) : "";
+  inputDialog(`Move ${name}`, `currently ${current}${unit ? " " + unit : ""}`, current, "Move", (target) =>
+    request("set", { name, value: target }).catch((e) => toast(e.message, true)));
+}
+
+function inputDialog(title, note, initial, okText, onOk) {
   const input = el("input", { value: initial, inputmode: "decimal", autocomplete: "off" });
   const dialog = el("dialog", {},
     el("h2", { text: title }), el("p", { text: note }), input,
     el("div", { class: "actions" },
       el("button", { class: "btn", text: "Cancel", onclick: () => dialog.close() }),
-      el("button", { class: "btn primary", text: "Move", onclick: () => { dialog.close(); onOk(input.value); } })));
+      el("button", { class: "btn primary", text: okText, onclick: () => { dialog.close(); onOk(input.value); } })));
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") { dialog.close(); onOk(input.value); } });
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
@@ -440,6 +589,265 @@ function confirmDialog(title, note, onOk) {
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
+}
+
+/** A sheet of actions; `actions`: [[label, fn], ...]. */
+function actionSheet(title, actions) {
+  const dialog = el("dialog", { class: "sheet" }, el("h2", { text: title }),
+    el("div", { class: "sheet-actions" }, actions.map(([label, fn]) =>
+      el("button", { class: "btn", text: label, onclick: () => { dialog.close(); fn(); } }))),
+    el("div", { class: "actions" }, el("button", { class: "btn", text: "Close", onclick: () => dialog.close() })));
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+function rowMenu(row, refs) {
+  const actions = [];
+  const pinned = isPinned(row.name);
+  actions.push([pinned ? "Unpin strip chart" : "Pin live strip chart", () => (pinned ? unpin(row.name) : pin(row.name))]);
+  if (row.writable && row.kind === "adjustable" && typeof refs.value?.num === "number") {
+    actions.push(["Tweak", () => (location.hash = `#/tweak/${encodeURIComponent(row.name)}`)]);
+  }
+  actions.push(["Details", () => showDetails(row.name)]);
+  if (navigator.clipboard && window.isSecureContext) {
+    actions.push(["Copy name", () => navigator.clipboard.writeText(row.name).then(() => toast("copied"), () => {})]);
+  }
+  actionSheet(row.name, actions);
+}
+
+async function showDetails(name) {
+  const body = el("div", { class: "details-body", text: "reading…" });
+  const dialog = el("dialog", { class: "sheet" }, el("h2", { text: name }), body,
+    el("div", { class: "actions" }, el("button", { class: "btn", text: "Close", onclick: () => dialog.close() })));
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  try {
+    const { rows } = await request("details", { name });
+    body.replaceChildren(el("dl", {}, rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })])));
+  } catch (e) {
+    body.textContent = e.message;
+  }
+}
+
+// ---- picker: find any item by name -------------------------------------------------------------
+
+/** A search over the initialized components; `onPick(name)` for the chosen item. */
+function picker(title, onPick) {
+  const input = el("input", { type: "search", placeholder: "part of a name, e.g. gauge or omega", autocomplete: "off",
+    autocapitalize: "off", spellcheck: "false" });
+  const results = el("div", { class: "list picker-results" });
+  const note = el("p", { class: "picker-note", text: "Searches the initialized components." });
+  const dialog = el("dialog", { class: "sheet" }, el("h2", { text: title }), input, note, results,
+    el("div", { class: "actions" }, el("button", { class: "btn", text: "Close", onclick: () => dialog.close() })));
+  let timer = null, seq = 0;
+  const run = async () => {
+    const mine = ++seq;
+    try {
+      const { hits } = await request("search", { query: input.value, limit: 40 });
+      if (mine !== seq) return;
+      results.replaceChildren(...hits.map((h) => el("button", { class: "item pick", onclick: () => { dialog.close(); onPick(h.name); } },
+        el("span", { class: "name", text: h.name }), el("span", { class: "note", text: h.kind }))));
+      if (!hits.length) results.append(el("div", { class: "empty small", text: "nothing found" }));
+    } catch (e) {
+      results.replaceChildren(el("div", { class: "empty small", text: e.message }));
+    }
+  };
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 250); });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
+  run();
+}
+
+// ---- pinned live strip charts (the dock) --------------------------------------------------------
+
+function loadPins() {
+  const pins = stored("eco-web-pins", []);
+  return Array.isArray(pins) ? pins.filter((p) => p && typeof p.name === "string") : [];
+}
+
+function savePins() {
+  store("eco-web-pins", S.pins.map(({ name, window, avg }) => ({ name, window, avg })));
+}
+
+function isPinned(name) {
+  return S.pins.some((p) => p.name === name);
+}
+
+function pin(name) {
+  if (isPinned(name)) return;
+  S.pins.push({ name, window: 60, avg: 0 });
+  savePins();
+  startPin(S.pins[S.pins.length - 1]);
+  renderDock(true);
+  toast(`${name} pinned – it stays in the strip below while you go elsewhere`);
+}
+
+function unpin(name) {
+  const p = S.pins.find((q) => q.name === name);
+  if (!p) return;
+  stopPin(p);
+  S.pins = S.pins.filter((q) => q !== p);
+  savePins();
+  renderDock();
+}
+
+function startPin(p) {
+  if (!S.series.has(p.name)) S.series.set(p.name, new strip.Series());
+  p.unlisten = listen(p.name, { value: (v) => updateCard(p, v) });
+  want([p.name]);
+}
+
+function stopPin(p) {
+  p.unlisten?.();
+  release([p.name]);
+  S.series.delete(p.name);
+}
+
+function updateCard(p, v) {
+  if (!p.valueEl) return;
+  p.valueEl.textContent = v.error !== undefined ? v.error : valueText(v);
+  p.valueEl.classList.toggle("error", v.error !== undefined);
+}
+
+function cycle(list, current) {
+  const i = list.indexOf(current);
+  return list[(i + 1) % list.length];
+}
+
+function renderDock(open) {
+  const dock = document.getElementById("dock");
+  if (open) store("eco-web-dock-open", true);
+  const isOpen = stored("eco-web-dock-open", true);
+  dock.hidden = false;
+  const head = el("div", { class: "dock-head" },
+    el("button", { class: "btn dock-toggle", text: `${isOpen ? "▾" : "▸"} Pinned (${S.pins.length})`, "aria-expanded": String(isOpen),
+      onclick: () => { store("eco-web-dock-open", !isOpen); renderDock(); } }),
+    el("button", { class: "btn", text: "+ Add", title: "pin any item: search by name", onclick: () => picker("Pin an item", pin) }));
+  const cards = el("div", { class: "dock-cards", hidden: !isOpen });
+  for (const p of S.pins) {
+    const windowLabel = strip.WINDOWS.find(([, s]) => s === p.window)?.[0] || `${p.window} s`;
+    p.valueEl = el("span", { class: "card-value", text: S.last.get(p.name) ? valueText(S.last.get(p.name)) : "…" });
+    p.avgEl = el("span", { class: "card-avg" });
+    p.canvas = el("canvas", { class: "chart", "aria-label": `strip chart of ${p.name}` });
+    cards.append(el("div", { class: "card" },
+      el("div", { class: "card-head" },
+        el("a", { class: "card-name", href: `#/d/${encodeURIComponent(p.name)}`, text: p.name }),
+        p.valueEl, p.avgEl),
+      p.canvas,
+      el("div", { class: "card-tools" },
+        el("button", { class: "btn small", text: windowLabel, title: "time window",
+          onclick: () => { p.window = cycle(strip.WINDOWS.map(([, s]) => s), p.window); savePins(); renderDock(); } }),
+        el("button", { class: "btn small", text: p.avg ? `avg ${p.avg}` : "avg off", title: "running average over the last N samples",
+          onclick: () => { p.avg = cycle(strip.AVERAGES, p.avg); savePins(); renderDock(); } }),
+        el("button", { class: "btn small", text: "clear", title: "forget the samples so far",
+          onclick: () => S.series.get(p.name) && (S.series.get(p.name).points = []) }),
+        el("button", { class: "btn small", text: "✕", title: "unpin", "aria-label": `unpin ${p.name}`, onclick: () => unpin(p.name) }))));
+  }
+  if (!S.pins.length) cards.append(el("p", { class: "empty small", text: "Pin items from their ⋯ menu, or add one by name." }));
+  dock.replaceChildren(head, cards);
+  document.body.style.setProperty("--dock-h", `${dock.offsetHeight}px`);
+  drawCharts();
+}
+
+function drawCharts() {
+  const now = serverNow();
+  for (const p of S.pins) {
+    const series = S.series.get(p.name);
+    if (!p.canvas || !series || !p.canvas.isConnected || p.canvas.closest("[hidden]")) continue;
+    const labels = S.last.get(p.name)?.enum || null;
+    const mean = strip.draw(p.canvas, series, { now, window: p.window, avg: p.avg, labels });
+    if (p.avgEl) p.avgEl.textContent = mean === null ? "" : `avg ${formatNum(+mean.toPrecision(6))}`;
+  }
+}
+
+setInterval(() => { if (document.visibilityState === "visible") drawCharts(); }, CHART_REDRAW);
+window.addEventListener("resize", () => {
+  const dock = document.getElementById("dock");
+  document.body.style.setProperty("--dock-h", `${dock.offsetHeight}px`);
+});
+
+// ---- tweak: one adjustable, big buttons, against the pinned detectors --------------------------------
+
+async function showTweak(name) {
+  const view = newView("tweak", name);
+  setTitle(`tweak ${name}`, true);
+  setMain(el("div", { class: "loading", text: "opening…" }));
+  let desc;
+  try {
+    desc = await request("describe", { name });
+  } catch (e) {
+    if (S.view === view) setMain(el("div", { class: "empty", text: `${name}: ${e.message}` }));
+    return;
+  }
+  if (S.view !== view) return;
+  const row = desc.rows.find((r) => r.name === name) || desc.rows[0];
+  if (desc.kind !== "adjustable" || !row || !row.writable) {
+    setMain(el("div", { class: "empty", text: `${name} cannot be tweaked here (not a writable adjustable${S.hello.writes ? "" : "; writes are off"}).` }));
+    return;
+  }
+  const big = el("div", { class: "tweak-value", text: "…" });
+  const dot = el("span", { class: "dot", text: "●", style: `color:${DOT.waiting}` });
+  const step = el("input", { class: "step big", type: "number", inputmode: "decimal", step: "any", value: "1", "aria-label": "step" });
+  const goTo = el("input", { class: "step big", type: "number", inputmode: "decimal", step: "any", placeholder: "go to", "aria-label": "go to" });
+  let start = null, readState = "waiting", writing = false;
+  request("step_size", { name }).then((r) => (step.value = r.step)).catch(() => {});
+
+  const send = (op, args) => request(op, { name, ...args }).catch((e) => toast(e.message, true));
+  const move = (sign) => send("step", { sign, step: parseFloat(step.value) });
+  const scale = (f) => { step.value = String(+(parseFloat(step.value) * f).toPrecision(6)); };
+  const startNote = el("span", { class: "tweak-start" });
+
+  view.unlisten.push(listen(name, {
+    value: (v) => {
+      if (v.error !== undefined) { big.textContent = v.error; readState = "error"; }
+      else {
+        big.replaceChildren(valueText(v), row.unit ? el("span", { class: "unit", text: row.unit }) : "");
+        readState = v.state || "polled";
+        if (start === null && typeof v.num === "number") { start = v.num; startNote.textContent = `start ${formatNum(start)}`; }
+      }
+      if (!writing) dot.style.color = DOT[readState] || DOT.error;
+    },
+    write: (w) => {
+      writing = w.state === "busy" || w.state === "moving";
+      dot.style.color = writing || w.state === "error" ? DOT[w.state] || DOT.error : DOT[readState] || DOT.error;
+    },
+  }));
+  view.wanted.push(name);
+  want([name]);
+
+  const onKey = (e) => {
+    if (e.target.closest?.("input, select, textarea, dialog")) return;
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") { move(1); e.preventDefault(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") { move(-1); e.preventDefault(); }
+    else if (e.key === "+" || e.key === "*") scale(2);
+    else if (e.key === "-" || e.key === "/") scale(0.5);
+    else if (e.key === "Escape") { send("stop", {}); e.preventDefault(); }
+  };
+  document.addEventListener("keydown", onKey);
+  view.cleanup = () => document.removeEventListener("keydown", onKey);
+
+  setMain(
+    el("div", { class: "tweak" },
+      el("div", { class: "tweak-head" }, dot, big),
+      el("div", { class: "tweak-row" },
+        el("button", { class: "btn huge", text: "▼", "aria-label": "step down", onclick: () => move(-1) }),
+        el("button", { class: "btn huge", text: "▲", "aria-label": "step up", onclick: () => move(1) })),
+      el("div", { class: "tweak-row" },
+        el("button", { class: "btn", text: "÷2", onclick: () => scale(0.5) }), step,
+        el("button", { class: "btn", text: "×2", onclick: () => scale(2) })),
+      el("div", { class: "tweak-row" },
+        goTo,
+        el("button", { class: "btn", text: "Go", onclick: () => goTo.value !== "" && send("set", { value: goTo.value }) })),
+      el("div", { class: "tweak-row" },
+        el("button", { class: "btn", text: "↺ back to start", onclick: () => start !== null && send("set", { value: start }) }),
+        startNote),
+      el("div", { class: "tweak-row" }, el("button", { class: "btn stop wide", text: "■ Stop", onclick: () => send("stop", {}) })),
+      el("p", { class: "doc", text: "Keys: ↑/→ step up, ↓/← step down, +/− double or halve the step, Esc stop. " +
+        "Pin detectors (⋯ menu or + Add below) to watch them while you tweak." })));
 }
 
 // ---- SVG panels ------------------------------------------------------------------------------------
@@ -516,4 +924,6 @@ async function showSvg(name) {
 if ("serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
+for (const p of S.pins) startPin(p);
+renderDock();
 connect();

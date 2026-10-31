@@ -118,10 +118,15 @@ class ClientSession:
             self.send({"v": PROTOCOL_VERSION, "ev": name, "data": data})
 
     def _object(self, name):
+        """An item this client has seen (a described row, a search hit), or
+        else one the backend resolves by name -- e.g. a pinned item after a
+        reload of the page."""
         with self._lock:
             obj = self._objects.get(name)
         if obj is None:
-            raise NotFound(f"{name!r} is not open in this client (describe it first)")
+            obj = self.backend.resolve(name)
+            with self._lock:
+                self._objects[name] = obj
         return obj
 
     def _may_write(self, name):
@@ -255,6 +260,32 @@ class ClientSession:
 
         threading.Thread(target=run, daemon=True).start()
         return {"triggered": name}
+
+    def _op_search(self, query, limit=40):
+        """Readable items of the initialized components whose name contains
+        every word of `query` -- for picking something to watch next to the
+        current view. Lazy components are not searched (that would
+        initialize them)."""
+        words = [w for w in str(query).lower().split() if w]
+        hits = []
+        for name, kind, obj in self.backend.search_index():
+            low = name.lower()
+            if all(w in low for w in words):
+                hits.append((not low.startswith(words[0]) if words else False, len(name), name, kind, obj))
+        hits.sort(key=lambda h: h[:3])
+        hits = hits[: max(1, min(int(limit), 200))]
+        with self._lock:
+            for _, _, name, _, obj in hits:
+                self._objects.setdefault(name, obj)
+        return {"hits": [{"name": name, "kind": kind} for _, _, name, kind, _ in hits],
+                "searched": "initialized components"}
+
+    def _op_details(self, name):
+        """The Details of the grids' "⋯" menu (eco.widgets.item_menu)."""
+        from eco.widgets.item_menu import describe_item
+
+        rows = describe_item(self._object(name))
+        return {"rows": [[field, viewmodels._clip(str(text))] for field, text in rows]}
 
     def _op_step_size(self, name):
         """The tweak step a ▲/▼ pair starts with (the grids' initial_step:

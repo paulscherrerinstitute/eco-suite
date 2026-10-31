@@ -51,7 +51,8 @@ def test_token_in_url_sets_cookie_and_redirects(gateway):
 
 def test_app_shell_is_served(gateway):
     for path, kind in [("/sw.js", "javascript"), ("/manifest.webmanifest", "manifest"),
-                       ("/icon.svg", "svg"), ("/static/app.js", "javascript"), ("/static/style.css", "css")]:
+                       ("/icon.svg", "svg"), ("/static/app.js", "javascript"),
+                       ("/static/strip.js", "javascript"), ("/static/style.css", "css")]:
         response = fetch(gateway, path)
         assert response.code == 200, path
         assert kind in response.headers["Content-Type"], path
