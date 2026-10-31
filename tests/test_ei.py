@@ -44,6 +44,14 @@ def _index(tmp_path):
         "def _hidden():\n    pass\n"
         r'X = "\d"  # an invalid escape: no SyntaxWarning may leak' "\n"
     )
+    (src / "swissfel.py").write_text(
+        "class SwissFel(Assembly):\n"
+        "    def __init__(self, name=None):\n"
+        '        self._append(DetectorPvData, "SARFE10:INTENSITY", name="aramis_pulse_energy")\n'
+        '        self._append(UndulatorK, name="aramis_photon_energy_undulators", is_display=True)\n'
+        '        self._append(DetectorPvData, "X", name="aramis_pulse_energy")\n'
+        '        self._append(DetectorPvData, "Y", name=some_variable)\n'
+    )
     # an analysis package with its docs and an example notebook
     esc, esc_docs, esc_examples = tmp_path / "escape", tmp_path / "escape-docs", tmp_path / "escape-examples"
     for d in (esc, esc_docs, esc_examples):
@@ -53,6 +61,12 @@ def _index(tmp_path):
         '    """Event-indexed data."""\n'
         "    def digitize(self, bins):\n"
         '        """Categorize events into bins of this array."""\n'
+    )
+    (esc / "exafs.py").write_text(
+        "def energy_to_k(energy, e0):\n"
+        '    """Convert photon energy (eV) to wavenumber k."""\n'
+        "def k_to_energy(k, e0):\n"
+        '    """Convert wavenumber k back to photon energy (eV)."""\n'
     )
     (esc_docs / "array_operations.md").write_text("# Arrays\n\n## Binning\n\nUse `delay.digitize(bins).categorize(sig)` to bin events.\n")
     nb = {"cells": [
@@ -213,6 +227,33 @@ def _assistant(tmp_path, backend=None, namespace=None):
     return a
 
 
+class _FelNamespace(_FakeNamespace):
+    def __init__(self):
+        super().__init__()
+        self.lazy_items["fel"] = _LazyProxy()
+        self._factory_info["fel"] = {"obj_factory": "SwissFel", "module_name": "eco.fel.swissfel"}
+
+
+def test_a_device_question_stays_on_eco_and_gets_the_device_class(tmp_path):
+    """'energy' matches more escape items than eco ones; naming `fel`
+    decides it, and SwissFel's components tell which energy is which."""
+    backend = _FakeBackend()
+    q = "how to see the fel energy?"
+    (tmp_path / "plain").mkdir()
+    (tmp_path / "ns").mkdir()
+    assert _assistant(tmp_path / "plain", backend).topic(q) == "escape"  # by the vote alone
+    a = _assistant(tmp_path / "ns", backend, _FelNamespace())
+    assert a.namespace.named(q) == [("fel", "SwissFel")]
+    assert a.namespace.named("the attenuator") == []  # names, not words that match them
+    assert a.topic(q) is None
+    hits = a.retrieve(q, follow_up=False)
+    assert hits[0].context == "eco.swissfel.SwissFel"
+    a.ask(q, report=None)
+    user = backend.calls[-1][-1]["content"]
+    assert "components: aramis_pulse_energy (DetectorPvData), aramis_photon_energy_undulators (UndulatorK)" in user
+    assert "fel: SwissFel [lazy]" in user and "[api escape." not in user
+
+
 # -- index additions (logs_ask) ----------------------------------------------------
 
 
@@ -226,6 +267,33 @@ def test_api_chunks_and_skipped_ei_commands(tmp_path, recwarn):
     assert any("set_transmission(value, wait=True): Set the transmission" in v for v in api.values())
     commands = [h.text for h in la.search("transmission", k=20, db_path=db, kinds=("command",))]
     assert commands == ["att.set_transmission(0.1)"]  # the %ei question is not history
+
+
+def test_api_chunks_list_assembly_components():
+    tree = la.ast.parse(
+        "class A:\n"
+        "    def __init__(self):\n"
+        '        self._append(Motor, "PV", name="x")\n'
+        '        self._append("Lazy", name="y")\n'
+        '        self._append(Motor, "PV2", name="x")\n'
+        "        self._append(Motor, name=computed)\n"
+        "        other.append(Motor, name='z')\n"
+    )
+    assert la._appended_components(tree.body[0]) == ["x (Motor)", "y ('Lazy')"]
+
+
+def test_an_older_api_extraction_is_redone_without_dropping_the_rest(tmp_path, monkeypatch):
+    db = _index(tmp_path)
+    con = la.sqlite3.connect(db)
+    con.execute("INSERT INTO items VALUES ('a scilog post', 'p1', 'scilog', 'ok', '', 0, 'scilog', 'scilog:1')")
+    con.execute("UPDATE meta SET value = '1' WHERE key = 'api_version'")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(la, "_appended_components", lambda node: ["marker_component (X)"])
+    result = la.build_index(db_path=db, log_dir=tmp_path / "logs", doc_dirs=(), src_dirs=(tmp_path / "eco",))
+    assert result["files_indexed"] == 2  # both source files read again, nothing else
+    assert la.search("marker_component", k=5, db_path=db, kinds=("api",))
+    assert la.search("scilog post", k=5, db_path=db, kinds=("scilog",))
 
 
 def test_stopwords_are_not_searched():
@@ -359,6 +427,31 @@ def test_eco_no_ei_disables_the_magic(monkeypatch):
     assert "ei" in shell.magics
 
 
+def test_a_question_may_end_in_a_question_mark():
+    """IPython would otherwise show help on the question's last word."""
+    pytest.importorskip("IPython")
+    from IPython.core.inputtransformer2 import TransformerManager
+
+    tm = TransformerManager()
+    tm.cleanup_transforms.append(ei._question_mark_transform)
+    code = tm.transform_cell("%ei how to see the fel energy?\n")
+    assert code.strip() == "get_ipython().run_line_magic('ei', 'how to see the fel energy?')"
+    # without %ei, or without the `?`, IPython's own handling is untouched
+    assert "pinfo" in tm.transform_cell("energy?\n")
+    assert tm.transform_cell("%ei the fel energy\n").strip() == "get_ipython().run_line_magic('ei', 'the fel energy')"
+    assert ei._question_mark_transform(["%eiffel?\n"]) == ["%eiffel?\n"]
+    cell = ["%%ei\n", "why?\n"]
+    assert ei._question_mark_transform(cell) == cell
+
+
+def test_register_magic_installs_the_transform_once():
+    shell = _Shell()
+    shell.input_transformers_cleanup = []
+    ei.register_magic(shell)
+    ei.register_magic(shell)
+    assert shell.input_transformers_cleanup == [ei._question_mark_transform]
+
+
 # -- the HTTP backend ---------------------------------------------------------------
 
 
@@ -436,11 +529,12 @@ def test_magic(tmp_path, monkeypatch, capsys):
     a = _assistant(tmp_path, backend)
     monkeypatch.setitem(ei._assistants, id(None), a)
 
-    ei.ei_magic("--paste")
+    assert ei.ei_magic("--paste") is None
     assert "no code" in capsys.readouterr().out
-    ei.ei_magic("how do I set the attenuator transmission?")
+    assert ei.ei_magic("how do I set the attenuator transmission?") is None  # no Out[] echo
     out = capsys.readouterr().out
     assert "att.set_transmission(0.1)" in out and "%ei --paste" in out
+    assert len(repr(a.last)) < 200
     ei.ei_magic("--paste")
     assert shell.next_input == "att.set_transmission(0.1)"
 

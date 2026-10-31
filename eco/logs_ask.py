@@ -59,6 +59,7 @@ SRC_DIR = Path(__file__).resolve().parent
 _SRC_SKIP = ("textual test", "__pycache__")
 _MAX_OUTCOME = 400  # chars of result/error/output kept per command
 _SCHEMA_VERSION = 2
+_API_VERSION = "2"  # bump when _api_chunks changes: re-extracts the api items only
 
 #: output (results, printed text, logged warnings) matching one of these
 #: marks the command it followed as "warning". Case-insensitive. Extend it
@@ -223,7 +224,8 @@ def _api_chunks(path, src_root=SRC_DIR):
     """(qualified name, text) per public class and function of one source
     file of the package in `src_root` (named after that directory):
     signature plus first docstring paragraph; a class also lists its
-    public methods, so "what can `att` do" finds them."""
+    public methods and the components it _append()s, so "what can `att`
+    do" and "the fel energy" find them."""
     try:
         module = ".".join((Path(src_root).name, *path.relative_to(src_root).with_suffix("").parts))
     except ValueError:
@@ -251,12 +253,35 @@ def _api_chunks(path, src_root=SRC_DIR):
             text = f"class {node.name}({bases}){init_sig and ' ' + node.name + init_sig}: {_first_paragraph(ast.get_docstring(node))}"
             if methods:
                 text += "\nmethods: " + ", ".join(methods)[:800]
+            components = _appended_components(node)
+            if components:
+                text += "\ncomponents: " + ", ".join(components)[:1500]
             chunks.append((f"{module}.{node.name}", text))
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
             doc = _first_paragraph(ast.get_docstring(node))
             if doc:
                 chunks.append((f"{module}.{node.name}", f"{node.name}{_signature(node)}: {doc}"))
     return chunks
+
+
+def _appended_components(class_node):
+    """["name (Class)", ...] for every self._append(Class, ..., name="name")
+    in a class body -- an Assembly's children, which no signature shows."""
+    out = []
+    for call in ast.walk(class_node):
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "_append"):
+            continue
+        name = next(
+            (kw.value.value for kw in call.keywords if kw.arg == "name" and isinstance(kw.value, ast.Constant)),
+            None,
+        )
+        if not isinstance(name, str):
+            continue
+        factory = ast.unparse(call.args[0])[:40] if call.args else ""
+        entry = f"{name} ({factory})" if factory else name
+        if entry not in out:
+            out.append(entry)
+    return out
 
 
 _MAX_CELL = 1500  # chars of one notebook code cell
@@ -312,6 +337,20 @@ def _dir_and_label(entry):
     return (Path(entry[0]), entry[1]) if isinstance(entry, (tuple, list)) else (Path(entry), "")
 
 
+def _invalidate_old_api_items(con):
+    """Forget the api items of an older _api_chunks, so their files are read
+    again -- without dropping SciLog posts and transcribed notes, which
+    cost a download or a model call to get back."""
+    row = con.execute("SELECT value FROM meta WHERE key = 'api_version'").fetchone()
+    if row and row[0] == _API_VERSION:
+        return
+    with con:
+        paths = [p for (p,) in con.execute("SELECT DISTINCT path FROM items WHERE kind = 'api'")]
+        con.execute("DELETE FROM items WHERE kind = 'api'")
+        con.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in paths])
+        con.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('api_version', ?)", (_API_VERSION,))
+
+
 def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs=(SRC_DIR,), example_dirs=()):
     """Add new/changed kernel logs, docs, package sources (api) and
     notebooks (examples) to the index; unchanged files (same mtime and
@@ -322,6 +361,7 @@ def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs
     package directories; their name is the module prefix ("escape").
     Returns {"files_indexed": n, "items": total}."""
     con = _connect(db_path)
+    _invalidate_old_api_items(con)
     sources = [(p, "log") for p in kernel_registry.find_all_logs(log_dir)]
     for entry in doc_dirs:
         if not entry:

@@ -358,6 +358,12 @@ class NamespaceInfo:
                 found.append(name)
         return found[:12]
 
+    def named(self, question):
+        """[(name, class name)] of top-level names the question spells out
+        ("how to see the fel energy" -> fel)."""
+        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", question))
+        return [(name, cls) for name, cls, _module, _state in self.entries() if len(name) >= 3 and name in tokens]
+
     def text(self, question="", max_lines=400):
         entries = self.entries()
         if not entries:
@@ -409,6 +415,9 @@ class Answer:
 
     def __str__(self):
         return self.text
+
+    def __repr__(self):
+        return f"<eco.ei.Answer {self.model or 'search only'}, {len(self.text)} chars, {self.sources()}: {self.question[:60]!r}>"
 
 
 class Assistant:
@@ -562,8 +571,9 @@ class Assistant:
     def topic(self, question, follow_up=True):
         """Name of the configured topic the question (or, for a
         follow-up, the previous question) is about, or None: one of the
-        topic's words, else a majority of the best doc/api/example
-        matches carrying its label or module."""
+        topic's words, else -- unless it names a device of the session --
+        a majority of the best doc/api/example matches carrying its label
+        or module."""
         topics = self.config.get("topics", {})
         texts = [question] + ([self.history[-1][0]] if follow_up and self.history else [])
         for text in texts:
@@ -571,6 +581,8 @@ class Assistant:
             for name, t in topics.items():
                 if any(f" {w.lower()} " in low for w in t.get("words", [])):
                     return name
+        if self.namespace.named(question):
+            return None  # "the fel energy" is about `fel`, whatever "energy" finds
         try:
             hits = logs_ask.search(" ".join(texts), k=10, db_path=self.db_path, kinds=("doc", "api", "example"))
         except Exception:
@@ -643,6 +655,12 @@ class Assistant:
                 (("example",), quota.get("example", 3), None, None),
             ]
         hits = []
+        if not topic:
+            # the class of each device the question names, with its components
+            for _name, cls in self.namespace.named(question)[:3]:
+                if cls:
+                    found = logs_ask.search(cls, k=10, db_path=self.db_path, kinds=("api",), context_prefix="eco.")
+                    hits += [h for h in found if h.context.endswith("." + cls) and h not in hits][:1]
         for kinds, k, prefix, exclude in groups:
             if k:
                 found = logs_ask.search(
@@ -665,7 +683,7 @@ class Assistant:
             elif h.kind == "note_command":
                 context.append(f"{h.cite()} (from notes, outcome unknown) >>> {h.text[:400]}")
             elif h.kind == "api":
-                context.append(f"{h.cite()} {h.text[:700]}")
+                context.append(f"{h.cite()} {h.text[:1500 if 'components: ' in h.text else 700]}")
             elif h.kind == "example":
                 context.append(f"{h.cite()}\n```python\n{h.text[:1200]}\n```")
             else:
@@ -774,7 +792,9 @@ def _print_answer(asst, question, **kwargs):
             print("-- `%ei --paste` puts the code at the next prompt")
     else:
         print(ans.text)
-    return ans
+    # nothing for IPython to echo as Out[]: the answer is already printed and
+    # stays available as eco.ei.assistant(namespace).last (and through %ei --paste)
+    return None
 
 
 # -- %ei -----------------------------------------------------------------------------
@@ -907,6 +927,22 @@ def _status(asst, key_where):
     )
 
 
+_QUESTION_LINE_RX = re.compile(r"^%ei(\s.*)?$", re.S)
+
+
+def _question_mark_transform(lines):
+    """IPython reads a line ending in `?` as a help request for its last word
+    (`%ei how to see the fel energy?` -> help on `energy`) before the magic
+    runs. Turn a one-line %ei into a plain call first, so questions can end
+    in a question mark."""
+    if len(lines) != 1:
+        return lines
+    line = lines[0].rstrip("\n")
+    if not line.rstrip().endswith("?") or not _QUESTION_LINE_RX.match(line):
+        return lines
+    return [f"get_ipython().run_line_magic('ei', {line[3:].strip()!r})\n"]
+
+
 def register_magic(shell):
     """Register %ei / %%ei on an IPython shell (idempotent). Nothing with
     ECO_NO_EI=1. Cheap: no network, no index, no key lookup until the
@@ -914,3 +950,6 @@ def register_magic(shell):
     if shell is None or not enabled():
         return
     shell.register_magic_function(ei_magic, magic_kind="line_cell", magic_name="ei")
+    cleanup = getattr(shell, "input_transformers_cleanup", None)
+    if cleanup is not None and _question_mark_transform not in cleanup:
+        cleanup.append(_question_mark_transform)

@@ -95,6 +95,13 @@ values), but its data points are not read off.
 %ei -n ...            # a new conversation
 ```
 
+Ask the way you would ask a person, question mark included: unlike other
+IPython lines, `%ei ...?` is not taken as a request for help on its last
+word. The answer is printed rather than returned, so nothing is echoed
+afterwards; `%ei --paste` puts its code at the prompt, and
+`eco.ei.assistant(namespace).last` holds the whole answer with the items it
+was given (`.hits`).
+
 ## All options
 
 | Command | Does |
