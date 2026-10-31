@@ -34,10 +34,17 @@ phone size):
   `set_target_value`, so the access gate and queue claims apply
 - SVG panels (`_widget_svg_panel` / `_show_svg`), live-refreshed, sanitized; a
   tap on a device opens its view (the `// eco: <cmd>` commands are **not run**)
+- nested devices: sub-assemblies fold/unfold in place (▸/▾) or open as their own
+  view (›); items of a recursive sub-assembly under a small group header
+- per-row ⋯ menu: pin live strip chart, tweak, details, copy name
+- pinned items in a dock at the bottom, live while navigating: strip chart
+  (30 s .. 1 h) with optional running average, survive a reload
+- picker: find any readable item of the initialized components by name
+- tweak view: big step buttons, ×2/÷2, go to, back to start, stop, arrow keys
 - token auth + HttpOnly cookie, binds 127.0.0.1, ping/reconnect after network
   drops, clean shutdown, service worker (app shell only), light/dark
 
-Not yet: queues/scan progress, cameras, plots, alarms, dashboards, status-server
+Not yet: queues/scan progress, archiver history, memories, cameras, alarms, status-server
 (shared, read-only) mode, the monospace-label convention of the static beamline
 SVG. See [PARITY.md](PARITY.md) for the order.
 
