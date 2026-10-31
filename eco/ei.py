@@ -40,6 +40,14 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei --examples PATH   index notebooks (code cells) as usage examples
     %ei --index | --scilog [pgroup] | --notes PATH | --models | --config
 
+SciLog as yourself (all logbooks your PSI groups can read; see
+eco.logs_scilog for getting the token from the browser):
+
+    %ei --scilog-token                   who, until when; asks for a token if none
+    %ei --scilog-logbooks [--location bernina] [--pgroup p23618] [--name kern]
+    %ei --scilog-index    [same filters | --all]   index them; no filter: the last choice
+    %ei --scilog-search TEXT             SciLog's own search, live
+
 Notes on paper -- photos, scanned PDFs, a webcam picture -- are transcribed
 by the (vision) model once and then searched like everything else. Only
 with a model connected:
@@ -55,6 +63,7 @@ Scanned and captured pictures are kept in ~/.eco/ei_scans (private).
 From Python: `eco.ei.ask("...")`, `eco.ei.assistant()`, `.scan(paths)`,
 `.scan_image(img)`.
 """
+import datetime
 import json
 import os
 import re
@@ -896,6 +905,9 @@ def ei_magic(line, cell=None):
         for path, note in result["notes"].items():
             print(f"  {path}: {note}")
         return None
+    if opt.startswith("--scilog-"):
+        _scilog_magic(asst, opt, rest)
+        return None
     if opt == "--bad":
         rows = logs_ask.command_outcomes(rest or None, db_path=asst.db_path, min_runs=2, limit=20)
         for r in rows:
@@ -916,6 +928,82 @@ def ei_magic(line, cell=None):
     return _print_answer(asst, text)
 
 
+def _scilog_magic(asst, opt, rest):
+    """--scilog-token / -logbooks / -index / -search: SciLog read with a
+    personal token (eco.logs_scilog)."""
+    from eco import logs_scilog as ls
+
+    if opt == "--scilog-token":
+        value, where = ls.token()
+        if value is None or rest == "new":
+            import getpass
+
+            print(ls.TOKEN_STEPS + "\n  3. paste it here (it is not shown):")
+            try:
+                value = getpass.getpass("SciLog token: ")
+            except (EOFError, KeyboardInterrupt):
+                print("eco.ei: no token entered")
+                return
+            try:
+                where = ls.save_token(value)
+            except ValueError as exc:
+                print(f"eco.ei: {exc}")
+                return
+        try:
+            n = len(ls.Reader(value).logbooks())
+        except ls.TokenError as exc:
+            print(f"eco.ei: {exc}")
+            return
+        except Exception as exc:
+            print(f"eco.ei: SciLog not reachable: {type(exc).__name__}: {exc}")
+            return
+        print(f"eco.ei: SciLog token from {where}: {ls.describe(value)}; {n} logbooks readable")
+        return
+    try:
+        reader = ls.Reader()
+        if opt == "--scilog-search":
+            if not rest:
+                print("eco.ei: %ei --scilog-search TEXT")
+                return
+            names = {lb["id"]: lb["name"] for lb in reader.logbooks()}
+            hits = reader.search(rest, limit=20)
+            for h in hits:
+                when = datetime.datetime.fromtimestamp(h["t"]).strftime("%Y-%m-%d %H:%M")
+                text = " ".join(h["text"].split())
+                print(f"{when}  {names.get(h['logbook'], h['logbook'])}  {h['author']}\n    {text[:220]}")
+            print(f"-- {len(hits)} posts" + (" (the newest 20)" if len(hits) == 20 else ""))
+            return
+        filters = ls.parse_filters(rest)
+        if opt == "--scilog-logbooks":
+            filters.pop("all", None)
+            lbs = reader.logbooks(**filters)
+            for lb in lbs:
+                print(f"{lb['touched'][:10]}  {lb['location']:<16} {lb['pgroup']:<7} {lb['name']}" + ("  (private)" if lb["private"] else ""))
+            print(f"-- {len(lbs)} logbooks; `%ei --scilog-index` with the same filters indexes them")
+            return
+        if opt == "--scilog-index":
+            if not filters:
+                filters = ls.load_selection(asst.db_path)
+                if not filters:
+                    print("eco.ei: which logbooks? e.g. `%ei --scilog-index --location bernina`, or `--all`")
+                    return
+                print(f"eco.ei: indexing the last choice: {filters}")
+            choice = {k: v for k, v in filters.items() if k != "all"}
+            lbs = reader.logbooks(**choice)
+            print(f"eco.ei: {len(lbs)} logbooks, fetching posts newer than the last time ...")
+            result = ls.index_logbooks(reader, lbs, db_path=asst.db_path)
+            ls.save_selection(filters, asst.db_path)
+            print(f"eco.ei: {result['new_posts']} new SciLog posts from {result['logbooks']} logbooks; index has {result['items']} items")
+            return
+        print(f"eco.ei: unknown option {opt} (--scilog-token, --scilog-logbooks, --scilog-index, --scilog-search)")
+    except ls.TokenError as exc:
+        print(f"eco.ei: {exc}")
+    except ValueError as exc:
+        print(f"eco.ei: {exc}")
+    except Exception as exc:
+        print(f"eco.ei: SciLog failed: {type(exc).__name__}: {exc}")
+
+
 def _status(asst, key_where):
     return (
         f"eco.ei: model {asst.model} at {asst.config['base_url']}, "
@@ -923,6 +1011,7 @@ def _status(asst, key_where):
         f"{len(asst.history)} earlier question(s) in this conversation.\n"
         "%ei <question> | -n new | -s search only | -m MODEL | --paste | --bad TEXT | "
         "--scan FILES | --scan-image VAR | --webcam | --key | --index | --scilog [pgroup] | --notes PATH | "
+        "--scilog-token | --scilog-logbooks | --scilog-index | --scilog-search TEXT | "
         "--examples PATH | --models | --config | --help"
     )
 
