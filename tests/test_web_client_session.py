@@ -175,3 +175,15 @@ def test_writes_can_be_limited_to_names():
         assert c.call("set", name="mono.energy", value=8)["error"]["type"] == "WritesDisabled"
     finally:
         c.session.close()
+
+
+def test_drill_down_and_move_in_a_nested_device(writer):
+    rows = writer.call("describe", name="sample")["data"]["rows"]
+    assert any(r["name"] == "sample.gonio" and r["kind"] == "assembly" for r in rows)
+    inner = writer.call("describe", name="sample.gonio")["data"]  # a row name of the parent view
+    assert [r["name"] for r in inner["rows"]] == ["sample.gonio.omega", "sample.gonio.chi", "sample.gonio.phi"]
+    writer.call("subscribe", names=["sample.gonio.omega"])
+    writer.values("sample.gonio.omega")
+    writer.call("set", name="sample.gonio.omega", value=1.0)
+    assert [e["state"] for e in writer.events("write", seconds=1.0)][-1] == "idle"
+    assert writer.session._objects["sample.gonio.omega"].get_current_value() == 1.0

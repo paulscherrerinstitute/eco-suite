@@ -118,3 +118,13 @@ def test_svg_panel(backend):
     text, prefix = backend.svg(vacuum)
     assert text.startswith("<svg") and 'onclick="// eco: valve1"' in text
     assert prefix == "vacuum"
+
+
+def test_nested_assemblies_follow_the_display_rules(backend):
+    view, objects = viewmodels.describe(backend.resolve("sample"), "sample")
+    rows = {r["name"]: r for r in view["rows"]}
+    assert rows["sample.gonio"]["kind"] == "assembly" and not rows["sample.gonio"].get("hidden")  # its own view
+    assert not rows["sample.cryo.temperature"].get("hidden")  # recursive: inline
+    assert rows["sample.cryo"].get("hidden")
+    inner, _ = viewmodels.describe(objects["sample.gonio"], "sample.gonio")
+    assert [r["label"] for r in inner["rows"]] == ["omega", "chi", "phi"]

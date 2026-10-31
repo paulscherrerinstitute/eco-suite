@@ -186,6 +186,33 @@ class SlowDevice(Assembly):
         self._append(SimDetector, 42.0, 0.5, name="reading", is_display=True)
 
 
+class Goniometer(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(SimMotor, 0.0, speed=5.0, limits=(-180, 180), unit="deg", name="omega", is_display=True)
+        self._append(SimMotor, 0.0, speed=2.0, limits=(-45, 45), unit="deg", name="chi", is_display=True)
+        self._append(SimMotor, 0.0, speed=5.0, limits=(-180, 180), unit="deg", name="phi", is_display=True)
+
+
+class Cryostat(Assembly):
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(AdjustableMemory, 100.0, name="setpoint", is_display=True)
+        self._append(SimDetector, 100.0, 0.05, unit="K", name="temperature", is_display=True)
+
+
+class Sample(Assembly):
+    """A nested device: the goniometer opens as its own view (is_display=True),
+    the cryostat's items are shown inline (is_display="recursive")."""
+
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        for axis in "xyz":
+            self._append(SimMotor, 0.0, speed=0.5, limits=(-10, 10), unit="mm", name=axis, is_display=True)
+        self._append(Goniometer, name="gonio", is_display=True)
+        self._append(Cryostat, name="cryo", is_display="recursive")
+
+
 def _broken(name=None):
     raise ConnectionError("simulated: IOC not reachable")
 
@@ -204,13 +231,14 @@ class DemoNamespace:
             "mono": Mono,
             "slits": Slits,
             "vacuum": Vacuum,
+            "sample": Sample,
             "lxt": lambda name=None: SimMotor(0.0, speed=2e-12, limits=(-1e-9, 1e-9), unit="s", name=name),
             "slow_device": SlowDevice,
             "broken": _broken,
         }
         for name in ("mono", "lxt"):
             self.init_name(name)
-        for name in ("slits", "vacuum", "slow_device", "broken"):
+        for name in ("slits", "vacuum", "sample", "slow_device", "broken"):
             self.lazy_items[name] = name
         self.init_name("broken")
 
