@@ -47,6 +47,15 @@ numbered the same way. SciLog has no address for a single post, so a post
 links to its logbook, and its date and author find it there. In eco desktop
 the sources are links under the answer.
 
+In a terminal the locations are clickable too (Ctrl+click in gnome-terminal):
+eco prints them as terminal hyperlinks, which gnome-terminal and other VTE
+terminals, kitty, WezTerm, iTerm2, Windows Terminal and VS Code's terminal
+understand; other terminals show the plain text. A file opens in the
+desktop's default application for it, at the start of the file (a file link
+has no line). In a session opened over SSH the link opens the same path on
+your own machine, which works for files on shared storage (`/sf`, home
+directories). `ECO_NO_HYPERLINKS=1` prints plain text.
+
 ## Where the answers come from
 
 | Source | What it contributes |

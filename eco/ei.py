@@ -826,21 +826,22 @@ def _readable_dir(path):
         return False
 
 
-def _listing(hits):
+def _listing(hits, links=False):
     lines = []
     for n, h in enumerate(hits, 1):
         first = h.text.splitlines()[0][:160] if h.text else ""
         bad = "" if h.ok else f"({logs_ask._status_label(h).lower()}: {h.flags[:80]}) "
         where = h.location()
-        lines.append(f"[{n}] {h.cite()} {bad}{first}" + (f"\n      {where}" if where else ""))
+        lines.append(f"[{n}] {h.cite()} {bad}{first}" + (f"\n      {_shown(where, links)}" if where else ""))
     if lines:
         lines.append("-- `%ei --open N` shows one of them in its context")
     return "\n".join(lines)
 
 
-def source_list(ans, markdown=False):
+def source_list(ans, markdown=False, links=False):
     """The answer's cited sources, numbered as `%ei --open N` takes them,
-    each with where it is; markdown=True for the desktop panel (links)."""
+    each with where it is; markdown=True for the desktop panel (links),
+    links=True for terminal hyperlinks."""
     cited = ans.cited
     if not cited:
         return ""
@@ -848,13 +849,50 @@ def source_list(ans, markdown=False):
     for n, h in enumerate(cited, 1):
         where = h.location()
         if markdown:
-            url = where if where.startswith("http") else ("file://" + where.split(":", 1)[0] if where else "")
+            url = _url(where)
             lines.append(f"{n}. {h.cite()}" + (f" -- [{where}]({url})" if url else ""))
         else:
-            lines.append(f"[{n}] {h.cite()}" + (f"\n      {where}" if where else ""))
+            lines.append(f"[{n}] {h.cite()}" + (f"\n      {_shown(where, links)}" if where else ""))
     if markdown:
         return "**Sources**\n\n" + "\n".join(lines)
     return "-- sources (`%ei --open N` shows one in its context):\n" + "\n".join(lines)
+
+
+def _url(where):
+    """A location as a URL: SciLog's as it is, file:line as file://host/path
+    (no line: file URLs have none). The host is where eco runs; a terminal
+    elsewhere opens the same path locally, which at PSI is mostly the same
+    file (NFS)."""
+    if not where or where.startswith("http"):
+        return where
+    import socket
+    from urllib.parse import quote
+
+    path = re.sub(r":\d+$", "", where)
+    return f"file://{socket.gethostname()}{quote(path)}"
+
+
+def terminal_links():
+    """Whether printed locations become clickable terminal hyperlinks
+    (OSC 8: gnome-terminal and other VTE terminals, kitty, WezTerm, iTerm2,
+    Windows Terminal, VS Code's terminal; others show the plain text).
+    Not in a Jupyter/qtconsole kernel, nor with ECO_NO_HYPERLINKS=1."""
+    import sys
+
+    if os.environ.get("ECO_NO_HYPERLINKS") or os.environ.get("TERM", "dumb") == "dumb":
+        return False
+    if type(sys.stdout).__module__.startswith("ipykernel"):
+        return False
+    try:
+        return sys.__stdout__.isatty()
+    except Exception:
+        return False
+
+
+def _shown(where, links):
+    """A location, as an OSC 8 terminal hyperlink when `links`."""
+    url = _url(where) if links else ""
+    return f"\x1b]8;;{url}\x1b\\{where}\x1b]8;;\x1b\\" if url else where
 
 
 _assistants = {}
@@ -892,13 +930,13 @@ def _print_answer(asst, question, **kwargs):
         return None
     if ans.model:
         print(f"\n\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}")
-        sources = source_list(ans)
+        sources = source_list(ans, links=terminal_links())
         if sources:
             print(sources)
         if ans.code:
             print("-- `%ei --paste` puts the code at the next prompt")
     else:
-        print(ans.text)
+        print(_listing(ans.hits, links=terminal_links()) if ans.hits else ans.text)
     # nothing for IPython to echo as Out[]: the answer is already printed and
     # stays available as eco.ei.assistant(namespace).last (and through %ei --paste)
     return None
@@ -999,7 +1037,8 @@ def ei_magic(line, cell=None):
         except (ValueError, IndexError):
             print(f"eco.ei: %ei --open N, N from 1 to {len(cited)} (the numbers under the last answer)" if cited else "eco.ei: no sources to open yet")
             return None
-        print(logs_ask.item_context(hit, db_path=asst.db_path))
+        text, where = logs_ask.item_context(hit, db_path=asst.db_path), hit.location()
+        print(text.replace(where, _shown(where, terminal_links()), 1) if where else text)
         return None
     if opt == "--examples":
         # for this session; add it to "sources" in ~/.eco/ei.json to keep it

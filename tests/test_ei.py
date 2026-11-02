@@ -421,6 +421,37 @@ def test_items_know_where_they_are_and_show_their_context(tmp_path):
     assert la.item_context(method, db_path=db).splitlines()[3].startswith("    def set_transmission")
 
 
+def test_locations_become_terminal_hyperlinks(tmp_path, monkeypatch):
+    import socket
+    import sys
+
+    host = socket.gethostname()
+    assert ei._url("/sf/a b/x.py:12") == f"file://{host}/sf/a%20b/x.py"
+    assert ei._url("https://scilog.psi.ch/logbooks/x/dashboard") == "https://scilog.psi.ch/logbooks/x/dashboard"
+    assert ei._shown("/sf/x.py:12", True) == f"\x1b]8;;file://{host}/sf/x.py\x1b\\/sf/x.py:12\x1b]8;;\x1b\\"
+    assert ei._shown("/sf/x.py:12", False) == "/sf/x.py:12"
+
+    class Tty:
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(sys, "__stdout__", Tty())
+    monkeypatch.delenv("ECO_NO_HYPERLINKS", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert ei.terminal_links()
+    monkeypatch.setenv("ECO_NO_HYPERLINKS", "1")
+    assert not ei.terminal_links()
+    monkeypatch.delenv("ECO_NO_HYPERLINKS")
+    monkeypatch.setenv("TERM", "dumb")
+    assert not ei.terminal_links()
+
+    db = _index(tmp_path)
+    doc = la.search("mesh", k=1, db_path=db, kinds=("doc",))[0]
+    ans = ei.Answer("q", "see [doc scanning.md > Mesh]", [doc], "m")
+    assert "\x1b]8;;file://" in ei.source_list(ans, links=True) and "\x1b" not in ei.source_list(ans)
+    assert "\x1b" not in ei.source_list(ans, markdown=True)
+
+
 def test_scilog_is_indexed_by_default_when_it_can_be_read(tmp_path, monkeypatch):
     import eco.logs_scilog as ls
     from test_logs_scilog import _reader
