@@ -230,7 +230,7 @@ def _run_web(args):
     if args.lazy:
         run_cmd += " -l"
     run_cmd += " -s {}".format(args.scope)
-    start = "import eco as _eco\n_eco.start_web(port={}, writes={}, host={!r})".format(
+    start = "import eco as _eco\n_eco.start_web(port={}, writes={}, host={!r});".format(
         args.port, bool(args.writes), args.host
     )
     _exec(
