@@ -206,3 +206,83 @@ def test_drill_down_and_move_in_a_nested_device(writer):
     writer.call("set", name="sample.gonio.omega", value=1.0)
     assert [e["state"] for e in writer.events("write", seconds=1.0)][-1] == "idle"
     assert writer.session._objects["sample.gonio.omega"].get_current_value() == 1.0
+
+
+# -- jog -------------------------------------------------------------------------------
+
+
+def _x(client):
+    client.call("describe", name="stage")
+    return client.session._objects["stage.x"]
+
+
+def test_jog_moves_while_confirmed_and_stops_on_release(writer):
+    x = _x(writer)
+    start = x.get_current_value()
+    assert writer.call("jog", name="stage.x", direction=1)["ok"]
+    for _ in range(4):
+        time.sleep(0.2)
+        writer.call("jog", name="stage.x", direction=1)  # the held button repeats
+    assert x._jog is not None and x.get_current_value() > start
+    assert writer.call("jog", name="stage.x", direction=1, start=False)["ok"]
+    assert x._jog is None
+    states = [e["state"] for e in writer.events("write", 0.3) if e["name"] == "stage.x"]
+    assert states[0] == "moving" and states[-1] == "idle"
+
+
+def test_jog_stops_without_confirmation(writer, monkeypatch):
+    # the phone locked or the tunnel died: no release ever arrives
+    from eco.web import client_session
+
+    monkeypatch.setattr(client_session, "JOG_DEADMAN", 0.3)
+    x = _x(writer)
+    writer.call("jog", name="stage.x", direction=-1)
+    assert x._jog is not None
+    time.sleep(0.7)
+    assert x._jog is None
+    events = [e for e in writer.events("write", 0.2) if e["name"] == "stage.x"]
+    assert "no signal" in events[-1]["message"]
+
+
+def test_closing_the_session_stops_a_jog(writer):
+    x = _x(writer)
+    writer.call("jog", name="stage.x", direction=1)
+    writer.session.close()
+    assert x._jog is None
+
+
+def test_stop_ends_a_jog(writer):
+    x = _x(writer)
+    writer.call("jog", name="stage.x", direction=1)
+    writer.call("stop", name="stage.x")
+    assert x._jog is None
+
+
+def test_jog_needs_writes_and_a_hardware_jog(client, writer):
+    x = _x(client)
+    reply = client.call("jog", name="stage.x", direction=1)
+    assert not reply["ok"] and reply["error"]["type"] == "WritesDisabled" and x._jog is None
+    reply = writer.call("jog", name="mono.energy", direction=1)
+    assert not reply["ok"] and "no hardware jog" in reply["error"]["message"]
+
+
+def test_jog_goes_through_the_access_and_claim_gates(writer, monkeypatch):
+    from eco.devices_general import utilities
+
+    def deny(parent):
+        raise PermissionError("blocked by a queue task")
+
+    monkeypatch.setattr(utilities, "_claim_gate", deny)
+    x = _x(writer)
+    reply = writer.call("jog", name="stage.x", direction=1)
+    assert not reply["ok"] and "queue task" in reply["error"]["message"] and x._jog is None
+
+
+def test_jog_speed(writer):
+    x = _x(writer)
+    assert writer.call("jog_speed", name="stage.x", value=0.8)["ok"]
+    deadline = time.monotonic() + 2
+    while x.jog_speed.get_current_value() != 0.8 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert x.jog_speed.get_current_value() == 0.8
+    assert not writer.call("jog_speed", name="stage.x", value=0)["ok"]

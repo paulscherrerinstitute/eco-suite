@@ -12,6 +12,7 @@ below is additive and opt-in.
 | `lab`     | JupyterLab on the packaged notebook (`eco/voila_app.ipynb`)     | existing, not yet wired into `/sf/bernina/bin/eco` |
 | `voila`   | That notebook served as a standalone Voila dashboard            | existing, not yet wired |
 | `desktop` | A Spyder/MATLAB-like Qt workbench window                        | new (this round), not yet wired |
+| `web`     | eco's web app (a PWA: phones, tablets, laptops), served from inside the session — `eco web -s bernina` | new, see below |
 
 None of `lab`/`voila`/`desktop` are reachable from `/sf/bernina/bin/eco`
 yet — `eco_cli.py` (the module that implements all four) isn't installed
@@ -104,6 +105,8 @@ eco.start_console()                 # a brand-new, INDEPENDENT console/kernel --
 eco.start_jupyterlab()              # attaches to a running JupyterLab server if
                                      # there is one, else starts a background one
 eco.start_webapp()                  # starts (or reuses) a background Voila server
+eco.start_web()                     # eco's web app (PWA) on this session, read-only;
+                                     # start_web(writes=True) to allow moves
 ```
 
 None of these block your terminal — the whole point is to try any of the
@@ -164,6 +167,34 @@ JupyterLab's own **Workspaces** feature (`jupyter lab workspaces export/
 import`, also in the command palette) is the closest browser-side
 equivalent of the Qt side's window-layout persistence — not eco code,
 just worth knowing it exists if a sidecar-heavy layout is worth saving.
+
+## `web` — the web app (PWA)
+
+`eco/web/`: a tornado gateway on a thread *inside* the eco session, and a
+small installable web client (no build step) made for phones and tablets,
+fine on a laptop. The browser shows exactly this session's devices, so
+the terminal and the phone work on the same objects.
+
+```bash
+eco web -s bernina                 # the console session + the web app, read-only
+eco web -s bernina --writes        # moves allowed from the browser
+eco web -s bernina --no-console    # only the web app (python -m eco.web -s bernina)
+python -m eco.web --demo --writes  # simulated namespace, no beamline needed
+```
+
+It prints `http://localhost:8097/?token=…`; it binds 127.0.0.1 only, so
+from another machine forward the port first (`ssh -L 8097:localhost:8097
+<console>`, through the usual jump host). The token is per account
+(`~/.eco/web_token`), kept by the browser in a cookie after the first visit.
+
+What it does: the namespace (tap a lazy component to initialize it), a
+device's rows with live values, ▲/▼/move/Stop, motor records with their
+value on the row and a **jog** view (hold to move, adjustable jog speed,
+stopped by the gateway within a second when the held button stops
+reporting), a tweak view, pinned live strip charts with running average,
+a picker, the devices' SVG panels. Writes go through the same
+`set_target_value`/access gate/queue claims as everywhere else. Design,
+protocol and status: `web_frontend/` at the repo root.
 
 ## What's genuinely new vs. what already existed
 

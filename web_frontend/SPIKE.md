@@ -71,10 +71,11 @@ then the PWA is a laptop/tablet tool only, which changes priorities (Tier 2 scan
 launcher before mobile polish), or the question of a PSI-hosted endpoint has to
 be raised properly.
 
-## Wiring it in, once the test went well (small, touches shared files)
+## Wiring it in — done (2026-11-02)
 
-- `eco/__init__.py`: a lazy `start_web()` wrapper like `start_webapp()`.
-- `eco_cli.py`: `--ui web` (start a session, then `start_web()`).
-- `pyproject.toml`: `eco[web] = ["tornado"]`; `eco/web/static/*` under
-  `[tool.setuptools.package-data]` (needed for `pip install`, not for checkouts).
-- `docs/`: a short page on starting it, and the gateway's threading and security rules.
+- `eco/__init__.py`: lazy `eco.start_web()` / `eco.stop_web()` wrappers.
+- `eco_cli.py`: `eco web -s <scope>` (the console session with `start_web()`
+  inside it; `--writes`, `--port`, `--no-console` → `python -m eco.web -s <scope>`).
+- `pyproject.toml`: `eco-suite[web] = ["tornado>=6.1"]`; `eco/web/static/*` under
+  `[tool.setuptools.package-data]`.
+- `docs/web_app.md`: starting it, tunnelling, what writes go through.

@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 PROTOCOL_VERSION = 0
 FLUSH_INTERVAL = 0.1  # s
 REQUEST_WORKERS = 4
+# A jog runs only while the client keeps confirming it (the held button
+# re-sends "jog" every JOG_REPEAT s); without a confirmation for JOG_DEADMAN
+# s -- the phone locked, the tunnel died, the tab was closed -- it is
+# stopped here, since a jog itself never ends on its own.
+JOG_DEADMAN = 1.0  # s
+JOG_REPEAT = 0.25  # s, what the client is told in hello
 
 
 class ProtocolError(Exception):
@@ -55,6 +61,11 @@ class ClientSession:
         self._pending = {}  # name -> encoded value, not yet flushed
         self._holders = {}  # name -> {"changer": ...} of the latest write
         self._closed = False
+        # jogs: one thread in request order (a quick press-release must not
+        # stop before it starts), plus the dead-man watchdog
+        self._jog_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="eco-web-jog")
+        self._jogs = {}  # name -> {"obj", "direction", "alive"}
+        self._jog_watch = None
         self._reader = live_values.LiveReader(self._on_result, poll_interval=poll_interval)
         self._reader.start()
 
@@ -73,8 +84,9 @@ class ClientSession:
         if handler is None:
             self._reply(request_id, error=ProtocolError(f"unknown op {op!r}"))
             return
+        pool = self._jog_pool if op == "jog" else self._pool
         try:
-            self._pool.submit(self._run, handler, request_id, args)
+            pool.submit(self._run, handler, request_id, args)
         except RuntimeError:  # closed
             pass
 
@@ -88,6 +100,9 @@ class ClientSession:
 
     def close(self):
         self._closed = True
+        for name in list(self._jogs):
+            self._end_jog(name, "client gone")
+        self._jog_pool.shutdown(wait=False, cancel_futures=True)
         self._reader.stop()
         self._pool.shutdown(wait=False, cancel_futures=True)
 
@@ -164,6 +179,7 @@ class ClientSession:
             "mode": "session",
             "writes": bool(self.writes),
             "flush_interval": FLUSH_INTERVAL,
+            "jog_repeat": JOG_REPEAT,
         }
 
     def _op_ping(self):
@@ -240,6 +256,8 @@ class ClientSession:
 
     def _op_stop(self, name):
         obj = self._check_write(name)
+        if name in self._jogs:
+            self._end_jog(name, "stopped")
         holder = self._holders.get(name, {})
 
         def on_state(state, message):
@@ -295,3 +313,96 @@ class ClientSession:
         if value is None:
             value = obj.get_current_value()
         return {"step": live_values.initial_step(obj, value)}
+
+    # -- jog: move while a button is held ------------------------------------------------------
+
+    def _op_jog(self, name, direction, start=True):
+        """Start (or keep going: the client repeats it every JOG_REPEAT s
+        while the button is held) or stop a hardware jog. Only for items
+        with one (viewmodels.jog_speed_item). The motor record jog writes
+        JOGF/JOGR directly, past the Changer every other write goes through,
+        so the access gate and queue claims are checked here."""
+        obj = self._check_write(name)
+        if viewmodels.jog_speed_item(obj) is None:
+            raise ProtocolError(f"{name} has no hardware jog")
+        direction = 1 if float(direction) > 0 else -1
+        if not start:
+            self._end_jog(name, "")
+            return {"jogging": None}
+        with self._lock:
+            active = self._jogs.get(name)
+            if active is not None and active["direction"] == direction:
+                active["alive"] = time.monotonic()
+                return {"jogging": direction}
+        if active is not None:
+            self._end_jog(name, "")
+        from eco.devices_general.utilities import _access_gate, _claim_gate
+
+        _access_gate(obj)
+        _claim_gate(obj)
+        obj.jog(direction, start=True)
+        with self._lock:
+            self._jogs[name] = {"obj": obj, "direction": direction, "alive": time.monotonic()}
+            if self._jog_watch is None or not self._jog_watch.is_alive():
+                self._jog_watch = threading.Thread(target=self._watch_jogs, daemon=True,
+                                                   name="eco-web-jog-deadman")
+                self._jog_watch.start()
+        logger.info("web client %s jogs %s %+d", self.client_id, name, direction)
+        self._event("write", {"name": name, "state": "moving", "message": f"jogging {'+' if direction > 0 else '−'}"})
+        return {"jogging": direction}
+
+    def _op_jog_speed(self, name, value):
+        """Set the jog speed of `name` (its own jog_speed item); allowed
+        whenever writing `name` is."""
+        obj = self._check_write(name)
+        speed = viewmodels.jog_speed_item(obj)
+        if speed is None:
+            raise ProtocolError(f"{name} has no hardware jog")
+        value = float(value)
+        if not value > 0:
+            raise ValueError("the jog speed must be positive")
+        speed_name = viewmodels.full_name(speed)
+        with self._lock:
+            self._objects.setdefault(speed_name, speed)
+        holder = self._holders.setdefault(speed_name, {})
+
+        def on_state(state, message):
+            self._event("write", {"name": speed_name, "state": state, "message": message})
+
+        def on_finished():
+            index = self._index.get(speed_name)
+            if index is not None:
+                self._reader.request_read(index)
+
+        live_values.start_write(speed, lambda: value, on_state, on_finished=on_finished, holder=holder)
+        return {"started": speed_name}
+
+    def _end_jog(self, name, message):
+        with self._lock:
+            active = self._jogs.pop(name, None)
+        if active is None:
+            return
+        try:
+            active["obj"].jog_stop()
+        except Exception as exc:
+            logger.warning("web client %s: stopping the jog of %s failed: %s", self.client_id, name, exc)
+            self._event("write", {"name": name, "state": "error",
+                                  "message": f"stopping the jog failed: {live_values.describe(exc)}"})
+            return
+        index = self._index.get(name)
+        if index is not None:
+            self._reader.request_read(index)
+        self._event("write", {"name": name, "state": "idle", "message": message})
+
+    def _watch_jogs(self):
+        while True:
+            time.sleep(0.1)
+            now = time.monotonic()
+            with self._lock:
+                if not self._jogs:
+                    self._jog_watch = None
+                    return
+                late = [name for name, j in self._jogs.items() if now - j["alive"] > JOG_DEADMAN]
+            for name in late:
+                logger.warning("web client %s: jog of %s stopped, no signal from the client", self.client_id, name)
+                self._end_jog(name, "jog stopped: no signal from the client")

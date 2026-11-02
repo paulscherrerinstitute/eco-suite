@@ -120,6 +120,84 @@ class SimValve:
         return _Changer(done)
 
 
+class SimMotorRecord(Assembly):
+    """Like eco.devices_general.motors.MotorRecord: an Assembly that is
+    itself an Adjustable, with readback/speed/limit items and a hardware
+    jog (JOGF/JOGR at JVEL, ending at the soft limits)."""
+
+    def __init__(self, value=0.0, speed=1.0, jog_speed=0.2, limits=(-10, 10), unit="mm", name=None):
+        super().__init__(name=name)
+        self.status_collection.append(self, selection="settings", recursive=False)
+        self._motor = SimMotor(value, speed=speed, limits=limits, unit=unit, name=f"{name}_motor")
+        self.unit = unit
+        self._jog = None  # (direction, stop event)
+        self._append(DetectorGetter, self._motor.get_current_value, name="readback", is_display=True)
+        self._append(AdjustableMemory, speed, name="speed", is_display=True)
+        self._append(AdjustableMemory, jog_speed, name="jog_speed", is_display=False)
+        self._append(AdjustableMemory, limits[0], name="limit_low", is_display=False)
+        self._append(AdjustableMemory, limits[1], name="limit_high", is_display=False)
+
+    def get_current_value(self):
+        return self._motor.get_current_value()
+
+    def set_target_value(self, value):
+        self.jog_stop()
+        self._motor.speed = self.speed.get_current_value()
+        self._motor.limits = (self.limit_low.get_current_value(), self.limit_high.get_current_value())
+        return self._motor.set_target_value(value)
+
+    def stop(self):
+        self.jog_stop()
+        self._motor.stop()
+
+    def jog(self, direction, start=True):
+        if not start:
+            return self.jog_stop()
+        self.jog_stop()
+        self._motor.stop()
+        stop = threading.Event()
+        self._jog = (direction, stop)
+        motor = self._motor
+
+        def run():
+            dt = 0.05
+            while not stop.is_set():
+                low, high = self.limit_low.get_current_value(), self.limit_high.get_current_value()
+                with motor._lock:
+                    value = motor._value + (1 if direction > 0 else -1) * self.jog_speed.get_current_value() * dt
+                    motor._value = min(max(value, low), high)
+                    if motor._value in (low, high):
+                        break
+                time.sleep(dt)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def jog_stop(self):
+        if self._jog is not None:
+            self._jog[1].set()
+            self._jog = None
+
+
+class DetectorGetter:
+    def __init__(self, getter, name=None):
+        self.name = name
+        self.alias = Alias(name)
+        self._getter = getter
+
+    def get_current_value(self):
+        return self._getter()
+
+
+class Stage(Assembly):
+    """Two motor-record axes (value, ▲/▼, tweak and jog) and a detector to watch."""
+
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._append(SimMotorRecord, 0.0, speed=1.0, jog_speed=0.2, limits=(-5, 5), unit="mm", name="x", is_display=True)
+        self._append(SimMotorRecord, 0.0, speed=1.0, jog_speed=0.2, limits=(-5, 5), unit="mm", name="y", is_display=True)
+        self._append(SimDetector, 1000.0, 20.0, unit="cts", name="diode", is_display=True)
+
+
 class Mono(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
@@ -232,11 +310,12 @@ class DemoNamespace:
             "slits": Slits,
             "vacuum": Vacuum,
             "sample": Sample,
+            "stage": Stage,
             "lxt": lambda name=None: SimMotor(0.0, speed=2e-12, limits=(-1e-9, 1e-9), unit="s", name=name),
             "slow_device": SlowDevice,
             "broken": _broken,
         }
-        for name in ("mono", "lxt"):
+        for name in ("mono", "lxt", "stage"):
             self.init_name(name)
         for name in ("slits", "vacuum", "sample", "slow_device", "broken"):
             self.lazy_items[name] = name

@@ -133,3 +133,20 @@ def test_persistent_token_is_created_private_and_reused(tmp_path):
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
     path.unlink()
     assert persistent_token(str(path)) != first  # deleting the file invalidates old clients
+
+
+def test_start_web_explains_a_port_in_use():
+    import socket
+
+    from eco.web import start_web, stop_web
+
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen()
+    port = blocker.getsockname()[1]
+    try:
+        with pytest.raises(RuntimeError, match="already in use"):
+            start_web(namespace=DemoNamespace(), port=port, token="t", quiet=True)
+    finally:
+        blocker.close()
+        stop_web()

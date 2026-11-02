@@ -7,7 +7,7 @@ package import (EPICS, cam_server, ...) is expensive and best done once, inside
 the fresh session that this launcher starts -- not in the parent process that
 only needs to build a command line.
 
-Four subcommands (``eco console`` is the default -- a bare ``eco`` is exactly
+Subcommands (``eco console`` is the default -- a bare ``eco`` is exactly
 ``eco console``):
 
     console    Interactive IPython session (the traditional eco startup).
@@ -22,6 +22,10 @@ Four subcommands (``eco console`` is the default -- a bare ``eco`` is exactly
     webapp     Serve the packaged eco notebook (eco/voila_app.ipynb) as a
                read-only Voila dashboard: the chosen namespace's widget,
                with the assembly browser to navigate to more components.
+    web        The console session, plus eco's web app (a PWA for phones,
+               tablets and laptops, see eco.web) served from inside it on
+               http://localhost:8097 -- terminal and browser share one
+               session. --no-console serves without an IPython prompt.
     jupyterlab Open JupyterLab on that same notebook. If -s/--scope is
                given, this also registers (and makes the default) a Jupyter
                kernel that preloads eco.<scope> -- see _run_jupyterlab --
@@ -68,7 +72,7 @@ _BUILTIN_DEFAULTS = {
     "lazy": True,
 }
 
-_COMMANDS = ("console", "desktop", "webapp", "jupyterlab", "box-server")
+_COMMANDS = ("console", "desktop", "webapp", "web", "jupyterlab", "box-server")
 
 
 def _ecorc_path():
@@ -202,6 +206,37 @@ def _run_webapp(args):
     _exec(
         ["voila", notebook],
         "Install it with e.g. `pip install eco[voila]` or `conda install voila`.",
+    )
+
+
+def _run_web(args):
+    """The console session with eco.web's gateway started inside it (the
+    browser then shows that very session), or -- --no-console -- a plain
+    process serving the namespace (python -m eco.web). Exec'd like the
+    other _run_* functions, so this launcher stays import-eco-free."""
+    if not args.scope:
+        sys.exit("eco: web needs -s/--scope (or try `python -m eco.web --demo`)")
+    if not args.console:
+        cmd = [sys.executable, "-m", "eco.web", "-s", args.scope,
+               "--lazy" if args.lazy else "--no-lazy", "--port", str(args.port), "--host", args.host]
+        if args.writes:
+            cmd += ["--writes"]
+        _exec(cmd, "It ships with eco itself (eco.web); it needs tornado (`pip install eco-suite[web]`).")
+        return
+    # %run (escaped: automagic applies to single-line cells only), then the
+    # gateway, which takes the session's `namespace` (see _run_console for
+    # why -m)
+    run_cmd = "%run -m eco.startup_inline"
+    if args.lazy:
+        run_cmd += " -l"
+    run_cmd += " -s {}".format(args.scope)
+    start = "import eco as _eco\n_eco.start_web(port={}, writes={}, host={!r})".format(
+        args.port, bool(args.writes), args.host
+    )
+    _exec(
+        ["ipython", "--profile={}".format(args.profile), "--no-banner", "-i", "-c",
+         run_cmd + "\n" + start],
+        "It ships with eco's core dependencies (IPython).",
     )
 
 
@@ -601,6 +636,13 @@ Subcommands:
   webapp      Serve the packaged notebook as a read-only Voila dashboard:
               widgets for the chosen namespace, with an assembly browser
               to navigate to more components. No code editing, just the UI.
+  web         The console session plus eco's web app (eco.web: a PWA for
+              phones, tablets and laptops -- live values, moves, tweak and
+              jog, pinned strip charts, SVG panels) served from inside it,
+              so terminal and browser share one session. Prints a
+              http://localhost:8097/?token=... URL; from another machine
+              forward the port over SSH first. Read-only unless --writes.
+              --no-console serves the namespace without an IPython prompt.
   jupyterlab  Open JupyterLab on a small notebook whose Namespace panel
               and each opened device are real Sidecar dock panels (see
               eco.widgets.jupyter_sidecar) -- the closest browser-side
@@ -716,7 +758,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="eco",
         description="Launch eco in an IPython console, a Qt desktop "
-                     "workbench, a Voila dashboard, or JupyterLab.",
+                     "workbench, a Voila dashboard, the web app, or JupyterLab.",
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -773,6 +815,25 @@ def main(argv=None):
     p_webapp = subparsers.add_parser("webapp", help="Voila dashboard (read-only widgets).")
     _add_common_args(p_webapp, defaults, scope_default=defaults["scope"])
 
+    p_web = subparsers.add_parser(
+        "web", help="Console session plus the web app (PWA) for phones/tablets/laptops."
+    )
+    _add_common_args(p_web, defaults, scope_default=defaults["scope"])
+    p_web.add_argument(
+        "--profile", default=defaults["profile"],
+        help="IPython profile for the console (default: %(default)s)",
+    )
+    _add_console_flag(
+        p_web,
+        help_on="the IPython session, with the web app served from inside it",
+        help_off="serve the namespace without an IPython prompt (python -m eco.web)",
+    )
+    p_web.add_argument("--writes", action="store_true",
+                       help="allow moves/writes from the browser (default: read-only)")
+    p_web.add_argument("--port", type=int, default=8097, help="(default: %(default)s)")
+    p_web.add_argument("--host", default="127.0.0.1",
+                       help="bind address (default: %(default)s; reach it via an SSH tunnel)")
+
     p_jupyterlab = subparsers.add_parser("jupyterlab", help="JupyterLab, with a preloaded console/kernel.")
     _add_common_args(p_jupyterlab, defaults, scope_default=defaults["scope"])
     _add_console_flag(
@@ -815,6 +876,8 @@ def main(argv=None):
         _run_desktop(args)
     elif args.command == "webapp":
         _run_webapp(args)
+    elif args.command == "web":
+        _run_web(args)
     elif args.command == "jupyterlab":
         _run_jupyterlab(args)
     elif args.command == "box-server":

@@ -1,6 +1,6 @@
 # Starting eco: front-ends and launchers
 
-eco has five ways to come up, all from one command-line entry point
+eco has six ways to come up, all from one command-line entry point
 (`eco_cli.py`, installed as the `eco` console script). Pick the one that fits
 the task: the classic IPython terminal, a Qt workbench, or a browser.
 
@@ -18,6 +18,7 @@ eco console    -s bernina     # IPython session (the default)
 eco desktop    -s bernina     # Qt workbench: console + Namespace browser
 eco jupyterlab -s bernina     # JupyterLab with an eco-bernina kernel
 eco webapp     -s bernina     # read-only Voila dashboard
+eco web        -s bernina     # console session + the web app for phones/tablets
 eco box-server -s bernina     # serve the handheld control box, see below
 ```
 
@@ -27,6 +28,7 @@ eco box-server -s bernina     # serve the handheld control box, see below
 | `desktop` | A Spyder/MATLAB-like Qt window: an embedded IPython console plus, with `-s`, a dockable **Namespace** panel. Lazy names are greyed out; click one to initialize it and open its widget. `--no-console`, `--no-namespace-panel` and `--theme dark\|light\|none` adjust it. |
 | `jupyterlab` | JupyterLab whose Namespace panel and each opened device are real Sidecar dock panels. With `-s` it also registers an `eco-<scope>` kernel and makes it the default, and opens a `jupyter console` on that kernel in your terminal (`--no-console` to skip). |
 | `webapp` | The packaged notebook served as a Voila dashboard: widgets only, no code editing. |
+| `web` | The console session, plus eco's **web app** served from inside it: phones, tablets and laptops get the session's devices with live values, moves (`--writes`), tweak and jog, pinned strip charts and SVG panels. `--no-console` serves without a prompt. See {doc}`web_app`. |
 | `box-server` | Keeps a connection to the manual-control box open without an interactive session. |
 
 Common flags: `-s/--scope` (`bernina`, `alvra`, ...), `-l/--lazy` and
@@ -69,6 +71,7 @@ eco.start_desktop()        # Qt workbench; with_console=False, with_namespace_pa
 eco.start_console()        # a second, independent Qt console kernel (kind="jupyterlab" also works)
 eco.start_jupyterlab()
 eco.start_webapp()         # Voila; port=... to choose the port
+eco.start_web()            # the web app on this very session; writes=True to allow moves
 ```
 
 `start_console()` starts a **fresh** kernel with its own namespace; it does not
@@ -104,3 +107,4 @@ tab off the tab bar to split it out again.
   output, and the Log Viewer shows them all on one timeline.
 - {doc}`widget_containers`: building your own panel for the desktop or a
   notebook.
+- {doc}`web_app`: the web app for phones and tablets.

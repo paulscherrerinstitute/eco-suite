@@ -32,11 +32,11 @@ The client never sends expressions.
 
 | op | args | reply / effect |
 |---|---|---|
-| `hello` | `{client_version, client_id}` | `{protocol, label, mode: "session", writes: bool, flush_interval}` |
+| `hello` | `{client_version, client_id}` | `{protocol, label, mode: "session", writes: bool, flush_interval, jog_repeat}` |
 | `ping` | `{}` | `{}` — the client sends it every 15 s; no reply in 8 s means the connection is dead |
 | `names` | `{}` | `{initialized:[…], lazy:[…], failed:{name: reason}}` |
 | `init` | `{name}` | *planned* — today `describe` of a lazy name initializes it |
-| `describe` | `{name}` | `{name, title, kind, svg, writable, doc?, rows:[{name, label, kind: "assembly"|"adjustable"|"detector"|"trigger"|"other", writable, unit?, enum?, group?, hidden?, svg?, button?}]}` — rows are the display collection, then the rest of the status collection as `hidden` (same split as `display_widget`/`display_qt`); initializes a lazy top-level name |
+| `describe` | `{name}` | `{name, title, kind, svg, writable, doc?, rows:[{name, label, kind: "assembly"|"adjustable"|"detector"|"trigger"|"other", writable, unit?, enum?, hidden?, svg?, button?, value?, jog?, own?}]}` — rows are the display collection, then the rest of the status collection as `hidden` (same split as `display_widget`/`display_qt`); initializes a lazy top-level name. An assembly that is itself an item (a motor record) has `value: "adjustable"|"detector"` on its row (shown with value and controls, like the grids), and its own view starts with an `own` row for it. `jog: {speed: <name of its jog speed item>}` marks a hardware jog |
 | `subscribe` | `{names:[…]}` | added to this client's `LiveReader`; values arrive as `ev: "values"` |
 | `unsubscribe` | `{names:[…]}` | |
 | `set` | `{name, value}` | (mode B, writes on) `start_write`; state via `ev: "write"` (`moving`/`done`/`error`) |
@@ -44,6 +44,8 @@ The client never sends expressions.
 | `stop` | `{name}` | `stop_move`; always allowed when writes are on |
 | `step_size` | `{name}` | `{step}` — the start value of the ▲/▼ step (the grids' `initial_step`) |
 | `trigger` | `{name}` | (writes on) runs an `AdjustableTrigger` |
+| `jog` | `{name, direction: 1|-1, start: bool}` | (writes on, items with `jog`) starts the hardware jog (`MotorRecord.jog`, JOGF/JOGR), after the access gate and queue claims; the client repeats `start: true` every `jog_repeat` s while the button is held, and the gateway stops the jog when that has not come for 1 s (`JOG_DEADMAN`), when the client goes away, on `stop`, or on `start: false`. Run in request order (one thread per client). State via `ev: "write"` (`moving` "jogging +", `idle`) |
+| `jog_speed` | `{name, value}` | sets the jog speed of `name` (its `jog_speed` item); allowed whenever writing `name` is |
 | — | — | SVG panels are plain HTTP: `GET /api/svg?name=…` returns the SVG, header `X-Eco-Prefix` is what click markers are relative to; the client re-fetches every 3 s |
 | `queues` *planned* | `{}` | queue list with tasks (mode B) |
 | `queue_call` *planned* | `{queue, action: "pause"|"resume"|"abort_current"|…}` | allow-listed subset of `TaskQueue` methods |

@@ -5,7 +5,7 @@
 
 import * as strip from "./strip.js";
 
-const VERSION = "0.2";
+const VERSION = "0.3";
 const STALE_AFTER = 35; // s without a fresh read -> greyed (monitored items are re-read at least every 10 s)
 const SHOW_AGE_AFTER = 12; // s
 const SVG_REFRESH = 3000; // ms
@@ -291,6 +291,7 @@ function route() {
   if (hash.startsWith("/d/")) showDevice(hash.slice(3));
   else if (hash.startsWith("/svg/")) showSvg(hash.slice(5));
   else if (hash.startsWith("/tweak/")) showTweak(hash.slice(7));
+  else if (hash.startsWith("/jog/")) showJog(hash.slice(5));
   else showHome();
 }
 
@@ -411,12 +412,10 @@ function groupedRows(view, rows, owner) {
 }
 
 function buildRow(view, row, owner, label = row.label) {
-  const refs = { row, value: null, readState: "waiting", writing: false, ctlBuilt: false, step: null };
-  const node = el("div", { class: "row" });
-  refs.node = node;
-
   if (row.kind === "assembly") return assemblyRow(view, row, owner, label);
+  const node = el("div", { class: "row" + (row.own ? " own" : "") });
   if (row.kind === "trigger") {
+    const refs = { row };
     const btn = el("button", { class: "btn", text: row.button, title: row.doc || "", disabled: !row.writable,
       onclick: () => confirmDialog(`Trigger ${row.name}?`, row.doc || "", () =>
         request("trigger", { name: row.name }).catch((e) => toast(e.message, true))) });
@@ -425,17 +424,28 @@ function buildRow(view, row, owner, label = row.label) {
     owner.unlisten.push(listen(row.name, { write: (w) => applyWrite(refs, w) }));
     return node;
   }
+  node.append(el("div", { class: "label", text: label }), ...itemCells(view, row, owner));
+  return node;
+}
+
+/** Whether a row's value can be set (an adjustable, or an assembly that is one, like a motor record). */
+function settable(row) {
+  return row.writable && (row.kind === "adjustable" || row.value === "adjustable");
+}
+
+/** The live value and the controls of an item row: [value cell, controls + ⋯ menu]. */
+function itemCells(view, row, owner) {
+  const refs = { row, value: null, readState: "waiting", writing: false, ctlBuilt: false, step: null };
   refs.dot = el("span", { class: "dot", text: "●", style: `color:${DOT.waiting}`, title: "waiting for the first value" });
   refs.valueEl = el("div", { class: "value", text: "…" });
   refs.ctl = el("div", { class: "ctl" }, refs.dot);
   const menu = el("button", { class: "btn menu", text: "⋯", title: "More", "aria-label": `more for ${row.name}`,
     onclick: () => rowMenu(row, refs) });
-  node.append(el("div", { class: "label", text: label }), refs.valueEl, el("div", { class: "ctl-wrap" }, refs.ctl, menu));
   view.refs.add(refs);
   owner.unlisten.push(listen(row.name, { value: (v) => applyValue(refs, v), write: (w) => applyWrite(refs, w) }));
   owner.wanted.push(row.name);
   want([row.name]);
-  return node;
+  return [refs.valueEl, el("div", { class: "ctl-wrap" }, refs.ctl, menu)];
 }
 
 /** A sub-assembly row: ▸ unfolds its rows in place (▾ folds them again), › opens it as its own view. */
@@ -484,6 +494,8 @@ function assemblyRow(view, row, owner, label) {
     el("div", { class: "label" }, toggle,
       el("a", { href: `#/d/${encodeURIComponent(row.name)}`, title: `open ${row.name} as its own view`, text: `${label} ›` })),
   );
+  // a motor record: an assembly that is also an item has its value and controls on the same row
+  if (row.value) node.append(...itemCells(view, row, owner));
   if (S.unfolded.has(row.name)) open();
   return el("div", { class: "assembly-wrap" }, node, inner);
 }
@@ -535,7 +547,7 @@ function refreshAges(view) {
 function buildControls(refs) {
   refs.ctlBuilt = true;
   const { row, value } = refs;
-  if (!row.writable || row.kind !== "adjustable") return;
+  if (!settable(row)) return;
   const name = row.name;
   const labels = row.enum || value.enum;
   if (labels) {
@@ -606,8 +618,11 @@ function rowMenu(row, refs) {
   const actions = [];
   const pinned = isPinned(row.name);
   actions.push([pinned ? "Unpin strip chart" : "Pin live strip chart", () => (pinned ? unpin(row.name) : pin(row.name))]);
-  if (row.writable && row.kind === "adjustable" && typeof refs.value?.num === "number") {
+  if (settable(row) && typeof refs.value?.num === "number") {
     actions.push(["Tweak", () => (location.hash = `#/tweak/${encodeURIComponent(row.name)}`)]);
+  }
+  if (settable(row) && row.jog) {
+    actions.push(["Jog", () => (location.hash = `#/jog/${encodeURIComponent(row.name)}`)]);
   }
   actions.push(["Details", () => showDetails(row.name)]);
   if (navigator.clipboard && window.isSecureContext) {
@@ -784,8 +799,8 @@ async function showTweak(name) {
     return;
   }
   if (S.view !== view) return;
-  const row = desc.rows.find((r) => r.name === name) || desc.rows[0];
-  if (desc.kind !== "adjustable" || !row || !row.writable) {
+  const row = desc.rows.find((r) => r.name === name);
+  if (!row || !settable(row)) {
     setMain(el("div", { class: "empty", text: `${name} cannot be tweaked here (not a writable adjustable${S.hello.writes ? "" : "; writes are off"}).` }));
     return;
   }
@@ -846,8 +861,144 @@ async function showTweak(name) {
         el("button", { class: "btn", text: "↺ back to start", onclick: () => start !== null && send("set", { value: start }) }),
         startNote),
       el("div", { class: "tweak-row" }, el("button", { class: "btn stop wide", text: "■ Stop", onclick: () => send("stop", {}) })),
+      row.jog ? el("div", { class: "tweak-row" }, el("a", { class: "btn link-btn", href: `#/jog/${encodeURIComponent(name)}`, text: "Jog instead" })) : null,
       el("p", { class: "doc", text: "Keys: ↑/→ step up, ↓/← step down, +/− double or halve the step, Esc stop. " +
         "Pin detectors (⋯ menu or + Add below) to watch them while you tweak." })));
+}
+
+// ---- jog: move while held, at an adjustable speed (motor records) -------------------------------------
+
+async function showJog(name) {
+  const view = newView("jog", name);
+  setTitle(`jog ${name}`, true);
+  setMain(el("div", { class: "loading", text: "opening…" }));
+  let desc;
+  try {
+    desc = await request("describe", { name });
+  } catch (e) {
+    if (S.view === view) setMain(el("div", { class: "empty", text: `${name}: ${e.message}` }));
+    return;
+  }
+  if (S.view !== view) return;
+  const row = desc.rows.find((r) => r.name === name);
+  if (!row || !settable(row) || !row.jog) {
+    setMain(el("div", { class: "empty", text: `${name} cannot be jogged here (no hardware jog${S.hello.writes ? "" : "; writes are off"}).` }));
+    return;
+  }
+  const speedName = row.jog.speed;
+  const unit = row.unit || "";
+  const big = el("div", { class: "tweak-value", text: "…" });
+  const dot = el("span", { class: "dot", text: "●", style: `color:${DOT.waiting}` });
+  const state = el("div", { class: "jog-state", text: "" });
+  const speedValue = el("span", { class: "jog-speed-value", text: "…" });
+  const speedInput = el("input", { class: "step big", type: "number", inputmode: "decimal", step: "any", min: "0",
+    placeholder: "speed", "aria-label": "jog speed" });
+  let speed = null, readState = "waiting", writing = false;
+
+  view.unlisten.push(listen(name, {
+    value: (v) => {
+      if (v.error !== undefined) { big.textContent = v.error; readState = "error"; }
+      else {
+        big.replaceChildren(valueText(v), unit ? el("span", { class: "unit", text: unit }) : "");
+        readState = v.state || "polled";
+      }
+      if (!writing) dot.style.color = DOT[readState] || DOT.error;
+    },
+    write: (w) => {
+      writing = w.state === "busy" || w.state === "moving";
+      dot.style.color = writing || w.state === "error" ? DOT[w.state] || DOT.error : DOT[readState] || DOT.error;
+      state.textContent = w.message || "";
+      state.className = "jog-state" + (w.state === "error" ? " error" : writing ? " moving" : "");
+    },
+  }));
+  view.unlisten.push(listen(speedName, {
+    value: (v) => {
+      if (v.error !== undefined) { speedValue.textContent = v.error; return; }
+      speed = typeof v.num === "number" ? v.num : null;
+      speedValue.textContent = `${valueText(v)}${unit ? ` ${unit}/s` : ""}`;
+      if (!speedInput.matches(":focus")) speedInput.value = speed ?? "";
+    },
+  }));
+  view.wanted.push(name, speedName);
+  want([name, speedName]);
+
+  // Held: "jog" every jog_repeat s; the gateway stops the motor when that stops
+  // coming (released, phone locked, connection gone). Released: an explicit stop.
+  let held = 0, repeat = null, holder = null;
+  const jogStart = (direction, button) => {
+    if (held === direction) return;
+    if (held) jogEnd();
+    held = direction;
+    holder = button;
+    button?.classList.add("held");
+    const send = () => request("jog", { name, direction, start: true }).catch((e) => { toast(e.message, true); jogEnd(); });
+    send();
+    repeat = setInterval(send, (S.hello?.jog_repeat || 0.25) * 1000);
+  };
+  const jogEnd = () => {
+    if (!held) return;
+    const direction = held;
+    held = 0;
+    clearInterval(repeat);
+    holder?.classList.remove("held");
+    request("jog", { name, direction, start: false }).catch(() => {});
+  };
+  const holdButton = (text, direction, label) => {
+    const b = el("button", { class: "btn huge jog", text, "aria-label": label });
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); jogStart(direction, b); });
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(type, jogEnd);
+    b.addEventListener("contextmenu", (e) => e.preventDefault()); // long press on a phone
+    b.addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) jogStart(direction, b); });
+    b.addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") jogEnd(); });
+    return b;
+  };
+  const setSpeed = (value) => {
+    if (!(value > 0)) return toast("the jog speed must be positive", true);
+    request("jog_speed", { name, value }).catch((e) => toast(e.message, true));
+  };
+
+  const onKey = (e) => {
+    if (e.target.closest?.("input, select, textarea, dialog")) return;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") { if (!e.repeat) jogStart(1, plus); e.preventDefault(); }
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") { if (!e.repeat) jogStart(-1, minus); e.preventDefault(); }
+    else if ((e.key === "+" || e.key === "*") && speed) setSpeed(speed * 2);
+    else if ((e.key === "-" || e.key === "/") && speed) setSpeed(speed / 2);
+    else if (e.key === "Escape") { jogEnd(); request("stop", { name }).catch(() => {}); e.preventDefault(); }
+  };
+  const onKeyUp = (e) => {
+    if (["ArrowRight", "ArrowUp", "ArrowLeft", "ArrowDown"].includes(e.key)) jogEnd();
+  };
+  const onHide = () => { if (document.visibilityState !== "visible") jogEnd(); };
+  document.addEventListener("keydown", onKey);
+  document.addEventListener("keyup", onKeyUp);
+  document.addEventListener("visibilitychange", onHide);
+  window.addEventListener("blur", jogEnd);
+  view.cleanup = () => {
+    jogEnd();
+    document.removeEventListener("keydown", onKey);
+    document.removeEventListener("keyup", onKeyUp);
+    document.removeEventListener("visibilitychange", onHide);
+    window.removeEventListener("blur", jogEnd);
+  };
+
+  const minus = holdButton("◀ −", -1, "jog negative while held");
+  const plus = holdButton("+ ▶", 1, "jog positive while held");
+  setMain(
+    el("div", { class: "tweak" },
+      el("div", { class: "tweak-head" }, dot, big),
+      state,
+      el("div", { class: "tweak-row" }, minus, plus),
+      el("div", { class: "tweak-row jog-speed" }, el("span", { class: "tweak-start", text: "jog speed" }), speedValue),
+      el("div", { class: "tweak-row" },
+        el("button", { class: "btn", text: "÷2", onclick: () => speed && setSpeed(speed / 2) }), speedInput,
+        el("button", { class: "btn", text: "×2", onclick: () => speed && setSpeed(speed * 2) }),
+        el("button", { class: "btn", text: "Set", onclick: () => setSpeed(parseFloat(speedInput.value)) })),
+      el("div", { class: "tweak-row" }, el("button", { class: "btn stop wide", text: "■ Stop",
+        onclick: () => { jogEnd(); request("stop", { name }).catch((e) => toast(e.message, true)); } })),
+      el("div", { class: "tweak-row" }, el("a", { class: "btn link-btn", href: `#/tweak/${encodeURIComponent(name)}`, text: "Tweak instead" })),
+      el("p", { class: "doc", text: "Moves only while a button is held, at the jog speed, until a limit. " +
+        "Released, phone locked or connection lost: it stops (the gateway stops it within a second " +
+        "when the held button stops reporting). Keys: hold →/↑ or ←/↓, +/− double or halve the speed, Esc stop." })));
 }
 
 // ---- SVG panels ------------------------------------------------------------------------------------

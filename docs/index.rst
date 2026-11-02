@@ -154,6 +154,7 @@ scientific Python libraries.
    widget_containers
    schematic_panels
    live_gui
+   web_app
    terminal_plots
 
 .. toctree::

@@ -4,8 +4,7 @@ on its own, see tests/test_web_viewmodels.py).
 
 Mirrors what the property grids show (eco.widgets.display_widget /
 display_qt): the rows are an assembly's display collection, everything else
-in its status collection is "hidden"; the group colours come from the same
-`section_row_styles` the terminal table uses; the value text from
+in its status collection is "hidden"; the value text comes from
 live_values.format_value. Kept as a small parallel implementation on purpose
 rather than importing display_widget (ipywidgets) -- see web_frontend/
 ARCHITECTURE.md on keeping the front-ends independent.
@@ -111,6 +110,36 @@ def kind_of(obj):
     return "other"
 
 
+def reads_as(obj):
+    """For an assembly that is itself an item (a MotorRecord: an Assembly
+    *and* an Adjustable), "adjustable" or "detector"; else None. The grids
+    show such a row with its value and controls next to its link."""
+    from eco.elements.protocols import Adjustable, Detector
+
+    if isinstance(obj, Adjustable):
+        return "adjustable"
+    if isinstance(obj, Detector):
+        return "detector"
+    return None
+
+
+def jog_speed_item(obj):
+    """The jog speed adjustable of an item with a hardware jog (the motor
+    record's JOGF/JOGR with its JVEL: MotorRecord.jog + .jog_speed), else
+    None. A software jog (eco.elements.adjustable.jog_option) is not
+    offered: it steps through set_target_value, which the tweak view
+    already does with a visible step."""
+    if not callable(getattr(type(obj), "jog", None)) or not callable(getattr(type(obj), "jog_stop", None)):
+        return None
+    try:
+        speed = object.__getattribute__(obj, "__dict__").get("jog_speed")
+    except Exception:
+        return None
+    if speed is None or not callable(getattr(speed, "get_current_value", None)):
+        return None
+    return speed
+
+
 def full_name(obj, fallback=None):
     try:
         return obj.alias.get_full_name()
@@ -167,30 +196,18 @@ def _display_and_all(assembly):
     return display_items, hidden
 
 
-def _group_colors(relative_names):
-    from eco.utilities.tables import section_row_styles
-
-    styles = section_row_styles([n.split(".", 1)[0] for n in relative_names])
-    colors = []
-    for style in styles:
-        if style and style.startswith("on #"):
-            colors.append(style[3:])
-        elif style == "on grey30":
-            colors.append("#4d4d4d")
-        else:
-            colors.append(None)
-    return colors
-
-
 def row_for(item, base=None):
     kind = kind_of(item)
+    reads = reads_as(item) if kind == "assembly" else None
     row = {
         "name": full_name(item),
         "label": relative_name(item, base) if base is not None else full_name(item),
         "kind": kind,
-        "writable": kind in ("adjustable", "trigger"),
+        "writable": kind in ("adjustable", "trigger") or reads == "adjustable",
     }
-    labels = enum_labels(item) if kind in ("adjustable", "detector") else None
+    if reads:
+        row["value"] = reads
+    labels = enum_labels(item) if kind in ("adjustable", "detector") or reads else None
     if labels:
         row["enum"] = labels
     unit = getattr(item, "unit", None)
@@ -207,7 +224,16 @@ def row_for(item, base=None):
             row["doc"] = str(doc)
     if kind == "assembly":
         row["svg"] = has_svg_panel(item)
+    speed = jog_speed_item(item) if (kind == "adjustable" or reads == "adjustable") else None
+    if speed is not None:
+        row["jog"] = {"speed": full_name(speed)}
     return row
+
+
+def _register(objects, row, item):
+    objects[row["name"]] = item
+    if "jog" in row:
+        objects[row["jog"]["speed"]] = jog_speed_item(item)
 
 
 def describe(obj, name=None):
@@ -220,18 +246,27 @@ def describe(obj, name=None):
     objects = {}
     if kind == "assembly":
         display_items, hidden_items = _display_and_all(obj)
+        # an assembly that is itself an item (a motor record) lists itself
+        # in its own status collection: shown once, as the first row
+        display_items = [item for item in display_items if item is not obj]
+        hidden_items = [item for item in hidden_items if item is not obj]
         rows = [row_for(item, base=obj) for item in display_items]
-        for row, color in zip(rows, _group_colors([r["label"] for r in rows])):
-            if color:
-                row["group"] = color
         hidden = [dict(row_for(item, base=obj), hidden=True) for item in hidden_items]
         view["rows"] = rows + hidden
         for item, row in zip(display_items + hidden_items, view["rows"]):
-            objects[row["name"]] = item
+            _register(objects, row, item)
+        reads = reads_as(obj)
+        if reads:
+            own = row_for(obj)
+            own.pop("svg", None)
+            own.pop("value", None)
+            own.update(kind=reads, label="value", own=True)
+            view["rows"].insert(0, own)
+            _register(objects, own, obj)
     else:
         row = row_for(obj)
         view["rows"] = [row]
-        objects[row["name"]] = obj
+        _register(objects, row, obj)
     doc = (getattr(type(obj), "__doc__", None) or "").strip()
     if doc:
         view["doc"] = doc.split("\n\n", 1)[0][:500]

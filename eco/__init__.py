@@ -127,6 +127,31 @@ def start_jupyterlab(*args, **kwargs):
     return _start_jupyterlab(*args, **kwargs)
 
 
+def start_web(namespace=None, port=8097, writes=False, **kwargs):
+    """Serve this session's namespace to eco's web app (a PWA for phones,
+    tablets and laptops: live values, moves, tweak/jog, pinned strip
+    charts, SVG panels), from a gateway thread inside this session -- so
+    the browser shows exactly this session's devices. Read-only unless
+    `writes=True`. Prints a ``http://localhost:<port>/?token=...`` URL;
+    from another machine forward the port over SSH first. Not to be
+    confused with start_webapp (the Voila dashboard).
+
+    See eco.web.start_web for the rest of the signature, `eco web` for
+    starting a session with it, and web_frontend/ in the repo for the
+    design. Imported lazily (needs tornado)."""
+    from eco.web import start_web as _start_web
+
+    return _start_web(namespace=namespace, port=port, writes=writes, **kwargs)
+
+
+def stop_web():
+    """Stop the web app gateway started by start_web (open pages show
+    "disconnected" and reconnect when it runs again)."""
+    from eco.web import stop_web as _stop_web
+
+    _stop_web()
+
+
 def start_webapp(*args, **kwargs):
     """Serve eco's packaged notebook as a Voila dashboard, as a background
     subprocess (your terminal session keeps working). See

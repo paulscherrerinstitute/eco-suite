@@ -12,12 +12,14 @@ is meant to implement the same small interface later:
 import logging
 import os
 import threading
+import time
 
 from eco.web.viewmodels import full_name
 
 logger = logging.getLogger(__name__)
 
 MAX_REASON = 400
+SVG_REUSE = 2.0  # s: a panel built this recently is served again to the next client
 
 
 class NotFound(LookupError):
@@ -44,6 +46,8 @@ class SessionBackend:
         self._init_lock = threading.Lock()
         self._index_lock = threading.Lock()
         self._index = None  # (initialized names, entries) -- see search_index
+        self._svg_lock = threading.Lock()
+        self._svg_cache = {}  # id(obj) -> (lock, [time, text, prefix])
 
     def names(self):
         ns = self.namespace
@@ -129,11 +133,33 @@ class SessionBackend:
     def svg(self, obj, live=True):
         """The SVG panel of `obj` as text, plus the prefix its click markers
         are relative to (Assembly.show: commands run against the assembly's
-        own full name)."""
+        own full name).
+
+        Built into a file of its own (a live Qt panel of the same device
+        rewrites the default one on its own timer, and a half-written file
+        would be read here), one build at a time per panel, and reused for
+        SVG_REUSE s: a live beamline panel reads every valve, and three
+        phones refreshing it must not triple that."""
+        with self._svg_lock:
+            lock, cached = self._svg_cache.setdefault((id(obj), live), (threading.Lock(), [0.0, None, None]))
+        with lock:
+            if cached[1] is not None and time.monotonic() - cached[0] < SVG_REUSE:
+                return cached[1], cached[2]
+            text, prefix = self._build_svg(obj, live)
+            cached[:] = [time.monotonic(), text, prefix]
+            return text, prefix
+
+    def _build_svg(self, obj, live):
         attach_ca_context()
         path = None
         if callable(getattr(type(obj), "_widget_svg_panel", None)):
-            path = obj._widget_svg_panel(live=live)
+            from eco.utilities.tempfiles import user_temp_svg_path
+
+            own = user_temp_svg_path("eco_web", f"{full_name(obj)}_{os.getpid()}")
+            try:
+                path = obj._widget_svg_panel(path=own, live=live)
+            except TypeError:  # a builder without path=
+                path = obj._widget_svg_panel(live=live)
         if not path:
             path = object.__getattribute__(obj, "__dict__").get("_show_svg")
         if not path or not os.path.exists(path):

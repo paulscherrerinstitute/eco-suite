@@ -8,6 +8,17 @@ Columns: **Qt** / **ipy** = exists for Qt / ipywidgets today. **Logic reusable**
 a toolkit-free module the gateway can drive as-is. **Mobile value** = how much it
 matters on a phone/tablet.
 
+## Done so far (2026-11-02)
+
+Namespace browser; property grid rows with ▲/▼, move, enum select, Stop,
+triggers, status dot and value age; motor records (assembly + adjustable)
+with their value and controls on the row; sub-assemblies folded in place or
+opened as a view; SVG panels; details (the grids' ⋯ menu); pinned live strip
+charts with running average; a picker over the initialized components; a
+tweak view (one axis); a **jog** view for hardware jogs (motor records:
+hold to move, jog speed ÷2/×2/set, dead-man stop in the gateway). Started
+with `eco web -s <scope>` or `eco.start_web()`.
+
 ## Tier 1 — core, port first
 
 | Feature | Qt module(s) | ipy | Logic reusable | PWA work | Effort | Mobile value |

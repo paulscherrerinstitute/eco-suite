@@ -128,3 +128,47 @@ def test_nested_assemblies_follow_the_display_rules(backend):
     assert rows["sample.cryo"].get("hidden")
     inner, _ = viewmodels.describe(objects["sample.gonio"], "sample.gonio")
     assert [r["label"] for r in inner["rows"]] == ["omega", "chi", "phi"]
+
+
+def test_a_motor_record_row_has_its_value_and_jog(backend):
+    # an Assembly that is itself an Adjustable (MotorRecord): the grids show
+    # its value and controls on the row, next to the link into it
+    view, objects = viewmodels.describe(backend.resolve("stage"), "stage")
+    x = next(r for r in view["rows"] if r["name"] == "stage.x")
+    assert x["kind"] == "assembly" and x["value"] == "adjustable" and x["writable"]
+    assert x["jog"] == {"speed": "stage.x.jog_speed"} and x["unit"] == "mm"
+    assert objects["stage.x.jog_speed"] is objects["stage.x"].jog_speed
+    diode = next(r for r in view["rows"] if r["name"] == "stage.diode")
+    assert "jog" not in diode and "value" not in diode
+
+
+def test_a_motor_record_view_starts_with_its_own_value(backend):
+    view, objects = viewmodels.describe(backend.resolve("stage").x, "stage.x")
+    own = view["rows"][0]
+    assert own["name"] == "stage.x" and own["own"] and own["kind"] == "adjustable" and own["jog"]
+    assert [r["name"] for r in view["rows"]].count("stage.x") == 1
+    assert objects["stage.x"] is backend.resolve("stage").x
+
+
+def test_items_without_a_hardware_jog_offer_none(backend):
+    assert viewmodels.jog_speed_item(backend.resolve("mono").energy) is None
+    assert viewmodels.jog_speed_item(backend.resolve("stage").x) is not None
+
+
+def test_svg_panels_are_built_once_for_clients_close_together(backend):
+    vacuum = backend.resolve("vacuum")
+    calls = []
+    original = type(vacuum)._widget_svg_panel
+
+    def counting(self, path=None, live=True):
+        calls.append(path)
+        return original(self, path=path, live=live)
+
+    type(vacuum)._widget_svg_panel = counting
+    try:
+        backend._svg_cache.clear()
+        first = backend.svg(vacuum)
+        assert backend.svg(vacuum) == first
+        assert len(calls) == 1 and "eco_web" in calls[0]  # its own file, not the Qt panel's
+    finally:
+        type(vacuum)._widget_svg_panel = original
