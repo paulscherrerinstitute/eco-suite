@@ -1537,10 +1537,13 @@ class MotorRecord(Assembly):
         )
 
         if pb_conf:
+            # host and axis are looked up on first read (axis from .OUT,
+            # pb_conf's axis only if OUT says nothing)
             self._append(
                 PowerBrickChannelPars,
-                self.host(),
+                self.host.get_current_value,
                 **pb_conf,
+                pvname=self.pvname,
                 name="cnf_pb",
             )
 

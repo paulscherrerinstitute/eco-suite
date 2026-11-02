@@ -58,8 +58,16 @@ class SSHComm:
 
         pass
 
-    def connect(self, host, password="deltatau", timeout=30.0):
-        "start communication to gpascii by starting a SSH session (if needed and gpascii on the PowerBrick"
+    def connect(
+        self, host, password="deltatau", timeout=30.0, jump=None, jump_socket=None
+    ):
+        """start communication to gpascii by starting a SSH session (if needed and gpascii on the PowerBrick
+
+        `jump`: host to tunnel through (e.g. "sf-gw" for the machine network),
+        via the system ssh, so Kerberos, keys and ~/.ssh/config apply; it must
+        log in without asking (BatchMode) -- or `jump_socket` is the
+        ControlPath of an already logged-in master connection to it. A
+        ProxyCommand from ~/.ssh/config takes precedence."""
         p = host.rfind(":")
         if p >= 0:
             hostname = host[:p]
@@ -115,6 +123,12 @@ class SSHComm:
                 elif k == "proxycommand":
                     cfg["sock"] = paramiko.ProxyCommand(v)
 
+        if jump and "sock" not in cfg:
+            via = f"-S {jump_socket} " if jump_socket else ""
+            cfg["sock"] = paramiko.ProxyCommand(
+                f"ssh {via}-o BatchMode=yes -o ConnectTimeout=10 "
+                f"-W {cfg['hostname']}:{cfg['port']} {jump}"
+            )
         client.connect(**cfg)
         self.gpascii()
 

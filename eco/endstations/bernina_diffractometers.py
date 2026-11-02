@@ -49,7 +49,7 @@ def append_diffractometer_modules(obj, configuration):
             name="xbase",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 3},
+            pb_conf={"type": "motor"},  # axis 3; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -57,7 +57,7 @@ def append_diffractometer_modules(obj, configuration):
             name="_ybase_deltatau",
             is_setting=False,
             is_display=False,
-            pb_conf={"type": "virtual", "axis": 9},
+            pb_conf={"type": "virtual"},  # axis 9; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -65,7 +65,7 @@ def append_diffractometer_modules(obj, configuration):
             name="_rxbase_deltatau",
             is_setting=False,
             is_display=False,
-            pb_conf={"type": "virtual", "axis": 10},
+            pb_conf={"type": "virtual"},  # axis 10; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -74,7 +74,7 @@ def append_diffractometer_modules(obj, configuration):
             is_setting=True,
             is_display=False,
             backlash_definition=True,
-            pb_conf={"type": "motor", "axis": 1},
+            pb_conf={"type": "motor"},  # axis 2; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -83,7 +83,7 @@ def append_diffractometer_modules(obj, configuration):
             is_setting=True,
             is_display=False,
             backlash_definition=True,
-            pb_conf={"type": "motor", "axis": 2},
+            pb_conf={"type": "motor"},  # axis 1; axis from .OUT now
         )
         obj._append(
             AdjustableVirtual,
@@ -119,7 +119,7 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_NY_RY2TH",
             name="gamma",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 4},
+            pb_conf={"type": "motor"},  # axis 4; axis from .OUT now
         )
 
         obj._append(
@@ -127,7 +127,7 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_MY_RYTH",
             name="mu",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 5},
+            pb_conf={"type": "motor"},  # axis 5; axis from .OUT now
         )
         obj.set_base_off = DeltaTauCurrOff("SARES22-GPS:asyn2.AOUT")
 
@@ -188,7 +188,7 @@ def append_diffractometer_modules(obj, configuration):
             name="delta",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 1},
+            pb_conf={"type": "motor"},  # axis 1; axis from .OUT now
         )
 
         obj._append(
@@ -208,7 +208,7 @@ def append_diffractometer_modules(obj, configuration):
             name="tdet",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 3},
+            pb_conf={"type": "motor"},  # axis 3; axis from .OUT now
         )
 
         ### motors XRD polarisation analyzer branch ###
@@ -218,7 +218,7 @@ def append_diffractometer_modules(obj, configuration):
             name="tpol",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 2},
+            pb_conf={"type": "motor"},  # axis 2; axis from .OUT now
         )
         # missing: slits of flight tube
         obj.set_detarm_off = DeltaTauCurrOff("SARES21-XRD:asyn3.AOUT")
@@ -230,7 +230,7 @@ def append_diffractometer_modules(obj, configuration):
             name="pol",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 4},
+            pb_conf={"type": "motor"},  # axis 4; axis from .OUT now
         )
 
         obj._append(
@@ -239,7 +239,7 @@ def append_diffractometer_modules(obj, configuration):
             name="pthe",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 5},
+            pb_conf={"type": "motor"},  # axis 5; axis from .OUT now
         )
 
         obj._append(
@@ -248,7 +248,7 @@ def append_diffractometer_modules(obj, configuration):
             name="ptth",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 6},
+            pb_conf={"type": "motor"},  # axis 6; axis from .OUT now
         )
 
     if configuration.phi_table():
@@ -258,14 +258,14 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_HEX_RX",
             name="eta",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 1},  # 6
+            pb_conf={"type": "motor"},  # axis 1 (SampleStage config: 6); axis from .OUT now
         )
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_HEX_TX",
             name="transl_eta",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 4},  # 7
+            pb_conf={"type": "motor"},  # axis 4 (SampleStage config: 7); axis from .OUT now
         )
 
     if configuration.phi_hex():
@@ -292,14 +292,14 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_TBL_TX",
             name="xhl",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 1},
+            pb_conf={"type": "motor"},  # axis 1; axis from .OUT now
         )
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_TBL_TZ",
             name="zhl",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 2},
+            pb_conf={"type": "motor"},  # axis 2; axis from .OUT now
         )
 
     if configuration.hly():
@@ -308,7 +308,7 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_TBL_TY",
             name="yhl",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 3},
+            pb_conf={"type": "motor"},  # axis 3; axis from .OUT now
         )
 
     if configuration.hlrxrz():
@@ -317,14 +317,14 @@ def append_diffractometer_modules(obj, configuration):
             obj.pvname + ":MOT_TBL_RX",
             name="rxhl",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 4},
+            pb_conf={"type": "motor"},  # axis 4; axis from .OUT now
         )
         obj._append(
             MotorRecord,
             obj.pvname + ":MOT_TBL_RZ",
             name="rzhl",
             is_setting=True,
-            pb_conf={"type": "motor", "axis": 5},
+            pb_conf={"type": "motor"},  # axis 5; axis from .OUT now
         )
     obj.set_samplestg_off = DeltaTauCurrOff("SARES22-GPS:asyn1.AOUT")
     if configuration.kappa():
@@ -334,7 +334,7 @@ def append_diffractometer_modules(obj, configuration):
             name="eta_kap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 1},
+            pb_conf={"type": "motor"},  # axis 1; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -342,7 +342,7 @@ def append_diffractometer_modules(obj, configuration):
             name="kappa",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 2},
+            pb_conf={"type": "motor"},  # axis 2; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -350,7 +350,7 @@ def append_diffractometer_modules(obj, configuration):
             name="phi_kap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 3},
+            pb_conf={"type": "motor"},  # axis 3; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -358,7 +358,7 @@ def append_diffractometer_modules(obj, configuration):
             name="zkap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 6},
+            pb_conf={"type": "motor"},  # axis 6; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -366,7 +366,7 @@ def append_diffractometer_modules(obj, configuration):
             name="xkap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 4},
+            pb_conf={"type": "motor"},  # axis 4; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -374,7 +374,7 @@ def append_diffractometer_modules(obj, configuration):
             name="ykap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 5},
+            pb_conf={"type": "motor"},  # axis 5; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -382,7 +382,7 @@ def append_diffractometer_modules(obj, configuration):
             name="rxkap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 7},
+            pb_conf={"type": "motor"},  # axis 7; axis from .OUT now
         )
         obj._append(
             MotorRecord,
@@ -390,7 +390,7 @@ def append_diffractometer_modules(obj, configuration):
             name="rykap",
             is_setting=True,
             is_display=True,
-            pb_conf={"type": "motor", "axis": 8},
+            pb_conf={"type": "motor"},  # axis 8; axis from .OUT now
         )
         obj.set_kappa_off = DeltaTauCurrOff(obj.pvname + ":asyn1.AOUT")
 
