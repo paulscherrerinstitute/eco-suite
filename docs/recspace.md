@@ -57,11 +57,19 @@ Diffractometer frame at all angles 0:
   z+   along the incoming X-ray beam
   last sample rotation phi: axis along x- (positive phi turns right-handed about it)
   sample circles, outermost first: mu y+, eta x-, chi z+, phi x-
+  a position is reached from all angles 0 by turning phi, then chi, then eta, then mu,
+  each about its axis as listed (the innermost circle turns the crystal first)
 ```
 
-A direction is written as an axis (`"x+"`, `"y-"`), `"beam"`, `"up"`,
-`"down"`, a circle (`"phi"`, `"-phi"`: along its rotation axis) or three
-numbers. Lattice constants are in angstrom and degrees, energies in eV.
+Two kinds of direction appear, and they are not interchangeable:
+
+| | written as | example |
+|---|---|---|
+| **in the crystal** | Miller indices h k l: the normal of the lattice planes (hkl), a reciprocal-lattice direction (not a real-space [uvw]) | `0 0 1`, `(0,0,1)`, `(001)`, `[0, 0, 1]` |
+| **in the lab** | where a direction points with all angles at 0: an axis, `beam`, `up`, `down`, `phi`/`-phi` (along the phi axis) or three numbers | `x+`, `y-`, `beam`, `-phi` |
+
+An orientation pairs one of each: "crystal (001) points along lab x+".
+Lattice constants are in angstrom and degrees, energies in eV.
 
 The diffractometer is still You's six-circle geometry, so every angle
 (circles and virtual angles: qaz = 90 is vertical scattering, betain,
@@ -81,11 +89,21 @@ xrd.recspace.create_crystal()
 
 prints the frame and asks for a name (a Python name, it becomes
 `xrd.recspace.<name>`), the six lattice parameters (Enter keeps the default
-in brackets, so a cubic crystal needs only `a`), the (h,k,l) of the surface
-normal and where it points with all angles at 0 (default `x+`, i.e. along
-the phi axis line, opposite to its rotation vector), and the (h,k,l) of a
-direction in the surface and where it points (default `beam`). From those
-two it calculates a *nominal* UB: the crystal as mounted by design.
+in brackets, so a cubic crystal needs only `a`), then two directions, each
+first in the crystal and then in the lab:
+
+```
+1st direction (surface normal) in the crystal, h k l [0 0 1]: (001)
+  ... points in the lab along [x+] (the phi axis is x-): x+
+2nd direction (in the surface) in the crystal, h k l [1 0 0]: 1 0 0
+  ... points in the lab along [beam]: beam
+```
+
+Enter takes the default in brackets (`x+` lies on the phi axis line,
+opposite to its rotation vector). The first direction is matched exactly;
+the second only fixes the rotation about the first (its part perpendicular
+to the first is used), so it does not have to be exactly perpendicular.
+From the two it calculates a *nominal* UB: the crystal as mounted by design.
 
 **The same as a script** is `create_crystal(name, unit_cell=dict(...))`
 followed by `add_orientation(hkl, direction)` for each nominal direction,

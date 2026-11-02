@@ -32,6 +32,8 @@ least-squares fit) lives here, written to give diffcalc's numbers.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 from hklforge import Degenerate, Geometry, ModeError
 from hklforge import plan as _hkl_plan
@@ -193,6 +195,24 @@ def _axis_name(v) -> str:
     return "(" + ", ".join(f"{x:.3g}" for x in v) + ")"
 
 
+def parse_triple(text) -> list | None:
+    """Three numbers from text as people write Miller indices or vectors:
+    "0 0 1", "0,0,1", "(0,0,1)", "[1 -1 0]", or "(001)" / "1-10" (one digit
+    each). None if the text is not that."""
+    t = str(text).strip().strip("()[]{} ").strip()
+    if not t:
+        return None
+    parts = [x for x in re.split(r"[,\s;]+", t) if x]
+    if len(parts) == 1 and re.fullmatch(r"(-?\d){3}", t):
+        parts = re.findall(r"-?\d", t)
+    if len(parts) != 3:
+        return None
+    try:
+        return [float(x) for x in parts]
+    except ValueError:
+        return None
+
+
 def lab_direction(spec) -> list:
     """A lab direction at all angles 0 (the diffractometer's own frame).
 
@@ -200,6 +220,8 @@ def lab_direction(spec) -> list:
     (the incoming beam), 'up'/'down', or a circle ('phi', '-phi', 'chi',
     ...: its rotation axis at all angles 0). Returns a unit 3-vector list.
     """
+    if isinstance(spec, str) and parse_triple(spec) is not None:
+        spec = parse_triple(spec)
     if not isinstance(spec, str):
         v = np.asarray(spec, float)
         if v.shape != (3,) or not np.linalg.norm(v):
@@ -238,6 +260,9 @@ def frame_description() -> str:
                  f"(positive {last.name} turns right-handed about it)")
     lines.append("  sample circles, outermost first: "
                  + ", ".join(f"{c.name} {_axis_name(c.axis)}" for c in GEOMETRY.sample))
+    order = ", then ".join(c.name for c in reversed(GEOMETRY.sample))
+    lines.append(f"  a position is reached from all angles 0 by turning {order},")
+    lines.append("  each about its axis as listed (the innermost circle turns the crystal first)")
     return "\n".join(lines)
 
 

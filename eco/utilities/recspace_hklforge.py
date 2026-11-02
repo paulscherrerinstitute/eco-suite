@@ -180,8 +180,18 @@ class RecSpace(Assembly):
         z+   along the incoming X-ray beam
         last sample rotation phi: axis along x-
 
-    Directions can be written as an axis ("x+", "y-"), "beam", "up",
-    "down", a circle ("phi", "-phi": along its rotation axis) or 3 numbers.
+    A position is reached from all angles 0 by turning phi, then chi, eta
+    and mu, each about its axis at all angles 0 (the innermost circle turns
+    the crystal first).
+
+    Two kinds of direction appear, and they are not interchangeable:
+
+    - in the crystal: Miller indices h k l, the normal of the lattice planes
+      (hkl), i.e. a reciprocal-lattice direction: [0, 0, 1] or "(001)";
+    - in the lab: an axis ("x+", "y-"), "beam", "up", "down", a circle
+      ("phi", "-phi": along its rotation axis) or 3 numbers.
+
+    An orientation pairs one of each: "crystal (001) points along lab x+".
 
     Create a crystal -- one of three ways:
 
@@ -189,10 +199,12 @@ class RecSpace(Assembly):
 
            xrd.recspace.create_crystal()
 
-       asks for a name, the lattice, the (h,k,l) of the surface normal and
-       where it points with all angles at 0 (e.g. "x+"), and the (h,k,l) of
-       a direction in the surface and where it points (e.g. "beam"). That
-       gives a nominal UB: the crystal mounted as designed.
+       asks for a name, the lattice, the surface normal in the crystal (h k
+       l) and where it points in the lab with all angles at 0 (e.g. "x+"),
+       then a direction in the surface (h k l) and where it points (e.g.
+       "beam"). The first is matched exactly, the second only fixes the
+       rotation about the first. That gives a nominal UB: the crystal
+       mounted as designed.
 
     2. The same as a script, here Si(001), surface normal along x+ and
        [110] along the beam::
@@ -567,7 +579,8 @@ class RecSpaceCrystal(Assembly):
             # used as the angle
             self._diff_adjs_constrained[adj] = self.constraints.__dict__[adj]
             if is_failed:
-                logger.warning("diffractometer angle '%s' failed to initialize; recspace uses its constraint.", adj)
+                logger.warning("diffractometer angle '%s' failed to initialize; recspace uses constraints.%s instead "
+                               "(h, k, l read NaN while that is unset).", adj, adj)
             elif real is None:
                 self.diffractometer._append(
                     DetectorVirtual,
@@ -579,7 +592,7 @@ class RecSpaceCrystal(Assembly):
                 )
 
         def make_get(i):
-            return lambda *args, **kwargs: self.calc_hkl()[i]
+            return lambda *args, **kwargs: self._current_hkl()[i]
 
         def make_set(i):
             def set_(val):
@@ -595,10 +608,18 @@ class RecSpaceCrystal(Assembly):
         self._append(
             AdjustableVirtual,
             targets,
-            lambda *args, **kwargs: self.calc_hkl(),
+            lambda *args, **kwargs: self._current_hkl(),
             self._calc_angles_unique_diffractometer,
             name="hkl",
         )
+
+    def _current_hkl(self):
+        """calc_hkl() for the readbacks; NaN where an angle cannot be read,
+        so that one failed motor does not break the display."""
+        try:
+            return self.calc_hkl()
+        except ValueError:
+            return np.full(3, np.nan)
 
     # --- angle bookkeeping ------------------------------------------------------
 
@@ -627,7 +648,13 @@ class RecSpaceCrystal(Assembly):
         if all(v is not None for v in given):
             return rc.position_to_angles(given)
         cur = self.get_diffractometer_angles()
-        return rc.position_to_angles([c if v is None else v for v, c in zip(given, cur)])
+        angles = [c if v is None else v for v, c in zip(given, cur)]
+        missing = [n for n, v in zip(rc.POSITION_ORDER, angles) if v is None]
+        if missing:
+            raise ValueError(f"no value for {', '.join(missing)}: not readable (failed to initialize?) and "
+                             f"no constraint value; give it, e.g. calc_hkl({missing[0]}=0), or set "
+                             f"constraints.{missing[0]}(...)")
+        return rc.position_to_angles(angles)
 
     def _calc_angles_unique_diffractometer(self, hkl):
         _, targets = self._unique_solution(*hkl)
@@ -682,37 +709,44 @@ class RecSpaceCrystal(Assembly):
         beta = float(input(f"Angle beta ({alpha}): ") or alpha)
         gamma = float(input(f"Angle gamma ({alpha}): ") or alpha)
 
-        def ask_vec(prompt, default):
+        def ask_hkl(prompt, default):
             while True:
                 text = input(prompt)
                 if not text.strip():
                     return default
-                try:
-                    v = [float(x) for x in text.split(",")]
-                except ValueError:
-                    continue
-                if len(v) == 3:
+                v = rc.parse_triple(text)
+                if v is not None and any(v):
                     return v
+                print("  Miller indices h k l of the crystal, e.g. 0 0 1, (0,0,1) or (001)"
+                      + (" -- where it points in the lab is asked next" if text.strip()[0].isalpha() else ""))
 
         def ask_dir(prompt, default):
             while True:
                 text = input(prompt).strip() or default
                 try:
-                    return rc.lab_direction(text if text[0].isalpha() or "," not in text
-                                            else [float(x) for x in text.split(",")])
+                    return rc.lab_direction(text)
                 except ValueError as e:
-                    print(e)
+                    print(f"  {e}")
 
         phi_axis = rc._axis_name(rc.GEOMETRY.sample[-1].axis)
+        normal_default = rc._axis_name(rc.DEFAULT_SURFACE["phi"])
         print()
         print(rc.frame_description())
-        print("Now two directions of the crystal, as mounted with all angles at 0. A lab direction\n"
-              "is an axis (x+, y-, ...), beam, up, down, a circle (phi, -phi: along its axis) or 3 numbers.")
-        normal = ask_vec("(h,k,l) of the surface normal (0,0,1): ", [0, 0, 1])
-        normal_default = rc._axis_name(rc.DEFAULT_SURFACE["phi"])
-        normal_dir = ask_dir(f"  points along ({normal_default}; the phi axis is {phi_axis}): ", normal_default)
-        inplane = ask_vec("(h,k,l) of a direction in the surface (1,0,0): ", [1, 0, 0])
-        inplane_dir = ask_dir("  points along (beam): ", "beam")
+        print(
+            "\nThe crystal's orientation, as mounted with all angles at 0, from two directions.\n"
+            "Each is given twice:\n"
+            "  in the crystal: Miller indices h k l, the normal of the lattice planes (hkl)\n"
+            "                  (a reciprocal-lattice direction), e.g. 0 0 1, (0,0,1) or (001)\n"
+            "  in the lab:     where that direction points: an axis (x+, y-, ...), beam, up,\n"
+            "                  down, phi or -phi (along the phi axis), or 3 numbers\n"
+            "The first direction is matched exactly; the second only fixes the rotation about\n"
+            "the first (its part perpendicular to the first is used). Defaults in [brackets]."
+        )
+        normal = ask_hkl("1st direction (surface normal) in the crystal, h k l [0 0 1]: ", [0, 0, 1])
+        normal_dir = ask_dir(f"  ... points in the lab along [{normal_default}] (the phi axis is {phi_axis}): ",
+                             normal_default)
+        inplane = ask_hkl("2nd direction (in the surface) in the crystal, h k l [1 0 0]: ", [1, 0, 0])
+        inplane_dir = ask_dir("  ... points in the lab along [beam]: ", "beam")
         self.set_unit_cell(crystal_name, a, b, c, alpha, beta, gamma)
         self.orientations.set_target_value([]).wait()
         self.add_orientation(normal, normal_dir, tag="surface normal")
@@ -781,17 +815,23 @@ class RecSpaceCrystal(Assembly):
         print(f"Removed reflection {removed}")
 
     def add_orientation(self, hkl, xyz, position=None, tag=None):
-        """Add a reference orientation: Miller indices ``hkl`` point along lab
-        direction ``xyz`` with all angles at 0 (or at ``position``, a list in
-        Position order).
+        """Add a reference orientation: the crystal direction ``hkl`` points
+        along the lab direction ``xyz`` with all angles at 0 (or at
+        ``position``, a list in Position order).
 
-        ``xyz`` is in the diffractometer's frame (``frame()`` prints it): 3
-        numbers, an axis ('x+', 'y-', ...), 'beam', 'up', 'down' or a circle
-        ('phi', '-phi': along its rotation axis), e.g.
-        ``add_orientation([0, 0, 1], "x+", tag="surface normal")``.
+        - ``hkl``, in the crystal: Miller indices, the normal of the lattice
+          planes (hkl), i.e. a reciprocal-lattice direction (not a real-space
+          [uvw]); [0, 0, 1] or a string like "(001)".
+        - ``xyz``, in the lab (``frame()`` prints it): an axis ('x+', 'y-',
+          ...), 'beam', 'up', 'down', a circle ('phi', '-phi': along its
+          rotation axis) or 3 numbers.
+
+        E.g. ``add_orientation([0, 0, 1], "x+", tag="surface normal")``.
         """
-        if not hasattr(hkl, "__len__"):
-            print("Please enter hkl as touple or list: add_orientation([h, k, l])")
+        if isinstance(hkl, str) and rc.parse_triple(hkl) is not None:
+            hkl = rc.parse_triple(hkl)
+        if not hasattr(hkl, "__len__") or isinstance(hkl, str):
+            print("Please enter hkl as Miller indices: add_orientation([h, k, l], ...) or add_orientation('(001)', ...)")
             return
         xyz = rc.lab_direction(xyz)
         self.orientations.set_target_value(
@@ -809,7 +849,9 @@ class RecSpaceCrystal(Assembly):
         print(f"Removed orientation {removed}")
 
     def calc_ub(self, idx1=0, idx2=1):
-        """Calculate U (and UB) from two references.
+        """Calculate U (and UB) from two references. The first is matched
+        exactly, the second only fixes the rotation about the first (its
+        part perpendicular to the first is used), as in Busing & Levy.
 
         As diffcalc: an index refers to a reflection, or to the orientation
         with that index if there are not that many reflections; a string is a

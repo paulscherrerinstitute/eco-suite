@@ -342,3 +342,39 @@ def test_reflections_app(rs):
     assert all("separation" in s for s in app.sols)
     app._store()
     assert rs.constraints.h2() == [0.0, 0.0, 1.0]
+
+
+def test_parse_triple_as_people_write_it():
+    for text in ("0 0 1", "0,0,1", "(0,0,1)", "[0, 0, 1]", "(001)"):
+        assert rc.parse_triple(text) == [0, 0, 1], text
+    assert rc.parse_triple("1-10") == [1, -1, 0]
+    assert rc.parse_triple("phi") is None and rc.parse_triple("") is None
+    assert rc.lab_direction("(0,1,0)") == rc.lab_direction("up")
+
+
+def test_interactive_create_crystal(rs, monkeypatch):
+    answers = iter(["", "3", "", "", "", "", "",
+                    "phi", "(0,0,1)", "phi",          # a lab word at the hkl question is explained, re-asked
+                    "1,0,0", "up"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        c = rs.create_crystal("cub")
+    assert "where it points in the lab is asked next" in out.getvalue()
+    assert "turning phi, then chi, then eta, then mu" in out.getvalue()
+    o = c.orientations()
+    assert o[0]["hkl"] == [0, 0, 1] and np.allclose(o[0]["xyz"], rc.lab_direction("phi"))
+    assert o[1]["hkl"] == [1, 0, 0] and np.allclose(o[1]["xyz"], [0, 1, 0])
+    # (001) along the phi axis at all angles 0: reads back as hkl there
+    q = rc.GEOMETRY.sample_matrix({}) @ c._ub() @ [0, 0, 1]
+    assert np.allclose(q / np.linalg.norm(q), rc.lab_direction("phi"))
+
+
+def test_unreadable_angle_does_not_break_the_display(rs):
+    c = _si(rs)
+    c._diff_adjs.pop("eta")                       # as a FailedComponent eta, constraint eta unset
+    c._diff_adjs_constrained["eta"] = rs.constraints.eta
+    with pytest.raises(ValueError, match="eta"):
+        c.calc_hkl()
+    assert np.isnan(c.h.get_current_value())
+    repr(c)
+    assert len(c.calc_hkl(eta=0)) == 3
