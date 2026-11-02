@@ -29,7 +29,7 @@ from eco.utilities.recspace_hklforge import RecSpace
 
 rs = RecSpace(name="recspace", config_dir=tempfile.mkdtemp(), energy_source=lambda: 9000)
 si = rs.create_crystal("si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-si.add_orientation([0, 0, 1], "z+", tag="surface normal")  # with all angles at 0
+si.add_orientation([0, 0, 1], "x+", tag="surface normal")  # with all angles at 0
 si.add_orientation([1, 1, 0], "beam", tag="in-plane")
 si.calc_ub()
 
@@ -45,24 +45,33 @@ solution inside their soft limits. `xrd.recspace?` and
 ## Creating a crystal
 
 A crystal is always described as it lies with **all diffractometer angles
-at 0**, in the diffractometer's own frame. `xrd.recspace.frame()` prints it,
-generated from the geometry:
+at 0**, in the SwissFEL/Bernina lab frame: z+ along the beam, y+ up, x+
+completing a right-handed frame (left, looking along the beam) -- the frame
+the 3D view is labelled in. `xrd.recspace.frame()` prints it, generated
+from the geometry:
 
 ```
 Diffractometer frame at all angles 0:
-  x+   up
-  y+   along the incoming X-ray beam
-  z+   left, looking along the beam
-  last sample rotation phi: axis along z- (positive phi turns right-handed about it)
-  sample circles, outermost first: mu x+, eta z-, chi y+, phi z-
+  x+   left, looking along the beam
+  y+   up
+  z+   along the incoming X-ray beam
+  last sample rotation phi: axis along x- (positive phi turns right-handed about it)
+  sample circles, outermost first: mu y+, eta x-, chi z+, phi x-
 ```
 
-A direction is written as an axis (`"z+"`, `"x-"`), `"beam"`, `"up"`,
+A direction is written as an axis (`"x+"`, `"y-"`), `"beam"`, `"up"`,
 `"down"`, a circle (`"phi"`, `"-phi"`: along its rotation axis) or three
-numbers. This differs from diffcalc, which asked for directions in "You
-coordinates"; the numbers are the same (it is the same frame), so crystals
-imported from diffcalc keep their orientation. Lattice constants are in
-angstrom and degrees, energies in eV.
+numbers. Lattice constants are in angstrom and degrees, energies in eV.
+
+The diffractometer is still You's six-circle geometry, so every angle
+(circles and virtual angles: qaz = 90 is vertical scattering, betain,
+psi, ...) means what it means in diffcalc. Only vectors and matrices differ:
+diffcalc writes them in You's frame (x up, y beam, z = x cross y), which is
+the same frame with the axes named cyclically differently. UB and U from
+diffcalc become `YOU_TO_LAB @ UB` here (`recspace_calc.from_you`); a
+crystal imported from diffcalc is turned on import, and one stored by an
+earlier `recspace` (before the frame was recorded with each crystal, in a
+`<name>_frame.json`) is turned once when it is first loaded.
 
 **Interactively**:
 
@@ -73,7 +82,7 @@ xrd.recspace.create_crystal()
 prints the frame and asks for a name (a Python name, it becomes
 `xrd.recspace.<name>`), the six lattice parameters (Enter keeps the default
 in brackets, so a cubic crystal needs only `a`), the (h,k,l) of the surface
-normal and where it points with all angles at 0 (default `z+`, i.e. along
+normal and where it points with all angles at 0 (default `x+`, i.e. along
 the phi axis line, opposite to its rotation vector), and the (h,k,l) of a
 direction in the surface and where it points (default `beam`). From those
 two it calculates a *nominal* UB: the crystal as mounted by design.
@@ -123,9 +132,9 @@ files).
 | calculating | `calc_angles`, `calc_angles_unique`, `calc_hkl`, `calc_angles_plot` |
 | view | `widget_geom()` |
 
-The conventions are diffcalc's (You geometry, x vertical, y along the beam;
-`gamma` is diffcalc's `nu`), so a crystal from `diffcalc` can be copied over
-unchanged:
+The geometry and the angles are diffcalc's (`gamma` is diffcalc's `nu`),
+so a crystal from `diffcalc` can be copied over; its matrices and
+directions are turned into the Bernina frame on the way:
 
 ```python
 xrd.recspace.import_from_diffcalc("si")       # one crystal, or None for all
@@ -141,7 +150,11 @@ Differences worth knowing:
   (190) instead of being rejected.
 - `set_reference(hkl=...)` / `set_surface(hkl=...)` set the vectors behind
   alpha/beta/psi/naz and betain/betaout; the diffcalc wrapper always used
-  diffcalc's defaults (reference hkl (1, 0, 0), surface phi-frame z).
+  diffcalc's defaults (reference hkl (1, 0, 0), surface phi-frame z in
+  You's frame, x+ here).
+- `calc_ub(idx)` with one reflection keeps the current U's rotation about
+  that reflection's Q and changes it by the smallest rotation; diffcalc
+  started from U = 1, which depends on the frame.
 - `pseudo_angles()` gives all virtual angles at the current position,
   `summary()` the crystal at a glance.
 - Where a mode leaves a continuum of positions (e.g. Q along a free

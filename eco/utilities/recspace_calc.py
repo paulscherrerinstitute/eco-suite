@@ -6,21 +6,24 @@ be tested and benchmarked on its own (``tests/test_recspace_hklforge.py``,
 it into eco Assemblies with the same interface as the diffcalc-based
 ``eco.utilities.recspace``.
 
-Conventions are diffcalc's, so crystals stored by the ``diffcalc`` objects
-can be used unchanged:
+Conventions:
 
-- You (1999) geometry, lab frame x vertical, y along the beam, z transverse.
+- The lab frame is SwissFEL/Bernina's: z+ along the beam, y+ up, x+ = y x z
+  (left, looking along the beam). The diffractometer is You's (1999) 4S+2D
+  geometry (diffcalc's) written in that frame; angles mean exactly what they
+  mean in diffcalc, only vectors and matrices differ, by ``YOU_TO_LAB``.
   The out-of-plane detector circle diffcalc calls ``nu`` is ``gamma`` here
-  (the Bernina name), also inside the hklforge geometry, so no renaming is
-  needed anywhere else.
-- UB in the phi frame with the 2 pi convention, q = UB h, abs(q) = 2 pi / d.
+  (the Bernina name), also inside the hklforge geometry.
+- UB in the phi frame (the lab frame at all angles 0) with the 2 pi
+  convention, q = UB h, abs(q) = 2 pi / d. A diffcalc UB is YOU_TO_LAB @ UB
+  here (``from_you``).
 - Stored reflection positions are lists in diffcalc's ``Position`` order
   (mu, delta, gamma, eta, chi, phi), energies in eV.
 - Orientations are (hkl, xyz) with xyz a lab direction at the given position
   (all zeros if none), i.e. a phi-frame direction for ``position=None``.
 - Reference vector default n_hkl = (1, 0, 0) (behind alpha, beta, psi, naz,
-  tau), surface normal default n_phi = (0, 0, 1) (betain, betaout), as in
-  diffcalc's ``UBCalculation``.
+  tau), surface normal default n_phi = (1, 0, 0) (betain, betaout): diffcalc's
+  ``UBCalculation`` defaults, the latter turned into this frame.
 
 hklforge has no UB-from-reflections yet, so the Busing-Levy part (two
 references, primary only, single-reflection refinement and the
@@ -50,26 +53,79 @@ BOOL_CONSTRAINTS = ("a_eq_b", "bin_eq_bout", "bisect")
 DETECTOR_POLICIES = ("h1", "between")
 
 DEFAULT_REFERENCE = {"hkl": [1, 0, 0]}
-DEFAULT_SURFACE = {"phi": [0, 0, 1]}
+DEFAULT_SURFACE = {"phi": [1, 0, 0]}   # diffcalc's phi (0, 0, 1), in this frame
 
 SMALL = 1e-4  # diffcalc's (Vlieg's) threshold for parallel references
 
 
-def _you_geometry() -> Geometry:
+# the SwissFEL/Bernina lab frame: beam along z+, up along y+, x+ = y+ cross z+
+BEAM = (0.0, 0.0, 1.0)
+UP = (0.0, 1.0, 0.0)
+# You's / diffcalc's frame (psic): beam along y+, up along x+
+YOU_BEAM = (0.0, 1.0, 0.0)
+YOU_UP = (1.0, 0.0, 0.0)
+
+
+def frame_rotation(beam_from, up_from, beam_to=BEAM, up_to=UP) -> np.ndarray:
+    """M with v_to = M @ v_from, for two right-handed lab frames given by
+    their beam and up directions."""
+    def triad(b, u):
+        b, u = np.asarray(b, float), np.asarray(u, float)
+        return np.column_stack([b, u, np.cross(b, u)])
+    return triad(beam_to, up_to) @ triad(beam_from, up_from).T
+
+
+YOU_TO_LAB = frame_rotation(YOU_BEAM, YOU_UP)
+
+
+def _turn(v) -> tuple:
+    return tuple(float(x) + 0.0 for x in np.round(YOU_TO_LAB @ np.asarray(v, float), 15))
+
+
+def _bernina_geometry() -> Geometry:
+    # hklforge >= 0.0.2 can do this as psic.reframed(beam="z+", up="y+"); done
+    # by hand here so that the released 0.0.1 is enough
     psic = Geometry.builtin("psic")
     return Geometry(
         name="bernina_you",
-        sample=list(psic.sample),
-        detector=[Circle("gamma" if c.name == "nu" else c.name, c.axis) for c in psic.detector],
-        beam=psic.beam,
-        description="psic (You 1999) with the out-of-plane detector circle named gamma, as at Bernina",
-        labels=dict(psic.labels),
-        azimuth_zero=psic.azimuth_zero,
+        sample=[Circle(c.name, _turn(c.axis)) for c in psic.sample],
+        detector=[Circle("gamma" if c.name == "nu" else c.name, _turn(c.axis)) for c in psic.detector],
+        beam=_turn(psic.beam),
+        description="psic (You 1999) in the Bernina frame (beam z+, up y+), "
+                    "with the out-of-plane detector circle named gamma",
+        labels={"x": "transverse", "y": "vertical", "z": "beam"},
+        azimuth_zero=_turn(psic.azimuth_zero),
         bisect_circle=psic.bisect_circle,
     )
 
 
-GEOMETRY = _you_geometry()
+GEOMETRY = _bernina_geometry()
+
+
+def from_you(a) -> np.ndarray:
+    """A diffcalc (You frame) vector or UB/U matrix in this lab frame."""
+    return YOU_TO_LAB @ np.asarray(a, float)
+
+
+def to_you(a) -> np.ndarray:
+    """A vector or UB/U matrix of this lab frame in diffcalc's (You) frame."""
+    return YOU_TO_LAB.T @ np.asarray(a, float)
+
+
+def turn_crystal_data(values, M):
+    """Crystal file values (u_matrix, ub_matrix, orientations, vectors) with
+    every lab/phi-frame vector turned by M; angles and hkl stay as they are."""
+    out = dict(values)
+    for key in ("u_matrix", "ub_matrix"):
+        if len(out.get(key) or []):
+            out[key] = (M @ np.asarray(out[key], float)).tolist()
+    if "orientations" in out:
+        out["orientations"] = [{**o, "xyz": (M @ np.asarray(o["xyz"], float)).tolist()}
+                               for o in out["orientations"]]
+    if "vectors" in out:
+        out["vectors"] = {k: ({"phi": (M @ np.asarray(v["phi"], float)).tolist()} if "phi" in v else v)
+                          for k, v in out["vectors"].items()}
+    return out
 
 
 # --- units and frames --------------------------------------------------------
@@ -126,11 +182,7 @@ def vector_hkl(spec, ub) -> np.ndarray | None:
 
 
 def _up() -> np.ndarray:
-    """The upward lab direction: the axis labelled vertical (psic: x+)."""
-    for axis, label in GEOMETRY.labels.items():
-        if label == "vertical":
-            return np.eye(3)["xyz".index(axis)]
-    return np.asarray(GEOMETRY.azimuth_frame()[1], float)
+    return np.asarray(UP, float)
 
 
 def _axis_name(v) -> str:
@@ -178,6 +230,7 @@ def frame_description() -> str:
     up, beam = _up(), np.asarray(GEOMETRY.beam, float)
     left = np.cross(up, beam)       # looking along the beam
     rows = [("up", up), ("along the incoming X-ray beam", beam), ("left, looking along the beam", left)]
+    rows.sort(key=lambda r: int(np.argmax(np.abs(r[1]))))
     lines = ["Diffractometer frame at all angles 0:"]
     lines += [f"  {_axis_name(v):4} {text}" for text, v in rows]
     last = GEOMETRY.sample[-1]
@@ -241,16 +294,23 @@ def u_from_two(B, h1, v1, h2, v2) -> np.ndarray:
     return triple(v1, v2) @ np.linalg.inv(triple(h1c, h2c))
 
 
-def u_from_one(B, h, v) -> np.ndarray:
-    """The smallest rotation taking B h onto the direction v (primary reflection only)."""
-    hc = B @ np.asarray(h, float)
+def u_from_one(B, h, v, U0=None) -> np.ndarray:
+    """U from one reference: ``U0`` (default 1) turned by the smallest
+    rotation that takes U0 B h onto the direction v. The rotation about v is
+    thereby kept from U0, which makes the result independent of the lab
+    frame when U0 is the crystal's current orientation; from U0 = 1 in the
+    You frame it is diffcalc's primary-only U."""
+    U0 = np.eye(3) if U0 is None or not len(U0) else np.asarray(U0, float)
+    hc = U0 @ B @ np.asarray(h, float)
     hc = hc / np.linalg.norm(hc)
     v = np.asarray(v, float) / np.linalg.norm(v)
     axis = np.cross(hc, v)
     s = np.linalg.norm(axis)
     if s < 1e-12:
-        return np.eye(3) if hc @ v > 0 else _rotation(_any_perpendicular(hc), np.pi)
-    return _rotation(axis, np.arctan2(s, hc @ v))
+        R = np.eye(3) if hc @ v > 0 else _rotation(_any_perpendicular(hc), np.pi)
+    else:
+        R = _rotation(axis, np.arctan2(s, hc @ v))
+    return R @ U0
 
 
 def _any_perpendicular(v):
@@ -278,15 +338,17 @@ def find_reference(reflections, orientations, idx):
                      f"({len(reflections)} reflections, {len(orientations)} orientations)")
 
 
-def calc_u(unit_cell, reflections, orientations, idx1=0, idx2=1):
-    """U from two references (``idx2=None``: from reflection ``idx1`` alone).
+def calc_u(unit_cell, reflections, orientations, idx1=0, idx2=1, U0=None):
+    """U from two references (``idx2=None``: from reflection ``idx1`` alone,
+    as the smallest change of ``U0``, see ``u_from_one``).
 
     Returns (U, description of what was used).
     """
     B = lattice_b(unit_cell)
     h1, v1, d1 = find_reference(reflections, orientations, idx1)
     if idx2 is None:
-        return u_from_one(B, h1, v1), f"{d1} only (azimuth about it undetermined)"
+        start = "the current U" if U0 is not None and len(U0) else "U = 1"
+        return u_from_one(B, h1, v1, U0), f"{d1} only (rotation about it kept from {start})"
     h2, v2, d2 = find_reference(reflections, orientations, idx2)
     return u_from_two(B, h1, v1, h2, v2), f"{d1} and {d2}"
 

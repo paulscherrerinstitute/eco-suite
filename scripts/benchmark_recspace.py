@@ -130,9 +130,10 @@ def make_test_crystals(d, seed=1):
     names = []
     for i, (name, cell) in enumerate(TEST_CELLS.items()):
         uc = dict(zip(("a", "b", "c", "alpha", "beta", "gamma"), cell), name=name)
+        # diffcalc's files are in the You frame; simulate in the lab frame
         oris = [{"hkl": [0, 0, 1], "xyz": [1, 0, 0], "position": None, "tag": "surface normal"},
                 {"hkl": [1, 0, 0], "xyz": [0, 1, 0], "position": None, "tag": "in-plane"}]
-        U0, _ = rc.calc_u(uc, [], oris)
+        U0, _ = rc.calc_u(uc, [], rc.turn_crystal_data({"orientations": oris}, rc.YOU_TO_LAB)["orientations"])
         miss = rc._rotation(rng.normal(size=3), np.radians(1.5))
         U = miss @ U0
         UB = U @ rc.lattice_b(uc)
@@ -147,6 +148,7 @@ def make_test_crystals(d, seed=1):
                 refls.append({"hkl": hkl, "position": pos, "energy": ENERGY, "tag": None})
                 if len(refls) == 4:
                     break
+        U0 = rc.to_you(U0)
         data = {"unit_cell": uc, "u_matrix": U0.tolist(), "ub_matrix": (U0 @ rc.lattice_b(uc)).tolist(),
                 "orientations": oris, "reflections": refls}
         for a, v in data.items():
@@ -208,10 +210,12 @@ def hkl_grid(ub, hmax):
 
 def benchmark_crystal(name, cr, hmax, max_hkls, rng):
     rep = {"crystal": name}
-    ub = np.asarray(cr["ub_matrix"], float)
     if not len(cr["ub_matrix"]):
         rep["skipped"] = "no UB"
         return rep
+    # cr is diffcalc's (You frame), lab the same crystal as RecSpace stores it
+    lab = rc.turn_crystal_data(cr, rc.YOU_TO_LAB)
+    ub = np.asarray(lab["ub_matrix"], float)
 
     # 1. UB from references
     dub = diffcalc_ubcalc(cr)
@@ -219,13 +223,13 @@ def benchmark_crystal(name, cr, hmax, max_hkls, rng):
     if nref >= 2:
         with contextlib.redirect_stdout(io.StringIO()):
             dub.calc_ub(1, 2)
-        U, _ = rc.calc_u(cr["unit_cell"], cr["reflections"], cr["orientations"], 0, 1)
-        rep["calc_ub_max_dU"] = float(np.abs(U - dub.U).max())
+        U, _ = rc.calc_u(lab["unit_cell"], lab["reflections"], lab["orientations"], 0, 1)
+        rep["calc_ub_max_dU"] = float(np.abs(U - rc.from_you(dub.U)).max())
     if len(cr["reflections"]) >= 3:
         with contextlib.redirect_stdout(io.StringIO()):
             du, dlat = dub.fit_ub(list(range(1, len(cr["reflections"]) + 1)))
-        U, lat, rms = rc.fit_ub(cr["reflections"])
-        rep["fit_ub_max_dU"] = float(np.abs(U - du).max())
+        U, lat, rms = rc.fit_ub(lab["reflections"])
+        rep["fit_ub_max_dU"] = float(np.abs(U - rc.from_you(du)).max())
         rep["fit_ub_max_dlattice"] = float(max(abs(lat[k] - v) for k, v in
                                                zip(("a", "b", "c", "alpha", "beta", "gamma"), dlat[1:])))
 

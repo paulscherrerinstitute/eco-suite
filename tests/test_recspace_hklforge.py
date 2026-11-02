@@ -26,6 +26,11 @@ REFLECTIONS = [
 ]
 
 
+def _lab(oris):
+    """diffcalc (You frame) orientations as RecSpace (Bernina frame) ones."""
+    return [{**o, "xyz": rc.from_you(o["xyz"]).tolist()} for o in oris]
+
+
 def _ubcalc(refls, oris):
     from diffcalc.hkl.geometry import Position
     from diffcalc.ub import calc as dccalc
@@ -50,8 +55,9 @@ def test_calc_u_matches_diffcalc(refls, idx1, idx2):
     u = _ubcalc(refls, ORIENTATIONS)
     with contextlib.redirect_stdout(io.StringIO()):
         u.calc_ub(idx1 + 1, None if idx2 is None else idx2 + 1)
-    U, _ = rc.calc_u(CELL, refls, ORIENTATIONS, idx1, idx2)
-    assert np.abs(U - u.U).max() < 1e-12
+    # diffcalc starts a primary-only U from U = 1 in its own frame
+    U, _ = rc.calc_u(CELL, refls, _lab(ORIENTATIONS), idx1, idx2, U0=rc.YOU_TO_LAB)
+    assert np.abs(U - rc.from_you(u.U)).max() < 1e-12
 
 
 def test_calc_u_by_tag():
@@ -69,7 +75,7 @@ def test_fit_and_refine_match_diffcalc():
         u.calc_ub(1, 2)
         newu, lat = u.fit_ub([1, 2, 3, 4])
     U, lattice, _ = rc.fit_ub(REFLECTIONS)
-    assert np.abs(U - newu).max() < 1e-12
+    assert np.abs(U - rc.from_you(newu)).max() < 1e-12
     # diffcalc uses hc = 12.3984 keV A here, so the lattice agrees to ~1e-5 only
     assert max(abs(lattice[k] - v) for k, v in zip(("a", "b", "c", "alpha", "beta", "gamma"), lat[1:])) < 1e-4
 
@@ -77,8 +83,9 @@ def test_fit_and_refine_match_diffcalc():
     U0, UB0 = u.U.copy(), u.UB.copy()
     with contextlib.redirect_stdout(io.StringIO()):
         u.refine_ub([1, 1, 1], Position(*pos), rc.en2lam(ENERGY), False, True)
-    _, M, _, _ = rc.refine_from_reflection(CELL, U0, UB0, [1, 1, 1], rc.position_to_angles(pos), ENERGY)
-    assert np.abs(M @ U0 - u.U).max() < 1e-12
+    _, M, _, _ = rc.refine_from_reflection(CELL, rc.from_you(U0), rc.from_you(UB0), [1, 1, 1],
+                                           rc.position_to_angles(pos), ENERGY)
+    assert np.abs(M @ rc.from_you(U0) - rc.from_you(u.U)).max() < 1e-12
 
 
 @pytest.mark.parametrize("mode", [
@@ -98,7 +105,8 @@ def test_solution_sets_match_diffcalc(mode):
         u.calc_ub(1, 2)
     cons = {("nu" if k == "gamma" else k): v for k, v in mode.items()}
     dc = HklCalculation(u, Constraints(cons)).get_position(1, 1, 1, rc.en2lam(ENERGY))
-    rs = rc.solve(u.UB, ENERGY, (1, 1, 1), mode)
+    ub = rc.from_you(u.UB)
+    rs = rc.solve(ub, ENERGY, (1, 1, 1), mode)
     wrap = lambda a: round(((a + 180) % 360) - 180, 5)
     dset = sorted(tuple(wrap(p.asdict["nu" if n == "gamma" else n]) for n in rc.POSITION_ORDER) for p, _ in dc)
     rset = sorted(tuple(wrap(s[n]) for n in rc.POSITION_ORDER) for s in rs)
@@ -106,7 +114,7 @@ def test_solution_sets_match_diffcalc(mode):
     # virtual angles as diffcalc's
     for p, va in dc:
         a = {("gamma" if k == "nu" else k): v for k, v in p.asdict.items()}
-        mine = rc.pseudo_angles(u.UB, a)
+        mine = rc.pseudo_angles(ub, a)
         for k in ("theta", "qaz", "alpha", "beta", "psi", "naz", "tau", "betain", "betaout"):
             assert abs(wrap(mine[k] - va[k])) < 1e-6, k
 
@@ -118,20 +126,22 @@ def test_wrap_into_limits():
 
 
 def test_lab_directions_from_geometry():
-    assert rc.lab_direction("beam") == [0, 1, 0]
-    assert rc.lab_direction("up") == [1, 0, 0]
-    assert rc.lab_direction("phi") == [0, 0, -1]      # psic: phi turns about z-
-    assert rc.lab_direction("-phi") == rc.lab_direction("z+") == [0, 0, 1]
+    # Bernina: z+ beam, y+ up, x+ = y x z
+    assert rc.lab_direction("beam") == [0, 0, 1]
+    assert rc.lab_direction("up") == [0, 1, 0]
+    assert rc.lab_direction("phi") == [-1, 0, 0]
+    assert rc.lab_direction("-phi") == rc.lab_direction("x+") == [1, 0, 0]
     assert rc.lab_direction([0, 2, 0]) == [0, 1, 0]
     with pytest.raises(ValueError):
         rc.lab_direction("sideways")
     text = rc.frame_description()
-    assert "y+   along the incoming X-ray beam" in text and "phi: axis along z-" in text
+    assert "z+   along the incoming X-ray beam" in text and "phi: axis along x-" in text
+    assert np.allclose(np.cross(rc.UP, rc.BEAM), [1, 0, 0])
 
 
 def test_orientation_by_name_equals_by_vector(tmp_path):
     ubs = []
-    for i, (n, b) in enumerate((("z+", "beam"), ([0, 0, 1], [0, 1, 0]))):
+    for i, (n, b) in enumerate((("x+", "beam"), ([1, 0, 0], [0, 0, 1]))):
         rs = RecSpace(name="recspace", config_dir=tmp_path / str(i), energy_source=lambda: ENERGY)
         c = rs.create_crystal("si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
         c.add_orientation([0, 0, 1], n)
@@ -162,8 +172,8 @@ def rs(tmp_path):
 
 def _si(rs):
     c = rs.create_crystal("si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-    c.add_orientation([0, 0, 1], [1, 0, 0], tag="n")
-    c.add_orientation([1, 1, 0], [0, 1, 0])
+    c.add_orientation([0, 0, 1], "up", tag="n")
+    c.add_orientation([1, 1, 0], "beam")
     with contextlib.redirect_stdout(io.StringIO()):
         c.calc_ub()
     return c
@@ -260,11 +270,48 @@ def test_import_from_diffcalc(rs, tmp_path):
     with contextlib.redirect_stdout(io.StringIO()):
         assert rs.import_from_diffcalc(source_dir=src) == ["tri"]
     assert "tri" in rs.crystals
-    assert np.allclose(rs.tri._ub(), files["ub_matrix"])
+    # matrices and directions turned into the Bernina frame, angles untouched
+    assert np.allclose(rs.tri._ub(), rc.from_you(files["ub_matrix"]))
+    assert np.allclose(rs.tri.orientations()[0]["xyz"], rc.from_you(ORIENTATIONS[0]["xyz"]))
     assert rs.tri.reflections() == REFLECTIONS
+    for r in REFLECTIONS:
+        assert np.allclose(_hkl_you(files["ub_matrix"], r["position"]),
+                           rs.tri.calc_hkl(*r["position"], energy=ENERGY))
     # the source is only read
     assert sorted(p.name for p in src.iterdir()) == sorted(
         [f"tri_{a}.json" for a in files] + ["diffcalc_list.json"])
+
+
+def _hkl_you(ub_you, position):
+    """hkl at a position in diffcalc's own frame (hklforge's psic)."""
+    from hklforge import Geometry
+
+    a = dict(zip(("mu", "delta", "nu", "eta", "chi", "phi"), position))
+    q = Geometry.builtin("psic").q_phi(a, rc.wavevector(ENERGY))
+    return np.linalg.solve(np.asarray(ub_you, float), q)
+
+
+def test_crystal_stored_in_you_frame_is_turned_once(tmp_path):
+    """A crystal written before the frame was recorded (You frame) is turned
+    into the Bernina frame on first load, and only once."""
+    U, _ = rc.calc_u(CELL, [], ORIENTATIONS)                  # You-frame data
+    ub_you = U @ rc.lattice_b(CELL)
+    files = {"unit_cell": {"name": "x", **CELL}, "u_matrix": U.tolist(), "ub_matrix": ub_you.tolist(),
+             "orientations": ORIENTATIONS, "reflections": REFLECTIONS,
+             "vectors": {"reference": {"hkl": [1, 0, 0]}, "surface": {"phi": [0, 0, 1]}}}
+    for a, v in files.items():
+        (tmp_path / f"old_{a}.json").write_text(json.dumps({"value": v}))
+    (tmp_path / "recspace_list.json").write_text(json.dumps({"value": {"old": ["now", "dummy"]}}))
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        rs = RecSpace(name="recspace", config_dir=tmp_path, energy_source=lambda: ENERGY)
+    assert "turned" in out.getvalue()
+    pos = REFLECTIONS[1]["position"]
+    assert np.allclose(rs.old.calc_hkl(*pos, energy=ENERGY), _hkl_you(ub_you, pos))
+    assert rs.old.vectors()["surface"] == {"phi": rc.DEFAULT_SURFACE["phi"]}
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        rs2 = RecSpace(name="recspace", config_dir=tmp_path, energy_source=lambda: ENERGY)
+    assert "turned" not in out.getvalue()
+    assert np.allclose(rs2.old._ub(), rs.old._ub())
 
 
 def test_geom_page(rs):

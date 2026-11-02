@@ -41,14 +41,20 @@ TABLE_ROWS = CIRCLES + ("theta", "ttheta", "qaz", "naz", "alpha", "beta", "psi",
 
 def payload(crystal, angles, energy, label="", targets=None, n=0):
     """The message the 3D view reads: angles (view naming), abs(k), UB, unit
-    surface normal in the phi frame, optional target reflections."""
+    surface normal in the phi frame, optional target reflections.
+
+    The view computes its mechanism on You's axes and only labels them in
+    the Bernina frame, so UB and the normal are handed over in the You frame.
+    """
     ub = crystal._ub()
     n_surf = rc.vector_phi(crystal._surface, ub)
+    if n_surf is None:
+        n_surf = np.asarray(rc.DEFAULT_SURFACE["phi"], float)
     msg = {
         "angles": {c: float(angles.get(c, 0.0)) for c in CIRCLES},
         "kMag": 2 * np.pi / rc.en2lam(energy),
-        "ub": ub.tolist(),
-        "nPhi": (n_surf if n_surf is not None else np.array([0.0, 0, 1])).tolist(),
+        "ub": rc.to_you(ub).tolist(),
+        "nPhi": rc.to_you(n_surf).tolist(),
         "label": label,
         "n": n,
     }

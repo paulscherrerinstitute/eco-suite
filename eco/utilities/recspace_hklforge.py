@@ -77,7 +77,7 @@ DEFAULT_CONSTRAINTS = {
     "h2_detector": "h1",
 }
 # per-crystal files; the diffcalc objects use the same names minus "vectors"
-CRYSTAL_FILES = ("unit_cell", "u_matrix", "ub_matrix", "orientations", "reflections", "vectors")
+CRYSTAL_FILES = ("unit_cell", "u_matrix", "ub_matrix", "orientations", "reflections", "vectors", "frame")
 DIFFCALC_FILES = ("unit_cell", "u_matrix", "ub_matrix", "orientations", "reflections")
 
 _NAME_SPECIALS = "'\". /()[]{}|-*+"
@@ -135,6 +135,32 @@ def _read_fs_value(path):
         return json.load(f)["value"]
 
 
+# the lab frame a crystal's matrices and vectors are stored in
+LAB_FRAME = {"beam": list(rc.BEAM), "up": list(rc.UP)}
+# diffcalc's, and that of RecSpace crystals stored before the frame was recorded
+YOU_FRAME = {"beam": list(rc.YOU_BEAM), "up": list(rc.YOU_UP)}
+
+
+def _bring_into_lab_frame(config_dir, name):
+    """Turn a stored crystal into LAB_FRAME if it was stored in another frame
+    (no ``_frame`` file: written before the frame was recorded, i.e. in the
+    You frame), and record the frame."""
+    config_dir = Path(config_dir)
+    frame_path = config_dir / f"{name}_frame.json"
+    existing = [k for k in ("u_matrix", "ub_matrix", "orientations", "vectors")
+                if (config_dir / f"{name}_{k}.json").exists()]
+    stored = _read_fs_value(frame_path) if frame_path.exists() else (YOU_FRAME if existing else LAB_FRAME)
+    if stored != LAB_FRAME:
+        M = rc.frame_rotation(stored["beam"], stored["up"])
+        values = rc.turn_crystal_data({k: _read_fs_value(config_dir / f"{name}_{k}.json") for k in existing}, M)
+        for k, v in values.items():
+            AdjustableFS(config_dir / f"{name}_{k}.json", default_value=v).set_target_value(v).wait()
+        print(f"Crystal {name}: turned from the frame beam {stored['beam']}, up {stored['up']} "
+              f"into beam {LAB_FRAME['beam']}, up {LAB_FRAME['up']}")
+    if not frame_path.exists() or stored != LAB_FRAME:
+        AdjustableFS(frame_path, default_value=LAB_FRAME).set_target_value(LAB_FRAME).wait()
+
+
 class RecSpace(Assembly):
     """Crystals for one diffractometer: (h, k, l) <-> diffractometer angles.
 
@@ -146,15 +172,15 @@ class RecSpace(Assembly):
     energies in eV.
 
     A crystal's orientation is always given as it lies with all
-    diffractometer angles at 0, in the diffractometer's own frame;
+    diffractometer angles at 0, in the SwissFEL/Bernina lab frame;
     ``xrd.recspace.frame()`` prints it::
 
-        x+   up
-        y+   along the incoming X-ray beam
-        z+   left, looking along the beam
-        last sample rotation phi: axis along z-
+        x+   left, looking along the beam
+        y+   up
+        z+   along the incoming X-ray beam
+        last sample rotation phi: axis along x-
 
-    Directions can be written as an axis ("z+", "x-"), "beam", "up",
+    Directions can be written as an axis ("x+", "y-"), "beam", "up",
     "down", a circle ("phi", "-phi": along its rotation axis) or 3 numbers.
 
     Create a crystal -- one of three ways:
@@ -164,16 +190,16 @@ class RecSpace(Assembly):
            xrd.recspace.create_crystal()
 
        asks for a name, the lattice, the (h,k,l) of the surface normal and
-       where it points with all angles at 0 (e.g. "z+"), and the (h,k,l) of
+       where it points with all angles at 0 (e.g. "x+"), and the (h,k,l) of
        a direction in the surface and where it points (e.g. "beam"). That
        gives a nominal UB: the crystal mounted as designed.
 
-    2. The same as a script, here Si(001), surface normal along z+ and
+    2. The same as a script, here Si(001), surface normal along x+ and
        [110] along the beam::
 
            si = xrd.recspace.create_crystal(
                "si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-           si.add_orientation([0, 0, 1], "z+", tag="surface normal")
+           si.add_orientation([0, 0, 1], "x+", tag="surface normal")
            si.add_orientation([1, 1, 0], "beam", tag="in-plane")
            si.set_surface(hkl=[0, 0, 1])     # for betain/betaout; option 1 does this too
            si.calc_ub()
@@ -420,7 +446,9 @@ class RecSpace(Assembly):
             if not path.exists():
                 raise FileNotFoundError(path)
             values[a] = _read_fs_value(path)
+        values = rc.turn_crystal_data(values, rc.YOU_TO_LAB)
         values["vectors"] = {"reference": dict(rc.DEFAULT_REFERENCE), "surface": dict(rc.DEFAULT_SURFACE)}
+        values["frame"] = LAB_FRAME
         for a, v in values.items():
             AdjustableFS(self.config_dir / f"{new_name}_{a}.json", default_value=v).set_target_value(v).wait()
         crystals = self._crystal_list()
@@ -447,12 +475,12 @@ class RecSpaceCrystal(Assembly):
     """One crystal on one diffractometer: UB matrix, reference data and the
     h, k, l adjustables. Interface as ``eco.utilities.recspace.DiffGeometryYou``.
 
-    Orientation (UB), with directions in the diffractometer's frame at all
-    angles 0 (``frame()``: x+ up, y+ along the beam, z+ left looking along
-    the beam; the phi axis is z-):
+    Orientation (UB), with directions in the lab frame at all angles 0
+    (``frame()``: z+ along the beam, y+ up, x+ = y x z, left looking along
+    the beam; the phi axis is x-):
 
     - ``add_orientation(hkl, xyz)``: a nominal direction, e.g.
-      ``add_orientation([0, 0, 1], "z+", tag="surface normal")``
+      ``add_orientation([0, 0, 1], "x+", tag="surface normal")``
     - ``add_reflection(h, k, l)``: a measured peak at the current angles and
       energy (or give ``mu=..., ..., energy=...``)
     - ``calc_ub()``: from reflections 0 and 1 (an index falls back to the
@@ -471,6 +499,7 @@ class RecSpaceCrystal(Assembly):
         super().__init__(name=name)
         self.config_dir = Path(config_dir or CONFIG_DIR)
         self._energy_source = energy_source
+        _bring_into_lab_frame(self.config_dir, name)
         files = {
             "unit_cell": ({"name": "", "a": 1, "b": 1, "c": 1, "alpha": 90, "beta": 90, "gamma": 90}, True),
             "u_matrix": ([], False),
@@ -643,7 +672,7 @@ class RecSpaceCrystal(Assembly):
 
         The directions are given as they lie with all diffractometer angles
         at 0, in the diffractometer's own frame (``frame()``): e.g. the
-        surface normal along "z+" and an in-plane direction along "beam".
+        surface normal along "x+" and an in-plane direction along "beam".
         """
         crystal_name = input(f"Name of the crystal: ({self.name})") or str(self.name)
         a = float(input("Lattice constant a (1): ") or 1)
@@ -678,9 +707,10 @@ class RecSpaceCrystal(Assembly):
         print()
         print(rc.frame_description())
         print("Now two directions of the crystal, as mounted with all angles at 0. A lab direction\n"
-              "is an axis (x+, z-, ...), beam, up, down, a circle (phi, -phi: along its axis) or 3 numbers.")
+              "is an axis (x+, y-, ...), beam, up, down, a circle (phi, -phi: along its axis) or 3 numbers.")
         normal = ask_vec("(h,k,l) of the surface normal (0,0,1): ", [0, 0, 1])
-        normal_dir = ask_dir(f"  points along (z+; the phi axis is {phi_axis}): ", "z+")
+        normal_default = rc._axis_name(rc.DEFAULT_SURFACE["phi"])
+        normal_dir = ask_dir(f"  points along ({normal_default}; the phi axis is {phi_axis}): ", normal_default)
         inplane = ask_vec("(h,k,l) of a direction in the surface (1,0,0): ", [1, 0, 0])
         inplane_dir = ask_dir("  points along (beam): ", "beam")
         self.set_unit_cell(crystal_name, a, b, c, alpha, beta, gamma)
@@ -708,7 +738,8 @@ class RecSpaceCrystal(Assembly):
 
     def set_surface(self, hkl=None, phi=None):
         """Surface normal behind betain, betaout and bin_eq_bout, as
-        ``set_reference``. diffcalc's default is phi (0, 0, 1)."""
+        ``set_reference``. Default: phi (1, 0, 0), diffcalc's phi (0, 0, 1)
+        in this frame (the line of the phi axis at all angles 0)."""
         self._set_vector("surface", hkl, phi)
 
     def _set_vector(self, which, hkl, phi):
@@ -755,9 +786,9 @@ class RecSpaceCrystal(Assembly):
         Position order).
 
         ``xyz`` is in the diffractometer's frame (``frame()`` prints it): 3
-        numbers, an axis ('x+', 'z-', ...), 'beam', 'up', 'down' or a circle
+        numbers, an axis ('x+', 'y-', ...), 'beam', 'up', 'down' or a circle
         ('phi', '-phi': along its rotation axis), e.g.
-        ``add_orientation([0, 0, 1], "z+", tag="surface normal")``.
+        ``add_orientation([0, 0, 1], "x+", tag="surface normal")``.
         """
         if not hasattr(hkl, "__len__"):
             print("Please enter hkl as touple or list: add_orientation([h, k, l])")
@@ -782,10 +813,12 @@ class RecSpaceCrystal(Assembly):
 
         As diffcalc: an index refers to a reflection, or to the orientation
         with that index if there are not that many reflections; a string is a
-        tag. ``idx2=None`` uses reflection ``idx1`` alone (U then undetermined
-        about its Q).
+        tag. ``idx2=None`` uses reflection ``idx1`` alone: the current U turned
+        by the smallest rotation that puts that reflection where it was
+        measured (the rotation about its Q is kept).
         """
-        U, used = rc.calc_u(self.unit_cell(), self.reflections(), self.orientations(), idx1, idx2)
+        U, used = rc.calc_u(self.unit_cell(), self.reflections(), self.orientations(), idx1, idx2,
+                            U0=self.u_matrix())
         self._set_u(U)
         print(f"UB calculated from {used}.")
 

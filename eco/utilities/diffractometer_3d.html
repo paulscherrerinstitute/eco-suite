@@ -85,8 +85,8 @@
       SwissFEL/Bernina convention: <b style="color:#cc3333">X</b> horizontal
       transverse, <b style="color:#2255cc">Y</b> vertical,
       <b style="color:#227722">Z</b> beam direction (right-handed). The
-      mechanism itself is computed directly on diffcalc's own axes (Y=beam,
-      Z=vertical there) &mdash; only these on-screen labels/arrows are
+      mechanism itself is computed directly on diffcalc's own axes (X vertical, Y beam,
+      Z transverse there) &mdash; only these on-screen labels/arrows are
       remapped. Detector order is currently gamma (outer) &rarr; delta
       (inner) per direct feedback; note this doesn't exactly match
       diffcalc's own composition order (delta-then-gamma) unless axis
@@ -97,28 +97,28 @@
     <div class="section" id="sample-circles-section">
       <h2>Sample circles</h2>
       <div class="angle-row">
-        <label><span><span class="swatch" style="background:#e6550d"></span>mu &mdash; tower tilt (rot. about X)</span><span id="mu-val">0.0&deg;</span></label>
+        <label><span><span class="swatch" style="background:#e6550d"></span>mu &mdash; base rotation (about +Y, up)</span><span id="mu-val">0.0&deg;</span></label>
         <div class="row-controls">
           <input type="range" id="mu" min="-30" max="30" step="0.1" value="0" style="flex:1">
           <input type="number" id="mu-num" min="-180" max="180" step="0.1" value="0">
         </div>
       </div>
       <div class="angle-row">
-        <label><span><span class="swatch" style="background:#fdae6b"></span>eta &mdash; sample rotation (Z)</span><span id="eta-val">0.0&deg;</span></label>
+        <label><span><span class="swatch" style="background:#fdae6b"></span>eta &mdash; sample rotation (about &minus;X)</span><span id="eta-val">0.0&deg;</span></label>
         <div class="row-controls">
           <input type="range" id="eta" min="-180" max="180" step="0.1" value="0" style="flex:1">
           <input type="number" id="eta-num" min="-180" max="180" step="0.1" value="0">
         </div>
       </div>
       <div class="angle-row">
-        <label><span><span class="swatch" style="background:#31a354"></span>chi &mdash; phi-axis tilt (Y)</span><span id="chi-val">0.0&deg;</span></label>
+        <label><span><span class="swatch" style="background:#31a354"></span>chi &mdash; phi-axis tilt (about +Z, beam)</span><span id="chi-val">0.0&deg;</span></label>
         <div class="row-controls">
           <input type="range" id="chi" min="-180" max="180" step="0.1" value="0" style="flex:1">
           <input type="number" id="chi-num" min="-180" max="180" step="0.1" value="0">
         </div>
       </div>
       <div class="angle-row">
-        <label><span><span class="swatch" style="background:#74c476"></span>phi &mdash; sample azimuth (Z)</span><span id="phi-val">0.0&deg;</span></label>
+        <label><span><span class="swatch" style="background:#74c476"></span>phi &mdash; sample azimuth (about &minus;X)</span><span id="phi-val">0.0&deg;</span></label>
         <div class="row-controls">
           <input type="range" id="phi" min="-180" max="180" step="0.1" value="0" style="flex:1">
           <input type="number" id="phi-num" min="-180" max="180" step="0.1" value="0">
@@ -129,14 +129,14 @@
     <div class="section" id="detector-circles-section">
       <h2>Detector circles</h2>
       <div class="angle-row">
-        <label><span><span class="swatch" style="background:#3182bd"></span>delta &mdash; in-plane swing (Z)</span><span id="delta-val">0.0&deg;</span></label>
+        <label><span><span class="swatch" style="background:#3182bd"></span>delta &mdash; detector swing (about &minus;X)</span><span id="delta-val">0.0&deg;</span></label>
         <div class="row-controls">
           <input type="range" id="delta" min="-30" max="150" step="0.1" value="0" style="flex:1">
           <input type="number" id="delta-num" min="-180" max="180" step="0.1" value="0">
         </div>
       </div>
       <div class="angle-row">
-        <label><span><span class="swatch" style="background:#9ecae1"></span>gamma (diffcalc: nu) &mdash; out-of-plane tilt (X)</span><span id="gamma-val">0.0&deg;</span></label>
+        <label><span><span class="swatch" style="background:#9ecae1"></span>gamma (diffcalc: nu) &mdash; detector swing (about +Y, up)</span><span id="gamma-val">0.0&deg;</span></label>
         <div class="row-controls">
           <input type="range" id="gamma" min="-30" max="150" step="0.1" value="0" style="flex:1">
           <input type="number" id="gamma-num" min="-180" max="180" step="0.1" value="0">
