@@ -406,3 +406,44 @@ class ClientSession:
             for name in late:
                 logger.warning("web client %s: jog of %s stopped, no signal from the client", self.client_id, name)
                 self._end_jog(name, "jog stopped: no signal from the client")
+
+    # -- camera: pan/tilt/zoom from the live view ------------------------------------------------
+
+    def _op_ptz(self, name, action, x=None, y=None, x1=None, y1=None, w=None, h=None):
+        """A PTZ command from the live view (eco.web.camera): "center" on
+        (x, y), "rect" zoom to (x, y)-(x1, y1), "zoom_in"/"zoom_out" one
+        step at (x, y) (the centre if not given), "wide" (zoom 1), "home".
+        Coordinates are in the displayed image of size w x h, as in the Qt
+        viewer. These are camera calls, not set_target_value, so the
+        access gate is checked here."""
+        from eco.web import camera
+
+        obj = self._check_write(name)
+        info = camera.camera_info(obj)
+        if not info or not info["ptz"]:
+            raise ProtocolError(f"{name} has no pan/tilt/zoom")
+        from eco.devices_general.utilities import _access_gate
+
+        _access_gate(obj)
+        if action in ("center", "rect", "zoom_in", "zoom_out"):
+            w, h = float(w), float(h)
+            if not (w > 0 and h > 0):
+                raise ProtocolError("w and h must be positive")
+            x = w / 2 if x is None else float(x)
+            y = h / 2 if y is None else float(y)
+        if action == "center":
+            obj.click_center(x, y, w, h)
+        elif action == "rect":
+            obj.zoom_to_rectangle(x, y, float(x1), float(y1), w, h)
+        elif action == "zoom_in":
+            obj.area_zoom(x, y, camera.ZOOM_IN_STEP, w, h)
+        elif action == "zoom_out":
+            obj.area_zoom(x, y, camera.ZOOM_OUT_STEP, w, h)
+        elif action == "wide":
+            obj.set_zoom(1)
+        elif action == "home":
+            obj.home()
+        else:
+            raise ProtocolError(f"unknown ptz action {action!r}")
+        logger.info("web client %s: %s ptz %s", self.client_id, name, action)
+        return {"done": action}

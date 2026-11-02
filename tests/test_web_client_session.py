@@ -286,3 +286,43 @@ def test_jog_speed(writer):
         time.sleep(0.02)
     assert x.jog_speed.get_current_value() == 0.8
     assert not writer.call("jog_speed", name="stage.x", value=0)["ok"]
+
+
+# -- camera ----------------------------------------------------------------------------
+
+
+def test_a_camera_is_described_with_its_live_stream(client):
+    view = client.call("describe", name="cam_demo")["data"]
+    assert view["camera"] == {"stream": "mjpeg", "ptz": True, "rotate": False, "qualities": ["low", "medium", "full"]}
+    assert "camera" not in client.call("describe", name="mono")["data"]
+
+
+def test_ptz_from_the_live_view(writer):
+    writer.call("describe", name="cam_demo")
+    cam = writer.session._objects["cam_demo"]
+    assert writer.call("ptz", name="cam_demo", action="center", x=480, y=180, w=640, h=360)["ok"]
+    assert cam._pos["pan"] == pytest.approx(15) and cam._pos["tilt"] == pytest.approx(0)
+    assert writer.call("ptz", name="cam_demo", action="zoom_in", w=640, h=360)["ok"]
+    assert cam._pos["zoom"] == pytest.approx(1.5)
+    assert writer.call("ptz", name="cam_demo", action="rect", x=0, y=0, x1=320, y1=180, w=640, h=360)["ok"]
+    assert cam._pos["zoom"] == pytest.approx(3.0)
+    writer.call("ptz", name="cam_demo", action="wide")
+    writer.call("ptz", name="cam_demo", action="home")
+    assert cam._pos == {"pan": 0.0, "tilt": 0.0, "zoom": 1.0}
+    assert not writer.call("ptz", name="cam_demo", action="spin")["ok"]
+    assert not writer.call("ptz", name="mono", action="home")["ok"]
+
+
+def test_ptz_needs_writes_and_passes_the_access_gate(client, writer, monkeypatch):
+    client.call("describe", name="cam_demo")
+    reply = client.call("ptz", name="cam_demo", action="home")
+    assert not reply["ok"] and reply["error"]["type"] == "WritesDisabled"
+    from eco.devices_general import utilities
+
+    def deny(parent):
+        raise PermissionError("not your camera")
+
+    monkeypatch.setattr(utilities, "_access_gate", deny)
+    writer.call("describe", name="cam_demo")
+    reply = writer.call("ptz", name="cam_demo", action="home")
+    assert not reply["ok"] and "not your camera" in reply["error"]["message"]

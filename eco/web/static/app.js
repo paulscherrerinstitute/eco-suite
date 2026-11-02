@@ -292,6 +292,7 @@ function route() {
   else if (hash.startsWith("/svg/")) showSvg(hash.slice(5));
   else if (hash.startsWith("/tweak/")) showTweak(hash.slice(7));
   else if (hash.startsWith("/jog/")) showJog(hash.slice(5));
+  else if (hash.startsWith("/cam/")) showCamera(hash.slice(5));
   else showHome();
 }
 
@@ -360,6 +361,7 @@ async function showDevice(name) {
   if (S.view !== view) return;
 
   const toolbar = el("div", { class: "toolbar" });
+  if (desc.camera) toolbar.append(el("a", { class: "btn primary link-btn", href: `#/cam/${encodeURIComponent(name)}` }, "Live view"));
   if (desc.svg) toolbar.append(el("a", { class: "btn primary link-btn", href: `#/svg/${encodeURIComponent(name)}` }, "Panel"));
   const parts = [];
   if (toolbar.childElementCount) parts.push(toolbar);
@@ -1000,6 +1002,129 @@ async function showJog(name) {
       el("p", { class: "doc", text: "Moves only while a button is held, at the jog speed, until a limit. " +
         "Released, phone locked or connection lost: it stops (the gateway stops it within a second " +
         "when the held button stops reporting). Keys: hold →/↑ or ←/↓, +/− double or halve the speed, Esc stop." })));
+}
+
+// ---- camera: live view, tap to center, drag to zoom ---------------------------------------------------
+
+async function showCamera(name) {
+  const view = newView("camera", name);
+  setTitle(`${name} live`, true);
+  setMain(el("div", { class: "loading", text: "opening…" }));
+  let desc;
+  try {
+    desc = await request("describe", { name });
+  } catch (e) {
+    if (S.view === view) setMain(el("div", { class: "empty", text: `${name}: ${e.message}` }));
+    return;
+  }
+  if (S.view !== view) return;
+  const cam = desc.camera;
+  if (!cam) {
+    setMain(el("div", { class: "empty", text: `${name} has no live stream.` }));
+    return;
+  }
+  const qualityKey = `eco-web-cam-quality:${name}`;
+  let quality = stored(qualityKey, "low");
+  if (!cam.qualities.includes(quality)) quality = "low";
+  const img = el("img", { class: "cam-img" + (cam.rotate ? " rotated" : ""), alt: `${name} live`, draggable: "false" });
+  const box = el("div", { class: "cam-box" });
+  const note = el("p", { class: "panel-note", text: "connecting…" });
+  const wrap = el("div", { class: "cam-wrap" }, img, box);
+  let retry = null, frames = 0;
+
+  // an <img> keeps the stream's connection open: dropping its src closes it,
+  // and the gateway closes the camera connection with its last viewer
+  const stop = () => { clearTimeout(retry); img.src = "data:,"; };
+  const start = () => {
+    clearTimeout(retry);
+    frames = 0;
+    note.textContent = "connecting…";
+    img.src = `/api/mjpeg?name=${encodeURIComponent(name)}&quality=${quality}&t=${Date.now()}`;
+  };
+  img.addEventListener("load", () => {
+    if (img.src.startsWith("data:")) return;
+    frames++;
+    note.textContent = `live · ${quality}` + (control ? " · control on: tap to center, drag a box to zoom" : "");
+  });
+  img.addEventListener("error", () => {
+    if (S.view !== view || img.src.startsWith("data:")) return;
+    note.textContent = `no stream (${quality})${quality !== "low" ? " – try low quality" : ""}; retrying…`;
+    retry = setTimeout(() => S.view === view && document.visibilityState === "visible" && start(), 4000);
+  });
+  const onVisible = () => (document.visibilityState === "visible" ? start() : stop());
+  document.addEventListener("visibilitychange", onVisible);
+  view.cleanup = () => { stop(); document.removeEventListener("visibilitychange", onVisible); };
+
+  // control: off by default (a stray tap must not move the camera), like the Qt viewer's mouse control
+  let control = false;
+  const canControl = cam.ptz && S.hello.writes && desc.writable;
+  const ptz = (action, args = {}) => request("ptz", { name, action, ...args }).catch((e) => toast(e.message, true));
+  const at = (e) => {
+    const r = img.getBoundingClientRect();
+    return { x: Math.min(Math.max(e.clientX - r.left, 0), r.width), y: Math.min(Math.max(e.clientY - r.top, 0), r.height), w: r.width, h: r.height };
+  };
+  let drag = null;
+  wrap.addEventListener("pointerdown", (e) => {
+    if (!control) return;
+    e.preventDefault();
+    wrap.setPointerCapture?.(e.pointerId);
+    drag = at(e);
+  });
+  wrap.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const p = at(e);
+    Object.assign(box.style, { display: "block", left: `${Math.min(drag.x, p.x)}px`, top: `${Math.min(drag.y, p.y)}px`,
+      width: `${Math.abs(p.x - drag.x)}px`, height: `${Math.abs(p.y - drag.y)}px` });
+  });
+  const endDrag = (e, cancelled) => {
+    if (!drag) return;
+    const p = at(e), d = drag;
+    drag = null;
+    box.style.display = "none";
+    if (cancelled) return;
+    if (Math.abs(p.x - d.x) < 8 && Math.abs(p.y - d.y) < 8) ptz("center", { x: p.x, y: p.y, w: p.w, h: p.h });
+    else ptz("rect", { x: d.x, y: d.y, x1: p.x, y1: p.y, w: p.w, h: p.h });
+  };
+  wrap.addEventListener("pointerup", (e) => endDrag(e, false));
+  wrap.addEventListener("pointercancel", (e) => endDrag(e, true));
+  wrap.addEventListener("wheel", (e) => {
+    if (!control) return;
+    e.preventDefault();
+    const p = at(e);
+    ptz(e.deltaY < 0 ? "zoom_in" : "zoom_out", p);
+  }, { passive: false });
+  wrap.addEventListener("contextmenu", (e) => control && e.preventDefault());
+
+  const controlBtn = el("button", { class: "btn", text: "Control: off", disabled: !canControl,
+    title: canControl ? "tap to center, drag a box to zoom" : (cam.ptz ? "writes are off in this web session" : "no pan/tilt/zoom"),
+    onclick: () => {
+      control = !control;
+      controlBtn.textContent = `Control: ${control ? "on" : "off"}`;
+      controlBtn.classList.toggle("on", control);
+      wrap.classList.toggle("control", control);
+      document.querySelectorAll(".cam-ptz").forEach((b) => (b.disabled = !control));
+      if (frames) note.textContent = `live · ${quality}` + (control ? " · control on: tap to center, drag a box to zoom" : "");
+    } });
+  const centre = () => { const r = img.getBoundingClientRect(); return { w: r.width || 1, h: r.height || 1 }; };
+  const ptzBtn = (text, title, fn) => el("button", { class: "btn cam-ptz", text, title, disabled: true, onclick: fn });
+  const qualitySelect = el("select", { class: "enum", "aria-label": "stream quality",
+    onchange: (e) => { quality = e.target.value; store(qualityKey, quality); start(); } },
+    cam.qualities.map((q) => el("option", { value: q, text: q })));
+  qualitySelect.value = quality;
+
+  setMain(
+    wrap, note,
+    el("div", { class: "toolbar cam-tools" },
+      cam.ptz ? controlBtn : null,
+      cam.ptz ? ptzBtn("Zoom +", "zoom in one step", () => ptz("zoom_in", centre())) : null,
+      cam.ptz ? ptzBtn("Zoom −", "zoom out one step", () => ptz("zoom_out", centre())) : null,
+      cam.ptz ? ptzBtn("Wide", "widest field of view", () => ptz("wide")) : null,
+      cam.ptz ? ptzBtn("Home", "the camera's home position", () => confirmDialog(`Send ${name} home?`, "", () => ptz("home"))) : null,
+      qualitySelect,
+      el("a", { class: "btn link-btn", href: `#/d/${encodeURIComponent(name)}`, text: "Settings" })),
+    el("p", { class: "doc", text: "Control on: tap to center the view there, drag a box to zoom into it; " +
+      "on a laptop the mouse wheel zooms. Quality: low for a phone on a tunnel, full on the console network." }));
+  if (document.visibilityState === "visible") start();
 }
 
 // ---- SVG panels ------------------------------------------------------------------------------------

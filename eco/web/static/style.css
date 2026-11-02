@@ -180,3 +180,12 @@ canvas.chart { display: block; width: 100%; height: 110px; margin: 4px 0; }
 .jog-speed-value { font-variant-numeric: tabular-nums; font-weight: 600; }
 .row.own { background: var(--group); }
 a.btn:not(.primary) { color: var(--link); }
+
+/* camera live view */
+.cam-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.cam-wrap.control { touch-action: none; cursor: crosshair; outline: 3px solid var(--busy); outline-offset: -3px; }
+.cam-img { display: block; width: 100%; height: auto; min-height: 120px; -webkit-touch-callout: none; pointer-events: none; }
+.cam-img.rotated { transform: rotate(180deg); }
+.cam-box { display: none; position: absolute; border: 2px dashed #fff; background: rgba(255,255,255,.12); pointer-events: none; }
+.cam-tools { margin-top: 8px; }
+.btn.on { background: var(--busy); color: #000; border-color: var(--busy); }

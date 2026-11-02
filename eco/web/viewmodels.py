@@ -13,6 +13,7 @@ import enum
 import math
 import numbers
 
+from eco.web.camera import camera_info
 from eco.widgets.live_values import format_value
 
 MAX_TEXT = 300  # characters of a value's text sent to the client (arrays, long strings)
@@ -224,6 +225,8 @@ def row_for(item, base=None):
             row["doc"] = str(doc)
     if kind == "assembly":
         row["svg"] = has_svg_panel(item)
+        if camera_info(item):
+            row["camera"] = True
     speed = jog_speed_item(item) if (kind == "adjustable" or reads == "adjustable") else None
     if speed is not None:
         row["jog"] = {"speed": full_name(speed)}
@@ -243,6 +246,9 @@ def describe(obj, name=None):
     name = name or full_name(obj)
     kind = kind_of(obj)
     view = {"name": name, "title": full_name(obj, name), "kind": kind, "svg": has_svg_panel(obj)}
+    cam = camera_info(obj)
+    if cam:
+        view["camera"] = cam
     objects = {}
     if kind == "assembly":
         display_items, hidden_items = _display_and_all(obj)

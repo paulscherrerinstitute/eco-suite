@@ -150,3 +150,34 @@ def test_start_web_explains_a_port_in_use():
     finally:
         blocker.close()
         stop_web()
+
+
+def _stream(gateway, query, nbytes):
+    """The first `nbytes` of /api/mjpeg?<query> (urllib: a streamed body)."""
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{gateway.port}/api/mjpeg?{query}&token={TOKEN}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return response.status, response.headers["Content-Type"], response.read(nbytes)
+    except urllib.error.HTTPError as exc:
+        return exc.code, None, exc.reason
+
+
+def test_camera_stream_is_multipart_jpeg_and_shared(gateway):
+    pytest.importorskip("PIL")
+    import time
+
+    code, kind, body = _stream(gateway, "name=cam_demo&quality=low", 60000)
+    assert code == 200 and kind == "multipart/x-mixed-replace; boundary=ecoframe"
+    assert body.startswith(b"--ecoframe\r\nContent-Type: image/jpeg") and b"\xff\xd8" in body
+    deadline = time.monotonic() + 3
+    while gateway.cameras._relays and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not gateway.cameras._relays  # the camera connection closed with its last viewer
+
+
+def test_camera_stream_refuses_other_items_and_qualities(gateway):
+    assert _stream(gateway, "name=mono", 10)[0] == 404
+    assert _stream(gateway, "name=cam_demo&quality=huge", 10)[0] == 400

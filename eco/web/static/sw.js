@@ -3,7 +3,7 @@
 // SVG panels or the websocket -- a stale beamline value shown as current
 // would be worse than none. Network first, so a new client version is
 // picked up as soon as the gateway is reachable.
-const CACHE = "eco-shell-v3";
+const CACHE = "eco-shell-v4";
 const SHELL = ["/", "/static/app.js", "/static/strip.js", "/static/style.css", "/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

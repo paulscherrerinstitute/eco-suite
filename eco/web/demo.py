@@ -13,7 +13,7 @@ import threading
 import time
 
 from eco.aliases.aliases import Alias
-from eco.elements.adjustable import AdjustableMemory, AdjustableTrigger
+from eco.elements.adjustable import AdjustableGetSet, AdjustableMemory, AdjustableTrigger
 from eco.elements.assembly import Assembly
 
 
@@ -198,6 +198,88 @@ class Stage(Assembly):
         self._append(SimDetector, 1000.0, 20.0, unit="cts", name="diode", is_display=True)
 
 
+class SimPTZCamera(Assembly):
+    """Like eco.devices_general.cameras_ptz.AxisPTZ, without a camera: an
+    MJPEG stream drawn with PIL (a pan/tilt grid, a few labelled targets and
+    a clock) and the same click-to-center / area-zoom / home commands."""
+
+    TARGETS = [(0, 0, "sample"), (-25, 5, "detector"), (30, -8, "laser in"), (-60, -20, "door"), (70, 12, "lamp")]
+
+    def __init__(self, name=None):
+        super().__init__(name=name)
+        self._pos = {"pan": 0.0, "tilt": 0.0, "zoom": 1.0}
+        self.rotate_display_180 = False
+        for axis, unit in (("pan", "deg"), ("tilt", "deg"), ("zoom", "")):
+            self._append(AdjustableGetSet, lambda a=axis: round(self._pos[a], 3),
+                         lambda v, a=axis: self._pos.__setitem__(a, float(v)), name=axis, is_display=True)
+        self._append(AdjustableTrigger, self.home, name="go_home", is_display=True, button_label="Home")
+
+    def _fov(self, w, h):
+        hfov = 60.0 / self._pos["zoom"]
+        return hfov, hfov * h / w
+
+    def home(self):
+        self._pos.update(pan=0.0, tilt=0.0, zoom=1.0)
+
+    def set_zoom(self, value):
+        self._pos["zoom"] = min(max(float(value), 1.0), 30.0)
+
+    def click_center(self, x, y, image_width, image_height):
+        hfov, vfov = self._fov(image_width, image_height)
+        self._pos["pan"] = min(max(self._pos["pan"] + (x / image_width - 0.5) * hfov, -170), 170)
+        self._pos["tilt"] = min(max(self._pos["tilt"] - (y / image_height - 0.5) * vfov, -80), 30)
+
+    def area_zoom(self, x, y, z, image_width, image_height):
+        self.click_center(x, y, image_width, image_height)
+        self.set_zoom(self._pos["zoom"] * z / 100)
+
+    def zoom_to_rectangle(self, x0, y0, x1, y1, image_width, image_height):
+        cx, cy, w, h = (x0 + x1) / 2, (y0 + y1) / 2, abs(x1 - x0), abs(y1 - y0)
+        if w < 4 or h < 4:
+            return self.click_center(cx, cy, image_width, image_height)
+        return self.area_zoom(cx, cy, 100 * min(image_width / w, image_height / h), image_width, image_height)
+
+    def iter_mjpeg_frames(self, resolution=None, compression=None, fps=None, stop_event=None, chunk_size=None):
+        import io
+
+        from PIL import Image, ImageDraw
+
+        w, h = (int(v) for v in (resolution or "1280x720").split("x"))
+        quality = max(10, 100 - int(compression or 50))
+        period = 1.0 / (fps or 10)
+        while stop_event is None or not stop_event.is_set():
+            t = time.time()
+            hfov, vfov = self._fov(w, h)
+            pan, tilt = self._pos["pan"], self._pos["tilt"]
+            X = lambda p: (p - pan) / hfov * w + w / 2
+            Y = lambda q: (tilt - q) / vfov * h + h / 2
+            img = Image.new("RGB", (w, h), (32, 44, 60))
+            d = ImageDraw.Draw(img)
+            step = 10 if hfov > 20 else (2 if hfov > 5 else 0.5)
+            p = math.floor((pan - hfov) / step) * step
+            while p <= pan + hfov:
+                d.line([(X(p), 0), (X(p), h)], fill=(70, 90, 115))
+                d.text((X(p) + 3, 3), f"{p:g}", fill=(150, 170, 200))
+                p += step
+            q = math.floor((tilt - vfov) / step) * step
+            while q <= tilt + vfov:
+                d.line([(0, Y(q)), (w, Y(q))], fill=(70, 90, 115))
+                d.text((3, Y(q) + 2), f"{q:g}", fill=(150, 170, 200))
+                q += step
+            for tp, tt, label in self.TARGETS:
+                r = 2.0 / hfov * w
+                d.ellipse([X(tp) - r, Y(tt) - r, X(tp) + r, Y(tt) + r], outline=(255, 200, 60), width=3)
+                d.text((X(tp) + r + 4, Y(tt) - 6), label, fill=(255, 220, 120))
+            d.line([(w / 2 - 12, h / 2), (w / 2 + 12, h / 2)], fill=(255, 255, 255))
+            d.line([(w / 2, h / 2 - 12), (w / 2, h / 2 + 12)], fill=(255, 255, 255))
+            d.text((8, h - 18), f"{time.strftime('%H:%M:%S')}  pan {pan:.1f}  tilt {tilt:.1f}  zoom {self._pos['zoom']:.2f}",
+                   fill=(255, 255, 255))
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=quality)
+            yield buf.getvalue()
+            time.sleep(max(0.0, period - (time.time() - t)))
+
+
 class Mono(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
@@ -311,13 +393,14 @@ class DemoNamespace:
             "vacuum": Vacuum,
             "sample": Sample,
             "stage": Stage,
+            "cam_demo": SimPTZCamera,
             "lxt": lambda name=None: SimMotor(0.0, speed=2e-12, limits=(-1e-9, 1e-9), unit="s", name=name),
             "slow_device": SlowDevice,
             "broken": _broken,
         }
         for name in ("mono", "lxt", "stage"):
             self.init_name(name)
-        for name in ("slits", "vacuum", "sample", "slow_device", "broken"):
+        for name in ("slits", "vacuum", "sample", "cam_demo", "slow_device", "broken"):
             self.lazy_items[name] = name
         self.init_name("broken")
 

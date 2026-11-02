@@ -23,10 +23,12 @@ import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import tornado.iostream
 import tornado.web
 import tornado.websocket
 from tornado.ioloop import IOLoop, PeriodicCallback
 
+from eco.web import camera
 from eco.web.backends import NotFound
 from eco.web.client_session import FLUSH_INTERVAL, ClientSession
 
@@ -94,6 +96,50 @@ class _Svg(_Base):
         self.set_header("Content-Type", "image/svg+xml; charset=utf-8")
         self.set_header("X-Eco-Prefix", prefix)
         self.finish(text)
+
+
+class _Mjpeg(_Base):
+    """A camera's live stream (eco.web.camera), as multipart JPEG for an <img>."""
+
+    _viewer = None
+
+    async def get(self):
+        if not self.authorized():
+            raise tornado.web.HTTPError(403)
+        name = self.get_query_argument("name")
+        quality = self.get_query_argument("quality", "low")
+        try:
+            obj = await IOLoop.current().run_in_executor(self.gateway.svg_pool, self.gateway.object_for, name)
+        except NotFound as exc:
+            raise tornado.web.HTTPError(404, reason=str(exc)[:200])
+        if camera.camera_info(obj) is None:
+            raise tornado.web.HTTPError(404, reason=f"{name} is not a camera with a live stream")
+        try:
+            self._viewer = self.gateway.cameras.viewer(obj, name, quality, asyncio.get_running_loop())
+        except ValueError as exc:
+            raise tornado.web.HTTPError(400, reason=str(exc))
+        try:
+            frame = await self._viewer.next_frame()
+            if frame is None:  # nothing came: say why instead of an empty stream
+                raise tornado.web.HTTPError(502, reason=(self._viewer.relay.error or "no stream")[:200])
+            self.set_header("Content-Type", "multipart/x-mixed-replace; boundary=ecoframe")
+            self.set_header("Cache-Control", "no-store")
+            while frame is not None:
+                self.write(b"--ecoframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(frame))
+                self.write(frame)
+                self.write(b"\r\n")
+                await self.flush()  # waits for a slow client: newer frames replace the ones it missed
+                frame = await self._viewer.next_frame()
+        except tornado.iostream.StreamClosedError:
+            pass
+        finally:
+            self._viewer.relay.remove(self._viewer)
+
+    def on_connection_close(self):  # the browser went: end get() (which leaves the relay)
+        viewer = self._viewer
+        if viewer is not None:
+            viewer.closed = True
+            viewer.wake()
 
 
 class _Socket(tornado.websocket.WebSocketHandler):
@@ -197,6 +243,7 @@ class WebGateway:
         self.poll_interval = poll_interval
         self.sessions = set()
         self.svg_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="eco-web-svg")
+        self.cameras = camera.RelayHub()
         self._svg_objects = {}
         self._loop = None
         self._thread = None
@@ -213,6 +260,7 @@ class WebGateway:
                 (r"/(%s)" % "|".join(re.escape(f) for f in _ROOT_FILES), _RootFile),
                 (r"/static/(.*)", tornado.web.StaticFileHandler, {"path": STATIC_DIR}),
                 (r"/api/svg", _Svg),
+                (r"/api/mjpeg", _Mjpeg),
                 (r"/ws", _Socket),
             ],
             gateway=self,
@@ -276,6 +324,7 @@ class WebGateway:
         self._thread = None
         self._loop = None
         self.svg_pool.shutdown(wait=False, cancel_futures=True)
+        self.cameras.stop_all()
 
     @property
     def running(self):
@@ -288,8 +337,12 @@ class WebGateway:
         return f"http://localhost:{self.port}/?token={self.token}"
 
     def svg_for(self, name, live):
-        """Resolve `name` -- any name a client has seen (top-level or a row)
-        -- and build its panel. Row names come from client sessions."""
+        """Resolve `name` and build its panel."""
+        return self.backend.svg(self.object_for(name), live=live)
+
+    def object_for(self, name):
+        """Any name a client has seen (top-level or a row; row names come
+        from client sessions), else what the backend resolves."""
         obj = None
         for handler in list(self.sessions):
             session = getattr(handler, "session", None)
@@ -299,4 +352,4 @@ class WebGateway:
                     break
         if obj is None:
             obj = self.backend.resolve(name)
-        return self.backend.svg(obj, live=live)
+        return obj
