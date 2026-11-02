@@ -494,6 +494,14 @@ def _forget_unreadable(con, readable):
     return posts
 
 
+def indexed_logbooks(db_path=logs_ask.DEFAULT_DB):
+    """Ids of the logbooks indexed so far."""
+    con = logs_ask._connect(db_path)
+    rows = con.execute("SELECT key FROM meta WHERE key LIKE 'scilog_logbook_last:%'").fetchall()
+    con.close()
+    return {key.split(":", 1)[1] for (key,) in rows}
+
+
 def save_selection(filters, db_path=logs_ask.DEFAULT_DB):
     """Remember which logbooks --scilog-index chose, for a plain repeat."""
     con = logs_ask._connect(db_path)

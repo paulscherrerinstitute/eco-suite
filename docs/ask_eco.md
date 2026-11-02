@@ -57,7 +57,8 @@ the sources are links under the answer.
 | Your namespace | Which top-level devices exist and their classes, plus the components of an initialized device the question names. Lazy devices are listed without being initialized. |
 | escape | The API of the installed escape package, and the docs and example notebooks of an escape checkout. |
 | Notebooks | Code cells of more notebooks, after `%ei --examples PATH`. |
-| SciLog, notes | Only after `%ei --scilog-index ...` or `%ei --notes PATH` has indexed them. |
+| SciLog | Bernina's logbooks by default, or those chosen with `%ei --scilog-index ...`, as far as the account can read them. |
+| Notes | After `%ei --notes PATH` or `%ei --scan ...` has indexed them. |
 
 The search index lives in `~/.eco/history_index.sqlite`. It is updated
 before a question at most every ten minutes, and only files that changed are
@@ -121,9 +122,14 @@ values), but its data points are not read off.
 
 Either way, `%ei` reads only what that account can read *now*. Every update
 lists the readable logbooks again and removes indexed posts of logbooks the
-account has lost access to. Updates run with `%ei --scilog-index` and, once
-logbooks have been chosen, by themselves every ten minutes before a
-question.
+account has lost access to.
+
+SciLog is searched by default: before a question (at most every ten
+minutes) `%ei` fetches the new posts of Bernina's logbooks -- the first
+time all of them, about 20 s -- or of the logbooks last chosen with
+`%ei --scilog-index`. Without a token and without the beamline password it
+says so once per session and searches the rest. `"scilog_default": null`
+in `~/.eco/ei.json` switches the default off.
 
 Personal accounts log in through the browser only, so `%ei` uses the token
 SciLog gives the browser after that login:

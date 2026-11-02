@@ -100,6 +100,9 @@ DEFAULT_CONFIG = {
     # where scanned and captured pictures are kept (mode 700)
     "scan_dir": "~/.eco/ei_scans",
     "max_tokens": 1500,
+    # SciLog logbooks indexed (and kept up to date) before questions until
+    # `%ei --scilog-index` chooses others; null: SciLog only when chosen
+    "scilog_default": {"location": "bernina"},
     "timeout": 180,
     # how many search hits of each kind go to the model
     "hits": {"command": 10, "note": 5, "doc": 6, "api": 8, "example": 3},
@@ -653,21 +656,33 @@ class Assistant:
             return result
 
     def _refresh_scilog(self, report):
-        """New posts of the SciLog logbooks chosen last time (if any were),
-        and away with those of logbooks no longer readable. One failure
-        report per session; the existing index is searched regardless."""
+        """New posts of the SciLog logbooks chosen last time (by default
+        config["scilog_default"], Bernina's), and away with those of
+        logbooks no longer readable. One failure report per session; the
+        existing index is searched regardless."""
         from eco import logs_scilog
 
-        filters = logs_scilog.load_selection(self.db_path)
+        filters = logs_scilog.load_selection(self.db_path) or self.config.get("scilog_default")
         if not filters:
             return
         try:
-            r = logs_scilog.update(logs_scilog.reader(timeout=10), filters, db_path=self.db_path, report=None)
+            reader = logs_scilog.reader(timeout=10)
+            first = not logs_scilog.indexed_logbooks(self.db_path)
+            if first and report:
+                report(f"eco.ei: indexing SciLog {filters} as {reader.identity} -- the first time takes ~20 s ...")
+            r = logs_scilog.update(reader, filters, db_path=self.db_path, report=None)
+        except logs_scilog.TokenError:
+            if report and not self._scilog_failed:
+                report("eco.ei: SciLog is not searched: no SciLog token here (`%ei --scilog-token` tells how to add one)")
+            self._scilog_failed = True
+            return
         except Exception as exc:
             if report and not self._scilog_failed:
                 report(f"eco.ei: SciLog not updated ({type(exc).__name__}: {str(exc).splitlines()[0]})")
             self._scilog_failed = True
             return
+        if first and report:
+            report(f"eco.ei: {r['new_posts']} SciLog posts from {r['logbooks']} logbooks indexed")
         self._scilog_failed = False
         if report and r["dropped"]:
             report(f"eco.ei: {r['dropped']} SciLog posts removed: {r['identity']} can no longer read their logbooks")

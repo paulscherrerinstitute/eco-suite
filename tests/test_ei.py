@@ -218,6 +218,7 @@ class _FakeBackend:
 def _config():
     cfg = json.loads(json.dumps(ei.DEFAULT_CONFIG))
     cfg["reindex_interval"] = 1e9  # the test index is built by hand
+    cfg["scilog_default"] = None  # no network
     return cfg
 
 
@@ -417,6 +418,32 @@ def test_items_know_where_they_are_and_show_their_context(tmp_path):
     method = api["eco.attenuator.AttenuatorAramis.set_transmission"]
     assert method.location().endswith("attenuator.py:6")
     assert la.item_context(method, db_path=db).splitlines()[3].startswith("    def set_transmission")
+
+
+def test_scilog_is_indexed_by_default_when_it_can_be_read(tmp_path, monkeypatch):
+    import eco.logs_scilog as ls
+    from test_logs_scilog import _reader
+
+    a = _assistant(tmp_path)
+    a.config["scilog_default"] = {"location": "bernina"}
+    reports = []
+    monkeypatch.setattr(ls, "reader", lambda **kw: (_ for _ in ()).throw(ls.TokenError("none")))
+    a._refresh_scilog(reports.append)
+    a._refresh_scilog(reports.append)
+    assert reports == ["eco.ei: SciLog is not searched: no SciLog token here (`%ei --scilog-token` tells how to add one)"]
+
+    reader, _ = _reader()
+    monkeypatch.setattr(ls, "reader", lambda **kw: reader)
+    reports.clear()
+    a._refresh_scilog(reports.append)
+    assert "first time" in reports[0] and reports[1] == "eco.ei: 3 SciLog posts from 2 logbooks indexed"
+    assert la.search("freespace", k=1, db_path=a.db_path, kinds=("scilog",))
+    a._refresh_scilog(reports.append)
+    assert len(reports) == 2  # quiet once it is there
+    a.config["scilog_default"] = None
+    ls.save_selection({"name": "instrument"}, a.db_path)  # a choice wins over the default
+    a._refresh_scilog(reports.append)
+    assert ls.indexed_logbooks(a.db_path) == {"lb1", "lb2"}
 
 
 def test_an_answer_lists_what_it_cites(tmp_path):
