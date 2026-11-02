@@ -225,9 +225,12 @@ class CounterValue:
             t_tmp = time.time()
             det_val = self.get_detector_values()
             scan_wr().detector_values.append(det_val)
-            time.sleep(collection_time - (time.time() - t_tmp))
+            time.sleep(max(0.0, collection_time - (time.time() - t_tmp)))
             t_stop = time.time()
             scan_wr().timestamp_intervals.append(StepTime(t_tmp, t_stop))
+            set_window = getattr(scan_wr(), "set_step_window", None)
+            if set_window is not None:  # only taken if this counter leads
+                set_window(self, time_start=t_tmp, time_stop=t_stop)
 
         acquisition.set_acquire_foo(acquire, hold=False)
 
@@ -526,12 +529,30 @@ class CounterValue:
                 files=files,
             )
 
-    # TODO
-    def start(self):
-        pass
+    # -- following the scan's leading counter (StepScan.do_next_step) --------
+    # The monitors run for the whole scan; a step is only the time window cut
+    # out of them afterwards (scan.timestamp_intervals). Following: start()
+    # reads the polled detectors and notes the time, stop() closes the
+    # window -- the leading counter's own times if it recorded them
+    # (scan.step_window), else the start()/stop() calls.
+    follows = True
 
-    def stop(self):
-        pass
+    def start(self, scan=None, **kwargs):
+        if scan is None:
+            return
+        scan.counter_scratch(self.name)["follow_start"] = time.time()
+        scan.detector_values.append(self.get_detector_values())
+
+    def stop(self, scan=None, **kwargs):
+        if scan is None:
+            return {"files": []}
+        t_stop = time.time()
+        t_start = scan.counter_scratch(self.name).pop("follow_start", t_stop)
+        window = getattr(scan, "step_window", None) or {}
+        scan.timestamp_intervals.append(
+            StepTime(window.get("time_start", t_start), window.get("time_stop", t_stop))
+        )
+        return {"files": []}
 
 
 def _with_esc_suffix(filename):

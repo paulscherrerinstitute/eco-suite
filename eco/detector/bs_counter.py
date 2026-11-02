@@ -546,6 +546,10 @@ class BsStreamCounter:
         for base in self._raw.values():
             base._source.eventWorker.registerSource(base._source.name)
 
+        # following the scan's leading counter: start()/stop() around its
+        # acquisition (see stop()), no exposure of its own
+        self.follows = True
+
         self.callbacks_start_scan = [self._on_scan_start]
         self.callbacks_start_step = []
         self.callbacks_step_counting = []
@@ -837,22 +841,33 @@ class BsStreamCounter:
             base._source.eventWorker.removeSource(base._source.name)
 
     # -- reading a step's bin ---------------------------------------------------
-    def _reduce_step(self, bins, step_index, n0=None):
+    def _reduce_step(self, bins, step_index, n0=None, pulse_range=None):
         # n0: per-channel index into that bin to start reducing from -- data
         # already sitting in the bin *before* this acquisition began must not
         # be included, only what arrived since. Bins created fresh per scan
         # step start empty, so n0=0 there is a no-op.
+        # pulse_range: (first, last) pulse id, inclusive -- only those shots
+        # (following a counter that recorded its pulses, see stop()).
         n0 = n0 or {name: 0 for name in bins.channels}
         result = {}
         pulse_ids = {}
         samples_all = {}
         for name in bins.channels:
             samples = list(bins.bin(name, step_index))[n0[name] :]
+            ids = list(bins.eventids(name, step_index))[n0[name] :]
+            if pulse_range is not None:
+                first, last = pulse_range
+                kept = [
+                    (v, i) for v, i in zip(samples, ids)
+                    if i is not None and first <= i <= last
+                ]
+                samples = [v for v, _ in kept]
+                ids = [i for _, i in kept]
             samples_all[name] = samples
             result[name] = (
                 self.reduction(samples) if len(samples) > 1 else (samples[0] if samples else None)
             )
-            pulse_ids[name] = list(bins.eventids(name, step_index))[n0[name] :]
+            pulse_ids[name] = ids
         bins.last_samples = samples_all
         value = result if len(result) > 1 else next(iter(result.values()), None)
         self.last_samples = samples_all
@@ -956,12 +971,20 @@ class BsStreamCounter:
         result = {}
 
         def _wait_and_reduce():
+            t_start = _time()
             try:
                 self._wait_for_n_new(bins, step_index, n0, Npulses)
                 result["value"] = self._reduce_step(bins, step_index, n0)
             finally:
                 if standalone:
                     self._close(bins)
+            set_window = getattr(scan, "set_step_window", None)
+            ids = [i for ids in self.last_pulse_ids.values() for i in ids if i is not None]
+            if set_window is not None and ids:  # only taken if this counter leads
+                set_window(
+                    self, pulse_id_start=int(min(ids)), pulse_id_stop=int(max(ids)),
+                    time_start=t_start, time_stop=_time(),
+                )
             return result["value"]
 
         return Acquisition(
@@ -978,12 +1001,43 @@ class BsStreamCounter:
         bins.pending = self._advance_step(bins, scan)
 
     def stop(self, scan=None, **kwargs):
+        """End the step. Following a counter that recorded its pulses
+        (``scan.step_window``, e.g. the DAQ): wait until every channel has a
+        shot at or past the last of them -- bs data arrive some time after
+        the pulse -- and keep exactly the shots of that range. Otherwise:
+        what arrived since ``start()``."""
         bins = self._standalone_bins if scan is None else self.scan_bins(scan)
-        self._reduce_step(bins, *bins.pending)
+        step_index, n0 = bins.pending
+        window = getattr(scan, "step_window", None) or {}
+        first, last = window.get("pulse_id_start"), window.get("pulse_id_stop")
+        if first is not None and last is not None:
+            self._wait_for_pulse_id(bins, step_index, last)
+            self._reduce_step(bins, step_index, n0, pulse_range=(first, last))
+        else:
+            self._reduce_step(bins, step_index, n0)
         if scan is None:
             self._close(bins)
             self._standalone_bins = None
         return {"files": []}
+
+    def _wait_for_pulse_id(self, bins, step_index, pulse_id):
+        """Until every channel's bin of `step_index` has a shot with a pulse
+        id >= `pulse_id`; TimeoutError after ``timeout`` seconds."""
+
+        def reached(name):
+            ids = bins.eventids(name, step_index)
+            return bool(ids) and ids[-1] is not None and ids[-1] >= pulse_id
+
+        deadline = _time() + self.timeout
+        while not all(reached(name) for name in bins.channels):
+            if _time() > deadline:
+                missing = [name for name in bins.channels if not reached(name)]
+                raise TimeoutError(
+                    f"{self.name}: step {step_index}: no shot up to pulse id {pulse_id} "
+                    f"from {missing} within {self.timeout}s -- is the stream still live?"
+                )
+            bins.new_data.wait(timeout=0.05)
+            bins.new_data.clear()
 
     def _advance_step(self, bins, scan):
         """Point the bin key of *bins* at *scan*'s current step (or a single

@@ -275,6 +275,8 @@ class AdaptiveDriver:
         self.description = f"adaptive ({type(strategy).__name__})"
 
     # -- counter protocol: nothing to acquire ------------------------------
+    follows = True  # takes no exposure; StepScan only start()s/stop()s it
+
     def acquire(self, scan=None, Npulses=None, **kwargs):
         return Acquisition(acquire=lambda: None, hold=False)
 

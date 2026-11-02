@@ -114,6 +114,7 @@ class StepScan(Assembly):
         from .counters import as_counters  # detectors become their counters
 
         self.counters = as_counters(counters)
+        self.step_window = {}  # see set_step_window
 
         self._append(
             DetectorGet, lambda: self._get_names(self.counters), name="counters_names"
@@ -406,22 +407,38 @@ class StepScan(Assembly):
         # milliseconds cost nothing. See eco.epics_utils.ca_tuning.
         with ca_tuning.sensitive_period("scan step acquisition"):
             if not self.has_callbacks_step_counting():
-                acs = []
+                # The first counter sets the step's length (N_pulses is its
+                # exposure) and records its window in self.step_window.
+                # Counters that can follow (`follows = True`) take no
+                # exposure: started before it and stopped after it, they
+                # collect exactly that window. Any other counter acquires
+                # N_pulses in parallel, as before.
+                self.step_window = {}
+                lead = self.counters[:1]
+                followers = [c for c in self.counters[1:] if getattr(c, "follows", False)]
+                acquiring = lead + [
+                    c for c in self.counters[1:] if not getattr(c, "follows", False)
+                ]
                 for ctr in self.counters:
-                    acq = ctr.acquire(
-                        scan=self, Npulses=self.pulses_per_step[0], **self.callbacks_kwargs
-                    )  # TODO make sure step-individual aquisition argument is possible.
-                    acs.append(acq)
-                    try:
-                        if hasattr(ctr, "name"):
-                            statstr += f"{ctr.name}, "
-                    except:
-                        pass
+                    statstr += f"{getattr(ctr, 'name', type(ctr).__name__)}, "
                 filenames = []
-                for ta in acs:
-                    ta.wait()
-                    if hasattr(ta, "file_names"):
-                        filenames.extend(ta.file_names)
+                for ctr in followers:
+                    ctr.start(scan=self, **self.callbacks_kwargs)
+                try:
+                    acs = [
+                        ctr.acquire(
+                            scan=self, Npulses=self.pulses_per_step[0], **self.callbacks_kwargs
+                        )
+                        for ctr in acquiring
+                    ]
+                    for ta in acs:
+                        ta.wait()
+                        if hasattr(ta, "file_names"):
+                            filenames.extend(ta.file_names)
+                finally:
+                    for ctr in followers:
+                        resp = ctr.stop(scan=self, **self.callbacks_kwargs)
+                        filenames.extend((resp or {}).get("files", []))
             else:
                 acs = []
                 for ctr in self.counters:
@@ -459,6 +476,8 @@ class StepScan(Assembly):
         if gridspecs:
             tstepinfo["grid_index"] = gridspecs["index_plan"][self.next_step]
 
+        if getattr(self, "step_window", None):
+            tstepinfo["window"] = dict(self.step_window)
         tstepinfo["times"] = {
             "callbacks_step_start": dt_callbacks_step_start,
             "adjustables": dt_adj,
@@ -499,6 +518,16 @@ class StepScan(Assembly):
             self.remove_last_scan_info_entry()
 
         return True
+
+    def set_step_window(self, counter, **window):
+        """The current step's acquisition window, recorded by the leading
+        (first) counter: ``pulse_id_start``/``pulse_id_stop`` and/or
+        ``time_start``/``time_stop`` (inclusive pulse ids, ``time.time()``).
+        Following counters read it from ``self.step_window`` in their
+        ``stop()``; it is also kept in the step's info. Calls from any other
+        counter are ignored, so a counter can call this unconditionally."""
+        if self.counters and counter is self.counters[0]:
+            self.step_window.update(by=getattr(counter, "name", None), **window)
 
     def counter_scratch(self, counter_name):
         """Per-counter scratch dict on this scan instance (see
@@ -1701,8 +1730,9 @@ class Scans(Assembly):
             number of intervals) or ``[adjustable, positions]`` -- the grid
             the strategy picks from, its finest resolution; may be unevenly
             spaced.
-        N_pulses: exposure per point, in the counters' unit (shots for the
-            DAQ, seconds for monitor counters).
+        N_pulses: exposure per point, in the unit of the first counter
+            (shots for the DAQ, seconds for a monitor counter); the other
+            counters follow it.
         feedback: what the strategy steers by -- a detector (its bs
             counter for a bs detector, else monitored through a
             ``CounterValue``), a counter with ``step_feedback``

@@ -125,6 +125,26 @@ The same detector given twice, or given both in `counters=` and as an adaptive
 scan's `feedback=`, is read by one counter. An object can choose its own
 counter by defining `_scan_counter()`.
 
+## The first counter sets the exposure, the others follow
+
+`N_pulses` is the exposure of the **first** counter, in its own unit: shots for
+the DAQ, seconds for a monitor counter, shots for a bs counter. The other
+counters do not read it. They collect for exactly as long as the first one
+acquires:
+
+- the first counter records its window per step: the DAQ its pulse ids
+  (`start_id` to `start_id + N - 1`) and times, a monitor counter its times, a
+  bs counter the pulse ids and times of its shots;
+- a monitor counter following it cuts its monitors to that time window;
+- a bs counter following it waits until the last of those pulses has arrived
+  (bs data come some time after the pulse) and keeps exactly those shots.
+
+So `ascan(mot, 0, 1, 20, 100, counters=[daq, mon_opt.intensity, diode])` takes
+100 DAQ shots per step, the bs counter the same 100 pulses, and the monitor
+counter the same time. The window of each step is kept in its step info
+(`scan.scan_info["scan_step_info"][i]["window"]`). A counter that cannot follow
+(e.g. a second DAQ) still acquires `N_pulses` in parallel, as before.
+
 ## Where the time goes
 
 Every step line ends with how the scan's time has been spent so far, and the

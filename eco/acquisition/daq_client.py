@@ -536,10 +536,16 @@ class Daq(Assembly):
             acquisition_kwargs={"Npulses": Npulses},
         )
 
+        # the step's pulses for the scan's following counters (only taken if
+        # the DAQ leads the scan, see StepScan.set_step_window)
+        set_window = getattr(scan, "set_step_window", None)
+        on_window = None if set_window is None else (lambda **w: set_window(self, **w))
+
         def acquire():
 
             response = self.acquire_pulses(
                 Npulses,
+                on_window=on_window,
                 # directory_relative=Path(file_name).parents[0],
                 wait=True,
                 channels_JF=self.channels["channels_JF"].get_current_value(),
@@ -564,12 +570,35 @@ class Daq(Assembly):
 
         return acquisition
 
-    def acquire_pulses(self, Npulses, label=None, wait=True, pgroup=None, **kwargs):
+    def acquire_pulses(
+        self, Npulses, label=None, wait=True, pgroup=None, on_window=None, **kwargs
+    ):
+        """`on_window(**window)`, if given, gets the acquisition's pulses as
+        soon as they are known (``pulse_id_start``, ``pulse_id_stop``,
+        inclusive, and ``time_start``), and ``time_stop`` once the last
+        pulse has passed, before the data are requested -- what a scan's
+        following counters cut their data to (StepScan.set_step_window).
+        Never fails the acquisition."""
         if pgroup is None:
             pgroup = self.pgroup
         ix = self.start(label=label, **kwargs)
+        start_id = self.running[ix]["start_id"]
+        stop_id = start_id + Npulses - 1
+
+        def report(**window):
+            if on_window is None:
+                return
+            try:
+                on_window(**window)
+            except Exception as exc:
+                print(f"daq: could not record the step's pulses: {exc}")
+
+        report(pulse_id_start=start_id, pulse_id_stop=stop_id, time_start=time.time())
+        if wait and on_window is not None:
+            self.wait_for_pulse_id(stop_id)  # stop() below then returns at once
+            report(time_stop=time.time())
         return self.stop(
-            stop_id=self.running[ix]["start_id"] + Npulses - 1,
+            stop_id=stop_id,
             acq_ix=ix,
             wait=wait,
             pgroup=pgroup,

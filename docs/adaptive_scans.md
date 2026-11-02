@@ -40,7 +40,7 @@ scans.adaptive_scan(*axes, N_pulses=..., feedback=..., budget=... or max_points=
 | Argument | Meaning |
 |---|---|
 | axes | one or two, written as for [`scans.scan`](scanning.md): `[adjustable, start, end, step]` (a float is the step size, an int the number of intervals) or `[adjustable, [p0, p1, ...]]`. This is the **grid**: points are only ever taken from it, so its spacing is the finest resolution. It may be unevenly spaced. |
-| `N_pulses` | exposure per point, in the counters' unit (shots for the DAQ, seconds for monitor counters) |
+| `N_pulses` | exposure per point, in the unit of the first counter (shots for the DAQ, seconds for a monitor counter); the other counters follow it, see [scanning](scanning.md) |
 | `feedback` | the live signal the strategy steers by: a detector, or a counter, see below |
 | `budget` | time limit: seconds or `"90s"`, `"10min"`, `"1h"` |
 | `max_points` | point limit. Give `budget`, `max_points` or both. |

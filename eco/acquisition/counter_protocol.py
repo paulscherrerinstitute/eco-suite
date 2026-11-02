@@ -30,7 +30,13 @@ class Counter(Protocol):
     *any* counter (or the scan itself) has a non-empty
     ``callbacks_step_counting``:
 
-    - simple mode: ``acquire(scan, Npulses=..., **kwargs)`` returns an
+    - simple mode: the first counter leads: ``acquire(scan, Npulses=...,
+      **kwargs)`` and it records its window with ``scan.set_step_window``
+      (pulse ids and/or times). A later counter with ``follows = True``
+      takes no exposure: ``start(scan)`` before and ``stop(scan)`` after the
+      leader's acquisition, cutting its data to ``scan.step_window``. Any
+      other counter acquires in parallel, as below.
+      ``acquire(scan, Npulses=..., **kwargs)`` returns an
       ``AcquisitionHandle``; StepScan calls ``.wait()`` on it and reads
       ``.file_names`` if present.
     - start/stop mode: ``start(scan, **kwargs)`` begins the acquisition,
