@@ -272,3 +272,10 @@ hexagonal, monoclinic, triclinic). Result on those (2026-10-30, 1600 cases):
   reflections in Bragg to 2.4e-14 (relative).
 - Time per solve: diffcalc 1.5 ms, `recspace` 3.1 ms (mostly numpy overhead
   on 3-vectors inside hklforge; fast enough for interactive use).
+
+```{admonition} Did you know?
+:class: tip
+
+`xrd.recspace.set_constraints()` without arguments lists the stored
+Bernina setups; one name sets all of a setup's constraints at once.
+```

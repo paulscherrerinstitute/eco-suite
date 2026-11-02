@@ -311,3 +311,12 @@ adding a key, `%ei --key` picks it up without restarting.
 log excerpts (SciLog posts and elog entries included), and the list of namespace names go to the model server. The
 server is PSI's own, but think before indexing notes you would not paste
 into it yourself.
+
+```{admonition} Did you know?
+:class: tip
+
+`%ei what happened to the machine since yesterday?` goes through the
+machine's elog entries of that span, in order, each linked to its entry.
+And now and then something other than the spinner keeps you company while
+the model thinks.
+```

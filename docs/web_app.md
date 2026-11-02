@@ -93,3 +93,11 @@ on a worker thread: the write-access gate, a running queue's claims
 jog writes the motor record's jog fields directly, so the web app checks the
 access gate and queue claims itself before it starts one. Writes are off
 unless asked for, and the session logs each one with the client that sent it.
+
+```{admonition} Did you know?
+:class: tip
+
+The same ⋯ menu exists in the desktop and Jupyter property grids, with
+the archiver history of the item from 10 minutes to 7 days
+({doc}`widget_views`).
+```

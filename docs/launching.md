@@ -101,6 +101,13 @@ timeline (see {doc}`command_history`).
 in one spot, the same as dropping one panel's title bar on another's. Drag a
 tab off the tab bar to split it out again.
 
+```{admonition} Did you know?
+:class: tip
+
+`features()` in a session opens a small window with a random tip on a
+recent feature, and {doc}`whats_new` lists what changed lately.
+```
+
 ## See also
 
 - {doc}`command_history`: every one of these consoles logs its input and

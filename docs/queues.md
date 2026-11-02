@@ -164,3 +164,10 @@ when the queue is muted.
   motor already moving keeps moving, as after Ctrl-C.
 - Claims cover moves that go through eco (every `mv`/`set_target_value`). A
   `caput` from outside eco is not stopped.
+
+```{admonition} Did you know?
+:class: tip
+
+The web app shows the queues too: what runs and what waits, the
+progress of a scan, its output, and pause/resume/stop ({doc}`web_app`).
+```

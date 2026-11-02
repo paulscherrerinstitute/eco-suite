@@ -112,3 +112,10 @@ from eco import ipymagic
 ipymagic.start(bernina)
 ipymagic.stop()
 ```
+
+```{admonition} Did you know?
+:class: tip
+
+`%ei --open N` shows a command an answer cites among the commands typed
+before and after it, with what came back ({doc}`ask_eco`).
+```

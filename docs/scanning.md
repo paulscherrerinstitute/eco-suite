@@ -161,6 +161,14 @@ less than half of the time goes into acquiring, a warning names where it
 goes, once per scan. Thresholds: `eco.acquisition.scan_timing`. The numbers
 are in `scan.timing`.
 
+```{admonition} Did you know?
+:class: tip
+
+You can try any of these scans without a beamline: `sim.peak.x` and
+`sim.peak.signal` are a motor and a detector with a peak between them
+({doc}`simulated_targets`). Move `sim.peak.center` while the scan runs.
+```
+
 ## See also
 
 - {doc}`adaptive_scans`: scans that choose their next points from the live

@@ -224,3 +224,11 @@ are not affected, apart from three small changes that apply to every scan:
   queued. For a fixed scan that is the same number as before;
 - `CounterValue` and `BsStreamCounter` gained a `step_feedback()` method.
   Nothing calls it unless an adaptive scan does.
+
+```{admonition} Did you know?
+:class: tip
+
+`%ei how do I run an adaptive scan on the delay?` answers with your
+session's device names, from these docs and the scans people actually ran
+({doc}`ask_eco`).
+```

@@ -174,3 +174,10 @@ into `eco.widgets.display_qt`'s property grid. Reach for this one if the
 simple pair's two approximations (no needle, no rolling line) actually
 matter for a given panel; otherwise the matched simple pair above is the
 current default recommendation for new work, on either backend.
+
+```{admonition} Did you know?
+:class: tip
+
+`eco.start_web()` shows the same rows on your phone, with live values,
+moves and pinned strip charts ({doc}`web_app`).
+```

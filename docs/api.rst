@@ -80,6 +80,15 @@ Delta Tau / PowerBrick configs
 .. automodule:: eco.motion.deltatau_config.verify
    :members:
 
+.. automodule:: eco.motion.deltatau_config.module_ioc
+   :members:
+
+PowerBrick parameters
+---------------------
+
+.. automodule:: eco.devices_general.powerbrick
+   :members: PowerBrickChannelPars, unlock, lock, gateway_open, axis_from_out, is_powerbrick_motor, ioc_host
+
 Direct motor drivers (EPICS-independent)
 ----------------------------------------
 
@@ -88,3 +97,26 @@ Direct motor drivers (EPICS-independent)
 
 .. automodule:: eco.devices_general.schneider_mcode
    :members:
+
+Simulated scan targets
+----------------------
+
+.. automodule:: eco.devices_general.simulated_signals
+   :members: SimulatedSignals, SimAxis, SimDetector, SimBeam
+
+Ask eco
+-------
+
+.. autofunction:: eco.ei.ask
+
+.. autofunction:: eco.ei.assistant
+
+.. autofunction:: eco.ei.time_window
+
+.. autofunction:: eco.ei.load_config
+
+.. automodule:: eco.logs_elog
+   :members: Reader, update, ca_bundle, parse_export
+
+.. automodule:: eco.ei_wait
+   :members: pick, Waiting, in_terminal

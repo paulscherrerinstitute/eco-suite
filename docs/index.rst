@@ -31,6 +31,13 @@ scientific Python libraries.
       Short tips on recent features: one call, what it gains you, and
       where to read more.
 
+   .. grid-item-card:: :octicon:`sparkle-fill` What's new
+      :link: whats_new
+      :link-type: doc
+
+      Recent changes and new features, and what to watch out for when
+      you update.
+
    .. grid-item-card:: :octicon:`light-bulb` Concepts
       :link: concepts
       :link-type: doc
@@ -44,6 +51,27 @@ scientific Python libraries.
 
       Queue scans and commands with ``%queue``: each one test-run when
       queued, run one after another while the prompt stays free.
+
+   .. grid-item-card:: :octicon:`comment-discussion` Ask eco
+      :link: ask_eco
+      :link-type: doc
+
+      ``%ei how do I ...?`` answers from the docs, the command history,
+      SciLog and the machine elog, with your session's devices.
+
+   .. grid-item-card:: :octicon:`goal` Adaptive scans
+      :link: adaptive_scans
+      :link-type: doc
+
+      Scans that put the next points where the live data say they help
+      most. Try them on the simulated targets in ``sim``.
+
+   .. grid-item-card:: :octicon:`device-mobile` eco on a phone
+      :link: web_app
+      :link-type: doc
+
+      ``eco web``: the running session in a browser, with live values,
+      moves, queues and the cameras.
 
    .. grid-item-card:: :octicon:`pulse` Listening monitor
       :link: examples/listening_monitor
@@ -78,6 +106,13 @@ scientific Python libraries.
       Servo parameters, their auto-assigned ratios, and how to tune
       them.
 
+   .. grid-item-card:: :octicon:`key` PowerBrick parameters
+      :link: powerbrick_parameters
+      :link-type: doc
+
+      The controller's own view of a motor (``cnf_pb``), and loading the
+      Kappa or SampleStage onto the diffractometer.
+
    .. grid-item-card:: :octicon:`plug` Direct motor drivers
       :link: examples/direct_motor_drivers
       :link-type: doc
@@ -101,6 +136,13 @@ scientific Python libraries.
       viewer widgets, aligned left/center/right, on either front end.
 
 
+.. admonition:: Did you know?
+   :class: tip
+
+   ``%ei what happened to the machine since yesterday?`` reads the SwissFEL
+   commissioning elog for you and answers with the entries in order. More
+   tips like this: :doc:`did_you_know/index`, or ``features()`` in a session.
+
 .. toctree::
    :maxdepth: 2
    :caption: Getting started
@@ -108,6 +150,7 @@ scientific Python libraries.
 
    installation
    launching
+   whats_new
    concepts
    did_you_know/index
 
@@ -118,6 +161,7 @@ scientific Python libraries.
 
    scanning
    adaptive_scans
+   simulated_targets
    queues
    tweak
    command_history
@@ -144,6 +188,7 @@ scientific Python libraries.
    :hidden:
 
    deltatau_servo
+   powerbrick_parameters
    channel_access
 
 .. toctree::
