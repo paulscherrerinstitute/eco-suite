@@ -293,6 +293,8 @@ function route() {
   else if (hash.startsWith("/tweak/")) showTweak(hash.slice(7));
   else if (hash.startsWith("/jog/")) showJog(hash.slice(5));
   else if (hash.startsWith("/cam/")) showCamera(hash.slice(5));
+  else if (hash === "/queues") showQueues();
+  else if (hash.startsWith("/qout/")) showTaskOutput(hash.slice(6));
   else showHome();
 }
 
@@ -342,7 +344,9 @@ async function showHome() {
     autocapitalize: "off", autocomplete: "off", spellcheck: "false",
     oninput: (e) => { S.filter = e.target.value; render(); } });
   render();
-  setMain(search, sections);
+  const tools = el("div", { class: "toolbar" },
+    el("a", { class: "btn link-btn", href: "#/queues", text: "Queues" }));
+  setMain(tools, search, sections);
 }
 
 // ---- device: an assembly or a single item -----------------------------------------------------
@@ -1125,6 +1129,149 @@ async function showCamera(name) {
     el("p", { class: "doc", text: "Control on: tap to center the view there, drag a box to zoom into it; " +
       "on a laptop the mouse wheel zooms. Quality: low for a phone on a tunnel, full on the console network." }));
   if (document.visibilityState === "visible") start();
+}
+
+// ---- task queues: what runs and waits, pause/resume/stop -----------------------------------------------
+
+const QUEUE_POLL = 1000; // ms
+
+function duration(seconds) {
+  if (seconds === null || seconds === undefined) return "";
+  const s = Math.max(0, Math.round(seconds));
+  return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+}
+
+async function showQueues() {
+  const view = newView("queues", "");
+  setTitle("Queues", true);
+  const box = el("div", { class: "queues" }, el("div", { class: "loading", text: "loading queues…" }));
+  setMain(box, el("p", { class: "doc", text: "The session's task queues (%queue, scans with queue=…). " +
+    "Controls act on what is already queued; nothing is added here." }));
+  const writes = !!S.hello.writes;
+  const act = (queue, action, task, question) => {
+    const go = () => request("queue_action", { queue, action, task }).then(load, (e) => toast(e.message, true));
+    question ? confirmDialog(question, "", go) : go();
+  };
+  const button = (text, onclick, cls = "") =>
+    el("button", { class: `btn small ${cls}`, text, onclick, disabled: !writes, title: writes ? "" : "writes are off in this web session" });
+
+  const taskLine = (q, t, kind) => {
+    const took = t.started ? duration((t.finished || serverNow()) - t.started) : "";
+    const head = el("div", { class: "task-head" },
+      el("span", { class: `task-state ${t.state}`, text: t.state }),
+      el("span", { class: "task-id", text: `#${t.id}` }),
+      t.description ? el("span", { class: "task-desc", text: t.description }) : null,
+      took ? el("span", { class: "task-time", text: took }) : null);
+    const node = el("div", { class: `task ${kind}` }, head, el("div", { class: "task-source", text: t.source }));
+    if (t.error) node.append(el("div", { class: "task-error", text: t.error }));
+    if (t.scan) {
+      const pct = t.scan.total ? (100 * t.scan.done) / t.scan.total : 0;
+      node.append(el("div", { class: "progress" }, el("div", { class: "bar", style: `width:${pct.toFixed(1)}%` })),
+        el("div", { class: "task-scan", text: `step ${t.scan.done} / ${t.scan.total}` +
+          (t.scan.stopping ? " · stopping" : t.scan.paused ? " · scan paused" : "") }));
+    }
+    const tools = el("div", { class: "task-tools" });
+    if (kind !== "pending") tools.append(el("a", { class: "btn small link-btn", href: `#/qout/${encodeURIComponent(q.name)}/${t.id}`, text: "Output" }));
+    if (kind === "running") {
+      if (t.scan) tools.append(t.scan.paused ? button("Resume scan", () => act(q.name, "resume_running"))
+        : button("Pause scan", () => act(q.name, "pause_running")));
+      tools.append(button("Stop task", () => act(q.name, "stop_running", undefined,
+        `Stop task #${t.id}? Its scan stops at the next step; the queue pauses.`), "stop"));
+    } else if (kind === "pending") {
+      tools.append(button("Top", () => act(q.name, "move_top", t.id)), button("↑", () => act(q.name, "move_up", t.id)),
+        button("Remove", () => act(q.name, "remove", t.id, `Remove task #${t.id} from queue ${q.name}?`), "stop"));
+    }
+    if (tools.childElementCount) node.append(tools);
+    return node;
+  };
+
+  const render = (data) => {
+    if (!data.queues.length) {
+      box.replaceChildren(el("div", { class: "empty", text: "No queues in this session yet." }));
+      return;
+    }
+    box.replaceChildren(...data.queues.map((q) => {
+      const state = q.running ? (q.paused ? "running, then paused" : "running") : q.paused ? "paused" : q.pending.length ? "starting" : "idle";
+      const card = el("section", { class: "queue-card" },
+        el("div", { class: "queue-head" },
+          el("h2", { text: q.name }), el("span", { class: `badge q-${q.paused ? "paused" : q.running ? "running" : "idle"}`, text: state }),
+          q.paused ? button("Resume queue", () => act(q.name, "resume", undefined, q.pending.length ? `Resume queue ${q.name}? ${q.pending.length} waiting task(s) will start.` : null))
+            : button("Pause queue", () => act(q.name, "pause"))));
+      if (q.running) card.append(taskLine(q, q.running, "running"));
+      if (q.pending.length) {
+        card.append(el("div", { class: "section-title", text: `Waiting (${q.pending.length})` }),
+          ...q.pending.map((t) => taskLine(q, t, "pending")),
+          el("div", { class: "task-tools" },
+            button("Drop all waiting", () => act(q.name, "clear", undefined, `Drop all ${q.pending.length} waiting tasks of ${q.name}?`), "stop")));
+      }
+      if (q.running || q.pending.length) {
+        card.append(el("div", { class: "task-tools" }, button("Stop everything", () => act(q.name, "stop", undefined,
+          `Stop the running task of ${q.name} and drop everything waiting?`), "stop")));
+      }
+      if (q.history.length) {
+        const list = el("div", {}, ...q.history.map((t) => taskLine(q, t, "done")));
+        card.append(el("details", { class: "hidden-items" }, el("summary", { text: `Finished (${q.history.length})` }), list));
+      }
+      return card;
+    }));
+  };
+  let busy = false;
+  const open = new Set(); // keep "Finished" folds open across refreshes
+  const load = async () => {
+    if (busy || S.view !== view || document.visibilityState !== "visible") return;
+    busy = true;
+    try {
+      box.querySelectorAll("section.queue-card").forEach((c) => {
+        if (c.querySelector("details")?.open) open.add(c.querySelector("h2").textContent);
+        else open.delete(c.querySelector("h2")?.textContent);
+      });
+      const data = await request("queues");
+      if (S.view !== view) return;
+      render(data);
+      box.querySelectorAll("section.queue-card").forEach((c) => {
+        const d = c.querySelector("details");
+        if (d && open.has(c.querySelector("h2").textContent)) d.open = true;
+      });
+    } catch (e) {
+      if (S.view === view) box.replaceChildren(el("div", { class: "empty", text: `could not read the queues: ${e.message}` }));
+    } finally {
+      busy = false;
+    }
+  };
+  await load();
+  view.timers.push(setInterval(load, QUEUE_POLL));
+}
+
+async function showTaskOutput(path) {
+  const slash = path.lastIndexOf("/");
+  const queue = path.slice(0, slash), id = parseInt(path.slice(slash + 1), 10);
+  const view = newView("qout", path);
+  setTitle(`${queue} #${id}`, true);
+  const head = el("div", { class: "task-head" });
+  const pre = el("pre", { class: "task-output", text: "" });
+  const follow = el("label", { class: "follow" }, el("input", { type: "checkbox", checked: true }), " follow");
+  setMain(head, pre, follow);
+  let offset = 0, busy = false;
+  const load = async () => {
+    if (busy || S.view !== view || document.visibilityState !== "visible") return;
+    busy = true;
+    try {
+      const r = await request("queue_output", { queue, task: id, since: offset });
+      if (S.view !== view) return;
+      if (r.offset < offset || r.clipped) pre.textContent = r.clipped ? "… (older output not shown)\n" : "";
+      offset = r.offset;
+      if (r.text) pre.append(r.text);
+      head.replaceChildren(el("span", { class: `task-state ${r.task.state}`, text: r.task.state }),
+        el("span", { class: "task-source", text: r.task.source }));
+      if (follow.querySelector("input").checked && r.text) pre.scrollTop = pre.scrollHeight;
+    } catch (e) {
+      if (S.view === view) head.replaceChildren(el("span", { class: "task-error", text: e.message }));
+    } finally {
+      busy = false;
+    }
+  };
+  await load();
+  view.timers.push(setInterval(load, QUEUE_POLL));
 }
 
 // ---- SVG panels ------------------------------------------------------------------------------------

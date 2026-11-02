@@ -373,6 +373,71 @@ class Sample(Assembly):
         self._append(Cryostat, name="cryo", is_display="recursive")
 
 
+class SimScan:
+    """The parts of eco.acquisition.scan.StepScan the queue view reads:
+    steps done/to do, pause/resume at the next step, stop."""
+
+    def __init__(self, positions):
+        self._values_todo = list(positions)
+        self._values_done = []
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+        self._stop_requested = False
+
+    def pause(self):
+        self._pause_event.clear()
+
+    def resume(self):
+        self._pause_event.set()
+
+    def is_paused(self):
+        return not self._pause_event.is_set()
+
+    def request_stop(self):
+        self._stop_requested = True
+        self._pause_event.set()
+
+
+def demo_scan(motor, detector, start, stop, steps, step_time=0.5):
+    """A queued 'scan' of a simulated motor: registers a SimScan with its
+    task (as StepScan does), moves step by step, prints a line per step."""
+    from eco.utilities import task_queue
+
+    positions = [start + (stop - start) * i / (steps - 1) for i in range(steps)]
+    scan = SimScan(positions)
+    task = task_queue.current_task()
+    if task is not None:
+        task.scans.append(scan)
+    print(f"scan {motor.name} {start} .. {stop}, {steps} steps")
+    while scan._values_todo:
+        while not scan._pause_event.wait(0.1):
+            pass
+        if scan._stop_requested:
+            print("stopped on request")
+            return
+        value = scan._values_todo[0]
+        motor.set_target_value(value).wait()
+        time.sleep(step_time)
+        print(f"step {len(scan._values_done) + 1:3d}/{steps}  {motor.name} = {motor.get_current_value():8.4f}"
+              f"  {detector.name} = {detector.get_current_value():9.2f}")
+        scan._values_done.append(scan._values_todo.pop(0))
+    print("scan done")
+
+
+def demo_queues(namespace):
+    """A queue "default" with three scans waiting, paused (so they wait for
+    Resume in the web client), and an empty queue "align"."""
+    from eco.utilities.task_queue import TaskQueue
+
+    stage = namespace.resolve_item("stage")
+    default = TaskQueue("default", namespace={})
+    default.pause()  # before the first append starts its worker
+    for start, stop, steps in ((-1, 1, 40), (-0.5, 0.5, 30), (0, 2, 20)):
+        default.append(demo_scan, stage.x, stage.diode, start, stop, steps, test=False,
+                       task_description=f"x {start}..{stop}")
+    return {"default": default, "align": TaskQueue("align", namespace={})}
+
+
 def _broken(name=None):
     raise ConnectionError("simulated: IOC not reachable")
 

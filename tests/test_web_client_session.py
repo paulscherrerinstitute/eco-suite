@@ -326,3 +326,102 @@ def test_ptz_needs_writes_and_passes_the_access_gate(client, writer, monkeypatch
     writer.call("describe", name="cam_demo")
     reply = writer.call("ptz", name="cam_demo", action="home")
     assert not reply["ok"] and "not your camera" in reply["error"]["message"]
+
+
+# -- task queues -------------------------------------------------------------------------
+
+
+def _queue_client(writes):
+    from eco.web.demo import demo_queues
+
+    ns = DemoNamespace()
+    c = Client(writes=writes)
+    c.session.close()
+    queues = demo_queues(ns)
+    from eco.web.client_session import ClientSession
+
+    c.session = ClientSession(SessionBackend(ns, queues=queues), c.messages.put, writes=writes, poll_interval=0.05)
+    return c, queues
+
+
+def _wait(predicate, seconds=5.0):
+    deadline = time.monotonic() + seconds
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return predicate()
+
+
+def test_queues_list_running_waiting_and_scan_progress():
+    c, queues = _queue_client(writes=True)
+    try:
+        data = c.call("queues")["data"]["queues"]
+        default = next(q for q in data if q["name"] == "default")
+        assert default["paused"] and default["running"] is None and len(default["pending"]) == 3
+        assert default["pending"][0]["description"] == "x -1..1"
+        assert c.call("queue_action", queue="default", action="resume")["ok"]
+        assert _wait(lambda: (queues["default"].current is not None and queues["default"].current.scan is not None
+                              and queues["default"].current.scan._values_done))
+        running = next(q for q in c.call("queues")["data"]["queues"] if q["name"] == "default")["running"]
+        assert running["state"] == "running" and running["scan"]["total"] == 40 and running["scan"]["done"] >= 1
+        # pause the scan, then stop the task: the queue pauses, the rest waits
+        assert c.call("queue_action", queue="default", action="pause_running")["ok"]
+        assert _wait(lambda: queues["default"].current.scan.is_paused())
+        assert c.call("queue_action", queue="default", action="stop_running")["ok"]
+        assert _wait(lambda: queues["default"].current is None)
+        q = next(q for q in c.call("queues")["data"]["queues"] if q["name"] == "default")
+        assert q["paused"] and len(q["pending"]) == 2 and q["history"][0]["state"] == "done"
+        out = c.call("queue_output", queue="default", task=q["history"][0]["id"])["data"]
+        assert "stopped on request" in out["text"] and out["offset"] == len(out["text"])
+        again = c.call("queue_output", queue="default", task=q["history"][0]["id"], since=out["offset"])["data"]
+        assert again["text"] == ""
+    finally:
+        for queue in queues.values():
+            queue.stop()
+            queue.close()
+        c.session.close()
+
+
+def test_waiting_tasks_can_be_moved_and_removed():
+    c, queues = _queue_client(writes=True)
+    try:
+        ids = [t.id for t in queues["default"].pending]
+        assert c.call("queue_action", queue="default", action="move_top", task=ids[2])["ok"]
+        assert [t.id for t in queues["default"].pending] == [ids[2], ids[0], ids[1]]
+        assert c.call("queue_action", queue="default", action="move_up", task=ids[1])["ok"]
+        assert [t.id for t in queues["default"].pending] == [ids[2], ids[1], ids[0]]
+        assert c.call("queue_action", queue="default", action="remove", task=ids[1])["ok"]
+        assert [t.id for t in queues["default"].pending] == [ids[2], ids[0]]
+        assert c.call("queue_action", queue="default", action="clear")["ok"]
+        assert queues["default"].pending == []
+        reply = c.call("queue_action", queue="default", action="remove", task=ids[0])
+        assert not reply["ok"] and "not waiting" in reply["error"]["message"]
+        assert not c.call("queue_action", queue="default", action="append")["ok"]
+        assert not c.call("queue_action", queue="nope", action="pause")["ok"]
+        assert "nope" not in queues
+    finally:
+        for queue in queues.values():
+            queue.close()
+        c.session.close()
+
+
+def test_queue_controls_need_writes():
+    c, queues = _queue_client(writes=False)
+    try:
+        assert c.call("queues")["ok"]
+        reply = c.call("queue_action", queue="default", action="resume")
+        assert not reply["ok"] and reply["error"]["type"] == "WritesDisabled"
+        assert queues["default"].paused
+    finally:
+        for queue in queues.values():
+            queue.close()
+        c.session.close()
+
+
+def test_task_lines_name_devices_instead_of_their_status_tables():
+    from eco.utilities.task_queue import Task
+    from eco.web.queues import task_source
+
+    ns = DemoNamespace()
+    stage = ns.resolve_item("stage")
+    task = Task(lambda *a, **k: None, (stage.x, -1, [1, 2]), {"counters": [stage.diode], "step_info": None})
+    assert task_source(task) == "test_task_lines_name_devices_instead_of_their_status_tables.<locals>.<lambda>(stage.x, -1, [1, 2], counters=[stage.diode], step_info=None)"

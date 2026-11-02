@@ -49,9 +49,9 @@ The client never sends expressions.
 | — | — | a camera's live stream is plain HTTP: `GET /api/mjpeg?name=…&quality=low|medium|full` returns `multipart/x-mixed-replace` JPEGs for an `<img>`; `describe` of such an item has `camera: {stream: "mjpeg", ptz, rotate, qualities}` |
 | `jog_speed` | `{name, value}` | sets the jog speed of `name` (its `jog_speed` item); allowed whenever writing `name` is |
 | — | — | SVG panels are plain HTTP: `GET /api/svg?name=…` returns the SVG, header `X-Eco-Prefix` is what click markers are relative to; the client re-fetches every 3 s |
-| `queues` *planned* | `{}` | queue list with tasks (mode B) |
-| `queue_call` *planned* | `{queue, action: "pause"|"resume"|"abort_current"|…}` | allow-listed subset of `TaskQueue` methods |
-| `queue_follow` *planned* | `{queue, from_task?}` | backlog + live `ev: "queue_output"` |
+| `queues` | `{}` | `{queues: [{name, paused, running: task?, pending: [task], history: [task] (newest first, 10)}], now}`; task = `{id, source, description, state, started, finished, error?, scan?: {done, total, paused, stopping}}` — the client polls it every second |
+| `queue_action` | `{queue, action, task?}` | (writes on, all items) `pause`, `resume`, `clear`, `stop`, `pause_running`, `resume_running`, `stop_running`, and for a waiting task `remove`, `move_up`, `move_top` (`eco.web.queues.ACTIONS`); nothing adds or repeats a task |
+| `queue_output` | `{queue, task, since}` | `{text, offset, clipped, task}` — what the task printed after character `since` (at most the newest 20 000 characters) |
 | `tweak` *planned* | `{session_id, action, args}` | `TweakController` methods by allow-list |
 
 ## Events

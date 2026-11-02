@@ -17,7 +17,9 @@ opened as a view; SVG panels; details (the grids' ⋯ menu); pinned live strip
 charts with running average; a picker over the initialized components; a
 tweak view (one axis); a **jog** view for hardware jogs (motor records:
 hold to move, jog speed ÷2/×2/set, dead-man stop in the gateway); a live view
-of MJPEG PTZ network cameras (cam_west & co.) with tap-to-center/drag-to-zoom. Started
+of MJPEG PTZ network cameras (cam_west & co.) with tap-to-center/drag-to-zoom;
+the task queues with scan progress, output and the queue panel's controls
+(not the launcher). Started
 with `eco web -s <scope>` or `eco.start_web()`.
 
 ## Tier 1 — core, port first

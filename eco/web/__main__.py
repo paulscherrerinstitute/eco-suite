@@ -51,10 +51,13 @@ def main(argv=None):
     if args.demo:
         from eco.web.demo import DemoNamespace
 
+        from eco.web.demo import demo_queues
+
         namespace = DemoNamespace()
+        backend = SessionBackend(namespace, queues=demo_queues(namespace))
     else:
-        namespace = scope_namespace(args.scope, args.lazy)
-    gateway = WebGateway(SessionBackend(namespace), host=args.host, port=args.port,
+        backend = SessionBackend(scope_namespace(args.scope, args.lazy))
+    gateway = WebGateway(backend, host=args.host, port=args.port,
                          token=args.token, writes=args.writes).start()
     print(connection_help(gateway))
     # a terminated server must still stop the jogs its clients hold

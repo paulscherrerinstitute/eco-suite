@@ -40,8 +40,9 @@ def attach_ca_context():
 
 
 class SessionBackend:
-    def __init__(self, namespace, label=None):
+    def __init__(self, namespace, label=None, queues=None):
         self.namespace = namespace
+        self._queues = queues  # default: the session's eco.utilities.task_queue.queues
         self.label = label or getattr(namespace, "name", None) or "eco"
         self._init_lock = threading.Lock()
         self._index_lock = threading.Lock()
@@ -97,6 +98,14 @@ class SessionBackend:
         if isinstance(obj, Proxy):
             obj = obj.__wrapped__
         return obj
+
+    def queues(self):
+        """{name: TaskQueue} of the session (eco.utilities.task_queue.queues)."""
+        if self._queues is not None:
+            return self._queues
+        from eco.utilities import task_queue
+
+        return task_queue.queues
 
     def search_index(self):
         """[(full name, kind, object)] of every adjustable/detector in the

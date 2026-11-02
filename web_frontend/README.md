@@ -46,6 +46,9 @@ phone size):
   (30 s .. 1 h) with optional running average, survive a reload
 - picker: find any readable item of the initialized components by name
 - tweak view: big step buttons, ×2/÷2, go to, back to start, stop, arrow keys
+- task queues: running task with scan progress, waiting and finished tasks,
+  live task output; pause/resume queue and running scan, stop, move/remove a
+  waiting task, drop all (`eco/web/queues.py`; nothing adds or repeats a task)
 - live view of MJPEG network cameras (AxisPTZ: cam_west, ...), relayed by the
   gateway (`eco/web/camera.py`: one camera connection per quality, newest frame
   per client), with tap-to-center, drag-to-zoom, zoom steps, wide, home. Tested
@@ -54,7 +57,7 @@ phone size):
 - token auth + HttpOnly cookie, binds 127.0.0.1, ping/reconnect after network
   drops, clean shutdown, service worker (app shell only), light/dark
 
-Not yet: queues/scan progress, archiver history, memories, cam_server cameras, alarms,
+Not yet: scan launcher (adding tasks), archiver history, memories, cam_server cameras, alarms,
 status-server (shared, read-only) mode. See [PARITY.md](PARITY.md) for the order.
 
 Points to keep in mind (found while wiring it in):

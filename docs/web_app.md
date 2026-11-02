@@ -76,6 +76,12 @@ python -m eco.web --demo --writes
   laptop), or use Zoom +/−, Wide and Home. *Settings* shows pan, tilt, zoom,
   iris and focus as rows. All viewers share one connection to the camera; the
   stream pauses while the page is in the background.
+- **Queues** (start page): the session's task queues ({doc}`queues`): the
+  running task with the step its scan is at, the waiting tasks, the last
+  finished ones with their errors, and each task's output, live. With writes
+  on: pause/resume the queue, pause/resume the running scan at its next step,
+  stop the running task, move a waiting task up or remove it, drop all
+  waiting, stop everything. Nothing can be added to a queue from here.
 - **Panel**: a device's schematic, refreshed every 3 s. Tapping a symbol
   opens that device; the panel's commands are not run from the web app.
 

@@ -189,3 +189,29 @@ a.btn:not(.primary) { color: var(--link); }
 .cam-box { display: none; position: absolute; border: 2px dashed #fff; background: rgba(255,255,255,.12); pointer-events: none; }
 .cam-tools { margin-top: 8px; }
 .btn.on { background: var(--busy); color: #000; border-color: var(--busy); }
+
+/* task queues */
+.queue-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+.queue-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.queue-head h2 { margin: 0; font-size: 18px; flex: 1; }
+.badge.q-running { background: var(--busy); color: #000; }
+.badge.q-paused { background: var(--err); color: #fff; }
+.badge.q-idle { background: var(--line); color: var(--text); }
+.task { border-top: 1px solid var(--line); padding: 8px 0; }
+.task-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.task-state { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+.task-state.running { color: var(--busy); }
+.task-state.done { color: var(--ok); }
+.task-state.error { color: var(--err); }
+.task-id { color: var(--muted); font-size: 13px; }
+.task-desc { font-weight: 600; }
+.task-time { color: var(--muted); font-size: 13px; margin-left: auto; }
+.task-source { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.task-error { color: var(--err); font-size: 13px; overflow-wrap: anywhere; }
+.task-scan { color: var(--muted); font-size: 13px; }
+.task-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.progress { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.progress .bar { height: 100%; background: var(--busy); }
+.task-output { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; max-height: 65vh; overflow: auto;
+  font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.follow { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }

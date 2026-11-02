@@ -447,3 +447,40 @@ class ClientSession:
             raise ProtocolError(f"unknown ptz action {action!r}")
         logger.info("web client %s: %s ptz %s", self.client_id, name, action)
         return {"done": action}
+
+    # -- task queues: what runs and waits, and the controls for it -----------------------------
+
+    def _queue(self, name):
+        queue = dict(self.backend.queues()).get(name)  # a copy: queues[missing] would create one
+        if queue is None:
+            raise NotFound(f"no queue {name!r}")
+        return queue
+
+    def _op_queues(self):
+        """Every queue of the session (eco.web.queues.queue_json)."""
+        from eco.web import queues
+
+        return {"queues": [queues.queue_json(q) for q in list(dict(self.backend.queues()).values())],
+                "now": time.time()}
+
+    def _op_queue_output(self, queue, task, since=0):
+        """What task #`task` of `queue` printed after character `since`."""
+        from eco.web import queues
+
+        found = queues.find_task(self._queue(queue), task)
+        if found is None:
+            raise NotFound(f"no task #{task} in queue {queue!r}")
+        text, offset, clipped = queues.output_since(found, since)
+        return {"text": text, "offset": offset, "clipped": clipped, "task": queues.task_json(found)}
+
+    def _op_queue_action(self, queue, action, task=None):
+        """Pause/resume/stop/clear a queue, its running scan, or move/remove a
+        waiting task (eco.web.queues.ACTIONS) -- writes must be on. Nothing
+        here adds or starts a new task."""
+        from eco.web import queues
+
+        if self.writes is not True:  # not per item: a queue moves whatever its tasks move
+            raise WritesDisabled("queue controls need writes enabled for this web session")
+        result = queues.act(self._queue(queue), action, task)
+        logger.info("web client %s: queue %s %s %s", self.client_id, queue, action, task or "")
+        return {"done": result}
