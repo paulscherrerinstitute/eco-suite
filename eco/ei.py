@@ -9,6 +9,10 @@ about past beamtimes, through a language model:
     marked ok / warning / failed by what followed it,
   - SciLog posts and personal notes, once indexed (`%ei --scilog`,
     `%ei --notes PATH`),
+  - the machine's elog (elog-gfa.psi.ch: SwissFEL commissioning and
+    Diagnostics by default, config "elog_logbooks"), so a question like
+    "what happened to the machine since yesterday?" gets that span's
+    entries in order (eco.logs_elog),
   - the running session's namespace: which devices exist and of which
     class, without initialising anything lazy,
   - escape (escape-fel), the analysis framework: its API from the
@@ -41,9 +45,10 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei --bad att   commands like `att...` that gave warnings/errors
     %ei --examples PATH   index notebooks (code cells) as usage examples
     %ei --index | --scilog [pgroup] | --notes PATH | --models | --config
+    %ei --elog [--rebuild]   update the elog entries now (or all again)
 
 Every answer ends with the sources it cites, numbered, each with where to
-find it: the SciLog logbook's address, or file:line.
+find it: the elog entry's or SciLog logbook's address, or file:line.
 
 SciLog (all logbooks your PSI groups can read with a personal token --
 see eco.logs_scilog for getting it from the browser -- or, without one
@@ -103,9 +108,13 @@ DEFAULT_CONFIG = {
     # SciLog logbooks indexed (and kept up to date) before questions until
     # `%ei --scilog-index` chooses others; null: SciLog only when chosen
     "scilog_default": {"location": "bernina"},
+    # elog-gfa.psi.ch logbooks indexed (and kept up to date) before
+    # questions; [] or null: none
+    "elog_logbooks": ["SwissFEL commissioning", "SwissFEL Diagnostics"],
     "timeout": 180,
     # how many search hits of each kind go to the model
-    "hits": {"command": 10, "note": 5, "doc": 6, "api": 8, "example": 3},
+    # (recent: logbook entries of the time span a question names)
+    "hits": {"command": 10, "note": 5, "elog": 3, "doc": 6, "api": 8, "example": 3, "recent": 25},
     # what is indexed besides eco itself. packages: their API, found
     # without importing them. repos: checkouts of those packages, the
     # first existing one is used; its docs/*.md and examples/**/*.ipynb
@@ -181,6 +190,10 @@ Namespace list and the context. If the context does not answer the question, \
 say so plainly and say what to look at (e.g. `dev.get_tree()`, `help(...)`).
 - Be brief: a short explanation and one runnable Python block. Cite the \
 context items you used by their [tag].
+- [elog ...] items are the accelerator's logbook (SwissFEL commissioning: \
+operation, shift handovers, problems and fixes). For a question about a time \
+span ("since yesterday", "last week"), summarise what the logbook entries of \
+that span report, in order, with their times and tags; no code needed.
 - The user runs the code themselves. Warn when a suggestion moves hardware \
 or starts an acquisition.
 """
@@ -295,6 +308,55 @@ class NoModel(RuntimeError):
 def enabled():
     """False when ECO_NO_EI=1: no %ei magic, no Ask menu."""
     return os.environ.get("ECO_NO_EI", "").strip().lower() not in ("1", "true", "yes", "on")
+
+
+# -- questions about a time span -------------------------------------------------
+
+_NUMBERS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+            "seven": 7, "ten": 10, "few": 3, "couple of": 2, "couple": 2}
+_UNITS = {"hour": 3600, "day": 86400, "week": 7 * 86400, "month": 30 * 86400, "shift": 8 * 3600}
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_SPAN_RX = re.compile(
+    r"\b(?:last|past|previous)\s+(?:(\d+|" + "|".join(_NUMBERS) + r")\s+)?(hour|day|week|month|shift)s?\b"
+)
+_TIME_WORDS_RX = re.compile(
+    r"\b(?:(?:in|over|during|for|since|from)\s+)?(?:the\s+)?(?:(?:last|past|previous)\s+(?:\w+\s+)?"
+    r"(?:hours?|days?|weeks?|months?|shifts?|night)|today|tonight|yesterday|this\s+(?:morning|week)"
+    r"|recently|recent|lately|latest|or\s+so|" + "|".join(_WEEKDAYS) + r")\b",
+    re.I,
+)
+
+
+def time_window(question, now=None):
+    """(since, until) in epoch seconds for the time span a question names --
+    "last day", "past 3 hours", "yesterday", "since Monday", "last night",
+    "this week", "recently" -- or None. until is None for "up to now"."""
+    now = time.time() if now is None else now
+    q = " " + question.lower() + " "
+    midnight = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
+    stretch = 1.5 if re.search(r"\bor so\b", q) else 1.0
+    m = _SPAN_RX.search(q)
+    if m:
+        n = m.group(1) or "1"
+        n = int(n) if n.isdigit() else _NUMBERS[n]
+        return now - n * _UNITS[m.group(2)] * stretch, None
+    if re.search(r"\b(last|past) night\b|\btonight\b", q):
+        return midnight - 6 * 3600, None
+    if re.search(r"\bsince yesterday\b", q):
+        return midnight - 86400, None
+    if re.search(r"\byesterday\b", q):
+        return midnight - 86400, midnight
+    if re.search(r"\btoday\b|\bthis morning\b", q):
+        return midnight, None
+    if re.search(r"\bthis week\b", q):
+        return midnight - time.localtime(now).tm_wday * 86400, None
+    for i, day in enumerate(_WEEKDAYS):
+        if re.search(rf"\bsince {day}\b", q):
+            back = (time.localtime(now).tm_wday - i) % 7
+            return midnight - back * 86400, None
+    if re.search(r"\b(recent|recently|lately|latest)\b", q):
+        return now - 2 * 86400, None
+    return None
 
 
 # -- the running session ---------------------------------------------------------
@@ -463,6 +525,9 @@ def _citation_forms(hit):
     if hit.kind in ("scilog", "note", "note_command") and hit.t:
         day = time.strftime("%Y-%m-%d", time.localtime(hit.t))
         forms.append(f"[{tag[1:].split()[0]} {day}")  # "[scilog 2026-05-08", "[note 2026-05-08"
+    if hit.kind == "elog" and hit.t:
+        # to the minute: the machine logbook has a dozen entries a day
+        forms.append(time.strftime("[elog %Y-%m-%d %H:%M", time.localtime(hit.t)))
     return forms
 
 
@@ -483,6 +548,7 @@ class Assistant:
         self._key_note_shown = False
         self._indexed_at = 0.0
         self._scilog_failed = False
+        self._elog_failed = False
         self._index_lock = threading.Lock()
 
     # model ---------------------------------------------------------------
@@ -666,6 +732,7 @@ class Assistant:
             if report and (fresh or force):
                 report(f"eco.ei: index has {result['items']} items ({result['files_indexed']} files updated, {time.time() - t0:.1f} s)")
             self._refresh_scilog(report)
+            self._refresh_elog(report)
             return result
 
     def _refresh_scilog(self, report):
@@ -700,6 +767,30 @@ class Assistant:
         if report and r["dropped"]:
             report(f"eco.ei: {r['dropped']} SciLog posts removed: {r['identity']} can no longer read their logbooks")
 
+    def _refresh_elog(self, report, rebuild=False):
+        """New entries of config["elog_logbooks"]. One failure report per
+        session; the existing index is searched regardless."""
+        from eco import logs_elog
+
+        logbooks = self.config.get("elog_logbooks") or []
+        try:
+            known = logs_elog.indexed_logbooks(self.db_path)
+            if not logbooks and not known:
+                return None
+            fresh = [lb for lb in logbooks if lb not in known]
+            if (fresh or rebuild) and report:
+                report(f"eco.ei: reading the elog {', '.join(fresh or logbooks)} -- all entries, ~30 s for SwissFEL commissioning ...")
+            r = logs_elog.update(
+                logbooks, db_path=self.db_path, report=report if (fresh or rebuild) else None, rebuild=rebuild
+            )
+        except Exception as exc:
+            if report and not self._elog_failed:
+                report(f"eco.ei: elog not updated ({type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''})")
+            self._elog_failed = True
+            return None
+        self._elog_failed = False
+        return r
+
     def retrieve(self, question, follow_up=True):
         """Best hits per kind, for the question plus (for a follow-up) the
         previous question, plus namespace names its words point to."""
@@ -731,11 +822,12 @@ class Assistant:
             groups = [
                 (("command",), quota.get("command", 10), None, None),
                 (("scilog", "note", "note_command"), quota.get("note", 5), None, None),
+                (("elog",), quota.get("elog", 3), None, None),
                 (("doc",), quota.get("doc", 6), None, None),
                 (("api",), quota.get("api", 8), "eco." if module_out else None, None),
                 (("example",), quota.get("example", 3), None, None),
             ]
-        hits = []
+        hits = self.recent_hits(question) if not topic else []
         if not topic:
             # the class of each device the question names, with its components
             for _name, cls in self.namespace.named(question)[:3]:
@@ -751,6 +843,21 @@ class Assistant:
                     found.sort(key=lambda h: logs_ask._STATUS_ORDER[h.status])
                 hits += [h for h in found if h not in hits]
         return hits
+
+    def recent_hits(self, question, now=None):
+        """The logbook entries (elog, SciLog) of the time span the question
+        names, oldest first; [] if it names none. More than the "recent"
+        quota: those with more of the question's other words, then the
+        newest, entries with a text before title-only ones."""
+        window = time_window(question, now=now)
+        if not window:
+            return []
+        since, until = window
+        found = logs_ask.recent(since, until, limit=1000, db_path=self.db_path)
+        words = logs_ask._query_words(_TIME_WORDS_RX.sub(" ", question))
+        found.sort(key=lambda h: (-logs_ask._coverage(words, h.text, h.context), "\n" not in h.text.strip(), -h.t))
+        chosen = found[: self.config["hits"].get("recent", 25)]
+        return sorted(chosen, key=lambda h: h.t)
 
     # asking --------------------------------------------------------------
 
@@ -771,7 +878,8 @@ class Assistant:
                 context.append(f"{h.cite()}\n{h.text[:1200]}")
         ns_text = self.namespace.text(question)
         user = (
-            (ns_text + "\n\n" if ns_text else "")
+            time.strftime("Now: %a %Y-%m-%d %H:%M\n\n")
+            + (ns_text + "\n\n" if ns_text else "")
             + "Context:\n\n"
             + ("\n\n".join(context) if context else "(nothing found)")
             + f"\n\nQuestion: {question}"
@@ -1028,6 +1136,11 @@ def ei_magic(line, cell=None):
     if opt == "--scilog":
         # one pgroup's logbooks, as whoever reads SciLog here
         _scilog_magic(asst, "--scilog-index", _scilog_default(asst, rest))
+        return None
+    if opt == "--elog":
+        r = asst._refresh_elog(print, rebuild="--rebuild" in rest)
+        if r:
+            print(f"eco.ei: elog read as {r['identity']}: {r['new_entries']} entries from {r['logbooks']} logbooks, {r['items']} items in the index")
         return None
     if opt == "--open":
         shown = asst.shown

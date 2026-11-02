@@ -82,7 +82,7 @@ _STATUS_ORDER = {"ok": 0, "warning": 1, "error": 2}
 
 @dataclass
 class Hit:
-    kind: str  # "command" | "doc" | "api" | "example" | "scilog" | "note" | "note_command"
+    kind: str  # "command" | "doc" | "api" | "example" | "scilog" | "elog" | "note" | "note_command"
     text: str  # the command, or the text chunk
     context: str  # command: what came back; doc: "file > heading"; scilog/note: author/file
     status: str  # "ok" | "warning" | "error" (commands); "ok" otherwise
@@ -90,7 +90,7 @@ class Hit:
     t: float  # when (0 if unknown)
     source: str  # session label, doc path, "scilog <pgroup>", note file
     score: float
-    path: str = ""  # the file it came from, or scilog:<logbook id>:<post id>
+    path: str = ""  # the file it came from, scilog:<logbook id>:<post id> or elog:<logbook>:<entry id>
 
     @property
     def ok(self):
@@ -108,10 +108,12 @@ class Hit:
             return f"[example {self.context}]"
         if self.kind == "scilog":
             return f"[scilog {when} {self.context}]"
+        if self.kind == "elog":
+            return f"[elog {when} {self.context}]"
         return f"[note {when} {Path(self.source).name}]"
 
     def location(self):
-        """Where to look it up: the SciLog logbook's address, or file:line
+        """Where to look it up: the elog entry's or SciLog logbook's address, or file:line
         (the line of the command, heading or definition when it is found)."""
         return item_location(self)
 
@@ -525,7 +527,7 @@ def _coverage(words, text, context):
     return sum(w in tokens if _exact(w) else any(t.startswith(w) for t in tokens) for w in words)
 
 
-ALL_KINDS = ("command", "doc", "api", "example", "scilog", "note", "note_command")
+ALL_KINDS = ("command", "doc", "api", "example", "scilog", "elog", "note", "note_command")
 
 
 def search(
@@ -579,9 +581,28 @@ def search(
     return hits
 
 
+def recent(since, until=None, kinds=("elog", "scilog"), limit=25, db_path=DEFAULT_DB):
+    """Items written between `since` and `until` (epoch seconds), newest
+    first -- for questions about a time ("what happened since yesterday?"),
+    which name no words to search for."""
+    kinds = tuple(kinds)
+    con = _connect(db_path)
+    rows = con.execute(
+        "SELECT text, context, kind, status, flags, t, source, path FROM items"
+        f" WHERE kind IN ({','.join('?' * len(kinds))}) AND CAST(t AS REAL) >= ?"
+        + (" AND CAST(t AS REAL) <= ?" if until is not None else "")
+        + " ORDER BY CAST(t AS REAL) DESC LIMIT ?",
+        (*kinds, since, *([until] if until is not None else []), limit),
+    ).fetchall()
+    con.close()
+    return [Hit(kind, text, context, status, flags, float(t), source, 0.0, path or "")
+            for text, context, kind, status, flags, t, source, path in rows]
+
+
 # -- where an item came from ----------------------------------------------------
 
 SCILOG_WEB = "https://scilog.psi.ch"
+ELOG_WEB = "https://elog-gfa.psi.ch"
 
 
 def scilog_ids(path):
@@ -595,10 +616,21 @@ def scilog_ids(path):
     return logbook, parts[2]
 
 
+def elog_ids(path):
+    """(logbook, entry id) of an item path "elog:<logbook>:<entry>", or (None, None)."""
+    parts = (path or "").rsplit(":", 1)
+    if len(parts) != 2 or not parts[0].startswith("elog:") or not parts[1].isdigit():
+        return None, None
+    return parts[0][5:], int(parts[1])
+
+
 def item_location(hit):
-    """A SciLog logbook's address, "file:line", "file", or "". SciLog has no
-    address for a single post, so a post links to its logbook (the
-    citation gives date and author)."""
+    """An elog entry's address, a SciLog logbook's address, "file:line",
+    "file", or "". SciLog has no address for a single post, so a post
+    links to its logbook (the citation gives date and author)."""
+    if hit.kind == "elog":
+        logbook, mid = elog_ids(hit.path)
+        return f"{ELOG_WEB}/{logbook.replace(' ', '+')}/{mid}" if logbook else ""
     if hit.kind in ("scilog", "note_command") and hit.path.startswith("scilog:"):
         logbook, _post = scilog_ids(hit.path)
         return f"{SCILOG_WEB}/logbooks/{logbook}/dashboard" if logbook else ""
@@ -642,7 +674,7 @@ def _item_line(hit):
 def item_context(hit, db_path=DEFAULT_DB, around=5):
     """The item in its surroundings, as text: the commands typed before and
     after a command (with what came back), the neighbouring posts of a
-    SciLog post, the lines around a doc section or definition."""
+    SciLog post or elog entry, the lines around a doc section or definition."""
     where = item_location(hit)
     head = f"{hit.cite()}  {where}".rstrip()
     if hit.kind == "command" and hit.path:
@@ -661,13 +693,16 @@ def item_context(hit, db_path=DEFAULT_DB, around=5):
             if shown:
                 out.append(f"           -> {'' if status == 'ok' else status.upper() + ': '}{' '.join(shown.split())[:150]}")
         return "\n".join(out)
-    if hit.kind == "scilog" or hit.path.startswith("scilog:"):
-        logbook, post = scilog_ids(hit.path)
+    if hit.kind in ("scilog", "elog") or hit.path.startswith("scilog:"):
+        if hit.kind == "elog":
+            prefix = hit.path.rsplit(":", 1)[0] + ":"
+        else:
+            logbook, _post = scilog_ids(hit.path)
+            prefix = f"scilog:{logbook}:" if logbook else hit.path.rsplit(":", 1)[0] + ":"
         con = _connect(db_path)
-        prefix = f"scilog:{logbook}:" if logbook else hit.path.rsplit(":", 1)[0] + ":"
         rows = con.execute(
-            "SELECT text, context, t, path FROM items WHERE kind = 'scilog' AND substr(path, 1, ?) = ? ORDER BY t",
-            (len(prefix), prefix),
+            "SELECT text, context, t, path FROM items WHERE kind = ? AND substr(path, 1, ?) = ? ORDER BY CAST(t AS REAL)",
+            ("elog" if hit.kind == "elog" else "scilog", len(prefix), prefix),
         ).fetchall()
         con.close()
         i = next((n for n, r in enumerate(rows) if r[3] == hit.path), None)

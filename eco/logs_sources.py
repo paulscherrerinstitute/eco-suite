@@ -146,19 +146,28 @@ class _TextOnly(html.parser.HTMLParser):
     # dated_chunks), line-level ones a newline
     _PARAGRAPH = {"p", "div", "h1", "h2", "h3", "h4", "pre", "table"}
     _LINE = {"br", "li", "tr"}
+    _HIDDEN = {"style", "script"}
 
     def __init__(self):
         super().__init__()
         self.parts = []
+        self._hidden = 0
 
     def handle_starttag(self, tag, attrs):
-        if tag in self._PARAGRAPH:
+        if tag in self._HIDDEN:
+            self._hidden += 1
+        elif tag in self._PARAGRAPH:
             self.parts.append("\n\n")
         elif tag in self._LINE:
             self.parts.append("\n")
 
+    def handle_endtag(self, tag):
+        if tag in self._HIDDEN:
+            self._hidden = max(0, self._hidden - 1)
+
     def handle_data(self, data):
-        self.parts.append(data)
+        if not self._hidden:
+            self.parts.append(data)
 
 
 def html_to_text(html_text):

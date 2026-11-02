@@ -37,14 +37,17 @@ find it:
       /photonics/home/.../kernel_logs/20261014_091204_console_3f2a.jsonl:118
 [3] [scilog 2026-10-13 10:02 henrik.lemke@psi.ch [26j_kern_p23618 (p23618)]]
       https://scilog.psi.ch/logbooks/6703.../dashboard
+[4] [elog 2026-11-02 08:02 Graf, Streich, Holz [SwissFEL commissioning] [Problem, ...]]
+      https://elog-gfa.psi.ch/SwissFEL+commissioning/43530
 ```
 
 `%ei --open 2` shows that source in its context: for a command, the commands
 typed before and after it in that session with what came back; for a SciLog
 post, the whole post between its neighbours in the logbook; for docs and
 code, the section or definition. A search-only listing (`%ei -s`) is
-numbered the same way. SciLog has no address for a single post, so a post
-links to its logbook, and its date and author find it there. In eco desktop
+numbered the same way. An elog entry links to itself; SciLog has no
+address for a single post, so a post links to its logbook, and its date and
+author find it there. In eco desktop
 the sources are links under the answer.
 
 In a terminal the locations are clickable too (Ctrl+click in gnome-terminal):
@@ -67,6 +70,7 @@ directories). `ECO_NO_HYPERLINKS=1` prints plain text.
 | escape | The API of the installed escape package, and the docs and example notebooks of an escape checkout. |
 | Notebooks | Code cells of more notebooks, after `%ei --examples PATH`. |
 | SciLog | Bernina's logbooks by default, or those chosen with `%ei --scilog-index ...`, as far as the account can read them. |
+| Machine elog | SwissFEL commissioning and SwissFEL Diagnostics on elog-gfa.psi.ch: operation, shift handovers, problems. |
 | Notes | After `%ei --notes PATH` or `%ei --scan ...` has indexed them. |
 
 The search index lives in `~/.eco/history_index.sqlite`. It is updated
@@ -173,6 +177,45 @@ Indexed posts are searched together with the history and the docs; the
 ones that match a question go to the model with it, like every other
 excerpt.
 
+## The machine's elog
+
+The accelerator is still logged in the classic elog at
+<https://elog-gfa.psi.ch>, and `%ei` searches its SwissFEL commissioning
+and SwissFEL Diagnostics logbooks along with everything else. They are
+most useful for what happened to the machine lately:
+
+```python
+%ei what happened to the machine over the last day or so?
+%ei any Athos problems since Friday?
+%ei what did the operators change last night?
+```
+
+A question that names a time span -- "last day", "past 3 hours",
+"yesterday", "since Monday", "last night", "this week", "recently" -- gets
+the logbook entries of that span (elog and SciLog, up to 25, those with
+more of the question's other words first) in time order, and the model is
+told the current time. The answer goes through them in order, citing each
+entry, and the sources link to the entries themselves.
+
+The first question reads both logbooks completely, ~42 000 entries in
+about 30 s; after that, each update (at most every ten minutes, before a
+question) fetches only the days since the last one, in about a second.
+An entry edited more than a day after it was written keeps its indexed
+version until `%ei --elog --rebuild`. Which logbooks are read is set by
+`"elog_logbooks"` in `~/.eco/ei.json` (logbook names as on the elog's
+tabs, `[]` for none).
+
+Both logbooks can be read without logging in. A logbook that asks for a
+login is read as the beamline account gac-bernina, with the elog password
+eco's elog client uses (gopass `elog/elog-password`, or `~/.elog_psi`).
+
+elog-gfa.psi.ch sends its certificate without the intermediate one, which
+browsers fetch by themselves and Python does not. eco does the same as the
+browsers: it downloads the intermediate certificate from the address the
+server's certificate gives, keeps it only if a root that certifi trusts
+signed it, and stores the completed bundle in `~/.eco/ca/`. Certificate
+checking stays on.
+
 ## Follow-up questions
 
 `%ei` keeps the conversation going, so a short follow-up works:
@@ -208,6 +251,7 @@ was given (`.hits`).
 | `%ei --scilog-logbooks FILTERS` | The logbooks that account can read; filters `--location`, `--pgroup`, `--name`. |
 | `%ei --scilog-index FILTERS` | Index those logbooks' new posts (`--all` for every one; no filter: the last choice; `--rebuild`: all posts again). |
 | `%ei --scilog-search TEXT` | SciLog's own search over everything you can read, live. |
+| `%ei --elog [--rebuild]` | Update the elog entries now (`--rebuild`: all of them again). |
 | `%ei --notes PATH` | Index a folder of notes (.txt, .md, .pdf). |
 | `%ei --examples PATH` | Index notebooks (code cells) as usage examples, for this session. |
 | `%ei --scan PATH ...` | Add notes from pictures, PDFs and text files (needs the model). |
@@ -256,6 +300,6 @@ adding a key, `%ei --key` picks it up without restarting.
 **Ask** menu.
 
 **What leaves the machine:** your question, the matching history, docs and
-log excerpts, and the list of namespace names go to the model server. The
+log excerpts (SciLog posts and elog entries included), and the list of namespace names go to the model server. The
 server is PSI's own, but think before indexing notes you would not paste
 into it yourself.

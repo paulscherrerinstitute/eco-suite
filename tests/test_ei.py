@@ -220,6 +220,7 @@ def _config():
     cfg = json.loads(json.dumps(ei.DEFAULT_CONFIG))
     cfg["reindex_interval"] = 1e9  # the test index is built by hand
     cfg["scilog_default"] = None  # no network
+    cfg["elog_logbooks"] = None
     return cfg
 
 
