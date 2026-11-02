@@ -177,6 +177,14 @@ scans.clear_auxiliary_counters()          # back to the DAQ alone
 
 A scan given `counters=` uses exactly those instead.
 
+```{admonition} Did you know?
+:class: tip
+
+Every scan also records where each step measured: `mesh_specs` in
+`scan.scan_info["scan_parameters"]` and a `mesh_index` per step. That works
+for adaptive scans and co-moving axes too ({doc}`multidim_scan_data`).
+```
+
 ## Where the time goes
 
 Every step line ends with how the scan's time has been spent so far, and the

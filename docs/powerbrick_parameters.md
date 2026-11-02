@@ -89,6 +89,51 @@ maintains. eco adds:
 - a check over channel access afterwards that the configuration's motor
   records came up.
 
+## What is behind a motor record: `identify()`
+
+`identify()` works on every motor record, not only PowerBrick ones. It
+reports which controller and drive the record runs, whether there is an
+encoder, and what homing actually does:
+
+```python
+mono.theta.identify()                    # one motor record
+mono.theta.identify(deep=False)          # channel access and IOC files only
+
+from eco.devices_general.motor_identify import identify_motor, identify_motors, survey_table
+identify_motor("SARES20-DSD:MOTOR_DSDX")
+print(survey_table(identify_motors(["SARES20-DSD:MOTOR_DSDX", ...])))   # one line per motor
+```
+
+The result names each finding together with where it came from (`.evidence`):
+
+- **Controller:** PowerBrick, Schneider, SmarAct MCS, Newport XPS or
+  piezosystem jena dDrive. It is found from the asyn port in the record's
+  OUT link, looked up in the IOC's startup script under `/ioc` (mounted on
+  the consoles). The same script gives the physical link (TCP host:port or
+  serial tty).
+- **Drive:** a Schneider drive is asked through the IOC's own `_get`
+  passthrough. Its part number tells an MDrive Plus, an MForce and a Lexium
+  Motion Module apart; the drive also reports its encoder, how its inputs are
+  set up and the homed flag. A PowerBrick axis is read over gpascii; behind
+  sf-gw it stays locked until `unlock()`, as above.
+- **Homing:** what HOMF/HOMR does on this controller. On a Schneider drive it
+  searches for a home *switch*; on a PowerBrick it captures whatever
+  `CaptCtrl`/`CaptFlagSel` select. The report also lists the other
+  references the hardware has (index mark, limit switch) and whether a PSI
+  homing script (`<prefix>:HOMING`) is attached.
+
+It only reads: no motion command, no configuration write. `deep=True` (the
+default) also asks the drive, about 0.3 s per value on a Schneider drive.
+`identify_motors()` runs many records in parallel.
+
+```{admonition} Did you know?
+:class: tip
+
+On a Schneider drive, HOMF cannot do index-mark homing: the record has no
+way to send `HI`. That is why the separate PSI homing scripts exist, and
+`identify()` shows whether one is attached.
+```
+
 See also: {doc}`deltatau_servo` for the servo parameters and
 {doc}`examples/deltatau_config` for reading, editing and applying whole
 controller configurations.

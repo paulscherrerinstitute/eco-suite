@@ -11,7 +11,7 @@ git pull                       # in your checkout
 pip install -e . --no-deps     # only if you install it; new dependencies below
 ```
 
-```{admonition} Upgrade notes for 25 October to 2 November 2026
+```{admonition} Upgrade notes for 25 October to 3 November 2026
 :class: important
 
 - **New dependency: `hklforge`** (core, for `recspace`). It is in the
@@ -25,9 +25,17 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   counters of a scan follow its window (same pulses, same time) instead of
   each acquiring `N_pulses` on their own. With the default counters (the DAQ
   alone) nothing changes. See {doc}`scanning`.
+- **The scans' exposure argument is called `exposure_def`.** `N_pulses=`
+  still works; giving both with different values is an error.
 - **A bs-stream counter bins only during its scans.** Before, it kept binning
   every shot between scans. Its per-scan data now live on the scan, so one
-  counter can serve concurrent scans.
+  counter can serve concurrent scans. It keeps only the shots the step was
+  reduced from, up to 1 000 000 per step (escape's default was 1000).
+- **Two counters of one scan keep their data apart.** The scan's `monitors`,
+  `monitor_scan_arrays`, `fig`, ... show the first one's; a second one plots
+  and stores separately.
+- **Scan info gains `mesh_specs`** in `scan_parameters` and `mesh_index` in
+  every step's info, next to `grid_specs`, which is unchanged.
 - **`recspace` works in the SwissFEL/Bernina frame** (z+ along the beam, y+
   up). Crystals stored before are turned once when they are first loaded, and
   directions are given as the crystal lies with all angles at 0. `diffcalc`
@@ -39,6 +47,12 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
 - **Status of PowerBrick motors** gains a `cnf_pb` entry, read only when
   shown; motors behind sf-gw show a 🔑 key instead.
 ```
+
+## 3 November 2026
+
+- `motor.identify()` on any motor record: controller, drive model, encoder
+  and what homing does there, read from the IOC and the drive
+  ({doc}`powerbrick_parameters`).
 
 ## 2 November 2026
 
@@ -60,7 +74,11 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   the live data.
 - Every scan shows where its time goes (acquire, move, settle, callbacks).
 - Detectors as counters: `counters=[daq, mon_opt.intensity, diode]`.
-- The first counter sets the exposure; the others follow its window.
+- The first counter sets the exposure (`exposure_def`); the others follow its
+  window, or acquire on their own with `counter_options`.
+- `scans.append_counter()`: a live counter in every scan, next to the DAQ.
+- Every scan records its mesh, the point each step measured
+  ({doc}`multidim_scan_data`).
 - Simulated scan targets: `sim`, with realistic motor and detector behaviour
   ({doc}`simulated_targets`).
 

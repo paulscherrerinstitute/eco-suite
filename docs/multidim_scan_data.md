@@ -65,6 +65,14 @@ and per step `scan_step_info[i]["mesh_index"]`: the node it measured.
 
 Code: `eco/acquisition/mesh.py`; tests: `tests/test_scan_mesh.py`.
 
+```{admonition} Did you know?
+:class: tip
+
+eco already writes the mesh for every scan, so runs taken now will have it
+when escape learns to read it. Older runs would be rebuilt from
+`scan_values` and `grid_specs` (section 2).
+```
+
 ## 2. escape: `Mesh` next to `Grid`
 
 escape gets a `Mesh` view of an `Array`, built from `mesh_specs` and the steps'
