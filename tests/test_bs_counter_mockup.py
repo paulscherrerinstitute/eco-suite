@@ -82,18 +82,21 @@ def test_multi_source_and_stepscan_binning(bs_worker):
     det.stream = Stream("pump_on", bs_worker, unit="a.u.")
 
     ctr = BsStreamCounter([det, "i0", "i"], eventworker=bs_worker, timeout=5)
-    assert set(ctr._channels) == {"pump_on", "i0", "i"}
+    assert set(ctr._raw) == {"pump_on", "i0", "i"}
 
     n_steps = 4
     fake_scan = FakeScan(n_steps)
     for cb in ctr.callbacks_start_scan:
         cb(scan=fake_scan)
+    # the bins are the scan's, not the counter's
+    bins = fake_scan.counter_state[ctr.name]["bins"]
+    assert ctr.scan_bins(fake_scan) is bins
     # Bins are open-ended (escape-fel 0.2.7 -- see bs_counter.py's module
     # docstring) and created on demand, so none exist yet right after
     # start; they grow to n_steps once every step has been visited below.
-    assert len(ctr._scan._values) == 0
+    assert len(bins.scan._values) == 0
 
-    all_pulse_ids = {name: [] for name in ctr._channels}
+    all_pulse_ids = {name: [] for name in ctr._raw}
     for step in range(n_steps):
         fake_scan.next_step = step
         val = ctr.acquire(scan=fake_scan, Npulses=10).wait()
@@ -102,7 +105,7 @@ def test_multi_source_and_stepscan_binning(bs_worker):
             assert len(pids) == 10
             all_pulse_ids[name].extend(pids)
 
-    assert len(ctr._scan._values) == n_steps
+    assert len(bins.scan._values) == n_steps
 
     for cb in ctr.callbacks_end_scan:
         cb(scan=fake_scan)
@@ -240,6 +243,75 @@ def test_store_false_never_writes_a_file(bs_worker, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# state on the scan, not on the counter
+# ---------------------------------------------------------------------------
+def _my_callbacks(ctr, worker):
+    """The event callbacks some bins of *ctr* still have on *worker*."""
+    mine = set()
+    for bins in ctr._open_bins:
+        for ch in bins.channels.values():
+            mine |= {id(ch._appendEventData.__self__)}
+    return [cb for cb in worker.eventCallbacks if id(getattr(cb, "__self__", None)) in mine]
+
+
+def test_two_scans_share_one_counter(bs_worker):
+    ctr = BsStreamCounter("i0", eventworker=bs_worker, timeout=5, live_plot=False, store=False)
+    a, b = FakeScan(3), FakeScan(2)
+    for scan in (a, b):
+        for cb in ctr.callbacks_start_scan:
+            cb(scan=scan)
+    ids = {}
+    for step in range(3):  # interleaved, as two scans running at once would
+        for scan in (a, b)[: 2 if step < 2 else 1]:
+            scan.next_step = step
+            ctr.acquire(scan=scan, Npulses=5).wait()
+            ids.setdefault(id(scan), []).extend(ctr.last_pulse_ids["i0"])
+    assert len(ctr.scan_bins(a).scan._values) == 3
+    assert len(ctr.scan_bins(b).scan._values) == 2
+    # every shot went into the step that was acquiring it, of either scan
+    for scan in (a, b):
+        bins = ctr.scan_bins(scan)
+        assert [len(bins.bin("i0", i)) >= 5 for i in range(len(bins.scan._values))]
+        assert len(set(ids[id(scan)])) == len(ids[id(scan)])
+    for scan in (a, b):
+        for cb in ctr.callbacks_end_scan:
+            cb(scan=scan)
+    ctr.close()
+
+
+def test_nothing_is_binned_between_scans(bs_worker, tmp_path):
+    ctr = BsStreamCounter(
+        "i0", eventworker=bs_worker, timeout=5, live_plot=False, storage_dir=str(tmp_path)
+    )
+    n_callbacks = len(bs_worker.eventCallbacks)
+    assert isinstance(ctr.get_current_value(), float)
+    assert len(bs_worker.eventCallbacks) == n_callbacks  # the read's bins are gone
+
+    scan = FakeScanWithInfo(2, "dummy_adjustable")
+    for cb in ctr.callbacks_start_scan:
+        cb(scan=scan)
+    assert len(bs_worker.eventCallbacks) > n_callbacks
+    for step in range(2):
+        scan.next_step = step
+        ctr.acquire(scan=scan, Npulses=5).wait()
+        scan.append_step(float(step))
+    for cb in ctr.callbacks_end_scan:
+        cb(scan=scan)
+    assert len(bs_worker.eventCallbacks) == n_callbacks
+    assert not ctr._open_bins
+
+    # the finished scan's data stay readable, also after a later read
+    bins = ctr.scan_bins(scan)
+    n = [len(bins.bin("i0", i)) for i in range(2)]
+    ctr.get_current_value()
+    time.sleep(0.1)
+    assert [len(bins.bin("i0", i)) for i in range(2)] == n
+    assert set(ctr.last_arrays) == {"i0"} and ctr.stored_filename is not None
+    assert ctr.scan_bins() is bins
+    ctr.close()
+
+
+# ---------------------------------------------------------------------------
 # scan units + peak analysis
 # ---------------------------------------------------------------------------
 class FakeStepScan(FakeScanWithInfo):
@@ -284,13 +356,14 @@ def test_live_scan_reads_in_scan_units(bs_worker):
     scan = FakeStepScan(len(adj_values), "dummy_adjustable")
     _run_scan(ctr, scan, adj_values)
 
-    channel = next(iter(ctr._channels.values()))
-    assert list(ctr._scan[0]) == adj_values
+    bins = ctr.scan_bins(scan)
+    channel = next(iter(bins.channels.values()))
+    assert list(bins.scan[0]) == adj_values
     assert list(channel.scan[0]) == adj_values
     assert list(channel.scan["dummy_adjustable"]) == adj_values
     assert list(channel.scan.copy()[0]) == adj_values
     # the bin keys themselves are untouched: step 0, 1, 2, ...
-    assert [v[0] for v in ctr._scan._values] == [0.0, 1.0, 2.0, 3.0, 4.0]
+    assert [v[0] for v in bins.scan._values] == [0.0, 1.0, 2.0, 3.0, 4.0]
     par = channel.scan._parameters[0]
     assert (par.name, par.unit) == ("dummy_adjustable", "mm")
 
@@ -301,9 +374,13 @@ def test_live_scan_reads_in_scan_units(bs_worker):
 
 def test_without_a_scan_value_the_axis_stays_the_step_index(bs_worker):
     ctr = BsStreamCounter("i0", eventworker=bs_worker, timeout=5, live_plot=False, store=False)
+    scan = FakeScan(3)  # says nothing about its values
+    for cb in ctr.callbacks_start_scan:
+        cb(scan=scan)
     for step in range(3):
-        ctr.acquire(Npulses=3).wait()  # standalone: no scan at all
-    assert list(ctr._scan[0]) == [0.0]
+        scan.next_step = step
+        ctr.acquire(scan=scan, Npulses=3).wait()
+    assert list(ctr.scan_bins(scan).scan[0]) == [0.0, 1.0, 2.0]
     ctr.close()
 
 
@@ -319,7 +396,7 @@ def test_peak_analysis_is_in_scan_units(bs_worker, capsys):
     assert analysis.values["n_points"] == 17  # the live stream's own values, but all steps
 
     # freeze the bins (no more live events) and put a known trace in them
-    channel = next(iter(ctr._channels.values()))
+    channel = next(iter(ctr.scan_bins(scan).channels.values()))
     channel._source.eventWorker.eventCallbacks.remove(channel._appendEventData)
     data = channel._dataManager._data
     for j, x in enumerate(adj_values):
@@ -370,9 +447,10 @@ def test_live_plot_axis_is_the_scan_variable_in_its_unit(bs_worker):
         ctr = BsStreamCounter("i0", eventworker=bs_worker, timeout=5, live_plot=True, store=False)
         scan = FakeStepScan(len(adj_values), "dummy_adjustable")
         _run_scan(ctr, scan, adj_values)
-        assert ctr._plot is not None
-        ctr._plot.replot()
-        ax = ctr._plot.axes
+        plot = ctr.scan_bins(scan).plot
+        assert plot is not None
+        plot.replot()
+        ax = plot.axes
         assert ax.get_xlabel() == "dummy_adjustable / mm"
         assert list(ax.lines[0].get_xdata()) == adj_values
         for cb in ctr.callbacks_end_scan:

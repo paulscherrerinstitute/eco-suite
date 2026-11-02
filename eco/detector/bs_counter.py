@@ -1,10 +1,21 @@
-"""Investigation mockup: a StepScan "counter" backed directly by one or more
-live bs (beam-synchronous / escape) streams, instead of an EPICS PV monitor.
+"""A StepScan "counter" backed directly by one or more live bs
+(beam-synchronous / escape) streams, instead of an EPICS PV monitor.
 
-Not wired into any namespace or ``bernina.py`` -- this is a proof of concept
-for a design discussion, exercised in ``tests/test_bs_counter_mockup.py``
+Started as a proof of concept, exercised in ``tests/test_bs_counter_mockup.py``
 against ``escape.stream``'s synthetic local test stream (no real beamline
-needed).
+needed); used by ``Stream.scans``, ``DetectorBsStream(bs_scan_mode=True)``
+and adaptive scans.
+
+Where the state lives
+---------------------
+Like every other counter, a ``BsStreamCounter`` keeps per-scan data on the
+scan (a ``_ScanBins`` in ``scan.counter_scratch(name)["bins"]``: bins, step
+keys, pulse ids, live plot, arrays, file), and on itself only the channel
+subscriptions and its settings. So one counter -- e.g. the one a detector
+keeps -- can be passed to any number of scans, also concurrent ones, and
+nothing is binned between scans. ``last_arrays``, ``stored_filename``,
+``step_pulse_ids`` and ``grid()`` read the most recent scan's bins
+(``scan_bins(scan)`` any other's).
 
 Two questions this answers
 ---------------------------
@@ -97,8 +108,8 @@ on **every scan start and end** -- fine against the synthetic
 
 Fixed here by decoupling the two lifecycles that were conflated: **channel
 subscription** (``registerSource``, done once per channel in ``__init__``,
-never repeated) from **per-scan bin structure** (a fresh ``Scan`` built in
-``_build_bins()``, which now only manipulates local ``eventCallbacks``
+never repeated) from **per-scan bin structure** (a fresh ``Scan`` built per scan in
+``_ScanBins``, which only manipulates local ``eventCallbacks``
 bookkeeping -- no ``accumulate()``, no ``registerSource``/``removeSource``
 at all after ``__init__``). Confirmed directly: two consecutive real
 ``ascan()`` runs against the real dispatcher, with a real ``DummyAdjustable``,
@@ -325,6 +336,100 @@ def install_stream_scans():
 install_stream_scans()
 
 
+class _ScanBins:
+    """Everything of one scan (or of one standalone read) of a
+    ``BsStreamCounter``: the per-step bins, the step keys, the pulse ids, the
+    live plot, the arrays and the file.
+
+    Kept on the scan (``scan.counter_scratch(counter.name)["bins"]``), like
+    every other counter's per-scan data, not on the counter: the counter
+    keeps only the channel subscriptions and its settings, so one counter
+    (e.g. the one a ``DetectorBsStream`` keeps) serves any number of scans,
+    also at the same time, and nothing is binned between scans.
+
+    Binning starts when this is built (callbacks on the shared event worker,
+    never ``registerSource``, see ``BsStreamCounter`` and the module
+    docstring) and stops at ``close()``; the data stay readable afterwards.
+    """
+
+    def __init__(self, raw, grid_specs=None, step_name=None, step_unit=None):
+        from escape import stream as escape_stream
+
+        # One source per grid dimension -- just one ("step_index") for an
+        # ordinary linear scan. Scan() keys bins on the tuple of however many
+        # of these there are, so this is the entire mechanism N-D (grid)
+        # binning needs -- see escape.stream.Grid, which reads this same
+        # tuple structure back out of self.scan._values.
+        ndim = len(grid_specs["shape"]) if grid_specs else 1
+        if ndim <= 1:
+            self.step_sources = [_StepIndexSource("step_index")]
+            # before the Scan below is built: it takes the parameter names
+            # from its sources at construction
+            if step_name is not None:
+                self.step_sources[0].name = step_name
+                self.step_sources[0].unit = step_unit
+        else:
+            self.step_sources = [_StepIndexSource(f"step_index_{d}") for d in range(ndim)]
+        self.grid_specs = grid_specs
+        # step index -> the scan's own value at that step (_scan_in_scan_units)
+        self.step_values = {}
+        # Open-ended (values=None): bins are created on demand as new step
+        # indices appear. Safe to share across every channel regardless of
+        # which one's data reaches a given step first -- see the module
+        # docstring (escape-fel 0.2.7, DataManager.append).
+        if ndim <= 1:
+            self.scan = _scan_in_scan_units(escape_stream)(
+                parameters=list(self.step_sources), step_values=self.step_values
+            )
+        else:
+            self.scan = escape_stream.Scan(parameters=list(self.step_sources))
+        self.new_data = Event()
+        self.step_pulse_ids = {}
+        self.pending = None  # (step_index, n0) between start() and stop()
+        self.last_samples = None
+        self.plot = None
+        self.arrays = {}
+        self.stored_filename = None
+        self.running = True
+        self.channels = {}
+        for name, base in raw.items():
+            binned = escape_stream.Stream(source=base._source, scan=self.scan)
+            ew = binned._source.eventWorker
+            ew.eventCallbacks.append(binned._appendEventData)
+            ew.eventCallbacks.append(self.new_data.set)
+            self.channels[name] = binned
+
+    @property
+    def ndim(self):
+        return len(self.step_sources)
+
+    def close(self):
+        """Stop binning (remove this object's event callbacks, never the
+        channel subscription). The bins keep what they collected."""
+        if not self.running:
+            return
+        self.running = False
+        for s in self.channels.values():
+            ew = s._source.eventWorker
+            for callback in (s._appendEventData, self.new_data.set):
+                try:
+                    ew.eventCallbacks.remove(callback)
+                except ValueError:
+                    pass
+
+    # Bins are created on demand (open-ended Scan) the first time a matching
+    # event actually arrives for a given channel, so `idx` may not exist yet
+    # in a freshly-advanced-to step -- treat that as "no samples yet", not
+    # an error.
+    def bin(self, name, idx):
+        data = self.channels[name]._dataManager._data
+        return data[idx] if idx < len(data) else []
+
+    def eventids(self, name, idx):
+        eventids = self.channels[name]._dataManager._eventIds
+        return eventids[idx] if idx < len(eventids) else []
+
+
 class BsStreamCounter:
     """Scalar Detector/Counter reading one or more bs channels from live
     ``escape.stream`` subscriptions, with per-scan-step histogram binning.
@@ -347,7 +452,7 @@ class BsStreamCounter:
         carry their own (a ``Stream`` or ``DetectorBsStream``).
     live_plot : bool, default True
         Automatically open (and keep live-updating) a plot for a 1-D scan
-        -- ``self._channels[name].plot_med()`` (median + percentile bands
+        -- ``plot_med()`` of the scan's binned stream (median + percentile bands
         + peak overlay, see ``escape.stream.Stream.plot_med``), reusing
         the exact same already-accumulating per-step Stream this counter
         uses internally, so this costs nothing beyond drawing. Only for a
@@ -368,9 +473,8 @@ class BsStreamCounter:
         EPICS-monitor path. This was the other thing a plain
         ``BsStreamCounter`` was missing compared to ``CounterValue``:
         without it, a bs-stream scan's data lived only in this counter's
-        in-memory bins (``last_value(s)``, ``.grid()``, the raw
-        ``_channels``), gone the moment the next scan tore them down, with
-        nothing on disk. Failure to store (any exception -- a bad
+        in-memory bins (``last_value(s)``, ``.grid()``), with nothing on
+        disk. Failure to store (any exception -- a bad
         directory, a concurrent writer, ...) is printed, never raised, so
         it can't fail the scan itself; see ``_store_arrays``.
     storage_dir : str | Path | callable, default "auto"
@@ -395,11 +499,12 @@ class BsStreamCounter:
     -----
     Outside a scan, each channel's ``get_current_value()``-equivalent is
     ``.last_values['<channel>']`` after calling ``.acquire().wait()``, or
-    read live via ``.get_current_value()`` (single channel only).
+    read live via ``.get_current_value()`` (single channel only). Bins
+    exist only during such a read.
 
     As a StepScan counter (``eco.acquisition.counter_protocol.Counter``),
-    pass it in ``scan.counters``: ``callbacks_start_scan``/``_end_scan``
-    (re)build the per-step bins sized to that scan's step count, and
+    pass it in ``scan.counters``: ``callbacks_start_scan`` builds the scan's
+    bins (on the scan), ``callbacks_end_scan`` stops them binning, and
     ``acquire(scan, Npulses)`` / ``start(scan)``+``stop(scan)`` wait for
     and reduce that step's bin, across all channels at once.
     """
@@ -418,53 +523,28 @@ class BsStreamCounter:
         self.reduction = reduction
         self.timeout = timeout
         self.live_plot = live_plot
-        self._plot = None
         self.store = store
         self.storage_dir = storage_dir
         self._peak_settings = _peak.parse_settings(peak_analysis)
-        # step index -> the scan's own value at that step (see
-        # _scan_in_scan_units); a new dict per scan, so the one a finished
-        # scan's bins still refer to is never touched again
-        self._step_values = {}
-        # Snapshot of the most recently *completed* scan's channels as real
-        # escape.Array objects (see _build_arrays) -- {channel_name: Array},
-        # and the file they were last written to (_store_arrays), if any.
-        self.last_arrays = {}
-        self.stored_filename = None
         self.alias = Alias(self.name, channel=list(self._raw), channeltype="BS")
 
-        # One source per grid dimension -- just one ("step_index") for an
-        # ordinary linear scan; _on_scan_start() sizes this to match
-        # scan.grid_specs for a real mesh/grid scan, before _build_bins()
-        # builds the Scan() from them. Scan() keys bins on the tuple of
-        # however many of these there are, so this is the entire mechanism
-        # N-D (grid) binning needs -- see escape.stream.Grid, which reads
-        # this same tuple structure back out of self._scan._values (also
-        # what self.grid() below hands it).
-        self._step_sources = [_StepIndexSource("step_index")]
-        self._grid_specs = None  # set by _on_scan_start() for a grid scan
-        self._scan = None
-        self._channels = {}
-        self._scan_running = False
-        # Snapshot of the most recently *completed* scan's bins -- see
-        # _on_scan_end() and grid().
-        self._last_channels = {}
-        self._last_scan = None
-        self._last_grid_specs = None
-        self._new_data = Event()
-        self._step_index = 0
+        # Per-scan state lives on the scans (_ScanBins); the counter only
+        # points at the most recent scan's, for grid()/last_arrays/... after
+        # the fact, and remembers which bins still bin, for close().
+        self._last_scan_bins = None
+        self._open_bins = set()
+        self._standalone_bins = None  # between a scan-less start() and stop()
+        # Convenience copies of the most recent step, whatever scan it was in.
         self.last_value = None
         self.last_values = {}
         self.last_pulse_ids = {}
-        self.step_pulse_ids = {}
+        self.last_samples = None
 
         # Subscribe each channel with the transport exactly once, here, for
-        # the life of this counter -- see _build_bins()'s docstring for why
-        # this must not repeat on every scan.
+        # the life of this counter -- see the module docstring for why this
+        # must not repeat on every scan.
         for base in self._raw.values():
             base._source.eventWorker.registerSource(base._source.name)
-
-        self._build_bins()
 
         self.callbacks_start_scan = [self._on_scan_start]
         self.callbacks_start_step = []
@@ -472,110 +552,74 @@ class BsStreamCounter:
         self.callbacks_end_step = [self._update_peak_analysis]
         self.callbacks_end_scan = [self._on_scan_end]
 
-    # -- (re)building the shared per-step bin structure ---------------------
-    def _build_bins(self):
-        """Fresh per-scan bins, reusing the already-subscribed channels.
+    # -- the most recent scan's results ---------------------------------------
+    @property
+    def last_arrays(self):
+        """``{channel_name: escape.Array}`` of the most recently finished scan
+        (see ``_build_arrays``), {} before the first one."""
+        return self._last_scan_bins.arrays if self._last_scan_bins else {}
 
-        Open-ended (values=None): bins are created on demand as new step
-        indices appear. Safe to share across every channel in self._raw
-        regardless of which one's data reaches a given step first -- see
-        the module docstring (escape-fel 0.2.7, DataManager.append).
+    @property
+    def stored_filename(self):
+        """The file the most recent scan's arrays went to, or None."""
+        return self._last_scan_bins.stored_filename if self._last_scan_bins else None
 
-        Deliberately does NOT call ``Stream.accumulate(True)`` (which is
-        what an earlier version of this method did): that calls
-        ``EventWorker.registerSource``, which -- for the real
-        dispatcher/datahub-backed handler -- unconditionally schedules a
-        debounced restart of the *entire shared* underlying connection
-        (``EventWorker._schedule_restart``) even when the channel is
-        already subscribed, on every single call. Doing that on every scan
-        start/end (this method used to run from both) was confirmed
-        against the real dispatcher to be the source of most of this
-        class's console output, and to occasionally race with the
-        datahub-backed handler's own stream teardown (an
-        already-registered channel does not need registering again, only a
-        fresh bin to write into).
-        """
-        from escape import stream as escape_stream
+    @property
+    def step_pulse_ids(self):
+        """{step index: pulse id at the step's start} of the most recent scan
+        -- a diagnostic record only, it does not drive the binning."""
+        return self._last_scan_bins.step_pulse_ids if self._last_scan_bins else {}
 
-        if len(self._step_sources) == 1:
-            # one dimension: bins keyed on the step index, read in scan units
-            self._scan = _scan_in_scan_units(escape_stream)(
-                parameters=list(self._step_sources), step_values=self._step_values
-            )
-        else:
-            self._scan = escape_stream.Scan(parameters=list(self._step_sources))
-        for src in self._step_sources:
-            src.value = 0.0
-        self._step_index = 0
-        # NOTE: step_pulse_ids is deliberately NOT reset here -- _build_bins()
-        # runs at the end of a scan too (_on_scan_end), and clearing it there
-        # would wipe the just-finished scan's record before calling code ever
-        # gets to read it. Only _on_scan_start resets it (a fresh scan is
-        # starting, the old record is no longer relevant); __init__ starts it
-        # at {} directly.
+    # -- where a scan's bins are -----------------------------------------------
+    def _scratch(self, scan):
+        counter_scratch = getattr(scan, "counter_scratch", None)
+        if counter_scratch is not None:
+            return counter_scratch(self.name)
+        # a scan object without counter_scratch: the same dict, by hand
+        return vars(scan).setdefault("counter_state", {}).setdefault(self.name, {})
 
-        self._channels = {}
-        for name, base in self._raw.items():
-            binned = escape_stream.Stream(source=base._source, scan=self._scan)
-            ew = binned._source.eventWorker
-            if binned._appendEventData not in ew.eventCallbacks:
-                ew.eventCallbacks.append(binned._appendEventData)
-            ew.eventCallbacks.append(self._new_data.set)
-            self._channels[name] = binned
+    def scan_bins(self, scan=None):
+        """The ``_ScanBins`` of *scan* (None if this counter has none there),
+        or of the most recent scan."""
+        if scan is None:
+            return self._last_scan_bins
+        return self._scratch(scan).get("bins")
 
-    def _teardown_bins(self):
-        # Mirrors _build_bins(): only removes the per-scan bin-wrapper's own
-        # callbacks, never touches the channel subscription itself (no
-        # accumulate(False)/removeSource -- see _build_bins()'s docstring).
-        for s in self._channels.values():
-            ew = s._source.eventWorker
-            try:
-                ew.eventCallbacks.remove(s._appendEventData)
-            except ValueError:
-                pass
-            try:
-                ew.eventCallbacks.remove(self._new_data.set)
-            except ValueError:
-                pass
-        self._channels = {}
+    def _open(self, scan=None):
+        """New bins: for *scan* (stored on it), or standalone (scan=None)."""
+        grid_specs = _get_grid_specs(scan)
+        step_name, step_unit = (None, None) if grid_specs else self._step_label(scan)
+        bins = _ScanBins(self._raw, grid_specs, step_name, step_unit)
+        self._open_bins.add(bins)
+        if scan is not None:
+            self._scratch(scan)["bins"] = bins
+            self._last_scan_bins = bins
+        return bins
+
+    def _close(self, bins):
+        bins.close()
+        self._open_bins.discard(bins)
+
+    def _bins_for(self, scan):
+        # a scan whose start callbacks this counter missed still gets bins
+        return self.scan_bins(scan) or self._open(scan)
 
     def _on_scan_start(self, scan=None, **kwargs):
-        # Size self._step_sources to match *this* scan's grid dimensionality
-        # (1 for an ordinary linear scan) before _build_bins() builds the
-        # Scan() from them -- growing this later, inside _advance_step(),
-        # would be after the Scan/DataManagers for this run already exist
-        # with the wrong number of parameters.
-        ndim = 1
-        grid_specs = _get_grid_specs(scan)
-        if grid_specs:
-            ndim = len(grid_specs["shape"])
-        self._step_sources = (
-            [_StepIndexSource("step_index")]
-            if ndim <= 1
-            else [_StepIndexSource(f"step_index_{d}") for d in range(ndim)]
-        )
-        self._grid_specs = grid_specs  # None for an ordinary scan -- see grid()
-        self._step_values = {}
-        if ndim <= 1:
-            self._label_step_source(scan)
-        self._scan_running = True
-        self._teardown_bins()
-        self._build_bins()
-        self.step_pulse_ids = {}
-        self._start_live_plot(ndim)
+        bins = self._open(scan)
+        self._start_live_plot(bins)
         # n-d scans, several channels, or another analysing counter: no-op
         _peak.attach(scan, self.name, self._peak_settings, n_channels=len(self._raw))
 
-    def _label_step_source(self, scan):
-        """Name the (single) step source after the scanned adjustable, with
-        its unit, so escape's axis label (``"<name> / <unit>"``, see
+    def _step_label(self, scan):
+        """(name, unit) of the scanned adjustable for the (single) step
+        source, so escape's axis label (``"<name> / <unit>"``, see
         ``Plot.plot``) reads e.g. "motor / mm" rather than "step_index / step".
-        Left alone for a scan object that does not say what it scans."""
+        (None, None) for a scan object that does not say what it scans."""
         scan_parameters = (getattr(scan, "scan_info", None) or {}).get("scan_parameters")
         names = (scan_parameters or {}).get("name") or []
         if len(names) == 1:
-            self._step_sources[0].name = str(names[0])
-            self._step_sources[0].unit = _peak.adjustable_unit(scan)
+            return str(names[0]), _peak.adjustable_unit(scan)
+        return None, None
 
     def _scan_value_at(self, scan):
         """The scanned adjustable's target value for the step now being
@@ -593,24 +637,25 @@ class BsStreamCounter:
         keyed on. Result in ``scan.peak_analysis``, see
         ``eco.acquisition.peak_analysis``. Never raises."""
         analysis = _peak.get_attached(scan, self.name)
-        if analysis is None or len(self._channels) != 1:
+        bins = self.scan_bins(scan) if scan is not None else None
+        if analysis is None or bins is None or len(bins.channels) != 1:
             return analysis
         try:
-            (channel,) = self._channels.values()
-            bins = list(channel._dataManager._data)
+            (channel,) = bins.channels.values()
+            data = list(channel._dataManager._data)
             # one key per bin, in creation order; a step that produced no
             # sample never got a bin, so the key -- not the position -- says
             # which step a bin is
-            keys = list(self._scan._values)
+            keys = list(bins.scan._values)
             positions = _peak.scan_positions(scan)
-            n = min(len(bins), len(keys))
+            n = min(len(data), len(keys))
             x = np.full(n, np.nan)
             y = np.full(n, np.nan)
             for j in range(n):
                 step = int(round(keys[j][0]))
                 if step < len(positions):
                     x[j] = positions[step]
-                samples = np.asarray(list(bins[j]), dtype=float)
+                samples = np.asarray(list(data[j]), dtype=float)
                 samples = samples[np.isfinite(samples)] if samples.ndim == 1 else []
                 if len(samples):
                     y[j] = np.median(samples)
@@ -631,11 +676,11 @@ class BsStreamCounter:
     # the live plot (and its redraw QTimer) lives on the main thread, also
     # when the scan runs on a queue's worker thread
     @mainthread.on_main
-    def _start_live_plot(self, ndim):
-        self._plot = None
-        if not self.live_plot or ndim != 1 or len(self._channels) != 1:
+    def _start_live_plot(self, bins):
+        bins.plot = None
+        if not self.live_plot or bins.ndim != 1 or len(bins.channels) != 1:
             return
-        (name,) = self._channels
+        (name,) = bins.channels
         try:
             # Short timeout: this runs synchronously at scan start, so it
             # must not meaningfully delay the scan if data isn't flowing
@@ -646,35 +691,22 @@ class BsStreamCounter:
             # not the raw bs channel plot_med() would otherwise title/label
             # the plot with -- e.g. "mon_opt.intensity", not
             # "SAROP21-PBPS133:INTENSITY".
-            self._plot = self._channels[name].plot_med(timeout=2, label=self.name)
+            bins.plot = bins.channels[name].plot_med(timeout=2, label=self.name)
         except Exception as exc:
             print(f"{self.name}: couldn't start a live plot: {exc}")
 
     def _on_scan_end(self, scan=None, **kwargs):
-        # Snapshot the just-finished scan's bins before _build_bins() below
-        # replaces self._channels/self._scan with fresh, empty ones for
-        # standalone use -- without this, grid()/any post-scan inspection
-        # of the full per-step data (not just last_value(s), the one step
-        # snapshot) would see nothing the moment the scan ends, since
-        # tearing down and rebuilding is exactly what always happened here
-        # even before grid() existed (fine for last_value(s), which are
-        # already-extracted plain values, not fine for anything reading
-        # the bins themselves after the fact).
-        self._finish_peak_analysis(scan)  # needs this scan's bins, so first
-        self._last_channels = dict(self._channels)
-        self._last_scan = self._scan
-        self._last_grid_specs = self._grid_specs
-        self._scan_running = False
-        if self._plot is not None:
-            # Stop the redraw timer (not accumulate(False)/close the
-            # figure -- see live_plot's docstring on why this counter
-            # never tears down the channel subscription itself) so the
-            # scan's final result stays visible instead of continuing to
-            # "update" against the fresh, empty standalone bins
-            # _build_bins() is about to create.
-            self._stop_live_plot()
-        self._teardown_bins()
-        self._build_bins()
+        bins = self.scan_bins(scan) if scan is not None else None
+        if bins is None:
+            return
+        self._finish_peak_analysis(scan)
+        # Stop binning; the bins keep this scan's data for grid(), the arrays
+        # and the plot's last redraw.
+        self._close(bins)
+        if bins.plot is not None:
+            # Stop the redraw timer (not accumulate(False)/close the figure:
+            # the channel subscription stays) so the final result stays.
+            self._stop_live_plot(bins.plot)
 
         if self.store:
             # Never let a storage problem fail the scan itself -- same
@@ -682,26 +714,25 @@ class BsStreamCounter:
             # DataSet creation in a bare try/except and prints instead of
             # raising.
             try:
-                self._build_arrays(scan)
-                self._store_arrays()
+                self._build_arrays(bins, scan)
+                self._store_arrays(bins)
             except Exception as exc:
                 print(f"{self.name}: couldn't build/store arrays: {exc}")
 
-    def _build_arrays(self, scan):
-        """Convert this scan's just-finished per-channel bins
-        (``self._last_channels``, snapshotted above) into real
-        ``escape.Array`` objects, one per channel -- with the parameter
-        axis relabeled to the scan's actual adjustable values (mirroring
+    def _build_arrays(self, bins, scan):
+        """Convert this scan's per-channel bins into real ``escape.Array``
+        objects, one per channel -- with the parameter axis relabeled to the
+        scan's actual adjustable values (mirroring
         ``eco.acquisition.counters.parameter_from_scan``) instead of
-        ``Stream.to_array()``'s own default, the synthetic step index this
-        counter's internal ``Scan`` is keyed on (see ``_StepIndexSource``
-        and the module docstring) -- which carries no physical meaning of
-        its own, only bin identity.
+        ``Stream.to_array()``'s own default, the synthetic step index the
+        bins are keyed on (see ``_StepIndexSource`` and the module
+        docstring) -- which carries no physical meaning of its own, only bin
+        identity.
 
-        Sets ``self.last_arrays`` (``{channel_name: escape.Array}``);
-        left at its previous value if ``scan`` isn't a real
-        ``eco.acquisition.scan.StepScan`` (no ``scan_info``) or no steps
-        were recorded (a scan that errored before its first step).
+        Sets ``bins.arrays`` (``{channel_name: escape.Array}``); left empty
+        if ``scan`` isn't a real ``eco.acquisition.scan.StepScan`` (no
+        ``scan_info``) or no steps were recorded (a scan that errored before
+        its first step).
         """
         scan_info = getattr(scan, "scan_info", None)
         scan_values = scan_info.get("scan_values") if scan_info else None
@@ -715,30 +746,28 @@ class BsStreamCounter:
         }
 
         arrays = {}
-        for name, channel in self._last_channels.items():
+        for name, channel in bins.channels.items():
             n_bins = len(channel.lens())
             if n_bins == n_steps:
-                arrays[name] = channel.to_array(
-                    parameter=parameter, grid_specs=self._last_grid_specs
-                )
+                arrays[name] = channel.to_array(parameter=parameter, grid_specs=bins.grid_specs)
             else:
                 # A step that timed out with zero samples never created a
-                # bin (see _build_bins()'s open-ended-Scan docstring) --
-                # the real scan values wouldn't line up against this
-                # channel's shorter bin list, so fall back to to_array()'s
-                # own parameter: that of the channel's scan, which reads each
-                # bin that exists by its own step's value (see
-                # _scan_in_scan_units) rather than by its position.
+                # bin (open-ended Scan, see _ScanBins) -- the real scan
+                # values wouldn't line up against this channel's shorter bin
+                # list, so fall back to to_array()'s own parameter: that of
+                # the channel's scan, which reads each bin that exists by its
+                # own step's value (see _scan_in_scan_units) rather than by
+                # its position.
                 print(
                     f"{self.name}: {name} has {n_bins} bins but the scan "
                     f"took {n_steps} steps -- using the scan values of the "
                     "bins that exist instead of one per step."
                 )
                 arrays[name] = channel.to_array()
-        self.last_arrays = arrays
+        bins.arrays = arrays
 
-    def _store_arrays(self):
-        """Write ``self.last_arrays`` (see ``_build_arrays``) to a fresh
+    def _store_arrays(self, bins):
+        """Write ``bins.arrays`` (see ``_build_arrays``) to a fresh
         ``escape.DataSet`` HDF5 file, one dataset per channel -- the
         bs-stream-counter analogue of
         ``eco.acquisition.counters.CounterValue.store_arrays`` (same
@@ -747,14 +776,13 @@ class BsStreamCounter:
         handling), just scoped to this one counter's channels rather than
         a whole scan's monitors.
 
-        Sets ``self.stored_filename`` to the resulting path; leaves
-        ``self.last_arrays`` itself as the plain in-memory arrays already
-        built by ``_build_arrays`` (unlike ``CounterValue.store_arrays``,
-        this does not reload/replace them with file-backed handles after
-        writing -- see the comment below for why not). No-op if
-        ``self.last_arrays`` is empty (nothing to store).
+        Sets ``bins.stored_filename`` to the resulting path; leaves
+        ``bins.arrays`` itself as the plain in-memory arrays already built
+        by ``_build_arrays`` (unlike ``CounterValue.store_arrays``, this does
+        not reload/replace them with file-backed handles after writing --
+        see the comment below for why not). No-op if there are no arrays.
         """
-        if not self.last_arrays:
+        if not bins.arrays:
             return
         from escape import DataSet
 
@@ -777,111 +805,100 @@ class BsStreamCounter:
         path = directory / filename
 
         d = DataSet.create_with_new_result_file(path, force_overwrite=False)
-        names = list(self.last_arrays)
-        for k in names:
-            d.append(self.last_arrays[k], name=k)
-            self.last_arrays[k].store()
+        for k, arr in bins.arrays.items():
+            d.append(arr, name=k)
+            arr.store()
         d.results_file.close()
         ensure_group_writable(path)
-        self.stored_filename = path.resolve().as_posix()
-        print(f"{self.name}: stored filename {self.stored_filename}")
+        bins.stored_filename = path.resolve().as_posix()
+        print(f"{self.name}: stored filename {bins.stored_filename}")
 
-        # Deliberately does NOT re-open/replace self.last_arrays[k] with a
+        # Deliberately does NOT re-open/replace bins.arrays[k] with a
         # freshly reloaded, file-backed handle the way
         # CounterValue.store_arrays does for its own ArrayTimestamps
         # objects: escape.Array's own dataset wrapper (ArrayH5Dataset) is
         # lazy for at least some attributes even past load_from_result_file
         # (default lazy_loading=False notwithstanding), so a *second*
-        # load-then-close round-trip here left self.last_arrays holding
+        # load-then-close round-trip here left the arrays holding
         # objects tied to an already-closed h5py.File - any later access
         # (e.g. arr._scan_parameter) raised deep inside h5py rather than
         # working, found by actually reading last_arrays back after a real
-        # scan. The arrays already in self.last_arrays (from _build_arrays)
-        # are plain in-memory numpy-backed Array objects with no file
-        # dependency at all, so there is nothing to refresh - keep them.
+        # scan. The arrays from _build_arrays are plain in-memory
+        # numpy-backed Array objects with no file dependency at all, so
+        # there is nothing to refresh - keep them.
 
     def close(self):
         """Unsubscribe every channel for good (the one deliberate use of
         removeSource/its restart -- everything else keeps the subscription
-        alive for this counter's whole lifetime, see _build_bins())."""
-        self._teardown_bins()
+        alive for this counter's whole lifetime, see the module docstring)."""
+        for bins in list(self._open_bins):
+            self._close(bins)
         for base in self._raw.values():
             base._source.eventWorker.removeSource(base._source.name)
 
-    # -- reading the current step's bin -------------------------------------
-    # Bins are created on demand (open-ended Scan) the first time a matching
-    # event actually arrives for a given channel, so `idx` may not exist yet
-    # in a freshly-advanced-to step -- treat that as "no samples yet", not
-    # an error.
-    def _bin(self, name, step_index=None):
-        idx = self._step_index if step_index is None else step_index
-        data = self._channels[name]._dataManager._data
-        return data[idx] if idx < len(data) else []
-
-    def _eventids(self, name, step_index=None):
-        idx = self._step_index if step_index is None else step_index
-        eventids = self._channels[name]._dataManager._eventIds
-        return eventids[idx] if idx < len(eventids) else []
-
-    def _reduce_step(self, step_index, n0=None):
+    # -- reading a step's bin ---------------------------------------------------
+    def _reduce_step(self, bins, step_index, n0=None):
         # n0: per-channel index into that bin to start reducing from -- data
-        # already sitting in the bin *before* this acquisition began (e.g.
-        # standalone/no-scan use, where every acquire() shares the same
-        # single bin) must not be included, only what arrived since. Bins
-        # created fresh per scan step start empty, so n0=0 there is a no-op.
-        n0 = n0 or {name: 0 for name in self._channels}
+        # already sitting in the bin *before* this acquisition began must not
+        # be included, only what arrived since. Bins created fresh per scan
+        # step start empty, so n0=0 there is a no-op.
+        n0 = n0 or {name: 0 for name in bins.channels}
         result = {}
         pulse_ids = {}
         samples_all = {}
-        for name in self._channels:
-            samples = list(self._bin(name, step_index))[n0[name] :]
+        for name in bins.channels:
+            samples = list(bins.bin(name, step_index))[n0[name] :]
             samples_all[name] = samples
             result[name] = (
                 self.reduction(samples) if len(samples) > 1 else (samples[0] if samples else None)
             )
-            pulse_ids[name] = list(self._eventids(name, step_index))[n0[name] :]
+            pulse_ids[name] = list(bins.eventids(name, step_index))[n0[name] :]
+        bins.last_samples = samples_all
+        value = result if len(result) > 1 else next(iter(result.values()), None)
         self.last_samples = samples_all
         self.last_values = result
         self.last_pulse_ids = pulse_ids
-        self.last_value = result if len(result) > 1 else next(iter(result.values()), None)
-        return self.last_value
+        self.last_value = value
+        return value
 
     def step_feedback(self, scan=None, channel=None):
-        """(mean, standard error, n) of the shots of the last reduced step,
-        one channel (default: the first) -- the live feedback an adaptive
-        scan steers by (eco.acquisition.adaptive). Always the mean, whatever
-        `reduction` is. None before the first step."""
-        samples = getattr(self, "last_samples", None)
+        """(mean, standard error, n) of the shots of *scan*'s last reduced
+        step (without a scan: of the most recent step anywhere), one channel
+        (default: the first) -- the live feedback an adaptive scan steers by
+        (eco.acquisition.adaptive). Always the mean, whatever `reduction` is.
+        None before the first step."""
+        bins = self.scan_bins(scan) if scan is not None else None
+        samples = bins.last_samples if bins is not None else self.last_samples
         if not samples:
             return None
         name = channel if channel is not None else next(iter(samples))
         return mean_sem(samples[name])
 
-    def _wait_for_n_new(self, step_index, n0, n_new):
+    def _wait_for_n_new(self, bins, step_index, n0, n_new):
         deadline = _time() + self.timeout
-        while any(len(self._bin(name, step_index)) < n0[name] + n_new for name in self._channels):
+        while any(len(bins.bin(name, step_index)) < n0[name] + n_new for name in bins.channels):
             if _time() > deadline:
                 have = {
-                    name: len(self._bin(name, step_index)) - n0[name] for name in self._channels
+                    name: len(bins.bin(name, step_index)) - n0[name] for name in bins.channels
                 }
                 raise TimeoutError(
                     f"{self.name}: step {step_index} got {have}/{n_new} new bs shots "
                     f"within {self.timeout}s -- is the stream still live?"
                 )
-            self._new_data.wait(timeout=0.05)
-            self._new_data.clear()
+            bins.new_data.wait(timeout=0.05)
+            bins.new_data.clear()
 
     @mainthread.on_main
-    def _stop_live_plot(self):
+    def _stop_live_plot(self, plot):
         try:
-            self._plot.replot()  # one last redraw with the true final data
-            self._plot.stop()
+            plot.replot()  # one last redraw with the true final data
+            plot.stop()
         except Exception:
             pass
 
-    def _flush_live_plot(self):
-        """Process this counter's live-plot figure's pending GUI events
-        (paints, and its own redraw ``QTimer``'s callback).
+    def _flush_live_plot(self, bins):
+        """Process the live-plot figure's pending GUI events (paints, and its
+        own redraw ``QTimer``'s callback).
 
         Must be called from the *calling* thread of a scan (e.g. the
         interactive Qt/ipympl session's own thread) -- not from
@@ -905,119 +922,125 @@ class BsStreamCounter:
         catch up once the scan call returns and control is handed back to
         the normal event loop.
         """
-        if self._plot is None or threading.current_thread() is not threading.main_thread():
+        if bins.plot is None or threading.current_thread() is not threading.main_thread():
             return  # off the main thread (a queue): the heartbeat services Qt
         try:
-            self._plot.fig.canvas.flush_events()
+            bins.plot.fig.canvas.flush_events()
         except Exception:
             pass
 
     # -- plain Detector protocol (single channel, standalone use only) ------
     def get_current_value(self):
-        if len(self._channels) != 1:
+        """The next shot of the (single) channel; None if none arrives within
+        ``timeout``. Bins exist only for this read, so nothing keeps
+        collecting afterwards."""
+        if len(self._raw) != 1:
             return dict(self.last_values) if self.last_values else None
-        (name,) = self._channels
-        if not self._bin(name):
-            # freshly subscribed (e.g. just built for this one call) -- wait
-            # briefly for the first shot rather than reporting "no value" for
-            # a channel that is, in fact, live.
+        bins = self._open()
+        try:
+            (name,) = bins.channels
             try:
-                self._wait_for_n_new(self._step_index, {name: 0}, 1)
+                self._wait_for_n_new(bins, 0, {name: 0}, 1)
             except TimeoutError:
                 return None
-        return list(self._bin(name))[-1]
+            return list(bins.bin(name, 0))[-1]
+        finally:
+            self._close(bins)
 
     # -- scan Counter protocol, simple mode ----------------------------------
     def acquire(self, scan=None, Npulses=1, **kwargs):
         Npulses = Npulses or 1
-        step_index, n0 = self._advance_step(scan)
+        standalone = scan is None
+        bins = self._open() if standalone else self._bins_for(scan)
+        step_index, n0 = self._advance_step(bins, scan)
+        result = {}
 
         def _wait_and_reduce():
-            self._wait_for_n_new(step_index, n0, Npulses)
-            return self._reduce_step(step_index, n0)
+            try:
+                self._wait_for_n_new(bins, step_index, n0, Npulses)
+                result["value"] = self._reduce_step(bins, step_index, n0)
+            finally:
+                if standalone:
+                    self._close(bins)
+            return result["value"]
 
         return Acquisition(
-            acquire=_wait_and_reduce, hold=False, get_result=lambda: self.last_value,
-            on_tick=self._flush_live_plot,
+            acquire=_wait_and_reduce, hold=False, get_result=lambda: result.get("value"),
+            on_tick=lambda: self._flush_live_plot(bins),
         )
 
     # -- scan Counter protocol, start/stop mode ------------------------------
     def start(self, scan=None, **kwargs):
-        self._step_index, self._n0 = self._advance_step(scan)
+        if scan is None:
+            bins = self._standalone_bins = self._open()
+        else:
+            bins = self._bins_for(scan)
+        bins.pending = self._advance_step(bins, scan)
 
     def stop(self, scan=None, **kwargs):
-        self._reduce_step(self._step_index, self._n0)
+        bins = self._standalone_bins if scan is None else self.scan_bins(scan)
+        self._reduce_step(bins, *bins.pending)
+        if scan is None:
+            self._close(bins)
+            self._standalone_bins = None
         return {"files": []}
 
-    def _advance_step(self, scan):
-        """Point the shared bin key at *scan*'s current step (or a single
-        standalone bin, index 0, if no scan) and return ``(step_index, n0)``,
-        where ``n0`` is how many samples were already in that step's bin per
+    def _advance_step(self, bins, scan):
+        """Point the bin key of *bins* at *scan*'s current step (or a single
+        bin, index 0, if no scan) and return ``(step_index, n0)``, where
+        ``n0`` is how many samples were already in that step's bin per
         channel -- data from *before* this call, to be excluded when
         reducing (see ``_reduce_step``). For a fresh per-step bin this is
-        always 0; for the standalone single-ever-bin case it is whatever a
-        previous acquire()/get_current_value() call already left there.
+        always 0.
 
-        Bins are created on demand (open-ended ``Scan``, see
-        ``_build_bins``), so no "step exceeds allocated bins" check is
-        needed here -- any non-negative step index is valid, it simply
-        hasn't collected any samples yet until the first matching event
-        arrives.
+        Bins are created on demand (open-ended ``Scan``, see ``_ScanBins``),
+        so no "step exceeds allocated bins" check is needed here -- any
+        non-negative step index is valid, it simply hasn't collected any
+        samples yet until the first matching event arrives.
 
-        Grid (N-D) scans: ``self._step_sources`` has one entry per grid
-        dimension (sized in ``_on_scan_start``, from *scan*'s own
-        ``grid_specs``) -- each gets set from
-        ``grid_specs["index_plan"][step_index]`` instead of the plain
-        linear ``step_index``, so the shared ``Scan`` keys bins on the
+        Grid (N-D) scans: ``bins.step_sources`` has one entry per grid
+        dimension (sized from *scan*'s own ``grid_specs``) -- each gets set
+        from ``grid_specs["index_plan"][step_index]`` instead of the plain
+        linear ``step_index``, so the ``Scan`` keys bins on the
         (x_index, y_index, ...) tuple rather than a flat count. The linear
         ``step_index`` itself is still what indexes into
-        ``DataManager._data`` (unchanged): a real StepScan/meshscan visits
-        each grid cell exactly once, in ``index_plan`` order, so the Nth
-        step is always the Nth genuinely-new tuple the shared ``Scan``
-        discovers -- ``scan._values[step_index] == index_plan[step_index]``
-        holds the same way the plain 1-D case already relied on
+        ``DataManager._data``: a real StepScan/meshscan visits each grid
+        cell exactly once, in ``index_plan`` order, so the Nth step is
+        always the Nth genuinely-new tuple the ``Scan`` discovers --
+        ``scan._values[step_index] == index_plan[step_index]`` holds the
+        same way the plain 1-D case already relied on
         ``scan._values[step_index]`` matching step order.
         """
         step_index = scan.next_step if scan is not None else 0
-        self._step_index = step_index
-        grid_specs = _get_grid_specs(scan)
+        grid_specs = bins.grid_specs
         if grid_specs:
             grid_index = grid_specs["index_plan"][step_index]
-            for src, idx in zip(self._step_sources, grid_index):
+            for src, idx in zip(bins.step_sources, grid_index):
                 src.value = float(idx)
         else:
             # the mapping first: the bin for this step comes into being on the
             # first event after the key moves (see _scan_in_scan_units)
             value = self._scan_value_at(scan)
             if value is not None:
-                self._step_values[step_index] = value
-            self._step_sources[0].value = float(step_index)
-        ew = next(iter(self._channels.values()))._source.eventWorker
-        start_pid = ew.event.getEventId() if ew.event is not None else None
-        self.step_pulse_ids[step_index] = start_pid
-        n0 = {name: len(self._bin(name, step_index)) for name in self._channels}
+                bins.step_values[step_index] = value
+            bins.step_sources[0].value = float(step_index)
+        ew = next(iter(bins.channels.values()))._source.eventWorker
+        bins.step_pulse_ids[step_index] = ew.event.getEventId() if ew.event is not None else None
+        n0 = {name: len(bins.bin(name, step_index)) for name in bins.channels}
         return step_index, n0
 
-    def grid(self, channel=None, shape=None, positions=None, dimension_names=None):
+    def grid(self, channel=None, shape=None, positions=None, dimension_names=None, scan=None):
         """Wrap one of this counter's channels as a live
         ``escape.stream.Grid`` (N-D reshaping + optional ``plot=True``
         live plotting for every reduction method -- see that class).
 
-        Only meaningful once ``callbacks_start_scan`` has run for a real
-        grid/mesh scan (``eco.acquisition.scan.Scans.meshscan``) -- that's
-        what sizes ``self._step_sources`` to more than one dimension and
-        records ``grid_specs`` (used to default ``shape``/``positions``/
-        ``dimension_names`` below) in the first place.
+        Only meaningful for a real grid/mesh scan
+        (``eco.acquisition.scan.Scans.meshscan``) -- that's what gives the
+        bins more than one dimension and the ``grid_specs`` used to default
+        ``shape``/``positions``/``dimension_names`` below.
 
-        Works both while such a scan is still running (a live, filling-in
-        grid -- reads ``self._channels``, the currently-active bins) and
-        after it has finished (reads ``self._last_channels``, a frozen
-        snapshot taken the moment the scan ended, *before*
-        ``callbacks_end_scan`` rebuilds fresh, empty bins for standalone
-        use -- without that snapshot, calling this after the scan would
-        see nothing, even though ``last_value``/``last_values`` still
-        report the final step's value just fine, since those are already-
-        extracted plain values rather than a reference into the bins).
+        Reads the bins of *scan*, by default of the most recent scan: live
+        and filling in while it runs, complete once it has ended.
 
         Parameters
         ----------
@@ -1026,8 +1049,10 @@ class BsStreamCounter:
             only if this counter has more than one (with exactly one,
             that one is used automatically).
         shape, positions, dimension_names : optional
-            Forwarded to ``Grid()``; default to this counter's
-            last-seen ``grid_specs`` (from the scan itself) when omitted.
+            Forwarded to ``Grid()``; default to the scan's own
+            ``grid_specs`` when omitted.
+        scan : optional
+            The scan whose bins to show (default: the most recent one).
 
         Returns
         -------
@@ -1035,13 +1060,13 @@ class BsStreamCounter:
         """
         from escape.stream import Grid
 
-        channels = self._channels if self._scan_running else self._last_channels
-        grid_specs = self._grid_specs if self._scan_running else self._last_grid_specs
-        if not channels:
+        bins = self.scan_bins(scan)
+        if bins is None:
             raise ValueError(
                 f"{self.name}: no scan data to grid yet -- run a scan "
-                "(callbacks_start_scan) first, or check .close()d channels."
+                "(callbacks_start_scan) first."
             )
+        channels = bins.channels
         if channel is None:
             if len(channels) != 1:
                 raise ValueError(
@@ -1049,7 +1074,7 @@ class BsStreamCounter:
                     "pass channel=<name> to pick one for the grid."
                 )
             (channel,) = channels
-        gs = grid_specs or {}
+        gs = bins.grid_specs or {}
         if shape is None:
             shape = gs.get("shape")
         if positions is None:
@@ -1066,7 +1091,6 @@ class BsStreamCounter:
             channels[channel], shape=shape, positions=positions,
             dimension_names=dimension_names,
         )
-
 
     # The throwaway bs-stream test detector that used to live here
     # (`DetectorBsTest`, for exercising `BsStreamCounter`/`bs_scannable`
