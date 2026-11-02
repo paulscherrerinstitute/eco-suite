@@ -105,6 +105,26 @@ Options: `reduction=np.mean`, `live_plot=True`, `store=True`,
 `storage_dir="auto"` (the current directory), `peak_analysis=True`,
 `timeout=10`. If storing fails, a message is printed and the scan carries on.
 
+## Detectors as counters
+
+`counters=` (which replaces the default counters, so list the DAQ too) also
+takes detectors directly; the scan picks the counter for each:
+
+```python
+scans.ascan(mot, 0, 1, 20, 100, counters=[daq, mon_opt.intensity, diode])
+```
+
+- a counter (the DAQ, a `BsStreamCounter`, ...) is used as it is;
+- a bs detector (`DetectorBsStream`, an escape `Stream`) gets its live bs
+  counter, built once and kept on the detector, so every scan reuses the same
+  subscription. If the dispatcher does not have the channel and the detector
+  has an EPICS PV, the PV is used instead (with a note);
+- all other detectors share **one** EPICS monitor counter (`CounterValue`).
+
+The same detector given twice, or given both in `counters=` and as an adaptive
+scan's `feedback=`, is read by one counter. An object can choose its own
+counter by defining `_scan_counter()`.
+
 ## Where the time goes
 
 Every step line ends with how the scan's time has been spent so far, and the

@@ -1,3 +1,4 @@
+import inspect
 import time
 import traceback
 import weakref
@@ -588,3 +589,154 @@ def parameter_from_scan(scan):
 #             print(
 #                 f"{pvname}:  {value};  time: {timestamp}; time_local: {ts_local}; diff: {ts_local-timestamp}"
 #             )
+
+
+# -- what a scan accepts as a counter -----------------------------------------
+def _is_counter(obj):
+    """A scan counter: an ``acquire`` that takes the scan. Several detectors
+    have an ``acquire(hold, seconds, samples, **kwargs)`` of their own, which
+    is not one."""
+    acquire = getattr(obj, "acquire", None)
+    if acquire is None:
+        return False
+    try:
+        return "scan" in inspect.signature(acquire).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _counter_name(obj, default):
+    alias = getattr(obj, "alias", None)
+    try:
+        return alias.get_full_name() if alias is not None else getattr(obj, "name", default)
+    except Exception:
+        return getattr(obj, "name", default)
+
+
+def _bs_counter_of(obj):
+    """The live bs counter for a ``DetectorBsStream``-like object (``.stream``
+    is an escape Stream) or for an escape Stream itself, built once and kept
+    on the object (``_bs_counter``, which ``.scans`` and
+    ``get_current_value(force_bsstream=True)`` use too): it holds the bs
+    subscription. None if `obj` is neither."""
+    try:
+        from escape.stream import Stream
+    except ImportError:
+        return None
+    if not isinstance(obj, Stream) and not isinstance(getattr(obj, "stream", None), Stream):
+        return None
+    counter = getattr(obj, "_bs_counter", None)
+    if counter is None:
+        from eco.detector.bs_counter import BsStreamCounter
+
+        counter = BsStreamCounter(obj, name=_counter_name(obj, "bs_counter"))
+        obj._bs_counter = counter
+    return counter
+
+
+def _bs_available(obj):
+    """False only if the dispatcher says the channel is not there; an object
+    that cannot tell (a Stream, no dispatcher access) counts as available."""
+    bs_avail = getattr(obj, "bs_avail", None)
+    if bs_avail is None:
+        return True
+    try:
+        return bool(bs_avail())
+    except Exception:
+        return True
+
+
+def _plain_detector(obj):
+    return isinstance(obj, (Detector, MonitorableValueUpdate))
+
+
+def as_counter(obj):
+    """What a scan uses for `obj` in ``counters=`` (or ``feedback=``):
+
+    1. ``obj._scan_counter()`` if the object says what its counter is (e.g. an
+       Assembly that wants one counter for several of its channels);
+    2. `obj` itself if it is a counter (``acquire(scan=...)``);
+    3. for a bs detector or an escape Stream: its live bs counter, kept on the
+       object and reused by every scan -- unless the dispatcher does not have
+       the channel and there is an EPICS PV to fall back to;
+    4. any other detector: a fresh ``CounterValue`` (EPICS monitor/polling).
+
+    For a whole list use ``as_counters``, which puts all detectors of case 4
+    into one ``CounterValue``.
+    """
+    obj = resolve_lazy(obj)
+    hook = getattr(obj, "_scan_counter", None)
+    if callable(hook):
+        return hook()
+    if _is_counter(obj):
+        return obj
+    has_pv = getattr(obj, "_pv", None) is not None
+    if not (has_pv and not _bs_available(obj)):
+        counter = _bs_counter_of(obj)
+        if counter is not None:
+            return counter
+    elif getattr(obj, "stream", None) is not None:
+        print(
+            f"{_counter_name(obj, obj)}: bs channel not on the dispatcher, "
+            "using its EPICS PV for the scan."
+        )
+    if _plain_detector(obj):
+        return CounterValue(obj, name=_counter_name(obj, "value_counter"))
+    raise TypeError(
+        f"{_counter_name(obj, type(obj).__name__)} is neither a counter nor a "
+        "detector; pass one of its detectors (e.g. a child with "
+        "get_current_value) instead."
+    )
+
+
+def as_counters(objs):
+    """The scan's counters for `objs`, in order, each counter once.
+
+    All plain detectors (case 4 of ``as_counter``) share **one**
+    ``CounterValue``, at the place of the first of them: a ``CounterValue``
+    keeps its per-scan data under fixed names on the scan (``scan.monitors``,
+    ``scan.timestamp_intervals``, ...), so two of them in one scan would
+    overwrite each other."""
+    counters = []
+    plain = []
+    slot = None
+    for obj in objs:
+        counter = as_counter(obj)
+        if isinstance(counter, CounterValue) and counter is not resolve_lazy(obj):
+            # made here for a plain detector: collect, build one at the end
+            detector = resolve_lazy(obj)
+            if not any(d is detector for d in plain):
+                plain.append(detector)
+            if slot is None:
+                slot = len(counters)
+                counters.append(None)
+            continue
+        if not any(c is counter for c in counters):
+            counters.append(counter)
+    if plain:
+        names = [_counter_name(d, "value_counter") for d in plain]
+        counters[slot] = CounterValue(*plain, name="+".join(names))
+    if sum(isinstance(c, CounterValue) for c in counters) > 1:
+        print(
+            "Warning: several CounterValue counters in one scan overwrite each "
+            "other's data on the scan -- give the detectors instead, they are "
+            "combined into one."
+        )
+    return counters
+
+
+def find_counter(counters, obj):
+    """(counter, channel) of the counter in `counters` that reads `obj` (a
+    counter, a bs detector or a monitored detector), or None. `channel` is
+    the name the counter knows `obj` by, None for the counter's only or
+    first channel."""
+    obj = resolve_lazy(obj)
+    bs_counter = getattr(obj, "_bs_counter", None)
+    for counter in counters:
+        if counter is obj or (bs_counter is not None and counter is bs_counter):
+            return counter, None
+        if isinstance(counter, CounterValue):
+            for monitored, name in zip(counter.monitorables, counter.get_monitorable_names()):
+                if monitored is obj:
+                    return counter, name
+    return None

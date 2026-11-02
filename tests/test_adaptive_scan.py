@@ -42,8 +42,14 @@ def test_parse_duration():
 def test_needs_a_limit_and_feedback(sim):
     with pytest.raises(ValueError, match="budget"):
         _run([sim.peak.x, -1.0, 2.0, 0.05], feedback=sim.peak.signal)
+    class DaqLike:  # a counter, but no live values
+        name = "daq_like"
+
+        def acquire(self, scan=None, Npulses=None, **kwargs):
+            raise AssertionError("not reached")
+
     with pytest.raises(ValueError, match="feedback"):
-        _run([sim.peak.x, -1.0, 2.0, 0.05], max_points=5, counters=[object()])
+        _run([sim.peak.x, -1.0, 2.0, 0.05], max_points=5, counters=[DaqLike()])
 
 
 def test_1d_points_on_grid_and_near_the_peak(sim):
@@ -145,3 +151,17 @@ def test_queue_test_build_does_not_run(sim):
         start_immediately=False,
     )
     assert s.next_step == 0 and len(s._values_todo) == 10
+
+
+def test_feedback_detector_joins_the_counters(sim):
+    # the feedback detector and another monitored one: one CounterValue
+    s = _run(
+        [sim.peak.x, -2.0, 3.0, 0.02], feedback=sim.peak.signal, max_points=16,
+        counters=[sim.step.signal],
+    )
+    ctr, driver = s.counters
+    assert driver is s.adaptive
+    assert set(ctr.get_monitorable_names()) == {
+        sim.peak.signal.alias.get_full_name(), sim.step.signal.alias.get_full_name()
+    }
+    assert s.adaptive.strategy.n_points == 16

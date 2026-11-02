@@ -111,7 +111,9 @@ class StepScan(Assembly):
         #     self.counters = counters
         # except TypeError:
         #     self.counters = [counters]
-        self.counters = counters
+        from .counters import as_counters  # detectors become their counters
+
+        self.counters = as_counters(counters)
 
         self._append(
             DetectorGet, lambda: self._get_names(self.counters), name="counters_names"
@@ -1701,8 +1703,9 @@ class Scans(Assembly):
             spaced.
         N_pulses: exposure per point, in the counters' unit (shots for the
             DAQ, seconds for monitor counters).
-        feedback: what the strategy steers by -- a detector (monitored
-            through a ``CounterValue``), a counter with ``step_feedback``
+        feedback: what the strategy steers by -- a detector (its bs
+            counter for a bs detector, else monitored through a
+            ``CounterValue``), a counter with ``step_feedback``
             (``CounterValue``, ``BsStreamCounter``), ``(counter, channel)``,
             or ``f(scan) -> (y, yerr)``. Never the DAQ data.
         strategy: "modelfree" (default), "uniform", "gradient", "edge",
@@ -1761,7 +1764,15 @@ class Scans(Assembly):
 
         if not counters:
             counters = self._default_counters
+        from .counters import as_counters
+
+        # a feedback detector is converted together with the counters, so a
+        # monitored one joins the scan's one CounterValue
         counters = list(counters)
+        source = feedback[0] if isinstance(feedback, tuple) else feedback
+        if adaptive.is_detector_like(source) and not any(c is source for c in counters):
+            counters.append(source)
+        counters = as_counters(counters)
         feedback_counter, feedback_fn = adaptive.resolve_feedback(feedback, counters)
         if feedback_counter is not None:
             counters.append(feedback_counter)

@@ -73,11 +73,17 @@ def parse_duration(budget):
     return float(m.group(1)) * factor
 
 
+def is_detector_like(obj):
+    """A counter with live values or a detector (not a plain function)."""
+    return hasattr(obj, "step_feedback") or hasattr(obj, "get_current_value")
+
+
 def resolve_feedback(feedback, counters):
     """(counter to add to the scan or None, function scan -> (y, yerr, n)).
 
     `feedback`: a counter with ``step_feedback``, a ``(counter, channel)``
-    pair, a Detector (wrapped into a ``CounterValue`` monitor counter), a
+    pair, a detector (turned into its counter by ``as_counter``: a bs
+    detector's live bs counter, otherwise a ``CounterValue``), a
     callable ``f(scan) -> (y, yerr)``, or None to use the first counter in
     `counters` that has ``step_feedback``."""
     channel = None
@@ -91,16 +97,22 @@ def resolve_feedback(feedback, counters):
             "adaptive scans steer by live (non-DAQ) data: pass "
             "feedback=<detector or counter>"
         )
-    if hasattr(feedback, "step_feedback"):
-        counter = None if any(c is feedback for c in counters) else feedback
-        return counter, lambda scan: feedback.step_feedback(scan, channel=channel)
-    if hasattr(feedback, "get_current_value"):
-        from eco.acquisition.counters import CounterValue
+    if is_detector_like(feedback):
+        from eco.acquisition.counters import as_counters, find_counter
 
-        name = getattr(feedback, "alias", None)
-        name = name.get_full_name() if name is not None else getattr(feedback, "name", "feedback")
-        counter = CounterValue(feedback, name=name)
-        return counter, lambda scan: counter.step_feedback(scan)
+        # the counter already reading it (adaptive_scan puts a feedback
+        # detector among the counters first), else a new one to add
+        found = find_counter(counters, feedback)
+        new = None
+        if found is None:
+            (new,) = as_counters([feedback])
+            found = (new, None)
+        counter, own_channel = found
+        if not hasattr(counter, "step_feedback"):
+            raise TypeError(f"feedback {feedback!r}: its counter gives no live values")
+        if channel is None:
+            channel = own_channel
+        return new, lambda scan: counter.step_feedback(scan, channel=channel)
     if callable(feedback):
         def call(scan):
             out = feedback(scan)
