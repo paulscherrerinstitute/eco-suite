@@ -30,14 +30,14 @@ Quick start
    Applying a wrong PowerBrick config can **destroy motors**. :func:`apply` asks
    for the ``deltatau`` safety password unless ``force=True``.
 
-Eventual bernina_diffractometers integration (design sketch, not yet wired)
----------------------------------------------------------------------------
-The diffractometer assemblies in
-``eco/endstations/bernina_diffractometers.py`` know which PowerBrick host each
-stage lives on (e.g. ``SARES22-GPS``, ``SARES21-XRD``). At startup they could
-call :func:`check(host, CONFIGS[...])` to confirm the device is configured as
-expected and, if not, offer to :func:`apply` the known-good bundle. That wiring
-is intentionally left as a reviewed follow-up given the motor-damage risk.
+XRD / GPS
+---------
+Loading Kappa or SampleStage onto the diffractometers' module PowerBrick is
+wired in as ``xrd.module_ioc`` / ``gps.module_ioc`` (:mod:`.module_ioc`). That
+runs the controls group's current ``ConfigMotorIOC.py`` instead of
+:func:`apply`, which is a port of an older version of it (``scp`` and a direct
+telnet to the IOC console, where the script now uses SFTP and the IOC console
+through the SSH connection; ``telnetlib`` is gone from Python 3.13).
 """
 
 from .bundle import (

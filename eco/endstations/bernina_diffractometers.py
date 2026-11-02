@@ -36,6 +36,11 @@ def addMotorRecordToSelf(self, name=None, Id=None):
 
 
 def append_diffractometer_modules(obj, configuration):
+    # load kappa / sample stage onto the module PowerBrick (no connection here)
+    from ..motion.deltatau_config.module_ioc import ModuleIoc
+
+    obj.module_ioc = ModuleIoc(obj)
+
     if configuration.base():
         ### motors base platform ###
         obj._append(
