@@ -66,6 +66,11 @@ class SessionBackend:
         """A top-level component (initialized first if lazy), or a dotted
         attribute path below one ("mono.energy"); private parts refused."""
         ns = self.namespace
+        # full names of a real namespace's items start with its own name
+        # ("bernina.slit_att.hpos"); the top-level names do not
+        prefix = f"{getattr(ns, 'name', None)}."
+        if name.startswith(prefix) and name not in getattr(ns, "all_names", set()):
+            name = name[len(prefix):]
         if name not in getattr(ns, "all_names", set()) and "." in name:
             head, *parts = name.split(".")
             if any(not part or part.startswith("_") for part in parts):

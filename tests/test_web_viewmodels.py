@@ -172,3 +172,10 @@ def test_svg_panels_are_built_once_for_clients_close_together(backend):
         assert len(calls) == 1 and "eco_web" in calls[0]  # its own file, not the Qt panel's
     finally:
         type(vacuum)._widget_svg_panel = original
+
+
+def test_resolve_accepts_full_names_with_the_namespace_prefix(backend):
+    # a real namespace's items are named "bernina.slit_att.hpos": a pin or a
+    # deep link resolves such a name after a reload
+    assert backend.resolve("demo.mono.energy") is backend.resolve("mono.energy")
+    assert backend.resolve("demo.mono") is backend.resolve("mono")
