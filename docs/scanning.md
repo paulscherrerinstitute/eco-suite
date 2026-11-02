@@ -105,7 +105,26 @@ Options: `reduction=np.mean`, `live_plot=True`, `store=True`,
 `storage_dir="auto"` (the current directory), `peak_analysis=True`,
 `timeout=10`. If storing fails, a message is printed and the scan carries on.
 
+## Where the time goes
+
+Every step line ends with how the scan's time has been spent so far, and the
+scan ends with a summary:
+
+```
+Step 12 of 40   x @ 0.620 ; Ctrs daq done.  | acq 61% move 30% settle 0% cb 9%
+Scan timing: 40 steps in 52.3 s (1.31 s/step): acq 60% move 31% settle 0% cb 9%
+```
+
+`acq` is the acquisition with all counters, `move` the moves of the
+adjustables, `settle` the `settling_time`, `cb` the per-step callbacks. If
+less than half of the time goes into acquiring, a warning names where it
+goes, once per scan. Thresholds: `eco.acquisition.scan_timing`. The numbers
+are in `scan.timing`.
+
 ## See also
+
+- {doc}`adaptive_scans`: scans that choose their next points from the live
+  data.
 
 - {doc}`status_server`: every scan also records the full update history of
   the namespace (`namespace_monitor.ixp.h5`).

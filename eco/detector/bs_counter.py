@@ -126,7 +126,7 @@ from time import time as _time
 import numpy as np
 
 from eco.acquisition import peak_analysis as _peak
-from eco.acquisition.utilities import Acquisition
+from eco.acquisition.utilities import Acquisition, mean_sem
 from eco.utilities import mainthread
 from eco.aliases import Alias
 
@@ -832,16 +832,30 @@ class BsStreamCounter:
         n0 = n0 or {name: 0 for name in self._channels}
         result = {}
         pulse_ids = {}
+        samples_all = {}
         for name in self._channels:
             samples = list(self._bin(name, step_index))[n0[name] :]
+            samples_all[name] = samples
             result[name] = (
                 self.reduction(samples) if len(samples) > 1 else (samples[0] if samples else None)
             )
             pulse_ids[name] = list(self._eventids(name, step_index))[n0[name] :]
+        self.last_samples = samples_all
         self.last_values = result
         self.last_pulse_ids = pulse_ids
         self.last_value = result if len(result) > 1 else next(iter(result.values()), None)
         return self.last_value
+
+    def step_feedback(self, scan=None, channel=None):
+        """(mean, standard error, n) of the shots of the last reduced step,
+        one channel (default: the first) -- the live feedback an adaptive
+        scan steers by (eco.acquisition.adaptive). Always the mean, whatever
+        `reduction` is. None before the first step."""
+        samples = getattr(self, "last_samples", None)
+        if not samples:
+            return None
+        name = channel if channel is not None else next(iter(samples))
+        return mean_sem(samples[name])
 
     def _wait_for_n_new(self, step_index, n0, n_new):
         deadline = _time() + self.timeout

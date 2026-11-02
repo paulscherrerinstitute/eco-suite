@@ -2,7 +2,7 @@ import time
 import traceback
 import weakref
 import numpy as np
-from eco.acquisition.utilities import Acquisition, as_numeric_array
+from eco.acquisition.utilities import Acquisition, as_numeric_array, mean_sem
 from eco.acquisition import peak_analysis as _peak
 from eco.elements.protocols import Detector, MonitorableValueUpdate, resolve_lazy
 from eco.utilities.datafiles import ensure_dir, ensure_group_writable
@@ -282,6 +282,24 @@ class CounterValue:
                 f"{self.name}: peak analysis failed: {type(exc).__name__}: {exc}",
             )
         return analysis
+
+    def step_feedback(self, scan, channel=None):
+        """(mean, standard error, n) of one monitored channel (default: the
+        first) over the last step's acquisition interval -- the live
+        feedback an adaptive scan steers by (eco.acquisition.adaptive).
+        None before the first step."""
+        monitors = getattr(scan, "monitors", None)
+        intervals = getattr(scan, "timestamp_intervals", None)
+        if not monitors or not intervals:
+            return None
+        name = channel if channel is not None else next(iter(monitors))
+        data = monitors[name].data
+        values = list(data["values"])
+        timestamps = np.asarray(list(data["timestamps"])[: len(values)])
+        values = values[: len(timestamps)]
+        start, stop = intervals[-1]
+        inside = (timestamps >= start) & (timestamps <= stop)
+        return mean_sem([v for v, keep in zip(values, inside) if keep])
 
     def finish_peak_analysis(self, scan, **kwargs):
         """Last pass at the end of the scan, and the one-line result."""

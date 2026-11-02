@@ -28,6 +28,7 @@ from IPython import get_ipython
 from .daq_client import Daq
 from .counter_protocol import Counter
 from .utilities import as_numeric_array
+from .scan_timing import ScanTiming
 from eco.elements.assembly import Assembly
 from rich.progress import Progress
 import inputimeout
@@ -121,7 +122,13 @@ class StepScan(Assembly):
             name="counter_description",
         )
 
-        self._append(DetectorMemory, len(values), name="number_of_steps")
+        # Steps a scan expects in total, best current knowledge: steps done +
+        # steps queued, plus `extra_expected_steps` that whoever adds steps
+        # while the scan runs (an adaptive scan) expects to add. Fixed scans
+        # leave it at 0, so this stays len(values).
+        self.extra_expected_steps = 0
+        self.timing = ScanTiming()
+        self._append(DetectorGet, self.expected_number_of_steps, name="number_of_steps")
         task = task_queue.current_task()
         if task is not None:  # run from a queue: the prompt's last input is unrelated
             scan_command = task.source
@@ -243,6 +250,9 @@ class StepScan(Assembly):
         self._pause_event.set()
         self._stop_requested = False
 
+    def expected_number_of_steps(self):
+        return self.next_step + len(self._values_todo) + self.extra_expected_steps
+
     def _get_names(self, elements):
         """Get the names of the elements."""
         names = []
@@ -351,10 +361,7 @@ class StepScan(Assembly):
             return False
         self.values_current_step = self._values_todo[0]
 
-        statstr = "Step %d of %d" % (
-            self.next_step + 1,
-            len(self._values_todo) + len(self._values_done),
-        )
+        statstr = "Step %d of %d" % (self.next_step + 1, self.expected_number_of_steps())
 
         # fina = self.get_filename(self.nextStep)
         t_adj_start = time()
@@ -366,8 +373,9 @@ class StepScan(Assembly):
         dt_adj = time() - t_adj_start
 
         # settling
-
+        t_settle_start = time()
         sleep(self._settling_time)
+        dt_settle = time() - t_settle_start
 
         # counters
         t_ctr_start = time()
@@ -428,6 +436,8 @@ class StepScan(Assembly):
                     resp = ctr.stop(scan=self, **self.callbacks_kwargs)
                     filenames.extend(resp["files"])
         statstr = statstr[:-2] + " done."
+        if self.timing.n_steps:  # where the time went in the steps so far
+            statstr += "  | " + self.timing.short()
         print(statstr, end="\n")
 
         dt_ctr = time() - t_ctr_start
@@ -467,6 +477,15 @@ class StepScan(Assembly):
         self.scan_info["scan_step_info"][-1]["times"][
             "callbacks_step_end"
         ] = dt_callbacks_step_end
+
+        self.timing.add_step(
+            acquire=dt_ctr,
+            move=dt_adj,
+            settle=dt_settle,
+            callbacks=dt_callbacks_step_start + dt_callbacks_step_end,
+        )
+        for message in self.timing.warnings():
+            print(message)
 
         if self._current_step_ok:
             self._values_done.append(self._values_todo.pop(0))
@@ -672,12 +691,13 @@ class StepScan(Assembly):
             self._have_run_callbacks_start_scan = True
         task_queue.register_scan(self)
         done = False
-        steps_remaining = len(self._values_todo)
+        first_step = self.next_step  # > 0 when resuming
         # no live progress bar from a queue's worker thread: it would redraw
         # over the prompt the user is typing at
         with Progress(disable=task_queue.in_queue()) as self._progress:
             pr_task = self._progress.add_task(
-                "[green]Scanning...", total=steps_remaining
+                "[green]Scanning...",
+                total=self.expected_number_of_steps() - first_step,
             )
             try:
                 while not done:
@@ -687,7 +707,14 @@ class StepScan(Assembly):
                     if self._stop_requested:
                         break
                     done = not self.do_next_step(step_info=step_info)
-                    self._progress.update(pr_task, advance=1)
+                    # total is re-read every step: steps can be added while
+                    # the scan runs (adaptive scans), and a repeated step
+                    # does not count as progress
+                    self._progress.update(
+                        pr_task,
+                        completed=self.next_step - first_step,
+                        total=self.expected_number_of_steps() - first_step,
+                    )
             except:
                 tb = traceback.format_exc()
             else:
@@ -695,6 +722,8 @@ class StepScan(Assembly):
             finally:
                 self._progress.stop()
                 print(tb)
+                if self.timing.n_steps:
+                    print(self.timing.summary())
 
                 self.run_callbacks_end_scan()
 
@@ -814,6 +843,7 @@ class Scans(Assembly):
         "a2scan",
         "meshscan",
         "scan",
+        "adaptive_scan",
     )
 
     def _collect_callback_keywords_quiet(self):
@@ -1631,6 +1661,155 @@ class Scans(Assembly):
             name="acquiring_scan",
             **kwargs_callbacks,
         )
+
+        self._set_acquiring_scan(s)
+        if start_immediately:
+            s.scan_all(step_info=step_info)
+
+        return s
+
+    def adaptive_scan(
+        self,
+        *adj_specs,
+        N_pulses=None,
+        feedback=None,
+        strategy="modelfree",
+        budget=None,
+        max_points=None,
+        batch=5,
+        exposure="fixed",
+        motion="auto",
+        plot=True,
+        strategy_options=None,
+        description="",
+        counters=[],
+        start_immediately=True,
+        return_at_end="timeout",
+        settling_time=0,
+        step_info=None,
+        queue=None,
+        **kwargs_callbacks,
+    ):
+        """Step scan whose points are chosen from the live data while it
+        runs, by a strategy from ``escape.adaptive_scan``. See
+        docs/adaptive_scans.md.
+
+        adj_specs: one per axis (1 or 2), as for ``scan``/``meshscan``:
+            ``[adjustable, start, end, step]`` (float step = step size, int =
+            number of intervals) or ``[adjustable, positions]`` -- the grid
+            the strategy picks from, its finest resolution; may be unevenly
+            spaced.
+        N_pulses: exposure per point, in the counters' unit (shots for the
+            DAQ, seconds for monitor counters).
+        feedback: what the strategy steers by -- a detector (monitored
+            through a ``CounterValue``), a counter with ``step_feedback``
+            (``CounterValue``, ``BsStreamCounter``), ``(counter, channel)``,
+            or ``f(scan) -> (y, yerr)``. Never the DAQ data.
+        strategy: "modelfree" (default), "uniform", "gradient", "edge",
+            "oscillation", "peak2d", or an escape strategy object.
+        budget: time limit, seconds or e.g. "10min"; max_points: point
+            limit. At least one of the two.
+        batch: points planned at a time.
+        exposure: "fixed" (always N_pulses), "auto" (0.5..8 x N_pulses,
+            chosen per point) or a list of allowed N_pulses.
+        motion: "auto" (learned from the scan's own moves and printed), an
+            escape ``Axis``/list of ``Axis`` in seconds, or None (moves cost
+            nothing).
+        plot: live plot of the strategy (data and model), next to the
+            counters' own plots.
+        strategy_options: passed to the strategy class (e.g. n_initial,
+            explore).
+        """
+        queued = self._route_to_queue(
+            queue,
+            "adaptive_scan",
+            adj_specs,
+            dict(
+                N_pulses=N_pulses,
+                feedback=feedback,
+                strategy=strategy,
+                budget=budget,
+                max_points=max_points,
+                batch=batch,
+                exposure=exposure,
+                motion=motion,
+                plot=plot,
+                strategy_options=strategy_options,
+                description=description,
+                counters=counters,
+                start_immediately=start_immediately,
+                return_at_end=return_at_end,
+                settling_time=settling_time,
+                step_info=step_info,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
+
+        from eco.acquisition import adaptive
+
+        budget = adaptive.parse_duration(budget)
+        if not budget and not max_points:
+            raise ValueError("adaptive_scan: give budget= (e.g. '10min') or max_points=")
+        if N_pulses is None:
+            raise ValueError("adaptive_scan: give N_pulses= (exposure per point)")
+        if not 1 <= len(adj_specs) <= 2:
+            raise ValueError("adaptive_scan: one or two axes ([adjustable, start, end, step] each)")
+        adjustables = [resolve_lazy(spec[0]) for spec in adj_specs]
+        axis_positions = [np.asarray(interpret_step_specification(spec[1:]), float) for spec in adj_specs]
+
+        if not counters:
+            counters = self._default_counters
+        counters = list(counters)
+        feedback_counter, feedback_fn = adaptive.resolve_feedback(feedback, counters)
+        if feedback_counter is not None:
+            counters.append(feedback_counter)
+
+        strategy = adaptive.build_strategy(
+            strategy, axis_positions, N_pulses, exposure=exposure,
+            strategy_options=strategy_options,
+        )
+        from eco.detector.bs_counter import BsStreamCounter
+
+        driver = adaptive.AdaptiveDriver(
+            strategy, adjustables, axis_positions, feedback_fn, N_pulses,
+            budget=budget, max_points=max_points, batch=batch, motion=motion,
+            plot=plot,
+            # a bs counter keys its 2-D grid bins on new grid cells: no revisits
+            avoid_revisits=len(adjustables) > 1
+            and any(isinstance(c, BsStreamCounter) for c in counters),
+        )
+        steps = driver.initial_values()
+        values = [v for v, _ in steps]
+        pulses = [n for _, n in steps]
+
+        gridspecs = None
+        if len(adjustables) > 1:
+            gridspecs = {
+                "shape": [len(p) for p in axis_positions],
+                "positions": axis_positions,
+                "index_plan": [tuple(driver.grid_index(v)) for v in values],
+                "grid_dimension_names": [get_eco_name(a) for a in adjustables],
+            }
+
+        s = StepScan(
+            adjustables,
+            values,
+            counters=counters + [driver],  # last: reads the others' results
+            Npulses=pulses,
+            description=description,
+            return_at_end=return_at_end,
+            settling_time=settling_time,
+            callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
+            callbacks_end_scan=self.callbacks_end_scan,
+            gridspecs=gridspecs,
+            name="acquiring_scan",
+            **kwargs_callbacks,
+        )
+        s.adaptive = driver
 
         self._set_acquiring_scan(s)
         if start_immediately:

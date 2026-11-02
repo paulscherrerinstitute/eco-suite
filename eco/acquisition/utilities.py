@@ -21,6 +21,18 @@ def as_numeric_array(values):
     return arr
 
 
+def mean_sem(values):
+    """(mean, standard error of the mean, n) of the finite numbers in
+    `values` -- one step's live feedback for an adaptive scan. The error is
+    NaN with fewer than two samples; (NaN, NaN, 0) without any."""
+    v = np.asarray(as_numeric_array(list(values)), dtype=float).ravel()
+    v = v[np.isfinite(v)]
+    if not len(v):
+        return np.nan, np.nan, 0
+    sem = v.std(ddof=1) / np.sqrt(len(v)) if len(v) > 1 else np.nan
+    return float(v.mean()), float(sem), len(v)
+
+
 class Acquisition:
     def __init__(
         self,

@@ -117,6 +117,7 @@ scientific Python libraries.
    :hidden:
 
    scanning
+   adaptive_scans
    queues
    tweak
    command_history
@@ -163,6 +164,7 @@ scientific Python libraries.
    :hidden:
 
    developer_notes
+   multidim_scan_data
 
 .. toctree::
    :maxdepth: 2
