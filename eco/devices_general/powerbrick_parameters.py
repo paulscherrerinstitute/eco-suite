@@ -135,8 +135,9 @@ pars_StatusCoordListCtrl = {
 
 pars_default = {
     ("EncTable[{}].PrevEnc", "r"),
-    ("EncTable[{}].EncLoss", "r"),
-    ("EncTable[{}].EncLossBit", "r"),
+    # EncLoss/EncLossBit are Motor[] parameters ("EncTable[n].EncLoss" is
+    # ILLEGAL CMD on the controller); Motor[].EncLoss is in the status list
+    ("Motor[{}].EncLossBit", "r"),
     ("EncTable[{}].MaxDelta", "rw"),
     ("Motor[{}].pos", "r"),
     ("Motor[{}].idCmd", "r"),

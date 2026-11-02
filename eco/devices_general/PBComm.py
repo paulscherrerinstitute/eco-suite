@@ -19,13 +19,23 @@ from __future__ import print_function
 
 # import wx
 import time
-import paramiko, re, os
+import re, os
 
 # WX3=(wx.VERSION[0]==3) #old version 3.x
 
 import logging
 
 _log = logging.getLogger(__name__)
+
+# paramiko logs every handshake at INFO ("Connected (version 2.0, ...)",
+# "Authentication (password) successful!"), which reaches the prompt through
+# the root handler some import installs at INFO -- and connects now happen
+# lazily, at the first read, i.e. in the middle of a status printout. Only
+# raised when nobody configured the level, so an explicit
+# logging.getLogger("paramiko").setLevel(logging.DEBUG) still works.
+_paramiko_log = logging.getLogger("paramiko")
+if _paramiko_log.level == logging.NOTSET:
+    _paramiko_log.setLevel(logging.WARNING)
 
 
 def debug(*args):
@@ -64,6 +74,8 @@ class SSHComm:
         else:
             username = "root"
 
+        import paramiko  # ~1 s with cryptography; only needed once connecting
+
         self.client = client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         # client.set_missing_host_key_policy(paramiko.WarningPolicy())
@@ -97,9 +109,9 @@ class SSHComm:
                 elif k == "requesttty":
                     self.get_pty = v in ("yes", "force")
                 elif k == "gssapikeyexchange":
-                    cfg["gss_auth"] = v == "yes"
-                elif k == "gssapiauthentication":
                     cfg["gss_kex"] = v == "yes"
+                elif k == "gssapiauthentication":
+                    cfg["gss_auth"] = v == "yes"
                 elif k == "proxycommand":
                     cfg["sock"] = paramiko.ProxyCommand(v)
 
@@ -162,9 +174,33 @@ class SSHComm:
             else:
                 time.sleep(0.001)
 
+    def read_acks(self, count, timeout=1.0):
+        """Read until `count` gpascii acknowledges arrived, return the replies.
+
+        gpascii -2 ends the reply to every input line with one ACK, errors
+        ("stdin:3:1: error #21: ILLEGAL PARAMETER: ...") included, so this
+        is what lets several lines be sent in one write."""
+        chan = self.chan
+        t0 = time.time()
+        buf = ""
+        while buf.count(SSHComm.gpascii_ack) < count:
+            if chan.recv_ready():
+                t0 = time.time()  # reset timeout
+                buf += chan.recv(65536).decode()
+            elif (time.time() - t0) > timeout:
+                raise TimeoutError(repr(buf[-200:]))
+            else:
+                time.sleep(0.001)
+        return buf.split(SSHComm.gpascii_ack)[:count]
+
+    def drain(self):
+        "discard anything still unread on the channel"
+        while self.chan.recv_ready():
+            self.chan.recv(65536)
+
     def iawrite(self, msg):
         """interactive write. if 1 is returned, nothing is done"""
-        m = re.match("\s*(define|open|close)", msg, re.IGNORECASE)
+        m = re.match(r"\s*(define|open|close)", msg, re.IGNORECASE)
         if m:
             kw = m.group(1).lower()
             if kw == "open":
@@ -177,7 +213,7 @@ class SSHComm:
                     print("close stack error")
                 print(self.defDictStack)
             elif kw == "define":
-                m = re.match("\s*define\s*\(([^)]*)", msg, re.IGNORECASE)
+                m = re.match(r"\s*define\s*\(([^)]*)", msg, re.IGNORECASE)
                 if m:
                     args = eval("dict(" + m.group(1) + ")")
                     self.defDictStack[-1].update(args)
