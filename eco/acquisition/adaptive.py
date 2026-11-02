@@ -316,6 +316,14 @@ class AdaptiveDriver:
         self._t0 = time.time()
         self._previous = list(scan.initial_values())
         scan.adaptive = self
+        mesh = getattr(scan, "mesh", None)
+        if mesh is not None:
+            # a refined subset of the axis grid, nodes at its spacing
+            mesh.kind = "adapted"
+            mesh.resolution = [
+                float(np.min(np.diff(np.unique(p)))) if len(np.unique(p)) > 1 else 0.0
+                for p in self.axis_positions
+            ]
         scan.set_scan_parameter("adaptive", {
             "strategy": type(self.strategy).__name__,
             "budget_s": self.budget,

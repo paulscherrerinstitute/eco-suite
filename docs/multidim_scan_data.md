@@ -1,150 +1,129 @@
-# Proposal: multi-dimensional scan data beyond the grid
+# Multi-dimensional scan data: grid and mesh
 
-Status: **proposal**, nothing of this is implemented. For eco and escape
-together.
+Status: **step 1 is implemented** (eco writes the mesh of every scan); the rest
+is a **proposal**, for eco and escape together.
 
-## Why
+## Two words for an N-d space
 
-Today a scan is a list of steps. A multi-dimensional scan additionally
-declares a **grid**: `grid_specs` with `shape`, one position array per
-dimension, `index_plan`, and a `grid_index` per step. escape uses that to put
-the data into an N-d array (`Array.grid`, NaN where nothing was measured) and
-to plot 2-D data as a map. That covers mesh scans, and adaptive scans as long
-as they stay on a grid.
+- A **grid** is the product of one position list per dimension: every
+  combination exists (`meshscan`, `scan` with several axes). It is described
+  by `grid_specs`, as today, and escape puts its data into an N-d array
+  (`Array.grid`, NaN where nothing was measured).
+- A **mesh** is the set of points actually measured, wherever they are. A grid
+  is a special mesh (a *structured* one); an adaptive scan's refined subset of
+  a grid, a path through N-d space, or points anywhere are meshes that are not
+  grids (*unstructured*, as in numerics).
 
-It does not cover:
+So every scan has a mesh, and some scans also have a grid. `meshscan` keeps
+its name: it scans a structured mesh, i.e. a grid.
 
-1. **Points anywhere**: an adaptive 2-D scan that follows a tilted, narrow
-   ridge needs points between grid cells; on a grid, the grid spacing limits
-   resolution everywhere, and a fine grid is mostly empty.
-2. **Repeated points**: adaptive scans measure a point again for more
-   statistics. On the grid, the last value wins. Proper treatment is a
-   weighted average (by exposure or inverse variance), with the individual
-   measurements kept.
+## Why the mesh is needed
+
+The grid alone does not cover:
+
+1. **Points anywhere**: an adaptive 2-D scan following a tilted, narrow ridge
+   needs points between grid cells. On a grid, its spacing limits resolution
+   everywhere, and a fine grid is mostly empty.
+2. **Repeated points**: adaptive scans measure a point again for statistics.
+   On the grid, the last value wins. Correct is one point with all its
+   measurements, averaged with weights.
 3. **Different exposure per point** (`exposure="auto"`): points are not
    equally precise; plots and fits must weight them.
-4. **Paths that are not grid lines**: co-moving axes (`a2scan`), a scan along
-   a direction in reciprocal space, or a line in a 2-D plane. Today these are
-   1-D scans whose second coordinate is lost for plotting.
-5. **Readbacks instead of targets**: a slow or backlash-prone axis ends up
-   near, not on, its target. For a scattered layout the actual position is the
-   coordinate; on a grid it is rounded away.
-6. **Uneven grids** already work (positions are arrays and escape's `plot2D`
-   draws cell edges halfway between positions), but nothing says whether a
-   grid is "regular", so tools cannot rely on it.
+4. **Paths that are not grid lines**: co-moving axes, a line in reciprocal
+   space. Today these are 1-D scans whose other coordinates are lost for
+   plotting.
+5. **Uneven grids** already work (escape's `plot2D` draws cell edges halfway
+   between positions), but nothing says whether a grid is regular.
 
-## What a solution must keep
+## 1. eco writes the mesh of every scan (implemented)
 
-- Every existing run keeps loading as it does now. `grid_specs` stays valid
-  and keeps meaning what it means today.
-- Data of one step stay together (one step = one acquisition = one DAQ
-  file set), as now.
-- Small: the description lives in `scan_info` (json) next to the step list,
-  not in a new file type.
-- Plotting a 2-D scan stays one call, whatever the layout.
-
-## Proposal
-
-### 1. Every step is a point, and the scan says so
-
-eco adds one block to `scan_info["scan_parameters"]`, written for **every**
-scan (it costs a few numbers per step):
+`scan_info["scan_parameters"]["mesh_specs"]`:
 
 ```text
-"points": {
-  "dimensions": [
-    {"name": "xrd.x", "unit": "mm", "adjustables": ["xrd.x"]},
-    {"name": "xrd.y", "unit": "mm", "adjustables": ["xrd.y"]}
-  ],
-  "layout": "grid",
-  "target":   [[0.10, -0.20], [0.15, -0.20], ...],
-  "readback": [[0.1003, -0.1998], ...],
-  "exposure": [100, 100, 200, ...],
-  "visit":    [0, 0, 0, 1, ...]
+"mesh_specs": {
+  "dimension_names": ["xrd.x", "xrd.y"],
+  "units": ["mm", "mm"],
+  "kind": "adapted",            // "grid", "adapted", "line" or "path"
+  "resolution": [0.05, 0.05],   // or null
+  "points": [[0.10, -0.20], [0.15, -0.20], ...]
 }
 ```
 
-- `dimensions`: the scan's coordinates. A co-moving group is **one**
-  dimension listing several adjustables (its coordinate is the first one, or a
-  declared parameter such as a path length).
-- `layout`: a hint for tools, one of `"line"` (1-D, ordered),
-  `"grid"` (a `grid_specs` exists), `"path"` (a curve through N-d, ordered by
-  step: co-moving or reciprocal-space scans), `"scattered"` (points anywhere,
-  order meaningless: adaptive).
-- `target` / `readback`: per step, per dimension. Today's
-  `scan_values`/`scan_readbacks` hold the same numbers per adjustable; this
-  is the same information per *dimension*, which is what plotting needs.
-- `exposure`: per step, in the unit of the counters.
-- `visit`: how many times this point was measured before (0 = first).
+and per step `scan_step_info[i]["mesh_index"]`: the node it measured.
 
-`grid_specs` stays as it is and is written exactly when `layout == "grid"`.
+- `points` are the mesh's **nodes**, in the order they were first measured.
+  A point measured twice is one node with two steps, found by index rather
+  than by comparing floats. With a `resolution`, targets that round to the
+  same multiple of it are the same node.
+- `kind`: `grid` (a `grid_specs` exists and every step is a grid point),
+  `adapted` (an adaptive scan: a refined subset of its axis grid, `resolution`
+  = the grid spacing), `line` (1-D), `path` (several adjustables, no grid).
+- The coordinates are the **targets**; readbacks are in `scan_readbacks` as
+  before. The dimensions are the grid's dimensions for a grid scan, else one
+  per adjustable.
+- `grid_specs` stays exactly as it is.
 
-### 2. escape: a point table on every scan, grids as a view
+Code: `eco/acquisition/mesh.py`; tests: `tests/test_scan_mesh.py`.
 
-escape's `Scan` gets a `points` table built from this block (from
-`scan_values` + `grid_specs` for old runs, so everything loaded today has it
-too). On top of it, three ways to get regular arrays, all explicit:
+## 2. escape: `Mesh` next to `Grid`
+
+escape gets a `Mesh` view of an `Array`, built from `mesh_specs` and the steps'
+`mesh_index`, and for older runs from `scan_values` (+ `grid_specs`):
 
 | Call | Returns | For |
 |---|---|---|
-| `arr.on_grid(reduce="weighted")` | the existing N-d grid view, revisits **averaged** (weights: exposure or 1/error²) instead of last-wins | grid layouts |
-| `arr.binned({"xrd.x": edges, ...})` | N-d histogram means with counts, for any layout | scattered, path |
-| `arr.interpolated(grid, method="linear")` | values on a regular grid by interpolation, with a mask for points too far from any measurement | maps of scattered data |
+| `arr.mesh(reduce="weighted")` | one value (and error, count, exposure) per node; repeated points **averaged** (weights: exposure, or 1/error²) | any scan |
+| `arr.mesh().on_grid()` | the N-d grid array, built from the nodes, revisits averaged instead of last-wins | grid and adapted kinds |
+| `arr.mesh().binned({"xrd.x": edges, ...})` | N-d histogram means with counts | any |
+| `arr.mesh().interpolated(grid)` | values on a regular grid through the mesh's triangulation, masked away from measured points | maps of unstructured meshes |
+| `arr.mesh().plot()` | `grid`: `pcolormesh` as today; otherwise the nodes coloured by value over their Delaunay triangulation (`tripcolor`), nothing drawn outside it; `path`: value against path length | |
 
-and plotting that follows `layout` automatically:
+The **cells** of an unstructured mesh (its triangles, simplices in N-d) are
+computed in escape from the nodes (Delaunay), not stored: they are a property
+of the points, and computing them is cheap.
 
-- `grid`: `pcolormesh` (as today);
-- `scattered`: points coloured by value over a triangulated map
-  (`tricontourf`), so nothing is invented beyond the convex hull;
-- `path`: value against path length, with the other coordinates as a
-  secondary axis or colour.
+Fits do not need a grid: escape's adaptive-scan models already fit nodes
+directly with their errors (`fit_peak2d(points, y, yerr)`). They should be
+offered on any `Mesh`, so "where is the peak" never depends on the layout.
 
-A fit does not need a grid at all. escape's adaptive-scan models already fit
-scattered points directly with their errors (`fit_peak2d(points, y, yerr)`).
-They should be offered for any `Array` with a points table, so "where is the
-peak" never depends on the layout.
+## 3. eco: adaptive scans leave the grid
 
-### 3. eco: adaptive scans leave the grid
+With 1 and 2, `scans.adaptive_scan(..., mesh="free")`: the axes' step becomes
+the mesh `resolution` (the minimum distance at which two points count as one)
+instead of a grid, and the strategies get a much finer candidate set (they
+already accept any). No `grid_specs` is written then, and the bs counter bins
+by step index as for 1-D scans -- which also removes today's "no revisits with
+a bs counter on a 2-D grid" rule.
 
-With 1 and 2 in place, `scans.adaptive_scan` gets a `layout="scattered"`
-option. The axes' step then becomes a **minimum distance** between points
-(below it two points count as the same point) instead of a grid. Strategies
-already accept arbitrary candidate positions, so they can be given a much
-finer candidate set. The step's `grid_index` is then not written. For
-`BsStreamCounter`, bins are keyed by step index (as for 1-D scans), which
-also removes today's "no revisits with a bs counter on a 2-D grid" limit.
-
-### 4. Uneven grids, explicitly
+## 4. Regular grids, explicitly
 
 `grid_specs` gets an optional `"regular": [true, false]` per dimension, so
 tools can choose `imshow` (fast, regular) or `pcolormesh` (correct, uneven)
 without guessing. eco sets it from the axis spec (a step size is regular, a
-position list or lin/log anchors are not). The adaptive strategies already
-take uneven candidate sets (`candidates=`); their own `grid_step=` option is
-regular only, which is fine since eco passes candidates.
+position list is not).
 
 ## Order of work
 
-1. eco writes `points` for every scan. Additive, no reader needs it yet.
-2. escape builds `Scan.points` (also for old runs) and `on_grid(reduce=...)`.
+1. eco writes `mesh_specs` and `mesh_index` for every scan. **Done.**
+2. escape: `Array.mesh()` with weighted averaging, and `on_grid()` from it.
    This alone fixes repeated points of today's on-grid adaptive scans.
-3. escape: `binned`, `interpolated`, layout-aware plotting, fits on points.
-4. eco: `adaptive_scan(..., layout="scattered")`.
+3. escape: `binned`, `interpolated`, mesh plotting, fits on meshes.
+4. eco: `adaptive_scan(..., mesh="free")`.
 5. `regular` flags on `grid_specs`.
 
 Each step is useful on its own, and none breaks existing runs.
 
 ## Open questions
 
-- **Which coordinate for scattered data, target or readback?** Proposal:
-  readback when it exists and is valid, target otherwise, with the choice
-  recorded in `points`.
-- **Weights for averaging**: exposure is always known; per-point errors only
-  for some data (monitor/bs feedback, not raw detector images). Default
-  exposure, option inverse variance.
-- **Co-moving dimension coordinate**: first adjustable, or a declared
-  parameter (path length, momentum transfer)? Probably the scan should be able
-  to name it.
-- **Size**: `points` duplicates `scan_values`/`scan_readbacks` arranged by
-  dimension. For very long scans (10⁵ steps) it belongs in the aux h5 file
-  rather than the json, behind the same accessor.
+- **Target or readback as the coordinate?** Now: targets (exact, and what the
+  node merging needs). For a slow or backlash-prone axis the readback is
+  where it actually was; escape could offer `arr.mesh(coordinates="readback")`.
+- **Weights for averaging**: exposure is always known, per-point errors only
+  for some data (monitor/bs feedback, not raw detector images). Proposal:
+  exposure by default, inverse variance as an option.
+- **Co-moving dimensions**: one dimension listing several adjustables. Its
+  coordinate is the first adjustable's position today; it could be a declared
+  parameter (path length, momentum transfer).
+- **Size**: `points` grows with the nodes. For very long scans (10⁵ steps) it
+  belongs in the aux h5 file rather than the json, behind the same accessor.
+- **Name of the free option**: `mesh="free"`, `layout=...`, or something else.

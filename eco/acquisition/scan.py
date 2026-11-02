@@ -210,6 +210,13 @@ class StepScan(Assembly):
             "scan_step_info": [],
         }
 
+        # where each step measures: every scan's mesh (a grid is a special,
+        # structured one), see eco.acquisition.mesh
+        from .mesh import mesh_for_scan
+
+        self.mesh = mesh_for_scan(self.adjustables, self.grid_specs.get_current_value())
+        self.scan_info["scan_parameters"]["mesh_specs"] = self.mesh.specs
+
         self._append(DetectorGet, lambda: self.scan_info, name="info", is_display=False)
 
         initial_values = []
@@ -486,6 +493,16 @@ class StepScan(Assembly):
         gridspecs = self.grid_specs.get_current_value()
         if gridspecs:
             tstepinfo["grid_index"] = gridspecs["index_plan"][self.next_step]
+        try:  # the step's node on the scan's mesh; never costs the step
+            from .mesh import step_point
+
+            point = step_point(
+                self.mesh, self.values_current_step, gridspecs, tstepinfo.get("grid_index")
+            )
+            if point is not None:
+                tstepinfo["mesh_index"] = self.mesh.add(point)
+        except Exception:
+            pass
 
         if getattr(self, "step_window", None):
             tstepinfo["window"] = dict(self.step_window)
