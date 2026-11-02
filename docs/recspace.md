@@ -136,16 +136,16 @@ and asks for one; with a name it sets that one directly, with angles exactly
 those, releasing all others:
 
 ```python
-xrd.recspace.set_constraints("surface_horizontal")   # mu=0, eta=0, chi=90
+xrd.recspace.set_constraints("sd_horizontal")   # mu=0, eta=0, chi=90
 xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)
 ```
 
-| setup | held | solution ranges |
+| setup (sd = surface diffractometer) | held | solution ranges |
 |---|---|---|
-| `surface` | mu 0, eta 0, chi 0 (phi axis horizontal) | gamma -150..10, delta -10..120 |
-| `surface_horizontal` | mu 0, eta 0, chi 90 (phi axis vertical) | same |
-| `surface_vertical_elbow_down` | mu 0, eta -90, chi 0 | same |
-| `surface_vertical_elbow_up` | mu 0, eta 90, chi 0 | same |
+| `sd` | mu 0, eta 0, chi 0 (phi axis horizontal) | gamma -150..10, delta -10..120 |
+| `sd_horizontal` | mu 0, eta 0, chi 90 (phi axis vertical) | same |
+| `sd_vertical_elbow_down` | mu 0, eta -90, chi 0 | same |
+| `sd_vertical_elbow_up` | mu 0, eta 90, chi 0 | same |
 | `gic` | mu 0, eta 0, chi 0 | same |
 | `thc` | mu 0, chi 90, phi 0 | delta 45..122 |
 

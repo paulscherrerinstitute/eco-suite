@@ -82,23 +82,23 @@ DEFAULT_CONSTRAINTS = {
 # the app's ranges on fixed angles are left out (redundant, and HGeom's chi
 # 0..0 contradicts its chi = 90). User presets: <config_dir>/constraint_presets.json.
 CONSTRAINT_PRESETS = {
-    "surface": {
-        "description": "surface diffractometer (You-B), phi axis horizontal (x-)",
+    "sd": {
+        "description": "SD: surface diffractometer (You-B), phi axis horizontal (x-)",
         "constraints": {"mu": 0.0, "eta": 0.0, "chi": 0.0},
         "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
     },
-    "surface_horizontal": {
-        "description": "surface diffractometer (You-B), chi = 90: phi axis vertical (y-)",
+    "sd_horizontal": {
+        "description": "SD: surface diffractometer (You-B), chi = 90: phi axis vertical (y-)",
         "constraints": {"mu": 0.0, "eta": 0.0, "chi": 90.0},
         "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
     },
-    "surface_vertical_elbow_down": {
-        "description": "surface diffractometer (You-B), eta = -90 (elbow down), phi axis horizontal (x-)",
+    "sd_vertical_elbow_down": {
+        "description": "SD: surface diffractometer (You-B), eta = -90 (elbow down), phi axis horizontal (x-)",
         "constraints": {"mu": 0.0, "eta": -90.0, "chi": 0.0},
         "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
     },
-    "surface_vertical_elbow_up": {
-        "description": "surface diffractometer (You-B), eta = +90 (elbow up), phi axis horizontal (x-)",
+    "sd_vertical_elbow_up": {
+        "description": "SD: surface diffractometer (You-B), eta = +90 (elbow up), phi axis horizontal (x-)",
         "constraints": {"mu": 0.0, "eta": 90.0, "chi": 0.0},
         "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
     },
@@ -268,7 +268,7 @@ class RecSpace(Assembly):
     normal), three for a fit not in one plane. ``si.summary()`` shows the
     result, ``si.calc_hkl()`` should then read the peak's hkl.
 
-    Constraints -- fix three. A stored Bernina setup (surface diffractometer
+    Constraints -- fix three. A stored Bernina setup (sd = surface diffractometer
     horizontal/vertical, GIC, THC; the list and a choice without argument)::
 
         xrd.recspace.set_constraints()
@@ -565,7 +565,7 @@ class RecSpace(Assembly):
         Without arguments it lists the stored setups and asks::
 
             xrd.recspace.set_constraints()
-            xrd.recspace.set_constraints("surface_horizontal")   # mu=0, eta=0, chi=90
+            xrd.recspace.set_constraints("sd_horizontal")   # mu=0, eta=0, chi=90
             xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)  # these three, the rest free
 
         Three are needed for a finite set of solutions: sample circles,

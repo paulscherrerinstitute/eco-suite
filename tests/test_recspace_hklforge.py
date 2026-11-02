@@ -408,7 +408,7 @@ def test_set_constraints_from_preset(rs, monkeypatch):
         {"mu": 0, "gamma": 0, "chi": 90}
     # interactive: the list, then a choice by number
     names = list(rs.constraint_presets())
-    monkeypatch.setattr("builtins.input", lambda prompt="": str(names.index("surface_horizontal")))
+    monkeypatch.setattr("builtins.input", lambda prompt="": str(names.index("sd_horizontal")))
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         rs.set_constraints()
