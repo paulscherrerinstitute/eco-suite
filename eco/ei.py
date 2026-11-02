@@ -432,10 +432,8 @@ class Answer:
             return list(self.hits)
         out = []
         for h in self.hits:
-            tag = h.cite()
-            if tag in self.text or tag[1:-1] in self.text or (h.kind in ("doc", "api", "example") and h.context in self.text):
-                if all(h is not o for o in out):
-                    out.append(h)
+            if any(form in self.text for form in _citation_forms(h)) and all(h is not o for o in out):
+                out.append(h)
         return out
 
     def sources(self):
@@ -451,6 +449,21 @@ class Answer:
 
     def __repr__(self):
         return f"<eco.ei.Answer {self.model or 'search only'}, {len(self.text)} chars, {self.sources()}: {self.question[:60]!r}>"
+
+
+def _citation_forms(hit):
+    """How an answer may cite a hit: its full [tag], or the shorter forms
+    models write -- [doc scanning.md], [scilog 2026-05-08]."""
+    tag = hit.cite()
+    forms = [tag[1:-1]]
+    if hit.kind in ("doc", "api", "example"):
+        forms.append(hit.context)
+        if hit.kind == "doc":
+            forms.append(f"[doc {hit.context.split(' > ')[0]}]")
+    if hit.kind in ("scilog", "note", "note_command") and hit.t:
+        day = time.strftime("%Y-%m-%d", time.localtime(hit.t))
+        forms.append(f"[{tag[1:].split()[0]} {day}")  # "[scilog 2026-05-08", "[note 2026-05-08"
+    return forms
 
 
 class Assistant:

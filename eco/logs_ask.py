@@ -495,15 +495,34 @@ def index_scilog(pgroup=None, db_path=DEFAULT_DB, client=None, limit=500):
 STOPWORDS = frozenset(
     "a an and are as at be by can could do does did for from has have how i if in into is it its me my "
     "of on or our should so that the their them then there these this to use used using was we were "
-    "what when where which who why will with would you your please want need eco".split()
+    "what when where which who why will with would you your please want need eco "
+    # chatty words that match every post saying "looks like ..."
+    "look looks like show see get make way something some any just".split()
 )
 
 
-def _fts_query(text):
+def _query_words(text):
     # same split as FTS5's unicode61 tokenizer: "att.set_transmission(0.1)"
     # -> att, set, transmission, 0, 1
-    words = [w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1 and w not in STOPWORDS]
-    return " OR ".join(f'"{w}"*' for w in dict.fromkeys(words))
+    return list(dict.fromkeys(w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1 and w not in STOPWORDS))
+
+
+def _fts_query(text):
+    # a word of two letters ("pm", "ev") and a number as themselves: as
+    # prefixes they match half the dictionary, or 1500 for 150
+    return " OR ".join(f'"{w}"' if _exact(w) else f'"{w}"*' for w in _query_words(text))
+
+
+def _exact(word):
+    return len(word) < 3 or word.isdigit()
+
+
+def _coverage(words, text, context):
+    """How many of the query words an item contains (longer ones as
+    prefix), in its first 600 characters: an automatic run post with a
+    status dump of everything would contain them all."""
+    tokens = set(re.findall(r"[a-z0-9]+", f"{text[:600]} {context}".lower()))
+    return sum(w in tokens if _exact(w) else any(t.startswith(w) for t in tokens) for w in words)
 
 
 ALL_KINDS = ("command", "doc", "api", "example", "scilog", "note", "note_command")
@@ -514,7 +533,8 @@ def search(
     context_prefix=None, exclude_prefix=None,
 ):
     """Best-matching index items for `query` (plain words, no syntax
-    needed), optionally only between `since`/`until` (epoch seconds), and
+    needed): those containing the most of its words first, then by full-
+    text rank. Optionally only between `since`/`until` (epoch seconds), and
     only items whose context starts (or, exclude_prefix: does not start)
     with a prefix -- a doc label like "escape: ", or a module like
     "escape.". Repeated identical items are collapsed to their latest
@@ -535,9 +555,13 @@ def search(
     rows = con.execute(
         "SELECT text, context, kind, status, flags, t, source, bm25(items), path FROM items"
         f" WHERE {where} ORDER BY bm25(items) LIMIT ?",
-        (*params, k * 10),
+        (*params, max(k * 10, 300)),
     ).fetchall()
     con.close()
+    # bm25 alone ranks a long post matching one word often above a short
+    # command matching three of them
+    words = _query_words(query)
+    rows.sort(key=lambda r: (-_coverage(words, r[0], r[1]), r[7]))
     hits, seen = [], set()
     for text, context, kind, status, flags, t, source, score, path in rows:
         t = float(t or 0)

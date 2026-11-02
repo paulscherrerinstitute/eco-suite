@@ -88,3 +88,22 @@ def test_ask_with_and_without_backend(tmp_path):
     assert "based on:" in answer
     assert "ONLY the context" in fake.prompt and "att.set_transmission(0.1)" in fake.prompt
     assert la.ask("zzzzunknown", db_path=db).startswith("Nothing")
+
+
+def test_items_with_more_of_the_question_rank_first(tmp_path):
+    db = tmp_path / "idx.sqlite"
+    con = la._connect(db)
+    chatty = "When aligning with the mono, the slit looks like this, which looks like the PMM is in. " * 3
+    dump = "DAQ run 150: status " + "x " * 400 + " scan mono counter ev pm 150"  # matches, but late
+    rows = [
+        (chatty, "ann [lb]", "scilog", "scilog:lb:s1"),
+        (dump, "beamline [lb]", "scilog", "scilog:lb:s2"),
+        ("scans.dscan(mono.energy,-50,50,50,150,file_name='mono_energy_scan')", "post", "note_command", "scilog:lb:s3"),
+    ]
+    for text, context, kind, path in rows:
+        con.execute("INSERT INTO items VALUES (?,?,?,?,?,?,?,?)", (text, context, kind, "ok", "", 0, "scilog lb", path))
+    con.commit()
+    con.close()
+    hits = la.search("how would a counter scan for the mono look like for pm 150 eV?", k=3, db_path=db)
+    assert hits[0].path == "scilog:lb:s3"
+    assert la._fts_query("look like pm 150 ev scan") == '"pm" OR "150" OR "ev" OR "scan"*'

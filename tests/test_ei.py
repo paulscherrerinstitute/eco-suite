@@ -4,6 +4,7 @@ OpenAI-style server (a local fake), and the magic's options."""
 import json
 import re
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -457,6 +458,9 @@ def test_an_answer_lists_what_it_cites(tmp_path):
     md = ei.source_list(ans, markdown=True)
     assert "1. [doc scanning.md > Mesh] -- [" in md and "(file://" in md
     assert ei.Answer("q", "nothing cited", [cmd, doc], "m").cited == []
+    assert ei.Answer("q", "as in [doc scanning.md]", [cmd, doc], "m").cited == [doc]  # the short forms models write
+    post = la.Hit("scilog", "a post", "ann [lb]", "ok", "", time.mktime((2026, 5, 8, 12, 0, 0, 0, 0, -1)), "scilog lb", 1.0, "scilog:lb1:s1")
+    assert ei.Answer("q", "used in the logbook [scilog 2026-05-08]", [cmd, post], "m").cited == [post]
     assert ei.Answer("q", "listing", [cmd, doc], "").cited == [cmd, doc]  # search only: all of them
 
 
