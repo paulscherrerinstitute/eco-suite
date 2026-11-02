@@ -11,10 +11,12 @@ class KbVer(Assembly):
         self.pvname = pvname
         super().__init__(name=name)
         self._append(
-            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_display=True
+            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_display=True,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_display=True
+            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_display=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
@@ -22,6 +24,7 @@ class KbVer(Assembly):
             name="pitch",
             is_setting=False,
             is_display=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
@@ -29,12 +32,14 @@ class KbVer(Assembly):
             name="roll",
             is_setting=False,
             is_display=True,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":W_RY", name="yaw", is_setting=False, is_display=True
+            MotorRecord, pvname + ":W_RY", name="yaw", is_setting=False, is_display=True,
+            pb_conf="auto",
         )
-        self._append(MotorRecord, pvname + ":BU", name="bend1", is_setting=True)
-        self._append(MotorRecord, pvname + ":BD", name="bend2", is_setting=True)
+        self._append(MotorRecord, pvname + ":BU", name="bend1", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, pvname + ":BD", name="bend2", is_setting=True, pb_conf="auto")
         self._append(
             AdjustableVirtual,
             [self.bend1, self.bend2],
@@ -72,19 +77,24 @@ class KbVer(Assembly):
 
         #### actual motors ###
         self._append(
-            MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TX1", name="_X1", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TX1", name="_X1", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._pv_sync_world = PV(pvname + ":SYNC_AXES")
         self._pv_amp_reset = PV(pvname + ":RESET_AMP.PROC")
@@ -131,10 +141,12 @@ class KbHor(Assembly):
         self.pvname = pvname
         super().__init__(name=name)
         self._append(
-            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_display=True
+            MotorRecord, pvname + ":W_X", name="x", is_setting=False, is_display=True,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_display=True
+            MotorRecord, pvname + ":W_Y", name="y", is_setting=False, is_display=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
@@ -142,6 +154,7 @@ class KbHor(Assembly):
             name="pitch",
             is_setting=False,
             is_display=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
@@ -149,12 +162,14 @@ class KbHor(Assembly):
             name="roll",
             is_setting=False,
             is_display=True,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":W_RX", name="yaw", is_setting=False, is_display=True
+            MotorRecord, pvname + ":W_RX", name="yaw", is_setting=False, is_display=True,
+            pb_conf="auto",
         )
-        self._append(MotorRecord, pvname + ":BU", name="bend1", is_setting=True)
-        self._append(MotorRecord, pvname + ":BD", name="bend2", is_setting=True)
+        self._append(MotorRecord, pvname + ":BU", name="bend1", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, pvname + ":BD", name="bend2", is_setting=True, pb_conf="auto")
         self._append(
             AdjustableVirtual,
             [self.bend1, self.bend2],
@@ -192,19 +207,24 @@ class KbHor(Assembly):
 
         #### actual motors ###
         self._append(
-            MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TY1", name="_Y1", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TY2", name="_Y2", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TY3", name="_Y3", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TX1", name="_X1", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TX1", name="_X1", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._append(
-            MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False
+            MotorRecord, pvname + ":TX2", name="_X2", is_setting=True, is_display=False,
+            pb_conf="auto",
         )
         self._pv_sync_world = PV(pvname + ":SYNC_AXES")
         self._pv_amp_reset = PV(pvname + ":RESET_AMP.PROC")

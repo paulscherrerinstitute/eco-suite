@@ -126,18 +126,21 @@ class DoubleCrystalMono(Assembly):
             pvname + ":RX12",
             name="theta",
             is_setting=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
             pvname + ":TX12",
             name="x",
             is_setting=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
             pvname + ":T2",
             name="gap",
             is_setting=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
@@ -145,6 +148,7 @@ class DoubleCrystalMono(Assembly):
             name="roll1",
             is_setting=True,
             has_park_pv=True,
+            pb_conf="auto",
         )
         self._append(
             AdjustablePv,
@@ -158,6 +162,7 @@ class DoubleCrystalMono(Assembly):
             pvname + ":RZ2",
             name="roll2",
             is_setting=True,
+            pb_conf="auto",
         )
         self._append(
             MotorRecord,
@@ -165,6 +170,7 @@ class DoubleCrystalMono(Assembly):
             name="pitch2",
             is_setting=True,
             has_park_pv=True,
+            pb_conf="auto",
         )
         self._append(
             AdjustablePv,

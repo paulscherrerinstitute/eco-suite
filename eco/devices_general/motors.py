@@ -34,7 +34,7 @@ from .motor_controller import MforceChannel
 from .detectors import DetectorVirtual
 from ..epics_utils.detector import DetectorPvData
 import json
-from .powerbrick import PowerBrickChannelPars
+from .powerbrick import PowerBrickChannelPars, is_powerbrick_motor
 from .schneider_settings import (
     SchneiderMotorSettings,
     SETTINGS_SELECTION as SCHNEIDER_SETTINGS_SELECTION,
@@ -1536,6 +1536,10 @@ class MotorRecord(Assembly):
             DetectorGet, lambda: self._motor._pvs["VAL"].host.split(":")[1], name="port"
         )
 
+        if pb_conf == "auto":
+            # only if this record is driven by a PowerBrick (generic device
+            # classes have PowerBrick and other motors alike)
+            pb_conf = {"type": "motor"} if is_powerbrick_motor(self) else None
         if pb_conf:
             # host and axis are looked up on first read (axis from .OUT,
             # pb_conf's axis only if OUT says nothing)

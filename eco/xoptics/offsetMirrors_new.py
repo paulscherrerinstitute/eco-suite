@@ -9,10 +9,10 @@ class OffsetMirror(Assembly):
     def __init__(self, pvname, name=None):
         super().__init__(name=name)
         self.pvname = pvname
-        self._append(MotorRecord, self.pvname + ":W_X", name="x", is_setting=True)
-        self._append(MotorRecord, self.pvname + ":W_Y", name="y", is_setting=True)
-        self._append(MotorRecord, self.pvname + ":W_RX", name="rx", is_setting=True)
-        self._append(MotorRecord, self.pvname + ":W_RZ", name="rz", is_setting=True)
+        self._append(MotorRecord, self.pvname + ":W_X", name="x", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, self.pvname + ":W_Y", name="y", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, self.pvname + ":W_RX", name="rx", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, self.pvname + ":W_RZ", name="rz", is_setting=True, pb_conf="auto")
         self._append(
             AdjustablePv,
             self.pvname + ":CURV_SP",

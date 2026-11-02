@@ -313,3 +313,43 @@ def test_offline_record_fails_fast_then_retries(controller, monkeypatch):
     out["axis"] = 1
     assert m.Motor_pos.get_current_value() == 1.5
     assert len(lookups) == 2
+
+
+class _FakeMotor:
+    def __init__(self, pvname, ca_host):
+        self.pvname = pvname
+        self.host = type("H", (), {"get_current_value": staticmethod(lambda: ca_host)})
+
+
+@pytest.mark.parametrize(
+    "ca_host, out, expected",
+    [
+        ("SARES21-CPPM-XRD2.psi.ch", None, True),  # PowerBrick IOC, no OUT read
+        ("sf-saresb-cagw-01.psi.ch", "@asyn(PPMAC1,6)", True),  # KB behind gateway
+        ("sf-saresb-cagw-01.psi.ch", "@asyn(motPort1,0)", False),  # MForce
+        ("SARES20-CSSU-MF1.psi.ch", "@asyn(motPort1,0)", False),
+        ("sf-saresb-cagw-01.psi.ch", "", False),
+        ("sf-saresb-cagw-01.psi.ch", "OFFLINE", False),  # record does not connect
+    ],
+)
+def test_is_powerbrick_motor(monkeypatch, ca_host, out, expected):
+    import epics
+
+    reads = []
+
+    class FakePV:
+        def __init__(self, name, auto_monitor=None):
+            self.name = name
+
+        def wait_for_connection(self, timeout=None):
+            return out != "OFFLINE"
+
+        def get(self, as_string=False, timeout=None):
+            reads.append(self.name)
+            return out
+
+    monkeypatch.setattr(epics, "PV", FakePV)
+    m = _FakeMotor("SAROP21-OKBV139:BU", ca_host)
+    assert pb.is_powerbrick_motor(m) is expected
+    if out is None:
+        assert reads == []

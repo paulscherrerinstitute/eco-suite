@@ -460,6 +460,28 @@ def axis_from_out(pvname, timeout=1.0):
     return int(m.group(1)) if m else None
 
 
+_PPMAC_OUT = re.compile(r"@asyn\(\s*PPMAC\d*\s*,")
+
+
+def is_powerbrick_motor(motor, timeout=1.0):
+    """Is `motor` (a MotorRecord) driven by a PowerBrick?
+
+    Served by a PowerBrick IOC (CA server "*-CPPM-*") -- known locally, no
+    traffic; behind a CA gateway, its OUT link names the PowerBrick asyn port
+    ("@asyn(PPMAC1,6)"; MForce and others use other port names)."""
+    try:
+        if "-CPPM-" in motor.host.get_current_value().upper():
+            return True
+    except Exception:
+        pass
+    from epics import PV
+
+    pv = PV(motor.pvname + ".OUT", auto_monitor=False)
+    if not pv.wait_for_connection(timeout=timeout):
+        return False
+    return bool(_PPMAC_OUT.match(pv.get(as_string=True, timeout=timeout) or ""))
+
+
 def ioc_host(pvname):
     """Host of the IOC serving `pvname`, from iocinfo.psi.ch.
 

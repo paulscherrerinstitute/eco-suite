@@ -139,19 +139,19 @@ def append_diffractometer_modules(obj, configuration):
                 SlitBladesGeneral,
                 def_blade_up={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_X2"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 def_blade_down={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_X1"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 def_blade_left={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_Y2"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 def_blade_right={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_T_Y1"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 name="slit_sam",
             )
@@ -161,19 +161,19 @@ def append_diffractometer_modules(obj, configuration):
                 SlitBladesGeneral,
                 def_blade_up={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_X2"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 def_blade_down={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_X1"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 def_blade_left={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_Y2"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 def_blade_right={
                     "args": [MotorRecord, obj.pvname + ":MOT_SLT_C_Y1"],
-                    "kwargs": {"resolution_pars": True, "backlash_definition": True},
+                    "kwargs": {"resolution_pars": True, "backlash_definition": True, "pb_conf": "auto"},
                 },
                 name="slit_det",
             )

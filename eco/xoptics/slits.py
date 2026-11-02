@@ -295,14 +295,14 @@ class SlitBlades(Assembly):
     def __init__(self, pvname, name=None, elog=None):
         super().__init__(name=name)
         self.Id = pvname
-        self._append(MotorRecord, pvname + ":MOTOR_X1", name="right", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_X2", name="left", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_Y1", name="down", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_Y2", name="up", is_setting=True)
-        self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec")
-        self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec")
-        self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec")
-        self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec")
+        self._append(MotorRecord, pvname + ":MOTOR_X1", name="right", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_X2", name="left", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_Y1", name="down", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_Y2", name="up", is_setting=True, pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos_virt_mrec", pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap_virt_mrec", pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos_virt_mrec", pb_conf="auto")
+        self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap_virt_mrec", pb_conf="auto")
 
         def getgap(xn, xp):
             return xp - xn
@@ -394,12 +394,12 @@ class SlitPosWidth(Assembly):
         self.pvname = pvname
         if motornames is not None:
             for name, ext in motornames.items():
-                self._append(MotorRecord, pvname + ext, name=name)
+                self._append(MotorRecord, pvname + ext, name=name, pb_conf="auto")
         else:
-            self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos")
-            self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos")
-            self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap")
-            self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap")
+            self._append(MotorRecord, pvname + ":MOTOR_X", name="hpos", pb_conf="auto")
+            self._append(MotorRecord, pvname + ":MOTOR_Y", name="vpos", pb_conf="auto")
+            self._append(MotorRecord, pvname + ":MOTOR_W", name="hgap", pb_conf="auto")
+            self._append(MotorRecord, pvname + ":MOTOR_H", name="vgap", pb_conf="auto")
 
         def getblade(pos, gap, direction=1):
             return pos + direction * gap / 2

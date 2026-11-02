@@ -8,17 +8,17 @@ class Xspect(Assembly):
     def __init__(self, name=None):
         super().__init__(name=name)
 
-        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_X1", name="x_grating")
-        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_Y1", name="y_grating")
-        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_ROT_X1", name="rx_grating")
-        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_PROBE", name="transl_probe")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_X2", name="x_girder")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_X3", name="x_crystal")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_Y3", name="y_crystal")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_ROT_X3", name="rx_crystal")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_Y4", name="y_alignment")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_ROT_X4", name="rx_camera")
-        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_X5", name="x_camera")
+        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_X1", name="x_grating", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_Y1", name="y_grating", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_ROT_X1", name="rx_grating", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS055:MOTOR_PROBE", name="transl_probe", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_X2", name="x_girder", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_X3", name="x_crystal", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_Y3", name="y_crystal", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_ROT_X3", name="rx_crystal", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_Y4", name="y_alignment", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_ROT_X4", name="rx_camera", pb_conf="auto")
+        self._append(MotorRecord, "SARFE10-PSSS059:MOTOR_X5", name="x_camera", pb_conf="auto")
         self._append(AdjustablePvEnum, "SARFE10-PSSS055:GRATING_SP", name="grid_type")
         self._append(
             AdjustablePvEnum, "SARFE10-PSSS059:CRYSTAL_SP", name="crystal_type"
