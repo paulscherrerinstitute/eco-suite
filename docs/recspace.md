@@ -29,8 +29,8 @@ from eco.utilities.recspace_hklforge import RecSpace
 
 rs = RecSpace(name="recspace", config_dir=tempfile.mkdtemp(), energy_source=lambda: 9000)
 si = rs.create_crystal("si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-si.add_orientation([0, 0, 1], [0, 0, 1], tag="surface normal")  # along phi at all angles 0 (You z)
-si.add_orientation([1, 1, 0], [0, 1, 0], tag="along beam")      # (You y)
+si.add_orientation([0, 0, 1], "z+", tag="surface normal")  # with all angles at 0
+si.add_orientation([1, 1, 0], "beam", tag="in-plane")
 si.calc_ub()
 
 rs.constraints.mu(0); rs.constraints.gamma(0); rs.constraints.chi(90)
@@ -44,25 +44,43 @@ solution inside their soft limits. `xrd.recspace?` and
 
 ## Creating a crystal
 
-The frame is You's: x vertical, y along the beam, z horizontal across it;
-at all angles 0 the phi axis points along z. Lattice constants are in
+A crystal is always described as it lies with **all diffractometer angles
+at 0**, in the diffractometer's own frame. `xrd.recspace.frame()` prints it,
+generated from the geometry:
+
+```
+Diffractometer frame at all angles 0:
+  x+   up
+  y+   along the incoming X-ray beam
+  z+   left, looking along the beam
+  last sample rotation phi: axis along z- (positive phi turns right-handed about it)
+  sample circles, outermost first: mu x+, eta z-, chi y+, phi z-
+```
+
+A direction is written as an axis (`"z+"`, `"x-"`), `"beam"`, `"up"`,
+`"down"`, a circle (`"phi"`, `"-phi"`: along its rotation axis) or three
+numbers. This differs from diffcalc, which asked for directions in "You
+coordinates"; the numbers are the same (it is the same frame), so crystals
+imported from diffcalc keep their orientation. Lattice constants are in
 angstrom and degrees, energies in eV.
 
-**Interactively**, as with diffcalc:
+**Interactively**:
 
 ```python
 xrd.recspace.create_crystal()
 ```
 
-asks for a name (a Python name, it becomes `xrd.recspace.<name>`), the six
-lattice parameters (Enter keeps the default in brackets, so a cubic crystal
-needs only `a`), the (h,k,l) of the surface normal and the (h,k,l) along the
-beam. From those two it calculates a *nominal* UB: the crystal as mounted by
-design, at all angles 0, with the surface normal along the phi axis.
+prints the frame and asks for a name (a Python name, it becomes
+`xrd.recspace.<name>`), the six lattice parameters (Enter keeps the default
+in brackets, so a cubic crystal needs only `a`), the (h,k,l) of the surface
+normal and where it points with all angles at 0 (default `z+`, i.e. along
+the phi axis line, opposite to its rotation vector), and the (h,k,l) of a
+direction in the surface and where it points (default `beam`). From those
+two it calculates a *nominal* UB: the crystal as mounted by design.
 
 **The same as a script** is `create_crystal(name, unit_cell=dict(...))`
-followed by `add_orientation` for each nominal direction, `set_surface`
-and `calc_ub()`, as in the example above.
+followed by `add_orientation(hkl, direction)` for each nominal direction,
+`set_surface` and `calc_ub()`, as in the example above.
 
 **From diffcalc**: `xrd.recspace.diffcalc_crystals()` lists what the
 diffcalc object knows, `xrd.recspace.import_from_diffcalc("si")` copies one

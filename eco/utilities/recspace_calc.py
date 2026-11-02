@@ -125,6 +125,69 @@ def vector_hkl(spec, ub) -> np.ndarray | None:
     return np.linalg.solve(np.asarray(ub, float), np.asarray(spec["phi"], float))
 
 
+def _up() -> np.ndarray:
+    """The upward lab direction: the axis labelled vertical (psic: x+)."""
+    for axis, label in GEOMETRY.labels.items():
+        if label == "vertical":
+            return np.eye(3)["xyz".index(axis)]
+    return np.asarray(GEOMETRY.azimuth_frame()[1], float)
+
+
+def _axis_name(v) -> str:
+    v = np.asarray(v, float)
+    i = int(np.argmax(np.abs(v)))
+    if np.isclose(abs(v[i]), 1.0):
+        return f"{'xyz'[i]}{'+' if v[i] > 0 else '-'}"
+    return "(" + ", ".join(f"{x:.3g}" for x in v) + ")"
+
+
+def lab_direction(spec) -> list:
+    """A lab direction at all angles 0 (the diffractometer's own frame).
+
+    ``spec`` is a 3-vector, an axis ('x+', '-z', ...), or a name: 'beam'
+    (the incoming beam), 'up'/'down', or a circle ('phi', '-phi', 'chi',
+    ...: its rotation axis at all angles 0). Returns a unit 3-vector list.
+    """
+    if not isinstance(spec, str):
+        v = np.asarray(spec, float)
+        if v.shape != (3,) or not np.linalg.norm(v):
+            raise ValueError(f"direction {spec!r}: give 3 numbers or a name like 'beam', 'up', 'phi', 'z-'")
+        return (v / np.linalg.norm(v) + 0.0).tolist()
+    s = spec.strip().lower()
+    name = s.strip("+- ")
+    sign = -1.0 if "-" in s else 1.0
+    circles = {c.name: c.axis for c in GEOMETRY.sample + GEOMETRY.detector}
+    if name in ("x", "y", "z"):
+        v = np.eye(3)["xyz".index(name)]
+    elif name == "beam":
+        v = np.asarray(GEOMETRY.beam, float)
+    elif name in ("up", "vertical"):
+        v = _up()
+    elif name == "down":
+        v = -_up()
+    elif name in circles:
+        v = np.asarray(circles[name], float)
+    else:
+        raise ValueError(f"direction {spec!r}: use 'beam', 'up', 'down', an axis like 'z-', "
+                         f"a circle ({', '.join(circles)}) or 3 numbers")
+    return (sign * v + 0.0).tolist()
+
+
+def frame_description() -> str:
+    """The diffractometer frame at all angles 0, in words, from GEOMETRY."""
+    up, beam = _up(), np.asarray(GEOMETRY.beam, float)
+    left = np.cross(up, beam)       # looking along the beam
+    rows = [("up", up), ("along the incoming X-ray beam", beam), ("left, looking along the beam", left)]
+    lines = ["Diffractometer frame at all angles 0:"]
+    lines += [f"  {_axis_name(v):4} {text}" for text, v in rows]
+    last = GEOMETRY.sample[-1]
+    lines.append(f"  last sample rotation {last.name}: axis along {_axis_name(last.axis)} "
+                 f"(positive {last.name} turns right-handed about it)")
+    lines.append("  sample circles, outermost first: "
+                 + ", ".join(f"{c.name} {_axis_name(c.axis)}" for c in GEOMETRY.sample))
+    return "\n".join(lines)
+
+
 def _rotation(axis, angle) -> np.ndarray:
     """Right-handed rotation about ``axis`` by ``angle`` (radians)."""
     a = np.asarray(axis, float)

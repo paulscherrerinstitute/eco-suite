@@ -117,6 +117,31 @@ def test_wrap_into_limits():
     assert rc.wrap_into_limits(100, (-50, 50)) is None
 
 
+def test_lab_directions_from_geometry():
+    assert rc.lab_direction("beam") == [0, 1, 0]
+    assert rc.lab_direction("up") == [1, 0, 0]
+    assert rc.lab_direction("phi") == [0, 0, -1]      # psic: phi turns about z-
+    assert rc.lab_direction("-phi") == rc.lab_direction("z+") == [0, 0, 1]
+    assert rc.lab_direction([0, 2, 0]) == [0, 1, 0]
+    with pytest.raises(ValueError):
+        rc.lab_direction("sideways")
+    text = rc.frame_description()
+    assert "y+   along the incoming X-ray beam" in text and "phi: axis along z-" in text
+
+
+def test_orientation_by_name_equals_by_vector(tmp_path):
+    ubs = []
+    for i, (n, b) in enumerate((("z+", "beam"), ([0, 0, 1], [0, 1, 0]))):
+        rs = RecSpace(name="recspace", config_dir=tmp_path / str(i), energy_source=lambda: ENERGY)
+        c = rs.create_crystal("si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
+        c.add_orientation([0, 0, 1], n)
+        c.add_orientation([1, 1, 0], b)
+        with contextlib.redirect_stdout(io.StringIO()):
+            c.calc_ub()
+        ubs.append(c._ub())
+    assert np.allclose(*ubs)
+
+
 def test_config_flag():
     assert _config_flag(["robot", "gps"], "robot")
     assert not _config_flag(["robot"], "kappa")

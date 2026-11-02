@@ -145,22 +145,36 @@ class RecSpace(Assembly):
     all crystals of this diffractometer. Lattice in angstrom and degrees,
     energies in eV.
 
+    A crystal's orientation is always given as it lies with all
+    diffractometer angles at 0, in the diffractometer's own frame;
+    ``xrd.recspace.frame()`` prints it::
+
+        x+   up
+        y+   along the incoming X-ray beam
+        z+   left, looking along the beam
+        last sample rotation phi: axis along z-
+
+    Directions can be written as an axis ("z+", "x-"), "beam", "up",
+    "down", a circle ("phi", "-phi": along its rotation axis) or 3 numbers.
+
     Create a crystal -- one of three ways:
 
-    1. Interactively, as with diffcalc::
+    1. Interactively::
 
            xrd.recspace.create_crystal()
 
-       asks for a name, the lattice, the (h,k,l) of the surface normal (along
-       the phi axis at all angles 0, You z) and the (h,k,l) along the beam
-       (You y). That gives a nominal UB: the crystal mounted as designed.
+       asks for a name, the lattice, the (h,k,l) of the surface normal and
+       where it points with all angles at 0 (e.g. "z+"), and the (h,k,l) of
+       a direction in the surface and where it points (e.g. "beam"). That
+       gives a nominal UB: the crystal mounted as designed.
 
-    2. The same as a script, here Si(001) with [110] along the beam::
+    2. The same as a script, here Si(001), surface normal along z+ and
+       [110] along the beam::
 
            si = xrd.recspace.create_crystal(
                "si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-           si.add_orientation([0, 0, 1], [0, 0, 1], tag="surface normal")
-           si.add_orientation([1, 1, 0], [0, 1, 0], tag="along beam")
+           si.add_orientation([0, 0, 1], "z+", tag="surface normal")
+           si.add_orientation([1, 1, 0], "beam", tag="in-plane")
            si.set_surface(hkl=[0, 0, 1])     # for betain/betaout; option 1 does this too
            si.calc_ub()
 
@@ -234,6 +248,10 @@ class RecSpace(Assembly):
         for key, meta in self._crystal_list().items():
             if self.diffractometer.name in meta:
                 self._append_crystal(key, is_setting=False, is_display=True)
+
+    def frame(self):
+        """Print the diffractometer frame that crystal directions refer to."""
+        print(rc.frame_description())
 
     @property
     def crystals(self):
@@ -429,11 +447,12 @@ class RecSpaceCrystal(Assembly):
     """One crystal on one diffractometer: UB matrix, reference data and the
     h, k, l adjustables. Interface as ``eco.utilities.recspace.DiffGeometryYou``.
 
-    Orientation (UB), in the You frame (x vertical, y along the beam, z
-    horizontal transverse; at all angles 0 the phi axis is z):
+    Orientation (UB), with directions in the diffractometer's frame at all
+    angles 0 (``frame()``: x+ up, y+ along the beam, z+ left looking along
+    the beam; the phi axis is z-):
 
     - ``add_orientation(hkl, xyz)``: a nominal direction, e.g.
-      ``add_orientation([0, 0, 1], [0, 0, 1], tag="surface normal")``
+      ``add_orientation([0, 0, 1], "z+", tag="surface normal")``
     - ``add_reflection(h, k, l)``: a measured peak at the current angles and
       energy (or give ``mu=..., ..., energy=...``)
     - ``calc_ub()``: from reflections 0 and 1 (an index falls back to the
@@ -620,7 +639,12 @@ class RecSpaceCrystal(Assembly):
         self.ub_matrix.set_target_value((U @ rc.lattice_b(uc)).tolist()).wait()
 
     def new_ub(self):
-        """Set lattice, surface normal and in-plane direction interactively and calculate UB."""
+        """Set lattice and two crystal directions interactively and calculate UB.
+
+        The directions are given as they lie with all diffractometer angles
+        at 0, in the diffractometer's own frame (``frame()``): e.g. the
+        surface normal along "z+" and an in-plane direction along "beam".
+        """
         crystal_name = input(f"Name of the crystal: ({self.name})") or str(self.name)
         a = float(input("Lattice constant a (1): ") or 1)
         b = float(input(f"Lattice constant b ({a}): ") or a)
@@ -641,12 +665,28 @@ class RecSpaceCrystal(Assembly):
                 if len(v) == 3:
                     return v
 
-        normal = ask_vec("(h,k,l) surface normal (along the phi axis at all angles 0, YOU z-axis) (0,0,1): ", [0, 0, 1])
-        inplane = ask_vec("(h,k,l) in-plane orientation along beam (YOU y-axis) (1,0,0): ", [1, 0, 0])
+        def ask_dir(prompt, default):
+            while True:
+                text = input(prompt).strip() or default
+                try:
+                    return rc.lab_direction(text if text[0].isalpha() or "," not in text
+                                            else [float(x) for x in text.split(",")])
+                except ValueError as e:
+                    print(e)
+
+        phi_axis = rc._axis_name(rc.GEOMETRY.sample[-1].axis)
+        print()
+        print(rc.frame_description())
+        print("Now two directions of the crystal, as mounted with all angles at 0. A lab direction\n"
+              "is an axis (x+, z-, ...), beam, up, down, a circle (phi, -phi: along its axis) or 3 numbers.")
+        normal = ask_vec("(h,k,l) of the surface normal (0,0,1): ", [0, 0, 1])
+        normal_dir = ask_dir(f"  points along (z+; the phi axis is {phi_axis}): ", "z+")
+        inplane = ask_vec("(h,k,l) of a direction in the surface (1,0,0): ", [1, 0, 0])
+        inplane_dir = ask_dir("  points along (beam): ", "beam")
         self.set_unit_cell(crystal_name, a, b, c, alpha, beta, gamma)
         self.orientations.set_target_value([]).wait()
-        self.add_orientation(normal, (0, 0, 1), tag="surface normal")
-        self.add_orientation(inplane, (0, 1, 0), tag="in-plane along x-ray beam direction")
+        self.add_orientation(normal, normal_dir, tag="surface normal")
+        self.add_orientation(inplane, inplane_dir, tag="in-plane")
         self.set_surface(hkl=normal)
         self.calc_ub()
         print(self.summary())
@@ -710,18 +750,26 @@ class RecSpaceCrystal(Assembly):
         print(f"Removed reflection {removed}")
 
     def add_orientation(self, hkl, xyz, position=None, tag=None):
-        """Add a reference orientation: Miller indices ``hkl`` along lab
-        direction ``xyz`` (You frame: x vertical, y beam, z transverse) at
-        ``position`` (list in Position order; None means all angles 0)."""
+        """Add a reference orientation: Miller indices ``hkl`` point along lab
+        direction ``xyz`` with all angles at 0 (or at ``position``, a list in
+        Position order).
+
+        ``xyz`` is in the diffractometer's frame (``frame()`` prints it): 3
+        numbers, an axis ('x+', 'z-', ...), 'beam', 'up', 'down' or a circle
+        ('phi', '-phi': along its rotation axis), e.g.
+        ``add_orientation([0, 0, 1], "z+", tag="surface normal")``.
+        """
         if not hasattr(hkl, "__len__"):
             print("Please enter hkl as touple or list: add_orientation([h, k, l])")
             return
-        if not hasattr(xyz, "__len__"):
-            print("Please enter xyz as touple or list: add_orientation([x, y, z])")
-            return
+        xyz = rc.lab_direction(xyz)
         self.orientations.set_target_value(
-            self.orientations() + [{"hkl": list(hkl), "xyz": list(xyz), "position": position, "tag": tag}]
+            self.orientations() + [{"hkl": list(hkl), "xyz": xyz, "position": position, "tag": tag}]
         ).wait()
+
+    def frame(self):
+        """Print the diffractometer frame that directions refer to."""
+        print(rc.frame_description())
 
     def del_orientation(self, idx):
         oris = self.orientations()
@@ -798,7 +846,7 @@ class RecSpaceCrystal(Assembly):
         else:
             lines.append("  UB: not calculated")
         for i, o in enumerate(self.orientations()):
-            lines.append(f"  orientation {i}: hkl {o['hkl']} along xyz {o['xyz']}  {o.get('tag') or ''}")
+            lines.append(f"  orientation {i}: hkl {o['hkl']} along {rc._axis_name(o['xyz'])}  {o.get('tag') or ''}")
         for i, r in enumerate(self.reflections()):
             pos = ", ".join(f"{n}={v:.3f}" for n, v in zip(rc.POSITION_ORDER, r["position"]))
             lines.append(f"  reflection {i}: hkl {r['hkl']} at {pos}, {r['energy']:.1f} eV  {r.get('tag') or ''}")
