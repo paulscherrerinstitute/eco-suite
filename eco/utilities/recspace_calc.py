@@ -540,3 +540,9 @@ __all__ = [
     "vector_phi", "vector_hkl", "lattice_b", "calc_u", "fit_ub", "refine_from_reflection",
     "make_mode", "solve", "calc_hkl", "pseudo_angles", "spots", "wrap_into_limits",
 ]
+
+
+def in_ranges(angles: dict, ranges: dict) -> bool:
+    """Whether every circle named in ``ranges`` ({name: (lo, hi)}) lies in its
+    range, allowing the same +-360 representations as ``wrap_into_limits``."""
+    return all(wrap_into_limits(float(angles[n]), r, strict=False) is not None for n, r in ranges.items())

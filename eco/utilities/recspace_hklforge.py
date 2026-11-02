@@ -76,6 +76,44 @@ DEFAULT_CONSTRAINTS = {
     "h2": None,
     "h2_detector": "h1",
 }
+# Bernina setups, from bernina-scripts' apps/bernina_parameters (the presets
+# of the diffraction reflections app; "gam" there is "gamma" here). "ranges"
+# narrow the solutions a move may choose from, on top of the motor limits;
+# the app's ranges on fixed angles are left out (redundant, and HGeom's chi
+# 0..0 contradicts its chi = 90). User presets: <config_dir>/constraint_presets.json.
+CONSTRAINT_PRESETS = {
+    "surface": {
+        "description": "surface diffractometer (You-B), phi axis horizontal (x-)",
+        "constraints": {"mu": 0.0, "eta": 0.0, "chi": 0.0},
+        "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
+    },
+    "surface_horizontal": {
+        "description": "surface diffractometer (You-B), chi = 90: phi axis vertical (y-)",
+        "constraints": {"mu": 0.0, "eta": 0.0, "chi": 90.0},
+        "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
+    },
+    "surface_vertical_elbow_down": {
+        "description": "surface diffractometer (You-B), eta = -90 (elbow down), phi axis horizontal (x-)",
+        "constraints": {"mu": 0.0, "eta": -90.0, "chi": 0.0},
+        "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
+    },
+    "surface_vertical_elbow_up": {
+        "description": "surface diffractometer (You-B), eta = +90 (elbow up), phi axis horizontal (x-)",
+        "constraints": {"mu": 0.0, "eta": 90.0, "chi": 0.0},
+        "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
+    },
+    "gic": {
+        "description": "GIC chamber, phi axis horizontal (x-)",
+        "constraints": {"mu": 0.0, "eta": 0.0, "chi": 0.0},
+        "ranges": {"gamma": [-150.0, 10.0], "delta": [-10.0, 120.0]},
+    },
+    "thc": {
+        "description": "THC chamber, chi = 90 and phi = 0, eta free",
+        "constraints": {"mu": 0.0, "chi": 90.0, "phi": 0.0},
+        "ranges": {"delta": [45.0, 122.0]},
+    },
+}
+
 # per-crystal files; the diffcalc objects use the same names minus "vectors"
 CRYSTAL_FILES = ("unit_cell", "u_matrix", "ub_matrix", "orientations", "reflections", "vectors", "frame")
 DIFFCALC_FILES = ("unit_cell", "u_matrix", "ub_matrix", "orientations", "reflections")
@@ -230,11 +268,19 @@ class RecSpace(Assembly):
     normal), three for a fit not in one plane. ``si.summary()`` shows the
     result, ``si.calc_hkl()`` should then read the peak's hkl.
 
-    Constraints -- fix three, release with None::
+    Constraints -- fix three. A stored Bernina setup (surface diffractometer
+    horizontal/vertical, GIC, THC; the list and a choice without argument)::
 
-        xrd.recspace.constraints.mu(0)
-        xrd.recspace.constraints.gamma(0)
-        xrd.recspace.constraints.chi(90)
+        xrd.recspace.set_constraints()
+        xrd.recspace.set_constraints("thc")
+
+    or exactly three angles, everything else released::
+
+        xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)
+
+    or one at a time, release with None: ``xrd.recspace.constraints.chi(90)``.
+    A setup may also restrict which solution a move picks
+    (``solution_ranges``, e.g. delta 45..122 for the THC).
 
     A second reflection kept in Bragg condition takes the place of one of
     them: ``constraints.chi(None)``, ``constraints.h2([2, 2, 0])``.
@@ -249,7 +295,7 @@ class RecSpace(Assembly):
     Managing crystals: ``crystals`` (this diffractometer's),
     ``activate_crystal`` (one of another diffractometer, or deactivated),
     ``deactivate_crystal``, ``delete_crystal``. Constraints from diffcalc:
-    ``import_constraints_from_diffcalc()``. More in docs/recspace.md.
+    ``import_constraints_from_diffcalc()``; own setups: ``store_constraint_preset``. More in docs/recspace.md.
     """
 
     def __init__(self, diffractometer_you=None, name=None, config_dir=None, energy_source=None):
@@ -283,6 +329,14 @@ class RecSpace(Assembly):
             is_setting=False,
             is_display="recursive",
         )
+        self._append(
+            AdjustableFS,
+            self.config_dir / f"{name}_solution_ranges.json",
+            name="solution_ranges",
+            default_value={},
+            is_setting=True,
+            is_display=True,
+        )
         for key, meta in self._crystal_list().items():
             if self.diffractometer.name in meta:
                 self._append_crystal(key, is_setting=False, is_display=True)
@@ -301,6 +355,7 @@ class RecSpace(Assembly):
             RecSpaceCrystal,
             diffractometer_you=self.diffractometer,
             constraints=self.constraints,
+            solution_ranges=self.solution_ranges,
             config_dir=self.config_dir,
             energy_source=self._energy_source,
             name=name,
@@ -482,6 +537,97 @@ class RecSpace(Assembly):
         self._constraints.set_target_value(cons).wait()
         return cons
 
+    # --- constraint presets -----------------------------------------------------
+
+    def _preset_file(self):
+        return self.config_dir / "constraint_presets.json"
+
+    def constraint_presets(self):
+        """The stored setups for ``set_constraints``: the built-in Bernina ones
+        (``CONSTRAINT_PRESETS``) and those stored with
+        ``store_constraint_preset`` (shared by all diffractometers)."""
+        user = _read_fs_value(self._preset_file()) if self._preset_file().exists() else {}
+        return {**CONSTRAINT_PRESETS, **user}
+
+    def _describe_preset(self, name, preset):
+        cons = ", ".join(f"{k}={v:g}" if isinstance(v, (int, float)) and not isinstance(v, bool) else f"{k}={v}"
+                         for k, v in preset["constraints"].items())
+        ranges = ", ".join(f"{k} {lo:g}..{hi:g}" for k, (lo, hi) in (preset.get("ranges") or {}).items())
+        line = f"{name:28} {cons}"
+        if ranges:
+            line += f"; ranges {ranges}"
+        return line + f"\n{'':28} {preset.get('description', '')}"
+
+    def set_constraints(self, preset=None, ranges=True, **fixed):
+        """Set all constraints at once: from a stored setup, or exactly the
+        angles given. Everything not set is released, including ``h2``.
+
+        Without arguments it lists the stored setups and asks::
+
+            xrd.recspace.set_constraints()
+            xrd.recspace.set_constraints("surface_horizontal")   # mu=0, eta=0, chi=90
+            xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)  # these three, the rest free
+
+        Three are needed for a finite set of solutions: sample circles,
+        detector circles or virtual angles (qaz, naz, alpha, beta, psi,
+        betain, betaout, ...), see ``constraints``. ``constraint_presets()``
+        lists the setups, ``store_constraint_preset`` adds one.
+
+        ``ranges`` restricts which solution a move (``hkl.mv``,
+        ``calc_angles_unique``) may choose, on top of the motor limits:
+        True takes the setup's ranges (e.g. delta 45..122 for the THC), a
+        dict sets them, e.g. ``ranges=dict(delta=(-10, 120))``, False or {}
+        clears them. They are kept in ``solution_ranges``; ``calc_angles``
+        still shows every solution.
+        """
+        if preset is None and not fixed:
+            names = list(self.constraint_presets())
+            print("Stored constraint setups:")
+            for i, n in enumerate(names):
+                print(f"{i:2}) " + self._describe_preset(n, self.constraint_presets()[n]).replace("\n", "\n    "))
+            choice = input("Your choice (number or name, q to quit): ").strip()
+            if choice in ("", "q"):
+                return None
+            preset = names[int(choice)] if choice.isdigit() and int(choice) < len(names) else choice
+        if preset is not None:
+            presets = self.constraint_presets()
+            if preset not in presets:
+                raise KeyError(f"No constraint setup {preset!r}; there are: {', '.join(presets)}")
+            fixed = {**presets[preset]["constraints"], **fixed}
+            if ranges is True:
+                ranges = presets[preset].get("ranges") or {}
+        unknown = [k for k in fixed if k not in DEFAULT_CONSTRAINTS]
+        if unknown:
+            raise KeyError(f"Unknown constraint(s) {unknown}; possible: {', '.join(DEFAULT_CONSTRAINTS)}")
+        if not isinstance(ranges, dict):
+            ranges = {}
+        bad = [k for k in ranges if k not in rc.POSITION_ORDER]
+        if bad:
+            raise KeyError(f"Ranges only for the circles {', '.join(rc.POSITION_ORDER)}, not {bad}")
+        cons = {k: None for k in DEFAULT_CONSTRAINTS}
+        cons["h2_detector"] = self._constraints().get("h2_detector") or "h1"
+        cons.update(fixed)
+        self._constraints.set_target_value(cons).wait()
+        self.solution_ranges.set_target_value({k: [float(lo), float(hi)] for k, (lo, hi) in ranges.items()}).wait()
+        held = {k: v for k, v in cons.items() if v is not None and k != "h2_detector"}
+        print(f"constraints: {', '.join(f'{k}={v}' for k, v in held.items())}"
+              + (f" (setup {preset})" if preset else ""))
+        if self.solution_ranges():
+            print("solution ranges: " + ", ".join(f"{k} {lo:g}..{hi:g}" for k, (lo, hi) in self.solution_ranges().items()))
+        if len(held) != 3:
+            print(f"Note: {len(held)} constraints held; the solver needs 3 (a second reflection h2 counts as one).")
+        return held
+
+    def store_constraint_preset(self, name, description=""):
+        """Store the current constraints and solution ranges as a setup for
+        ``set_constraints(name)``, in the config directory (shared by all
+        diffractometers; a built-in name is overridden)."""
+        cons = {k: v for k, v in self._constraints().items() if v is not None and k != "h2_detector"}
+        user = _read_fs_value(self._preset_file()) if self._preset_file().exists() else {}
+        user[name] = {"description": description, "constraints": cons, "ranges": dict(self.solution_ranges())}
+        AdjustableFS(self._preset_file(), default_value={}).set_target_value(user).wait()
+        return user[name]
+
 
 class RecSpaceCrystal(Assembly):
     """One crystal on one diffractometer: UB matrix, reference data and the
@@ -507,10 +653,12 @@ class RecSpaceCrystal(Assembly):
     ``widget_geom``.
     """
 
-    def __init__(self, diffractometer_you=None, constraints=None, name=None, config_dir=None, energy_source=None):
+    def __init__(self, diffractometer_you=None, constraints=None, name=None, config_dir=None, energy_source=None,
+                 solution_ranges=None):
         super().__init__(name=name)
         self.config_dir = Path(config_dir or CONFIG_DIR)
         self._energy_source = energy_source
+        self._solution_ranges = solution_ranges
         _bring_into_lab_frame(self.config_dir, name)
         files = {
             "unit_cell": ({"name": "", "a": 1, "b": 1, "c": 1, "alpha": 90, "beta": 90, "gamma": 90}, True),
@@ -975,15 +1123,26 @@ class RecSpaceCrystal(Assembly):
         df["tdet_max"] = [s["tdet_max"] for s in sp]
         return df
 
+    def _ranges(self):
+        if self._solution_ranges is None:
+            return {}
+        try:
+            return dict(self._solution_ranges())
+        except Exception:
+            return {}
+
     def calc_angles_unique(self, h=None, k=None, l=None, energy=None):
-        """The one solution for (h, k, l) inside the motor limits, as a dict.
-        Raises if there are none or several (adjust the soft limits)."""
+        """The one solution for (h, k, l) inside the motor limits and the
+        solution ranges of ``set_constraints``, as a dict. Raises if there
+        are none or several (adjust the soft limits or the ranges)."""
         return self._unique_solution(h, k, l, energy)[0]
 
     def _unique_solution(self, h=None, k=None, l=None, energy=None):
         """(solution dict, motor targets inside the limits)."""
         df = self.calc_angles(h, k, l, energy)
-        fitted = [self.fit_target_into_limits(**df.loc[idx].to_dict()) for idx in df.index]
+        ranges = self._ranges()
+        fitted = [self.fit_target_into_limits(**df.loc[idx].to_dict())
+                  if rc.in_ranges(df.loc[idx].to_dict(), ranges) else None for idx in df.index]
         idx_in = [idx for idx, f in zip(df.index, fitted) if f is not None]
         if len(idx_in) != 1:
             if idx_in:
@@ -993,6 +1152,9 @@ class RecSpaceCrystal(Assembly):
                 print("There is no angular configuration, which is allowed for the current diffractometer "
                       "motor soft limits. please check the diffractometer limits to allow one of the solutions shown below.")
             print("Current limits are:\n" + self._limits_str())
+            if ranges:
+                print("Solution ranges (set_constraints) are:\n"
+                      + "".join(f"{n}: ({lo:g}, {hi:g})\n" for n, (lo, hi) in ranges.items()))
             print("Solutions:")
             print(df.loc[idx_in] if idx_in else df)
             raise Exception("No unique solution")

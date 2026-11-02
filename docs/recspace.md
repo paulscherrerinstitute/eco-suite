@@ -131,9 +131,35 @@ plane; both are refused with a message. `si.summary()` shows the result,
 and `si.calc_hkl()` at a stored peak should give back its hkl.
 
 **Then the constraints**, shared by all crystals of the diffractometer:
-fix three, release with `None`, e.g. `xrd.recspace.constraints.mu(0)`,
-`.gamma(0)`, `.chi(90)`. And check the motor soft limits, since
-`calc_angles_unique` and `hkl.mv` pick the one solution inside them.
+fix three. `xrd.recspace.set_constraints()` lists the stored Bernina setups
+and asks for one; with a name it sets that one directly, with angles exactly
+those, releasing all others:
+
+```python
+xrd.recspace.set_constraints("surface_horizontal")   # mu=0, eta=0, chi=90
+xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)
+```
+
+| setup | held | solution ranges |
+|---|---|---|
+| `surface` | mu 0, eta 0, chi 0 (phi axis horizontal) | gamma -150..10, delta -10..120 |
+| `surface_horizontal` | mu 0, eta 0, chi 90 (phi axis vertical) | same |
+| `surface_vertical_elbow_down` | mu 0, eta -90, chi 0 | same |
+| `surface_vertical_elbow_up` | mu 0, eta 90, chi 0 | same |
+| `gic` | mu 0, eta 0, chi 0 | same |
+| `thc` | mu 0, chi 90, phi 0 | delta 45..122 |
+
+They are the presets of bernina-scripts' diffraction reflections app
+(`apps/bernina_parameters`). Their solution ranges (the app's min/max
+filters) are kept in `xrd.recspace.solution_ranges` and restrict, on top of
+the motor soft limits, which solution `calc_angles_unique` and `hkl.mv`
+pick; `calc_angles` still lists all. `ranges=False` leaves them out,
+`ranges=dict(delta=(0, 90))` sets your own, and
+`store_constraint_preset("name", "description")` stores the current
+constraints and ranges as a setup of your own. Single constraints can still
+be set one at a time, release with `None`: `xrd.recspace.constraints.chi(90)`.
+And check the motor soft limits, since `calc_angles_unique` and `hkl.mv`
+pick the one solution inside them.
 
 Other crystal management: `xrd.recspace.crystals` (this diffractometer's),
 `activate_crystal` (one created on another diffractometer, or a

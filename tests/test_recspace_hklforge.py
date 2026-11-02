@@ -378,3 +378,51 @@ def test_unreadable_angle_does_not_break_the_display(rs):
     assert np.isnan(c.h.get_current_value())
     repr(c)
     assert len(c.calc_hkl(eta=0)) == 3
+
+
+def test_set_constraints_from_preset(rs, monkeypatch):
+    c = _si(rs)
+    _set(rs, h2=[0, 0, 1], qaz=90)
+    with contextlib.redirect_stdout(io.StringIO()):
+        held = rs.set_constraints("thc")
+    assert held == {"mu": 0.0, "chi": 90.0, "phi": 0.0}
+    cons = rs._constraints()
+    assert cons["h2"] is None and cons["qaz"] is None   # everything else released
+    assert rs.solution_ranges() == {"delta": [45.0, 122.0]}
+    # the ranges decide which solution a move picks; calc_angles shows all
+    d = rs.diffractometer
+    for n in ("mu", "delta", "gamma", "eta", "chi", "phi"):
+        getattr(d, n).set_limits(-400, 400)
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints("thc", ranges=dict(delta=(-10, 120), gamma=(-150, 10)))
+        assert len(c.calc_angles(1, 1, 1)) == 4
+        sol = c.calc_angles_unique(1, 1, 1)       # the only one with delta > -10 and gamma < 10
+        assert -10 < sol["delta"] < 120 and sol["gamma"] < 10
+        rs.set_constraints("thc", ranges=False)
+        with pytest.raises(Exception, match="No unique solution"):
+            c.calc_angles_unique(1, 1, 1)
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints(mu=0, gamma=0, chi=90)
+    assert rs.solution_ranges() == {}
+    assert {k: v for k, v in rs._constraints().items() if v is not None and k != "h2_detector"} == \
+        {"mu": 0, "gamma": 0, "chi": 90}
+    # interactive: the list, then a choice by number
+    names = list(rs.constraint_presets())
+    monkeypatch.setattr("builtins.input", lambda prompt="": str(names.index("surface_horizontal")))
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rs.set_constraints()
+    assert "thc" in out.getvalue() and rs._constraints()["chi"] == 90.0 and rs._constraints()["eta"] == 0.0
+    with pytest.raises(KeyError):
+        rs.set_constraints("nonsense")
+
+
+def test_store_constraint_preset(rs, tmp_path):
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints(mu=0, eta=10, qaz=90, ranges=dict(delta=(0, 90)))
+    rs.store_constraint_preset("mine", "test setup")
+    assert json.loads((tmp_path / "constraint_presets.json").read_text())["value"]["mine"]["ranges"] == {"delta": [0.0, 90.0]}
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints(mu=0, gamma=0, chi=90)
+        rs.set_constraints("mine")
+    assert rs._constraints()["qaz"] == 90 and rs.solution_ranges() == {"delta": [0.0, 90.0]}
