@@ -24,6 +24,29 @@ This moves hardware ... [api AttenuatorAramis]
 Nothing in an answer is run for you. `%ei --paste` puts the answer's code at
 the next prompt, where you can read and edit it first.
 
+## Sources: where an answer comes from
+
+Every answer ends with the sources it cites, numbered, each with where to
+find it:
+
+```text
+-- sources (`%ei --open N` shows one in its context):
+[1] [api eco.xoptics.attenuator_aramis.AttenuatorAramis]
+      /sf/bernina/.../eco/xoptics/attenuator_aramis.py:57
+[2] [2026-10-14 09:12 console:bernina · 091204]
+      /photonics/home/.../kernel_logs/20261014_091204_console_3f2a.jsonl:118
+[3] [scilog 2026-10-13 10:02 henrik.lemke@psi.ch [26j_kern_p23618 (p23618)]]
+      https://scilog.psi.ch/logbooks/6703.../dashboard
+```
+
+`%ei --open 2` shows that source in its context: for a command, the commands
+typed before and after it in that session with what came back; for a SciLog
+post, the whole post between its neighbours in the logbook; for docs and
+code, the section or definition. A search-only listing (`%ei -s`) is
+numbered the same way. SciLog has no address for a single post, so a post
+links to its logbook, and its date and author find it there. In eco desktop
+the sources are links under the answer.
+
 ## Where the answers come from
 
 | Source | What it contributes |
@@ -34,7 +57,7 @@ the next prompt, where you can read and edit it first.
 | Your namespace | Which top-level devices exist and their classes, plus the components of an initialized device the question names. Lazy devices are listed without being initialized. |
 | escape | The API of the installed escape package, and the docs and example notebooks of an escape checkout. |
 | Notebooks | Code cells of more notebooks, after `%ei --examples PATH`. |
-| SciLog, notes | Only after `%ei --scilog-index ...` (as yourself), `%ei --scilog [pgroup]` (the beamline account) or `%ei --notes PATH` has indexed them. |
+| SciLog, notes | Only after `%ei --scilog-index ...` or `%ei --notes PATH` has indexed them. |
 
 The search index lives in `~/.eco/history_index.sqlite`. It is updated
 before a question at most every ten minutes, and only files that changed are
@@ -85,12 +108,25 @@ kept in `~/.eco/ei_scans`, readable only by you, and they are sent to the
 model server to be read. A hand-drawn plot is described (axes, units, marked
 values), but its data points are not read off.
 
-## SciLog as yourself
+## SciLog
 
-The beamline account (`%ei --scilog`) sees only its own logbooks. With your
-own PSI account `%ei` reads every logbook your groups can read, across
-pgroups and beamlines. Personal accounts log in through the browser only,
-so `%ei` uses the token SciLog gives the browser after that login:
+`%ei` reads SciLog as one of two accounts:
+
+- **as yourself**, with a personal token: every logbook your PSI groups can
+  read, across pgroups and beamlines;
+- **as the beamline account** (`swissfelaramis-bernina`), when there is no
+  personal token, and always on the shared gac-bernina account. This needs
+  no token: it logs in with the password eco's SciLog client already uses
+  (gopass `elog/scilog-password`, or `~/.scilog_psi`).
+
+Either way, `%ei` reads only what that account can read *now*. Every update
+lists the readable logbooks again and removes indexed posts of logbooks the
+account has lost access to. Updates run with `%ei --scilog-index` and, once
+logbooks have been chosen, by themselves every ten minutes before a
+question.
+
+Personal accounts log in through the browser only, so `%ei` uses the token
+SciLog gives the browser after that login:
 
 1. log in at <https://scilog.psi.ch>;
 2. in the browser's developer console (F12): `copy(localStorage.id_token)`;
@@ -100,20 +136,27 @@ so `%ei` uses the token SciLog gives the browser after that login:
 
 The token lasts about two weeks; then `%ei --scilog-token new` with a fresh
 one. Only ever on your own account: under a shared account (gac-bernina)
-everyone using it would read SciLog as you.
+everyone using it would read SciLog as you, so eco refuses to store one
+there.
 
 ```python
-%ei --scilog-logbooks --location bernina      # what you can read there
-%ei --scilog-index --location bernina         # all of it, ~20 s for 40 000 posts
+%ei --scilog-token                            # who reads SciLog here
+%ei --scilog-logbooks --location bernina      # what that account can read there
+%ei --scilog-index --location bernina         # all of it, ~15 s for 40 000 posts
 %ei --scilog-index                            # later: only what is new, < 1 s
 %ei --scilog-search tapedrive trigger         # SciLog's own search, live
 %ei what trigger settings did we use for the tapedrive?
 ```
 
+Indexed posts are kept in the local index, so searching them needs no
+network, and an expired token loses nothing already indexed. An update
+fetches only posts newer than the last one, so a post edited or deleted
+later keeps its indexed version until `%ei --scilog-index --rebuild` reads
+the chosen logbooks again completely (~15 s for Bernina's).
+
 Indexed posts are searched together with the history and the docs; the
 ones that match a question go to the model with it, like every other
-excerpt. Posts are labelled with their logbook, so answers can say where
-something was written.
+excerpt.
 
 ## Follow-up questions
 
@@ -142,12 +185,13 @@ was given (`.hits`).
 | `%ei -s WORDS` | Show only the matching history, docs and API entries, without asking the model. |
 | `%ei -m MODEL [QUESTION]` | Switch the model (kept for the session). |
 | `%ei --paste` | Put the last answer's code at the next prompt. |
+| `%ei --open N` | Source N of the last answer (or listing) in its context. |
 | `%ei --bad TEXT` | Commands containing TEXT that gave warnings or errors, worst first. |
 | `%ei --index` | Update the search index now. |
-| `%ei --scilog [pgroup]` | Index SciLog posts of one pgroup through the beamline account. |
-| `%ei --scilog-token [new]` | Your SciLog token: who and until when; asks for one if there is none. |
-| `%ei --scilog-logbooks FILTERS` | The logbooks you can read; filters `--location`, `--pgroup`, `--name`. |
-| `%ei --scilog-index FILTERS` | Index those logbooks (`--all` for every one; no filter: the last choice). |
+| `%ei --scilog [pgroup]` | Index the logbooks of one pgroup (no pgroup: the last choice, else Bernina's). |
+| `%ei --scilog-token [new]` | Who reads SciLog here: your token (and until when), or the beamline account; asks for a token if neither works. |
+| `%ei --scilog-logbooks FILTERS` | The logbooks that account can read; filters `--location`, `--pgroup`, `--name`. |
+| `%ei --scilog-index FILTERS` | Index those logbooks' new posts (`--all` for every one; no filter: the last choice; `--rebuild`: all posts again). |
 | `%ei --scilog-search TEXT` | SciLog's own search over everything you can read, live. |
 | `%ei --notes PATH` | Index a folder of notes (.txt, .md, .pdf). |
 | `%ei --examples PATH` | Index notebooks (code cells) as usage examples, for this session. |
@@ -165,7 +209,8 @@ From Python: `eco.ei.ask("...")`.
 The **Ask** menu opens the same assistant as a panel (Ctrl+Shift+A), with a
 model choice and a **Search only** switch. **To Console** puts the answer's
 code at the console prompt, without running it. The menu also updates the
-index and indexes SciLog or a notes folder.
+index, updates SciLog (the last choice of logbooks, else Bernina's) and
+indexes a notes folder.
 
 ## Model and API key
 

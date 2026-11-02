@@ -36,16 +36,23 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei -n ...      new conversation        %ei -s ...   search only, no model
     %ei -m openai/gpt-oss-120b ...          another model (kept)
     %ei --paste     last answer's code to the next prompt
+    %ei --open 2    source [2] of the last answer in its context (the
+                    commands around it, the neighbouring logbook posts, ...)
     %ei --bad att   commands like `att...` that gave warnings/errors
     %ei --examples PATH   index notebooks (code cells) as usage examples
     %ei --index | --scilog [pgroup] | --notes PATH | --models | --config
 
-SciLog as yourself (all logbooks your PSI groups can read; see
-eco.logs_scilog for getting the token from the browser):
+Every answer ends with the sources it cites, numbered, each with where to
+find it: the SciLog logbook's address, or file:line.
 
-    %ei --scilog-token                   who, until when; asks for a token if none
+SciLog (all logbooks your PSI groups can read with a personal token --
+see eco.logs_scilog for getting it from the browser -- or, without one
+and always on gac-bernina, what the beamline account can read):
+
+    %ei --scilog-token                   who reads; asks for a token if none
     %ei --scilog-logbooks [--location bernina] [--pgroup p23618] [--name kern]
-    %ei --scilog-index    [same filters | --all]   index them; no filter: the last choice
+    %ei --scilog-index    [same filters | --all] [--rebuild]   index them (new posts only,
+                                         or all again); no filter: the last choice
     %ei --scilog-search TEXT             SciLog's own search, live
 
 Notes on paper -- photos, scanned PDFs, a webcam picture -- are transcribed
@@ -414,6 +421,20 @@ class Answer:
         """The answer's Python code blocks, joined."""
         return "\n\n".join(b.strip() for b in _CODE_RX.findall(self.text))
 
+    @property
+    def cited(self):
+        """The items the answer cites by their [tag], in the order given;
+        every item for a search-only answer (it lists them all)."""
+        if not self.model:
+            return list(self.hits)
+        out = []
+        for h in self.hits:
+            tag = h.cite()
+            if tag in self.text or tag[1:-1] in self.text or (h.kind in ("doc", "api", "example") and h.context in self.text):
+                if all(h is not o for o in out):
+                    out.append(h)
+        return out
+
     def sources(self):
         """How many items of each kind the answer was given, e.g.
         "10 commands, 6 doc, 8 api"."""
@@ -440,10 +461,12 @@ class Assistant:
         self.db_path = db_path
         self.history = []  # [(question, answer text)]
         self.last = None
+        self.shown = None  # the last answer or listing, for --open
         self._backend = backend
         self._no_key_until = 0.0  # don't look for a missing key again before
         self._key_note_shown = False
         self._indexed_at = 0.0
+        self._scilog_failed = False
         self._index_lock = threading.Lock()
 
     # model ---------------------------------------------------------------
@@ -626,7 +649,28 @@ class Assistant:
             self._indexed_at = time.time()
             if report and (fresh or force):
                 report(f"eco.ei: index has {result['items']} items ({result['files_indexed']} files updated, {time.time() - t0:.1f} s)")
+            self._refresh_scilog(report)
             return result
+
+    def _refresh_scilog(self, report):
+        """New posts of the SciLog logbooks chosen last time (if any were),
+        and away with those of logbooks no longer readable. One failure
+        report per session; the existing index is searched regardless."""
+        from eco import logs_scilog
+
+        filters = logs_scilog.load_selection(self.db_path)
+        if not filters:
+            return
+        try:
+            r = logs_scilog.update(logs_scilog.reader(timeout=10), filters, db_path=self.db_path, report=None)
+        except Exception as exc:
+            if report and not self._scilog_failed:
+                report(f"eco.ei: SciLog not updated ({type(exc).__name__}: {str(exc).splitlines()[0]})")
+            self._scilog_failed = True
+            return
+        self._scilog_failed = False
+        if report and r["dropped"]:
+            report(f"eco.ei: {r['dropped']} SciLog posts removed: {r['identity']} can no longer read their logbooks")
 
     def retrieve(self, question, follow_up=True):
         """Best hits per kind, for the question plus (for a follow-up) the
@@ -736,10 +780,11 @@ class Assistant:
                 self._key_note_shown = True
             text = _listing(hits) or "Nothing in the docs, the eco source, the command history, logbooks or notes matches that."
             # not self.last: that stays the last model answer, for --paste
-            return Answer(question, text, hits, "", time.time() - t0)
+            self.shown = Answer(question, text, hits, "", time.time() - t0)
+            return self.shown
         text = backend.chat(self.messages(question, hits), on_delta=on_delta, stop=stop)
         self.history.append((question, text))
-        self.last = Answer(question, text, hits, self.model, time.time() - t0)
+        self.last = self.shown = Answer(question, text, hits, self.model, time.time() - t0)
         return self.last
 
     def reset(self):
@@ -755,11 +800,33 @@ def _readable_dir(path):
 
 def _listing(hits):
     lines = []
-    for h in hits:
+    for n, h in enumerate(hits, 1):
         first = h.text.splitlines()[0][:160] if h.text else ""
         bad = "" if h.ok else f"({logs_ask._status_label(h).lower()}: {h.flags[:80]}) "
-        lines.append(f"{h.cite()} {bad}{first}")
+        where = h.location()
+        lines.append(f"[{n}] {h.cite()} {bad}{first}" + (f"\n      {where}" if where else ""))
+    if lines:
+        lines.append("-- `%ei --open N` shows one of them in its context")
     return "\n".join(lines)
+
+
+def source_list(ans, markdown=False):
+    """The answer's cited sources, numbered as `%ei --open N` takes them,
+    each with where it is; markdown=True for the desktop panel (links)."""
+    cited = ans.cited
+    if not cited:
+        return ""
+    lines = []
+    for n, h in enumerate(cited, 1):
+        where = h.location()
+        if markdown:
+            url = where if where.startswith("http") else ("file://" + where.split(":", 1)[0] if where else "")
+            lines.append(f"{n}. {h.cite()}" + (f" -- [{where}]({url})" if url else ""))
+        else:
+            lines.append(f"[{n}] {h.cite()}" + (f"\n      {where}" if where else ""))
+    if markdown:
+        return "**Sources**\n\n" + "\n".join(lines)
+    return "-- sources (`%ei --open N` shows one in its context):\n" + "\n".join(lines)
 
 
 _assistants = {}
@@ -797,6 +864,9 @@ def _print_answer(asst, question, **kwargs):
         return None
     if ans.model:
         print(f"\n\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}")
+        sources = source_list(ans)
+        if sources:
+            print(sources)
         if ans.code:
             print("-- `%ei --paste` puts the code at the next prompt")
     else:
@@ -890,9 +960,18 @@ def ei_magic(line, cell=None):
         asst.refresh_index(force=True)
         return None
     if opt == "--scilog":
-        pgroup = rest or None
-        result = logs_ask.index_scilog(pgroup=pgroup, db_path=asst.db_path)
-        print(f"eco.ei: {result['new_posts']} new SciLog posts indexed ({pgroup or 'default pgroup'})")
+        # one pgroup's logbooks, as whoever reads SciLog here
+        _scilog_magic(asst, "--scilog-index", _scilog_default(asst, rest))
+        return None
+    if opt == "--open":
+        shown = asst.shown
+        cited = shown.cited if shown else []
+        try:
+            hit = cited[int(rest) - 1]
+        except (ValueError, IndexError):
+            print(f"eco.ei: %ei --open N, N from 1 to {len(cited)} (the numbers under the last answer)" if cited else "eco.ei: no sources to open yet")
+            return None
+        print(logs_ask.item_context(hit, db_path=asst.db_path))
         return None
     if opt == "--examples":
         # for this session; add it to "sources" in ~/.eco/ei.json to keep it
@@ -928,13 +1007,30 @@ def ei_magic(line, cell=None):
     return _print_answer(asst, text)
 
 
+def _scilog_default(asst, pgroup=""):
+    """--scilog's choice: that pgroup, else the last choice, else Bernina."""
+    from eco import logs_scilog as ls
+
+    if pgroup:
+        return f"--pgroup {pgroup}"
+    return "" if ls.load_selection(asst.db_path) else "--location bernina"
+
+
 def _scilog_magic(asst, opt, rest):
     """--scilog-token / -logbooks / -index / -search: SciLog read with a
-    personal token (eco.logs_scilog)."""
+    personal token, or as the beamline account (eco.logs_scilog)."""
     from eco import logs_scilog as ls
 
     if opt == "--scilog-token":
         value, where = ls.token()
+        shared = ls._shared_account()
+        if shared:
+            try:
+                reader = ls.reader()
+                print(f"eco.ei: {shared} is a shared account, so no personal token here: SciLog is read as {reader.identity}; {len(reader.logbooks())} logbooks readable")
+            except Exception as exc:
+                print(f"eco.ei: {shared} reads SciLog as the beamline account, which failed: {type(exc).__name__}: {exc}")
+            return
         if value is None or rest == "new":
             import getpass
 
@@ -960,7 +1056,7 @@ def _scilog_magic(asst, opt, rest):
         print(f"eco.ei: SciLog token from {where}: {ls.describe(value)}; {n} logbooks readable")
         return
     try:
-        reader = ls.Reader()
+        reader = ls.reader()
         if opt == "--scilog-search":
             if not rest:
                 print("eco.ei: %ei --scilog-search TEXT")
@@ -982,18 +1078,20 @@ def _scilog_magic(asst, opt, rest):
             print(f"-- {len(lbs)} logbooks; `%ei --scilog-index` with the same filters indexes them")
             return
         if opt == "--scilog-index":
-            if not filters:
-                filters = ls.load_selection(asst.db_path)
-                if not filters:
+            if not {k for k in filters if k != "rebuild"}:
+                last = ls.load_selection(asst.db_path)
+                if not last:
                     print("eco.ei: which logbooks? e.g. `%ei --scilog-index --location bernina`, or `--all`")
                     return
-                print(f"eco.ei: indexing the last choice: {filters}")
-            choice = {k: v for k, v in filters.items() if k != "all"}
-            lbs = reader.logbooks(**choice)
-            print(f"eco.ei: {len(lbs)} logbooks, fetching posts newer than the last time ...")
-            result = ls.index_logbooks(reader, lbs, db_path=asst.db_path)
-            ls.save_selection(filters, asst.db_path)
+                print(f"eco.ei: indexing the last choice: {last}")
+                filters = {**last, **filters}
+            what = "all posts again" if filters.get("rebuild") else "posts newer than the last time"
+            print(f"eco.ei: reading SciLog as {reader.identity}; fetching {what} ...")
+            result = ls.update(reader, filters, db_path=asst.db_path)
+            ls.save_selection({k: v for k, v in filters.items() if k != "rebuild"}, asst.db_path)
             print(f"eco.ei: {result['new_posts']} new SciLog posts from {result['logbooks']} logbooks; index has {result['items']} items")
+            if result["dropped"]:
+                print(f"eco.ei: {result['dropped']} posts removed: their logbooks are no longer readable")
             return
         print(f"eco.ei: unknown option {opt} (--scilog-token, --scilog-logbooks, --scilog-index, --scilog-search)")
     except ls.TokenError as exc:

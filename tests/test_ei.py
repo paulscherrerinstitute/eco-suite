@@ -2,6 +2,7 @@
 anything, retrieval and prompt, follow-ups, the streamed answer from an
 OpenAI-style server (a local fake), and the magic's options."""
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -402,6 +403,36 @@ def test_search_only_and_no_key(tmp_path, monkeypatch):
     assert "no API key" in reports[-1] and "scans.scan" in ans.text
 
 
+def test_items_know_where_they_are_and_show_their_context(tmp_path):
+    db = _index(tmp_path)
+    cmd = la.search("set_transmission", k=1, db_path=db, kinds=("command",))[0]
+    assert cmd.location().endswith("20261020_090000_console_aaaa.jsonl:2")
+    text = la.item_context(cmd, db_path=db)
+    assert "> " in text and "att.set_transmission(0.1)" in text and "-> done" in text
+    doc = la.search("mesh", k=1, db_path=db, kinds=("doc",))[0]
+    assert doc.location().endswith("scanning.md:3")
+    assert "## Mesh" in la.item_context(doc, db_path=db)
+    api = {h.context: h for h in la.search("attenuator transmission", k=10, db_path=db, kinds=("api",))}
+    assert api["eco.attenuator.AttenuatorAramis"].location().endswith("attenuator.py:2")
+    method = api["eco.attenuator.AttenuatorAramis.set_transmission"]
+    assert method.location().endswith("attenuator.py:6")
+    assert la.item_context(method, db_path=db).splitlines()[3].startswith("    def set_transmission")
+
+
+def test_an_answer_lists_what_it_cites(tmp_path):
+    db = _index(tmp_path)
+    doc = la.search("mesh", k=1, db_path=db, kinds=("doc",))[0]
+    cmd = la.search("set_transmission", k=1, db_path=db, kinds=("command",))[0]
+    ans = ei.Answer("q", "A mesh scan, see [doc scanning.md > Mesh].", [cmd, doc], "m")
+    assert ans.cited == [doc]
+    text = ei.source_list(ans)
+    assert "[1] [doc scanning.md > Mesh]\n      " in text and text.endswith("scanning.md:3")
+    md = ei.source_list(ans, markdown=True)
+    assert "1. [doc scanning.md > Mesh] -- [" in md and "(file://" in md
+    assert ei.Answer("q", "nothing cited", [cmd, doc], "m").cited == []
+    assert ei.Answer("q", "listing", [cmd, doc], "").cited == [cmd, doc]  # search only: all of them
+
+
 def test_without_a_key_it_searches_and_says_so_once(tmp_path, monkeypatch):
     lookups = []
     monkeypatch.setattr(ei, "api_key", lambda base_url=None: lookups.append(1) or (None, None))
@@ -539,7 +570,13 @@ def test_magic(tmp_path, monkeypatch, capsys):
     assert shell.next_input == "att.set_transmission(0.1)"
 
     ei.ei_magic("-s mesh scan")
-    assert "[doc scanning.md > Mesh]" in capsys.readouterr().out and len(backend.calls) == 1
+    out = capsys.readouterr().out
+    n = re.search(r"\[(\d+)\] \[doc scanning.md > Mesh\]", out).group(1)
+    assert "scanning.md:3" in out and len(backend.calls) == 1
+    ei.ei_magic(f"--open {n}")
+    assert "## Mesh" in capsys.readouterr().out
+    ei.ei_magic("--open 99")
+    assert "%ei --open N, N from 1 to" in capsys.readouterr().out
     ei.ei_magic("-m other-model")
     assert a.model == "other-model"
     ei.ei_magic("-n", cell="a question\nover two lines")

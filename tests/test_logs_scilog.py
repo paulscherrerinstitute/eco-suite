@@ -63,6 +63,13 @@ class _Server:
         ]
         self.requests = []
         self.token = TOKEN
+        self.password = "beamline-pw"
+
+    def post(self, url, json=None, timeout=None):
+        self.requests.append("POST " + url.split("/api/v1", 1)[1])
+        if json != {"principal": ls.FUNCTIONAL_USER, "password": self.password}:
+            return _Response(401, {"error": "Unauthorized"})
+        return _Response(200, {"token": self.token})
 
     def get(self, url, params=None, timeout=None, headers=None):
         path = url.split("/api/v1", 1)[1]
@@ -107,6 +114,7 @@ def _reader(server=None):
 
 
 def test_token_from_env_then_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(ls, "_shared_account", lambda: None)
     path = tmp_path / "scilog_token"
     monkeypatch.delenv("ECO_SCILOG_TOKEN", raising=False)
     assert ls.token(path) == (None, None)
@@ -117,7 +125,8 @@ def test_token_from_env_then_file(tmp_path, monkeypatch):
     assert ls.token(path) == ("other.to.ken", "$ECO_SCILOG_TOKEN")
 
 
-def test_save_token_rejects_what_is_not_a_token(tmp_path):
+def test_save_token_rejects_what_is_not_a_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(ls, "_shared_account", lambda: None)
     for junk in ("", "my password", "a.b"):
         try:
             ls.save_token(junk, tmp_path / "t")
@@ -151,6 +160,53 @@ def test_no_token_and_a_refused_token_say_how_to_get_one(monkeypatch, tmp_path):
         assert "refused" in str(exc) and "%ei --scilog-token new" in str(exc)
     else:
         raise AssertionError("no TokenError")
+
+
+def _no_personal_token(monkeypatch, tmp_path):
+    monkeypatch.delenv("ECO_SCILOG_TOKEN", raising=False)
+    monkeypatch.setattr(ls, "TOKEN_PATH", tmp_path / "scilog_token")
+    monkeypatch.setattr(ls, "_functional", {})
+
+
+def test_without_a_personal_token_the_beamline_account_logs_in(tmp_path, monkeypatch):
+    _no_personal_token(monkeypatch, tmp_path)
+    monkeypatch.setattr(ls, "_shared_account", lambda: None)
+    server = _Server()
+    monkeypatch.setattr(ls, "_functional_password", lambda: "beamline-pw")
+    r = ls.reader(url="https://x/api/v1", session=server)
+    assert r.identity == f"the beamline account {ls.FUNCTIONAL_USER}" and r.token == TOKEN
+    assert len(r.logbooks()) == 3
+    ls.reader(url="https://x/api/v1", session=server)
+    assert server.requests.count("POST /users/login") == 1  # the token is kept until it expires
+    # a personal token wins on a personal account
+    ls.save_token(_jwt(name="Ann"), ls.TOKEN_PATH)
+    assert ls.reader(url="https://x/api/v1", session=server).identity.startswith("Ann <ann@psi.ch> (token from ")
+    # no token and no password: how to get a token
+    monkeypatch.setattr(ls, "_functional_password", lambda: None)
+    ls.TOKEN_PATH.unlink()
+    try:
+        ls.reader(url="https://x/api/v1", session=server)
+    except ls.TokenError as exc:
+        assert "copy(localStorage.id_token)" in str(exc) and "scilog-password" in str(exc)
+    else:
+        raise AssertionError("no TokenError")
+
+
+def test_a_shared_account_never_reads_or_stores_a_personal_token(tmp_path, monkeypatch):
+    _no_personal_token(monkeypatch, tmp_path)
+    monkeypatch.setattr(ls, "_shared_account", lambda: None)
+    ls.save_token(_jwt(name="Ann"), ls.TOKEN_PATH)  # left there before
+    monkeypatch.setattr(ls, "_shared_account", lambda: "gac-bernina")
+    try:
+        ls.save_token(TOKEN, tmp_path / "other")
+    except ValueError as exc:
+        assert "shared account" in str(exc)
+    else:
+        raise AssertionError("stored a personal token on a shared account")
+    assert not (tmp_path / "other").exists()
+    monkeypatch.setattr(ls, "_functional_password", lambda: "beamline-pw")
+    r = ls.reader(url="https://x/api/v1", session=_Server())
+    assert r.identity.startswith("the beamline account")
 
 
 # -- reading ------------------------------------------------------------------------
@@ -189,7 +245,7 @@ def test_search_with_several_words_in_any_order():
 
 def test_parse_filters():
     assert ls.parse_filters("--location bernina --pgroup p23618") == {"location": "bernina", "pgroup": "p23618"}
-    assert ls.parse_filters('instrument log --all') == {"name": "instrument log", "all": True}
+    assert ls.parse_filters('instrument log --all --rebuild') == {"name": "instrument log", "all": True, "rebuild": True}
     assert ls.parse_filters("") == {}
     try:
         ls.parse_filters("--bogus x")
@@ -245,6 +301,49 @@ def test_a_post_indexed_through_the_functional_account_is_not_kept_twice(tmp_pat
     assert "old copy" not in texts and any("freespace" in t for t in texts)
 
 
+def test_logbooks_no_longer_readable_are_dropped(tmp_path):
+    db = tmp_path / "idx.sqlite"
+    con = la._connect(db)  # one post from the older per-pgroup fetch
+    con.execute("INSERT INTO items VALUES ('old fetch', 'x', 'scilog', 'ok', '', 0, 'scilog p23618', 'scilog:p23618:s9')")
+    con.commit()
+    con.close()
+    reader, server = _reader()
+    r = ls.update(reader, {"all": True}, db_path=db, report=None)
+    assert (r["new_posts"], r["dropped"]) == (4, 1)
+    server.logbooks = [lb for lb in server.logbooks if lb["id"] != "lb1"]  # access to lb1 withdrawn
+    r = ls.update(reader, {"all": True}, db_path=db, report=None)
+    assert (r["new_posts"], r["dropped"]) == (0, 2)
+    con = sqlite3.connect(db)
+    assert sorted(p for (p,) in con.execute("SELECT path FROM items WHERE path LIKE 'scilog:%'")) == [
+        "scilog:lb2:s3", "scilog:lb3:s6",
+    ]
+    assert [k for (k,) in con.execute("SELECT key FROM meta WHERE key LIKE 'scilog_logbook_last:%' ORDER BY key")] == [
+        "scilog_logbook_last:lb2", "scilog_logbook_last:lb3",
+    ]
+    # a filter chooses among the readable ones only
+    assert ls.update(reader, {"location": "bernina"}, db_path=db, report=None)["logbooks"] == 1
+    # an edited and a deleted post show only after a rebuild
+    server.snippets[2]["textcontent"] = "<p>USD vented, edited</p>"
+    server.snippets[5]["deleted"] = True
+    assert ls.update(reader, {"all": True}, db_path=db, report=None)["new_posts"] == 0
+    assert ls.update(reader, {"all": True, "rebuild": True}, db_path=db, report=None)["new_posts"] == 1
+    assert [t for (t,) in con.execute("SELECT text FROM items WHERE kind = 'scilog'")] == ["USD vented, edited"]
+
+
+def test_a_post_links_to_its_logbook_and_opens_among_its_neighbours(tmp_path):
+    db = tmp_path / "idx.sqlite"
+    reader, _ = _reader()
+    ls.update(reader, {"location": "bernina"}, db_path=db, report=None)
+    hit = la.search("transmission check", k=1, db_path=db, kinds=("scilog",))[0]
+    assert hit.location() == "https://scilog.psi.ch/logbooks/lb1/dashboard"
+    text = la.item_context(hit, db_path=db)
+    assert text.splitlines()[0].endswith("https://scilog.psi.ch/logbooks/lb1/dashboard")
+    assert "  ann@psi.ch\nDid the timing" in text  # the post before, short
+    assert "> " in text and "att.set_transmission(0.1)" in text
+    cmd = la.search("transmission", k=1, db_path=db, kinds=("note_command",))[0]
+    assert cmd.location() == hit.location()
+
+
 def test_selection_is_remembered(tmp_path):
     db = tmp_path / "idx.sqlite"
     assert ls.load_selection(db) is None
@@ -259,8 +358,10 @@ def test_the_magic_commands(tmp_path, monkeypatch, capsys):
     server = _Server()
     monkeypatch.setattr(ls, "TOKEN_PATH", tmp_path / "scilog_token")
     monkeypatch.delenv("ECO_SCILOG_TOKEN", raising=False)
+    monkeypatch.setattr(ls, "_shared_account", lambda: None)
     real_reader = ls.Reader
     monkeypatch.setattr(ls, "Reader", lambda token_value=None: real_reader(token_value, url="https://x/api/v1", session=server))
+    monkeypatch.setattr(ls, "reader", lambda **kw: ls.Reader(ls.token()[0]))
     asst = types.SimpleNamespace(db_path=tmp_path / "idx.sqlite")
 
     import getpass
@@ -278,10 +379,15 @@ def test_the_magic_commands(tmp_path, monkeypatch, capsys):
     ei._scilog_magic(asst, "--scilog-index", "")
     assert "which logbooks?" in capsys.readouterr().out
     ei._scilog_magic(asst, "--scilog-index", "--location bernina")
-    assert "3 new SciLog posts from 2 logbooks" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "reading SciLog as Ann Example <ann@psi.ch>" in out and "3 new SciLog posts from 2 logbooks" in out
     ei._scilog_magic(asst, "--scilog-index", "")
     out = capsys.readouterr().out
     assert "the last choice: {'location': 'bernina'}" in out and "0 new SciLog posts" in out
+    ei._scilog_magic(asst, "--scilog-index", "--rebuild")
+    out = capsys.readouterr().out
+    assert "fetching all posts again" in out and "3 new SciLog posts from 2 logbooks" in out
+    assert ls.load_selection(asst.db_path) == {"location": "bernina"}
 
     ei._scilog_magic(asst, "--scilog-search", "laser freespace")
     out = capsys.readouterr().out

@@ -959,7 +959,7 @@ class EcoDesktopApp:
 
         menu.addSeparator()
         menu.addAction("Update Search Index").triggered.connect(lambda: self._ei_background("index"))
-        menu.addAction("Index SciLog Posts (current pgroup)").triggered.connect(lambda: self._ei_background("scilog"))
+        menu.addAction("Update SciLog Posts").triggered.connect(lambda: self._ei_background("scilog"))
         menu.addAction("Index Notes Folder...").triggered.connect(self._on_ei_index_notes)
 
     def _ei_assistant(self):
@@ -1003,8 +1003,9 @@ class EcoDesktopApp:
                 if what == "index":
                     asst.refresh_index(force=True)
                 elif what == "scilog":
-                    r = logs_ask.index_scilog(db_path=asst.db_path)
-                    print(f"eco.ei: {r['new_posts']} new SciLog posts indexed")
+                    from eco import ei
+
+                    ei._scilog_magic(asst, "--scilog-index", ei._scilog_default(asst))
                 elif what == "notes":
                     r = logs_ask.index_documents(arg, db_path=asst.db_path)
                     print(f"eco.ei: {r['files_indexed']} files from {arg} indexed")

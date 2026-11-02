@@ -90,6 +90,7 @@ class Hit:
     t: float  # when (0 if unknown)
     source: str  # session label, doc path, "scilog <pgroup>", note file
     score: float
+    path: str = ""  # the file it came from, or scilog:<logbook id>:<post id>
 
     @property
     def ok(self):
@@ -108,6 +109,11 @@ class Hit:
         if self.kind == "scilog":
             return f"[scilog {when} {self.context}]"
         return f"[note {when} {Path(self.source).name}]"
+
+    def location(self):
+        """Where to look it up: the SciLog logbook's address, or file:line
+        (the line of the command, heading or definition when it is found)."""
+        return item_location(self)
 
 
 def _connect(db_path):
@@ -527,13 +533,13 @@ def search(
         params += [len(exclude_prefix), exclude_prefix]
     con = _connect(db_path)
     rows = con.execute(
-        "SELECT text, context, kind, status, flags, t, source, bm25(items) FROM items"
+        "SELECT text, context, kind, status, flags, t, source, bm25(items), path FROM items"
         f" WHERE {where} ORDER BY bm25(items) LIMIT ?",
         (*params, k * 10),
     ).fetchall()
     con.close()
     hits, seen = [], set()
-    for text, context, kind, status, flags, t, source, score in rows:
+    for text, context, kind, status, flags, t, source, score, path in rows:
         t = float(t or 0)
         if kind not in kinds or (only_ok and status != "ok"):
             continue
@@ -543,10 +549,128 @@ def search(
         if key in seen:
             continue
         seen.add(key)
-        hits.append(Hit(kind, text, context, status, flags, t, source, -float(score)))
+        hits.append(Hit(kind, text, context, status, flags, t, source, -float(score), path or ""))
         if len(hits) >= k:
             break
     return hits
+
+
+# -- where an item came from ----------------------------------------------------
+
+SCILOG_WEB = "https://scilog.psi.ch"
+
+
+def scilog_ids(path):
+    """(logbook id, post id) of an item path "scilog:<logbook>:<post>", or
+    (None, None). Posts indexed by the older per-pgroup fetch have the
+    pgroup in place of the logbook id; for those the logbook is None."""
+    parts = (path or "").split(":")
+    if len(parts) != 3 or parts[0] != "scilog":
+        return None, None
+    logbook = None if re.fullmatch(r"p\d{5}|None|", parts[1]) else parts[1]
+    return logbook, parts[2]
+
+
+def item_location(hit):
+    """A SciLog logbook's address, "file:line", "file", or "". SciLog has no
+    address for a single post, so a post links to its logbook (the
+    citation gives date and author)."""
+    if hit.kind in ("scilog", "note_command") and hit.path.startswith("scilog:"):
+        logbook, _post = scilog_ids(hit.path)
+        return f"{SCILOG_WEB}/logbooks/{logbook}/dashboard" if logbook else ""
+    if not hit.path:
+        return ""
+    line = _item_line(hit)
+    return f"{hit.path}:{line}" if line else hit.path
+
+
+def _item_line(hit):
+    try:
+        lines = Path(hit.path).read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    if hit.kind == "command":
+        for n, line in enumerate(lines, 1):
+            if '"input"' not in line and '"widget_control"' not in line:
+                continue
+            try:
+                if float(json.loads(line).get("t")) == hit.t:
+                    return n
+            except Exception:
+                continue
+        return None
+    if hit.kind == "doc":
+        heading = hit.context.split(" > ", 1)[-1]
+        rx = re.compile(r"^#+\s*" + re.escape(heading) + r"\s*$")
+        return next((n for n, line in enumerate(lines, 1) if rx.match(line)), 1)
+    if hit.kind == "api":
+        parts = hit.context.split(".")
+        start = 0
+        if not hit.text.startswith("class ") and len(parts) > 1:
+            # a method: its class first, then the def below it
+            rx = re.compile(r"^class\s+" + re.escape(parts[-2]) + r"\b")
+            start = next((n for n, line in enumerate(lines) if rx.match(line)), 0)
+        rx = re.compile(r"^\s*(async\s+def|def|class)\s+" + re.escape(parts[-1]) + r"\b")
+        return next((n for n, line in enumerate(lines[start:], start + 1) if rx.match(line)), None)
+    return None
+
+
+def item_context(hit, db_path=DEFAULT_DB, around=5):
+    """The item in its surroundings, as text: the commands typed before and
+    after a command (with what came back), the neighbouring posts of a
+    SciLog post, the lines around a doc section or definition."""
+    where = item_location(hit)
+    head = f"{hit.cite()}  {where}".rstrip()
+    if hit.kind == "command" and hit.path:
+        episodes = _command_episodes(Path(hit.path))
+        i = next((n for n, e in enumerate(episodes) if e[4] == hit.t), None)
+        if i is None:
+            return f"{head}\n(not in {hit.path} any more)"
+        out = [head]
+        for n in range(max(0, i - around), min(len(episodes), i + around + 1)):
+            code, outcome, status, flags, t, _session = episodes[n]
+            mark = ">" if n == i else " "
+            when = time.strftime("%H:%M:%S", time.localtime(t))
+            lines = code.splitlines()
+            out.append(f"{mark} {when} {lines[0][:150]}" + "".join(f"\n           {c[:150]}" for c in lines[1:6]))
+            shown = flags if status != "ok" else outcome
+            if shown:
+                out.append(f"           -> {'' if status == 'ok' else status.upper() + ': '}{' '.join(shown.split())[:150]}")
+        return "\n".join(out)
+    if hit.kind == "scilog" or hit.path.startswith("scilog:"):
+        logbook, post = scilog_ids(hit.path)
+        con = _connect(db_path)
+        prefix = f"scilog:{logbook}:" if logbook else hit.path.rsplit(":", 1)[0] + ":"
+        rows = con.execute(
+            "SELECT text, context, t, path FROM items WHERE kind = 'scilog' AND substr(path, 1, ?) = ? ORDER BY t",
+            (len(prefix), prefix),
+        ).fetchall()
+        con.close()
+        i = next((n for n, r in enumerate(rows) if r[3] == hit.path), None)
+        if i is None:
+            return f"{head}\n{hit.text}"
+        out = [head]
+        for n in range(max(0, i - 2), min(len(rows), i + 3)):
+            text, context, t, _path = rows[n]
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(t))
+            author = context.split(" [", 1)[0]
+            body = text if n == i else " ".join(text.split())[:200]
+            out.append(f"\n{'>' if n == i else ' '} {when}  {author}\n{body}")
+        return "\n".join(out)
+    try:
+        lines = Path(hit.path).read_text(errors="replace").splitlines() if hit.kind in ("doc", "api") else None
+    except OSError:
+        lines = None
+    line = _item_line(hit) if lines else None
+    if line:
+        if hit.kind == "doc":
+            # the section, up to the next heading
+            end = next((n for n in range(line, len(lines)) if lines[n].startswith("#")), len(lines))
+            body = lines[line - 1:min(end, line + 60)]
+        else:
+            body = lines[max(0, line - 3):line + 30]
+        return head + "\n" + "\n".join(body)
+    return f"{head}\n{hit.text}" + (f"\n\n(from: {hit.context})" if hit.kind == "note_command" and hit.context else "")
 
 
 def command_shape(code):

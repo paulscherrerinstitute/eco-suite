@@ -13,7 +13,15 @@ works with the token SciLog issues after that login:
 The token carries your PSI groups, so everything below sees what you see
 in the web interface. It lasts about two weeks; then do the same again.
 Never store a personal token under a shared account (gac-bernina): every
-user of that account would read SciLog as you.
+user of that account would read SciLog as you. save_token() refuses there.
+
+Without a personal token (and always on a shared account), reader() logs
+in as the beamline's functional account with the password eco's SciLog
+client uses (gopass `elog/scilog-password`, or ~/.scilog_psi), and so
+reads what that account's groups can read today -- no token needed.
+
+Access changes: every update lists the logbooks the account can read now
+and drops indexed posts of the ones it no longer can.
 
 Plain `requests` rather than the `scilog` package: that package deletes
 its token cache file (which also holds the functional account's token) on
@@ -34,6 +42,9 @@ from eco import logs_ask, logs_sources
 URL = "https://scilog.psi.ch/api/v1"
 TOKEN_PATH = Path.home() / ".eco" / "scilog_token"
 PAGE = 500  # snippets per request
+FUNCTIONAL_USER = "swissfelaramis-bernina@psi.ch"
+#: accounts several people use: never a personal token there
+SHARED_ACCOUNTS = ("gac-bernina",)
 
 TOKEN_STEPS = """\
   1. log in at https://scilog.psi.ch
@@ -71,8 +82,24 @@ def token(path=None):
     return (text, str(path)) if text else (None, None)
 
 
+def _shared_account():
+    import getpass
+
+    try:
+        user = getpass.getuser()
+    except Exception:
+        return None
+    return user if user in SHARED_ACCOUNTS else None
+
+
 def save_token(value, path=None):
     """Keep a token in ~/.eco/scilog_token, readable only by you."""
+    shared = _shared_account()
+    if shared:
+        raise ValueError(
+            f"{shared} is a shared account: everyone using it would read SciLog as you. "
+            "It reads SciLog through the beamline account instead, without a token."
+        )
     value = _clean(value)
     if value.count(".") != 2:
         raise ValueError("that is not a SciLog token (expected three dot-separated parts)")
@@ -109,6 +136,63 @@ def describe(value):
     return out
 
 
+def login(user, password, url=URL, session=None, timeout=30):
+    """A SciLog token for an account with a SciLog password (the functional
+    accounts; personal accounts only log in through the browser)."""
+    if session is None:
+        import requests
+
+        session = requests
+    r = session.post(url.rstrip("/") + "/users/login", json={"principal": user, "password": password}, timeout=timeout)
+    if r.status_code in (401, 403):
+        raise TokenError(f"SciLog refused the login of {user}")
+    r.raise_for_status()
+    return r.json()["token"]
+
+
+def _functional_password():
+    """The password eco's SciLog client uses (eco.utilities.elog_scilog)."""
+    try:
+        from eco.utilities.secrets_gopass import get_gopass_password
+
+        pw = get_gopass_password("elog/scilog-password")
+        if pw:
+            return pw
+    except Exception:
+        pass
+    try:
+        return (Path.home() / ".scilog_psi").read_text().strip() or None
+    except OSError:
+        return None
+
+
+_functional = {}  # url -> (token, exp)
+
+
+def reader(url=URL, session=None, timeout=30):
+    """A Reader as yourself (personal token) or, without one or on a shared
+    account, as the beamline account. Its `identity` says which."""
+    if not _shared_account():
+        value, where = token()
+        if value:
+            r = Reader(value, url=url, timeout=timeout, session=session)
+            r.identity = f"{describe(value).split(',')[0]} (token from {where})"
+            return r
+    password = _functional_password()
+    if not password:
+        raise TokenError(
+            TOKEN_HELP + "\n(The beamline account would work without a token, but its password is not "
+            "readable here: gopass elog/scilog-password or ~/.scilog_psi.)"
+        )
+    cached = _functional.get(url)
+    if not cached or cached[1] < time.time() + 600:
+        value = login(FUNCTIONAL_USER, password, url=url, session=session, timeout=timeout)
+        _functional[url] = cached = (value, claims(value).get("exp") or time.time() + 3600)
+    r = Reader(cached[0], url=url, timeout=timeout, session=session)
+    r.identity = f"the beamline account {FUNCTIONAL_USER}"
+    return r
+
+
 # -- reading ------------------------------------------------------------------------
 
 
@@ -129,6 +213,7 @@ class Reader:
             session = requests.Session()
         self.session = session
         self._locations = None
+        self.identity = describe(self.token).split(",")[0]
 
     def get(self, path, filt=None):
         params = {"filter": json.dumps(filt)} if filt else None
@@ -137,6 +222,7 @@ class Reader:
             headers={"Authorization": "Bearer " + self.token, "Accept": "application/json"},
         )
         if r.status_code == 401:
+            _functional.clear()  # a beamline-account token: log in again next time
             raise TokenError(
                 f"SciLog refused the token ({describe(self.token)}) -- get a new one:\n{TOKEN_STEPS}\n"
                 "  3. %ei --scilog-token new"
@@ -176,13 +262,9 @@ class Reader:
                 "private": bool(r.get("isPrivate")),
                 "touched": r.get("touchedAt") or r.get("updatedAt") or "",
             }
-            if all(
-                not want or want.lower() in lb[field].lower()
-                for field, want in (("location", location), ("pgroup", pgroup), ("name", name))
-            ):
-                out.append(lb)
+            out.append(lb)
         out.sort(key=lambda lb: lb["touched"], reverse=True)
-        return out
+        return select_logbooks(out, location=location, pgroup=pgroup, name=name)
 
     def paragraphs(self, logbook_id, after_iso=None, limit=100000):
         """Text posts of one logbook (or of a list of them) created after
@@ -224,25 +306,36 @@ class Reader:
         return [p for p in (_record(r) for r in rows if not r.get("deleted")) if p]
 
 
+def select_logbooks(logbooks, location=None, pgroup=None, name=None, **_ignored):
+    """The ones matching every given filter (case-insensitive substrings)."""
+    return [
+        lb for lb in logbooks
+        if all(
+            not want or want.lower() in lb[field].lower()
+            for field, want in (("location", location), ("pgroup", pgroup), ("name", name))
+        )
+    ]
+
+
 def parse_filters(text):
     """'--location bernina --pgroup p23618 --name kern' (or a bare word,
     taken as part of the name; --all for no filter) -> dict for
-    Reader.logbooks(), plus "all": True when --all was given."""
+    Reader.logbooks(), plus "all": True / "rebuild": True when given."""
     import shlex
 
     words = shlex.split(text or "")
     out, i = {}, 0
     while i < len(words):
         w = words[i]
-        if w == "--all":
-            out["all"] = True
+        if w in ("--all", "--rebuild"):
+            out[w[2:]] = True
         elif w in ("--location", "--pgroup", "--name") and i + 1 < len(words):
             out[w[2:]] = words[i + 1]
             i += 1
         elif not w.startswith("--"):
             out["name"] = (out.get("name", "") + " " + w).strip()
         else:
-            raise ValueError(f"unknown option {w} (--location, --pgroup, --name, --all)")
+            raise ValueError(f"unknown option {w} (--location, --pgroup, --name, --all, --rebuild)")
         i += 1
     return out
 
@@ -275,16 +368,40 @@ def _record(r):
 # -- indexing -----------------------------------------------------------------------
 
 
-def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print):
+def update(reader, filters, db_path=logs_ask.DEFAULT_DB, report=print):
+    """Index the logbooks `filters` choose (parse_filters(); {"all": True}
+    for every one) among those `reader` can read now, and drop indexed
+    posts of logbooks it can no longer read. "rebuild": True reads the
+    chosen logbooks again completely (edited and deleted posts too).
+    Returns index_logbooks()'s result plus "dropped" (posts) and "identity"."""
+    readable = reader.logbooks()
+    chosen = readable if filters.get("all") else select_logbooks(readable, **filters)
+    if filters.get("rebuild"):
+        con = logs_ask._connect(db_path)
+        try:
+            _forget_logbooks(con, {lb["id"] for lb in chosen})
+        finally:
+            con.close()
+    result = index_logbooks(reader, chosen, db_path=db_path, report=report, readable={lb["id"] for lb in readable})
+    result["identity"] = reader.identity
+    return result
+
+
+def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print, readable=None):
     """Add the posts of `logbooks` (Reader.logbooks() dicts) that are new
     since the last fetch to the %ei index, labelled with the logbook.
 
     A logbook seen for the first time is read completely; all others are
     checked together, in one request for posts newer than the newest post
     the last run saw anywhere. (A logbook's touchedAt is no help: opening
-    it in the browser changes it.) Returns {"logbooks", "new_posts", "items"}."""
+    it in the browser changes it.) `readable`: ids of every logbook the
+    account can read now; posts of any other logbook are dropped (also
+    those indexed by the older per-pgroup fetch, which are fetched again
+    here with their logbook). Returns {"logbooks", "new_posts", "items",
+    "dropped"}."""
     con = logs_ask._connect(db_path)
     try:
+        dropped = _forget_unreadable(con, readable) if readable is not None else 0
         known = {
             k.split(":", 1)[1]: v
             for k, v in con.execute("SELECT key, value FROM meta WHERE key LIKE 'scilog_logbook_last:%'")
@@ -331,7 +448,7 @@ def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print):
         total = con.execute("SELECT count(*) FROM items").fetchone()[0]
     finally:
         con.close()
-    return {"logbooks": len(logbooks), "new_posts": sum(map(len, posts.values())), "items": total}
+    return {"logbooks": len(logbooks), "new_posts": sum(map(len, posts.values())), "items": total, "dropped": dropped}
 
 
 def _label(lb):
@@ -346,6 +463,35 @@ def _forget_posts(con, ids):
     rows = con.execute("SELECT rowid, path FROM items WHERE kind IN ('scilog', 'note_command') AND path LIKE 'scilog:%'")
     stale = [(rowid,) for rowid, path in rows if path.rsplit(":", 1)[-1] in ids]
     con.executemany("DELETE FROM items WHERE rowid = ?", stale)
+
+
+def _forget_logbooks(con, ids):
+    """Drop everything indexed from these logbooks, so they are read anew."""
+    rows = con.execute("SELECT rowid, path FROM items WHERE kind IN ('scilog', 'note_command') AND path LIKE 'scilog:%'")
+    stale = [(rowid,) for rowid, path in rows if logs_ask.scilog_ids(path)[0] in ids]
+    with con:
+        con.executemany("DELETE FROM items WHERE rowid = ?", stale)
+        con.executemany("DELETE FROM meta WHERE key = ?", [(f"scilog_logbook_last:{i}",) for i in ids])
+
+
+def _forget_unreadable(con, readable):
+    """Drop posts (and their command lines) of logbooks not in `readable`,
+    and forget where their fetch stood. Returns how many posts went."""
+    rows = con.execute("SELECT rowid, kind, path FROM items WHERE kind IN ('scilog', 'note_command') AND path LIKE 'scilog:%'")
+    stale, posts = [], 0
+    for rowid, kind, path in rows:
+        logbook, _post = logs_ask.scilog_ids(path)
+        if logbook not in readable:
+            stale.append((rowid,))
+            posts += kind == "scilog"
+    with con:
+        con.executemany("DELETE FROM items WHERE rowid = ?", stale)
+        gone = [
+            (key,) for (key,) in con.execute("SELECT key FROM meta WHERE key LIKE 'scilog_logbook_last:%'")
+            if key.split(":", 1)[1] not in readable
+        ]
+        con.executemany("DELETE FROM meta WHERE key = ?", gone)
+    return posts
 
 
 def save_selection(filters, db_path=logs_ask.DEFAULT_DB):

@@ -433,7 +433,10 @@ class EiPanel(QtWidgets.QWidget):
             self._answer = ans
             self._render_timer.stop()
             if ans.model:
-                self.answer.setMarkdown(ans.text)
+                from eco.ei import source_list
+
+                sources = source_list(ans, markdown=True)
+                self.answer.setMarkdown(ans.text + ("\n\n" + sources if sources else ""))
                 self.status.setText(f"{ans.model}, {ans.seconds:.1f} s -- context: {ans.sources()}")
             else:
                 self.answer.setPlainText(ans.text)
