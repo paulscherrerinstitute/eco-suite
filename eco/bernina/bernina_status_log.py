@@ -108,6 +108,15 @@ class DummyMexicanHat(Assembly):
 
 namespace.append_obj(DummyMexicanHat, name="dummy", lazy=True)
 
+# simulated scan targets (step, peak, gradient, 2-D peak, pump-probe
+# oscillations) with adjustable device timing/noise, in memory only
+namespace.append_obj(
+    "SimulatedSignals",
+    module_name="eco.devices_general.simulated_signals",
+    name="sim",
+    lazy=True,
+)
+
 namespace.append_obj(
     "set_global_memory_dir",
     "/sf/bernina/code/gac-bernina/eco_cnf_bernina/memory",
