@@ -233,6 +233,14 @@ afterwards; `%ei --paste` puts its code at the prompt, and
 `eco.ei.assistant(namespace).last` holds the whole answer with the items it
 was given (`.hits`).
 
+While the model thinks, a terminal shows a spinner with the seconds
+waited -- and now and then, at random, a small animation instead (a
+chicken working on the chicken-and-egg question, an electron lasing
+through an undulator, a coffee brewing, a cat after a laser dot, a scan
+finding its peak). `"wait_animations"` in `~/.eco/ei.json` is the share of
+questions that get one (0.25; 0 for always the spinner). Jupyter, qtconsole
+and output that is not a terminal get neither.
+
 ## All options
 
 | Command | Does |

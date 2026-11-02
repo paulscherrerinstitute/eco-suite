@@ -105,6 +105,9 @@ DEFAULT_CONFIG = {
     # where scanned and captured pictures are kept (mode 700)
     "scan_dir": "~/.eco/ei_scans",
     "max_tokens": 1500,
+    # share of questions (0..1) that get a small animation instead of the
+    # spinner while the model thinks (terminal only); 0: always the spinner
+    "wait_animations": 0.25,
     # SciLog logbooks indexed (and kept up to date) before questions until
     # `%ei --scilog-index` chooses others; null: SciLog only when chosen
     "scilog_default": {"location": "bernina"},
@@ -895,9 +898,10 @@ class Assistant:
         msgs.append({"role": "user", "content": user})
         return msgs
 
-    def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print):
+    def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print, on_waiting=None):
         """Answer `question`. on_delta(text) receives the answer as it
-        streams. search_only (or no API key): the search hits, no model."""
+        streams; on_waiting() is called just before the model is asked.
+        search_only (or no API key): the search hits, no model."""
         question = question.strip()
         if new:
             self.history = []
@@ -918,7 +922,10 @@ class Assistant:
             # not self.last: that stays the last model answer, for --paste
             self.shown = Answer(question, text, hits, "", time.time() - t0)
             return self.shown
-        text = backend.chat(self.messages(question, hits), on_delta=on_delta, stop=stop)
+        msgs = self.messages(question, hits)
+        if on_waiting:
+            on_waiting()
+        text = backend.chat(msgs, on_delta=on_delta, stop=stop)
         self.history.append((question, text))
         self.last = self.shown = Answer(question, text, hits, self.model, time.time() - t0)
         return self.last
@@ -1022,14 +1029,28 @@ def ask(question, namespace=None, **kwargs):
 def _print_answer(asst, question, **kwargs):
     import sys
 
+    from eco import ei_wait
+
     out = sys.stdout
+    waiting = []
+
+    def on_waiting():
+        if ei_wait.in_terminal(out):
+            animation = ei_wait.pick(asst.config.get("wait_animations", 0))
+            waiting.append(ei_wait.Waiting(out, label=f"asking {asst.model} ...", animation=animation).start())
 
     def on_delta(piece):
+        if waiting:
+            waiting.pop().stop()
         out.write(piece)
         out.flush()
 
     try:
-        ans = asst.ask(question, on_delta=on_delta, **kwargs)
+        try:
+            ans = asst.ask(question, on_delta=on_delta, on_waiting=on_waiting, **kwargs)
+        finally:
+            if waiting:  # erased before anything else is printed
+                waiting.pop().stop()
     except KeyboardInterrupt:
         print("\neco.ei: interrupted")
         return None
