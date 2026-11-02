@@ -146,3 +146,79 @@ def test_scan_with_two_detectors(sim):
     assert set(s.monitors) == {
         sim.peak.signal.alias.get_full_name(), sim.step.signal.alias.get_full_name()
     }
+
+
+def test_two_counter_values_in_one_scan_keep_apart(sim):
+    a, b = CounterValue(sim.peak.signal, name="a"), CounterValue(sim.step.signal, name="b")
+    s = Scans().ascan(sim.peak.x, 0, 1, 2, 0.1, counters=[a, b], return_at_end=False)
+    state_a, state_b = a._state(s), b._state(s)
+    assert list(state_a.monitors) == [sim.peak.signal.alias.get_full_name()]
+    assert list(state_b.monitors) == [sim.step.signal.alias.get_full_name()]
+    assert len(state_a.timestamp_intervals) == len(state_b.timestamp_intervals) == 3
+    # the scan's own attributes: the first one's, as before
+    assert s.monitors is state_a.monitors
+    assert s.monitor_scan_arrays is state_a.monitor_scan_arrays
+    assert state_a.stored_filename != state_b.stored_filename
+
+
+def test_counter_options_by_position(sim):
+    lead_calls = []
+
+    class Lead:
+        name = "lead"
+
+        def acquire(self, scan=None, Npulses=None, **kwargs):
+            from eco.acquisition.utilities import Acquisition
+
+            lead_calls.append(Npulses)
+            return Acquisition(acquire=lambda: None, hold=False)
+
+    t0 = __import__("time").time()
+    s = Scans().ascan(
+        sim.peak.x, 0, 1, 1, 7, counters=[Lead(), sim.peak.signal],
+        counter_options=[None, {"collection_time": 0.2}], return_at_end=False,
+    )
+    assert lead_calls == [7, 7]
+    # the monitor counter took its own 0.2 s instead of following
+    (start, stop), _ = s.timestamp_intervals
+    assert 0.15 < stop - start < 1
+    assert __import__("time").time() - t0 < 10
+
+
+def test_exposure_def_and_n_pulses(sim):
+    s = Scans().ascan(sim.peak.x, 0, 1, 1, exposure_def=0.05, counters=[sim.peak.signal],
+                      return_at_end=False)
+    assert s.pulses_done == [0.05, 0.05]
+    s = Scans().ascan(sim.peak.x, 0, 1, 1, N_pulses=0.05, counters=[sim.peak.signal],
+                      return_at_end=False)
+    assert s.pulses_done == [0.05, 0.05]
+    with pytest.raises(TypeError, match="exposure_def"):
+        Scans().ascan(sim.peak.x, 0, 1, 1, counters=[sim.peak.signal])
+
+
+def test_help_says_what_exposure_def_means(sim):
+    doc = Scans(default_counters=[sim.peak.signal]).ascan.__doc__
+    assert "exposure_def (also as N_pulses=)" in doc
+    assert "collection time per step, in seconds" in doc
+
+
+def test_append_and_clear_auxiliary_counters(sim):
+    class Main:
+        name = "main"
+
+        def acquire(self, scan=None, Npulses=None, **kwargs):
+            from eco.acquisition.utilities import Acquisition
+
+            return Acquisition(acquire=lambda: None, hold=False)
+
+    main = Main()
+    scans = Scans(default_counters=[main])
+    scans.append_counter(sim.peak.signal)
+    scans.append_counter(sim.peak.signal)  # once only
+    assert scans.auxiliary_counters == [sim.peak.signal]
+    s = scans.ascan(sim.peak.x, 0, 1, 1, 0.05, return_at_end=False)
+    assert s.counters[0] is main and isinstance(s.counters[1], CounterValue)
+    assert len(s.timestamp_intervals) == 2  # followed the main counter
+    scans.clear_auxiliary_counters()
+    assert scans._default_counters == [main] and scans.auxiliary_counters == []
+    assert Scans()._default_counters == []  # the shared default list untouched

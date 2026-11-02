@@ -9,6 +9,7 @@ from eco.elements.protocols import Detector, MonitorableValueUpdate, resolve_laz
 from eco.utilities.datafiles import ensure_dir, ensure_group_writable
 from eco.utilities import mainthread
 from collections import namedtuple
+from types import SimpleNamespace
 from escape import ArrayTimestamps
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
@@ -88,7 +89,7 @@ class CounterValue:
         slot aborts the whole interpreter under PySide6/PyQt -- confirmed
         directly (`Aborted (core dumped)`), not a theoretical concern.
         """
-        animation = getattr(scan, "animation", None)
+        animation = None if scan is None else getattr(self._state(scan), "animation", None)
         if animation is None:
             return
         try:
@@ -122,25 +123,58 @@ class CounterValue:
 
                 # self.detectors = detectors
 
+    # This counter's data of a scan live on the scan under the counter's own
+    # name (scan.counter_scratch), so several CounterValues in one scan keep
+    # apart. The scan's familiar attributes (scan.monitors,
+    # scan.monitor_scan_arrays, scan.fig, ...) show the first CounterValue's.
+    _SCAN_ATTRIBUTES = (
+        "monitors", "detector_values", "detector_names", "timestamp_intervals",
+        "monitor_scan_arrays", "fig", "axs", "animation", "stored_filename",
+    )
+
+    def _state(self, scan):
+        """This counter's data of `scan`: monitors, values, step windows,
+        arrays, figure, file."""
+        counter_scratch = getattr(scan, "counter_scratch", None)
+        if counter_scratch is not None:
+            scratch = counter_scratch(self.name)
+        else:
+            scratch = vars(scan).setdefault("counter_state", {}).setdefault(self.name, {})
+        state = scratch.get("values")
+        if state is None:
+            state = scratch["values"] = SimpleNamespace()
+        return state
+
+    def _owns_scan_attributes(self, scan):
+        return vars(scan).setdefault("_value_counter_owner", self.name) == self.name
+
+    def _publish(self, scan):
+        """The scan's own attributes, for the scan's first CounterValue."""
+        if scan is None or not self._owns_scan_attributes(scan):
+            return
+        state = self._state(scan)
+        for attr in self._SCAN_ATTRIBUTES:
+            if hasattr(state, attr):
+                setattr(scan, attr, getattr(state, attr))
+
     def start_scan(self, scan=None, detectors=[], **kwargs):
         self.append_detectors(*detectors)
-        scan.detector_values = []
-        scan.detector_names = self.get_detector_names()
+        self._state(scan).detector_values = []
+        self._state(scan).detector_names = self.get_detector_names()
         self.start_monitoring(scan=scan)
-        scan.timestamp_intervals = []
+        self._state(scan).timestamp_intervals = []
         # scan.moniitorable_names = self.get_monitorable_names()
         _peak.attach(
-            scan, self.name, self._peak_settings, n_channels=len(scan.monitors)
+            scan, self.name, self._peak_settings, n_channels=len(self._state(scan).monitors)
         )
+        self._publish(scan)
 
     def start_monitoring(self, scan=None, **kwargs):
-        if hasattr(scan, "monitors"):
-            del scan.monitors
         monitors = [tm.set_current_value_callback() for tm in self.monitorables]
         for tm in monitors:
             tm.start()
         if scan is not None:
-            scan.monitors = {
+            self._state(scan).monitors = {
                 tn: tm for (tn, tm) in zip(self.get_monitorable_names(), monitors)
             }
         else:
@@ -148,7 +182,7 @@ class CounterValue:
 
     def stop_monitoring(self, scan=None, **kwargs):
         if scan is not None:
-            for tm in scan.monitors.values():
+            for tm in self._state(scan).monitors.values():
                 tm.stop()
             # del scan.monitors
         else:
@@ -194,9 +228,11 @@ class CounterValue:
                 detector_values.append(None)
         return detector_values
 
-    def acquire(self, scan=None, collection_time=1.0, Npulses=None, **kwargs):
-        if Npulses is not None:
-            collection_time = Npulses
+    def acquire(self, scan=None, collection_time=None, Npulses=None, **kwargs):
+        # collection_time, if given (counter_options), else the scan's
+        # exposure, else 1 s
+        if collection_time is None:
+            collection_time = Npulses if Npulses is not None else 1.0
         t_start = time.time()
         acq_pars = {}
 
@@ -224,10 +260,10 @@ class CounterValue:
         def acquire():
             t_tmp = time.time()
             det_val = self.get_detector_values()
-            scan_wr().detector_values.append(det_val)
+            self._state(scan_wr()).detector_values.append(det_val)
             time.sleep(max(0.0, collection_time - (time.time() - t_tmp)))
             t_stop = time.time()
-            scan_wr().timestamp_intervals.append(StepTime(t_tmp, t_stop))
+            self._state(scan_wr()).timestamp_intervals.append(StepTime(t_tmp, t_stop))
             set_window = getattr(scan_wr(), "set_step_window", None)
             if set_window is not None:  # only taken if this counter leads
                 set_window(self, time_start=t_tmp, time_stop=t_stop)
@@ -237,8 +273,8 @@ class CounterValue:
         return acquisition
 
     def create_arrays(self, scan, **kwargs):
-        scan.monitor_scan_arrays = {}
-        for monname, mon in scan.monitors.items():
+        self._state(scan).monitor_scan_arrays = {}
+        for monname, mon in self._state(scan).monitors.items():
             # Snapshot of the still-growing monitor lists (the CA callback
             # appends timestamp then value, so the two can differ by one),
             # as numpy arrays: escape >= 0.2.13's ArrayTimestamps keeps
@@ -250,13 +286,14 @@ class CounterValue:
             values = list(mon.data["values"])
             timestamps = list(mon.data["timestamps"])
             n = min(len(values), len(timestamps))
-            scan.monitor_scan_arrays[monname] = ArrayTimestamps(
+            self._state(scan).monitor_scan_arrays[monname] = ArrayTimestamps(
                 data=as_numeric_array(values[:n]),
                 timestamps=np.asarray(timestamps[:n]),
-                timestamp_intervals=scan.timestamp_intervals,
+                timestamp_intervals=self._state(scan).timestamp_intervals,
                 parameter=parameter_from_scan(scan),
                 name=monname,
             )
+        self._publish(scan)
 
     def update_peak_analysis(self, scan, **kwargs):
         """Re-run the peak/step analysis on the steps taken so far, from the
@@ -269,13 +306,13 @@ class CounterValue:
         raises, so a problem here cannot cost a scan.
         """
         analysis = _peak.get_attached(scan, self.name)
-        arrays = getattr(scan, "monitor_scan_arrays", {})
+        arrays = getattr(self._state(scan), "monitor_scan_arrays", {})
         if analysis is None or len(arrays) != 1:
             return analysis
         try:
             (array,) = arrays.values()
             y = _peak.step_medians(
-                array.timestamps, array.data, scan.timestamp_intervals
+                array.timestamps, array.data, self._state(scan).timestamp_intervals
             )
             x = _peak.scan_positions(scan)
             n = min(len(x), len(y))
@@ -292,8 +329,8 @@ class CounterValue:
         first) over the last step's acquisition interval -- the live
         feedback an adaptive scan steers by (eco.acquisition.adaptive).
         None before the first step."""
-        monitors = getattr(scan, "monitors", None)
-        intervals = getattr(scan, "timestamp_intervals", None)
+        monitors = getattr(self._state(scan), "monitors", None)
+        intervals = getattr(self._state(scan), "timestamp_intervals", None)
         if not monitors or not intervals:
             return None
         name = channel if channel is not None else next(iter(monitors))
@@ -315,32 +352,37 @@ class CounterValue:
     # on a queue's worker thread (see eco.utilities.task_queue)
     @mainthread.on_main
     def plot_arrays(self, scan, **kwargs):
-        if not hasattr(scan, "animation"):
-
-            plt.close("CounterValue")
+        if not hasattr(self._state(scan), "animation"):
+            # one window reused scan after scan; a second CounterValue in
+            # the scan gets its own
+            label = "CounterValue"
+            if not self._owns_scan_attributes(scan):
+                label = f"CounterValue {self.name}"
+            plt.close(label)
 
             f, axs = plt.subplots(
-                len(scan.monitor_scan_arrays), 1, sharex=True, num="CounterValue"
+                len(self._state(scan).monitor_scan_arrays), 1, sharex=True, num=label
             )
-            scan.fig = f
+            self._state(scan).fig = f
             if isinstance(axs, plt.Axes):
                 axs = [axs]
-            scan.axs = axs
+            self._state(scan).axs = axs
 
             def plotdat(n, *args):
-                for ma, ax in zip(scan.monitor_scan_arrays.values(), axs):
+                for ma, ax in zip(self._state(scan).monitor_scan_arrays.values(), axs):
                     ax.cla()
                     ma.scan.plot(axis=ax, fmt="o-")
 
-            scan.animation = FuncAnimation(
+            self._state(scan).animation = FuncAnimation(
                 fig=f, func=plotdat, cache_frame_data=False, interval=500
             )
             plt.show(block=False)
             self._attach_escape_buttons(scan)
+            self._publish(scan)
         else:
-            scan.fig.tight_layout()
-            scan.fig.canvas.draw()
-            scan.fig.canvas.flush_events()
+            self._state(scan).fig.tight_layout()
+            self._state(scan).fig.canvas.draw()
+            self._state(scan).fig.canvas.flush_events()
 
     def _attach_escape_buttons(self, scan):
         """Attach escape's own Fit / Peak / Peak-params toolbar buttons
@@ -368,7 +410,7 @@ class CounterValue:
         try:
             from escape.plot_utilities import attach_escape_buttons
 
-            attach_escape_buttons(scan.fig, before_click=lambda: self.stop_animation(scan))
+            attach_escape_buttons(self._state(scan).fig, before_click=lambda: self.stop_animation(scan))
         except Exception as exc:
             print(f"{self.name}: couldn't attach escape's Fit/Peak buttons: {exc}")
 
@@ -390,7 +432,9 @@ class CounterValue:
                 print(f"Warning: Could not create directory {directory.resolve()} !")
 
         if filename == "auto":
-            filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".esc.h5"
+            # a second CounterValue in the scan: its own file
+            own = "" if self._owns_scan_attributes(scan) else f".{self.name}"
+            filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + own + ".esc.h5"
         else:
             # escape's DataSet refuses any other name ("Expecting esc suffix
             # in filename"), so a plain `filename="myfile"` used to complete
@@ -421,7 +465,7 @@ class CounterValue:
                 # escape asked "...would you like to overwrite? (y/n)" and got "n"
                 raise FileExistsError(f"{filepath} exists and overwriting was declined")
             names = []
-            for k, v in scan.monitor_scan_arrays.items():
+            for k, v in self._state(scan).monitor_scan_arrays.items():
                 names.append(k)
                 stage = f"appending '{k}' to the dataset"
                 d.append(v, name=k)
@@ -433,9 +477,9 @@ class CounterValue:
             # (0o644); the pgroup has to be able to rewrite it too
             stage = "setting group permissions"
             ensure_group_writable(filepath)
-            scan.stored_filename = filepath.resolve().as_posix()
+            self._state(scan).stored_filename = filepath.resolve().as_posix()
             stored = True
-            print(f"Stored filename {scan.stored_filename}")
+            print(f"Stored filename {self._state(scan).stored_filename}")
 
             stage = "reloading the stored file"
             d = DataSet.load_from_result_file(filepath)
@@ -447,8 +491,9 @@ class CounterValue:
                 # file and raises a ValueError deep inside h5py.
                 array.data = np.asarray(array.data)
                 array.timestamps
-                scan.monitor_scan_arrays[name] = array
+                self._state(scan).monitor_scan_arrays[name] = array
             d.results_file.close()
+            self._publish(scan)
         except Exception as exc:
             # A failure after the file was opened must not leave it open:
             # h5py then keeps a half-written, unflushed file that other
@@ -496,7 +541,7 @@ class CounterValue:
                 # it too, or it would show a scan whose data was not kept
                 print(f"{self.name}: not writing {plotfilename} either.")
             else:
-                mainthread.on_main(scan.fig.savefig)(plotfilename.as_posix())
+                mainthread.on_main(self._state(scan).fig.savefig)(plotfilename.as_posix())
                 ensure_group_writable(plotfilename)  # savefig also uses the umask
                 files.append(plotfilename)
             # print(plotfilename, plotfilename.as_posix())
@@ -536,12 +581,13 @@ class CounterValue:
     # window -- the leading counter's own times if it recorded them
     # (scan.step_window), else the start()/stop() calls.
     follows = True
+    exposure_doc = "collection time per step, in seconds"
 
     def start(self, scan=None, **kwargs):
         if scan is None:
             return
         scan.counter_scratch(self.name)["follow_start"] = time.time()
-        scan.detector_values.append(self.get_detector_values())
+        self._state(scan).detector_values.append(self.get_detector_values())
 
     def stop(self, scan=None, **kwargs):
         if scan is None:
@@ -549,7 +595,7 @@ class CounterValue:
         t_stop = time.time()
         t_start = scan.counter_scratch(self.name).pop("follow_start", t_stop)
         window = getattr(scan, "step_window", None) or {}
-        scan.timestamp_intervals.append(
+        self._state(scan).timestamp_intervals.append(
             StepTime(window.get("time_start", t_start), window.get("time_stop", t_stop))
         )
         return {"files": []}
@@ -710,15 +756,38 @@ def as_counter(obj):
     )
 
 
-def as_counters(objs):
+def exposure_doc(obj):
+    """What a scan's exposure_def means with `obj` as the first counter --
+    without building a counter for it."""
+    obj = resolve_lazy(obj)
+    doc = getattr(obj, "exposure_doc", None)
+    if doc:
+        return doc
+    if _is_counter(obj):
+        return "passed to the counter as Npulses"
+    try:
+        from escape.stream import Stream
+
+        if isinstance(obj, Stream) or isinstance(getattr(obj, "stream", None), Stream):
+            return "number of bs shots per step"
+    except ImportError:
+        pass
+    return CounterValue.exposure_doc
+
+
+def as_counters(objs, options=None):
     """The scan's counters for `objs`, in order, each counter once.
 
     All plain detectors (case 4 of ``as_counter``) share **one**
-    ``CounterValue``, at the place of the first of them: a ``CounterValue``
-    keeps its per-scan data under fixed names on the scan (``scan.monitors``,
-    ``scan.timestamp_intervals``, ...), so two of them in one scan would
-    overwrite each other."""
+    ``CounterValue``, at the place of the first of them: one monitor counter
+    reads them all, with one plot.
+
+    With `options` (``counter_options``: one dict or None per entry of
+    `objs`, by position) returns ``(counters, options)``, the options moved
+    along with their objects -- merged where several objects end up in one
+    counter."""
     counters = []
+    origin = []  # per input: index into counters
     plain = []
     slot = None
     for obj in objs:
@@ -731,19 +800,29 @@ def as_counters(objs):
             if slot is None:
                 slot = len(counters)
                 counters.append(None)
+            origin.append(slot)
             continue
-        if not any(c is counter for c in counters):
+        for i, c in enumerate(counters):
+            if c is counter:
+                origin.append(i)
+                break
+        else:
+            origin.append(len(counters))
             counters.append(counter)
     if plain:
         names = [_counter_name(d, "value_counter") for d in plain]
         counters[slot] = CounterValue(*plain, name="+".join(names))
-    if sum(isinstance(c, CounterValue) for c in counters) > 1:
-        print(
-            "Warning: several CounterValue counters in one scan overwrite each "
-            "other's data on the scan -- give the detectors instead, they are "
-            "combined into one."
+    if options is None:
+        return counters
+    options = list(options)
+    if len(options) > len(origin):
+        raise ValueError(
+            f"counter_options has {len(options)} entries for {len(origin)} counters"
         )
-    return counters
+    merged = [{} for _ in counters]
+    for i, opts in zip(origin, options):
+        merged[i].update(opts or {})
+    return counters, merged
 
 
 def find_counter(counters, obj):

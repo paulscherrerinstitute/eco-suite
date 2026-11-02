@@ -113,7 +113,11 @@ class StepScan(Assembly):
         #     self.counters = [counters]
         from .counters import as_counters  # detectors become their counters
 
-        self.counters = as_counters(counters)
+        # counter_options: per counter given (by position), keywords for its
+        # own acquisition; a counter with its own options does not follow
+        self.counters, self.counter_options = as_counters(
+            counters, kwargs_callbacks.pop("counter_options", None) or []
+        )
         self.step_window = {}  # see set_step_window
 
         self._append(
@@ -414,11 +418,13 @@ class StepScan(Assembly):
                 # collect exactly that window. Any other counter acquires
                 # N_pulses in parallel, as before.
                 self.step_window = {}
+                options = dict(zip(map(id, self.counters), self.counter_options))
                 lead = self.counters[:1]
-                followers = [c for c in self.counters[1:] if getattr(c, "follows", False)]
-                acquiring = lead + [
-                    c for c in self.counters[1:] if not getattr(c, "follows", False)
+                rest = self.counters[1:]
+                followers = [
+                    c for c in rest if getattr(c, "follows", False) and not options[id(c)]
                 ]
+                acquiring = lead + [c for c in rest if not any(c is f for f in followers)]
                 for ctr in self.counters:
                     statstr += f"{getattr(ctr, 'name', type(ctr).__name__)}, "
                 filenames = []
@@ -427,7 +433,12 @@ class StepScan(Assembly):
                 try:
                     acs = [
                         ctr.acquire(
-                            scan=self, Npulses=self.pulses_per_step[0], **self.callbacks_kwargs
+                            scan=self,
+                            **{
+                                "Npulses": self.pulses_per_step[0],
+                                **self.callbacks_kwargs,
+                                **options[id(ctr)],
+                            },
                         )
                         for ctr in acquiring
                     ]
@@ -855,7 +866,9 @@ class Scans(Assembly):
 
         # self.scan_info_dir = scan_info_dir
         # self.filename_generator = RunFilenameGenerator(self.scan_info_dir)
-        self._default_counters = default_counters
+        # own copy: the default argument is one list shared by every Scans
+        self._default_counters = list(default_counters)
+        self._auxiliary_counters = []  # see append_counter
         self._append(
             DetectorGet, self._get_counter_names, name="default_counters_names"
         )
@@ -936,7 +949,18 @@ class Scans(Assembly):
         except Exception:
             return
         counter_names = ", ".join(self._get_counter_names()) or "none"
-        extra = "\n\nCounter keywords (from default counters: " + counter_names + "):\n"
+        try:
+            from .counters import exposure_doc
+
+            lead = self._default_counters[0]
+            extra = (
+                "\n\nexposure_def (also as N_pulses=): the exposure of the first "
+                f"counter, {getattr(lead, 'name', lead)}: {exposure_doc(lead)}. "
+                "The other counters follow it.\n"
+            )
+        except Exception:
+            extra = ""
+        extra += "\nCounter keywords (from default counters: " + counter_names + "):\n"
         if kws:
             extra += "\n".join(f"    {k}" for k in kws)
         else:
@@ -950,6 +974,33 @@ class Scans(Assembly):
             wrapper.__doc__ = base_doc + extra
             wrapper.__name__ = method_name
             setattr(self, method_name, wrapper)
+
+    def append_counter(self, counter):
+        """Add `counter` -- a counter or a detector, e.g. ``mon_opt.intensity``
+        -- to the counters every scan uses by default, after the main ones
+        (the DAQ): it follows the first counter, e.g. for a live plot of the
+        DAQ's own shots. Kept until ``clear_auxiliary_counters()``; a scan
+        given ``counters=`` uses those instead, as always."""
+        if any(c is counter for c in self._default_counters):
+            return
+        self._auxiliary_counters.append(counter)
+        self._default_counters.append(counter)
+        self._augment_docstrings()
+
+    def clear_auxiliary_counters(self):
+        """Remove every counter added with ``append_counter``; the main
+        default counters (the DAQ) stay."""
+        self._default_counters[:] = [
+            c for c in self._default_counters
+            if not any(c is a for a in self._auxiliary_counters)
+        ]
+        self._auxiliary_counters = []
+        self._augment_docstrings()
+
+    @property
+    def auxiliary_counters(self):
+        """The counters added with ``append_counter``."""
+        return list(self._auxiliary_counters)
 
     @property
     def queues(self):
@@ -1093,9 +1144,23 @@ class Scans(Assembly):
 
         return kws_all
 
+    @staticmethod
+    def _exposure_def(exposure_def, kwargs_callbacks, method, required):
+        """The scan's exposure: `exposure_def`, or the DAQ's own keyword
+        ``N_pulses=`` (popped from `kwargs_callbacks`, so it does not also
+        reach the counters as a callback keyword)."""
+        n_pulses = kwargs_callbacks.pop("N_pulses", None)
+        if exposure_def is None:
+            exposure_def = n_pulses
+        elif n_pulses is not None and n_pulses != exposure_def:
+            raise TypeError(f"{method}: exposure_def={exposure_def} and N_pulses={n_pulses}")
+        if exposure_def is None and required:
+            raise TypeError(f"{method}: give exposure_def (the first counter's exposure)")
+        return exposure_def
+
     def acquire(
         self,
-        N_pulses,
+        exposure_def=None,
         N_repetitions=1,
         description="",
         counters=[],
@@ -1106,10 +1171,11 @@ class Scans(Assembly):
         queue=None,
         **kwargs_callbacks,
     ):
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "acquire", True)
         queued = self._route_to_queue(
             queue,
             "acquire",
-            (N_pulses,),
+            (exposure_def,),
             dict(
                 N_repetitions=N_repetitions,
                 description=description,
@@ -1138,7 +1204,7 @@ class Scans(Assembly):
             values,
             counters=counters,
             description=description,
-            Npulses=N_pulses,
+            Npulses=exposure_def,
             settling_time=settling_time,
             callbacks_start_scan=self.callbacks_start_scan,
             callbacks_start_step=self.callbacks_start_step,
@@ -1160,7 +1226,7 @@ class Scans(Assembly):
         start_pos,
         end_pos,
         N_intervals,
-        N_pulses,
+        exposure_def=None,
         description="",
         counters=[],
         start_immediately=True,
@@ -1171,10 +1237,11 @@ class Scans(Assembly):
         queue=None,
         **kwargs_callbacks,
     ):
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "ascan", True)
         queued = self._route_to_queue(
             queue,
             "ascan",
-            (adjustable, start_pos, end_pos, N_intervals, N_pulses),
+            (adjustable, start_pos, end_pos, N_intervals, exposure_def),
             dict(
                 description=description,
                 counters=counters,
@@ -1199,7 +1266,7 @@ class Scans(Assembly):
             values,
             counters=counters,
             description=description,
-            Npulses=N_pulses,
+            Npulses=exposure_def,
             settling_time=settling_time,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
@@ -1220,7 +1287,7 @@ class Scans(Assembly):
         self,
         adjustable,
         position_list,
-        N_pulses,
+        exposure_def=None,
         description="",
         counters=[],
         # checker="default",
@@ -1233,10 +1300,11 @@ class Scans(Assembly):
         queue=None,
         **kwargs_callbacks,
     ):
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "ascan_position_list", True)
         queued = self._route_to_queue(
             queue,
             "ascan_position_list",
-            (adjustable, position_list, N_pulses),
+            (adjustable, position_list, exposure_def),
             dict(
                 description=description,
                 counters=counters,
@@ -1263,7 +1331,7 @@ class Scans(Assembly):
             values,
             counters=counters,
             description=description,
-            Npulses=N_pulses,
+            Npulses=exposure_def,
             settling_time=settling_time,
             return_at_end=return_at_end,
             callbacks_start_scan=self.callbacks_start_scan,
@@ -1286,7 +1354,7 @@ class Scans(Assembly):
         start_pos,
         end_pos,
         N_intervals,
-        N_pulses,
+        exposure_def=None,
         description="",
         counters=[],
         start_immediately=True,
@@ -1298,10 +1366,11 @@ class Scans(Assembly):
         **kwargs_callbacks,
     ):
         """Differential scan, i.e. the adjustable is moved to the start position and then moved in steps of the interval size."""
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "dscan", True)
         queued = self._route_to_queue(
             queue,
             "dscan",
-            (adjustable, start_pos, end_pos, N_intervals, N_pulses),
+            (adjustable, start_pos, end_pos, N_intervals, exposure_def),
             dict(
                 description=description,
                 counters=counters,
@@ -1327,7 +1396,7 @@ class Scans(Assembly):
             [adjustable],
             values,
             counters,
-            Npulses=N_pulses,
+            Npulses=exposure_def,
             description=description,
             return_at_end=return_at_end,
             settling_time=settling_time,
@@ -1437,7 +1506,7 @@ class Scans(Assembly):
         start1_pos,
         end1_pos,
         N_intervals,
-        N_pulses,
+        exposure_def=None,
         start_immediately=True,
         **kwargs_callbacks,
     ):
@@ -1446,12 +1515,13 @@ class Scans(Assembly):
         Thin wrapper around the general ``scan`` using a single simultaneous
         (a2scan-like) axis.
         """
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "a2scan", True)
         return self.scan(
             [
                 (adjustable0, start0_pos, end0_pos, N_intervals),
                 (adjustable1, start1_pos, end1_pos, N_intervals),
             ],
-            N_pulses=N_pulses,
+            exposure_def=exposure_def,
             start_immediately=start_immediately,
             **kwargs_callbacks,
         )
@@ -1460,7 +1530,7 @@ class Scans(Assembly):
         self,
         *adj_specs,
         scanning_order="last_fastest",
-        N_pulses=None,
+        exposure_def=None,
         description="",
         counters=[],
         start_immediately=True,
@@ -1475,13 +1545,14 @@ class Scans(Assembly):
         Mesh scan, i.e. a scan in multiple dimensions, where the last adjustable is moved first.
         The scanning order can be changed by setting the `scanning_order` parameter.
         """
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "meshscan", False)
         queued = self._route_to_queue(
             queue,
             "meshscan",
             adj_specs,
             dict(
                 scanning_order=scanning_order,
-                N_pulses=N_pulses,
+                exposure_def=exposure_def,
                 description=description,
                 counters=counters,
                 start_immediately=start_immediately,
@@ -1533,7 +1604,7 @@ class Scans(Assembly):
             adjustables,
             values,
             counters=counters,
-            Npulses=N_pulses,
+            Npulses=exposure_def,
             description=description,
             return_at_end=return_at_end,
             settling_time=settling_time,
@@ -1558,7 +1629,7 @@ class Scans(Assembly):
         self,
         *adj_specs,
         scanning_order="last_fastest",
-        N_pulses=None,
+        exposure_def=None,
         description="",
         counters=[],
         start_immediately=True,
@@ -1589,13 +1660,14 @@ class Scans(Assembly):
         appends this call to that queue instead (after test-building it) and
         returns the Task -- see ``eco.utilities.task_queue``.
         """
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "scan", False)
         queued = self._route_to_queue(
             queue,
             "scan",
             adj_specs,
             dict(
                 scanning_order=scanning_order,
-                N_pulses=N_pulses,
+                exposure_def=exposure_def,
                 description=description,
                 counters=counters,
                 start_immediately=start_immediately,
@@ -1678,7 +1750,7 @@ class Scans(Assembly):
             adjustables_flat,
             values,
             counters=counters,
-            Npulses=N_pulses,
+            Npulses=exposure_def,
             description=description,
             return_at_end=return_at_end,
             settling_time=settling_time,
@@ -1702,7 +1774,7 @@ class Scans(Assembly):
     def adaptive_scan(
         self,
         *adj_specs,
-        N_pulses=None,
+        exposure_def=None,
         feedback=None,
         strategy="modelfree",
         budget=None,
@@ -1730,7 +1802,7 @@ class Scans(Assembly):
             number of intervals) or ``[adjustable, positions]`` -- the grid
             the strategy picks from, its finest resolution; may be unevenly
             spaced.
-        N_pulses: exposure per point, in the unit of the first counter
+        exposure_def: exposure per point, in the unit of the first counter
             (shots for the DAQ, seconds for a monitor counter); the other
             counters follow it.
         feedback: what the strategy steers by -- a detector (its bs
@@ -1743,8 +1815,8 @@ class Scans(Assembly):
         budget: time limit, seconds or e.g. "10min"; max_points: point
             limit. At least one of the two.
         batch: points planned at a time.
-        exposure: "fixed" (always N_pulses), "auto" (0.5..8 x N_pulses,
-            chosen per point) or a list of allowed N_pulses.
+        exposure: "fixed" (always exposure_def), "auto" (0.5..8 x exposure_def,
+            chosen per point) or a list of allowed exposure_def.
         motion: "auto" (learned from the scan's own moves and printed), an
             escape ``Axis``/list of ``Axis`` in seconds, or None (moves cost
             nothing).
@@ -1753,12 +1825,13 @@ class Scans(Assembly):
         strategy_options: passed to the strategy class (e.g. n_initial,
             explore).
         """
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "adaptive_scan", True)
         queued = self._route_to_queue(
             queue,
             "adaptive_scan",
             adj_specs,
             dict(
-                N_pulses=N_pulses,
+                exposure_def=exposure_def,
                 feedback=feedback,
                 strategy=strategy,
                 budget=budget,
@@ -1785,8 +1858,8 @@ class Scans(Assembly):
         budget = adaptive.parse_duration(budget)
         if not budget and not max_points:
             raise ValueError("adaptive_scan: give budget= (e.g. '10min') or max_points=")
-        if N_pulses is None:
-            raise ValueError("adaptive_scan: give N_pulses= (exposure per point)")
+        if exposure_def is None:
+            raise ValueError("adaptive_scan: give exposure_def= (exposure per point)")
         if not 1 <= len(adj_specs) <= 2:
             raise ValueError("adaptive_scan: one or two axes ([adjustable, start, end, step] each)")
         adjustables = [resolve_lazy(spec[0]) for spec in adj_specs]
@@ -1802,19 +1875,22 @@ class Scans(Assembly):
         source = feedback[0] if isinstance(feedback, tuple) else feedback
         if adaptive.is_detector_like(source) and not any(c is source for c in counters):
             counters.append(source)
-        counters = as_counters(counters)
+        counters, counter_options = as_counters(
+            counters, kwargs_callbacks.pop("counter_options", None) or []
+        )
+        kwargs_callbacks["counter_options"] = counter_options
         feedback_counter, feedback_fn = adaptive.resolve_feedback(feedback, counters)
         if feedback_counter is not None:
             counters.append(feedback_counter)
 
         strategy = adaptive.build_strategy(
-            strategy, axis_positions, N_pulses, exposure=exposure,
+            strategy, axis_positions, exposure_def, exposure=exposure,
             strategy_options=strategy_options,
         )
         from eco.detector.bs_counter import BsStreamCounter
 
         driver = adaptive.AdaptiveDriver(
-            strategy, adjustables, axis_positions, feedback_fn, N_pulses,
+            strategy, adjustables, axis_positions, feedback_fn, exposure_def,
             budget=budget, max_points=max_points, batch=batch, motion=motion,
             plot=plot,
             # a bs counter keys its 2-D grid bins on new grid cells: no revisits

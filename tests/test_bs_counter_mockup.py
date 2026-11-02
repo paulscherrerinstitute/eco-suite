@@ -290,10 +290,13 @@ def test_nothing_is_binned_between_scans(bs_worker, tmp_path):
     scan = FakeScanWithInfo(2, "dummy_adjustable")
     for cb in ctr.callbacks_start_scan:
         cb(scan=scan)
-    assert len(bs_worker.eventCallbacks) > n_callbacks
+    assert len(bs_worker.eventCallbacks) == n_callbacks  # bins only during a step
     for step in range(2):
         scan.next_step = step
-        ctr.acquire(scan=scan, Npulses=5).wait()
+        acq = ctr.acquire(scan=scan, Npulses=5)
+        assert len(bs_worker.eventCallbacks) > n_callbacks
+        acq.wait()
+        assert len(bs_worker.eventCallbacks) == n_callbacks  # paused again
         scan.append_step(float(step))
     for cb in ctr.callbacks_end_scan:
         cb(scan=scan)
@@ -303,6 +306,7 @@ def test_nothing_is_binned_between_scans(bs_worker, tmp_path):
     # the finished scan's data stay readable, also after a later read
     bins = ctr.scan_bins(scan)
     n = [len(bins.bin("i0", i)) for i in range(2)]
+    assert n == [5, 5]  # trimmed to the shots each step was reduced from
     ctr.get_current_value()
     time.sleep(0.1)
     assert [len(bins.bin("i0", i)) for i in range(2)] == n
@@ -396,8 +400,8 @@ def test_peak_analysis_is_in_scan_units(bs_worker, capsys):
     assert analysis.values["n_points"] == 17  # the live stream's own values, but all steps
 
     # freeze the bins (no more live events) and put a known trace in them
+    # (no more live events: the bins are paused between steps)
     channel = next(iter(ctr.scan_bins(scan).channels.values()))
-    channel._source.eventWorker.eventCallbacks.remove(channel._appendEventData)
     data = channel._dataManager._data
     for j, x in enumerate(adj_values):
         data[j] = type(data[j])([float(_gauss(x))] * 5)

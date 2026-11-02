@@ -336,6 +336,10 @@ def install_stream_scans():
 install_stream_scans()
 
 
+# escape keeps 1000 samples per bin by default; a step may have more shots
+MAX_SHOTS_PER_STEP = 1_000_000
+
+
 class _ScanBins:
     """Everything of one scan (or of one standalone read) of a
     ``BsStreamCounter``: the per-step bins, the step keys, the pulse ids, the
@@ -347,9 +351,12 @@ class _ScanBins:
     (e.g. the one a ``DetectorBsStream`` keeps) serves any number of scans,
     also at the same time, and nothing is binned between scans.
 
-    Binning starts when this is built (callbacks on the shared event worker,
-    never ``registerSource``, see ``BsStreamCounter`` and the module
-    docstring) and stops at ``close()``; the data stay readable afterwards.
+    Binning runs only while a step collects: ``resume()`` (when a step
+    starts, after its key is set) adds the callbacks on the shared event
+    worker -- never ``registerSource``, see ``BsStreamCounter`` and the
+    module docstring -- and ``pause()`` (once the step's shots are in)
+    removes them, so nothing lands in a bin between steps, e.g. during a
+    move. ``close()`` ends it for good; the data stay readable afterwards.
     """
 
     def __init__(self, raw, grid_specs=None, step_name=None, step_unit=None):
@@ -391,24 +398,33 @@ class _ScanBins:
         self.arrays = {}
         self.stored_filename = None
         self.running = True
+        self.binning = False
         self.channels = {}
         for name, base in raw.items():
-            binned = escape_stream.Stream(source=base._source, scan=self.scan)
-            ew = binned._source.eventWorker
-            ew.eventCallbacks.append(binned._appendEventData)
-            ew.eventCallbacks.append(self.new_data.set)
-            self.channels[name] = binned
+            self.channels[name] = escape_stream.Stream(
+                source=base._source, scan=self.scan, maxlen=MAX_SHOTS_PER_STEP
+            )
 
     @property
     def ndim(self):
         return len(self.step_sources)
 
-    def close(self):
-        """Stop binning (remove this object's event callbacks, never the
-        channel subscription). The bins keep what they collected."""
-        if not self.running:
+    def resume(self):
+        """Bin from now on (into whatever step the keys point at)."""
+        if self.binning or not self.running:
             return
-        self.running = False
+        self.binning = True
+        for s in self.channels.values():
+            ew = s._source.eventWorker
+            ew.eventCallbacks.append(s._appendEventData)
+            ew.eventCallbacks.append(self.new_data.set)
+
+    def pause(self):
+        """Stop binning (remove the event callbacks, never the channel
+        subscription). The bins keep what they collected."""
+        if not self.binning:
+            return
+        self.binning = False
         for s in self.channels.values():
             ew = s._source.eventWorker
             for callback in (s._appendEventData, self.new_data.set):
@@ -416,6 +432,35 @@ class _ScanBins:
                     ew.eventCallbacks.remove(callback)
                 except ValueError:
                     pass
+
+    def close(self):
+        self.pause()
+        self.running = False
+
+    def trim(self, idx, n0=None, pulse_range=None, n=None):
+        """Keep in bin `idx` of every channel only the shots of the step:
+        those after the first ``n0[name]``, within `pulse_range` (first, last
+        pulse id, inclusive), at most the first `n` -- what was reduced, and
+        so what is stored, plotted and analysed."""
+        for name, s in self.channels.items():
+            dm = s._dataManager
+            with dm._lock:
+                if idx >= len(dm._data):
+                    continue
+                start = (n0 or {}).get(name, 0)
+                pairs = list(zip(dm._data[idx], dm._eventIds[idx]))[start:]
+                if pulse_range is not None:
+                    first, last = pulse_range
+                    pairs = [(v, i) for v, i in pairs if i is not None and first <= i <= last]
+                if n is not None:
+                    pairs = pairs[:n]
+                dm._data[idx].clear()
+                dm._eventIds[idx].clear()
+                for v, i in pairs:
+                    dm._data[idx].append(v)
+                    dm._eventIds[idx].append(i)
+                if hasattr(dm, "_counts") and idx < len(dm._counts):
+                    dm._counts[idx] = len(pairs)
 
     # Bins are created on demand (open-ended Scan) the first time a matching
     # event actually arrives for a given channel, so `idx` may not exist yet
@@ -549,6 +594,7 @@ class BsStreamCounter:
         # following the scan's leading counter: start()/stop() around its
         # acquisition (see stop()), no exposure of its own
         self.follows = True
+        self.exposure_doc = "number of bs shots per step"
 
         self.callbacks_start_scan = [self._on_scan_start]
         self.callbacks_start_step = []
@@ -952,6 +998,7 @@ class BsStreamCounter:
         if len(self._raw) != 1:
             return dict(self.last_values) if self.last_values else None
         bins = self._open()
+        bins.resume()
         try:
             (name,) = bins.channels
             try:
@@ -974,7 +1021,14 @@ class BsStreamCounter:
             t_start = _time()
             try:
                 self._wait_for_n_new(bins, step_index, n0, Npulses)
-                result["value"] = self._reduce_step(bins, step_index, n0)
+                skip = n0
+                if not standalone:
+                    # this step's shots are in: no more into its bin, and
+                    # keep exactly the N it is reduced from
+                    bins.pause()
+                    bins.trim(step_index, n0, n=Npulses)
+                    skip = None
+                result["value"] = self._reduce_step(bins, step_index, skip)
             finally:
                 if standalone:
                     self._close(bins)
@@ -1012,9 +1066,15 @@ class BsStreamCounter:
         first, last = window.get("pulse_id_start"), window.get("pulse_id_stop")
         if first is not None and last is not None:
             self._wait_for_pulse_id(bins, step_index, last)
-            self._reduce_step(bins, step_index, n0, pulse_range=(first, last))
+            pulse_range = (first, last)
         else:
-            self._reduce_step(bins, step_index, n0)
+            pulse_range = None
+        if scan is not None:
+            # no more into this step's bin; keep exactly its shots
+            bins.pause()
+            bins.trim(step_index, n0, pulse_range=pulse_range)
+            n0, pulse_range = None, None
+        self._reduce_step(bins, step_index, n0, pulse_range=pulse_range)
         if scan is None:
             self._close(bins)
             self._standalone_bins = None
@@ -1081,6 +1141,7 @@ class BsStreamCounter:
         ew = next(iter(bins.channels.values()))._source.eventWorker
         bins.step_pulse_ids[step_index] = ew.event.getEventId() if ew.event is not None else None
         n0 = {name: len(bins.bin(name, step_index)) for name in bins.channels}
+        bins.resume()  # after the keys moved: from here on into this step
         return step_index, n0
 
     def grid(self, channel=None, shape=None, positions=None, dimension_names=None, scan=None):

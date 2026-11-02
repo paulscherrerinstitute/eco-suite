@@ -11,13 +11,13 @@ either one adjustable or a list of adjustables that **move together**:
 
 ```python
 # 2-D mesh: mot2 is scanned for every mot1 position (last axis fastest)
-scans.scan((mot1, 0, 1, 10), (mot2, -1, 1, 20), N_pulses=100)
+scans.scan((mot1, 0, 1, 10), (mot2, -1, 1, 20), exposure_def=100)
 
 # a2scan-style: mot2 and mot3 move together, 21 points
-scans.scan([(mot2, 0, 1, 20), (mot3, 5, 6, 20)], N_pulses=100)
+scans.scan([(mot2, 0, 1, 20), (mot3, 5, 6, 20)], exposure_def=100)
 
 # both: a mesh of mot1 against the co-moving pair
-scans.scan((mot1, 0, 1, 10), [(mot2, 0, 1, 20), (mot3, 5, 6, 20)], N_pulses=100)
+scans.scan((mot1, 0, 1, 10), [(mot2, 0, 1, 20), (mot3, 5, 6, 20)], exposure_def=100)
 ```
 
 There is no limit on the number of dimensions. `scans.a2scan` and
@@ -95,7 +95,7 @@ explicitly:
 from eco.detector.bs_counter import BsStreamCounter
 
 c = BsStreamCounter("SAROP21-PBPS133:INTENSITY", name="i0")
-scans.meshscan((m1, 0, 1, 10), (m2, 0, 1, 10), N_pulses=100, counters=[c])
+scans.meshscan((m1, 0, 1, 10), (m2, 0, 1, 10), exposure_def=100, counters=[c])
 c.grid().plot()                                   # N-D binned, live while running
 c.last_arrays["SAROP21-PBPS133:INTENSITY"]        # escape Array of the last scan
 c.stored_filename
@@ -127,10 +127,13 @@ counter by defining `_scan_counter()`.
 
 ## The first counter sets the exposure, the others follow
 
-`N_pulses` is the exposure of the **first** counter, in its own unit: shots for
-the DAQ, seconds for a monitor counter, shots for a bs counter. The other
-counters do not read it. They collect for exactly as long as the first one
-acquires:
+`exposure_def` (the argument after the positions, e.g. the `100` in
+`ascan(mot, 0, 1, 20, 100)`) is the exposure of the **first** counter, in its
+own unit: shots for the DAQ, seconds for a monitor counter, shots for a bs
+counter. `N_pulses=100`, the DAQ's own keyword, works as well.
+`help(scans.ascan)` says what it means for the scans' first default counter.
+The other counters do not read it. They collect for exactly as long as the
+first one acquires:
 
 - the first counter records its window per step: the DAQ its pulse ids
   (`start_id` to `start_id + N - 1`) and times, a monitor counter its times, a
@@ -139,11 +142,40 @@ acquires:
 - a bs counter following it waits until the last of those pulses has arrived
   (bs data come some time after the pulse) and keeps exactly those shots.
 
+A bs counter collects only while a step acquires and keeps exactly the shots
+it was reduced from (the first counter's pulses, or its own first N), so what
+it stores, plots and analyses contains no shots from moves or settling.
+
 So `ascan(mot, 0, 1, 20, 100, counters=[daq, mon_opt.intensity, diode])` takes
 100 DAQ shots per step, the bs counter the same 100 pulses, and the monitor
 counter the same time. The window of each step is kept in its step info
 (`scan.scan_info["scan_step_info"][i]["window"]`). A counter that cannot follow
-(e.g. a second DAQ) still acquires `N_pulses` in parallel, as before.
+(e.g. a second DAQ) still acquires `exposure_def` in parallel, as before.
+
+A counter can be given its own acquisition with `counter_options`, one dict
+(or `None`) per entry of `counters`, by position. It then acquires in parallel
+with its own keywords instead of following:
+
+```python
+scans.ascan(mot, 0, 1, 20, 100, counters=[daq, diode],
+            counter_options=[None, {"collection_time": 0.5}])
+```
+
+The keywords are the counter's own: `Npulses` for the DAQ and bs counters,
+`collection_time` (seconds) for a monitor counter.
+
+## Live counters next to the DAQ for every scan
+
+`scans` is set up for the DAQ. To have a live counter in every scan, e.g. for a
+live plot of the DAQ's own shots:
+
+```python
+scans.append_counter(mon_opt.intensity)   # follows the DAQ
+scans.auxiliary_counters
+scans.clear_auxiliary_counters()          # back to the DAQ alone
+```
+
+A scan given `counters=` uses exactly those instead.
 
 ## Where the time goes
 

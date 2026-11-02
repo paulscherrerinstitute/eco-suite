@@ -19,7 +19,7 @@ that behave like real ones. See `eco/devices_general/simulated_signals.py`.
 ```python
 scans.adaptive_scan(
     [sim.peak.x, -2, 3, 0.02],     # axis and grid: start, end, step
-    N_pulses=0.2,                  # exposure per point
+    exposure_def=0.2,                  # exposure per point
     feedback=sim.peak.signal,      # what the strategy steers by
     max_points=40,
 )
@@ -32,7 +32,7 @@ own plot with the data and what it concludes from them.
 ## Syntax
 
 ```python
-scans.adaptive_scan(*axes, N_pulses=..., feedback=..., budget=... or max_points=...,
+scans.adaptive_scan(*axes, exposure_def=..., feedback=..., budget=... or max_points=...,
                     strategy="modelfree", batch=5, exposure="fixed", motion="auto",
                     plot=True, counters=[], queue=None, ...)
 ```
@@ -40,13 +40,13 @@ scans.adaptive_scan(*axes, N_pulses=..., feedback=..., budget=... or max_points=
 | Argument | Meaning |
 |---|---|
 | axes | one or two, written as for [`scans.scan`](scanning.md): `[adjustable, start, end, step]` (a float is the step size, an int the number of intervals) or `[adjustable, [p0, p1, ...]]`. This is the **grid**: points are only ever taken from it, so its spacing is the finest resolution. It may be unevenly spaced. |
-| `N_pulses` | exposure per point, in the unit of the first counter (shots for the DAQ, seconds for a monitor counter); the other counters follow it, see [scanning](scanning.md) |
+| `exposure_def` | exposure per point, in the unit of the first counter (shots for the DAQ, seconds for a monitor counter); the other counters follow it, see [scanning](scanning.md) |
 | `feedback` | the live signal the strategy steers by: a detector, or a counter, see below |
 | `budget` | time limit: seconds or `"90s"`, `"10min"`, `"1h"` |
 | `max_points` | point limit. Give `budget`, `max_points` or both. |
 | `strategy` | what to look for, see the table below |
 | `batch` | points planned at a time (default 5) |
-| `exposure` | `"fixed"`: always `N_pulses`. `"auto"`: 0.5 to 8 times `N_pulses`, chosen per point. Or a list of allowed values. |
+| `exposure` | `"fixed"`: always `exposure_def`. `"auto"`: 0.5 to 8 times `exposure_def`, chosen per point. Or a list of allowed values. |
 | `motion` | `"auto"` (default): learned from the scan's own moves. Or escape `Axis` objects in seconds, or `None` for "moves cost nothing". |
 | `counters`, `settling_time`, `description`, `return_at_end`, `queue` | as for every other scan |
 
@@ -67,16 +67,16 @@ Examples:
 
 ```python
 # time zero and oscillation of a pump-probe signal, with exposure chosen per point
-scans.adaptive_scan([las.delay, -1, 6, 0.02], N_pulses=100, feedback=mon_opt,
+scans.adaptive_scan([las.delay, -1, 6, 0.02], exposure_def=100, feedback=mon_opt,
                     strategy="oscillation", exposure="auto", budget="20min")
 
 # a 2-D peak on a 0.05 mm grid
-scans.adaptive_scan([xrd.x, -1, 1, 0.05], [xrd.y, -1, 1, 0.05], N_pulses=100,
+scans.adaptive_scan([xrd.x, -1, 1, 0.05], [xrd.y, -1, 1, 0.05], exposure_def=100,
                     feedback=diode, strategy="peak2d", max_points=150)
 
 # an uneven grid: dense where the edge is expected
 scans.adaptive_scan([mot, [-2, -1, -0.5, -0.2, -0.1, 0, 0.1, 0.2, 0.5, 1, 2]],
-                    N_pulses=100, feedback=diode, strategy="edge", max_points=30)
+                    exposure_def=100, feedback=diode, strategy="edge", max_points=30)
 ```
 
 ## How it works
@@ -117,7 +117,7 @@ scans.adaptive_scan([mot, [-2, -1, -0.5, -0.2, -0.1, 0, 0.1, 0.2, 0.5, 1, 2]],
     <text x="185" y="158" text-anchor="middle">1  move to the next queued point</text>
     <text x="185" y="213" text-anchor="middle">2  acquire with all counters</text>
     <text x="185" y="268" text-anchor="middle">3  end-of-step callbacks</text>
-    <text x="185" y="353" text-anchor="middle">queued points (and N_pulses each)</text>
+    <text x="185" y="353" text-anchor="middle">queued points (and exposure_def each)</text>
     <text x="390" y="125" font-weight="bold">counters, in this order</text>
     <text x="475" y="153" text-anchor="middle">DAQ</text>
     <text x="475" y="170" text-anchor="middle" font-size="11">data to disk, not for steering</text>
@@ -208,7 +208,7 @@ a proposal for now: [Multi-dimensional scan data](multidim_scan_data.md).
 ## Time units
 
 The strategies weigh exposure time against move time. Here the time unit is
-one `N_pulses` unit. eco measures how many seconds one unit takes from the
+one `exposure_def` unit. eco measures how many seconds one unit takes from the
 acquisitions, and converts the motion model (always given and printed in
 seconds) to it. The dead time per point (settling and callbacks) is measured
 too and counted as overhead per point.

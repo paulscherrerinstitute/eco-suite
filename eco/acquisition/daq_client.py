@@ -147,6 +147,9 @@ class Daq(Assembly):
     ``status_server_strict=True``. See ``eco/status_server/README.md``.
     """
 
+    # what a scan's exposure_def means with this counter first (Scans help)
+    exposure_doc = "number of pulses (shots) recorded per step"
+
     def __init__(
         self,
         broker_address="http://sf-daq:10002",
