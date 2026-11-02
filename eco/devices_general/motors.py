@@ -1737,6 +1737,14 @@ class MotorRecord(Assembly):
         pv, m = tuple(self.pvname.split(":"))
         self._run_cmd(f'caqtdm -macro "P={pv}:,M={m}" motorx_all.ui')
 
+    def identify(self, deep=True):
+        """Controller, drive model, encoder and homing options of this axis,
+        asked from the IOC and the drive (read-only); see
+        eco.devices_general.motor_identify."""
+        from .motor_identify import identify_motor
+
+        return identify_motor(self.pvname, deep=deep)
+
     # return string with motor value as variable representation
     def __str__(self):
         # """ return short info for the current motor"""
