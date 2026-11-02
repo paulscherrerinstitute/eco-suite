@@ -882,7 +882,8 @@ async function showJog(name) {
   if (S.view !== view) return;
   const row = desc.rows.find((r) => r.name === name);
   if (!row || !settable(row) || !row.jog) {
-    setMain(el("div", { class: "empty", text: `${name} cannot be jogged here (no hardware jog${S.hello.writes ? "" : "; writes are off"}).` }));
+    const why = row?.jog ? "writes are off in this web session" : "it has no hardware jog";
+    setMain(el("div", { class: "empty", text: `${name} cannot be jogged here: ${why}.` }));
     return;
   }
   const speedName = row.jog.speed;
