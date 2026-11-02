@@ -41,3 +41,37 @@ def test_web_main_needs_a_source():
 
     with pytest.raises(SystemExit):
         main([])
+
+
+@pytest.mark.parametrize("signame", ["SIGHUP", "SIGTERM"])
+def test_the_standalone_server_stops_its_gateway_on_hangup(signame, tmp_path):
+    # started over SSH with a terminal: the connection going away is a SIGHUP;
+    # the gateway must still stop (closing its clients, ending their jogs)
+    import os
+    import signal
+    import socket
+    import subprocess
+    import time
+
+    pytest.importorskip("tornado")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = dict(os.environ, PYTHONPATH=os.getcwd() + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    proc = subprocess.Popen([sys.executable, "-m", "eco.web", "--demo", "--port", str(port), "--token", "t"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, text=True)
+    try:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                break
+            except OSError:
+                time.sleep(0.2)
+        else:
+            pytest.fail("the server did not start")
+        proc.send_signal(getattr(signal, signame))
+        assert proc.wait(timeout=15) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()

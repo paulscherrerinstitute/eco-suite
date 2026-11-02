@@ -60,8 +60,11 @@ def main(argv=None):
     gateway = WebGateway(backend, host=args.host, port=args.port,
                          token=args.token, writes=args.writes).start()
     print(connection_help(gateway))
-    # a terminated server must still stop the jogs its clients hold
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    # a terminated server must still stop the jogs its clients hold: SIGTERM
+    # (kill), and SIGHUP -- the connection it was started over is gone (an
+    # SSH command with a terminal, e.g. started by a phone app on connect)
+    for signum in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, lambda *_: sys.exit(0))
     try:
         while True:
             time.sleep(3600)
