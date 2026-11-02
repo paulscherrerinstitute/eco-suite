@@ -136,8 +136,69 @@ def _read_fs_value(path):
 
 
 class RecSpace(Assembly):
-    """Crystals for one diffractometer, solved with hklforge. Same interface
-    as the ``diffcalc`` objects; see the module docstring for what is new."""
+    """Crystals for one diffractometer: (h, k, l) <-> diffractometer angles.
+
+    The hklforge-based successor of the ``diffcalc`` object next to it, with
+    the same interface; see the module docstring for what is new. Each
+    crystal is an attribute (``xrd.recspace.si``) with its own UB matrix and
+    ``h``, ``k``, ``l``, ``hkl`` adjustables; the constraints are shared by
+    all crystals of this diffractometer. Lattice in angstrom and degrees,
+    energies in eV.
+
+    Create a crystal -- one of three ways:
+
+    1. Interactively, as with diffcalc::
+
+           xrd.recspace.create_crystal()
+
+       asks for a name, the lattice, the (h,k,l) of the surface normal (along
+       the phi axis at all angles 0, You z) and the (h,k,l) along the beam
+       (You y). That gives a nominal UB: the crystal mounted as designed.
+
+    2. The same as a script, here Si(001) with [110] along the beam::
+
+           si = xrd.recspace.create_crystal(
+               "si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
+           si.add_orientation([0, 0, 1], [0, 0, 1], tag="surface normal")
+           si.add_orientation([1, 1, 0], [0, 1, 0], tag="along beam")
+           si.set_surface(hkl=[0, 0, 1])     # for betain/betaout; option 1 does this too
+           si.calc_ub()
+
+    3. From the crystals the diffcalc object already knows::
+
+           xrd.recspace.diffcalc_crystals()        # what there is
+           xrd.recspace.import_from_diffcalc("si")  # None: all of them
+
+    Then replace the nominal orientation by measured reflections: drive to a
+    Bragg peak and ``si.add_reflection(h, k, l)`` stores it with the current
+    angles and energy. With one reflection,
+    ``si.calc_ub(0, "surface normal")`` combines it with the nominal surface
+    normal; with two, ``si.calc_ub()``; with three or more, ``si.fit_ub()``.
+    Two references must not be parallel (e.g. (004) with a (001) surface
+    normal), three for a fit not in one plane. ``si.summary()`` shows the
+    result, ``si.calc_hkl()`` should then read the peak's hkl.
+
+    Constraints -- fix three, release with None::
+
+        xrd.recspace.constraints.mu(0)
+        xrd.recspace.constraints.gamma(0)
+        xrd.recspace.constraints.chi(90)
+
+    A second reflection kept in Bragg condition takes the place of one of
+    them: ``constraints.chi(None)``, ``constraints.h2([2, 2, 0])``.
+
+    Use it::
+
+        si.calc_angles(1, 1, 1)        # every solution, limits ignored
+        si.calc_angles_unique(1, 1, 1) # the one inside the motor limits
+        si.hkl.mv([1, 1, 1])           # move there
+        si.widget_reflections(1, 1, 1) # browse the solutions in 3D
+
+    Managing crystals: ``crystals`` (this diffractometer's),
+    ``activate_crystal`` (one of another diffractometer, or deactivated),
+    ``deactivate_crystal``, ``delete_crystal``. Constraints from diffcalc:
+    ``import_constraints_from_diffcalc()``. More in docs/recspace.md.
+    """
 
     def __init__(self, diffractometer_you=None, name=None, config_dir=None, energy_source=None):
         super().__init__(name=name)
@@ -231,10 +292,15 @@ class RecSpace(Assembly):
                 continue
 
     def create_crystal(self, name=None, unit_cell=None):
-        """Create a new crystal. Without ``unit_cell`` the UB matrix is set up
-        interactively (``new_ub``), as with diffcalc; with
-        ``unit_cell=dict(a=.., b=.., c=.., alpha=.., beta=.., gamma=..)``
-        only the lattice is set and orientations/reflections are added later."""
+        """Create a new crystal on this diffractometer and return it.
+
+        Without ``unit_cell`` everything is asked interactively (``new_ub``):
+        name, lattice, surface normal and in-plane direction, and a nominal
+        UB is calculated. With ``unit_cell=dict(a=.., b=.., c=.., alpha=..,
+        beta=.., gamma=..)`` (angstrom, degrees) only the lattice is set; add
+        orientations or reflections and run ``calc_ub()`` next. The new
+        crystal is then ``self.<name>``. See ``RecSpace`` for an example.
+        """
         if name is None:
             name = self._ask_name()
         elif name in self._crystal_list():
@@ -361,7 +427,26 @@ class RecSpace(Assembly):
 
 class RecSpaceCrystal(Assembly):
     """One crystal on one diffractometer: UB matrix, reference data and the
-    h, k, l adjustables. Interface as ``eco.utilities.recspace.DiffGeometryYou``."""
+    h, k, l adjustables. Interface as ``eco.utilities.recspace.DiffGeometryYou``.
+
+    Orientation (UB), in the You frame (x vertical, y along the beam, z
+    horizontal transverse; at all angles 0 the phi axis is z):
+
+    - ``add_orientation(hkl, xyz)``: a nominal direction, e.g.
+      ``add_orientation([0, 0, 1], [0, 0, 1], tag="surface normal")``
+    - ``add_reflection(h, k, l)``: a measured peak at the current angles and
+      energy (or give ``mu=..., ..., energy=...``)
+    - ``calc_ub()``: from reflections 0 and 1 (an index falls back to the
+      orientation with that index; a string is a tag, so
+      ``calc_ub(0, "surface normal")`` mixes both); ``fit_ub()``: from 3 or
+      more reflections; ``refine_ub(hkl)``: lattice and/or U from one peak
+    - ``set_unit_cell``, ``set_reference``, ``set_surface``, ``summary()``
+
+    Calculating and moving: ``h``, ``k``, ``l``, ``hkl`` (adjustables),
+    ``calc_angles``, ``calc_angles_two``, ``calc_angles_unique``,
+    ``calc_hkl``, ``pseudo_angles``, ``spots``. Viewing: ``widget_reflections``,
+    ``widget_geom``.
+    """
 
     def __init__(self, diffractometer_you=None, constraints=None, name=None, config_dir=None, energy_source=None):
         super().__init__(name=name)
@@ -556,8 +641,8 @@ class RecSpaceCrystal(Assembly):
                 if len(v) == 3:
                     return v
 
-        normal = ask_vec("(h,k,l) surface normal (along YOU x-axis, vertical), e.g. 0,0,1: ", [0, 0, 1])
-        inplane = ask_vec("(h,k,l) in-plane orientation along beam (YOU y-axis), e.g. 1,0,0: ", [1, 0, 0])
+        normal = ask_vec("(h,k,l) surface normal (along the phi axis at all angles 0, YOU z-axis) (0,0,1): ", [0, 0, 1])
+        inplane = ask_vec("(h,k,l) in-plane orientation along beam (YOU y-axis) (1,0,0): ", [1, 0, 0])
         self.set_unit_cell(crystal_name, a, b, c, alpha, beta, gamma)
         self.orientations.set_target_value([]).wait()
         self.add_orientation(normal, (0, 0, 1), tag="surface normal")
