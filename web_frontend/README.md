@@ -46,10 +46,15 @@ phone size):
   (30 s .. 1 h) with optional running average, survive a reload
 - picker: find any readable item of the initialized components by name
 - tweak view: big step buttons, ×2/÷2, go to, back to start, stop, arrow keys
+- live view of MJPEG network cameras (AxisPTZ: cam_west, ...), relayed by the
+  gateway (`eco/web/camera.py`: one camera connection per quality, newest frame
+  per client), with tap-to-center, drag-to-zoom, zoom steps, wide, home. Tested
+  read-only on cam_west: low 640×360 ~4 fps ~120 kB/s, medium 1280×720 ~8 fps
+  ~1.1 MB/s, full 1280×720 ~10 fps ~1.6 MB/s
 - token auth + HttpOnly cookie, binds 127.0.0.1, ping/reconnect after network
   drops, clean shutdown, service worker (app shell only), light/dark
 
-Not yet: queues/scan progress, archiver history, memories, cameras, alarms,
+Not yet: queues/scan progress, archiver history, memories, cam_server cameras, alarms,
 status-server (shared, read-only) mode. See [PARITY.md](PARITY.md) for the order.
 
 Points to keep in mind (found while wiring it in):

@@ -45,6 +45,8 @@ The client never sends expressions.
 | `step_size` | `{name}` | `{step}` — the start value of the ▲/▼ step (the grids' `initial_step`) |
 | `trigger` | `{name}` | (writes on) runs an `AdjustableTrigger` |
 | `jog` | `{name, direction: 1|-1, start: bool}` | (writes on, items with `jog`) starts the hardware jog (`MotorRecord.jog`, JOGF/JOGR), after the access gate and queue claims; the client repeats `start: true` every `jog_repeat` s while the button is held, and the gateway stops the jog when that has not come for 1 s (`JOG_DEADMAN`), when the client goes away, on `stop`, or on `start: false`. Run in request order (one thread per client). State via `ev: "write"` (`moving` "jogging +", `idle`) |
+| `ptz` | `{name, action: "center"|"rect"|"zoom_in"|"zoom_out"|"wide"|"home", x?, y?, x1?, y1?, w?, h?}` | (writes on, items whose `describe` has `camera.ptz`) `click_center`/`zoom_to_rectangle`/`area_zoom`/`set_zoom(1)`/`home`, coordinates in the displayed image of size w×h; access gate checked |
+| — | — | a camera's live stream is plain HTTP: `GET /api/mjpeg?name=…&quality=low|medium|full` returns `multipart/x-mixed-replace` JPEGs for an `<img>`; `describe` of such an item has `camera: {stream: "mjpeg", ptz, rotate, qualities}` |
 | `jog_speed` | `{name, value}` | sets the jog speed of `name` (its `jog_speed` item); allowed whenever writing `name` is |
 | — | — | SVG panels are plain HTTP: `GET /api/svg?name=…` returns the SVG, header `X-Eco-Prefix` is what click markers are relative to; the client re-fetches every 3 s |
 | `queues` *planned* | `{}` | queue list with tasks (mode B) |

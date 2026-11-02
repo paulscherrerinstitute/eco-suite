@@ -69,6 +69,13 @@ python -m eco.web --demo --writes
   re-confirms a held button four times a second, and the session stops the
   jog when that has not come for one second (phone locked, network gone,
   page closed), and when the session ends.
+- **Live view** (network PTZ cameras such as `cam_west`): the camera's video
+  in the page, in low (default, for a phone on a tunnel), medium or full
+  quality. With writes on, switch **Control** on to tap where the view should
+  be centred or drag a box to zoom into it (the mouse wheel zooms on a
+  laptop), or use Zoom +/−, Wide and Home. *Settings* shows pan, tilt, zoom,
+  iris and focus as rows. All viewers share one connection to the camera; the
+  stream pauses while the page is in the background.
 - **Panel**: a device's schematic, refreshed every 3 s. Tapping a symbol
   opens that device; the panel's commands are not run from the web app.
 
