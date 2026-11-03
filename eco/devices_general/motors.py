@@ -35,6 +35,7 @@ from .detectors import DetectorVirtual
 from ..epics_utils.detector import DetectorPvData
 import json
 from .powerbrick import PowerBrickChannelPars, is_powerbrick_motor
+from .motor_identify import MotorController
 from .schneider_settings import (
     SchneiderMotorSettings,
     SETTINGS_SELECTION as SCHNEIDER_SETTINGS_SELECTION,
@@ -1303,6 +1304,8 @@ class MotorRecord(Assembly):
         self.status_collection.append(self, selection="settings", recursive=False)
 
         self.pvname = pvname
+        # plain attribute, not _append: looked up only when used, never in status
+        self.controller = MotorController(pvname)
         self._motor = _Motor(pvname)
         # a move is aborted only if the readback stops progressing for this many
         # seconds (see _wait_for_motion), not after a fixed maximum duration
@@ -1740,10 +1743,9 @@ class MotorRecord(Assembly):
     def identify(self, deep=True):
         """Controller, drive model, encoder and homing options of this axis,
         asked from the IOC and the drive (read-only); see
-        eco.devices_general.motor_identify."""
-        from .motor_identify import identify_motor
-
-        return identify_motor(self.pvname, deep=deep)
+        eco.devices_general.motor_identify. Always asks again, and updates
+        what ``self.controller`` shows."""
+        return self.controller.identity(deep=deep, refresh=True)
 
     # return string with motor value as variable representation
     def __str__(self):
@@ -2085,6 +2087,8 @@ class SmaractRecord(Assembly):
         self.status_collection.append(self, selection="settings", recursive=False)
 
         self.pvname = pvname
+        # plain attribute, not _append: looked up only when used, never in status
+        self.controller = MotorController(pvname)
         self._motor = _Motor(pvname)
         # a move is aborted only if the readback stops progressing for this many
         # seconds (see _wait_for_motion), not after a fixed maximum duration.

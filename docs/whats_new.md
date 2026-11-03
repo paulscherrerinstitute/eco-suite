@@ -53,6 +53,8 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
 - `motor.identify()` on any motor record: controller, drive model, encoder
   and what homing does there, read from the IOC and the drive
   ({doc}`powerbrick_parameters`).
+- `motor.controller` on every motor record: `.type`, `.link`, `.homing`,
+  looked up only when asked, never during scans.
 
 ## 2 November 2026
 

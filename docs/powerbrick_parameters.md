@@ -122,6 +122,20 @@ The result names each finding together with where it came from (`.evidence`):
   references the hardware has (index mark, limit switch) and whether a PSI
   homing script (`<prefix>:HOMING`) is attached.
 
+Every motor record also carries the short version as `controller`. Creating
+it costs nothing and scans never read it: it is looked up the first time you
+ask, and kept for the session.
+
+```python
+mono.theta.controller           # report from channel access and IOC files
+mono.theta.controller.type      # e.g. "schneider", "powerbrick"
+mono.theta.controller.link      # e.g. "TCP SARES20-CMOV-DSD1:1002"
+mono.theta.controller.homing    # what HOMF/HOMR does, other references, script, homed
+```
+
+`homing` asks the drive, so `type` then also names the model
+(`schneider MDrive Plus`). `controller.refresh()` forgets what was found.
+
 It only reads: no motion command, no configuration write. `deep=True` (the
 default) also asks the drive, about 0.3 s per value on a Schneider drive.
 `identify_motors()` runs many records in parallel.

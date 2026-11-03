@@ -152,3 +152,63 @@ def test_report_skips_empty_rows():
     text = str(ident)
     assert "controller  smaract_mcs" in text
     assert "firmware" not in text
+
+
+@pytest.fixture
+def fake_identify(monkeypatch):
+    calls = []
+
+    def identify(pvname, deep=True, timeout=2.0):
+        calls.append((pvname, deep))
+        ident = mi.MotorIdentity(pvname, online=True, family="schneider", ioc="SARES20-CPCL-DSD")
+        ident.link = "TCP SARES20-CMOV-DSD1:1002"
+        if deep:
+            ident.model = "MDI3CRL34B7-EE-N-K: MDrive Plus (integrated motor)"
+            ident.homing = mi.Homing("HM: to the home switch", ["HI: encoder index mark"], None, True)
+        return ident
+
+    monkeypatch.setattr(mi, "identify_motor", identify)
+    monkeypatch.setattr(mi, "_identities", {})
+    return calls
+
+
+def test_controller_costs_nothing_until_used(fake_identify):
+    ctrl = mi.MotorController("SARES20-DSD:MOTOR_DSDX")
+    assert fake_identify == []
+    assert "not looked up yet" in repr(ctrl)
+    # never read by get_status, which reads everything with get_current_value
+    assert not hasattr(ctrl, "get_current_value")
+
+
+def test_controller_shallow_then_deep_then_cached(fake_identify):
+    ctrl = mi.MotorController("SARES20-DSD:MOTOR_DSDX")
+    assert ctrl.type == "schneider"
+    assert ctrl.link == "TCP SARES20-CMOV-DSD1:1002"
+    assert fake_identify == [("SARES20-DSD:MOTOR_DSDX", False)]
+    assert ctrl.homing.record.startswith("HM")
+    assert ctrl.type == "schneider MDrive Plus"
+    ctrl.homing, ctrl.ioc
+    assert fake_identify == [("SARES20-DSD:MOTOR_DSDX", False), ("SARES20-DSD:MOTOR_DSDX", True)]
+    ctrl.refresh()
+    ctrl.type
+    assert len(fake_identify) == 3
+
+
+def test_offline_is_asked_again(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mi, "identify_motor", lambda pv, deep=True: calls.append(pv) or mi.MotorIdentity(pv))
+    monkeypatch.setattr(mi, "_identities", {})
+    ctrl = mi.MotorController("A:B")
+    assert ctrl.type == "offline"
+    ctrl.type
+    assert len(calls) == 2
+
+
+def test_homing_text():
+    text = str(mi.Homing("fails: no input is set up as home switch", ["HI: encoder index mark"], "X:HOMING = done", False))
+    assert text.splitlines() == [
+        "HOMF/HOMR      fails: no input is set up as home switch",
+        "could also     HI: encoder index mark",
+        "homing script  X:HOMING = done",
+        "homed          no",
+    ]

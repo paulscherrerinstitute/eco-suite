@@ -98,6 +98,14 @@ class Homing:
     script: str | None = None
     homed: bool | None = None
 
+    def __str__(self):
+        rows = [("HOMF/HOMR", self.record)] + [("could also", a) for a in self.alternatives]
+        rows += [("homing script", self.script), ("homed", None if self.homed is None else ("yes" if self.homed else "no"))]
+        return "\n".join(f"{k:<13}  {v}" for k, v in rows if v is not None)
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self))
+
 
 @dataclass
 class MotorIdentity:
@@ -203,6 +211,78 @@ def identify_motor(pvname: str, deep: bool = True, timeout: float = 2.0) -> Moto
     if handler:
         handler(ident, deep, timeout)
     return ident
+
+
+# pvname -> (deep, MotorIdentity); a deep result also answers shallow questions
+_identities: dict[str, tuple[bool, MotorIdentity]] = {}
+
+
+def cached_identity(pvname: str, deep: bool = False, refresh: bool = False) -> MotorIdentity:
+    """``identify_motor`` once per session and record; ``refresh`` asks again."""
+    pvname = pvname.split(".")[0]
+    hit = _identities.get(pvname)
+    # an offline record is asked again next time
+    if hit and not refresh and hit[1].online and (hit[0] or not deep):
+        return hit[1]
+    ident = identify_motor(pvname, deep=deep)
+    _identities[pvname] = (deep, ident)
+    return ident
+
+
+class MotorController:
+    """``motor.controller``: what drives a motor record, looked up on first
+    use and kept for the session -- creating it costs nothing, and it is not
+    part of the motor's status, so scans never read it.
+
+    ``type``, ``ioc`` and ``link`` come from channel access and the IOC boot
+    files (about a second the first time); ``homing`` also asks the drive or
+    controller (a few seconds for a Schneider drive). ``refresh()`` forgets
+    what was found; ``motor.identify()`` gives the full report."""
+
+    def __init__(self, pvname):
+        self._pvname = pvname
+
+    def identity(self, deep=False, refresh=False) -> MotorIdentity:
+        return cached_identity(self._pvname, deep=deep, refresh=refresh)
+
+    @property
+    def type(self) -> str:
+        """Controller family, plus the drive model once it was asked
+        (``homing`` or ``identify()``), e.g. ``schneider MDrive Plus``."""
+        ident = self.identity()
+        if not ident.online:
+            return "offline"
+        model = ident.model and ident.model.split(":", 1)[-1].split("(")[0].strip()
+        return " ".join(x for x in (ident.family, model) if x)
+
+    @property
+    def ioc(self) -> str | None:
+        return self.identity().ioc
+
+    @property
+    def link(self) -> str | None:
+        """Physical connection: ``TCP host:port``, ``serial /dev/ttyMn``, ..."""
+        return self.identity().link
+
+    @property
+    def homing(self) -> Homing:
+        """What HOMF/HOMR does on this controller, other references the
+        hardware offers, an attached PSI homing script, and the homed flag."""
+        return self.identity(deep=True).homing
+
+    def refresh(self):
+        _identities.pop(self._pvname.split(".")[0], None)
+
+    def __str__(self):
+        return str(self.identity())
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self))
+
+    def __repr__(self):
+        hit = _identities.get(self._pvname.split(".")[0])
+        state = f"{hit[1].family}" if hit else "not looked up yet"
+        return f"<MotorController {self._pvname}: {state}>"
 
 
 def identify_motors(pvnames, deep: bool = True, max_workers: int = 8):
