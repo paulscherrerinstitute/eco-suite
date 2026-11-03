@@ -269,8 +269,20 @@ crystal's own UB:
 
 - in Jupyter: hkl, energy, constraints with "fix" boxes (including the
   second reflection), a table of all solutions with a motor-limit row, and
-  the 3D view; clicking a solution moves the drawing. Constraints changed
-  there apply to the browser only until **store constraints**.
+  the 3D view; clicking a solution moves the drawing.
+  - **min/max** beside each angle filter the solutions (empty: no filter);
+    the circles' boxes start from the solution ranges of `set_constraints`.
+  - **load a setup** fills in a stored setup (`constraint_presets()`):
+    the held angles and the ranges.
+  - Constraints and min/max changed there apply to the browser only until
+    **store constraints**, which writes the constraints, and the circles'
+    min/max (both filled in) as the solution ranges.
+  - **simulate angles** takes any six circle angles, typed or taken with
+    **from view** (the solution or stored reflection shown) or **current**,
+    and shows the hkl in Bragg condition there, the nearest integer
+    reflection, the virtual angles and the motor-limit check, and draws
+    that position. The 3D view's own panel under the drawing has the
+    Ewald sphere, the detector's cut of it, the detector distance and size.
 - from a terminal it opens `widget_geom` in the web browser: the current
   position, every stored reflection and every solution, clickable, with
   their angles; solutions outside the limits are marked.

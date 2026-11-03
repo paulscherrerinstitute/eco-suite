@@ -175,6 +175,13 @@ def _read_fs_value(path):
         return json.load(f)["value"]
 
 
+def constraint_presets(config_dir):
+    """The built-in ``CONSTRAINT_PRESETS`` and the user setups stored in
+    ``<config_dir>/constraint_presets.json``, which override them."""
+    path = Path(config_dir) / "constraint_presets.json"
+    return {**CONSTRAINT_PRESETS, **(_read_fs_value(path) if path.exists() else {})}
+
+
 # the lab frame a crystal's matrices and vectors are stored in
 LAB_FRAME = {"beam": list(rc.BEAM), "up": list(rc.UP)}
 # diffcalc's, and that of RecSpace crystals stored before the frame was recorded
@@ -556,8 +563,7 @@ class RecSpace(Assembly):
         """The stored setups for ``set_constraints``: the built-in Bernina ones
         (``CONSTRAINT_PRESETS``) and those stored with
         ``store_constraint_preset`` (shared by all diffractometers)."""
-        user = _read_fs_value(self._preset_file()) if self._preset_file().exists() else {}
-        return {**CONSTRAINT_PRESETS, **user}
+        return constraint_presets(self.config_dir)
 
     def _describe_preset(self, name, preset):
         cons = ", ".join(f"{k}={v:g}" if isinstance(v, (int, float)) and not isinstance(v, bool) else f"{k}={v}"
@@ -1307,8 +1313,9 @@ class RecSpaceCrystal(Assembly):
 
     def widget_reflections(self, h=None, k=None, l=None, h2=None):
         """Interactive solution browser: hkl, energy, constraints (with the
-        two-reflection mode), the solution table with motor-limit check and
-        filters, and the 3D view. Inline ipywidgets in Jupyter; from a
+        two-reflection mode, min/max solution filters and the stored setups),
+        the solution table with motor-limit check, an angle simulator (any
+        six angles -> hkl, virtual angles) and the 3D view. Inline ipywidgets in Jupyter; from a
         terminal it opens ``widget_geom`` in the browser instead."""
         from eco.utilities.utilities import is_notebook
 

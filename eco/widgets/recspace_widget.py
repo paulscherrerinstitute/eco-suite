@@ -12,10 +12,12 @@ document for the angles, UB, abs(k), surface normal and target reflections):
   limits); clicking one moves the view and shows its angles.
 - ``ReflectionsApp``: the ipywidgets solution browser, modelled on
   bernina-scripts ``apps/diffraction_reflections.ipynb`` but working on the
-  crystal's own UB: hkl, energy, constraints with "fix" boxes (including the
-  two-reflection mode), a solution table with the motor-limit check and the
-  3D view. Constraints edited here are only used here until "store" writes
-  them to the RecSpace constraints.
+  crystal's own UB: hkl, energy, constraints with "fix" boxes and min/max
+  solution filters (including the two-reflection mode, and loading a stored
+  setup), a solution table with the motor-limit check, an angle simulator
+  (any position -> hkl and virtual angles) and the 3D view. Constraints
+  edited here are only used here until "store" writes them to the RecSpace
+  constraints and solution ranges.
 
 Nothing here moves a motor.
 """
@@ -74,6 +76,26 @@ def _fmt(v):
     if isinstance(v, (bool, np.bool_)):
         return "yes" if v else "no"
     return f"{float(v):.3f}"
+
+
+def _num_text(v):
+    return "" if v == "" or v is None else f"{float(v):g}"
+
+
+def _parse_num(text):
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _presets(crystal):
+    from eco.utilities.recspace_hklforge import constraint_presets
+
+    try:
+        return constraint_presets(crystal.config_dir)
+    except Exception:
+        return {}
 
 
 # --- static page (terminal sessions) ------------------------------------------
@@ -218,7 +240,7 @@ def geom_page(crystal, hkl=None, energy=None, h2=None, detector=None, open_brows
 class ReflectionsApp:
     """Interactive solution browser for one crystal; ``.widget`` is the box to display."""
 
-    SEL_CURRENT, SEL_ZERO = "current", "zero"
+    SEL_CURRENT, SEL_ZERO, SEL_SIM = "current", "zero", "sim"
 
     def __init__(self, crystal, hkl=None, h2=None):
         import ipywidgets as w
@@ -226,6 +248,7 @@ class ReflectionsApp:
         self.w = w
         self.c = crystal
         self._suspend = False
+        self._sim_suspend = False
         self._pushes = 0
         self.sols = []
         self.selected = self.SEL_CURRENT
@@ -253,15 +276,24 @@ class ReflectionsApp:
                                    layout=L(width="80px"))
         self.energy_btn.on_click(self._read_energy)
 
-        # constraints: value + fix box, initialised from the stored ones
+        # constraints: value + fix box, initialised from the stored ones; min/max
+        # filter the solutions (the circles' start from the solution ranges)
         self.cons = {}
-        rows = []
+        self.filters = {}
+        ranges = crystal._ranges()
+        rows = [w.HTML("<span style='font-size:11px;color:#888'>"
+                       "<span style='display:inline-block;width:62px'></span>value"
+                       "<span style='display:inline-block;width:44px'></span>min"
+                       "<span style='display:inline-block;width:28px'></span>max</span>")]
         for name in CIRCLES + VIRTUAL_CONSTRAINTS:
             val = stored.get(name)
-            box = w.Checkbox(value=val is not None, description="fix", indent=False, layout=L(width="50px"))
-            fld = w.FloatText(value=float(val) if val is not None else 0.0, layout=L(width="80px"))
+            box = w.Checkbox(value=val is not None, description="fix", indent=False, layout=L(width="44px"))
+            fld = w.FloatText(value=float(val) if val is not None else 0.0, layout=L(width="76px"))
+            lo, hi = ranges.get(name, ("", ""))
+            self.filters[name] = (w.Text(value=_num_text(lo), placeholder="min", layout=L(width="52px")),
+                                  w.Text(value=_num_text(hi), placeholder="max", layout=L(width="52px")))
             self.cons[name] = (fld, box)
-            rows.append(w.HBox([w.Label(name, layout=L(width="62px")), fld, box]))
+            rows.append(w.HBox([w.Label(name, layout=L(width="62px")), fld, *self.filters[name], box]))
         for name in BOOL_CONSTRAINTS:
             box = w.Checkbox(value=bool(stored.get(name)), description=name, indent=False, layout=L(width="150px"))
             self.cons[name] = (None, box)
@@ -275,36 +307,61 @@ class ReflectionsApp:
                                    value=stored.get("h2_detector") or "h1", layout=L(width="240px"))
         self.only_limits = w.Checkbox(value=False, description="only solutions within motor limits", indent=False,
                                       layout=L(width="260px"))
-        store = w.Button(description="store constraints", tooltip="write these constraints to "
-                         "the RecSpace constraints (used by h, k, l, hkl)", layout=L(width="140px"))
+        store = w.Button(description="store constraints", tooltip="write these constraints and the "
+                         "circles' min/max (solution ranges) to the RecSpace (used by h, k, l, hkl)",
+                         layout=L(width="140px"))
         store.on_click(self._store)
         reload_ = w.Button(description="reload stored", layout=L(width="110px"))
         reload_.on_click(self._reload)
         self.msg = w.HTML()
+        self.presets = _presets(crystal)
+        self.preset = w.Dropdown(options=[("load a setup ...", "")] + [(n, n) for n in self.presets],
+                                 layout=L(width="300px"))
+        self.preset.observe(lambda ch: self._load_preset(ch["new"]), names="value")
 
         summary = w.HTML(f"<pre style='font-size:11px;line-height:1.25'>{html.escape(crystal.summary())}</pre>")
         controls = w.VBox([
             w.HTML(f"<b>{html.escape(crystal.name)}</b> &mdash; target reflection"),
             w.HBox(self.hkl), w.HBox([self.energy, self.energy_btn]),
             w.HTML("<b>constraints</b> <span style='font-size:11px;color:#888'>(3 of them: circles "
-                   "and/or virtual angles)</span>"),
-            w.VBox(rows),
+                   "and/or virtual angles; min/max filter the solutions)</span>"),
+            self.preset, w.VBox(rows),
             w.HTML("<b>two reflections</b>"), self.two, w.HBox(self.h2), self.detector,
             self.only_limits, w.HBox([store, reload_]), self.msg,
             w.Accordion(children=[summary], titles=("crystal",)) if hasattr(w.Accordion, "titles") else summary,
-        ], layout=L(width="300px", flex="0 0 auto"))
+        ], layout=L(width="350px", flex="0 0 auto"))
 
         self.buttons = w.HBox([])
         self.table = w.HTML()
         self.solve_msg = w.HTML()
-        stored_opts = [("current position", self.SEL_CURRENT), ("all zero", self.SEL_ZERO)] + [
+        stored_opts = [("current position", self.SEL_CURRENT), ("all zero", self.SEL_ZERO),
+                       ("simulated angles", self.SEL_SIM)] + [
             (f"stored {r.get('tag') or i}: {r['hkl']}", f"refl:{i}") for i, r in enumerate(crystal.reflections())]
         self.show_stored = w.Dropdown(options=stored_opts, description="view", layout=L(width="300px"),
                                       style={"description_width": "40px"})
         self.show_stored.observe(lambda ch: self.select(ch["new"]), names="value")
+
+        # simulator: any six circle angles -> hkl, virtual angles, limits, 3D view
+        self.sim = {c: w.FloatText(value=0.0, description=c, step=0.5, layout=L(width="150px"),
+                                   style={"description_width": "48px"}) for c in CIRCLES}
+        from_view = w.Button(description="from view", tooltip="start from the angles the 3D view shows "
+                             "(a solution, a stored reflection, ...)", layout=L(width="96px"))
+        from_view.on_click(self._sim_from_view)
+        from_current = w.Button(description="current", tooltip="start from the diffractometer position",
+                                layout=L(width="80px"))
+        from_current.on_click(lambda _b: self._sim_from(self.SEL_CURRENT))
+        self.sim_out = w.HTML()
+        sim_box = w.VBox([
+            w.HTML("<b>simulate angles</b> &mdash; any position: which hkl is in Bragg condition there"),
+            w.HBox([w.VBox([self.sim[c] for c in CIRCLES[:3]]), w.VBox([self.sim[c] for c in CIRCLES[3:]])]),
+            w.HBox([from_view, from_current]), self.sim_out,
+        ], layout=L(margin="14px 0 0 0"))
+        for fld in self.sim.values():
+            fld.observe(self._sim_changed, names="value")
+
         table_panel = w.VBox([
             w.HTML("<b>solutions</b> &mdash; click a column to show it in the 3D view"),
-            self.solve_msg, self.buttons, self.table, self.show_stored,
+            self.solve_msg, self.buttons, self.table, self.show_stored, sim_box,
         ], layout=L(flex="0 0 auto", margin="0 0 0 12px"))
 
         view = w.HTML(f'<iframe srcdoc="{html.escape(VIEWER_HTML.read_text())}" '
@@ -318,6 +375,8 @@ class ReflectionsApp:
         watched = [*self.hkl, self.energy, self.two, *self.h2, self.detector, self.only_limits]
         for fld, box in self.cons.values():
             watched += [box] + ([fld] if fld is not None else [])
+        for lo, hi in self.filters.values():
+            watched += [lo, hi]
         for x in watched:
             x.observe(self.recompute, names="value")
         self.recompute()
@@ -341,15 +400,71 @@ class ReflectionsApp:
         except Exception as e:
             self.msg.value = f"<span style='color:#b00'>{html.escape(str(e))}</span>"
 
+    def filter_ranges(self):
+        """{name: (min or None, max or None)} of the filled-in min/max boxes."""
+        out = {}
+        for name, (lo, hi) in self.filters.items():
+            a, b = _parse_num(lo.value), _parse_num(hi.value)
+            if a is not None or b is not None:
+                out[name] = (a, b)
+        return out
+
+    def _passes(self, sol, ranges):
+        for name, (a, b) in ranges.items():
+            v = sol.get(name)
+            if v is None or not np.isfinite(v):
+                continue
+            if name in CIRCLES and a is not None and b is not None:
+                ok = rc.wrap_into_limits(float(v), (a, b), strict=False) is not None   # as solution_ranges
+            else:
+                ok = (a is None or v >= a) and (b is None or v <= b)
+            if not ok:
+                return False
+        return True
+
     def _store(self, _b=None):
         base = self.c.constraints._base_dict
         base.set_target_value({**base(), **self.constraint_dict()}).wait()
-        self.msg.value = "<span style='color:#282;font-size:11px'>stored as RecSpace constraints</span>"
+        text = "stored as RecSpace constraints"
+        if self.c._solution_ranges is not None:
+            ranges = {n: [a, b] for n, (a, b) in self.filter_ranges().items()
+                      if n in CIRCLES and a is not None and b is not None}
+            self.c._solution_ranges.set_target_value(ranges).wait()
+            text += ", circle min/max as solution ranges" if ranges else ", no solution ranges"
+            skipped = [n for n, (a, b) in self.filter_ranges().items() if n not in ranges]
+            if skipped:
+                text += f" (only used here: {', '.join(skipped)})"
+        self.msg.value = f"<span style='color:#282;font-size:11px'>{html.escape(text)}</span>"
+
+    def _load_preset(self, name):
+        if not name:
+            return
+        preset = self.presets[name]
+        cons, ranges = preset.get("constraints", {}), preset.get("ranges") or {}
+        self._suspend = True
+        try:
+            for n, (fld, box) in self.cons.items():
+                val = cons.get(n)
+                box.value = bool(val) if n in BOOL_CONSTRAINTS else val is not None
+                if fld is not None and val is not None:
+                    fld.value = float(val)
+            for n, (lo, hi) in self.filters.items():
+                lo.value, hi.value = (_num_text(v) for v in ranges.get(n, ("", "")))
+            self.two.value = False
+            self.preset.value = ""
+        finally:
+            self._suspend = False
+        self.msg.value = (f"<span style='color:#555;font-size:11px'>setup {html.escape(name)}: "
+                          f"{html.escape(preset.get('description', ''))} (used here; store to keep)</span>")
+        self.recompute()
 
     def _reload(self, _b=None):
         stored = self.c.constraints._base_dict()
+        ranges = self.c._ranges()
         self._suspend = True
         try:
+            for name, (lo, hi) in self.filters.items():
+                lo.value, hi.value = (_num_text(v) for v in ranges.get(name, ("", "")))
             for name, (fld, box) in self.cons.items():
                 val = stored.get(name)
                 box.value = bool(val) if name in BOOL_CONSTRAINTS else val is not None
@@ -381,17 +496,69 @@ class ReflectionsApp:
                 if two:
                     sp = rc.spots(self.c._ub(), energy, s, [hkl, cons["h2"]])
                     s["separation"], s["tdet max [mm]"] = sp["separation"], sp["tdet_max"]
+            n_all = len(sols)
             if self.only_limits.value:
                 sols = [s for s in sols if s["in limits"]]
+            ranges = self.filter_ranges()
+            sols = [s for s in sols if self._passes(s, ranges)]
             self.sols = sols
+            hidden = f" ({n_all - len(sols)} hidden by the limits or min/max filters)" if n_all > len(sols) else ""
             self.solve_msg.value = ("" if sols else
-                                    "<span style='color:#a60;font-size:12px'>no solution</span>")
+                                    f"<span style='color:#a60;font-size:12px'>no solution{hidden}</span>")
         except Exception as e:
             self.solve_msg.value = f"<span style='color:#b00;font-size:12px'>{html.escape(str(e))}</span>"
         if isinstance(self.selected, int) and self.selected >= len(self.sols):
             self.selected = self.SEL_CURRENT
         self._rebuild_buttons()
         self.select(self.selected)
+
+    # --- simulator ---------------------------------------------------------------
+
+    def sim_angles(self):
+        return {c: float(self.sim[c].value) for c in CIRCLES}
+
+    def _sim_from(self, sel):
+        try:
+            angles = self._view(sel)[0]
+        except Exception as e:
+            self.sim_out.value = f"<span style='color:#b00;font-size:12px'>{html.escape(str(e))}</span>"
+            return
+        self._sim_suspend = True
+        try:
+            for c in CIRCLES:
+                self.sim[c].value = round(float(angles.get(c, 0.0)), 4)
+        finally:
+            self._sim_suspend = False
+        self.select(self.SEL_SIM)
+
+    def _sim_from_view(self, _b=None):
+        if self.selected != self.SEL_SIM:
+            self._sim_from(self.selected)
+
+    def _sim_changed(self, *_):
+        if not self._sim_suspend:
+            self.select(self.SEL_SIM)
+
+    def _render_sim(self):
+        angles, energy = self.sim_angles(), float(self.energy.value)
+        try:
+            ub = self.c._ub()
+            hkl = rc.calc_hkl(ub, energy, angles)
+            virt = rc.pseudo_angles(ub, angles, self.c._reference, self.c._surface)
+        except Exception as e:
+            self.sim_out.value = f"<span style='color:#b00;font-size:12px'>{html.escape(str(e))}</span>"
+            return
+        near = np.round(hkl)
+        rows = [("h k l", "&nbsp;&nbsp;".join(f"{x:.3f}" for x in hkl)),
+                ("nearest", "(" + " ".join(f"{int(x)}" for x in near + 0.0) + f")&nbsp; off by "
+                 f"{np.linalg.norm(hkl - near):.3f}")]
+        rows += [(r, _fmt(virt.get(r))) for r in TABLE_ROWS if r not in CIRCLES and r in virt]
+        ok = _limits_ok(self.c, angles)
+        rows.append(("in limits", f"<span style='color:#b33'>no</span>" if ok is False else _fmt(ok)))
+        self.sim_out.value = ("<table style='border-collapse:collapse;font-size:12px'>" + "".join(
+            f"<tr><td style='width:90px;text-align:right;padding:1px 6px;font-weight:600'>{html.escape(r)}</td>"
+            f"<td style='padding:1px 6px;font-variant-numeric:tabular-nums'>{v}</td></tr>" for r, v in rows)
+            + "</table>")
 
     def _rebuild_buttons(self):
         w = self.w
@@ -428,24 +595,31 @@ class ReflectionsApp:
         for b in self.buttons.children:
             if hasattr(b, "_sel"):
                 b.button_style = "info" if b._sel == sel else ""
+        if not isinstance(sel, int) and sel != self.show_stored.value:
+            self.show_stored.value = sel          # fires select(sel) once more, harmless
         self._render_table()
+        self._render_sim()
         self._push()
 
-    def _push(self):
-        sel, energy = self.selected, float(self.energy.value)
+    def _view(self, sel):
+        """(angles, label, energy, target reflections) of a view selection."""
+        energy = float(self.energy.value)
         hkl = [float(x.value) for x in self.hkl]
         targets = [hkl, [float(x.value) for x in self.h2]] if self.two.value else [hkl]
+        if isinstance(sel, int):
+            return self.sols[sel], f"sol. {sel}", energy, targets
+        if sel == self.SEL_ZERO:
+            return {}, "zero", energy, targets
+        if sel == self.SEL_SIM:
+            return self.sim_angles(), "simulated", energy, targets
+        if isinstance(sel, str) and sel.startswith("refl:"):
+            r = self.c.reflections()[int(sel[5:])]
+            return rc.position_to_angles(r["position"]), f"stored {r['hkl']}", r["energy"], [r["hkl"]]
+        return self.c._angles(), "current", energy, targets
+
+    def _push(self):
         try:
-            if isinstance(sel, int):
-                angles, label = self.sols[sel], f"sol. {sel}"
-            elif sel == self.SEL_ZERO:
-                angles, label = {}, "zero"
-            elif isinstance(sel, str) and sel.startswith("refl:"):
-                r = self.c.reflections()[int(sel[5:])]
-                angles, label, energy = rc.position_to_angles(r["position"]), f"stored {r['hkl']}", r["energy"]
-                targets = [r["hkl"]]
-            else:
-                angles, label = self.c._angles(), "current"
+            angles, label, energy, targets = self._view(self.selected)
             msg = payload(self.c, angles, energy, label, targets, n=self._pushes)
         except Exception as e:
             self.solve_msg.value = f"<span style='color:#b00;font-size:12px'>{html.escape(str(e))}</span>"

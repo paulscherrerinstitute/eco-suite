@@ -344,6 +344,34 @@ def test_reflections_app(rs):
     assert rs.constraints.h2() == [0.0, 0.0, 1.0]
 
 
+def test_reflections_app_filters_presets_and_simulator(rs):
+    pytest.importorskip("ipywidgets")
+    from eco.widgets.recspace_widget import ReflectionsApp
+
+    c = _si(rs)
+    _set(rs, mu=0, gamma=0, chi=90)
+    app = ReflectionsApp(c, hkl=(1, 1, 1))
+    assert len(app.sols) == 4
+    lo, hi = app.filters["eta"]
+    lo.value, hi.value = "0", "180"                # min/max filter the solutions
+    assert 0 < len(app.sols) < 4 and all(0 <= s["eta"] <= 180 for s in app.sols)
+    app._store()                                   # circle min/max become the solution ranges
+    assert rs.solution_ranges() == {"eta": [0.0, 180.0]}
+
+    app.preset.value = "sd_horizontal"             # mu 0, eta 0, chi 90; gamma -150..10, delta -10..120
+    assert app.preset.value == ""
+    assert app.cons["eta"][1].value and not app.cons["gamma"][1].value
+    assert app.filters["delta"][0].value == "-10" and app.filters["eta"][0].value == ""
+    assert app.sols and all(-10 <= s["delta"] <= 120 for s in app.sols)
+
+    app.select(0)
+    app._sim_from_view()                           # simulator starts from the solution shown
+    assert app.selected == app.SEL_SIM and "simulated" in app.payload_holder.value
+    assert "1.000&nbsp;&nbsp;1.000&nbsp;&nbsp;1.000" in app.sim_out.value
+    app.sim["delta"].value += 5                    # off Bragg: hkl follows
+    assert "1.000&nbsp;&nbsp;1.000" not in app.sim_out.value and "off by" in app.sim_out.value
+
+
 def test_parse_triple_as_people_write_it():
     for text in ("0 0 1", "0,0,1", "(0,0,1)", "[0, 0, 1]", "(001)"):
         assert rc.parse_triple(text) == [0, 0, 1], text
