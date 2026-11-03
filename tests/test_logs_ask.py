@@ -59,6 +59,20 @@ def test_index_is_incremental(tmp_path):
     assert la.search("mono", db_path=db)[0].text == "mono.mv(8000)"
 
 
+def test_docs_of_another_checkout_are_forgotten(tmp_path):
+    logs, docs = _setup(tmp_path)
+    old = tmp_path / "old_checkout_docs"
+    old.mkdir()
+    (old / "scanning.md").write_text("# Scanning\n\n## Mesh scans\n\nOutdated: use `s.oldmesh(...)`.\n")
+    db = tmp_path / "idx.sqlite"
+    la.build_index(db, log_dir=logs, doc_dirs=[old], src_dirs=())
+    assert la.search("oldmesh", db_path=db)
+    la.build_index(db, log_dir=logs, doc_dirs=[docs], src_dirs=())
+    assert not la.search("oldmesh", db_path=db)
+    assert la.search("mesh scan", db_path=db)[0].kind == "doc"
+    assert la.search("transmission", db_path=db)          # command history kept
+
+
 def test_query_syntax_never_raises(tmp_path):
     logs, docs = _setup(tmp_path)
     db = tmp_path / "idx.sqlite"

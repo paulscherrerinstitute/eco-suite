@@ -359,6 +359,19 @@ def _invalidate_old_api_items(con):
         con.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('api_version', ?)", (_API_VERSION,))
 
 
+def _forget_unlisted(con, sources):
+    """Drop docs, api and examples whose file is no longer among the sources:
+    deleted, or from another checkout an earlier session ran from. Otherwise
+    an outdated copy of a doc keeps answering next to the current one."""
+    listed = {str(p) for p, what in sources if what != "log"}
+    with con:
+        stale = [p for (p,) in con.execute(
+            "SELECT DISTINCT path FROM items WHERE kind IN ('doc', 'api', 'example')") if p not in listed]
+        con.executemany("DELETE FROM items WHERE path = ? AND kind IN ('doc', 'api', 'example')",
+                        [(p,) for p in stale])
+        con.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in stale])
+
+
 def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs=(SRC_DIR,), example_dirs=()):
     """Add new/changed kernel logs, docs, package sources (api) and
     notebooks (examples) to the index; unchanged files (same mtime and
@@ -394,6 +407,8 @@ def build_index(db_path=DEFAULT_DB, log_dir=None, doc_dirs=(DOCS_DIR,), src_dirs
                 (p, ("example", label)) for p in sorted(d.rglob("*.ipynb"))
                 if ".ipynb_checkpoints" not in p.parts
             ]
+
+    _forget_unlisted(con, sources)
 
     def rows_for(path, what):
         if what == "log":
