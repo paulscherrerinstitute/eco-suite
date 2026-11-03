@@ -129,6 +129,15 @@ STATUS_DATA = {}
 
 
 class StatusData:
+    """Run status of the current pgroup: one run's status.json
+    (`get_run_status`), or all runs as a table (`table`, `plot`), kept in a
+    parquet cache next to the run table (see eco.acquisition.run_store).
+
+    Status files are looked up in `res_search` first - the DAQ client's copy,
+    which has every run - then in `path_search` (raw/, which since 2025 holds
+    only some runs, and is all there is for older pgroups).
+    """
+
     def __init__(
         self,
         pgroup_adj,
@@ -136,30 +145,74 @@ class StatusData:
         status_search="aux/status.json",
         load_kwargs={},
         name="",
+        res_search="/sf/bernina/data/{pgroup:s}/res/run_data/daq",
+        cache_path="/sf/bernina/data/{pgroup:s}/res/run_data/run_table/{pgroup:s}_runs.parquet",
     ):
         # super().__init__(name=name)
         # self._append(pgroup_adj, name="pgroup")
         self.pgroup = pgroup_adj
         self.path_search = path_search
+        self.res_search = res_search
+        self.cache_path = cache_path
         self.status_search = status_search
         self.load_kwargs = load_kwargs
         self.loaded_statii = {}
+        self._stores = {}
         STATUS_DATA[self.pgroup.get_current_value()] = self
+
+    def _status_dirs(self, pgroup):
+        return [
+            Path(s.format(pgroup=pgroup))
+            for s in (self.res_search, self.path_search)
+            if s
+        ]
+
+    def _status_file(self, run_number):
+        pgroup = self.pgroup.get_current_value()
+        for d in self._status_dirs(pgroup):
+            p = d / f"run{run_number:04d}" / self.status_search
+            if p.exists():
+                return p
+        raise FileNotFoundError(
+            f"no {self.status_search} for run {run_number} of {pgroup} in "
+            + " or ".join(str(d) for d in self._status_dirs(pgroup))
+        )
 
     def get_available_run_numbers(self):
         pgroup = self.pgroup.get_current_value()
-        p = Path(self.path_search.format(pgroup=pgroup))
-        runs = []
-        for tp in p.iterdir():
-            if not tp.is_dir():
+        runs = set()
+        for p in self._status_dirs(pgroup):
+            if not p.is_dir():
                 continue
-            if tp.name[:3] == "run":
-                numstring = tp.name.split("run")[1]
-                if numstring.isdecimal():
+            for tp in p.iterdir():
+                if tp.name[:3] == "run" and tp.name[3:].isdecimal():
                     if (tp / Path(self.status_search)).exists():
-                        runs.append(int(numstring))
-        runs.sort()
-        return runs
+                        runs.add(int(tp.name[3:]))
+        return sorted(runs)
+
+    @property
+    def store(self):
+        """The RunStore of the current pgroup."""
+        from eco.acquisition.run_store import RunStore
+
+        pgroup = self.pgroup.get_current_value()
+        if pgroup not in self._stores:
+            cache = self.cache_path.format(pgroup=pgroup) if self.cache_path else None
+            self._stores[pgroup] = RunStore(self._status_dirs(pgroup), cache)
+        return self._stores[pgroup]
+
+    def table(self, columns=None, prefix=None, runs=None):
+        """All runs' status as a DataFrame, one row per run plus a "time"
+        column; see RunStore.table. Names are full names as in status.json,
+        e.g. prefix="bernina.kb" for everything below kb."""
+        return self.store.table(columns=columns, prefix=prefix, runs=runs)
+
+    def plot(self, columns, runs=None, x="time", ax=None, **plot_kwargs):
+        """Plot status values against time (x="time", run numbers as a
+        second x axis) or run number (x="run", time as the second axis)."""
+        from eco.acquisition.run_store import plot_table
+
+        return plot_table(self.table(columns=columns, runs=runs), x=x, ax=ax, **plot_kwargs)
 
     def get_run_status(self, run_number, **kwargs):
         if run_number < 0:
@@ -174,20 +227,7 @@ class StatusData:
         if run_number < 0:
             run_number = self.get_available_run_numbers()[run_number]
             print(f"Loading run number {run_number}")
-        tkwargs = self.load_kwargs
-        tkwargs.update(kwargs)
-
-        tks = {}
-        for tk, tv in tkwargs.items():
-            if type(tv) is str:
-                tv = tv.format(pgroup=self.pgroup.get_current_value())
-            tks[tk] = tv
-        pgroup = self.pgroup.get_current_value()
-        with open(
-            Path(self.path_search.format(pgroup=pgroup))
-            / Path(f"run{run_number:04d}/aux/status.json"),
-            "r",
-        ) as fh:
+        with open(self._status_file(run_number), "r") as fh:
             r = json.load(fh)
         self.loaded_statii[run_number] = r
         return r
@@ -691,6 +731,57 @@ class RunStatusAccessor:
     def __getitem__(self, run_number):
         return self(run_number)
 
+    def table(self, runs=None, columns=None, settings_only=False, pgroup="auto"):
+        """This object's status over many runs, as a DataFrame: one row per
+        run (index "run"), a "time" column, then one column per name below
+        this object, relative to it as in `.dict()`; the object's own value
+        is the column "value".
+
+        runs: None for all, a slice over the available runs (slice(-50,
+        None): the last 50), run numbers (negative count from the newest).
+        columns: names to include (relative, "value" for the object itself).
+        settings_only: only the names this object marks as settings.
+        Built from the pgroup's run store (eco.acquisition.run_store), i.e.
+        the status at run start.
+        """
+        data = STATUS_DATA[self._pgroup_key(pgroup)]
+        nam = self._obj.alias.get_full_name()
+        if columns is None:
+            tab = data.table(prefix=nam, runs=runs)
+        else:
+            full = [nam if c in ("value", "") else f"{nam}.{c}" for c in columns]
+            tab = data.table(columns=full, runs=runs)
+        rel = {c: c[len(nam) + 1:] for c in tab.columns if c.startswith(nam + ".")}
+        own = "value" if "value" not in rel.values() else nam
+        rel[nam] = own
+        # a child called "time" keeps its full name next to the run's time
+        rel = {k: (k if v == "time" and k != "time" else v) for k, v in rel.items()}
+        tab = tab.rename(columns=rel)
+        if settings_only and hasattr(self._obj, "status_collection"):
+            keep = set(self._obj.status_collection.get_names(selection="settings"))
+            tab = tab[["time"] + [c for c in tab.columns if c in keep]]
+        return tab
+
+    def plot(self, columns=None, runs=None, x="time", ax=None, pgroup="auto", **plot_kwargs):
+        """Plot this object's status over runs, against time (x="time", run
+        numbers on a second x axis) or run number (x="run", time on the
+        second axis). columns: relative names as in `.table()`; default the
+        object's own value."""
+        from eco.acquisition.run_store import plot_table
+
+        if columns is None:
+            tab = self.table(runs=runs, columns=["value"], pgroup=pgroup)
+            own = tab.drop(columns="time")
+            if own.iloc[:, 0].isna().all():
+                choices = [c for c in self.table(runs=slice(-1, None), pgroup=pgroup).columns if c != "time"]
+                raise ValueError(
+                    f"{self._obj.alias.get_full_name()} has no value of its own in the "
+                    f"run status; pass columns=, e.g. {choices[:10]}"
+                )
+        else:
+            tab = self.table(runs=runs, columns=columns, pgroup=pgroup)
+        return plot_table(tab, x=x, ax=ax, title=self._obj.alias.get_full_name(), **plot_kwargs)
+
     def __repr__(self):
         try:
             runs = self.available()
@@ -701,7 +792,9 @@ class RunStatusAccessor:
             f"<run_status for {self._obj.alias.get_full_name()}: {avail}>\n"
             "Call e.g. .run_status(1234) or .run_status[1234] for a display view "
             "(depth=, include_hidden=, compare_live=); .run_status([1234, 1235]) for "
-            "a combined multi-run table; .run_status.dict(...) for raw values."
+            "a combined multi-run table; .run_status.dict(...) for raw values; "
+            ".run_status.table(runs=slice(-50, None)) / .run_status.plot() for "
+            "values over many runs."
         )
 
 

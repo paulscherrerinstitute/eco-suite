@@ -170,6 +170,7 @@ scientific Python libraries.
    recspace
    recspace_crystals
    status_server
+   run_history
    shared_files
 
 .. toctree::
