@@ -168,6 +168,7 @@ scientific Python libraries.
    ask_eco
    tab_completion
    recspace
+   recspace_crystals
    status_server
    shared_files
 

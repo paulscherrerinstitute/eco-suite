@@ -188,6 +188,10 @@ be set one at a time, release with `None`: `xrd.recspace.constraints.chi(90)`.
 And check the motor soft limits, since `calc_angles_unique` and `hkl.mv`
 pick the one solution inside them.
 
+Crystallography facts and common mistakes (hexagonal cells, Miller-Bravais
+indices, forbidden reflections, a worked thin-film example):
+[recspace_crystals.md](recspace_crystals.md).
+
 Other crystal management: `xrd.recspace.crystals` (this diffractometer's),
 `activate_crystal` (one created on another diffractometer, or a
 deactivated one), `deactivate_crystal`, `delete_crystal` (also deletes the
