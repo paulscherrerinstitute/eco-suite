@@ -19,8 +19,10 @@ What is new over diffcalc:
   keeps both on the detector.
 - Every branch, exactly (hklforge), also for modes diffcalc lacks
   (naz with two sample circles) or gets wrong (bisect/omega).
-- Reference vector and surface normal can be set (``set_reference``,
-  ``set_surface``); diffcalc's wrapper always used its defaults.
+- The surface normal is a property of the crystal of its own
+  (``set_surface_normal``), independent of the orientations that define
+  how the crystal is mounted; diffcalc's tools took the first orientation
+  for it. The reference vector can be set too (``set_reference``).
 - Solutions whose angles are only out of the motor limits by a 360 degree
   representation are mapped into them instead of being rejected.
 - ``widget_reflections()``: an interactive solution browser with the 3D
@@ -237,22 +239,28 @@ class RecSpace(Assembly):
 
            xrd.recspace.create_crystal()
 
-       asks for a name, the lattice, the surface normal in the crystal (h k
-       l) and where it points in the lab with all angles at 0 (e.g. "x+"),
-       then a direction in the surface (h k l) and where it points (e.g.
-       "beam"). The first is matched exactly, the second only fixes the
-       rotation about the first. That gives a nominal UB: the crystal
-       mounted as designed.
+       asks for a name, the lattice, the surface normal (h k l, or none),
+       then two crystal directions (h k l) and where each points in the lab
+       with all angles at 0 (e.g. "x+", "beam"). The first is matched
+       exactly, the second only fixes the rotation about the first. That
+       gives a nominal UB: the crystal mounted as designed.
 
-    2. The same as a script, here Si(001), surface normal along x+ and
-       [110] along the beam::
+    2. The same as a script, here Si with a (001) surface, mounted with
+       (001) along x+ and (110) along the beam::
 
            si = xrd.recspace.create_crystal(
                "si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-           si.add_orientation([0, 0, 1], "x+", tag="surface normal")
-           si.add_orientation([1, 1, 0], "beam", tag="in-plane")
-           si.set_surface(hkl=[0, 0, 1])     # for betain/betaout; option 1 does this too
+           si.set_surface_normal([0, 0, 1])
+           si.add_orientation([0, 0, 1], "x+", tag="mount 1")
+           si.add_orientation([1, 1, 0], "beam", tag="mount 2")
            si.calc_ub()
+
+    The surface normal and the orientations are independent: the surface
+    normal says which lattice planes form the sample surface (behind
+    betain, betaout, bin_eq_bout: grazing incidence and exit), the
+    orientations how the crystal is mounted. Often a mounting direction is
+    the surface normal, but it does not have to be (another face up, a
+    miscut: give non-integer h k l, or the normal as a lab direction).
 
     3. From the crystals the diffcalc object already knows::
 
@@ -262,10 +270,10 @@ class RecSpace(Assembly):
     Then replace the nominal orientation by measured reflections: drive to a
     Bragg peak and ``si.add_reflection(h, k, l)`` stores it with the current
     angles and energy. With one reflection,
-    ``si.calc_ub(0, "surface normal")`` combines it with the nominal surface
-    normal; with two, ``si.calc_ub()``; with three or more, ``si.fit_ub()``.
-    Two references must not be parallel (e.g. (004) with a (001) surface
-    normal), three for a fit not in one plane. ``si.summary()`` shows the
+    ``si.calc_ub(0, "mount 1")`` combines it with the first nominal
+    direction; with two, ``si.calc_ub()``; with three or more, ``si.fit_ub()``.
+    Two references must not be parallel (e.g. (004) with a nominal (001)),
+    three for a fit not in one plane. ``si.summary()`` shows the
     result, ``si.calc_hkl()`` should then read the peak's hkl.
 
     Constraints -- fix three. A stored Bernina setup (sd = surface diffractometer
@@ -406,8 +414,8 @@ class RecSpace(Assembly):
         """Create a new crystal on this diffractometer and return it.
 
         Without ``unit_cell`` everything is asked interactively (``new_ub``):
-        name, lattice, surface normal and in-plane direction, and a nominal
-        UB is calculated. With ``unit_cell=dict(a=.., b=.., c=.., alpha=..,
+        name, lattice, surface normal and two mounting directions, and a
+        nominal UB is calculated. With ``unit_cell=dict(a=.., b=.., c=.., alpha=..,
         beta=.., gamma=..)`` (angstrom, degrees) only the lattice is set; add
         orientations or reflections and run ``calc_ub()`` next. The new
         crystal is then ``self.<name>``. See ``RecSpace`` for an example.
@@ -514,6 +522,8 @@ class RecSpace(Assembly):
                 raise FileNotFoundError(path)
             values[a] = _read_fs_value(path)
         values = rc.turn_crystal_data(values, rc.YOU_TO_LAB)
+        # the surface normal diffcalc's wrapper always used, so betain/betaout
+        # mean what they meant there; set_surface_normal replaces it
         values["vectors"] = {"reference": dict(rc.DEFAULT_REFERENCE), "surface": dict(rc.DEFAULT_SURFACE)}
         values["frame"] = LAB_FRAME
         for a, v in values.items():
@@ -637,15 +647,17 @@ class RecSpaceCrystal(Assembly):
     (``frame()``: z+ along the beam, y+ up, x+ = y x z, left looking along
     the beam; the phi axis is x-):
 
-    - ``add_orientation(hkl, xyz)``: a nominal direction, e.g.
-      ``add_orientation([0, 0, 1], "x+", tag="surface normal")``
+    - ``set_surface_normal(hkl)``: which lattice planes form the surface
+      (for betain, betaout, bin_eq_bout), independent of the orientations
+    - ``add_orientation(hkl, xyz)``: a nominal direction of the mount, e.g.
+      ``add_orientation([0, 0, 1], "x+")``
     - ``add_reflection(h, k, l)``: a measured peak at the current angles and
       energy (or give ``mu=..., ..., energy=...``)
     - ``calc_ub()``: from reflections 0 and 1 (an index falls back to the
       orientation with that index; a string is a tag, so
-      ``calc_ub(0, "surface normal")`` mixes both); ``fit_ub()``: from 3 or
+      ``calc_ub(0, "mount 1")`` mixes both); ``fit_ub()``: from 3 or
       more reflections; ``refine_ub(hkl)``: lattice and/or U from one peak
-    - ``set_unit_cell``, ``set_reference``, ``set_surface``, ``summary()``
+    - ``set_unit_cell``, ``set_reference``, ``summary()``
 
     Calculating and moving: ``h``, ``k``, ``l``, ``hkl`` (adjustables),
     ``calc_angles``, ``calc_angles_two``, ``calc_angles_unique``,
@@ -666,7 +678,7 @@ class RecSpaceCrystal(Assembly):
             "ub_matrix": ([], False),
             "orientations": ([], True),
             "reflections": ([], True),
-            "vectors": ({"reference": dict(rc.DEFAULT_REFERENCE), "surface": dict(rc.DEFAULT_SURFACE)}, False),
+            "vectors": ({"reference": dict(rc.DEFAULT_REFERENCE)}, False),
         }
         for fname, (default, display) in files.items():
             self._append(
@@ -843,11 +855,13 @@ class RecSpaceCrystal(Assembly):
         self.ub_matrix.set_target_value((U @ rc.lattice_b(uc)).tolist()).wait()
 
     def new_ub(self):
-        """Set lattice and two crystal directions interactively and calculate UB.
+        """Set lattice, surface normal and two mounting directions
+        interactively and calculate UB.
 
-        The directions are given as they lie with all diffractometer angles
-        at 0, in the diffractometer's own frame (``frame()``): e.g. the
-        surface normal along "x+" and an in-plane direction along "beam".
+        The surface normal (which lattice planes form the surface) is asked
+        on its own; the mounting directions are given as they lie with all
+        diffractometer angles at 0, in the diffractometer's own frame
+        (``frame()``), e.g. (001) along "x+" and (110) along "beam".
         """
         crystal_name = input(f"Name of the crystal: ({self.name})") or str(self.name)
         a = float(input("Lattice constant a (1): ") or 1)
@@ -857,16 +871,20 @@ class RecSpaceCrystal(Assembly):
         beta = float(input(f"Angle beta ({alpha}): ") or alpha)
         gamma = float(input(f"Angle gamma ({alpha}): ") or alpha)
 
-        def ask_hkl(prompt, default):
+        def ask_hkl(prompt, default, allow_none=False):
             while True:
-                text = input(prompt)
-                if not text.strip():
+                text = input(prompt).strip()
+                if not text:
                     return default
+                if allow_none and text.lower() in ("none", "-", "no"):
+                    return None
                 v = rc.parse_triple(text)
                 if v is not None and any(v):
                     return v
                 print("  Miller indices h k l of the crystal, e.g. 0 0 1, (0,0,1) or (001)"
-                      + (" -- where it points in the lab is asked next" if text.strip()[0].isalpha() else ""))
+                      + (" -- where it points in the lab is asked next" if text[0].isalpha() and not allow_none
+                         else "")
+                      + (", or none" if allow_none else ""))
 
         def ask_dir(prompt, default):
             while True:
@@ -876,30 +894,42 @@ class RecSpaceCrystal(Assembly):
                 except ValueError as e:
                     print(f"  {e}")
 
+        def fmt(v):
+            return " ".join(f"{x:g}" for x in v)
+
         phi_axis = rc._axis_name(rc.GEOMETRY.sample[-1].axis)
-        normal_default = rc._axis_name(rc.DEFAULT_SURFACE["phi"])
         print()
         print(rc.frame_description())
         print(
-            "\nThe crystal's orientation, as mounted with all angles at 0, from two directions.\n"
-            "Each is given twice:\n"
-            "  in the crystal: Miller indices h k l, the normal of the lattice planes (hkl)\n"
-            "                  (a reciprocal-lattice direction), e.g. 0 0 1, (0,0,1) or (001)\n"
-            "  in the lab:     where that direction points: an axis (x+, y-, ...), beam, up,\n"
-            "                  down, phi or -phi (along the phi axis), or 3 numbers\n"
-            "The first direction is matched exactly; the second only fixes the rotation about\n"
-            "the first (its part perpendicular to the first is used). Defaults in [brackets]."
+            "\nDirections in the crystal are Miller indices h k l, the normal of the lattice\n"
+            "planes (hkl) (a reciprocal-lattice direction), e.g. 0 0 1, (0,0,1) or (001).\n"
+            "Directions in the lab: an axis (x+, y-, ...), beam, up, down, phi or -phi (along\n"
+            "the phi axis), or 3 numbers. Defaults in [brackets].\n"
+            "\nSurface normal: which lattice planes form the sample surface. Used for the\n"
+            "incidence/exit angles betain, betaout (bin_eq_bout); none for a sample\n"
+            "without a defined surface. It does not orient the crystal."
         )
-        normal = ask_hkl("1st direction (surface normal) in the crystal, h k l [0 0 1]: ", [0, 0, 1])
-        normal_dir = ask_dir(f"  ... points in the lab along [{normal_default}] (the phi axis is {phi_axis}): ",
-                             normal_default)
-        inplane = ask_hkl("2nd direction (in the surface) in the crystal, h k l [1 0 0]: ", [1, 0, 0])
-        inplane_dir = ask_dir("  ... points in the lab along [beam]: ", "beam")
+        normal = ask_hkl("Surface normal in the crystal, h k l, or none [0 0 1]: ", [0, 0, 1], allow_none=True)
+        print(
+            "\nOrientation: how the crystal is mounted, with all angles at 0, from two crystal\n"
+            "directions and where each points in the lab. The first is matched exactly; the\n"
+            "second only fixes the rotation about the first (its part perpendicular to the\n"
+            "first is used). The surface normal is a natural first direction, but any is fine."
+        )
+        first_default = normal if normal is not None else [0, 0, 1]
+        first = ask_hkl(f"1st direction in the crystal, h k l [{fmt(first_default)}]: ", first_default)
+        first_dir = ask_dir(f"  ... points in the lab along [x+] (the phi axis is {phi_axis}): ", "x+")
+        second_default = [0, 1, 0] if np.allclose(np.cross(first, [1, 0, 0]), 0) else [1, 0, 0]
+        second = ask_hkl(f"2nd direction in the crystal, h k l [{fmt(second_default)}]: ", second_default)
+        second_dir = ask_dir("  ... points in the lab along [beam]: ", "beam")
         self.set_unit_cell(crystal_name, a, b, c, alpha, beta, gamma)
         self.orientations.set_target_value([]).wait()
-        self.add_orientation(normal, normal_dir, tag="surface normal")
-        self.add_orientation(inplane, inplane_dir, tag="in-plane")
-        self.set_surface(hkl=normal)
+        self.add_orientation(first, first_dir, tag="mount 1")
+        self.add_orientation(second, second_dir, tag="mount 2")
+        if normal is None:
+            self.del_surface_normal()
+        else:
+            self.set_surface_normal(normal)
         self.calc_ub()
         print(self.summary())
         print("UB was calculated - next please set the constraints (.constraints) and the limits of the diffractometer motors")
@@ -918,11 +948,57 @@ class RecSpaceCrystal(Assembly):
         (``phi``). diffcalc's default is hkl (1, 0, 0)."""
         self._set_vector("reference", hkl, phi)
 
+    def set_surface_normal(self, hkl=None, lab=None):
+        """Define the sample surface: which lattice planes form it.
+
+        A property of the crystal of its own, independent of the
+        orientations (which say how the crystal is mounted). It is behind
+        the incidence and exit angles betain, betaout and bin_eq_bout, the
+        3D view's surface plane and ``pseudo_angles``.
+
+        - ``hkl``: Miller indices, [0, 0, 1] or "(001)"; non-integer for a
+          miscut. Follows the crystal: a new UB turns it along.
+        - ``lab``: where the normal points with all angles at 0 (as in
+          ``add_orientation``: "x+", "beam", 3 numbers, ...), e.g. measured
+          with a laser. Fixed to the sample stage: a new UB does not turn it.
+
+        ``del_surface_normal()`` removes it.
+        """
+        if isinstance(hkl, str):
+            hkl = rc.parse_triple(hkl)
+            if hkl is None:
+                raise ValueError("hkl as Miller indices, e.g. [0, 0, 1] or '(001)'")
+        self._set_vector("surface", hkl, None if lab is None else rc.lab_direction(lab))
+        print("surface normal: " + self._surface_text())
+
+    def del_surface_normal(self):
+        """Remove the surface normal (a sample without a defined surface)."""
+        v = self.vectors()
+        v.pop("surface", None)
+        self.vectors.set_target_value(v).wait()
+
     def set_surface(self, hkl=None, phi=None):
-        """Surface normal behind betain, betaout and bin_eq_bout, as
-        ``set_reference``. Default: phi (1, 0, 0), diffcalc's phi (0, 0, 1)
-        in this frame (the line of the phi axis at all angles 0)."""
-        self._set_vector("surface", hkl, phi)
+        """diffcalc's name of ``set_surface_normal``; ``phi`` is the
+        phi-frame direction, i.e. the lab direction at all angles 0."""
+        self.set_surface_normal(hkl=hkl, lab=phi)
+
+    def _surface_text(self):
+        spec = self._surface
+        if not spec:
+            return "not defined (set_surface_normal(hkl); needed for betain, betaout, bin_eq_bout)"
+        try:
+            ub = self._ub()
+        except ValueError:
+            ub = None
+        if spec.get("hkl") is not None:
+            text = f"({' '.join(f'{x:g}' for x in spec['hkl'])}) in the crystal"
+            if ub is not None:
+                text += f", along {rc._axis_name(np.round(rc.vector_phi(spec, ub), 4))} at all angles 0"
+            return text
+        text = f"fixed to the stage, along {rc._axis_name(np.round(rc.vector_phi(spec, None), 4))} at all angles 0"
+        if ub is not None:
+            text += f" = hkl ({' '.join(f'{x + 0.0:.3g}' for x in np.round(rc.vector_hkl(spec, ub), 4))})"
+        return text
 
     def _set_vector(self, which, hkl, phi):
         if (hkl is None) == (phi is None):
@@ -937,7 +1013,7 @@ class RecSpaceCrystal(Assembly):
 
     @property
     def _surface(self):
-        return self.vectors().get("surface", rc.DEFAULT_SURFACE)
+        return self.vectors().get("surface")
 
     def add_reflection(self, h, k, l, mu=None, delta=None, gamma=None, eta=None, chi=None, phi=None,
                        energy=None, tag=None):
@@ -974,7 +1050,8 @@ class RecSpaceCrystal(Assembly):
           ...), 'beam', 'up', 'down', a circle ('phi', '-phi': along its
           rotation axis) or 3 numbers.
 
-        E.g. ``add_orientation([0, 0, 1], "x+", tag="surface normal")``.
+        E.g. ``add_orientation([0, 0, 1], "x+")``. This only orients the
+        crystal; the surface normal is set on its own (``set_surface_normal``).
         """
         if isinstance(hkl, str) and rc.parse_triple(hkl) is not None:
             hkl = rc.parse_triple(hkl)
@@ -1060,12 +1137,13 @@ class RecSpaceCrystal(Assembly):
         """Lattice, U/UB, reference vectors and the stored reference data."""
         uc = self.unit_cell()
         lines = [f"crystal {self.name} ({uc.get('name', '')})",
-                 "  lattice: " + ", ".join(f"{k}={uc[k]:g}" for k in ("a", "b", "c", "alpha", "beta", "gamma"))]
+                 "  lattice: " + ", ".join(f"{k}={uc[k]:g}" for k in ("a", "b", "c", "alpha", "beta", "gamma")),
+                 "  surface normal: " + self._surface_text()]
         if len(self.ub_matrix()):
             ub = self._ub()
             lines.append("  UB:\n" + "\n".join("    " + " ".join(f"{x: 10.5f}" for x in r) for r in ub))
-            for which, spec in (("reference", self._reference), ("surface", self._surface)):
-                lines.append(f"  {which}: {spec}  -> phi {np.round(rc.vector_phi(spec, ub), 5).tolist()}")
+            spec = self._reference
+            lines.append(f"  reference: {spec}  -> phi {np.round(rc.vector_phi(spec, ub), 5).tolist()}")
         else:
             lines.append("  UB: not calculated")
         for i, o in enumerate(self.orientations()):
@@ -1100,6 +1178,11 @@ class RecSpaceCrystal(Assembly):
         if energy is None:
             energy = self.get_energy()
         cons = self._constraint_dict(constraints_update, h2, detector)
+        if self._surface is None:
+            used = [n for n in ("betain", "betaout", "bin_eq_bout") if cons.get(n) not in (None, "", False)]
+            if used:
+                raise ValueError(f"The constraint {used[0]} needs the surface normal of {self.name}: "
+                                 f"{self.name}.set_surface_normal([h, k, l])")
         sols = rc.solve(self._ub(), energy, (h, k, l), cons, self._reference, self._surface)
         cols = list(rc.POSITION_ORDER) + [v for v in rc.VIRTUAL_ORDER if any(v in s for s in sols)]
         return pd.DataFrame([[s.get(c, np.nan) for c in cols] for s in sols], columns=cols,

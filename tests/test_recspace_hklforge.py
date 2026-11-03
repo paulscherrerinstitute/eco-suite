@@ -354,6 +354,7 @@ def test_parse_triple_as_people_write_it():
 
 def test_interactive_create_crystal(rs, monkeypatch):
     answers = iter(["", "3", "", "", "", "", "",
+                    "(1,1,1)",                        # surface normal
                     "phi", "(0,0,1)", "phi",          # a lab word at the hkl question is explained, re-asked
                     "1,0,0", "up"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
@@ -367,6 +368,45 @@ def test_interactive_create_crystal(rs, monkeypatch):
     # (001) along the phi axis at all angles 0: reads back as hkl there
     q = rc.GEOMETRY.sample_matrix({}) @ c._ub() @ [0, 0, 1]
     assert np.allclose(q / np.linalg.norm(q), rc.lab_direction("phi"))
+    # the surface normal is its own: (111), not the first orientation
+    assert c.vectors()["surface"] == {"hkl": [1.0, 1.0, 1.0]}
+
+
+def test_interactive_crystal_without_surface(rs, monkeypatch):
+    answers = iter(["", "3", "", "", "", "", "", "none", "", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    with contextlib.redirect_stdout(io.StringIO()):
+        c = rs.create_crystal("bare")
+    assert c._surface is None
+    assert c.orientations()[0]["hkl"] == [0, 0, 1] and c.orientations()[1]["hkl"] == [1, 0, 0]
+
+
+def test_surface_normal_independent_of_orientations(rs):
+    c = _si(rs)                         # orientations (001) up, (110) beam
+    assert c._surface is None           # nothing taken from the orientations
+    assert "not defined" in c.summary()
+    a = {"mu": 0, "delta": 30, "gamma": 0, "eta": 15, "chi": 90, "phi": 0}
+    assert "betain" not in c.pseudo_angles(**a)
+    with pytest.raises(ValueError, match="set_surface_normal"):
+        c.calc_angles(1, 1, 1, constraints_update=dict(betain=2, mu=None, chi=None, eta=0, gamma=0))
+    # a (110) surface on a crystal mounted with (001) up: grazing incidence on (110)
+    with contextlib.redirect_stdout(io.StringIO()):
+        c.set_surface_normal("(110)")
+    assert "(1 1 0) in the crystal, along z+" in c.summary()
+    free = {n: None for n in ("mu", "eta", "chi", "phi", "delta", "gamma", "qaz")}
+    df = c.calc_angles(1, 1, 1, constraints_update={**free, "betain": 2, "mu": 0, "chi": 90})
+    assert len(df)
+    n = c._ub() @ [1, 1, 0]
+    for _, row in df.iterrows():   # the beam meets the (110) planes at 2 degrees
+        s = rc.GEOMETRY.sample_matrix({k: row[k] for k in rc.POSITION_ORDER}) @ n
+        assert np.degrees(np.arcsin(-np.dot(rc.BEAM, s) / np.linalg.norm(s))) == pytest.approx(2, abs=1e-9)
+    # given in the lab, fixed to the stage: kept when UB changes
+    with contextlib.redirect_stdout(io.StringIO()):
+        c.set_surface_normal(lab="up")
+        c.calc_ub()
+    assert c.vectors()["surface"] == {"phi": [0.0, 1.0, 0.0]} and "fixed to the stage, along y+" in c.summary()
+    c.del_surface_normal()
+    assert c._surface is None
 
 
 def test_unreadable_angle_does_not_break_the_display(rs):

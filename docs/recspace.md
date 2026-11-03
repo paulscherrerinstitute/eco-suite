@@ -29,8 +29,9 @@ from eco.utilities.recspace_hklforge import RecSpace
 
 rs = RecSpace(name="recspace", config_dir=tempfile.mkdtemp(), energy_source=lambda: 9000)
 si = rs.create_crystal("si", unit_cell=dict(a=5.431, b=5.431, c=5.431, alpha=90, beta=90, gamma=90))
-si.add_orientation([0, 0, 1], "x+", tag="surface normal")  # with all angles at 0
-si.add_orientation([1, 1, 0], "beam", tag="in-plane")
+si.set_surface_normal([0, 0, 1])                     # the (001) planes form the surface
+si.add_orientation([0, 0, 1], "x+", tag="mount 1")  # mounted, with all angles at 0,
+si.add_orientation([1, 1, 0], "beam", tag="mount 2")  # with (001) along x+, (110) along the beam
 si.calc_ub()
 
 rs.constraints.mu(0); rs.constraints.gamma(0); rs.constraints.chi(90)
@@ -69,6 +70,30 @@ Two kinds of direction appear, and they are not interchangeable:
 | **in the lab** | where a direction points with all angles at 0: an axis, `beam`, `up`, `down`, `phi`/`-phi` (along the phi axis) or three numbers | `x+`, `y-`, `beam`, `-phi` |
 
 An orientation pairs one of each: "crystal (001) points along lab x+".
+
+The **surface normal** and the **orientations** are two separate things:
+
+- the surface normal says which lattice planes form the sample surface. It
+  is behind the incidence and exit angles `betain`, `betaout` and
+  `bin_eq_bout`, and the surface plate in the 3D view. Nothing else uses
+  it, and a sample without a defined surface does not need one.
+- the orientations (and later the measured reflections) say how the crystal
+  is mounted; only they determine UB.
+
+A mounting direction is often the surface normal, but does not have to be:
+a crystal can be mounted with another face up, and a miscut surface is not
+along a low-index direction. diffcalc's tools took the first orientation as
+the surface normal; here it is set on its own:
+
+| | |
+|---|---|
+| `si.set_surface_normal([0, 0, 1])` or `("(001)")` | in the crystal, Miller indices (non-integer for a miscut); a new UB turns it along |
+| `si.set_surface_normal(lab="up")` | where it points with all angles at 0 (e.g. measured with a laser); fixed to the sample stage, a new UB does not turn it |
+| `si.del_surface_normal()` | no defined surface |
+
+`si.summary()` shows it in both forms. A mode with `betain`, `betaout` or
+`bin_eq_bout` on a crystal without a surface normal is refused with a
+message naming `set_surface_normal`.
 Lattice constants are in angstrom and degrees, energies in eV.
 
 The diffractometer is still You's six-circle geometry, so every angle
@@ -89,25 +114,28 @@ xrd.recspace.create_crystal()
 
 prints the frame and asks for a name (a Python name, it becomes
 `xrd.recspace.<name>`), the six lattice parameters (Enter keeps the default
-in brackets, so a cubic crystal needs only `a`), then two directions, each
-first in the crystal and then in the lab:
+in brackets, so a cubic crystal needs only `a`), the surface normal (or
+`none`), then two mounting directions, each first in the crystal and then
+in the lab:
 
 ```
-1st direction (surface normal) in the crystal, h k l [0 0 1]: (001)
+Surface normal in the crystal, h k l, or none [0 0 1]: (001)
+1st direction in the crystal, h k l [0 0 1]: (001)
   ... points in the lab along [x+] (the phi axis is x-): x+
-2nd direction (in the surface) in the crystal, h k l [1 0 0]: 1 0 0
+2nd direction in the crystal, h k l [1 0 0]: 1 1 0
   ... points in the lab along [beam]: beam
 ```
 
-Enter takes the default in brackets (`x+` lies on the phi axis line,
-opposite to its rotation vector). The first direction is matched exactly;
+Enter takes the default in brackets; the first direction's default is the
+surface normal just entered, since that is the usual mount (`x+` lies on
+the phi axis line, opposite to its rotation vector). The first direction is matched exactly;
 the second only fixes the rotation about the first (its part perpendicular
 to the first is used), so it does not have to be exactly perpendicular.
 From the two it calculates a *nominal* UB: the crystal as mounted by design.
 
 **The same as a script** is `create_crystal(name, unit_cell=dict(...))`
-followed by `add_orientation(hkl, direction)` for each nominal direction,
-`set_surface` and `calc_ub()`, as in the example above.
+followed by `set_surface_normal(hkl)`, `add_orientation(hkl, direction)`
+for each nominal direction and `calc_ub()`, as in the example above.
 
 **From diffcalc**: `xrd.recspace.diffcalc_crystals()` lists what the
 diffcalc object knows, `xrd.recspace.import_from_diffcalc("si")` copies one
@@ -120,13 +148,12 @@ pass `mu=..., ..., energy=...`). Then:
 
 | measured | command |
 |---|---|
-| 1 reflection | `si.calc_ub(0, "surface normal")`: the peak plus the nominal surface normal (a string is a tag) |
+| 1 reflection | `si.calc_ub(0, "mount 1")`: the peak plus the first nominal direction (a string is a tag) |
 | 2 reflections | `si.calc_ub()`: reflections 0 and 1 |
 | 3 or more | `si.fit_ub()`: least squares; `refine_lattice=True` also applies the fitted lattice |
 | 1, lattice off | `si.refine_ub([h, k, l])`: prints the lattice/U it would change; apply with `refine_lattice=True` / `refine_umatrix=True` |
 
-Two references must not be parallel ((004) together with a (001) surface
-normal says nothing about the azimuth), and three for a fit not in one
+Two references must not be parallel ((004) together with a nominal (001) says nothing about the azimuth), and three for a fit not in one
 plane; both are refused with a message. `si.summary()` shows the result,
 and `si.calc_hkl()` at a stored peak should give back its hkl.
 
@@ -192,10 +219,13 @@ Differences worth knowing:
 - A solution that is outside a motor's limits only by its representation
   (e.g. phi = -170 with limits 0..360) is driven as the equivalent angle
   (190) instead of being rejected.
-- `set_reference(hkl=...)` / `set_surface(hkl=...)` set the vectors behind
-  alpha/beta/psi/naz and betain/betaout; the diffcalc wrapper always used
-  diffcalc's defaults (reference hkl (1, 0, 0), surface phi-frame z in
-  You's frame, x+ here).
+- The surface normal is the crystal's own (`set_surface_normal`, see
+  above), not the first orientation; `set_surface` is the same under
+  diffcalc's name. A crystal imported from diffcalc keeps the normal the
+  diffcalc wrapper always used (phi-frame z in You's frame, fixed to the
+  stage, along x+ here) until you set its own. `set_reference(hkl=...)`
+  sets the vector behind alpha/beta/psi/naz (diffcalc's default hkl
+  (1, 0, 0)).
 - `calc_ub(idx)` with one reflection keeps the current U's rotation about
   that reflection's Q and changes it by the smallest rotation; diffcalc
   started from U = 1, which depends on the frame.

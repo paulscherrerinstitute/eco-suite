@@ -47,14 +47,12 @@ def payload(crystal, angles, energy, label="", targets=None, n=0):
     the Bernina frame, so UB and the normal are handed over in the You frame.
     """
     ub = crystal._ub()
-    n_surf = rc.vector_phi(crystal._surface, ub)
-    if n_surf is None:
-        n_surf = np.asarray(rc.DEFAULT_SURFACE["phi"], float)
+    n_surf = rc.vector_phi(crystal._surface, ub)   # None: no surface normal defined
     msg = {
         "angles": {c: float(angles.get(c, 0.0)) for c in CIRCLES},
         "kMag": 2 * np.pi / rc.en2lam(energy),
         "ub": rc.to_you(ub).tolist(),
-        "nPhi": rc.to_you(n_surf).tolist(),
+        "nPhi": None if n_surf is None else rc.to_you(n_surf).tolist(),
         "label": label,
         "n": n,
     }
