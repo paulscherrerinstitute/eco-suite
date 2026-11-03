@@ -466,3 +466,15 @@ def test_store_constraint_preset(rs, tmp_path):
         rs.set_constraints(mu=0, gamma=0, chi=90)
         rs.set_constraints("mine")
     assert rs._constraints()["qaz"] == 90 and rs.solution_ranges() == {"delta": [0.0, 90.0]}
+
+
+def test_geom_page_without_ub_says_so(rs):
+    c = rs.create_crystal("bare", unit_cell=dict(a=4.132, b=4.132, c=28.6, alpha=90, beta=90, gamma=120))
+    c.add_orientation([0, 0, 1], "x+")
+    c.add_orientation([1, 0, 0], "beam")
+    with pytest.raises(ValueError, match=r"run bare.calc_ub\(\)"):
+        c.widget_geom(open_browser=False)
+    with contextlib.redirect_stdout(io.StringIO()):
+        c.calc_ub()
+    page = c.widget_geom(open_browser=False).read_text()
+    assert "showCell: true" in page and '"ub"' in page

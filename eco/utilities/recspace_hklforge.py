@@ -845,7 +845,10 @@ class RecSpaceCrystal(Assembly):
     def _ub(self):
         ub = self.ub_matrix()
         if not len(ub):
-            raise ValueError(f"No UB matrix for {self.name} yet: add orientations/reflections and run calc_ub().")
+            n_o, n_r = len(self.orientations()), len(self.reflections())
+            raise ValueError(f"No UB matrix for {self.name} yet ({n_o} orientation(s), {n_r} reflection(s) "
+                             f"stored): " + (f"run {self.name}.calc_ub()" if n_o + n_r >= 2 else
+                                             "add two orientations or reflections, then calc_ub()"))
         return np.asarray(ub, float)
 
     def _set_u(self, U, unit_cell=None):

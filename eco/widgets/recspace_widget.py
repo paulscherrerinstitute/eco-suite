@@ -160,8 +160,12 @@ const ENTRIES = {json.dumps(entries)};
 const list = document.getElementById('list');
 const buttons = [];
 let lastGroup = null;
+// the reciprocal cell and vectors on at first, to see the crystal's
+// orientation; later clicks leave the viewer's own toggles alone
+let display = {{showCell: true, showRecip: true, showHklCell: true}};
 function show(i) {{
   const p = Object.assign({{}}, ENTRIES[i].payload, {{n: Date.now()}});
+  if (display) {{ p.display = display; display = null; }}
   document.getElementById('diff3d-payload').textContent = JSON.stringify(p);
   buttons.forEach((b, j) => b.classList.toggle('active', j === i));
   const t = document.getElementById('rows');
@@ -191,7 +195,15 @@ if (ENTRIES.length) show(firstSolution >= 0 ? firstSolution : 0);
 
 
 def geom_page(crystal, hkl=None, energy=None, h2=None, detector=None, open_browser=True):
+    crystal._ub()   # without a UB there is nothing to draw: say so instead of an empty page
     entries = geom_entries(crystal, hkl, energy, h2, detector)
+    if not entries:
+        # the current position could not be read: show the crystal at all angles 0
+        zero = {c: 0.0 for c in rc.POSITION_ORDER}
+        en = crystal.get_energy() if energy is None else energy
+        entries = [{"group": "position", "label": "all angles 0", "ok": None,
+                    "rows": [[c, "0.000"] for c in CIRCLES],
+                    "payload": payload(crystal, zero, en, "all angles 0")}]
     path = Path(user_temp_path(f"eco_recspace_{crystal.name}.html"))
     path.write_text(build_page(entries, f"RecSpace {crystal.name}"))
     if open_browser:
