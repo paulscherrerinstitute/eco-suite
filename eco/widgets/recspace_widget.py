@@ -2,7 +2,7 @@
 
 Two front-ends around the same 3D reciprocal-space view
 (``eco/utilities/diffractometer_3d.html``, vendored from
-swissfel/bernina-scripts ``apps/diffractometer_3d.html``; a self-contained
+swissfel/bernina-scripts ``bernina_prep/diffractometer_3d.html``; a self-contained
 three.js page that polls a hidden ``#diff3d-payload`` element in its parent
 document for the angles, UB, abs(k), surface normal and target reflections):
 

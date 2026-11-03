@@ -32,7 +32,7 @@ from epics import PV
 
 logger = logging.getLogger(__name__)
 
-# Vendored from swissfel/bernina-scripts apps/dev/diffractometer_3d.html: a
+# Vendored from swissfel/bernina-scripts bernina_prep/diffractometer_3d.html: a
 # self-contained Three.js reciprocal-space viewer that needs no server, only
 # a JSON payload (angles, UB matrix, k-magnitude, surface normal) written
 # into a hidden element it polls every 150ms.
@@ -1132,7 +1132,7 @@ class DiffGeometryYou(Assembly):
         reference reflection, clickable in a sidebar.
 
         Reuses the 3D viewer from swissfel/bernina-scripts
-        apps/dev/diffractometer_3d.html unmodified - only the UB matrix,
+        bernina_prep/diffractometer_3d.html unmodified - only the UB matrix,
         current/stored angles and energy are fed in, so none of that
         notebook's manual unit-cell/orientation input fields are needed here;
         this crystal's own UB calculation already has them.

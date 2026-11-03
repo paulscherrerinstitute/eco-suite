@@ -282,7 +282,13 @@ crystal's own UB:
     and shows the hkl in Bragg condition there, the nearest integer
     reflection, the virtual angles and the motor-limit check, and draws
     that position. The 3D view's own panel under the drawing has the
-    Ewald sphere, the detector's cut of it, the detector distance and size.
+    Ewald sphere, the detector's cut of it, the detector distance, size
+    and presets (JUNGFRAU modules, Bernina's JF01T03 and JF07T32 in both
+    orientations), the cells and Brillouin zones around Q, the target
+    reflections and everything the detector sees, the real-space cell, and
+    an experimental shaded view with rocking and GIF/movie export. The
+    crystals carry no space group, so the Brillouin zones are those of the
+    primitive lattice of the given cell.
 - from a terminal it opens `widget_geom` in the web browser: the current
   position, every stored reflection and every solution, clickable, with
   their angles; solutions outside the limits are marked.

@@ -154,8 +154,11 @@
         </div>
       </div>
       <div class="row-controls" style="margin-top:6px;">
-        <label style="font-size:12px;">width <input type="number" id="det-w" min="1" max="1000" step="1" value="77"> mm</label>
-        <label style="font-size:12px;">height <input type="number" id="det-h" min="1" max="1000" step="1" value="77"> mm</label>
+        <label style="font-size:12px;">detector <select id="det-preset" style="max-width:100%"></select></label>
+      </div>
+      <div class="row-controls" style="margin-top:6px;">
+        <label style="font-size:12px;">width <input type="number" id="det-w" min="1" max="1000" step="any" value="77"> mm</label>
+        <label style="font-size:12px;">height <input type="number" id="det-h" min="1" max="1000" step="any" value="77"> mm</label>
       </div>
       <div class="hint">Size is used for the detector cut of the Ewald sphere.</div>
     </div>
@@ -169,9 +172,56 @@
       <label class="chk"><input type="checkbox" id="show-circles" checked> show rotation circles</label>
       <label class="chk"><input type="checkbox" id="show-recip"> show reciprocal vectors (k, k&prime;, Q)</label>
       <label class="chk"><input type="checkbox" id="show-cell"> show reciprocal unit cell (a*, b*, c*)</label>
-      <label class="chk"><input type="checkbox" id="show-hkl-cell"> label Q with hkl + cell around it</label>
+      <label class="chk"><input type="checkbox" id="show-real-cell"> show real-space unit cell (a, b, c) at the origin</label>
+      <label class="chk"><input type="checkbox" id="show-hkl-cell"> label Q with hkl + cells around Q and the target reflections</label>
+      <label class="chk"><input type="checkbox" id="show-hkl-bz"> Brillouin zones around Q and the target reflections</label>
       <label class="chk"><input type="checkbox" id="show-ewald"> show Ewald sphere (radius |k|)</label>
       <label class="chk"><input type="checkbox" id="show-det-patch"> show detector cut of the Ewald sphere</label>
+      <label class="chk"><input type="checkbox" id="show-det-cells"> show all cells the detector sees <span id="det-cells-count"></span></label>
+      <label class="chk" style="margin-left:18px"><input type="checkbox" id="show-det-cell-labels"> &hellip; with their hkl (up to 12 cells)</label>
+      <label class="chk"><input type="checkbox" id="show-det-bz"> show all Brillouin zones the detector sees <span id="det-bz-count"></span></label>
+      <div class="hint">
+        The cell around Q or a target reflection has the reflection at its corner,
+        a*, b*, c* leaving from there. "All cells the detector sees" span hkl
+        &plusmn; &frac12; around every reflection whose surroundings (diffuse scattering,
+        truncation rods, satellites) end up somewhere on the detector image. A
+        Brillouin zone (dashed around Q and the targets) is the region closer to its
+        reflection than to any other one the lattice centring allows.
+      </div>
+      <label class="chk"><input type="checkbox" id="enhanced-3d"> experimental 3D enhancement (shading, shadows, depth fog)</label>
+      <div id="fx-options" style="margin-left:18px; display:none">
+        <div class="angle-row">
+          <label><span>floor (shadow plane) height</span><span id="fx-floor-val">-350 mm</span></label>
+          <div class="row-controls">
+            <input type="range" id="fx-floor" min="-1500" max="0" step="10" value="-350" style="flex:1">
+            <input type="number" id="fx-floor-num" min="-1500" max="0" step="10" value="-350">
+          </div>
+        </div>
+        <label class="chk"><input type="checkbox" id="rock-3d"> slow rocking of the view</label>
+        <div class="angle-row">
+          <label><span>rocking amplitude</span><span id="fx-amp-val">&plusmn;8&deg;</span></label>
+          <div class="row-controls">
+            <input type="range" id="fx-amp" min="1" max="60" step="1" value="8" style="flex:1">
+            <input type="number" id="fx-amp-num" min="1" max="60" step="1" value="8">
+          </div>
+        </div>
+        <div class="angle-row">
+          <label><span>rocking period</span><span id="fx-period-val">7 s</span></label>
+          <div class="row-controls">
+            <input type="range" id="fx-period" min="2" max="20" step="0.5" value="7" style="flex:1">
+            <input type="number" id="fx-period-num" min="2" max="20" step="0.5" value="7">
+          </div>
+        </div>
+        <div style="margin:6px 0">
+          <button id="fx-save-gif">save GIF</button>
+          <button id="fx-save-movie">save movie</button>
+          <span id="fx-rec-status" style="font-size:12px;color:#555;margin-left:6px"></span>
+        </div>
+        <div class="hint">Both save one rocking period of the current view, whether or
+          not rocking is switched on: the GIF loops seamlessly (15 frames/s, at most
+          720 px wide); the movie is recorded in real time from the view (MP4 where
+          the browser supports it, otherwise WebM).</div>
+      </div>
       <label class="chk"><input type="checkbox" id="show-angle-controls" checked> show angle controls</label>
       <label class="chk"><input type="checkbox" id="controls-below" checked> controls under the plot</label>
       <div class="angle-row" style="margin-top:8px;">
@@ -192,6 +242,12 @@
   </div>
 </div>
 
+<script>
+/* gifenc 1.0.3 (MIT license, (c) 2017 Matt DesLauriers, https://github.com/mattdesl/gifenc),
+   ESM build wrapped as a classic script exposing window.gifenc; used to save
+   the rocking view as a GIF in the experimental 3D enhancement */
+(function () {var X={signature:"GIF",version:"89a",trailer:59,extensionIntroducer:33,applicationExtensionLabel:255,graphicControlExtensionLabel:249,imageSeparator:44,signatureSize:3,versionSize:3,globalColorTableFlagMask:128,colorResolutionMask:112,sortFlagMask:8,globalColorTableSizeMask:7,applicationIdentifierSize:8,applicationAuthCodeSize:3,disposalMethodMask:28,userInputFlagMask:2,transparentColorFlagMask:1,localColorTableFlagMask:128,interlaceFlagMask:64,idSortFlagMask:32,localColorTableSizeMask:7};function F(t=256){let e=0,s=new Uint8Array(t);return{get buffer(){return s.buffer},reset(){e=0},bytesView(){return s.subarray(0,e)},bytes(){return s.slice(0,e)},writeByte(r){n(e+1),s[e]=r,e++},writeBytes(r,o=0,i=r.length){n(e+i);for(let c=0;c<i;c++)s[e++]=r[c+o]},writeBytesView(r,o=0,i=r.byteLength){n(e+i),s.set(r.subarray(o,o+i),e),e+=i}};function n(r){var o=s.length;if(o>=r)return;var i=1024*1024;r=Math.max(r,o*(o<i?2:1.125)>>>0),o!=0&&(r=Math.max(r,256));let c=s;s=new Uint8Array(r),e>0&&s.set(c.subarray(0,e),0)}}var O=12,J=5003,lt=[0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535];function at(t,e,s,n,r=F(512),o=new Uint8Array(256),i=new Int32Array(J),c=new Int32Array(J)){let x=i.length,a=Math.max(2,n);o.fill(0),c.fill(0),i.fill(-1);let l=0,f=0,g=a+1,h=g,b=!1,w=h,_=(1<<w)-1,u=1<<g-1,k=u+1,B=u+2,p=0,A=s[0],z=0;for(let y=x;y<65536;y*=2)++z;z=8-z,r.writeByte(a),I(u);let d=s.length;for(let y=1;y<d;y++){t:{let m=s[y],v=(m<<O)+A,M=m<<z^A;if(i[M]===v){A=c[M];break t}let V=M===0?1:x-M;for(;i[M]>=0;)if(M-=V,M<0&&(M+=x),i[M]===v){A=c[M];break t}I(A),A=m,B<1<<O?(c[M]=B++,i[M]=v):(i.fill(-1),B=u+2,b=!0,I(u))}}return I(A),I(k),r.writeByte(0),r.bytesView();function I(y){for(l&=lt[f],f>0?l|=y<<f:l=y,f+=w;f>=8;)o[p++]=l&255,p>=254&&(r.writeByte(p),r.writeBytesView(o,0,p),p=0),l>>=8,f-=8;if((B>_||b)&&(b?(w=h,_=(1<<w)-1,b=!1):(++w,_=w===O?1<<w:(1<<w)-1)),y==k){for(;f>0;)o[p++]=l&255,p>=254&&(r.writeByte(p),r.writeBytesView(o,0,p),p=0),l>>=8,f-=8;p>0&&(r.writeByte(p),r.writeBytesView(o,0,p),p=0)}}}var $=at;function D(t,e,s){return t<<8&63488|e<<2&992|s>>3}function G(t,e,s,n){return t>>4|e&240|(s&240)<<4|(n&240)<<8}function j(t,e,s){return t>>4<<8|e&240|s>>4}function R(t,e,s){return t<e?e:t>s?s:t}function T(t){return t*t}function tt(t,e,s){var n=0,r=1e100;let o=t[e],i=o.cnt,c=o.ac,x=o.rc,a=o.gc,l=o.bc;for(var f=o.fw;f!=0;f=t[f].fw){let h=t[f],b=h.cnt,w=i*b/(i+b);if(!(w>=r)){var g=0;s&&(g+=w*T(h.ac-c),g>=r)||(g+=w*T(h.rc-x),!(g>=r)&&(g+=w*T(h.gc-a),!(g>=r)&&(g+=w*T(h.bc-l),!(g>=r)&&(r=g,n=f))))}}o.err=r,o.nn=n}function Q(){return{ac:0,rc:0,gc:0,bc:0,cnt:0,nn:0,fw:0,bk:0,tm:0,mtm:0,err:0}}function ut(t,e){let s=e==="rgb444"?4096:65536,n=new Array(s),r=t.length;if(e==="rgba4444")for(let o=0;o<r;++o){let i=t[o],c=i>>24&255,x=i>>16&255,a=i>>8&255,l=i&255,f=G(l,a,x,c),g=f in n?n[f]:n[f]=Q();g.rc+=l,g.gc+=a,g.bc+=x,g.ac+=c,g.cnt++}else if(e==="rgb444")for(let o=0;o<r;++o){let i=t[o],c=i>>16&255,x=i>>8&255,a=i&255,l=j(a,x,c),f=l in n?n[l]:n[l]=Q();f.rc+=a,f.gc+=x,f.bc+=c,f.cnt++}else for(let o=0;o<r;++o){let i=t[o],c=i>>16&255,x=i>>8&255,a=i&255,l=D(a,x,c),f=l in n?n[l]:n[l]=Q();f.rc+=a,f.gc+=x,f.bc+=c,f.cnt++}return n}function H(t,e,s={}){let{format:n="rgb565",clearAlpha:r=!0,clearAlphaColor:o=0,clearAlphaThreshold:i=0,oneBitAlpha:c=!1}=s;if(!t||!t.buffer)throw new Error("quantize() expected RGBA Uint8Array data");if(!(t instanceof Uint8Array)&&!(t instanceof Uint8ClampedArray))throw new Error("quantize() expected RGBA Uint8Array data");let x=new Uint32Array(t.buffer),a=s.useSqrt!==!1,l=n==="rgba4444",f=ut(x,n),g=f.length,h=g-1,b=new Uint32Array(g+1);for(var w=0,u=0;u<g;++u){let C=f[u];if(C!=null){var _=1/C.cnt;l&&(C.ac*=_),C.rc*=_,C.gc*=_,C.bc*=_,f[w++]=C}}T(e)/w<.022&&(a=!1);for(var u=0;u<w-1;++u)f[u].fw=u+1,f[u+1].bk=u,a&&(f[u].cnt=Math.sqrt(f[u].cnt));a&&(f[u].cnt=Math.sqrt(f[u].cnt));var k,B,p;for(u=0;u<w;++u){tt(f,u,!1);var A=f[u].err;for(B=++b[0];B>1&&(p=B>>1,!(f[k=b[p]].err<=A));B=p)b[B]=k;b[B]=u}var z=w-e;for(u=0;u<z;){for(var d;;){var I=b[1];if(d=f[I],d.tm>=d.mtm&&f[d.nn].mtm<=d.tm)break;d.mtm==h?I=b[1]=b[b[0]--]:(tt(f,I,!1),d.tm=u);var A=f[I].err;for(B=1;(p=B+B)<=b[0]&&(p<b[0]&&f[b[p]].err>f[b[p+1]].err&&p++,!(A<=f[k=b[p]].err));B=p)b[B]=k;b[B]=I}var y=f[d.nn],m=d.cnt,v=y.cnt,_=1/(m+v);l&&(d.ac=_*(m*d.ac+v*y.ac)),d.rc=_*(m*d.rc+v*y.rc),d.gc=_*(m*d.gc+v*y.gc),d.bc=_*(m*d.bc+v*y.bc),d.cnt+=y.cnt,d.mtm=++u,f[y.bk].fw=y.fw,f[y.fw].bk=y.bk,y.mtm=h}let M=[];var V=0;for(u=0;;++V){let L=R(Math.round(f[u].rc),0,255),C=R(Math.round(f[u].gc),0,255),Y=R(Math.round(f[u].bc),0,255),E=255;if(l){if(E=R(Math.round(f[u].ac),0,255),c){let st=typeof c=="number"?c:127;E=E<=st?0:255}r&&E<=i&&(L=C=Y=o,E=0)}let K=l?[L,C,Y,E]:[L,C,Y];if(xt(M,K)||M.push(K),(u=f[u].fw)==0)break}return M}function xt(t,e){for(let s=0;s<t.length;s++){let n=t[s],r=n[0]===e[0]&&n[1]===e[1]&&n[2]===e[2],o=n.length>=4&&e.length>=4?n[3]===e[3]:!0;if(r&&o)return!0}return!1}function U(t,e){var s=0,n;for(n=0;n<t.length;n++){let r=t[n]-e[n];s+=r*r}return s}function P(t,e){return e>1?Math.round(t/e)*e:t}function et(t,{roundRGB:e=5,roundAlpha:s=10,oneBitAlpha:n=null}={}){let r=new Uint32Array(t.buffer);for(let o=0;o<r.length;o++){let i=r[o],c=i>>24&255,x=i>>16&255,a=i>>8&255,l=i&255;if(c=P(c,s),n){let f=typeof n=="number"?n:127;c=c<=f?0:255}l=P(l,e),a=P(a,e),x=P(x,e),r[o]=c<<24|x<<16|a<<8|l<<0}}function nt(t,e,s="rgb565"){if(!t||!t.buffer)throw new Error("quantize() expected RGBA Uint8Array data");if(!(t instanceof Uint8Array)&&!(t instanceof Uint8ClampedArray))throw new Error("quantize() expected RGBA Uint8Array data");if(e.length>256)throw new Error("applyPalette() only works with 256 colors or less");let n=new Uint32Array(t.buffer),r=n.length,o=s==="rgb444"?4096:65536,i=new Uint8Array(r),c=new Array(o),x=s==="rgba4444";if(s==="rgba4444")for(let a=0;a<r;a++){let l=n[a],f=l>>24&255,g=l>>16&255,h=l>>8&255,b=l&255,w=G(b,h,g,f),_=w in c?c[w]:c[w]=gt(b,h,g,f,e);i[a]=_}else{let a=s==="rgb444"?j:D;for(let l=0;l<r;l++){let f=n[l],g=f>>16&255,h=f>>8&255,b=f&255,w=a(b,h,g),_=w in c?c[w]:c[w]=bt(b,h,g,e);i[l]=_}}return i}function gt(t,e,s,n,r){let o=0,i=1e100;for(let c=0;c<r.length;c++){let x=r[c],a=x[3],l=q(a-n);if(l>i)continue;let f=x[0];if(l+=q(f-t),l>i)continue;let g=x[1];if(l+=q(g-e),l>i)continue;let h=x[2];l+=q(h-s),!(l>i)&&(i=l,o=c)}return o}function bt(t,e,s,n){let r=0,o=1e100;for(let i=0;i<n.length;i++){let c=n[i],x=c[0],a=q(x-t);if(a>o)continue;let l=c[1];if(a+=q(l-e),a>o)continue;let f=c[2];a+=q(f-s),!(a>o)&&(o=a,r=i)}return r}function rt(t,e,s=5){if(!t.length||!e.length)return;let n=t.map(i=>i.slice(0,3)),r=s*s,o=t[0].length;for(let i=0;i<e.length;i++){let c=e[i];c.length<o?c=[c[0],c[1],c[2],255]:c.length>o?c=c.slice(0,3):c=c.slice();let x=N(n,c.slice(0,3),U),a=x[0],l=x[1];l>0&&l<=r&&(t[a]=c)}}function q(t){return t*t}function W(t,e,s=U){let n=Infinity,r=-1;for(let o=0;o<t.length;o++){let i=t[o],c=s(e,i);c<n&&(n=c,r=o)}return r}function N(t,e,s=U){let n=Infinity,r=-1;for(let o=0;o<t.length;o++){let i=t[o],c=s(e,i);c<n&&(n=c,r=o)}return[r,n]}function ot(t,e,s=U){return t[W(t,e,s)]}function ct(t={}){let{initialCapacity:e=4096,auto:s=!0}=t,n=F(e),r=5003,o=new Uint8Array(256),i=new Int32Array(r),c=new Int32Array(r),x=!1;return{reset(){n.reset(),x=!1},finish(){n.writeByte(X.trailer)},bytes(){return n.bytes()},bytesView(){return n.bytesView()},get buffer(){return n.buffer},get stream(){return n},writeHeader:a,writeFrame(l,f,g,h={}){let{transparent:b=!1,transparentIndex:w=0,delay:_=0,palette:u=null,repeat:k=0,colorDepth:B=8,dispose:p=-1}=h,A=!1;if(s?x||(A=!0,a(),x=!0):A=Boolean(h.first),f=Math.max(0,Math.floor(f)),g=Math.max(0,Math.floor(g)),A){if(!u)throw new Error("First frame must include a { palette } option");pt(n,f,g,u,B),it(n,u),k>=0&&dt(n,k)}let z=Math.round(_/10);wt(n,p,z,b,w);let d=Boolean(u)&&!A;ht(n,f,g,d?u:null),d&&it(n,u),yt(n,l,f,g,B,o,i,c)}};function a(){ft(n,"GIF89a")}}function wt(t,e,s,n,r){t.writeByte(33),t.writeByte(249),t.writeByte(4),r<0&&(r=0,n=!1);var o,i;n?(o=1,i=2):(o=0,i=0),e>=0&&(i=e&7),i<<=2;let c=0;t.writeByte(0|i|c|o),S(t,s),t.writeByte(r||0),t.writeByte(0)}function pt(t,e,s,n,r=8){let o=1,i=0,c=Z(n.length)-1,x=o<<7|r-1<<4|i<<3|c,a=0,l=0;S(t,e),S(t,s),t.writeBytes([x,a,l])}function dt(t,e){t.writeByte(33),t.writeByte(255),t.writeByte(11),ft(t,"NETSCAPE2.0"),t.writeByte(3),t.writeByte(1),S(t,e),t.writeByte(0)}function it(t,e){let s=1<<Z(e.length);for(let n=0;n<s;n++){let r=[0,0,0];n<e.length&&(r=e[n]),t.writeByte(r[0]),t.writeByte(r[1]),t.writeByte(r[2])}}function ht(t,e,s,n){if(t.writeByte(44),S(t,0),S(t,0),S(t,e),S(t,s),n){let r=0,o=0,i=Z(n.length)-1;t.writeByte(128|r|o|0|i)}else t.writeByte(0)}function yt(t,e,s,n,r=8,o,i,c){$(s,n,e,r,t,o,i,c)}function S(t,e){t.writeByte(e&255),t.writeByte(e>>8&255)}function ft(t,e){for(var s=0;s<e.length;s++)t.writeByte(e.charCodeAt(s))}function Z(t){return Math.max(Math.ceil(Math.log2(t)),1)}var Bt=ct;window.gifenc={GIFEncoder:ct,applyPalette:nt,quantize:H};})();
+</script>
 <script>
 /* three.min.js (r128, MIT license, bundled inline for fully offline use) */
 /**
@@ -1321,7 +1377,8 @@
   const LABEL_H_WORLD = 0.42; // on-screen height, as before
   let _measureCtx = null;
 
-  function makeTextSprite(text, color) {
+  function drawLabel(sprite) {
+    const { text, color } = sprite.userData.label;
     if (!_measureCtx) _measureCtx = document.createElement("canvas").getContext("2d");
     _measureCtx.font = LABEL_FONT;
     const textW = Math.ceil(_measureCtx.measureText(String(text)).width);
@@ -1338,10 +1395,18 @@
     // non-power-of-two canvas: mipmaps would blur or drop it entirely
     texture.minFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
-    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false,
-                                                transparent: true });
-    const sprite = new THREE.Sprite(material);
+    if (sprite.material.map) sprite.material.map.dispose();
+    sprite.material.map = texture;
+    sprite.material.needsUpdate = true;
     sprite.scale.set(LABEL_H_WORLD * (canvas.width / canvas.height), LABEL_H_WORLD, 1);
+  }
+
+  function makeTextSprite(text, color) {
+    const material = new THREE.SpriteMaterial({ depthTest: false, transparent: true, fog: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.renderOrder = 10;
+    sprite.userData.label = { text, color };
+    drawLabel(sprite);
     return sprite;
   }
 
@@ -1416,10 +1481,26 @@
     controls.dampingFactor = 0.08;
     controls.update();
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambient);
     const key = new THREE.DirectionalLight(0xffffff, 0.7);
     key.position.set(15, 10, -10);
     scene.add(key);
+
+    // --- experimental 3D enhancement (off by default): sky/ground light for
+    //     shading that tells top from bottom, shadows on the floor plane, fog
+    //     that fades what is far from the camera, and optionally a slow
+    //     rocking of the camera, since motion is
+    //     the strongest depth cue of all.
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7f70, 0);
+    hemi.position.set(1, 0, 0);   // diffcalc X is up
+    scene.add(hemi);
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    key.shadow.mapSize.set(2048, 2048);
+    Object.assign(key.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 60 });
+    key.shadow.bias = -0.0005;
+    const fx = { on: false, rock: false, rockPhase: 0, ampDeg: 8, periodS: 7,
+                 t0: performance.now(), busy: false, forceRock: false };
 
     // --- SwissFEL-labeled lab axes (cyclic relabeling of diffcalc's own X,Y,Z) ---
     const SF_X = new THREE.Vector3(0, 0, 1); // transverse = diffcalc Z
@@ -1438,13 +1519,14 @@
     yLabel.position.copy(SF_Y).multiplyScalar(axesLen + 0.35);
     scene.add(yLabel);
     const zLabel = makeTextSprite("Z (beam)", "#227722");
-    zLabel.position.copy(SF_Z).multiplyScalar(-VIEW_SPAN * 0.4);
-    zLabel.position.x += 0.9;
+    zLabel.position.copy(SF_Z).multiplyScalar(axesLen + 0.9);
     scene.add(zLabel);
 
-    // --- incident beam ---
+    // --- incident beam --- (while k is drawn, k and a dashed line upstream
+    // of the Ewald centre take its place: see updateRecip)
     const beamStart = SF_Z.clone().multiplyScalar(-VIEW_SPAN);
-    scene.add(arrow(SF_Z, beamStart, VIEW_SPAN, COLORS.beamIn, 0.5, 0.22));
+    const beamArrow = arrow(SF_Z, beamStart, VIEW_SPAN, COLORS.beamIn, 0.5, 0.22);
+    scene.add(beamArrow);
 
     // --- sample tower: mu -> eta -> chi -> phi (nested, base to sample) ---
     // Each circle: the ring itself sits in the rotating group, but its arc
@@ -1589,6 +1671,22 @@
     grid.rotation.z = -Math.PI / 2;
     grid.position.x = -3.5;
     scene.add(grid);
+    // invisible floor that only shows the shadows (enhanced view)
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16),
+                                 new THREE.ShadowMaterial({ opacity: 0.2, depthWrite: false }));
+    // (depthWrite off: reciprocal-space drawings often hang below the floor)
+    floor.rotation.y = Math.PI / 2;   // plane normal +Z -> +X (up)
+    floor.position.x = grid.position.x + 0.002;
+    floor.receiveShadow = true;
+    floor.visible = false;
+    scene.add(floor);
+
+    // grid and shadow floor move together; height in mm, negative = below
+    // the sample (the reciprocal-space drawings can hang far below it)
+    function setFloorHeight(mm) {
+      grid.position.x = mm * SCENE_MM_SCALE;
+      floor.position.x = grid.position.x + 0.002;
+    }
 
     // --- reciprocal space: k, k', Q (lab frame) and the reciprocal cell ---
     // Crystallographic convention, |k| = 1/lambda, so |Q| = |k' - k| = 1/d.
@@ -1604,7 +1702,8 @@
     // one (|a*| = 2*pi/a), so |Q| = 2*pi/d and the tip of Q lands exactly on
     // the reciprocal lattice node of the drawn cell. Supplied by the notebook.
     const recipState = { show: false, showCell: false, showHklCell: false,
-                         showEwald: false, showDetPatch: false,
+                         showEwald: false, showDetPatch: false, showDetCells: false, showDetCellLabels: false,
+                         showHklBz: false, showDetBz: false, showRealCell: false, centring: "P",
                          cmPerInvAng: 5, kMag: null, ub: null,
                          detW: 77, detH: 77 };
 
@@ -1705,10 +1804,19 @@
         lastMeasuredHkl = measured;
       }
 
+      beamArrow.visible = !(recipState.show && recipState.kMag);
       if (recipState.show && recipState.kMag) {
         const origin = new THREE.Vector3(0, 0, 0);
 
+        // k from the Ewald centre to the sample, |k| long on the reciprocal
+        // scale; the incident beam upstream of it dashed
         recipGroup.add(arrow(beam, kStart, len, 0xff0033, len * 0.09, len * 0.035));
+        if (len < VIEW_SPAN) {
+          const upstream = new THREE.Line(new THREE.BufferGeometry().setFromPoints([beamStart, kStart]),
+            new THREE.LineDashedMaterial({ color: COLORS.beamIn, dashSize: 0.3, gapSize: 0.2 }));
+          upstream.computeLineDistances();
+          recipGroup.add(upstream);
+        }
         recipGroup.add(arrow(outDir, origin, len, 0xff7f0e, len * 0.09, len * 0.035));
 
         if (qLen > 1e-6) {
@@ -1824,11 +1932,119 @@
         });
       }
 
-      if ((recipState.showCell || (recipState.showHklCell && lastMeasuredHkl)) && recipState.ub) {
+      let detCellCount = null, detNodes = null, detZoneCount = null;
+      if (recipState.ub) {
         const U = recipState.ub;   // columns are a*, b*, c* in the phi frame
         const col = (j) => new THREE.Vector3(U[0][j], U[1][j], U[2][j]).multiplyScalar(s);
         const A = col(0), B = col(1), C = col(2);
         const origin = new THREE.Vector3(0, 0, 0);
+
+        // All cells the detector sees: sample the detector's cut of the Ewald
+        // sphere, turn each point into hkl and keep the nearest node. The grid
+        // is refined until neighbouring samples are < 0.05 cell apart, so a
+        // cell is only missed when the cut merely grazes one of its corners.
+        if (recipState.showDetCells && recipState.kMag) {
+          const nodes = detectorNodes(len, kStart);
+          detNodes = nodes;
+          detCellCount = nodes.length;
+          const shown = nodes.slice(0, MAX_DET_CELLS);
+          if (shown.length) {
+            cellGroup.add(new THREE.LineSegments(cellEdgeGeometry(shown, A, B, C),
+              new THREE.LineBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.45,
+                                            depthWrite: false, clippingPlanes: clipPlanes })));
+            const pts = new Float32Array(shown.length * 3);
+            shown.forEach((h, i) => {
+              const p = nodePosition(h, A, B, C);
+              pts[3 * i] = p.x; pts[3 * i + 1] = p.y; pts[3 * i + 2] = p.z;
+            });
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute("position", new THREE.BufferAttribute(pts, 3));
+            cellGroup.add(new THREE.Points(geo, new THREE.PointsMaterial({
+              color: 0x333333, size: Math.max(len * 0.012, 0.03), clippingPlanes: clipPlanes })));
+            if (recipState.showDetCellLabels && shown.length <= MAX_DET_LABELS) {
+              for (const h of shown) {
+                cellGroup.add(labelAt("(" + h.join(" ") + ")", nodePosition(h, A, B, C), "#555555",
+                                      new THREE.Vector3(0.12, 0.12, 0)));
+              }
+            }
+          }
+        }
+
+        // the cell around each target reflection, in that reflection's colour
+        if (recipState.showHklCell && recipState.targets && recipState.targets.length) {
+          const hex = [0x0a8f6a, 0xb5179e];
+          recipState.targets.forEach((h, i) => {
+            cellGroup.add(new THREE.LineSegments(
+              cellEdgeGeometry([cellCorner(h)], A, B, C, false),
+              new THREE.LineBasicMaterial({ color: hex[i % 2] })));
+          });
+        }
+
+        // Brillouin zones: around Q and the targets dashed, in their colours;
+        // all the detector sees in blue-grey
+        if (recipState.showHklBz || recipState.showDetBz) {
+          const zone = bzEdges(A, B, C);
+          if (recipState.showDetBz && recipState.kMag) {
+            const nodes = detectorNodes(len, kStart, (h) => nearestAllowed(h, A, B, C));
+            detZoneCount = nodes.length;
+            const shown = nodes.slice(0, MAX_DET_CELLS);
+            if (shown.length) {
+              cellGroup.add(new THREE.LineSegments(bzEdgeGeometry(zone, shown, A, B, C),
+                new THREE.LineBasicMaterial({ color: 0x3a6fb0, transparent: true, opacity: 0.5,
+                                              depthWrite: false, clippingPlanes: clipPlanes })));
+            }
+          }
+          if (recipState.showHklBz) {
+            const dashed = (color) => new THREE.LineDashedMaterial({
+              color, dashSize: Math.min(A.length(), B.length(), C.length()) * 0.06,
+              gapSize: Math.min(A.length(), B.length(), C.length()) * 0.04 });
+            const around = [];
+            if (recipState.targets) {
+              recipState.targets.forEach((h, i) => around.push([nearestAllowed(h, A, B, C), [0x0a8f6a, 0xb5179e][i % 2]]));
+            }
+            if (lastMeasuredHkl) around.push([nearestAllowed(lastMeasuredHkl, A, B, C), 0xcc6600]);
+            for (const [n, color] of around) {
+              const seg = new THREE.LineSegments(bzEdgeGeometry(zone, [n], A, B, C), dashed(color));
+              seg.computeLineDistances();
+              cellGroup.add(seg);
+            }
+          }
+        }
+
+        // The real-space cell at the origin, turning with the sample. Drawn
+        // at 1/(2 pi) of the reciprocal scale (1 A shown as long as
+        // 1/(2 pi) 1/A), so it follows the scale slider: a = 2 pi (b* x c*) / V*.
+        if (recipState.showRealCell) {
+          const bc = new THREE.Vector3().crossVectors(B, C);
+          const vol = A.dot(bc);
+          if (Math.abs(vol) > 1e-12) {
+            const k = s * s / vol;
+            const real = [bc.multiplyScalar(k), new THREE.Vector3().crossVectors(C, A).multiplyScalar(k),
+                          new THREE.Vector3().crossVectors(A, B).multiplyScalar(k)];
+            const css = ["#8b1a1a", "#1d6b1d", "#1a3f8b"];
+            real.forEach((v, i) => {
+              const L = v.length();
+              cellGroup.add(arrow(v.clone().normalize(), origin, L, new THREE.Color(css[i]).getHex(),
+                                  L * 0.08, L * 0.03));
+              cellGroup.add(labelAt("abc"[i], v.clone().multiplyScalar(1.08), css[i]));
+            });
+            const [a, b, c] = real;
+            const P = (x, y, z) => new THREE.Vector3().addScaledVector(a, x).addScaledVector(b, y).addScaledVector(c, z);
+            const edges = [
+              [P(1,0,0), P(1,1,0)], [P(0,1,0), P(1,1,0)],
+              [P(1,0,0), P(1,0,1)], [P(0,0,1), P(1,0,1)],
+              [P(0,1,0), P(0,1,1)], [P(0,0,1), P(0,1,1)],
+              [P(1,1,0), P(1,1,1)], [P(1,0,1), P(1,1,1)], [P(0,1,1), P(1,1,1)],
+            ];
+            const mat = new THREE.LineDashedMaterial({ color: 0x555555, dashSize: s * 0.04, gapSize: s * 0.03 });
+            for (const [p0, p1] of edges) {
+              const seg = new THREE.Line(new THREE.BufferGeometry().setFromPoints([p0, p1]), mat);
+              seg.computeLineDistances();
+              cellGroup.add(seg);
+            }
+          }
+        }
+
         if (recipState.showCell) {
         const axisColors = [0xcc0000, 0x00aa00, 0x2255cc];   // a*=red b*=green c*=blue
         const axisNames = ["a*", "b*", "c*"];
@@ -1851,29 +2067,224 @@
         for (const [a, b] of edges) cellGroup.add(thinLine(a, b, 0x222222));
         }
 
-        // Optionally also outline the cell the requested reflection sits in:
-        // hkl (0.1, 2.99, 3) -> the cell spanning h 0-1, k 2-3, l 3-4.
+        // Also outline the cell Q sits in, with its corner on the lattice:
+        // hkl (0.1, 2.99, 3) -> the cell spanning h 0..1, k 2..3, l 3..4, so
+        // Q in Bragg condition is the corner the a*/b*/c* edges leave from.
         if (recipState.showHklCell && lastMeasuredHkl) {
-          const n = lastMeasuredHkl.map(Math.floor);
-          const base = new THREE.Vector3()
-            .addScaledVector(A, n[0]).addScaledVector(B, n[1]).addScaledVector(C, n[2]);
+          const n = cellCorner(lastMeasuredHkl);
+          const base = nodePosition(n, A, B, C);
           const Pn = (x, y, z) => base.clone()
             .addScaledVector(A, x).addScaledVector(B, y).addScaledVector(C, z);
-          // the three edges leaving the corner keep the a*/b*/c* colours; the
-          // rest of the body is drawn in a distinct colour so this cell is
-          // still clearly the one around Q rather than the one at the origin
+          // the body in a distinct colour, so this is clearly the cell around
+          // Q; the three edges leaving its corner keep the a*/b*/c* colours
+          cellGroup.add(new THREE.LineSegments(cellEdgeGeometry([n], A, B, C, false),
+                                               new THREE.LineBasicMaterial({ color: 0xcc6600 })));
           cellGroup.add(thinLine(Pn(0,0,0), Pn(1,0,0), 0xcc0000));   // a*
           cellGroup.add(thinLine(Pn(0,0,0), Pn(0,1,0), 0x00aa00));   // b*
           cellGroup.add(thinLine(Pn(0,0,0), Pn(0,0,1), 0x2255cc));   // c*
-          const cellEdges = [
-            [Pn(1,0,0),Pn(1,1,0)], [Pn(0,1,0),Pn(1,1,0)],
-            [Pn(1,0,0),Pn(1,0,1)], [Pn(0,0,1),Pn(1,0,1)],
-            [Pn(0,1,0),Pn(0,1,1)], [Pn(0,0,1),Pn(0,1,1)],
-            [Pn(1,1,0),Pn(1,1,1)], [Pn(1,0,1),Pn(1,1,1)], [Pn(0,1,1),Pn(1,1,1)],
-          ];
-          for (const [a, b] of cellEdges) cellGroup.add(thinLine(a, b, 0xcc6600));
         }
       }
+      lastDetNodes = detNodes;
+      const bzCountEl = document.getElementById("det-bz-count");
+      if (bzCountEl) {
+        bzCountEl.textContent = detZoneCount === null ? ""
+          : detZoneCount > MAX_DET_CELLS ? `(${detZoneCount}, first ${MAX_DET_CELLS} drawn)`
+          : `(${detZoneCount})`;
+      }
+      const countEl = document.getElementById("det-cells-count");
+      if (countEl) {
+        countEl.textContent = detCellCount === null ? ""
+          : detCellCount > MAX_DET_CELLS ? `(${detCellCount}, first ${MAX_DET_CELLS} drawn)`
+          : `(${detCellCount})`;
+      }
+    }
+
+    const MAX_DET_CELLS = 3000;   // beyond that the view is a solid grey block anyway
+    const MAX_DET_LABELS = 12;
+    let lastDetNodes = null;   // for debugCounts
+    // corners of a unit cube, as index pairs of its 12 edges
+    const CUBE_EDGES = [
+      [[0,0,0],[1,0,0]], [[0,1,0],[1,1,0]], [[0,0,1],[1,0,1]], [[0,1,1],[1,1,1]],
+      [[0,0,0],[0,1,0]], [[1,0,0],[1,1,0]], [[0,0,1],[0,1,1]], [[1,0,1],[1,1,1]],
+      [[0,0,0],[0,0,1]], [[1,0,0],[1,0,1]], [[0,1,0],[0,1,1]], [[1,1,0],[1,1,1]],
+    ];
+
+    function nodePosition(h, A, B, C) {
+      return new THREE.Vector3().addScaledVector(A, h[0]).addScaledVector(B, h[1]).addScaledVector(C, h[2]);
+    }
+
+    // The lower corner of the cell hkl lies in; a value within 0.001 of an
+    // integer counts as that integer, so a measured k = 2.9999 still puts Q
+    // on the corner of the cell 3..4 rather than the far corner of 2..3.
+    function cellCorner(h) {
+      return h.map((v) => Math.abs(v - Math.round(v)) < 1e-3 ? Math.round(v) : Math.floor(v));
+    }
+
+    // One geometry with the 12 edges of each cell, in the phi frame: centred
+    // on the node (h +- 1/2, the cells the detector sees) or, with
+    // centred = false, spanning h..h+1.
+    function cellEdgeGeometry(nodes, A, B, C, centred = true) {
+      const half = new THREE.Vector3().add(A).add(B).add(C).multiplyScalar(centred ? 0.5 : 0);
+      const pos = new Float32Array(nodes.length * 12 * 6);
+      let k = 0;
+      for (const h of nodes) {
+        const base = nodePosition(h, A, B, C).sub(half);
+        for (const edge of CUBE_EDGES) {
+          for (const [x, y, z] of edge) {
+            const p = base.clone().addScaledVector(A, x).addScaledVector(B, y).addScaledVector(C, z);
+            pos[k++] = p.x; pos[k++] = p.y; pos[k++] = p.z;
+          }
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      return geo;
+    }
+
+    // Lattice centring: which integer hkl are nodes of the lattice (as in
+    // detector_view._CENTRING; glides and screws do not change the lattice).
+    const mod = (a, n) => ((a % n) + n) % n;
+    const CENTRING_OK = {
+      P: () => true,
+      A: (h, k, l) => mod(k + l, 2) === 0,
+      B: (h, k, l) => mod(h + l, 2) === 0,
+      C: (h, k, l) => mod(h + k, 2) === 0,
+      I: (h, k, l) => mod(h + k + l, 2) === 0,
+      F: (h, k, l) => mod(h, 2) === mod(k, 2) && mod(k, 2) === mod(l, 2),
+      R: (h, k, l) => mod(-h + k + l, 3) === 0,
+    };
+    function isNode(h) {
+      return (CENTRING_OK[recipState.centring] || CENTRING_OK.P)(h[0], h[1], h[2]);
+    }
+
+    // The lattice node closest to hkl in reciprocal space (not in hkl
+    // numbers, which differ for oblique cells), searched like
+    // detector_view.nearest_nodes: +-1 around the rounded hkl, +-2 if centred.
+    function nearestAllowed(h, A, B, C) {
+      const r = (recipState.centring || "P") === "P" ? 1 : 2;
+      const base = h.map(Math.round);
+      const d0 = [h[0] - base[0], h[1] - base[1], h[2] - base[2]];
+      let best = base, bestD = Infinity;
+      for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) for (let k = -r; k <= r; k++) {
+        const n = [base[0] + i, base[1] + j, base[2] + k];
+        if (!isNode(n)) continue;
+        const a = d0[0] - i, b = d0[1] - j, c = d0[2] - k;
+        const x = A.x * a + B.x * b + C.x * c, y = A.y * a + B.y * b + C.y * c, z = A.z * a + B.z * b + C.z * c;
+        const dd = x * x + y * y + z * z;
+        if (dd < bestD) { bestD = dd; best = n; }
+      }
+      return best;
+    }
+
+    // The Brillouin zone around the origin (Wigner-Seitz cell of the
+    // reciprocal lattice): bounded by the planes halfway to the nearest
+    // nodes. Its corners are where three planes meet inside all others; two
+    // corners sharing two planes are joined by an edge. Cached per lattice.
+    let bzCache = { key: null, edges: null };
+    function bzEdges(A, B, C) {
+      const key = [A, B, C].map((v) => v.toArray().map((x) => x.toPrecision(9)).join(",")).join(";")
+        + recipState.centring;
+      if (bzCache.key === key) return bzCache.edges;
+      const R = 3;
+      let G = [];
+      for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) for (let k = -R; k <= R; k++) {
+        if ((i || j || k) && isNode([i, j, k])) G.push(nodePosition([i, j, k], A, B, C));
+      }
+      G.sort((a, b) => a.lengthSq() - b.lengthSq());
+      G = G.slice(0, 64);
+      const half = G.map((g) => g.lengthSq() / 2);
+      const scale = G[0].lengthSq();
+      const eps = 1e-7 * scale;
+      const verts = [];
+      const m = new THREE.Matrix3();
+      for (let a = 0; a < G.length; a++) for (let b = a + 1; b < G.length; b++) for (let c = b + 1; c < G.length; c++) {
+        const ga = G[a], gb = G[b], gc = G[c];
+        m.set(ga.x, ga.y, ga.z, gb.x, gb.y, gb.z, gc.x, gc.y, gc.z);
+        if (Math.abs(m.determinant()) < 1e-9 * scale ** 1.5) continue;
+        const x = new THREE.Vector3(half[a], half[b], half[c]).applyMatrix3(m.clone().invert());
+        let inside = true;
+        for (let p = 0; p < G.length && inside; p++) inside = x.dot(G[p]) <= half[p] + eps;
+        if (!inside || verts.some((v) => v.p.distanceToSquared(x) < eps)) continue;
+        const planes = new Set();
+        G.forEach((g, p) => { if (Math.abs(x.dot(g) - half[p]) < eps) planes.add(p); });
+        verts.push({ p: x, planes });
+      }
+      const edges = [];
+      for (let i = 0; i < verts.length; i++) for (let j = i + 1; j < verts.length; j++) {
+        let shared = 0;
+        for (const p of verts[i].planes) if (verts[j].planes.has(p)) shared++;
+        if (shared >= 2) edges.push([verts[i].p, verts[j].p]);
+      }
+      bzCache = { key, edges, vertices: verts.length };
+      return edges;
+    }
+
+    // One geometry with the zone's edges around each node, in the phi frame.
+    function bzEdgeGeometry(edges, nodes, A, B, C) {
+      const pos = new Float32Array(nodes.length * edges.length * 6);
+      let k = 0;
+      for (const h of nodes) {
+        const c = nodePosition(h, A, B, C);
+        for (const [p, q] of edges) {
+          pos[k++] = c.x + p.x; pos[k++] = c.y + p.y; pos[k++] = c.z + p.z;
+          pos[k++] = c.x + q.x; pos[k++] = c.y + q.y; pos[k++] = c.z + q.z;
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      return geo;
+    }
+
+    // Nearest nodes of the points on the detector's cut of the Ewald sphere,
+    // sorted by distance from the detector centre. Same detector face as the
+    // drawn patch: height on the delta group's local X, width on local Z.
+    // toNode turns an hkl into its node: the rounded hkl for the cells, the
+    // nearest lattice node for the Brillouin zones.
+    function detectorNodes(len, kStart, toNode = (h) => h.map(Math.round)) {
+      const ubInv = invert3(recipState.ub);
+      if (!ubInv) return [];
+      deltaGroup.updateMatrixWorld(true);
+      phiGroup.updateMatrixWorld(true);
+      const qDet = deltaGroup.getWorldQuaternion(new THREE.Quaternion());
+      const qPhiInv = phiGroup.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const armLen = lastTdetMm * SCENE_MM_SCALE;
+      const w = detWmm * SCENE_MM_SCALE, hgt = detHmm * SCENE_MM_SCALE;
+      const s = recScale();
+      const hklAt = (u, v) => {
+        const dir = new THREE.Vector3((u - 0.5) * hgt, armLen, (v - 0.5) * w)
+          .applyQuaternion(qDet).normalize();
+        // the point on the sphere is Q itself: the sphere passes the origin
+        const q = kStart.clone().addScaledVector(dir, len).divideScalar(s).applyQuaternion(qPhiInv);
+        const h = mul3(ubInv, q);
+        return [h.x, h.y, h.z];
+      };
+      // coarse pass: how many cells one grid step crosses
+      const N0 = 16;
+      let step = 0;
+      const coarse = [];
+      for (let i = 0; i <= N0; i++) {
+        coarse.push([]);
+        for (let j = 0; j <= N0; j++) coarse[i].push(hklAt(i / N0, j / N0));
+      }
+      for (let i = 0; i <= N0; i++) {
+        for (let j = 0; j <= N0; j++) {
+          for (const [a, b] of [[i + 1, j], [i, j + 1]]) {
+            if (a > N0 || b > N0) continue;
+            for (let c = 0; c < 3; c++) step = Math.max(step, Math.abs(coarse[a][b][c] - coarse[i][j][c]));
+          }
+        }
+      }
+      const N = Math.min(600, Math.max(N0, Math.ceil(N0 * step / 0.05)));
+      const found = new Map();
+      for (let i = 0; i <= N; i++) {
+        for (let j = 0; j <= N; j++) {
+          const h = toNode(hklAt(i / N, j / N));
+          const key = h.join(",");
+          const r = (i / N - 0.5) ** 2 + (j / N - 0.5) ** 2;
+          if (!found.has(key) || found.get(key).r > r) found.set(key, { h, r });
+        }
+      }
+      return [...found.values()].sort((a, b) => a.r - b.r).map((e) => e.h);
     }
 
     function setRecip(opts) {
@@ -1924,8 +2335,157 @@
     }
     window.addEventListener("resize", resize);
 
+    // Rocking: the camera swings about the vertical through the orbit target;
+    // applied as the change since the last frame, so dragging still works.
+    function applyRock(angle) {
+      const off = camera.position.clone().sub(controls.target)
+        .applyAxisAngle(rockAxis, angle - fx.rockPhase);
+      camera.position.copy(controls.target).add(off);
+      fx.rockPhase = angle;
+    }
+    function rockAngleAt(fraction) {   // fraction of one period
+      return deg(fx.ampDeg) * Math.sin(2 * Math.PI * fraction);
+    }
+
+    function setEnhanced({ on, rock, ampDeg, periodS, floorMm }) {
+      if (typeof ampDeg === "number" && ampDeg > 0) fx.ampDeg = ampDeg;
+      if (typeof periodS === "number" && periodS > 0) fx.periodS = periodS;
+      if (typeof floorMm === "number") setFloorHeight(floorMm);
+      if (typeof rock === "boolean" && rock !== fx.rock) {
+        fx.rock = rock;
+        if (!rock) applyRock(0);           // back to where the view was
+        fx.t0 = performance.now();         // start at the centre, no jump
+      }
+      if (typeof on !== "boolean" || on === fx.on) return;
+      if (!on) applyRock(0);
+      fx.on = on;
+      renderer.shadowMap.enabled = on;
+      key.castShadow = on;
+      floor.visible = on;
+      ambient.intensity = on ? 0.3 : 0.7;
+      hemi.intensity = on ? 0.6 : 0;
+      key.intensity = on ? 0.85 : 0.7;
+      scene.fog = on ? new THREE.Fog(0xf5f5f5, 10, 40) : null;
+      // rings thick enough for their shading to show
+      for (const name in circles) {
+        const c = circles[name];
+        c.ringMesh.geometry.dispose();
+        c.ringMesh.geometry = new THREE.TorusGeometry(c.radius, on ? TUBE * 2.2 : TUBE, on ? 16 : 10, on ? 160 : 96);
+      }
+      scene.traverse((o) => {
+        if (o.material) o.material.needsUpdate = true;   // shadow / fog shader variants
+      });
+    }
+
+    const rockAxis = new THREE.Vector3(1, 0, 0);   // about the vertical
+
+    function saveBlob(blob, name) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+    const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
+
+    // One rocking period as a looping GIF. Frames are rendered here, at
+    // exact phases, rather than grabbed from the live loop, so the loop
+    // closes without a jump. The palette comes from a few sample frames
+    // first, so colours do not flicker from frame to frame.
+    async function saveRockingGif({ fps = 15, maxWidth = 720, onProgress } = {}) {
+      if (fx.busy || !window.gifenc) return null;
+      fx.busy = true;
+      const { GIFEncoder, quantize, applyPalette } = window.gifenc;
+      try {
+        const src = renderer.domElement;
+        const scale = Math.min(1, maxWidth / src.width);
+        const w = Math.round(src.width * scale), h = Math.round(src.height * scale);
+        const c2 = document.createElement("canvas");
+        c2.width = w; c2.height = h;
+        const ctx = c2.getContext("2d", { willReadFrequently: true });
+        const n = Math.max(2, Math.round(fx.periodS * fps));
+        const grab = (i) => {
+          applyRock(rockAngleAt(i / n));
+          controls.update();
+          renderer.render(scene, camera);
+          ctx.drawImage(src, 0, 0, w, h);
+          return ctx.getImageData(0, 0, w, h).data;
+        };
+        const samples = [0, 0.25, 0.5, 0.75].map((f) => grab(Math.round(f * n)));
+        const all = new Uint8ClampedArray(samples.length * w * h * 4);
+        samples.forEach((d, i) => all.set(d, i * w * h * 4));
+        const palette = quantize(all, 256);
+        const gif = GIFEncoder();
+        const delay = Math.round(1000 / fps);
+        for (let i = 0; i < n; i++) {
+          const index = applyPalette(grab(i), palette);
+          gif.writeFrame(index, w, h, i === 0 ? { palette, delay, repeat: 0 } : { delay });
+          if (onProgress) onProgress(i + 1, n);
+          await nextFrame();
+        }
+        gif.finish();
+        const blob = new Blob([gif.bytes()], { type: "image/gif" });
+        saveBlob(blob, "diffractometer_rocking.gif");
+        return { bytes: blob.size, frames: n, width: w, height: h };
+      } finally {
+        applyRock(0);
+        fx.t0 = performance.now();
+        fx.busy = false;
+      }
+    }
+
+    // One rocking period as a movie, recorded from the live canvas in real
+    // time: MP4 where the browser can record it (recent Chrome), else WebM.
+    async function saveRockingMovie({ fps = 30, onProgress } = {}) {
+      if (fx.busy || !window.MediaRecorder || !renderer.domElement.captureStream) return null;
+      fx.busy = true;
+      try {
+        const types = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"];
+        const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t));
+        if (!mimeType) return null;
+        const rec = new MediaRecorder(renderer.domElement.captureStream(fps),
+                                      { mimeType, videoBitsPerSecond: 8e6 });
+        const chunks = [];
+        rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        const stopped = new Promise((r) => { rec.onstop = r; });
+        applyRock(0);
+        fx.forceRock = true;
+        fx.t0 = performance.now();
+        rec.start(250);
+        const end = fx.t0 + fx.periodS * 1000;
+        while (performance.now() < end) {
+          if (onProgress) onProgress(Math.min(1, (performance.now() - fx.t0) / (end - fx.t0)));
+          await nextFrame();
+        }
+        rec.stop();
+        await stopped;
+        const ext = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+        const blob = new Blob(chunks, { type: mimeType.split(";")[0] });
+        saveBlob(blob, "diffractometer_rocking." + ext);
+        return { bytes: blob.size, type: mimeType };
+      } finally {
+        fx.forceRock = false;
+        if (!fx.rock) applyRock(0);
+        fx.busy = false;
+      }
+    }
     function animate() {
       requestAnimationFrame(animate);
+      if (fx.on) {
+        // opaque meshes cast shadows; the Ewald shell and the detector patch
+        // are transparent and would darken everything
+        scene.traverse((o) => {
+          if (o.isMesh && o !== floor) o.castShadow = !o.material.transparent;
+        });
+        const d = camera.position.distanceTo(controls.target);
+        scene.fog.near = d * 0.75;
+        scene.fog.far = d * 2.6;
+        if ((fx.rock || fx.forceRock) && !(fx.busy && !fx.forceRock)) {
+          applyRock(rockAngleAt((performance.now() - fx.t0) / 1000 / fx.periodS));
+        }
+      }
       controls.update();
       renderer.render(scene, camera);
     }
@@ -1937,6 +2497,8 @@
         cellObjects: cellGroup.children.length,
         circlesVisible: Object.keys(circles).filter((n) => circles[n].ringMesh.visible).length,
         measuredHkl: lastMeasuredHkl,
+        detectorNodes: lastDetNodes,
+        zone: bzCache.key ? { vertices: bzCache.vertices, edges: bzCache.edges.length } : null,
         surfaceNormalPhi: sampleGroup.localToWorld(new THREE.Vector3(0, 0, 1))
           .sub(sampleGroup.localToWorld(new THREE.Vector3(0, 0, 0))).toArray(),
         samplePlateOffsetZ: sampleMesh.position.z,
@@ -1957,7 +2519,8 @@
     }
 
     return { setAngles, setDetectorDistance, setShowCircles, setRecip,
-             setSurfaceNormal, resize, debugCounts };
+             setSurfaceNormal, setEnhanced, saveRockingGif, saveRockingMovie,
+             resize, debugCounts };
   };
 })();
 
@@ -2032,10 +2595,137 @@
   const showHklCellEl = document.getElementById("show-hkl-cell");
   const showEwaldEl = document.getElementById("show-ewald");
   const showDetPatchEl = document.getElementById("show-det-patch");
+  const showDetCellsEl = document.getElementById("show-det-cells");
+  const showDetCellLabelsEl = document.getElementById("show-det-cell-labels");
+  const showHklBzEl = document.getElementById("show-hkl-bz");
+  const showRealCellEl = document.getElementById("show-real-cell");
+  const showDetBzEl = document.getElementById("show-det-bz");
   const showAngleCtrlEl = document.getElementById("show-angle-controls");
+  const enhancedEl = document.getElementById("enhanced-3d");
+  const rockEl = document.getElementById("rock-3d");
+  // slider + number pairs of the enhancement options
+  const fxPairs = {
+    floorMm: ["fx-floor", (v) => v.toFixed(0) + " mm"],
+    ampDeg: ["fx-amp", (v) => "\u00b1" + v.toFixed(0) + "\u00b0"],
+    periodS: ["fx-period", (v) => v.toFixed(1).replace(/\.0$/, "") + " s"],
+  };
+  function fxValue(key) { return parseFloat(document.getElementById(fxPairs[key][0]).value); }
+  function setFxValue(key, v) {
+    const [id, fmt] = fxPairs[key];
+    const slider = document.getElementById(id);
+    slider.value = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max), v));
+    document.getElementById(id + "-num").value = v;
+    document.getElementById(id + "-val").textContent = fmt(v);
+  }
+  function refreshEnhanced() {
+    document.getElementById("fx-options").style.display = enhancedEl.checked ? "" : "none";
+    app.setEnhanced({ on: enhancedEl.checked, rock: enhancedEl.checked && rockEl.checked,
+                      floorMm: fxValue("floorMm"), ampDeg: fxValue("ampDeg"), periodS: fxValue("periodS") });
+  }
+  for (const key of Object.keys(fxPairs)) {
+    const id = fxPairs[key][0];
+    document.getElementById(id).addEventListener("input", (e) => {
+      setFxValue(key, parseFloat(e.target.value)); refreshEnhanced();
+    });
+    document.getElementById(id + "-num").addEventListener("input", (e) => {
+      const v = parseFloat(e.target.value);
+      if (Number.isNaN(v)) return;
+      setFxValue(key, v); refreshEnhanced();
+    });
+  }
+  const recStatusEl = document.getElementById("fx-rec-status");
+  const saveGifEl = document.getElementById("fx-save-gif");
+  const saveMovieEl = document.getElementById("fx-save-movie");
+  async function record(kind) {
+    saveGifEl.disabled = saveMovieEl.disabled = true;
+    try {
+      const r = kind === "gif"
+        ? await app.saveRockingGif({ onProgress: (i, n) => { recStatusEl.textContent = `GIF frame ${i}/${n}`; } })
+        : await app.saveRockingMovie({ onProgress: (f) => { recStatusEl.textContent = `recording ${Math.round(f * 100)} %`; } });
+      recStatusEl.textContent = !r ? (kind === "gif" ? "GIF encoder not available"
+                                                     : "this browser cannot record video")
+        : `saved (${(r.bytes / 1e6).toFixed(1)} MB${r.type ? ", " + r.type.split(";")[0] : ""})`;
+    } catch (e) {
+      recStatusEl.textContent = "failed: " + e;
+    } finally {
+      saveGifEl.disabled = saveMovieEl.disabled = false;
+    }
+  }
+  saveGifEl.addEventListener("click", () => record("gif"));
+  saveMovieEl.addEventListener("click", () => record("movie"));
   const controlsBelowEl = document.getElementById("controls-below");
   const detWEl = document.getElementById("det-w");
   const detHEl = document.getElementById("det-h");
+  const detPresetEl = document.getElementById("det-preset");
+
+  // --- detector presets, kept in step with the app's detector tool ----
+  // The app sends its list (bernina_prep.diffraction.DETECTOR_PRESETS) and
+  // its current detector with every push; standalone (eco) the page uses
+  // this copy of the list. A change made here is written into a hidden text
+  // widget of the app (class diff3d-detector-in), which the app observes.
+  const DEFAULT_DET_PRESETS = [["77 x 77 mm", 77.0, 77.0], ["JUNGFRAU 1 module (76.8 x 38.4 mm)", 76.8, 38.4], ["JUNGFRAU 2 modules (76.8 x 76.8 mm)", 76.8, 76.8], ["JUNGFRAU 4 modules (153.6 x 76.8 mm)", 153.6, 76.8], ["JF01T03 Bernina 1.5M, 3 modules (77.2 x 121.0 mm)", 77.25, 121.05], ["JF01T03 Bernina 1.5M, 3 modules, turned 90° (121.0 x 77.2 mm)", 121.05, 77.25], ["JF07T32 Bernina 16M, 32 modules (316.1 x 332.4 mm)", 316.125, 332.4], ["JF07T32 Bernina 16M, 32 modules, turned 90° (332.4 x 316.1 mm)", 332.4, 316.125]];
+  let detPresets = DEFAULT_DET_PRESETS;
+  let lastLocalDet = -1e9;     // when the detector was last changed here
+
+  function fillDetPresets() {
+    detPresetEl.innerHTML = "";
+    for (const [name] of [["custom size"]].concat(detPresets)) {
+      const o = document.createElement("option");
+      o.value = name === "custom size" ? "" : name;
+      o.textContent = name;
+      detPresetEl.appendChild(o);
+    }
+    matchDetPreset();
+  }
+
+  // select the preset of the current size, or "custom size"
+  function matchDetPreset() {
+    const w = parseFloat(detWEl.value), h = parseFloat(detHEl.value);
+    const hit = detPresets.find(([, pw, ph]) => Math.abs(pw - w) < 1e-3 && Math.abs(ph - h) < 1e-3);
+    detPresetEl.value = hit ? hit[0] : "";
+  }
+
+  function sendDetector() {
+    lastLocalDet = performance.now();
+    try {
+      const doc = window.parent && window.parent !== window ? window.parent.document : null;
+      const input = doc && doc.querySelector(".diff3d-detector-in input");
+      if (!input) return;
+      input.value = JSON.stringify({ name: detPresetEl.value, w: parseFloat(detWEl.value),
+                                     h: parseFloat(detHEl.value) });
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (e) {
+      // standalone or parent not reachable
+    }
+  }
+
+  detPresetEl.addEventListener("change", () => {
+    const hit = detPresets.find(([name]) => name === detPresetEl.value);
+    if (hit) { detWEl.value = hit[1]; detHEl.value = hit[2]; }
+    refreshRecip();
+    sendDetector();
+  });
+  for (const el of [detWEl, detHEl]) {
+    el.addEventListener("input", () => { matchDetPreset(); sendDetector(); });
+  }
+
+  // from the app: its preset list and its detector. Ignored for a moment
+  // after a change here, so a push sent before the app saw that change
+  // cannot undo it while the user is still typing.
+  function applyDetectorMsg(msg) {
+    if (Array.isArray(msg.detectors) && JSON.stringify(msg.detectors) !== JSON.stringify(detPresets)) {
+      detPresets = msg.detectors;
+      fillDetPresets();
+    }
+    const d = msg.detector;
+    if (!d || typeof d.w !== "number" || typeof d.h !== "number") return;
+    if (performance.now() - lastLocalDet < 1500) return;
+    if (Math.abs(d.w - parseFloat(detWEl.value)) < 1e-6 && Math.abs(d.h - parseFloat(detHEl.value)) < 1e-6) return;
+    detWEl.value = d.w;
+    detHEl.value = d.h;
+    matchDetPreset();
+    refreshRecip();
+  }
 
   function refreshRecip() {
     const cm = parseFloat(recScaleEl.value);
@@ -2046,6 +2736,11 @@
       showHklCell: showHklCellEl.checked,
       showEwald: showEwaldEl.checked,
       showDetPatch: showDetPatchEl.checked,
+      showDetCells: showDetCellsEl.checked,
+      showDetCellLabels: showDetCellLabelsEl.checked,
+      showHklBz: showHklBzEl.checked,
+      showRealCell: showRealCellEl.checked,
+      showDetBz: showDetBzEl.checked,
       cmPerInvAng: cm,
       detW: parseFloat(detWEl.value) || 77,
       detH: parseFloat(detHEl.value) || 77,
@@ -2076,9 +2771,16 @@
   showHklCellEl.addEventListener("change", refreshRecip);
   showEwaldEl.addEventListener("change", refreshRecip);
   showDetPatchEl.addEventListener("change", refreshRecip);
+  showDetCellsEl.addEventListener("change", refreshRecip);
+  showDetCellLabelsEl.addEventListener("change", refreshRecip);
+  showHklBzEl.addEventListener("change", refreshRecip);
+  showRealCellEl.addEventListener("change", refreshRecip);
+  showDetBzEl.addEventListener("change", refreshRecip);
   detWEl.addEventListener("input", refreshRecip);
   detHEl.addEventListener("input", refreshRecip);
   showAngleCtrlEl.addEventListener("change", refreshAngleControls);
+  enhancedEl.addEventListener("change", refreshEnhanced);
+  rockEl.addEventListener("change", refreshEnhanced);
   controlsBelowEl.addEventListener("change", refreshLayout);
   recScaleEl.addEventListener("input", () => {
     recScaleNumEl.value = recScaleEl.value;
@@ -2096,6 +2798,8 @@
   const displayChecks = {
     showCircles: showCirclesEl, showRecip: showRecipEl, showCell: showCellEl,
     showHklCell: showHklCellEl, showEwald: showEwaldEl, showDetPatch: showDetPatchEl,
+    showDetCells: showDetCellsEl, showDetCellLabels: showDetCellLabelsEl,
+    showHklBz: showHklBzEl, showDetBz: showDetBzEl, showRealCell: showRealCellEl, enhanced3d: enhancedEl, rock3d: rockEl,
     showAngleControls: showAngleCtrlEl, controlsBelow: controlsBelowEl,
   };
 
@@ -2106,6 +2810,7 @@
     d.tdet = tdet;
     d.detW = parseFloat(detWEl.value);
     d.detH = parseFloat(detHEl.value);
+    for (const key of Object.keys(fxPairs)) d[key] = fxValue(key);
     return d;
   }
 
@@ -2120,11 +2825,19 @@
     }
     if (typeof d.detW === "number") detWEl.value = d.detW;
     if (typeof d.detH === "number") detHEl.value = d.detH;
+    if (typeof d.detW === "number" || typeof d.detH === "number") {
+      matchDetPreset();
+      sendDetector();   // a stored view brings its detector to the app's tool too
+    }
     if (typeof d.tdet === "number") tdet = d.tdet;
+    for (const key of Object.keys(fxPairs)) {
+      if (typeof d[key] === "number") setFxValue(key, d[key]);
+    }
     app.setShowCircles(showCirclesEl.checked);
     refreshTdet();
     refreshRecip();
     refreshAngleControls();
+    refreshEnhanced();
     refreshLayout();
   }
 
@@ -2171,6 +2884,7 @@
       // sent once, by a config load; later pushes omit it so the user's
       // own toggles are not overwritten
       if (msg.display) applyDisplay(msg.display);
+      applyDetectorMsg(msg);
       // the notebook sizes the view without rebuilding the iframe (which would
       // reset the camera): a srcdoc frame may restyle its own frame element
       if (typeof msg.frameHeight === "number" && window.frameElement) {
@@ -2191,6 +2905,7 @@
       const opts = {};
       if (typeof msg.kMag === "number") opts.kMag = msg.kMag;
       if (msg.ub) opts.ub = msg.ub;
+      if (typeof msg.centring === "string") opts.centring = msg.centring;
       if (Array.isArray(msg.targets)) opts.targets = msg.targets;
       if (msg.nPhi) app.setSurfaceNormal(msg.nPhi);
       if (Object.keys(opts).length) app.setRecip(opts);
@@ -2201,11 +2916,13 @@
     }
   }
   setInterval(pollParent, 150);
+  fillDetPresets();
 
   refreshUI();
   refreshTdet();
   refreshRecip();
   refreshAngleControls();
+  refreshEnhanced();
   refreshLayout();
 })();
 </script>
