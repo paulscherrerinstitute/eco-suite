@@ -2865,11 +2865,52 @@
   const statusEl = document.getElementById("status");
   let lastPayload = null;
 
+  // --- the app's state, remembered in this browser ---------------------
+  // The app sends its full state with every push (msg.autosave); it is kept
+  // in localStorage together with this page's display settings. When a new
+  // session starts, the stored state is offered back once through a hidden
+  // text widget (class diff3d-state-in) - the app only starts sending
+  // autosaves after that, so its defaults never overwrite the stored state.
+  // Per browser and per web address (each Binder server has its own).
+  const STATE_KEY = "bernina-reflections-state";
+  let stateOffered = false, lastAutosave = null, lastStored = null, forgetting = false;
+
+  function offerState(doc) {
+    const input = doc.querySelector(".diff3d-state-in input");
+    if (!input) return;
+    stateOffered = true;
+    let stored = null;
+    try { stored = window.localStorage.getItem(STATE_KEY); } catch (e) { /* storage blocked */ }
+    let offer = "{}";
+    try {
+      const rec = stored ? JSON.parse(stored) : null;
+      if (rec && rec.state) {
+        offer = JSON.stringify({ state: rec.state, display: rec.display,
+                                 savedText: new Date(rec.saved).toLocaleString() });
+      }
+    } catch (e) { /* unreadable: start fresh */ }
+    input.value = offer;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function storeState() {
+    if (!lastAutosave || forgetting) return;
+    const display = getDisplay();
+    const key = JSON.stringify([lastAutosave, display]);
+    if (key === lastStored) return;
+    lastStored = key;
+    try {
+      window.localStorage.setItem(STATE_KEY, JSON.stringify({ saved: Date.now(), state: lastAutosave, display }));
+    } catch (e) { /* storage blocked or full */ }
+  }
+
   function pollParent() {
     try {
       const doc = window.parent && window.parent !== window ? window.parent.document : null;
       if (!doc) return;
       syncDownload(doc);
+      if (!stateOffered) offerState(doc);
+      storeState();                       // display changes are kept too
       const el = doc.getElementById("diff3d-payload");
       if (!el) return;
       const raw = el.textContent || "";
@@ -2885,6 +2926,13 @@
       // own toggles are not overwritten
       if (msg.display) applyDisplay(msg.display);
       applyDetectorMsg(msg);
+      if (msg.forgetState && !forgetting) {
+        forgetting = true;
+        try { window.localStorage.removeItem(STATE_KEY); } catch (e) { /* nothing stored */ }
+        window.parent.location.reload();
+        return;
+      }
+      if (msg.autosave) { lastAutosave = msg.autosave; storeState(); }
       // the notebook sizes the view without rebuilding the iframe (which would
       // reset the camera): a srcdoc frame may restyle its own frame element
       if (typeof msg.frameHeight === "number" && window.frameElement) {
