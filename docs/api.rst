@@ -118,5 +118,8 @@ Ask eco
 .. automodule:: eco.logs_elog
    :members: Reader, update, ca_bundle, parse_export
 
+.. automodule:: eco.ei_page
+   :members: render, write, open_page, clean_html
+
 .. automodule:: eco.ei_wait
    :members: pick, Waiting, in_terminal

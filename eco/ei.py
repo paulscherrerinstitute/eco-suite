@@ -38,6 +38,7 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei how do I set the attenuator transmission?
     %ei and only if the shutter is open?    # follow-up, same conversation
     %ei -n ...      new conversation        %ei -s ...   search only, no model
+    %ei -b ...      answer in the browser   %ei -b       the last answer there
     %ei -m openai/gpt-oss-120b ...          another model (kept)
     %ei --paste     last answer's code to the next prompt
     %ei --open 2    source [2] of the last answer in its context (the
@@ -1153,6 +1154,25 @@ def _print_answer(asst, question, **kwargs):
     return None
 
 
+def _show_in_browser(asst):
+    """The last answer (or search listing) as a page: written, opened if a
+    browser can be started here, and its path printed."""
+    from eco import ei_page
+
+    if asst.shown is None:
+        print("eco.ei: nothing to show yet -- `%ei -b <question>`")
+        return None
+    try:
+        path = ei_page.write(asst.shown, db_path=asst.db_path, report=print)
+    except Exception as exc:
+        print(f"eco.ei: the page failed: {type(exc).__name__}: {exc}")
+        return None
+    opened = ei_page.open_page(path)
+    where = _shown(str(path), terminal_links())
+    print(f"eco.ei: {'opened ' if opened else 'page: '}{where}")
+    return path
+
+
 # -- %ei -----------------------------------------------------------------------------
 
 
@@ -1287,6 +1307,11 @@ def ei_magic(line, cell=None):
         return _print_answer(asst, rest, new=True)
     if opt in ("-s", "--search"):
         return _print_answer(asst, rest, search_only=True)
+    if opt in ("-b", "--browser"):
+        if rest:
+            _print_answer(asst, rest)
+        _show_in_browser(asst)
+        return None
     return _print_answer(asst, text)
 
 
@@ -1390,7 +1415,7 @@ def _status(asst, key_where):
         f"eco.ei: model {asst.model} at {asst.config['base_url']}, "
         f"API key {'from ' + key_where if key_where else 'MISSING -- search only, `%ei --key` once you have one'}; "
         f"{len(asst.history)} earlier question(s) in this conversation.\n"
-        "%ei <question> | -n new | -s search only | -m MODEL | --paste | --bad TEXT | "
+        "%ei <question> | -n new | -s search only | -b browser | -m MODEL | --paste | --bad TEXT | "
         "--scan FILES | --scan-image VAR | --webcam | --key | --index | --scilog [pgroup] | --notes PATH | "
         "--scilog-token | --scilog-logbooks | --scilog-index | --scilog-search TEXT | "
         "--examples PATH | --models | --config | --help"

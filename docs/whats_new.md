@@ -54,6 +54,9 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   first index unasked: it says that its answers will be a search, shows the
   search syntax and asks once whether to index now. `%ei --index` builds it
   later ({doc}`ask_eco`).
+- `%ei -b`: the answer as a page in the browser. Each SciLog source is
+  shown as in SciLog, with images and tables, between its neighbouring
+  posts; citations link to it ({doc}`ask_eco`).
 
 ## 3 November 2026
 

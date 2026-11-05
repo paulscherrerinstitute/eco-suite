@@ -241,6 +241,41 @@ finding its peak). `"wait_animations"` in `~/.eco/ei.json` is the share of
 questions that get one (0.25; 0 for always the spinner). Jupyter, qtconsole
 and output that is not a terminal get neither.
 
+## In the browser
+
+`%ei -b` shows the answer as a page in the browser, `%ei -b QUESTION` asks
+and shows it there:
+
+```text
+%ei -b what trigger settings did we use for the tapedrive?
+%ei -b                      # the last answer, or the last search listing
+```
+
+The page has the answer, the numbered sources and, below them, every
+source in its context. The citations in the answer and the numbers in the
+source list link there.
+
+A SciLog source is read from SciLog again while the page is made: as it
+looks in SciLog, with its tables and images, between the three posts written
+before and the three after it in the same logbook. The cited post is
+highlighted. It is read as the account `%ei` indexes SciLog with (your token,
+or the beamline account). Without SciLog (no network, no token), the page
+shows the indexed text, as `%ei --open N` does; so does every other kind of
+source. The machine's elog entries link to the elog.
+
+The pages are kept in `~/.eco/ei_pages`, readable only by you because they
+hold SciLog posts. SciLog's images are saved next to each page, and the last
+30 pages are kept. A browser is started only on a machine with a display
+and not over ssh; otherwise `%ei -b` prints where the page is.
+
+```{admonition} Did you know?
+:class: tip
+
+A search without a model works with `-b` too: `%ei -s tapedrive` and then
+`%ei -b` puts every match on one page, each SciLog post between its
+neighbours.
+```
+
 ## All options
 
 | Command | Does |
@@ -248,6 +283,7 @@ and output that is not a terminal get neither.
 | `%ei QUESTION` | Ask (a follow-up to the previous question). |
 | `%%ei` | Ask a question longer than one line. |
 | `%ei -n QUESTION` | Start a new conversation. |
+| `%ei -b [QUESTION]` | Ask and show the answer in the browser, with each SciLog source between its neighbouring posts; without a question, the last answer or listing. |
 | `%ei -s WORDS` | Show only the matching history, docs and API entries, without asking the model. |
 | `%ei -m MODEL [QUESTION]` | Switch the model (kept for the session). |
 | `%ei --paste` | Put the last answer's code at the next prompt. |

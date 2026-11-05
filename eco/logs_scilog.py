@@ -286,6 +286,42 @@ class Reader:
             skip += PAGE
         return out[:limit]
 
+    #: what post()/around() read of a post: its HTML and attachments too
+    POST_FIELDS = {
+        "id": True, "createdAt": True, "createdBy": True, "tags": True, "textcontent": True,
+        "files": True, "deleted": True, "parentId": True,
+    }
+
+    def post(self, post_id):
+        """One post as SciLog stores it (HTML in "textcontent", images in
+        "files"), for showing it rather than indexing it."""
+        return self.get(f"/basesnippets/{_quote(post_id)}")
+
+    def around(self, post, n=3):
+        """`post` with the n posts before and after it in its logbook,
+        oldest first (raw, as post())."""
+        where = {"snippetType": "paragraph", "parentId": post.get("parentId")}
+
+        def side(op, order):
+            return self.get("/basesnippets", {
+                "where": {**where, "createdAt": {op: post["createdAt"]}},
+                "order": [f"createdAt {order}"], "limit": n, "fields": self.POST_FIELDS,
+            })
+
+        if not n or not post.get("parentId"):
+            return [post]
+        rows = side("lt", "DESC")[::-1] + [post] + side("gt", "ASC")
+        return [r for r in rows if r is post or not r.get("deleted")]
+
+    def image(self, file_id):
+        """(bytes, content type) of an attachment."""
+        r = self.session.get(
+            f"{self.url}/images/{_quote(file_id)}", timeout=self.timeout,
+            headers={"Authorization": "Bearer " + self.token},
+        )
+        r.raise_for_status()
+        return r.content, r.headers.get("content-type", "application/octet-stream")
+
     def search(self, text, limit=20):
         """SciLog's own search over everything you can read, newest first.
         The server matches one case-insensitive regular expression, so
