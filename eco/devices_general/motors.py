@@ -6,6 +6,7 @@ from epics import PV
 
 from eco.acquisition.scan_data import run_status_convenience
 from .utilities import Changer
+from ..utilities import PropagatingThread
 from ..aliases import Alias
 from ..elements.adjustable import (
     AdjustableError,
@@ -2242,27 +2243,171 @@ class SmaractRecord(Assembly):
         if ll == 0 and hl == 0:
             self.set_limits(-abs_set_value, abs_set_value)
 
-    def home(self):
-        if (
-            self.preferred_home_direction.get_current_value() == "forward"
-            or self.preferred_home_direction.get_current_value() is None
-            or self.preferred_home_direction.get_current_value()
-        ):
-            self.home_forward(1)
-        elif (
-            self.preferred_home_direction.get_current_value() == "reverse"
-            or self.preferred_home_direction.get_current_value() is False
-        ):
-            self.home_reverse(1)
-        time.sleep(0.1)
-        while not self.flags.is_homed.get_current_value():
-            time.sleep(0.1)
+    # MSTA bits, see flag_names_smaract_record
+    _MSTA_DONE = 1 << 1
+    _MSTA_PROBLEM = 1 << 9
+    _MSTA_COMM_ERROR = 1 << 12
+    _MSTA_HOMED = 1 << 14
 
-    def calibrate_sensor(self):
-        self._pv_calibrate_sensor(1)
-        time.sleep(0.1)
-        while not self.flags.motion_complete.get_current_value():
+    def _msta(self):
+        value = self._flags.get_current_value()
+        if value is None:
+            raise AdjustableError(f"{self.pvname}.MSTA cannot be read")
+        return int(value)
+
+    def _wait_for_driver_action(self, what, start_timeout, timeout):
+        """Wait until an action the controller runs on its own (calibration,
+        homing) has started and finished, judged by the MSTA done bit.
+
+        The bit is updated by the IOC's poller (every 100 ms while moving,
+        every 1 s when idle), so the start is waited for up to
+        `start_timeout`; an action shorter than one poll may never be seen,
+        which only costs that wait. Raises TimeoutError if it does not
+        finish within `timeout`, and AdjustableError if the controller
+        reports a problem or communication error afterwards."""
+        t0 = time.time()
+        started = False
+        while time.time() - t0 < start_timeout:
+            if not self._msta() & self._MSTA_DONE:
+                started = True
+                break
+            time.sleep(0.05)
+        while not self._msta() & self._MSTA_DONE:
+            if time.time() - t0 > timeout:
+                raise TimeoutError(
+                    f"{self.alias.get_full_name()}: {what} did not finish within "
+                    f"{timeout} s (MSTA={self._msta()})"
+                )
             time.sleep(0.1)
+        msta = self._msta()
+        if msta & (self._MSTA_PROBLEM | self._MSTA_COMM_ERROR):
+            raise AdjustableError(
+                f"{self.alias.get_full_name()}: controller reports a "
+                f"{'communication error' if msta & self._MSTA_COMM_ERROR else 'problem'}"
+                f" after {what} (MSTA={msta})"
+            )
+        return started
+
+    # home/calibrate_sensor are shadowed on every instance by the
+    # AdjustableTrigger of the same name, whose call drops all arguments --
+    # code that passes timeouts uses _home/_calibrate_sensor.
+    def home(self, timeout=120, start_timeout=3):
+        """Reference the stage in the preferred direction and wait until it
+        is homed."""
+        self._home(timeout=timeout, start_timeout=start_timeout)
+
+    def _home(self, timeout=120, start_timeout=3):
+        direction = self.preferred_home_direction.get_current_value()
+        if direction == "reverse" or direction is False:
+            self.home_reverse(1)
+        else:
+            self.home_forward(1)
+        self._wait_for_driver_action("homing", start_timeout, timeout)
+        if not self._msta() & self._MSTA_HOMED:
+            raise AdjustableError(
+                f"{self.alias.get_full_name()}: homing finished but the stage "
+                f"is not referenced (MSTA={self._msta()})"
+            )
+
+    def calibrate_sensor(self, timeout=60, start_timeout=3):
+        """Run the controller's sensor calibration and wait until it is
+        done."""
+        self._calibrate_sensor(timeout=timeout, start_timeout=start_timeout)
+
+    def _calibrate_sensor(self, timeout=60, start_timeout=3):
+        self._pv_calibrate_sensor(1)
+        self._wait_for_driver_action("calibration", start_timeout, timeout)
+
+    def diagnose(self, query_controller=False, verbose=True):
+        """Why does this channel not work? Read-only EPICS checks (is the
+        IOC polling the axis at all, MSTA flags, alarms); with
+        query_controller=True also asks the controller itself through the
+        IOC's asyn record (read-only get commands). Prints a report and
+        returns it as a list with one dict. See eco.motion.smaract_diagnose."""
+        from ..motion.smaract_diagnose import diagnose_channels
+
+        return diagnose_channels(
+            [self.pvname], query_controller=query_controller, verbose=verbose
+        )
+
+    def startup_stage(
+        self,
+        sensor_type=None,
+        max_frequency=None,
+        calibrate=True,
+        home=True,
+        calibration_timeout=60,
+        homing_timeout=120,
+        wait=True,
+        verbose=True,
+    ):
+        """Bring a stage into a defined state after the controller or the
+        stage has been (re)connected:
+
+        1. set the sensor type (default: the type the controller reports now),
+        2. set the maximum closed-loop frequency (default: the present
+           setting -- MCS1 channels have no readback for it),
+        3. calibrate the sensor and wait for the calibration to finish,
+        4. home the stage and wait until it is referenced.
+
+        With wait=False it runs in a background thread, which is returned;
+        its join() returns the result or raises what the startup raised, so
+        several stages can be started at once (see
+        SmaractController.startup)."""
+        if not wait:
+            thread = PropagatingThread(
+                target=self.startup_stage,
+                kwargs=dict(
+                    sensor_type=sensor_type,
+                    max_frequency=max_frequency,
+                    calibrate=calibrate,
+                    home=home,
+                    calibration_timeout=calibration_timeout,
+                    homing_timeout=homing_timeout,
+                    wait=True,
+                    verbose=verbose,
+                ),
+                name=f"smaract_startup_{self.pvname}",
+                daemon=True,
+            )
+            thread.start()
+            return thread
+
+        name = self.alias.get_full_name()
+
+        def report(message):
+            if verbose:
+                print(f"{name}: {message}")
+
+        pars = self.motor_parameters
+        if sensor_type is None:
+            sensor_type = pars.sensor_type_num.get_current_value()
+            if sensor_type is None:
+                raise AdjustableError(f"{name}: sensor type readback cannot be read")
+        pars.sensor_type_num.set_target_value(int(sensor_type)).wait(timeout=10)
+        report(f"sensor type set to {int(sensor_type)}")
+
+        if max_frequency is None:
+            max_frequency = pars.max_frequency.get_current_value()
+            if max_frequency is None:
+                raise AdjustableError(f"{name}: max frequency cannot be read")
+        pars.max_frequency.set_target_value(int(max_frequency)).wait(timeout=10)
+        report(f"max frequency set to {int(max_frequency)} Hz")
+
+        if calibrate:
+            report("calibrating sensor ...")
+            self._calibrate_sensor(timeout=calibration_timeout)
+            report("calibration done")
+        if home:
+            report("homing ...")
+            self._home(timeout=homing_timeout)
+            report(f"homed, at {self.get_current_value()}")
+        return {
+            "sensor_type": int(sensor_type),
+            "max_frequency": int(max_frequency),
+            "calibrated": bool(calibrate),
+            "homed": bool(home),
+        }
 
     def set_target_value(self, value, hold=False, check=True):
         """Adjustable convention"""
