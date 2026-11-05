@@ -323,6 +323,23 @@ class NoModel(RuntimeError):
     """Raised by Assistant.scan*/transcriber() without a connected model."""
 
 
+#: seconds between progress lines of a long first read
+PROGRESS_S = 10
+
+
+def _every(seconds, report, template):
+    """progress(*values) that reports `template` at most every `seconds`
+    (and not for something done sooner)."""
+    last = [time.time()]
+
+    def progress(*values):
+        if time.time() - last[0] >= seconds:
+            last[0] = time.time()
+            report(template.format(*values))
+
+    return progress
+
+
 def enabled():
     """False when ECO_NO_EI=1: no %ei magic, no Ask menu."""
     return os.environ.get("ECO_NO_EI", "").strip().lower() not in ("1", "true", "yes", "on")
@@ -798,8 +815,11 @@ class Assistant:
                 return
             reader = logs_scilog.reader(timeout=10)
             if first and report:
-                report(f"eco.ei: indexing SciLog {filters} as {reader.identity} -- the first time takes ~20 s ...")
-            r = logs_scilog.update(reader, filters, db_path=self.db_path, report=None)
+                report(f"eco.ei: indexing SciLog {filters} as {reader.identity} -- the first time reads every post, a minute or more; Ctrl-C stops it ...")
+            r = logs_scilog.update(
+                reader, filters, db_path=self.db_path, report=None,
+                progress=_every(PROGRESS_S, report, "eco.ei: SciLog {0}/{1} logbooks read, {2} posts ...") if first and report else None,
+            )
         except logs_scilog.TokenError:
             if report and not self._scilog_failed:
                 report("eco.ei: SciLog is not searched: no SciLog token here (`%ei --scilog-token` tells how to add one)")

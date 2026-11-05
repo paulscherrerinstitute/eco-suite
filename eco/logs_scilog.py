@@ -404,7 +404,7 @@ def _record(r):
 # -- indexing -----------------------------------------------------------------------
 
 
-def update(reader, filters, db_path=logs_ask.DEFAULT_DB, report=print):
+def update(reader, filters, db_path=logs_ask.DEFAULT_DB, report=print, progress=None):
     """Index the logbooks `filters` choose (parse_filters(); {"all": True}
     for every one) among those `reader` can read now, and drop indexed
     posts of logbooks it can no longer read. "rebuild": True reads the
@@ -418,12 +418,18 @@ def update(reader, filters, db_path=logs_ask.DEFAULT_DB, report=print):
             _forget_logbooks(con, {lb["id"] for lb in chosen})
         finally:
             con.close()
-    result = index_logbooks(reader, chosen, db_path=db_path, report=report, readable={lb["id"] for lb in readable})
+    result = index_logbooks(
+        reader, chosen, db_path=db_path, report=report, readable={lb["id"] for lb in readable}, progress=progress
+    )
     result["identity"] = reader.identity
     return result
 
 
-def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print, readable=None):
+#: logbooks read at the same time on a first read
+PARALLEL_LOGBOOKS = 6
+
+
+def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print, readable=None, progress=None):
     """Add the posts of `logbooks` (Reader.logbooks() dicts) that are new
     since the last fetch to the %ei index, labelled with the logbook.
 
@@ -433,8 +439,9 @@ def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print, 
     it in the browser changes it.) `readable`: ids of every logbook the
     account can read now; posts of any other logbook are dropped (also
     those indexed by the older per-pgroup fetch, which are fetched again
-    here with their logbook). Returns {"logbooks", "new_posts", "items",
-    "dropped"}."""
+    here with their logbook). Logbooks read for the first time are read
+    PARALLEL_LOGBOOKS at a time; progress(done, total, posts) is called as
+    each one is in. Returns {"logbooks", "new_posts", "items", "dropped"}."""
     con = logs_ask._connect(db_path)
     try:
         dropped = _forget_unreadable(con, readable) if readable is not None else 0
@@ -445,10 +452,20 @@ def index_logbooks(reader, logbooks, db_path=logs_ask.DEFAULT_DB, report=print, 
         by_id = {lb["id"]: lb for lb in logbooks}
         posts = {lb_id: [] for lb_id in by_id}
         fresh = [lb for lb in logbooks if lb["id"] not in known]
-        for i, lb in enumerate(fresh, 1):
-            posts[lb["id"]] = reader.paragraphs(lb["id"])
-            if report:
-                report(f"  [{i}/{len(fresh)}] {_label(lb)}: {len(posts[lb['id']])} posts")
+        if fresh:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            with ThreadPoolExecutor(max_workers=PARALLEL_LOGBOOKS) as pool:
+                futures = {pool.submit(reader.paragraphs, lb["id"]): lb for lb in fresh}
+                read = 0
+                for i, future in enumerate(as_completed(futures), 1):
+                    lb = futures[future]
+                    posts[lb["id"]] = future.result()
+                    read += len(posts[lb["id"]])
+                    if report:
+                        report(f"  [{i}/{len(fresh)}] {_label(lb)}: {len(posts[lb['id']])} posts")
+                    if progress:
+                        progress(i, len(fresh), read)
         seen = [lb_id for lb_id in by_id if lb_id in known]
         if seen:
             for p in reader.paragraphs(seen, after_iso=min(known[lb_id] for lb_id in seen)):

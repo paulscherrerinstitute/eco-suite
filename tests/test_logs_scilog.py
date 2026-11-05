@@ -262,8 +262,11 @@ def test_index_reads_new_logbooks_whole_and_the_rest_in_one_request(tmp_path):
     db = tmp_path / "idx.sqlite"
     reader, server = _reader()
     lbs = reader.logbooks(location="bernina")
-    result = ls.index_logbooks(reader, lbs, db_path=db, report=None)
+    progress = []
+    result = ls.index_logbooks(reader, lbs, db_path=db, report=None, progress=lambda *a: progress.append(a))
     assert result["new_posts"] == 3 and result["logbooks"] == 2
+    # read in parallel, reported as each one is in
+    assert [p[:2] for p in progress] == [(1, 2), (2, 2)] and progress[-1][2] == 3
     hits = la.search("freespace laser", k=5, db_path=db, kinds=("scilog",))
     assert hits[0].context == "ann@psi.ch [26j_kern_p23618 (p23618)] [t]"
     assert la.search("transmission", k=5, db_path=db, kinds=("note_command",))[0].text == "att.set_transmission(0.1)"
