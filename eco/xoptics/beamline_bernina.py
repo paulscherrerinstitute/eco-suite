@@ -369,9 +369,11 @@ def make_bernina_experiment_hutch(name="bernina_experiment_hutch", xp=None):
     )
     bl.add_component(
         SlitBladesGeneral,
-        def_blade_up={"args": [SmaractRecord, "SARES20-MCS1:MOT_14"], "kwargs": {}},
-        def_blade_down={"args": [SmaractRecord, "SARES20-MCS1:MOT_13"], "kwargs": {}},
-        def_blade_left={"args": [SmaractRecord, "SARES20-MCS1:MOT_18"], "kwargs": {}},
+        # MCS1 module 1 (ch 1-3) without sensors since 2026-11-05:
+        # up 2 -> 16, down 1 -> 15 (att_usd.transl_1 3 -> 17)
+        def_blade_up={"args": [SmaractRecord, "SARES20-MCS1:MOT_16"], "kwargs": {}},
+        def_blade_down={"args": [SmaractRecord, "SARES20-MCS1:MOT_15"], "kwargs": {}},
+        def_blade_left={"args": [SmaractRecord, "SARES20-MCS1:MOT_6"], "kwargs": {}},
         def_blade_right={"args": [SmaractRecord, "SARES20-MCS1:MOT_4"], "kwargs": {}},
         name="slit_kb", lazy=True, z_sample=-1850.0, kind="slit",
         description="slits upstream of the KB mirrors",
@@ -380,7 +382,7 @@ def make_bernina_experiment_hutch(name="bernina_experiment_hutch", xp=None):
         SlitBladesGeneral,
         def_blade_up={"args": [SmaractRecord, "SARES20-MCS1:MOT_6"], "kwargs": {}},
         def_blade_down={"args": [SmaractRecord, "SARES20-MCS1:MOT_5"], "kwargs": {}},
-        def_blade_left={"args": [SmaractRecord, "SARES20-MCS1:MOT_17"], "kwargs": {}},
+        def_blade_left={"args": [SmaractRecord, "SARES20-MCS1:MOT_8"], "kwargs": {}},
         def_blade_right={"args": [SmaractRecord, "SARES20-MCS1:MOT_16"], "kwargs": {}},
         name="slit_cleanup", lazy=True, z_sample=-1800.0, kind="slit",
         description="cleanup slit, upstream diagnostics",

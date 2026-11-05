@@ -85,17 +85,23 @@ namespace.append_obj(
     module_name="eco.loptics.bernina_laser",
 )
 
-# namespace.append_obj(
-#    "Organic_crystal_breadboard",
-#    lazy=True,
-#    name="ocb",
-#    delay_offset_detector=NamespaceComponent(namespace, "thc.delay_x_center"),
-#    thc_x_adjustable=NamespaceComponent(namespace, "thc.x"),
-#    module_name="eco.endstations.bernina_sample_environments",
-# )
+namespace.append_obj(
+   "Organic_crystal_breadboard",
+   lazy=True,
+   name="ocb",
+   delay_offset_detector=NamespaceComponent(namespace, "thc.delay_x_center"),
+   thc_x_adjustable=NamespaceComponent(namespace, "thc.x"),
+   module_name="eco.endstations.bernina_sample_environments",
+)
 
-
-
+namespace.append_obj(
+   "Terahertz_In_Air",
+   lazy=True,
+   name="tia",
+   delay_offset_detector=None,#NamespaceComponent(namespace, "ocb.delay_x_center"),
+   thc_x_adjustable=None,#NamespaceComponent(namespace, "ocb.x"),
+   module_name="eco.endstations.bernina_sample_environments",
+)
 
 
 # namespace.append_obj(
@@ -224,7 +230,7 @@ namespace.append_obj(
 #         self.offset_par_z.mv(self._pz())
 
 
-# class THz(Assembly):
+# class THZz(Assembly):
 #     def __init__(self, name=None):
 #         super().__init__(name=name)
 #         self._append(SmaractRecord, "SARES23-USR:MOT_6", name="par_x", is_setting=True)
@@ -287,102 +293,6 @@ namespace.append_obj(
 #         return 1.0 * val2
 # )
 
-# class THz_in_air(Assembly):
-#     def __init__(self, name=None):
-#         super().__init__(name=name)
-
-#         self._append(SmaractRecord, "SARES23-USR:MOT_5", name="crystal_ROT", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-LIC:MOT_15", name="ir_1_z", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-LIC:MOT_13", name="ir_1_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-LIC:MOT_14", name="ir_1_Rx", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_10", name="ir_2_Rx", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_7", name="ir_2_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_9", name="para_2_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_3", name="thz_mir_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_1", name="thz_mir_z", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_8", name="thz_mir_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_2", name="thz_mir_Rz", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_6", name="focus_z", is_setting=True)
-#         self._append(
-#             MotorRecord,
-#             "SARES20-MF1:MOT_4",
-#             name="focus_y",
-#             is_setting=True,
-#             is_display=True,
-#         )
-#         self._append(SmaractRecord, "SARES23-USR:MOT_14", name="focus_x", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_13", name="focus_Rz", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_15", name="focus_Ry", is_setting=True)
-#         self._append(SmaractRecord, "SARES23-USR:MOT_11", name="focus_Rx", is_setting=True)
-#         self._append(SmaractRecord, ":MOT_18", name="thz_wp", is_setting=True)
-#         self._append(
-#             SmaractRecord, "SARES23-LIC:MOT_16", name="delaystage_thz", is_setting=True
-#         )
-#         self._append(DelayTime, self.delaystage_thz, name="delay_thz", is_setting=True)
-#         self._append(
-#             MotorRecord,
-#             "SLAAR21-LMOT-M521:MOTOR_1",
-#             name="delaystage_800_pump",
-#             is_setting=True,
-#         )
-#         self._append(
-#             DelayTime, self.delaystage_800_pump, name="delay_800_pump", is_setting=True
-#         )
-#         self._append(
-#             AdjustableFS,
-#             "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/combined_delta.json",
-#             name="combined_delta",
-#             default_value=0,
-#             is_setting=True,
-#         )
-#         self.delay_thz = DelayTime(self.delaystage_thz, name="delay_thz")
-
-#         self._append(
-#             AdjustableVirtual,
-#             [self.crystal_ROT, self.thz_wp],
-#             self.thz_pol_get,
-#             self.thz_pol_set,
-#             name="",
-#         )
-#         # self.thz_polarization = AdjustableVirtual(
-#         #     [self.crystal_ROT, self.thz_wp],
-#         #     self.thz_pol_get,
-#         #     self.thz_pol_set,
-#         #     name="thz_polarization",
-#         # )
-#         self._append(
-#             AdjustableVirtual,
-#             [self.delay_thz, self.delay_800_pump],
-#             self.delay_get,
-#             self.delay_set,
-#             name="combined_delay",
-#         )
-
-#         # self.combined_delay = AdjustableVirtual(
-#         #     [self.delay_thz, self.delay_800_pump],
-#         #     self.delay_get,
-#         #     self.delay_set,
-#         #     name="combined_delay",
-#         # )
-
-#     def thz_pol_set(self, val):
-#         return 1.0 * val, 1.0 / 2 * val
-
-#     def thz_pol_get(self, val, val2):
-#         return 1.0 * val2
-
-#     def delay_set(self, val):
-#         return 1.0 * val + self.combined_delta(), 1.0 * val
-
-#     def delay_get(self, val, val2):
-#         return 1.0 * val2
-
-
-# namespace.append_obj(
-#    THz_in_air,
-#    lazy=True,
-#    name="thz",
-# )
 
 
 

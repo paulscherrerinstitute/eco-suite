@@ -837,6 +837,585 @@ class Organic_crystal_breadboard(Assembly):
     #     return self.get_adjustable_positions_str()
 
 
+class Organic_crystal_breadboard(Assembly):
+    def __init__(self, delay_offset_detector=None, thc_x_adjustable=None, name=None):
+        super().__init__(name=name)
+        self.delay_offset_detector = delay_offset_detector
+        self._thc_x_adjustable = thc_x_adjustable
+        self.motor_configuration = {
+            # "mir_x": {
+            #    # "id": "-LIC17",
+            #    "id": "-USR:MOT_8",
+            #    "pv_descr": "Motor8:2 THz mirror x ",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "mir_rz": {
+            #    # "id": "-LIC18",
+            #    "id": "-USR:MOT_9",
+            #    "pv_descr": "Motor8:3 THz mirror rz ",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "mir_ry": {
+            #    # "id": "-ESB1",
+            #    "id": "-LIC:MOT_18",
+            #    "pv_descr": "Motor3:1 THz mirror ry ",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "forward",
+            # },
+            # "mir_z": {
+            #    # "id": "-LIC16",
+            #    "id": "-USR:MOT_7",
+            #    "pv_descr": "Motor8:1 THz mirror z",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "par_x": {
+            #    # "id": "-ESB3",
+            #    "id": "-LIC:MOT_17",
+            #    "pv_descr": "Motor3:3 THz parabola2 x",
+            #    "type": 1,
+            #    "sensor": 0,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "delaystage_thz": {
+            #    "id": "-USR:MOT_1",
+            #    "pv_descr": "Motor8:3 NIR delay stage",
+            #    "type": 1,
+            #    "sensor": 0,
+            #    "speed": 100,
+            #    "home_direction": "back",
+            # },
+            "nir_m1_ry": {
+                "id": "SARES23-LIC:MOT_18",
+                "pv_descr": "Module6:3 NIR Mirr1 Ry",
+                "sensor": 2,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "nir_m1_rx": {
+                "id": "SARES23-USR:MOT_10",
+                "pv_descr": "Module4:1 NIR Mirr1 Rx",
+                "sensor": 53,
+                "speed": 250,
+                "direction": 1,
+                "home_direction": "back",
+            },
+            "nir_m2_ry": {
+                "id": "SARES23-USR:MOT_1",
+                "pv_descr": "Module1:1 NIR Mirr2 Ry",
+                "sensor": 2,
+                "speed": 250,
+                "direction": 1,
+                "home_direction": "back",
+            },
+            "nir_m2_rx": {
+                # "id": "-USR:MOT_4",
+                "id": "SARES23-USR:MOT_7",
+                "pv_descr": "Module3:1 NIR Mirr2 rx",
+                "sensor": 53,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "delay_400nm": {
+                # "id": "-USR:MOT_4",
+                "id": "SARES23-LIC:MOT_17",
+                "pv_descr": "Module6:2 400nm_stage",
+                "sensor": 2,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            # "crystal": {
+            #    "id": "-USR:MOT_2",
+            #    "pv_descr": "Motor3:2 crystal rotation",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "wp": {
+            #    "id": "-USR:MOT_7",>
+            #    "pv_descr": "Motor5:1 waveplate rotation",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #    "direction": 1,
+            # },
+        }
+
+        self.motor_configuration_thorlabs = {
+            "polarizer": {
+                "pvname": "SLAAR21-LMOT-ELL1",
+            },
+            "waveplate_ir": {
+                "pvname": "SLAAR21-LMOT-ELL5",
+            },
+            "eos_block": {
+                "pvname": "SLAAR21-LMOT-ELL2",
+            },
+            "crystal": {
+                "pvname": "SLAAR21-LMOT-ELL3",
+            },
+            "thz_filter": {
+                "pvname": "SLAAR21-LMOT-ELL4",
+            },
+            "waveplate_Thz": {
+                "pvname": "SLAAR21-LMOT-ELL6",
+            },
+        }
+
+        ### smaract motors ###
+        for name, config in self.motor_configuration.items():
+            self._append(
+                SmaractRecord,
+                pvname=config["id"],
+                name=name,
+                is_setting=True,
+            )
+
+        ### thorlabs piezo motors ###
+        for name, config in self.motor_configuration_thorlabs.items():
+            self._append(
+                ThorlabsPiezoRecord,
+                pvname=config["pvname"],
+                name=name,
+                is_setting=True,
+            )
+        self._append(
+            MotorRecord,
+            pvname="SLAAR21-LMOT-M522:MOTOR_1",
+            name="delaystage_thz",
+            is_setting=True,
+            is_display=False,
+            is_status=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_thz,
+            name="delay_thz",
+            offset_detector=self.delay_offset_detector,
+            is_setting=False,
+            is_display=True,
+            is_status=True,
+        )
+        if self._thc_x_adjustable is not None:
+
+            def movexcomp(x):
+                delay = self.delay_thz.get_current_value()
+                dx = x - self._thc_x_adjustable.get_current_value()
+                new_delay = delay + dx / 1000 / constants.c
+                return x, new_delay
+
+            self._append(
+                AdjustableVirtual,
+                [self._thc_x_adjustable, self.delay_thz],
+                lambda x, delay_thz: x,
+                movexcomp,
+                name="thcx_delaycomp",
+                is_setting=False,
+            )
+        # self.thz_polarization = AdjustableVirtual(
+        #     [self.crystal, self.waveplate_ir],
+        #     self.thz_pol_get,
+        #     self.thz_pol_set,
+        #     name="thz_polarization",
+        # )
+        self._append(
+            AdjustableVirtual,
+            [self.crystal, self.waveplate_ir],
+            self._thz_pol_get,
+            self._thz_pol_set,
+            reset_current_value_to=False,
+            is_setting=False,
+            name="thz_polarization",
+        )
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
+
+    def _thz_pol_set(self, val):
+        return 1.0 * val, 1.0 / 2 * val
+
+    def _thz_pol_get(self, val, val2):
+        return 1.0 * val
+
+    def set_stage_config(self, cfg=None):
+        if cfg is None:
+            cfg = self.motor_configuration
+        for name, config in cfg.items():
+            mot = self.__dict__[name]
+            mot.description(config["pv_descr"])
+            # mot.stage_type(config["type"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
+            mot.speed(0)
+            sleep(0.5)
+            mot.calibrate_sensor()
+class Terahertz_In_Air(Assembly):
+    def __init__(self, delay_offset_detector=None, x_adjustable=None, name=None):
+        super().__init__(name=name)
+        self.delay_offset_detector = None,#delay_offset_detector
+        self._x_adjustable = None,#x_adjustable
+        self._append(MotorRecord, "SARES20-MF1:MOT_12", name="foc_x", is_setting=True)
+        self._append(MotorRecord, "SARES20-MF1:MOT_13", name="foc_y", is_setting=True)
+        self._append(MotorRecord, "SARES20-MF1:MOT_14", name="foc_z", is_setting=True)
+        self.motor_configuration = {
+            # "mir_x": {
+            #    # "id": "-LIC17",
+            #    "id": "-USR:MOT_8",
+            #    "pv_descr": "Motor8:2 THz mirror x ",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "mir_rz": {
+            #    # "id": "-LIC18",
+            #    "id": "-USR:MOT_9",
+            #    "pv_descr": "Motor8:3 THz mirror rz ",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "mir_ry": {
+            #    # "id": "-ESB1",
+            #    "id": "-LIC:MOT_18",
+            #    "pv_descr": "Motor3:1 THz mirror ry ",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "forward",
+            # },
+            # "mir_z": {
+            #    # "id": "-LIC16",
+            #    "id": "-USR:MOT_7",
+            #    "pv_descr": "Motor8:1 THz mirror z",
+            #    "type": 1,
+            #    "sensor": 13,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "par_x": {
+            #    # "id": "-ESB3",
+            #    "id": "-LIC:MOT_17",
+            #    "pv_descr": "Motor3:3 THz parabola2 x",
+            #    "type": 1,
+            #    "sensor": 0,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "delaystage_thz": {
+            #    "id": "-USR:MOT_1",
+            #    "pv_descr": "Motor8:3 NIR delay stage",
+            #    "type": 1,
+            #    "sensor": 0,
+            #    "speed": 100,
+            #    "home_direction": "back",
+            # },
+            "nir_m1_ry": {
+                "id": "SARES20-MCS2:MOT_1",
+                "pv_descr": "NIR Mirr1 Ry",
+                "sensor": 2,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "nir_m1_rx": {
+                "id": "SARES20-MCS2:MOT_6",
+                "pv_descr": "NIR Mirr1 Rx",
+                "sensor": 53,
+                "speed": 250,
+                "direction": 1,
+                "home_direction": "back",
+            },
+            "par_x": {
+                "id": "SARES20-MCS2:MOT_5",
+                "pv_descr": "Module1:1 NIR Mirr2 Ry",
+                "sensor": 2,
+                "speed": 250,
+                "direction": 1,
+                "home_direction": "back",
+            },
+            "par_ry": {
+                # "id": "-USR:MOT_4",
+                "id": "SARES20-MCS2:MOT_2",
+                "pv_descr": "Module3:1 NIR Mirr2 rx",
+                "sensor": 53,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            "delaystage_thz_new": {
+                # "id": "-USR:MOT_4",
+                "id": "SLAAR21-LMTS-SMAR1:MOT_0",
+                "pv_descr": "delay_thz_new",
+                "sensor": 1,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
+            # "crystal": {
+            #    "id": "-USR:MOT_2",
+            #    "pv_descr": "Motor3:2 crystal rotation",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            # },
+            # "wp": {
+            #    "id": "-USR:MOT_7",>
+            #    "pv_descr": "Motor5:1 waveplate rotation",
+            #    "type": 2,
+            #    "sensor": 1,
+            #    "speed": 250,
+            #    "home_direction": "back",
+            #    "direction": 1,
+            # },
+        }
+
+        self.motor_configuration_thorlabs = {
+            "polarizer": {
+                "pvname": "SLAAR21-LMOT-ELL1",
+            },
+            "waveplate_ir": {
+                "pvname": "SLAAR21-LMOT-ELL5",
+            },
+            "eos_block": {
+                "pvname": "SLAAR21-LMOT-ELL2",
+            },
+            "crystal": {
+                "pvname": "SLAAR21-LMOT-ELL3",
+            },
+            "thz_filter": {
+                "pvname": "SLAAR21-LMOT-ELL4",
+            },
+            "waveplate_Thz": {
+                "pvname": "SLAAR21-LMOT-ELL6",
+            },
+        }
+
+        ### smaract motors ###
+        for name, config in self.motor_configuration.items():
+            self._append(
+                SmaractRecord,
+                pvname=config["id"],
+                name=name,
+                is_setting=True,
+            )
+
+        ### thorlabs piezo motors ###
+        for name, config in self.motor_configuration_thorlabs.items():
+            self._append(
+                ThorlabsPiezoRecord,
+                pvname=config["pvname"],
+                name=name,
+                is_setting=True,
+            )
+        self._append(
+            MotorRecord,
+            pvname="SLAAR21-LMOT-M522:MOTOR_1",
+            name="delaystage_thz",
+            is_setting=True,
+            is_display=False,
+            is_status=True,
+        )
+        self._append(
+            DelayTime,
+            self.delaystage_thz,
+            name="delay_thz",
+            # offset_detector=self.delay_offset_detector,
+            is_setting=False,
+            is_display=True,
+            is_status=True,
+        )
+
+        self._append(
+            DelayTime,
+            self.delaystage_thz_new,
+            name="delay_thz_new",
+            # offset_detector=self.delay_offset_detector,
+            is_setting=False,
+            is_display=True,
+            is_status=True,
+        )
+        # if self._thc_x_adjustable is not None:
+
+        #     def movexcomp(x):
+        #         delay = self.delay_thz.get_current_value()
+        #         dx = x - self._thc_x_adjustable.get_current_value()
+        #         new_delay = delay + dx / 1000 / constants.c
+        #         return x, new_delay
+
+        #     self._append(
+        #         AdjustableVirtual,
+        #         [self._thc_x_adjustable, self.delay_thz],
+        #         lambda x, delay_thz: x,
+        #         movexcomp,
+        #         name="thcx_delaycomp",
+        #         is_setting=False,
+        #     )
+        # self.thz_polarization = AdjustableVirtual(
+        #     [self.crystal, self.waveplate_ir],
+        #     self.thz_pol_get,
+        #     self.thz_pol_set,
+        #     name="thz_polarization",
+        # )
+        self._append(
+            AdjustableVirtual,
+            [self.crystal, self.waveplate_ir],
+            self._thz_pol_get,
+            self._thz_pol_set,
+            reset_current_value_to=False,
+            is_setting=False,
+            name="thz_polarization",
+        )
+        self._append(
+            AdjustableTrigger,
+            self.home_smaract_stages,
+            name="home_smaract_stages",
+            button_label="Home Smaract Stages",
+        )
+
+    def _thz_pol_set(self, val):
+        return 1.0 * val, 1.0 / 2 * val
+
+    def _thz_pol_get(self, val, val2):
+        return 1.0 * val
+
+    def set_stage_config(self, cfg=None):
+        if cfg is None:
+            cfg = self.motor_configuration
+        for name, config in cfg.items():
+            mot = self.__dict__[name]
+            mot.description(config["pv_descr"])
+            # mot.stage_type(config["type"])
+            mot.motor_parameters.sensor_type_num(config["sensor"])
+            mot.direction(config["direction"])
+            mot.motor_parameters.max_frequency(config["speed"])
+            mot.speed(0)
+            sleep(0.5)
+            mot.calibrate_sensor()
+
+    def home_smaract_stages(self, motor_configuration=None):
+        if motor_configuration == None:
+            motor_configuration = self.motor_configuration
+        stages = motor_configuration.keys()
+        print("#### Positions before homing ####")
+        print(self.__repr__())
+        for name in stages:
+            config = motor_configuration[name]
+            mot = self.__dict__[name]
+            print(
+                "#### Homing {} in {} direction ####".format(
+                    name, config["home_direction"]
+                )
+            )
+            sleep(1)
+            if config["home_direction"] == "back":
+                mot.home_reverse(1)
+                sleep(0.5)
+                while not mot.flags.motion_complete():
+                    sleep(1)
+                if not mot.flags.is_homed():
+                    print(
+                        "Homing failed, try homing {} in forward direction".format(name)
+                    )
+                    mot.home_forward(1)
+            elif config["home_direction"] == "forward":
+                mot.home_forward(1)
+                sleep(0.5)
+                while not mot.flags.motion_complete():
+                    sleep(1)
+                if not mot.flags.is_homed():
+                    print(
+                        "Homing failed, try homing {} in backward direction".format(
+                            name
+                        )
+                    )
+                    mot.home_reverse(1)
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****Organic Crystal Breadboard positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
+
+    # def home_smaract_stages(self, motor_configuration=None):
+    #     if motor_configuration == None:
+    #         motor_configuration = self.motor_configuration
+    #     stages = motor_configuration.keys()
+    #     print("#### Positions before homing ####")
+    #     print(self.__repr__())
+    #     for name in stages:
+    #         config = motor_configuration[name]
+    #         mot = self.__dict__[name]
+    #         print(
+    #             "#### Homing {} in {} direction ####".format(
+    #                 name, config["home_direction"]
+    #             )
+    #         )
+    #         sleep(1)
+    #         if config["home_direction"] == "back":
+    #             mot.home_reverse(1)
+    #             sleep(0.5)
+    #             while not mot.flags.motion_complete():
+    #                 sleep(1)
+    #             if not mot.flags.is_homed():
+    #                 print(
+    #                     "Homing failed, try homing {} in forward direction".format(name)
+    #                 )
+    #                 mot.home_forward(1)
+    #         elif config["home_direction"] == "forward":
+    #             mot.home_forward(1)
+    #             sleep(0.5)
+    #             while not mot.flags.motion_complete():
+    #                 sleep(1)
+    #             if not mot.flags.is_homed():
+    #                 print(
+    #                     "Homing failed, try homing {} in backward direction".format(
+    #                         name
+    #                     )
+    #                 )
+    #                 mot.home_reverse(1)
+
+    def get_adjustable_positions_str(self):
+        ostr = "*****Organic Crystal Breadboard positions******\n"
+
+        for tkey, item in self.__dict__.items():
+            if hasattr(item, "get_current_value"):
+                pos = item.get_current_value()
+                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+        return ostr
+
+    # def __repr__(self):
+    #     return self.get_adjustable_positions_str()
+
+
 class LiNbO3_crystal_breadboard:
     def __init__(self, name=None, Id=None, alias_namespace=None):
         self.Id = Id

@@ -146,41 +146,42 @@ namespace.append_obj(
     #     "kwargs": {},
     # },
     # backup config 2025-02-27 broken drivers
-
-    #def_blade_up={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_14"],
-    #    "kwargs": {},
-    #},
-    #def_blade_down={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_13"],
-    #    "kwargs": {},
-    #},
-    #def_blade_left={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_18"],
-    #    "kwargs": {},
-    #},
-    #def_blade_right={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
-    #    "kwargs": {},
-    #},
-    # backup config 2026-10-01 broken drivers
+    # reverting back to this definition
 
     def_blade_up={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_14"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_14"],
+       "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_13"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_13"],
+       "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_18"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_18"],
+       "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES20-MCS2:MOT_1"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
+       "kwargs": {},
     },
+    # # backup config 2026-10-01 broken drivers
+
+    # def_blade_up={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_14"],
+    #     "kwargs": {},
+    # },
+    # def_blade_down={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_13"],
+    #     "kwargs": {},
+    # },
+    # def_blade_left={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_18"],
+    #     "kwargs": {},
+    # },
+    # def_blade_right={
+    #     "args": [SmaractRecord, "SARES20-MCS2:MOT_1"],
+    #     "kwargs": {},
+    # },
     module_name="eco.xoptics.slits",
     lazy=True,
 )
@@ -259,41 +260,42 @@ namespace.append_obj(
     #     "kwargs": {},
     # },
     # backup config 2025-02-27 broken drivers
-
-    #def_blade_up={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
-    #    "kwargs": {},
-    #},
-    #def_blade_down={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_5"],
-    #    "kwargs": {},
-    #},
-    #def_blade_left={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
-    #    "kwargs": {},
-    #},
-    #def_blade_right={
-    #    "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
-    #    "kwargs": {},
-    #},
-    #backup config 2026-10-01 broken drivers
+    # drivers repaired reverting back here
 
     def_blade_up={
-        "args": [SmaractRecord, "SARES20-MCS2:MOT_3"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
+       "kwargs": {},
     },
     def_blade_down={
-        "args": [SmaractRecord, "SARES20-MCS2:MOT_2"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_5"],
+       "kwargs": {},
     },
     def_blade_left={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
+       "kwargs": {},
     },
     def_blade_right={
-        "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
-        "kwargs": {},
+       "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
+       "kwargs": {},
     },
+    # backup config 2026-10-01 broken drivers
+
+    # def_blade_up={
+    #     "args": [SmaractRecord, "SARES20-MCS2:MOT_3"],
+    #     "kwargs": {},
+    # },
+    # def_blade_down={
+    #     "args": [SmaractRecord, "SARES20-MCS2:MOT_2"],
+    #     "kwargs": {},
+    # },
+    # def_blade_left={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
+    #     "kwargs": {},
+    # },
+    # def_blade_right={
+    #     "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
+    #     "kwargs": {},
+    # },
     module_name="eco.xoptics.slits",
     lazy=True,
 )
