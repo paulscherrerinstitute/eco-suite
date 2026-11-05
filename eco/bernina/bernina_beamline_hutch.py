@@ -258,24 +258,23 @@ namespace.append_obj(
     #     "args": [SmaractRecord, "SARES20-MCS1:MOT_7"],
     #     "kwargs": {},
     # },
-    # backup config 2025-02-27 broken drivers
-    # drivers repaired reverting back here
-
+    # backup config 2025-02-27 broken drivers: left 17, right 16
+    # 2026-11-05: back to the normal channels (16/17 are slit_kb now)
     def_blade_up={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_6"],
+        "kwargs": {},
     },
     def_blade_down={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_5"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_5"],
+        "kwargs": {},
     },
     def_blade_left={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_8"],
+        "kwargs": {},
     },
     def_blade_right={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_7"],
+        "kwargs": {},
     },
     # backup config 2026-10-01 broken drivers
 

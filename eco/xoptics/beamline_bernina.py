@@ -383,7 +383,7 @@ def make_bernina_experiment_hutch(name="bernina_experiment_hutch", xp=None):
         def_blade_up={"args": [SmaractRecord, "SARES20-MCS1:MOT_6"], "kwargs": {}},
         def_blade_down={"args": [SmaractRecord, "SARES20-MCS1:MOT_5"], "kwargs": {}},
         def_blade_left={"args": [SmaractRecord, "SARES20-MCS1:MOT_8"], "kwargs": {}},
-        def_blade_right={"args": [SmaractRecord, "SARES20-MCS1:MOT_16"], "kwargs": {}},
+        def_blade_right={"args": [SmaractRecord, "SARES20-MCS1:MOT_7"], "kwargs": {}},
         name="slit_cleanup", lazy=True, z_sample=-1800.0, kind="slit",
         description="cleanup slit, upstream diagnostics",
     )
