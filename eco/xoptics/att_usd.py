@@ -52,9 +52,7 @@ class Att_usd(Assembly):
         )
         self._append(
             SmaractRecord,
-            # normal: "SARES20-MCS1:MOT_10"
-            # 2026-11-05 swapped with transl_1
-            "SARES20-MCS1:MOT_18",
+            "SARES20-MCS1:MOT_10",
             name="transl_2",
             is_setting=True,
             is_display=True,
@@ -64,9 +62,8 @@ class Att_usd(Assembly):
             # normal
             # "SARES20-MCS1:MOT_3",
             # backup 2025-02-27 broken drivers: "SARES20-MCS1:MOT_15"
-            # backup 2026-11-05 module 1 (ch 1-3) without sensors: "SARES20-MCS1:MOT_18"
-            # 2026-11-05 swapped with transl_2
-            "SARES20-MCS1:MOT_10",
+            # backup 2026-11-05 module 1 (ch 1-3) without sensors
+            "SARES20-MCS1:MOT_18",
             name="transl_1",
             is_setting=True,
             is_display=True,
