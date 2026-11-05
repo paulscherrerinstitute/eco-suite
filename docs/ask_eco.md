@@ -301,6 +301,30 @@ eco looks for it in this order:
 Not everyone has a key, so the model is optional. Without one, `%ei` still
 searches the docs, the API and the command history and lists what matches.
 It explains once how to add a key, and after that only notes "search only".
+
+The search needs the index, and building it the first time takes a while:
+about 1.5 minutes for the docs, the source and the command history on a
+console, plus about 20 s for SciLog and 30 s for the machine's elog. So when
+the answer will be a search and that first indexing is still to do, `%ei`
+first shows how to search and asks:
+
+```text
+eco.ei: without the model, %ei is a search, e.g.
+  %ei attenuator transmission          the best matches in the docs, eco's source, the
+                                       command history and the logbooks, numbered, with
+                                       where each one is
+  %ei --open 2                         match [2] in its context (the commands around it,
+                                       the neighbouring logbook entries, the docs section)
+  %ei what happened since yesterday?   the logbook entries of that time span, in order
+  %ei --bad att                        commands like `att...` that gave warnings or errors
+  %ei -s ...                           search only, also once there is a key
+eco.ei: build the search index now (docs, eco source and command history ~90 s)? [Y/n]
+```
+
+Enter builds it, and the search syntax stays on screen while it does. `n`
+skips it for the session; `%ei --index` builds it whenever you like. It asks
+only in a terminal; eco desktop's Ask panel indexes as before. With a key,
+nothing is asked.
 In eco desktop, the Ask panel switches to **Search only** by itself. After
 adding a key, `%ei --key` picks it up without restarting.
 

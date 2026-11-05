@@ -48,6 +48,13 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   shown; motors behind sf-gw show a 🔑 key instead.
 ```
 
+## 5 November 2026
+
+- `%ei` without a model key (e.g. on gac-bernina) no longer builds its long
+  first index unasked: it says that its answers will be a search, shows the
+  search syntax and asks once whether to index now. `%ei --index` builds it
+  later ({doc}`ask_eco`).
+
 ## 3 November 2026
 
 - `motor.identify()` on any motor record: controller, drive model, encoder

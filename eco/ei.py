@@ -291,6 +291,20 @@ or store it, readable only by you:
 Until then %ei only searches (docs, API, history) without a model.
 Then `%ei --key` to pick it up in this session."""
 
+#: shown before the first (long) indexing when the answer will be a search
+SEARCH_HELP = """eco.ei: without the model, %ei is a search, e.g.
+  %ei attenuator transmission          the best matches in the docs, eco's source, the
+                                       command history and the logbooks, numbered, with
+                                       where each one is
+  %ei --open 2                         match [2] in its context (the commands around it,
+                                       the neighbouring logbook entries, the docs section)
+  %ei what happened since yesterday?   the logbook entries of that time span, in order
+  %ei --bad att                        commands like `att...` that gave warnings or errors
+  %ei -s ...                           search only, also once there is a key"""
+
+#: a search before the first index was built
+NOT_INDEXED = "eco.ei: no search index yet -- `%ei --index` builds it whenever you like."
+
 #: what a question without a key prints after the first time
 NO_KEY_SHORT = "(search only -- no API key for the model; `%ei` says how to add one)"
 
@@ -550,6 +564,9 @@ class Assistant:
         self._no_key_until = 0.0  # don't look for a missing key again before
         self._key_note_shown = False
         self._indexed_at = 0.0
+        # None: not asked yet; False: the first (long) indexing was declined
+        # for this session; True: go ahead
+        self._index_choice = None
         self._scilog_failed = False
         self._elog_failed = False
         self._index_lock = threading.Lock()
@@ -720,13 +737,39 @@ class Assistant:
         except OSError:
             return ""
 
+    def first_index_steps(self):
+        """The long first-time parts of the next refresh_index():
+        [(what, rough seconds)], empty once everything is indexed."""
+        from eco import logs_elog, logs_scilog
+
+        exists = Path(self.db_path).exists()
+        steps = [] if exists else [("docs, eco source and command history", 90)]
+        try:
+            filters = (logs_scilog.load_selection(self.db_path) if exists else None) or self.config.get("scilog_default")
+            if filters and not self._scilog_failed and not (exists and logs_scilog.indexed_logbooks(self.db_path)):
+                steps.append(("SciLog", 20))
+            known = logs_elog.indexed_logbooks(self.db_path) if exists else {}
+            fresh = [lb for lb in self.config.get("elog_logbooks") or [] if lb not in known]
+            if fresh and not self._elog_failed:
+                steps.append((f"the elog {', '.join(fresh)}", 30))
+        except Exception:
+            pass  # an unreadable index: refresh_index reports it
+        return steps
+
     def refresh_index(self, force=False, report=print):
         """Incremental logs_ask.build_index(), at most every
-        reindex_interval seconds unless forced."""
+        reindex_interval seconds unless forced. After the first indexing
+        was declined (ask(confirm=...)), only what is indexed already is
+        updated, until forced."""
         with self._index_lock:
-            if not force and time.time() - self._indexed_at < self.config["reindex_interval"]:
+            if force:
+                self._index_choice = True
+            elif time.time() - self._indexed_at < self.config["reindex_interval"]:
                 return None
+            first_time = self._index_choice is not False
             fresh = not Path(self.db_path).exists()
+            if fresh and not first_time:
+                return None
             if fresh and report:
                 report("eco.ei: building the search index (docs, eco source, command history) -- the first time takes a while ...")
             t0 = time.time()
@@ -734,11 +777,11 @@ class Assistant:
             self._indexed_at = time.time()
             if report and (fresh or force):
                 report(f"eco.ei: index has {result['items']} items ({result['files_indexed']} files updated, {time.time() - t0:.1f} s)")
-            self._refresh_scilog(report)
-            self._refresh_elog(report)
+            self._refresh_scilog(report, first_time=first_time)
+            self._refresh_elog(report, first_time=first_time)
             return result
 
-    def _refresh_scilog(self, report):
+    def _refresh_scilog(self, report, first_time=True):
         """New posts of the SciLog logbooks chosen last time (by default
         config["scilog_default"], Bernina's), and away with those of
         logbooks no longer readable. One failure report per session; the
@@ -749,8 +792,10 @@ class Assistant:
         if not filters:
             return
         try:
-            reader = logs_scilog.reader(timeout=10)
             first = not logs_scilog.indexed_logbooks(self.db_path)
+            if first and not first_time:
+                return
+            reader = logs_scilog.reader(timeout=10)
             if first and report:
                 report(f"eco.ei: indexing SciLog {filters} as {reader.identity} -- the first time takes ~20 s ...")
             r = logs_scilog.update(reader, filters, db_path=self.db_path, report=None)
@@ -770,14 +815,17 @@ class Assistant:
         if report and r["dropped"]:
             report(f"eco.ei: {r['dropped']} SciLog posts removed: {r['identity']} can no longer read their logbooks")
 
-    def _refresh_elog(self, report, rebuild=False):
-        """New entries of config["elog_logbooks"]. One failure report per
-        session; the existing index is searched regardless."""
+    def _refresh_elog(self, report, rebuild=False, first_time=True):
+        """New entries of config["elog_logbooks"] (first_time=False: only
+        of those indexed already). One failure report per session; the
+        existing index is searched regardless."""
         from eco import logs_elog
 
         logbooks = self.config.get("elog_logbooks") or []
         try:
             known = logs_elog.indexed_logbooks(self.db_path)
+            if not first_time:
+                logbooks = [lb for lb in logbooks if lb in known]
             if not logbooks and not known:
                 return None
             fresh = [lb for lb in logbooks if lb not in known]
@@ -898,23 +946,47 @@ class Assistant:
         msgs.append({"role": "user", "content": user})
         return msgs
 
-    def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print, on_waiting=None):
+    def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print, on_waiting=None,
+            confirm=None):
         """Answer `question`. on_delta(text) receives the answer as it
         streams; on_waiting() is called just before the model is asked.
-        search_only (or no API key): the search hits, no model."""
+        search_only (or no API key): the search hits, no model.
+
+        When the answer will be a search and the first, long indexing is
+        due, the search syntax is reported first, and confirm(steps) --
+        steps as from first_index_steps() -- decides whether to index now
+        (once per session; without confirm it goes ahead)."""
         question = question.strip()
         if new:
             self.history = []
+        t0 = time.time()
+        # the key first: without one the answer is a search, and the user may
+        # rather not wait for the first indexing just to try %ei
+        backend = None if search_only else self.backend()
+        explained = False
+        steps = self.first_index_steps() if backend is None and self._index_choice is None else []
+        if steps:
+            if report:
+                if not search_only:
+                    report(NO_KEY_HELP.format(base_url=self.config["base_url"]))
+                    self._key_note_shown = explained = True
+                report(SEARCH_HELP)
+            if confirm is not None:
+                self._index_choice = bool(confirm(steps))
+                if not self._index_choice and report and Path(self.db_path).exists():
+                    report("eco.ei: not indexed now -- `%ei --index` builds it whenever you like; "
+                           "until then %ei searches what is indexed already.")
         try:
             self.refresh_index(report=report)
         except Exception as exc:
             if report:
                 report(f"eco.ei: index update failed ({type(exc).__name__}: {exc}); searching the existing index")
-        t0 = time.time()
+        if self._index_choice is False and not Path(self.db_path).exists():
+            self.shown = Answer(question, NOT_INDEXED, [], "", time.time() - t0)
+            return self.shown
         hits = self.retrieve(question, follow_up=not search_only)
-        backend = None if search_only else self.backend()
         if backend is None:
-            if not search_only and report:
+            if not search_only and report and not explained:
                 # the full how-to once per session, then a reminder
                 report(NO_KEY_SHORT if self._key_note_shown else NO_KEY_HELP.format(base_url=self.config["base_url"]))
                 self._key_note_shown = True
@@ -1045,6 +1117,16 @@ def _print_answer(asst, question, **kwargs):
         out.write(piece)
         out.flush()
 
+    def confirm(steps):
+        what = ", ".join(f"{name} ~{seconds} s" for name, seconds in steps)
+        try:
+            reply = input(f"eco.ei: build the search index now ({what})? [Y/n] ")
+        except EOFError:
+            return False
+        return reply.strip().lower() not in ("n", "no")
+
+    if ei_wait.in_terminal(out) and sys.stdin.isatty():
+        kwargs.setdefault("confirm", confirm)
     try:
         try:
             ans = asst.ask(question, on_delta=on_delta, on_waiting=on_waiting, **kwargs)

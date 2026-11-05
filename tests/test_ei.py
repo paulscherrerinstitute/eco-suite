@@ -510,6 +510,42 @@ def test_without_a_key_it_searches_and_says_so_once(tmp_path, monkeypatch):
     assert a.backend(recheck=True) is None and len(lookups) == 2
 
 
+def test_without_a_key_it_asks_before_the_first_long_indexing(tmp_path, monkeypatch):
+    monkeypatch.setattr(ei, "api_key", lambda base_url=None: (None, None))
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "scanning.md").write_text("# Scanning\n\nscans.scan((mot1, 0, 1, 10)) is a mesh scan.\n")
+    builds, real_build = [], la.build_index
+
+    def build_index(db_path, **kw):
+        builds.append(db_path)
+        return real_build(db_path=db_path, doc_dirs=(docs,))
+
+    monkeypatch.setattr(la, "build_index", build_index)
+    a = ei.Assistant(None, config=_config(), backend=None, db_path=tmp_path / "new.sqlite")
+    asked, reports = [], []
+    ans = a.ask("mesh scan", report=reports.append, confirm=lambda steps: asked.append(steps) or False)
+    assert asked == [[("docs, eco source and command history", 90)]]
+    assert not builds and ans.text == ei.NOT_INDEXED and not ans.hits
+    assert "Get one at https://ai.psi.ch" in reports[0] and reports[1] == ei.SEARCH_HELP
+    assert len(reports) == 2  # nothing indexed: the answer itself says how to build it
+    ans = a.ask("mesh scan", report=reports.append, confirm=lambda steps: asked.append(steps) or True)
+    assert len(asked) == 1 and not builds  # asked once per session
+
+    a.refresh_index(force=True, report=None)  # %ei --index
+    ans = a.ask("mesh scan", report=None)
+    assert builds and "scans.scan" in ans.text
+
+    b = ei.Assistant(None, config=_config(), backend=None, db_path=tmp_path / "other.sqlite")
+    reports.clear()
+    ans = b.ask("mesh scan", report=reports.append, confirm=lambda steps: True)
+    assert "scans.scan" in ans.text and ei.SEARCH_HELP in reports  # the syntax while it indexes
+    assert reports.count(ei.NO_KEY_SHORT) == 0  # the key how-to was given just before
+
+    with_key = ei.Assistant(None, config=_config(), backend=_FakeBackend(), db_path=tmp_path / "k.sqlite")
+    with_key.ask("mesh scan", report=None, confirm=lambda steps: pytest.fail("a model answers: no question"))
+
+
 def test_eco_no_ei_disables_the_magic(monkeypatch):
     shell = _Shell()
     monkeypatch.setenv("ECO_NO_EI", "1")
