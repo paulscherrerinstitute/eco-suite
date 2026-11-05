@@ -145,24 +145,23 @@ namespace.append_obj(
     #     "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
     #     "kwargs": {},
     # },
-    # backup config 2025-02-27 broken drivers
-    # reverting back to this definition
-
+    # backup config 2025-02-27 broken drivers: up 14, down 13, left 18, right 4
+    # 2026-11-05: module 1 (ch 1-3) without sensors, 13-15 used by clic
     def_blade_up={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_14"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_17"],
+        "kwargs": {},
     },
     def_blade_down={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_13"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_16"],
+        "kwargs": {},
     },
     def_blade_left={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_18"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_9"],
+        "kwargs": {},
     },
     def_blade_right={
-       "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
-       "kwargs": {},
+        "args": [SmaractRecord, "SARES20-MCS1:MOT_4"],
+        "kwargs": {},
     },
     # # backup config 2026-10-01 broken drivers
 
