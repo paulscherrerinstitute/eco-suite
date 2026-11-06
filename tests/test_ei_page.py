@@ -115,3 +115,15 @@ def test_the_magic_writes_and_opens_the_last_answer(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(ep, "open_page", lambda path: opened.append(path) or True)
     ei.ei_magic("--browser")
     assert opened and opened[0].parent == tmp_path / "pages" and "eco.ei: opened" in capsys.readouterr().out
+
+
+def test_a_filesystem_without_permissions_is_no_failure(tmp_path, monkeypatch):
+    import errno
+    import os
+
+    def chmod(path, mode):
+        raise OSError(errno.EOPNOTSUPP, "Operation not supported", str(path))
+
+    monkeypatch.setattr(os, "chmod", chmod)
+    path = ep.write(ei.Answer("q", "an answer", [], "m", 0.0), directory=tmp_path / "pages", reader=False)
+    assert path.exists()

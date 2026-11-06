@@ -267,8 +267,11 @@ def write(ans, directory=None, **kwargs):
     images in <name>_files/ next to it); returns its path. Older pages
     beyond the last KEEP are removed, with their images."""
     directory = Path(directory or PAGES_DIR)
-    directory.mkdir(parents=True, exist_ok=True)
-    os.chmod(directory, 0o700)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass  # a filesystem without permissions (EOPNOTSUPP, e.g. a CIFS home): its mount decides
     slug = re.sub(r"[^a-z0-9]+", "-", ans.question.lower())[:40].strip("-") or "answer"
     path = directory / f"{time.strftime('%Y%m%d_%H%M%S')}_{slug}.html"
     text = render(ans, image_dir=path.with_name(path.stem + "_files"), **kwargs)
