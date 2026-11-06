@@ -76,6 +76,7 @@ Scanned and captured pictures are kept in ~/.eco/ei_scans (private).
 From Python: `eco.ei.ask("...")`, `eco.ei.assistant()`, `.scan(paths)`,
 `.scan_image(img)`.
 """
+import contextlib
 import datetime
 import json
 import os
@@ -974,9 +975,10 @@ class Assistant:
         return msgs
 
     def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print, on_waiting=None,
-            confirm=None):
+            confirm=None, on_phase=None):
         """Answer `question`. on_delta(text) receives the answer as it
-        streams; on_waiting() is called just before the model is asked.
+        streams; on_waiting() is called just before the model is asked,
+        on_phase(what) as each step starts ("updating the index", ...).
         search_only (or no API key): the search hits, no model.
 
         When the answer will be a search and the first, long indexing is
@@ -1003,6 +1005,8 @@ class Assistant:
                 if not self._index_choice and report and Path(self.db_path).exists():
                     report("eco.ei: not indexed now -- `%ei --index` builds it whenever you like; "
                            "until then %ei searches what is indexed already.")
+        if on_phase:
+            on_phase("updating the index")
         try:
             self.refresh_index(report=report)
         except Exception as exc:
@@ -1011,6 +1015,8 @@ class Assistant:
         if self._index_choice is False and not Path(self.db_path).exists():
             self.shown = Answer(question, NOT_INDEXED, [], "", time.time() - t0)
             return self.shown
+        if on_phase:
+            on_phase("searching")
         hits = self.retrieve(question, follow_up=not search_only)
         if backend is None:
             if not search_only and report and not explained:
@@ -1022,6 +1028,8 @@ class Assistant:
             self.shown = Answer(question, text, hits, "", time.time() - t0)
             return self.shown
         msgs = self.messages(question, hits)
+        if on_phase:
+            on_phase(f"asking {self.model}")
         if on_waiting:
             on_waiting()
         text = backend.chat(msgs, on_delta=on_delta, stop=stop)
@@ -1131,12 +1139,23 @@ def _print_answer(asst, question, **kwargs):
     from eco import ei_wait
 
     out = sys.stdout
+    # one display for the whole wait: the index update and the search come
+    # before the model, and on a console they take seconds too
     waiting = []
+    if ei_wait.in_terminal(out):
+        animation = ei_wait.pick(asst.config.get("wait_animations", 0))
+        waiting.append(ei_wait.Waiting(out, label="getting ready", animation=animation, tips=True).start())
 
-    def on_waiting():
-        if ei_wait.in_terminal(out):
-            animation = ei_wait.pick(asst.config.get("wait_animations", 0))
-            waiting.append(ei_wait.Waiting(out, label=f"asking {asst.model} ...", animation=animation).start())
+    def paused():
+        return waiting[0].paused() if waiting else contextlib.nullcontext()
+
+    def on_phase(what):
+        if waiting:
+            waiting[0].label = what
+
+    def report(text):
+        with paused():
+            print(text)
 
     streamed = []
 
@@ -1149,17 +1168,19 @@ def _print_answer(asst, question, **kwargs):
 
     def confirm(steps):
         what = ", ".join(f"{name} ~{seconds} s" for name, seconds in steps)
-        try:
-            reply = input(f"eco.ei: build the search index now ({what})? [Y/n] ")
-        except EOFError:
-            return False
+        with paused():
+            try:
+                reply = input(f"eco.ei: build the search index now ({what})? [Y/n] ")
+            except EOFError:
+                return False
         return reply.strip().lower() not in ("n", "no")
 
     if ei_wait.in_terminal(out) and sys.stdin.isatty():
         kwargs.setdefault("confirm", confirm)
+    kwargs.setdefault("report", report)
     try:
         try:
-            ans = asst.ask(question, on_delta=on_delta, on_waiting=on_waiting, **kwargs)
+            ans = asst.ask(question, on_delta=on_delta, on_phase=on_phase, **kwargs)
         finally:
             if waiting:  # erased before anything else is printed
                 waiting.pop().stop()
@@ -1261,16 +1282,27 @@ def _render_in_place(config, out, streamed, text):
 def _show_in_browser(asst):
     """The last answer (or search listing) as a page: written, opened if a
     browser can be started here, and its path printed."""
+    import sys
+
     from eco import ei_page
 
     if asst.shown is None:
         print("eco.ei: nothing to show yet -- `%ei -b <question>`")
         return None
+    from eco import ei_wait
+
+    waiting = None
+    if ei_wait.in_terminal(sys.stdout):
+        waiting = ei_wait.Waiting(sys.stdout, label="making the page, with the SciLog posts it cites", tips=True).start()
     try:
-        path = ei_page.write(asst.shown, db_path=asst.db_path, report=print)
+        path = ei_page.write(asst.shown, db_path=asst.db_path, report=None)
     except Exception as exc:
+        if waiting:
+            waiting.stop()
         print(f"eco.ei: the page failed: {type(exc).__name__}: {exc}")
         return None
+    if waiting:
+        waiting.stop()
     opened = ei_page.open_page(path)
     where = _shown(str(path), terminal_links())
     print(f"eco.ei: {'opened ' if opened else 'page: '}{where}")

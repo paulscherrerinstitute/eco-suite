@@ -1,14 +1,20 @@
 """eco.ei_wait -- something to look at while %ei waits for the model.
 
-Usually a one-line spinner with the seconds waited. Now and then (config
-"wait_animations", the share of questions; 0.25 by default) one of the
-small animations below instead, picked at random and never the same twice
+A spinner with what %ei is doing ("updating the index", "searching",
+"asking <model>") and the seconds waited, from the moment the question is
+asked; below it a "Did you know?" tip, a new one every TIP_S seconds. Now
+and then (config "wait_animations", the share of questions) one of the
+small animations below on top, picked at random and never the same twice
 in a row, so it stays a surprise. Drawn in place under the question and
-erased as soon as the answer starts, only in a real terminal.
+erased as soon as the answer starts, only in a real terminal; messages
+printed meanwhile go through paused().
 """
+
+import contextlib
 
 import math
 import random
+import re
 import sys
 import threading
 import time
@@ -132,10 +138,15 @@ class Waiting:
     stop(); stop() erases it. Thread-safe: stop() waits for a frame being
     drawn, so the answer never lands in the middle of one."""
 
-    def __init__(self, out, label="", animation=None):
+    #: seconds each tip is shown
+    TIP_S = 7
+
+    def __init__(self, out, label="", animation=None, tips=False):
         self.out = out
-        self.label = label
+        self.label = label  # may be changed while it runs
         self.animation = animation
+        self.tips = tips
+        self._tips = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._height = 0  # lines of the frame on screen
@@ -152,16 +163,50 @@ class Waiting:
         return self
 
     def _frames(self):
-        if self.animation:
-            delay, frames = ANIMATIONS[self.animation]
-            i = 0
-            while True:
-                yield frames[i % len(frames)], delay
-                i += 1
-        i = 0
+        import shutil
+
+        delay, frames = ANIMATIONS[self.animation] if self.animation else (0.1, [""])
+        tick, i, shown = 0.1, 0, 0.0
         while True:
-            yield f"{SPINNER[i % len(SPINNER)]} {self.label} {time.time() - self._t0:.0f} s", 0.1
+            elapsed = time.time() - self._t0
+            art = frames[int(elapsed / delay) % len(frames)] if self.animation else ""
+            lines = (art.split("\n") if art else []) + [f"{SPINNER[i % len(SPINNER)]} {self.label} {elapsed:.0f} s"]
+            lines += self._tip_lines(int(elapsed / self.TIP_S))
+            # a wrapped line could not be erased: cut every line to the width
+            columns = shutil.get_terminal_size().columns - 1
+            yield "\n".join(line[:columns] for line in lines), tick
             i += 1
+
+    def _tip_lines(self, n):
+        """Two lines of the n-th tip of a shuffled list: its title, and the
+        first line of its example (or of its text)."""
+        if not self.tips:
+            return []
+        if self._tips is None:
+            try:
+                from eco.utilities import tips
+
+                self._tips = tips.load_tips()
+                random.shuffle(self._tips)
+            except Exception:
+                self._tips = []
+        if not self._tips:
+            return []
+        tip = self._tips[n % len(self._tips)]
+        code = re.search(r"```[^\n]*\n(.*?)\n", tip.body)
+        example = code.group(1) if code else " ".join(tip.body.split())
+        return [f"  Did you know? {tip.title.strip('# ')}", f"    {example.strip()}"]
+
+    @contextlib.contextmanager
+    def paused(self):
+        """Erase it while the block prints something (or asks), then draw
+        it again below."""
+        with self._lock:
+            if self._height:
+                self.out.write((f"\x1b[{self._height - 1}A" if self._height > 1 else "") + "\r\x1b[J\x1b[?25h")
+                self.out.flush()
+                self._height = 0
+            yield
 
     def _run(self):
         for frame, delay in self._frames():

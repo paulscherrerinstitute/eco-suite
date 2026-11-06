@@ -169,3 +169,33 @@ def test_glow_renders_when_it_is_there():
         pytest.skip("no glow here")
     out = ei.glow("# Title\n\nsome **bold** text", 80, {"glow_style": "dark"})
     assert "Title" in out and "**" not in out and "\x1b[" in out
+
+
+def test_the_wait_is_shown_from_the_start_and_steps_aside_for_messages(tmp_path, monkeypatch):
+    import shutil
+    import sys
+
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setattr(ew, "in_terminal", lambda out=None: isinstance(out, _Tty))
+    monkeypatch.setattr(shutil, "get_terminal_size", lambda *a: shutil.os.terminal_size((100, 40)))
+    a = _assistant(tmp_path, 0)
+    a._indexed_at = 0
+    a.config["reindex_interval"] = 0
+    labels = []
+
+    def refresh_index(force=False, report=print):
+        time.sleep(0.3)
+        report("eco.ei: a message while indexing")
+        time.sleep(0.3)
+
+    a.refresh_index = refresh_index
+    tty = _Tty()
+    monkeypatch.setattr(sys, "stdout", tty)
+    tty.write("In [1]: %ei q\n")
+    real = ew.Waiting._draw
+    monkeypatch.setattr(ew.Waiting, "_draw", lambda self, frame: labels.append(self.label) or real(self, frame))
+    ei._print_answer(a, "q")
+    screen = _screen(tty.getvalue())
+    assert screen[:3] == ["In [1]: %ei q", "eco.ei: a message while indexing", "The answer."]
+    assert labels[0] in ("getting ready", "updating the index") and "updating the index" in labels
+    assert any("Did you know?" in line for line in tty.getvalue().split("\x1b[J"))
