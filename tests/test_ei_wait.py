@@ -87,7 +87,7 @@ class _SlowBackend:
 
 def _assistant(tmp_path, share):
     cfg = ei.load_config(tmp_path / "ei.json")
-    cfg.update(scilog_default=None, elog_logbooks=None, wait_animations=share)
+    cfg.update(scilog_default=None, elog_logbooks=None, wait_animations=share, render="plain")
     a = ei.Assistant(config=cfg, backend=_SlowBackend(), db_path=tmp_path / "i.sqlite")
     a._indexed_at = 1e18
     a.retrieve = lambda q, follow_up=True: []
@@ -114,3 +114,58 @@ def test_the_answer_replaces_the_waiting_in_a_terminal_only(tmp_path, monkeypatc
     monkeypatch.setattr(sys, "stdout", plain)
     ei._print_answer(_assistant(tmp_path, 1.0), "what?")
     assert "\x1b" not in plain.getvalue() and plain.getvalue().startswith("The answer.")
+
+
+class _MarkdownBackend:
+    def __init__(self, lines=3):
+        self.text = "\n".join(f"**line {i}**" for i in range(lines))
+
+    def chat(self, msgs, on_delta=None, stop=None):
+        for piece in self.text.split(" "):
+            on_delta(piece + " ")
+        return self.text
+
+
+def test_a_finished_answer_is_replaced_by_glows_rendering(tmp_path, monkeypatch):
+    import shutil
+    import sys
+
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setattr(ew, "in_terminal", lambda out=None: isinstance(out, _Tty))
+    monkeypatch.setattr(shutil, "get_terminal_size", lambda *a: shutil.os.terminal_size((80, 20)))
+    monkeypatch.setattr(ei, "glow", lambda text, width, config=None: "  RENDERED\n  " + text.replace("**", "") + "\n\n")
+
+    def run(backend):
+        a = _assistant(tmp_path, 0)
+        a.config["render"] = "auto"
+        a._backend = backend
+        tty = _Tty()
+        monkeypatch.setattr(sys, "stdout", tty)
+        tty.write("In [1]: %ei q\n")
+        ei._print_answer(a, "q")
+        return _screen(tty.getvalue())
+
+    screen = run(_MarkdownBackend(3))
+    assert screen[:3] == ["In [1]: %ei q", "  RENDERED", "  line 0"]
+    assert not any("**" in line for line in screen) and any(line.startswith("-- ") for line in screen)
+
+    screen = run(_MarkdownBackend(30))  # taller than the screen: left as streamed
+    assert screen[1] == "**line 0**" and "  RENDERED" not in screen
+
+    # "plain" switches it off
+    a = _assistant(tmp_path, 0)
+    a.config["render"] = "plain"
+    a._backend = _MarkdownBackend(3)
+    tty = _Tty()
+    monkeypatch.setattr(sys, "stdout", tty)
+    ei._print_answer(a, "q")
+    assert "RENDERED" not in tty.getvalue()
+
+
+def test_glow_renders_when_it_is_there():
+    import pytest
+
+    if ei.glow_path() is None:
+        pytest.skip("no glow here")
+    out = ei.glow("# Title\n\nsome **bold** text", 80, {"glow_style": "dark"})
+    assert "Title" in out and "**" not in out and "\x1b[" in out

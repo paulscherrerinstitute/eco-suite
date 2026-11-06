@@ -109,6 +109,12 @@ DEFAULT_CONFIG = {
     # share of questions (0..1) that get a small animation instead of the
     # spinner while the model thinks (terminal only); 0: always the spinner
     "wait_animations": 0.25,
+    # how a finished answer is shown in a terminal: "auto" renders it with
+    # glow (https://github.com/charmbracelet/glow) when glow is found, "plain"
+    # leaves the streamed text; "glow_style" "dark" or "light" ("auto": from
+    # $COLORFGBG, else dark)
+    "render": "auto",
+    "glow_style": "auto",
     # SciLog logbooks indexed (and kept up to date) before questions until
     # `%ei --scilog-index` chooses others; null: SciLog only when chosen
     "scilog_default": {"location": "bernina"},
@@ -1132,9 +1138,12 @@ def _print_answer(asst, question, **kwargs):
             animation = ei_wait.pick(asst.config.get("wait_animations", 0))
             waiting.append(ei_wait.Waiting(out, label=f"asking {asst.model} ...", animation=animation).start())
 
+    streamed = []
+
     def on_delta(piece):
         if waiting:
             waiting.pop().stop()
+        streamed.append(piece)
         out.write(piece)
         out.flush()
 
@@ -1161,7 +1170,8 @@ def _print_answer(asst, question, **kwargs):
         print(f"\neco.ei: {asst.model} at {asst.config['base_url']} failed: {type(exc).__name__}: {exc}")
         return None
     if ans.model:
-        print(f"\n\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}")
+        rendered = _render_in_place(asst.config, out, "".join(streamed), ans.text)
+        print(f"{'' if rendered else chr(10)}\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}")
         sources = source_list(ans, links=terminal_links())
         if sources:
             print(sources)
@@ -1172,6 +1182,80 @@ def _print_answer(asst, question, **kwargs):
     # nothing for IPython to echo as Out[]: the answer is already printed and
     # stays available as eco.ei.assistant(namespace).last (and through %ei --paste)
     return None
+
+
+#: where glow may be when it is not on PATH (the SwissFEL consoles)
+GLOW_PLACES = ("/sf/daq/bin/glow",)
+
+
+def glow_path():
+    """The glow executable, or None."""
+    import shutil
+
+    return shutil.which("glow") or next((p for p in GLOW_PLACES if os.access(p, os.X_OK)), None)
+
+
+def _glow_style(config):
+    style = config.get("glow_style", "auto")
+    if style in ("dark", "light"):
+        return style
+    # COLORFGBG="15;0": foreground;background, a light background is 7 or 15
+    bg = os.environ.get("COLORFGBG", "").split(";")[-1]
+    return "light" if bg in ("7", "15") else "dark"
+
+
+def glow(text, width, config=None):
+    """`text` (Markdown) rendered by glow for a terminal `width` wide, or None."""
+    import subprocess
+
+    exe = glow_path()
+    if exe is None:
+        return None
+    env = dict(os.environ, CLICOLOR_FORCE="1")  # colours also into a pipe
+    try:
+        r = subprocess.run(
+            [exe, "-s", _glow_style(config or {}), "-w", str(max(40, min(width, 120))), "-"],
+            input=text, capture_output=True, text=True, timeout=10, env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout if r.returncode == 0 and r.stdout.strip() else None
+
+
+def _rows(text, columns):
+    """Terminal rows `text` takes when printed from column 0."""
+    try:
+        from wcwidth import wcswidth
+    except ImportError:
+        wcswidth = len
+    rows = 0
+    for line in text.split("\n"):
+        width = max(wcswidth(line), 0) if wcswidth is not len else len(line)
+        rows += max(1, -(-width // columns))
+    return rows
+
+
+def _render_in_place(config, out, streamed, text):
+    """Replace the streamed answer by glow's rendering of it; True if done.
+    Only in a terminal, with config "render" "auto" and glow found, and only
+    if the streamed text still fits on the screen (what scrolled away cannot
+    be erased)."""
+    import shutil
+
+    from eco import ei_wait
+
+    if config.get("render", "auto") != "auto" or not streamed or not ei_wait.in_terminal(out):
+        return False
+    size = shutil.get_terminal_size()
+    rows = _rows(streamed, size.columns)
+    if rows >= size.lines - 1:
+        return False
+    rendered = glow(text, size.columns, config)
+    if rendered is None:
+        return False
+    out.write((f"\x1b[{rows - 1}A" if rows > 1 else "") + "\r\x1b[J" + rendered.rstrip("\n") + "\n")
+    out.flush()
+    return True
 
 
 def _show_in_browser(asst):

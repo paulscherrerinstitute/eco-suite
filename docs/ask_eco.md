@@ -241,6 +241,16 @@ finding its peak). `"wait_animations"` in `~/.eco/ei.json` is the share of
 questions that get one (0.25; 0 for always the spinner). Jupyter, qtconsole
 and output that is not a terminal get neither.
 
+If [glow](https://github.com/charmbracelet/glow) is installed (on the
+SwissFEL consoles it is, as `/sf/daq/bin/glow`), a finished answer is shown
+rendered: headings, bold, lists and highlighted code instead of Markdown
+symbols. The answer streams in as plain text while the model writes it, and
+when it is complete glow's rendering replaces it. An answer taller than the
+terminal stays as it streamed, since what has scrolled away cannot be
+replaced. In `~/.eco/ei.json`, `"render": "plain"` switches this off, and
+`"glow_style": "light"` suits a terminal with a light background; the
+default, `"auto"`, picks light or dark from `$COLORFGBG` and otherwise dark.
+
 ## In the browser
 
 `%ei -b` shows the answer as a page in the browser, `%ei -b QUESTION` asks
