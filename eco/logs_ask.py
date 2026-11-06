@@ -43,7 +43,9 @@ called) and an explicitly configured OpenAICompatibleBackend.
 """
 import ast
 import json
+import os
 import re
+import shutil
 import time
 import sqlite3
 import warnings
@@ -53,7 +55,55 @@ from pathlib import Path
 from eco import logs_sources
 from eco.widgets import kernel_registry
 
-DEFAULT_DB = Path.home() / ".eco" / "history_index.sqlite"
+#: filesystems SQLite cannot rely on (locks, a journal next to the file, a
+#: second open of the same file): network shares mounted by the desktop
+#: (gvfs, a fuse mount) or over SMB
+UNSAFE_FS = ("fuse", "cifs", "smb3", "smbfs", "9p")
+INDEX_NAME = "history_index.sqlite"
+
+
+def _fs_type(path):
+    """The filesystem type `path` (resolved) lives on, from /proc/mounts."""
+    real = os.path.realpath(path)
+    best, kind = "", ""
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                mount = parts[1].replace("\\040", " ")
+                if (real == mount or real.startswith(mount.rstrip("/") + "/")) and len(mount) > len(best):
+                    best, kind = mount, parts[2]
+    except OSError:
+        return ""
+    return kind
+
+
+def index_dir():
+    """Where the index lives: ~/.eco, unless that is on a filesystem SQLite
+    cannot rely on (on gac-bernina it is a gvfs network share: "unable to
+    open database file"); then ~/.cache/eco, or else a per-user directory
+    in /tmp. $ECO_INDEX_DIR overrides."""
+    import getpass
+    import tempfile
+
+    env = os.environ.get("ECO_INDEX_DIR")
+    if env:
+        return Path(env).expanduser()
+    home = Path.home()
+    for d in (home / ".eco", home / ".cache" / "eco", Path(tempfile.gettempdir()) / f"eco-index-{getpass.getuser()}"):
+        probe = d
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent  # the nearest existing directory decides
+        if not _fs_type(probe).startswith(UNSAFE_FS):
+            return d
+    return home / ".eco"
+
+
+DEFAULT_DB = index_dir() / INDEX_NAME
+#: where the index was before it moved off an unsafe filesystem
+LEGACY_DB = Path.home() / ".eco" / INDEX_NAME
 DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
 SRC_DIR = Path(__file__).resolve().parent
 _SRC_SKIP = ("textual test", "__pycache__")
@@ -120,7 +170,12 @@ class Hit:
 
 def _connect(db_path):
     db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)  # history and logbook posts: private
+    if db_path == DEFAULT_DB != LEGACY_DB and not db_path.exists() and LEGACY_DB.exists():
+        try:  # moved off the network share: keep what was indexed there
+            shutil.copyfile(LEGACY_DB, db_path)
+        except OSError:
+            pass
     con = sqlite3.connect(str(db_path))
     if con.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
         # prototype: an index is a cache of files that are still on disk,

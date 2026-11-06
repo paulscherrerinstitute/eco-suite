@@ -121,3 +121,34 @@ def test_items_with_more_of_the_question_rank_first(tmp_path):
     hits = la.search("how would a counter scan for the mono look like for pm 150 eV?", k=3, db_path=db)
     assert hits[0].path == "scilog:lb:s3"
     assert la._fts_query("look like pm 150 ev scan") == '"pm" OR "150" OR "ev" OR "scan"*'
+
+
+def test_the_index_stays_off_network_shares(tmp_path, monkeypatch):
+    import eco.logs_ask as la
+
+    home = tmp_path / "home"
+    share = tmp_path / "share"
+    (share / "eco").mkdir(parents=True)
+    home.mkdir()
+    (home / ".eco").symlink_to(share / "eco")  # as on gac-bernina
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("ECO_INDEX_DIR", raising=False)
+    monkeypatch.setattr(la, "_fs_type", lambda p: "fuse.gvfsd-fuse" if str(share) in __import__("os").path.realpath(p) else "xfs")
+    assert la.index_dir() == home / ".cache" / "eco"
+    monkeypatch.setattr(la, "_fs_type", lambda p: "xfs")
+    assert la.index_dir() == home / ".eco"
+    monkeypatch.setenv("ECO_INDEX_DIR", str(tmp_path / "elsewhere"))
+    assert la.index_dir() == tmp_path / "elsewhere"
+
+    # what was indexed on the share is taken along once
+    old, new = share / "eco" / la.INDEX_NAME, home / ".cache" / "eco" / la.INDEX_NAME
+    con = la._connect(old)
+    con.execute("INSERT INTO meta VALUES ('k', 'v')")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(la, "LEGACY_DB", old)
+    monkeypatch.setattr(la, "DEFAULT_DB", new)
+    con = la._connect(new)
+    assert con.execute("SELECT value FROM meta WHERE key = 'k'").fetchone() == ("v",)
+    con.close()
+    assert oct(new.parent.stat().st_mode & 0o777) == "0o700"

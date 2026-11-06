@@ -75,7 +75,16 @@ directories). `ECO_NO_HYPERLINKS=1` prints plain text.
 
 The search index lives in `~/.eco/history_index.sqlite`. It is updated
 before a question at most every ten minutes, and only files that changed are
-read again.
+read again. `%ei --rebuild` removes it and builds it again from scratch,
+with SciLog and the elog (a few minutes); notes added with `--notes` or
+`--scan` then need adding again.
+
+Where `~/.eco` is on a network share mounted by the desktop or over SMB, as
+on gac-bernina, the index goes to `~/.cache/eco` instead, or to a per-user
+directory in `/tmp` if that is on a share too. The database cannot be used
+reliably on such a share: it fails with "unable to open database file". An
+index already on the share is copied over the first time. `$ECO_INDEX_DIR`
+sets the directory explicitly.
 
 ## Analysis questions: escape
 
@@ -300,6 +309,7 @@ neighbours.
 | `%ei --open N` | Source N of the last answer (or listing) in its context. |
 | `%ei --bad TEXT` | Commands containing TEXT that gave warnings or errors, worst first. |
 | `%ei --index` | Update the search index now. |
+| `%ei --rebuild` | Remove the search index and build it again from scratch (minutes). |
 | `%ei --scilog [pgroup]` | Index the logbooks of one pgroup (no pgroup: the last choice, else Bernina's). |
 | `%ei --scilog-token [new]` | Who reads SciLog here: your token (and until when), or the beamline account; asks for a token if neither works. |
 | `%ei --scilog-logbooks FILTERS` | The logbooks that account can read; filters `--location`, `--pgroup`, `--name`. |

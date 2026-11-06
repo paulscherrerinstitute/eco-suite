@@ -54,6 +54,12 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   first index unasked: it says that its answers will be a search, shows the
   search syntax and asks once whether to index now. `%ei --index` builds it
   later ({doc}`ask_eco`).
+- `%ei` shows its wait display from the moment you ask, naming the step
+  (updating the index, searching, asking the model), with a "Did you
+  know?" tip that changes every few seconds.
+- `%ei --rebuild` builds the search index from scratch. Where `~/.eco` is a
+  network share (gac-bernina), the index is kept in `~/.cache/eco`, since
+  SQLite fails on such shares ({doc}`ask_eco`).
 - `%ei` answers in a terminal are rendered with glow when it is installed
   (on the consoles it is): bold, lists and highlighted code instead of
   Markdown symbols ({doc}`ask_eco`).

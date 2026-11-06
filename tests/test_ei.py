@@ -535,6 +535,9 @@ def test_without_a_key_it_asks_before_the_first_long_indexing(tmp_path, monkeypa
     a.refresh_index(force=True, report=None)  # %ei --index
     ans = a.ask("mesh scan", report=None)
     assert builds and "scans.scan" in ans.text
+    builds.clear()
+    a.rebuild_index(report=None)  # %ei --rebuild: removed and built again
+    assert builds and a.ask("mesh scan", report=None).hits
 
     b = ei.Assistant(None, config=_config(), backend=None, db_path=tmp_path / "other.sqlite")
     reports.clear()

@@ -45,7 +45,7 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
                     commands around it, the neighbouring logbook posts, ...)
     %ei --bad att   commands like `att...` that gave warnings/errors
     %ei --examples PATH   index notebooks (code cells) as usage examples
-    %ei --index | --scilog [pgroup] | --notes PATH | --models | --config
+    %ei --index | --rebuild | --scilog [pgroup] | --notes PATH | --models | --config
     %ei --elog [--rebuild]   update the elog entries now (or all again)
 
 Every answer ends with the sources it cites, numbered, each with where to
@@ -806,6 +806,24 @@ class Assistant:
             self._refresh_elog(report, first_time=first_time)
             return result
 
+    def rebuild_index(self, report=print):
+        """The index from scratch: removed, then built again with SciLog and
+        the elog (minutes). Notes added with --notes/--scan need adding again."""
+        with self._index_lock:
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                path = Path(str(self.db_path) + suffix)
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+            self._scilog_failed = self._elog_failed = False
+        if report:
+            report(f"eco.ei: {self.db_path} removed, building it again ...")
+        result = self.refresh_index(force=True, report=report)
+        if report:
+            report("eco.ei: done; notes added with `%ei --notes` or `--scan` need adding again")
+        return result
+
     def _refresh_scilog(self, report, first_time=True):
         """New posts of the SciLog logbooks chosen last time (by default
         config["scilog_default"], Bernina's), and away with those of
@@ -1392,6 +1410,9 @@ def ei_magic(line, cell=None):
     if opt == "--index":
         asst.refresh_index(force=True)
         return None
+    if opt == "--rebuild":
+        asst.rebuild_index()
+        return None
     if opt == "--scilog":
         # one pgroup's logbooks, as whoever reads SciLog here
         _scilog_magic(asst, "--scilog-index", _scilog_default(asst, rest))
@@ -1552,7 +1573,7 @@ def _status(asst, key_where):
         f"API key {'from ' + key_where if key_where else 'MISSING -- search only, `%ei --key` once you have one'}; "
         f"{len(asst.history)} earlier question(s) in this conversation.\n"
         "%ei <question> | -n new | -s search only | -b browser | -m MODEL | --paste | --bad TEXT | "
-        "--scan FILES | --scan-image VAR | --webcam | --key | --index | --scilog [pgroup] | --notes PATH | "
+        "--scan FILES | --scan-image VAR | --webcam | --key | --index | --rebuild | --scilog [pgroup] | --notes PATH | "
         "--scilog-token | --scilog-logbooks | --scilog-index | --scilog-search TEXT | "
         "--examples PATH | --models | --config | --help"
     )
