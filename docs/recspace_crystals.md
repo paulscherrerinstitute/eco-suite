@@ -94,28 +94,13 @@ reflections; pick allowed ones to align on:
 R-3c (sapphire, calcite) additionally needs l even for (h -h 0 l)-type
 reflections, so the sapphire specular reflections are (0 0 6), (0 0 12).
 
-## Constraints for specular and off-specular reflections
-
-Q along the surface normal (specular, e.g. (0 0 l) of a c-axis film) is along
-the phi axis at all angles 0, so phi alone cannot bring it into Bragg
-condition: under the `sd` setup (mu = eta = chi = 0, phi free) there is no
-solution for (0 0 l). Release mu instead:
-
-```python
-xrd.recspace.set_constraints(eta=0, chi=0, phi=0)   # mu = theta, gamma = 2 theta
-bs.calc_angles(0, 0, 6)
-```
-
-For reflections with an in-plane component the `sd` setup works:
-`set_constraints("sd")`, then `calc_angles(0, 1, 5)`.
-
 ## Worked example: Bi2Se3 film on sapphire
 
 Bi2Se3: R-3m, hexagonal setting a = 4.132 A, c = 28.600 A, film c axis
 along the surface normal; in-plane azimuth not known yet.
 
 ```python
-bs = recspace.create_crystal(
+bs = xrd.recspace.create_crystal(
     "Bi2Se3_15nm",
     unit_cell=dict(a=4.132, b=4.132, c=28.600, alpha=90, beta=90, gamma=120))
 bs.set_surface_normal([0, 0, 1])                  # the (001) planes form the surface
@@ -135,6 +120,25 @@ Then align:
    probably wrong, the film is 3-fold in plane, often twinned 6-fold);
 3. store both with `bs.add_reflection(h, k, l)` at the peak, then
    `bs.calc_ub(0, 1)`.
+
+## Constraints for specular and off-specular reflections
+
+Q along the surface normal (specular, e.g. (0 0 l) of a c-axis film) is along
+the phi axis at all angles 0, so phi alone cannot bring it into Bragg
+condition: under the `sd` setup (mu = eta = chi = 0, phi free) there is no
+solution for (0 0 l). Release mu instead:
+
+```python
+xrd.recspace.set_constraints(eta=0, chi=0, phi=0)   # mu = theta, gamma = 2 theta
+bs.calc_angles(0, 0, 6)
+```
+
+For reflections with an in-plane component the `sd` setup finds solutions:
+`set_constraints("sd")`, then `calc_angles(0, 1, 5)`. Check them against
+`xrd.recspace.solution_ranges` before moving: at 9 keV all four solutions
+for (0 1 5) have gamma outside the `sd` range, so `hkl.mv` and
+`calc_angles_unique` refuse them; `set_constraints("sd", ranges=False)`
+leaves the ranges out.
 
 ## Common mistakes
 

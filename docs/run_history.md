@@ -22,7 +22,7 @@ status.
 ## Many runs: a table
 
 ```python
-kb.ver.x.run_status.table()                       # all runs
+kb.ver.run_status.table()                         # all runs
 kb.ver.run_status.table(runs=slice(-50, None))    # the last 50 runs
 kb.ver.run_status.table(settings_only=True)       # only the settings
 ```
@@ -31,21 +31,25 @@ One row per run, a `time` column with the run's start, then one column per
 name below the object, named relative to it. The object's own value is the
 column `value`.
 
-The same for the whole namespace, with full names:
+`run_status` in the namespace does the same for everything, for the
+pgroup set in `config_bernina.pgroup`, with full names:
 
 ```python
 run_status.table(prefix="bernina.mono", runs=slice(-20, None))
 run_status.table(columns=["bernina.mono.energy", "scan_info.description"])
 ```
 
-Besides the status, every row has `scan_info.description`,
-`scan_info.adjustables` and `scan_info.steps` from the run's scan info.
+The table also has `scan_info.description`, `scan_info.adjustables` and
+`scan_info.steps` from each run's scan info; ask for them by name with
+`columns=[...]`, since `prefix=` and a device's own `run_status` leave them
+out.
 
 ## Plotting over runs
 
 ```python
 kb.ver.x.run_status.plot()                        # against time, run numbers on top
 kb.ver.x.run_status.plot(x="run")                 # against run number, time on top
+# several values of one device:
 kb.ver.run_status.plot(columns=["x", "y"], runs=slice(-100, None))
 run_status.plot(["bernina.mono.energy"])
 ```
@@ -78,3 +82,11 @@ then in `raw/`, which since 2025 has only some (for p23926, 40 of 494).
 Run start times come from the scan's own start time when the status has it,
 otherwise from the status file's modification time, which can be late for a
 file written again afterwards.
+
+```{admonition} Did you know?
+:class: tip
+
+`run_status.table(columns=["bernina.mono.energy", "scan_info.description"])`
+puts each run's scan description next to the value, a quick way to find
+which run was which.
+```

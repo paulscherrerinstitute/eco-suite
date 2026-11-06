@@ -293,12 +293,13 @@ class RecSpace(Assembly):
 
         xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)
 
-    or one at a time, release with None: ``xrd.recspace.constraints.chi(90)``.
+    or one at a time, ``xrd.recspace.constraints.chi(90)``, released with
+    ``constraints.chi.set_target_value(None)`` (calling it with None reads it).
     A setup may also restrict which solution a move picks
     (``solution_ranges``, e.g. delta 45..122 for the THC).
 
     A second reflection kept in Bragg condition takes the place of one of
-    them: ``constraints.chi(None)``, ``constraints.h2([2, 2, 0])``.
+    them: ``constraints.chi.set_target_value(None)``, ``constraints.h2([2, 2, 0])``.
 
     Use it::
 

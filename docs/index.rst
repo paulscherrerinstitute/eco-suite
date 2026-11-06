@@ -191,6 +191,7 @@ scientific Python libraries.
 
    deltatau_servo
    powerbrick_parameters
+   smaract
    channel_access
 
 .. toctree::

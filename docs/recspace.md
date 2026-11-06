@@ -176,17 +176,17 @@ xrd.recspace.set_constraints(mu=0, gamma=0, chi=90)
 | `gic` | mu 0, eta 0, chi 0 | same |
 | `thc` | mu 0, chi 90, phi 0 | delta 45..122 |
 
-They are the presets of bernina-scripts' diffraction reflections app
-(`apps/bernina_parameters`). Their solution ranges (the app's min/max
+They are the setups of bernina-scripts (`apps/bernina_parameters`), which
+its diffraction reflections app uses. Their solution ranges (the app's min/max
 filters) are kept in `xrd.recspace.solution_ranges` and restrict, on top of
 the motor soft limits, which solution `calc_angles_unique` and `hkl.mv`
 pick; `calc_angles` still lists all. `ranges=False` leaves them out,
 `ranges=dict(delta=(0, 90))` sets your own, and
 `store_constraint_preset("name", "description")` stores the current
 constraints and ranges as a setup of your own. Single constraints can still
-be set one at a time, release with `None`: `xrd.recspace.constraints.chi(90)`.
-And check the motor soft limits, since `calc_angles_unique` and `hkl.mv`
-pick the one solution inside them.
+be set one at a time, `xrd.recspace.constraints.chi(90)`, and released with
+`xrd.recspace.constraints.chi.set_target_value(None)` (calling it with
+`None` only reads it).
 
 Crystallography facts and common mistakes (hexagonal cells, Miller-Bravais
 indices, forbidden reflections, a worked thin-film example):
@@ -230,7 +230,7 @@ Differences worth knowing:
   stage, along x+ here) until you set its own. `set_reference(hkl=...)`
   sets the vector behind alpha/beta/psi/naz (diffcalc's default hkl
   (1, 0, 0)).
-- `calc_ub(idx)` with one reflection keeps the current U's rotation about
+- `calc_ub(idx, None)` with one reflection keeps the current U's rotation about
   that reflection's Q and changes it by the smallest rotation; diffcalc
   started from U = 1, which depends on the frame.
 - `pseudo_angles()` gives all virtual angles at the current position,
@@ -240,10 +240,11 @@ Differences worth knowing:
 
 ## Two reflections at once
 
-Hold two of the sample circles' worth of freedom less, and add `h2`:
+A second reflection kept in Bragg condition counts as one of the three
+constraints: release one constraint and set `h2`:
 
 ```python
-rs.constraints.chi(None)
+rs.constraints.chi.set_target_value(None)   # release chi
 rs.constraints.h2([2, 2, 0])             # keep (220) in Bragg too
 rs.constraints.h2_detector("h1")         # detector on (h,k,l); "between": on the bisector
 si.hkl.mv([1, 1, 1])                     # moves to a position with (111) and (220) both in Bragg
@@ -328,6 +329,8 @@ hexagonal, monoclinic, triclinic). Result on those (2026-10-30, 1600 cases):
 ```{admonition} Did you know?
 :class: tip
 
-`xrd.recspace.set_constraints()` without arguments lists the stored
-Bernina setups; one name sets all of a setup's constraints at once.
+In `si.widget_reflections(1, 1, 1)`, **simulate angles** takes any six
+circle angles and shows which hkl is in Bragg condition there and the
+nearest reflection. It is a quick way to name an unexpected peak, and
+nothing moves.
 ```

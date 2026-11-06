@@ -8,11 +8,13 @@ you update. For one feature at a time, with the main call, see
 
 ```bash
 git pull                       # in your checkout
-pip install -e . --no-deps     # only if you install it; new dependencies below
+pip install -e . --no-deps     # only for a pip-installed checkout; see the new dependencies below
 ```
 
-```{admonition} Upgrade notes for 25 October to 3 November 2026
+```{admonition} Upgrade notes for 25 October to 6 November 2026
 :class: important
+
+*New dependencies*
 
 - **New dependency: `hklforge`** (core, for `recspace`). It is in the
   Bernina Python environments; a separate installation needs
@@ -21,6 +23,13 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   it everything else works.
 - **Adaptive scans need escape-fel 0.2.17 or newer.** Nothing else changes
   with an older escape.
+- **`run_status.table()` needs `pyarrow`.** It is in the Bernina Python
+  environments. The run table is cached per pgroup in
+  `res/run_data/run_table/<pgroup>_runs.parquet` (about 30 MB, group
+  writable); the runs' `status.json` files stay the original record.
+
+*Scans*
+
 - **`N_pulses` is now the exposure of the first counter.** The other
   counters of a scan follow its window (same pulses, same time) instead of
   each acquiring `N_pulses` on their own. With the default counters (the DAQ
@@ -36,45 +45,85 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   and stores separately.
 - **Scan info gains `mesh_specs`** in `scan_parameters` and `mesh_index` in
   every step's info, next to `grid_specs`, which is unchanged.
+
+*Diffraction (`recspace`)*
+
 - **`recspace` works in the SwissFEL/Bernina frame** (z+ along the beam, y+
   up). Crystals stored before are turned once when they are first loaded, and
   directions are given as the crystal lies with all angles at 0. `diffcalc`
   is not affected.
+- **`recspace`: a crystal's surface normal is set on its own**
+  (`set_surface_normal`), no longer taken from the orientations. A new
+  crystal has none until it is set, and a mode that needs it says so;
+  imported diffcalc crystals keep the one diffcalc used.
+
+*Motors*
+
+- **Status of PowerBrick motors** gains a `cnf_pb` entry, read only when
+  shown; motors behind sf-gw show a 🔑 key instead.
+- **SmarAct `home()` and `calibrate_sensor()` wait** until the action has
+  started and finished, with a timeout; before, `home()` on an already
+  homed stage returned at once.
+
+*`%ei`*
+
 - **`%ei` indexes SciLog and the machine elog before its first question**:
   about 20 s and 30 s, once per account; the index in `~/.eco` grows by about
   50 MB. `"scilog_default": null` and `"elog_logbooks": []` in
   `~/.eco/ei.json` switch them off.
-- **Status of PowerBrick motors** gains a `cnf_pb` entry, read only when
-  shown; motors behind sf-gw show a 🔑 key instead.
+- **The `%ei` index moves off network shares.** Where `~/.eco` is one, as on
+  gac-bernina, the index is kept in `~/.cache/eco` (copied over once);
+  `$ECO_INDEX_DIR` sets it explicitly.
+- **`%ei` checks the code of its answers**, and asks the model again when
+  something does not fit, so such an answer takes a second model call.
+  `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
-## 5 November 2026
+## 5 and 6 November 2026
 
-- `%ei` without a model key (e.g. on gac-bernina) no longer builds its long
-  first index unasked: it says that its answers will be a search, shows the
-  search syntax and asks once whether to index now. `%ei --index` builds it
-  later ({doc}`ask_eco`).
-- `%ei` checks the code in its answers against eco's source and the
-  session (attributes, keywords, imports), has the model correct it once,
-  and marks what still does not fit as **Not verified** ({doc}`ask_eco`).
-- `%ei` shows its wait display from the moment you ask, naming the step
-  (updating the index, searching, asking the model). An animation now comes
-  with 40 % of the questions instead of 25 %.
-- `%ei --rebuild` builds the search index from scratch. Where `~/.eco` is a
-  network share (gac-bernina), the index is kept in `~/.cache/eco`, since
-  SQLite fails on such shares ({doc}`ask_eco`).
-- `%ei` answers in a terminal are rendered with glow when it is installed
-  (on the consoles it is): bold, lists and highlighted code instead of
-  Markdown symbols ({doc}`ask_eco`).
+**Asking eco (`%ei`)** — {doc}`ask_eco`
+
+- The code in an answer is checked against eco's source and the session
+  (attributes, keywords, imports). If it does not fit, the model corrects
+  it once, and what still does not fit is marked **Not verified**.
 - `%ei -b`: the answer as a page in the browser. Each SciLog source is
   shown as in SciLog, with images and tables, between its neighbouring
-  posts; citations link to it ({doc}`ask_eco`).
+  posts; citations link to it.
+- Answers are rendered with glow in a terminal where it is installed (on
+  the consoles it is): headings, lists and highlighted code.
+- The wait display starts the moment you ask and names the step; an
+  animation now comes with 40 % of the questions.
+- Without a model key, `%ei` shows how to search and asks before the long
+  first indexing. `%ei --rebuild` builds the index from scratch.
 
-## 3 November 2026
+**Motors** — {doc}`smaract`
+
+- SmarAct stages: `startup_stage()` (sensor type, frequency, calibration,
+  homing) and `smaract_usd.startup([...])` for several stages at once;
+  `diagnose()` finds why channels don't respond, without moving anything.
+
+## 3 and 4 November 2026
+
+**Runs** — {doc}`run_history`
+
+- `run_status.table()` and `.plot()`: any device's values over all runs of a
+  beamtime, from the status every run stores.
+
+**Diffraction** — {doc}`recspace`, {doc}`recspace_crystals`
+
+- The reflections browser filters solutions by min/max per angle, loads
+  stored setups, and simulates any six angles: which hkl is in the Bragg
+  condition there, and the nearest reflection.
+- Its 3D view has detector presets (JF01T03, JF07T32), Brillouin zones, the
+  real-space cell, and everything the detector sees.
+- The surface normal is a property of the crystal (`set_surface_normal`).
+- A reference for setting up crystals: hexagonal cells, reciprocal
+  directions, forbidden reflections, a thin film.
+
+**Motors** — {doc}`powerbrick_parameters`
 
 - `motor.identify()` on any motor record: controller, drive model, encoder
-  and what homing does there, read from the IOC and the drive
-  ({doc}`powerbrick_parameters`).
+  and what homing does there, read from the IOC and the drive.
 - `motor.controller` on every motor record: `.type`, `.link`, `.homing`,
   looked up only when asked, never during scans.
 
@@ -90,7 +139,7 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
 - Every answer lists its sources with their locations, clickable in the
   terminal; `%ei --open N` shows one in its context.
 - Better ranking: items containing more of the question come first.
-- A spinner while the model thinks, and now and then something else.
+- A spinner while the model thinks, and now and then a small animation instead.
 
 **Scans** — {doc}`scanning`, {doc}`adaptive_scans`
 

@@ -18,13 +18,79 @@ The standard way is to use the `set_transmission` method ...
 
 This moves hardware ... [api AttenuatorAramis]
 
--- Qwen3.8-27B, 7.7 s; context: 10 command, 6 doc, 8 api
+-- Qwen3.8-27B, 7.7 s; context: 10 command, 6 doc, 8 api; code checked against eco
 ```
 
 Nothing in an answer is run for you. `%ei --paste` puts the answer's code at
 the next prompt, where you can read and edit it first.
 
-## Sources: where an answer comes from
+## Model and API key
+
+The default is Qwen3.8-27B on PSI's `ai.psi.ch`, an OpenAI-compatible
+service. `openai/gpt-oss-120b` is faster, but in tests it wrote longer
+answers and was more inclined to guess names. The settings are in
+`~/.eco/ei.json`, which is written with the defaults on first use.
+
+You need your own API key from <https://ai.psi.ch> (Settings → Account).
+eco looks for it in this order:
+
+1. the environment variable `ECO_EI_API_KEY`;
+2. the file `~/.eco/ei_api_key`, which should be readable only by you:
+   `(umask 077; cat > ~/.eco/ei_api_key)`, paste the key, Enter, Ctrl-D
+   (it then stays out of the shell history);
+3. the gopass entry `ai/psi-api-key`;
+4. the key the VS Code extension Continue uses for the same server
+   (`~/.continue/config.yaml`).
+
+**What leaves the machine:** your question, the matching history, docs and
+log excerpts (SciLog posts and elog entries included) and the list of
+namespace names go to the model server; so do pictures scanned with
+`--scan`, `--scan-image` or `--webcam`. The server is PSI's own, but think
+before indexing notes you would not paste into it yourself.
+
+## Without a key
+
+Not everyone has a key, so the model is optional. Without one, `%ei` still
+searches the docs, the API and the command history and lists what matches.
+It explains once how to add a key, and after that only notes "search only".
+
+The search needs the index, and building it the first time takes a while:
+about 1.5 minutes for the docs, the source and the command history on a
+console, plus about 20 s for SciLog and 30 s for the machine's elog. So when
+the answer will be a search and that first indexing is still to do, `%ei`
+first shows how to search and asks:
+
+```text
+eco.ei: without the model, %ei is a search, e.g.
+  %ei attenuator transmission          the best matches in the docs, eco's source, the
+                                       command history and the logbooks, numbered, with
+                                       where each one is
+  %ei --open 2                         match [2] in its context (the commands around it,
+                                       the neighbouring logbook entries, the docs section)
+  %ei what happened since yesterday?   the logbook entries of that time span, in order
+  %ei --bad att                        commands like `att...` that gave warnings or errors
+  %ei -s ...                           search only, also once there is a key
+eco.ei: build the search index now (docs, eco source and command history ~90 s, SciLog ~20 s,
+        the elog SwissFEL commissioning, SwissFEL Diagnostics ~30 s)? [Y/n]
+```
+
+Enter builds it now, and the search syntax stays on screen while it does;
+`n` skips it for this session, and `%ei --index` builds it later. Only a
+terminal asks: eco desktop's Ask panel indexes without asking and switches
+to **Search only** by itself. With a key nothing is asked; after adding one,
+`%ei --key` picks it up without restarting.
+
+`ECO_NO_EI=1` switches the feature off completely: no `%ei` magic and no
+**Ask** menu.
+
+
+```{admonition} Did you know?
+:class: tip
+
+`%ei --bad att` lists the `att...` commands that most often gave warnings
+or errors, worst first, with the message they gave.
+```
+## Citations and `--open`
 
 Every answer ends with the sources it cites, numbered, each with where to
 find it:
@@ -59,7 +125,7 @@ has no line). In a session opened over SSH the link opens the same path on
 your own machine, which works for files on shared storage (`/sf`, home
 directories). `ECO_NO_HYPERLINKS=1` prints plain text.
 
-## Where the answers come from
+## What is searched
 
 | Source | What it contributes |
 |---|---|
@@ -77,7 +143,8 @@ The search index lives in `~/.eco/history_index.sqlite`. It is updated
 before a question at most every ten minutes, and only files that changed are
 read again. `%ei --rebuild` removes it and builds it again from scratch,
 with SciLog and the elog (a few minutes); notes added with `--notes` or
-`--scan` then need adding again.
+`--scan` then need adding again, and so does a SciLog choice made with
+`--scilog-index` (it falls back to Bernina's logbooks).
 
 Where `~/.eco` is on a network share mounted by the desktop or over SMB, as
 on gac-bernina, the index goes to `~/.cache/eco` instead, or to a per-user
@@ -170,7 +237,7 @@ there.
 ```python
 %ei --scilog-token                            # who reads SciLog here
 %ei --scilog-logbooks --location bernina      # what that account can read there
-%ei --scilog-index --location bernina         # all of it, ~15 s for 40 000 posts
+%ei --scilog-index --location bernina         # all of it, ~20 s for 40 000 posts
 %ei --scilog-index                            # later: only what is new, < 1 s
 %ei --scilog-search tapedrive trigger         # SciLog's own search, live
 %ei what trigger settings did we use for the tapedrive?
@@ -180,7 +247,7 @@ Indexed posts are kept in the local index, so searching them needs no
 network, and an expired token loses nothing already indexed. An update
 fetches only posts newer than the last one, so a post edited or deleted
 later keeps its indexed version until `%ei --scilog-index --rebuild` reads
-the chosen logbooks again completely (~15 s for Bernina's).
+the chosen logbooks again completely (~20 s for Bernina's).
 
 Indexed posts are searched together with the history and the docs; the
 ones that match a question go to the model with it, like every other
@@ -277,7 +344,10 @@ afterwards; `%ei --paste` puts its code at the prompt, and
 `eco.ei.assistant(namespace).last` holds the whole answer with the items it
 was given (`.hits`).
 
-While the model thinks, a terminal shows a spinner with the seconds
+## In a terminal
+
+From the moment you ask, a terminal shows a spinner with the step `%ei`
+is at (updating the index, searching, asking the model) and the seconds
 waited -- and now and then, at random, a small animation instead (a
 chicken working on the chicken-and-egg question, an electron lasing
 through an undulator, a coffee brewing, a cat after a laser dot, a scan
@@ -289,7 +359,8 @@ If [glow](https://github.com/charmbracelet/glow) is installed (on the
 SwissFEL consoles it is, as `/sf/daq/bin/glow`), a finished answer is shown
 rendered: headings, bold, lists and highlighted code instead of Markdown
 symbols. While the model writes, the wait display shows the last lines of
-the answer; when it is complete, the whole answer is printed rendered. In `~/.eco/ei.json`, `"render": "plain"` switches this off, and
+the answer; when it is complete, the whole answer is printed rendered. In
+`~/.eco/ei.json`, `"render": "plain"` switches this off, and
 `"glow_style": "light"` suits a terminal with a light background; the
 default, `"auto"`, picks light or dark from `$COLORFGBG` and otherwise dark.
 
@@ -328,16 +399,24 @@ A search without a model works with `-b` too: `%ei -s tapedrive` and then
 neighbours.
 ```
 
+## In eco desktop
+
+The **Ask** menu opens the same assistant as a panel (Ctrl+Shift+A), with a
+model choice and a **Search only** switch. **To Console** puts the answer's
+code at the console prompt, without running it. The menu also updates the
+index, updates SciLog (the last choice of logbooks, else Bernina's) and
+indexes a notes folder.
+
 ## All options
 
 | Command | Does |
 |---|---|
 | `%ei QUESTION` | Ask (a follow-up to the previous question). |
 | `%%ei` | Ask a question longer than one line. |
-| `%ei -n QUESTION` | Start a new conversation. |
-| `%ei -b [QUESTION]` | Ask and show the answer in the browser, with each SciLog source between its neighbouring posts; without a question, the last answer or listing. |
-| `%ei -s WORDS` | Show only the matching history, docs and API entries, without asking the model. |
-| `%ei -m MODEL [QUESTION]` | Switch the model (kept for the session). |
+| `%ei -n QUESTION`, `--new` | Start a new conversation. |
+| `%ei -b [QUESTION]`, `--browser` | Ask and show the answer in the browser, with each SciLog source between its neighbouring posts; without a question, the last answer or listing. |
+| `%ei -s WORDS`, `--search` | Only search, without the model: the matching docs, API, command history, logbook entries and notes. |
+| `%ei -m MODEL [QUESTION]`, `--model` | Switch the model (kept for the session). |
 | `%ei --paste` | Put the last answer's code at the next prompt. |
 | `%ei --open N` | Source N of the last answer (or listing) in its context. |
 | `%ei --bad TEXT` | Commands containing TEXT that gave warnings or errors, worst first. |
@@ -356,80 +435,9 @@ neighbours.
 | `%ei --webcam` | Add notes from webcam pictures (needs the model). |
 | `%ei --key` | Look for the API key again, after adding one. |
 | `%ei --models` | Models the server offers. |
+| `%ei --config` | Print the settings, `~/.eco/ei.json` merged with the defaults. |
+| `%ei -h`, `--help` | The full list, with examples. |
 | `%ei` | Model, where the API key came from, and the options. |
 
 From Python: `eco.ei.ask("...")`.
 
-## In eco desktop
-
-The **Ask** menu opens the same assistant as a panel (Ctrl+Shift+A), with a
-model choice and a **Search only** switch. **To Console** puts the answer's
-code at the console prompt, without running it. The menu also updates the
-index, updates SciLog (the last choice of logbooks, else Bernina's) and
-indexes a notes folder.
-
-## Model and API key
-
-The default is Qwen3.8-27B on PSI's `ai.psi.ch`, an OpenAI-compatible
-service. `openai/gpt-oss-120b` is faster, but in tests it wrote longer
-answers and was more inclined to guess names. The settings are in
-`~/.eco/ei.json`, which is written with the defaults on first use.
-
-You need your own API key from <https://ai.psi.ch> (Settings → Account).
-eco looks for it in this order:
-
-1. the environment variable `ECO_EI_API_KEY`;
-2. the file `~/.eco/ei_api_key`, which should be readable only by you:
-   `(umask 077; echo sk-... > ~/.eco/ei_api_key)`;
-3. the gopass entry `ai/psi-api-key`;
-4. the key the VS Code extension Continue uses for the same server
-   (`~/.continue/config.yaml`).
-
-## Without a key
-
-Not everyone has a key, so the model is optional. Without one, `%ei` still
-searches the docs, the API and the command history and lists what matches.
-It explains once how to add a key, and after that only notes "search only".
-
-The search needs the index, and building it the first time takes a while:
-about 1.5 minutes for the docs, the source and the command history on a
-console, plus about 20 s for SciLog and 30 s for the machine's elog. So when
-the answer will be a search and that first indexing is still to do, `%ei`
-first shows how to search and asks:
-
-```text
-eco.ei: without the model, %ei is a search, e.g.
-  %ei attenuator transmission          the best matches in the docs, eco's source, the
-                                       command history and the logbooks, numbered, with
-                                       where each one is
-  %ei --open 2                         match [2] in its context (the commands around it,
-                                       the neighbouring logbook entries, the docs section)
-  %ei what happened since yesterday?   the logbook entries of that time span, in order
-  %ei --bad att                        commands like `att...` that gave warnings or errors
-  %ei -s ...                           search only, also once there is a key
-eco.ei: build the search index now (docs, eco source and command history ~90 s)? [Y/n]
-```
-
-Enter builds it, and the search syntax stays on screen while it does. `n`
-skips it for the session; `%ei --index` builds it whenever you like. It asks
-only in a terminal; eco desktop's Ask panel indexes as before. With a key,
-nothing is asked.
-In eco desktop, the Ask panel switches to **Search only** by itself. After
-adding a key, `%ei --key` picks it up without restarting.
-
-`ECO_NO_EI=1` switches the feature off completely: no `%ei` magic and no
-**Ask** menu.
-
-**What leaves the machine:** your question, the matching history, docs and
-log excerpts (SciLog posts and elog entries included), and the list of namespace names go to the model server. The
-server is PSI's own, but think before indexing notes you would not paste
-into it yourself.
-
-```{admonition} Did you know?
-:class: tip
-
-`%ei what happened to the machine since yesterday?` goes through the
-machine's elog entries of that span, in order, each linked to its entry.
-And now and then something other than the spinner keeps you company while
-the model thinks.
-```
