@@ -1,5 +1,4 @@
 import weakref
-from eco.acquisition.counters import CounterValue
 # from eco.acquisition import scan
 
 # from lazy_object_proxy import Proxy as LazyProxy
@@ -9,6 +8,9 @@ def scannable(Obj):
     @property
     def scans(self):
         from eco.acquisition import scan  # moved import here to avoid circular import
+        # deferred: counters pulls in escape and matplotlib, seconds on NFS,
+        # and every EPICS detector class is decorated with @scannable
+        from eco.acquisition.counters import CounterValue
         if hasattr(self, "_counter"):
             if not hasattr(self, "_old_counters"):
                 self._old_counters = []

@@ -32,6 +32,10 @@ is just the dumb valve/gauge group for one channel.
    :meth:`PrepumpSystem.vent` for where it would plug in once it does.
 """
 
+import contextlib
+import os
+import socket
+import getpass
 import time
 
 from eco import Assembly
@@ -196,6 +200,28 @@ class PrepumpLine(Assembly):
         return out
 
 
+def _valve(line, role):
+    """A channel's valve, or None for a channel without one (e.g. a line
+    whose valves are not cabled yet and only has a gauge)."""
+    return getattr(line, role, None)
+
+
+def _close_now(valve, timeout=0.4):
+    """Close `valve` and wait (briefly) until the request is written -- for
+    abort paths, where the process may exit right after: caQtDM's process
+    window sends SIGTERM and kills 500 ms later."""
+    try:
+        valve.close().wait(timeout=timeout)
+    except Exception as e:
+        print(f"[prepump] could not confirm closing {getattr(valve, 'name', valve)}: {e}")
+
+
+def _close_if_present(line, role):
+    valve = _valve(line, role)
+    if valve is not None:
+        valve.close()
+
+
 class PrepumpSystem(Assembly):
     """The whole Bernina prepump system: one Roots pump, the common pump-line
     gauge ``Gp``, and any number of :class:`PrepumpLine` channels.
@@ -223,11 +249,20 @@ class PrepumpSystem(Assembly):
         Pressure [mbar] at/above which a channel counts as "vented" (close
         enough to atmosphere -- tune to what the channel's own gauge can
         actually read up to).
+    lock_file : str or None
+        Shared file locked (``flock``) for the whole duration of
+        :meth:`pump_down`/:meth:`vent`, so that two sequences never run at
+        the same time -- also not from two processes, e.g. an eco session
+        and the caQtDM panel's buttons (see :mod:`.prepump_cli`), or two
+        consoles (NFS turns ``flock`` into a cross-host lock). It holds who
+        runs what, for the "busy" message. ``None``: no locking.
     """
 
     def __init__(self, name=None, gp=None, roots_pump=None, lines=None,
-                 p_target=P_TARGET, p_vent_target=P_VENT_TARGET, vent_line_name="GN2"):
+                 p_target=P_TARGET, p_vent_target=P_VENT_TARGET, vent_line_name="GN2",
+                 lock_file=None):
         super().__init__(name=name)
+        self.lock_file = lock_file
         self.p_target = p_target
         self.p_vent_target = p_vent_target
         self.vent_line_name = vent_line_name
@@ -292,6 +327,77 @@ class PrepumpSystem(Assembly):
         return self._get_line(line).state()
 
     # ---- procedures ------------------------------------------------------
+    @contextlib.contextmanager
+    def _exclusive(self, what):
+        """Hold :attr:`lock_file` while `what` runs; raise ``RuntimeError``
+        naming the holder if another sequence already runs."""
+        if not self.lock_file:
+            yield
+            return
+        import fcntl
+
+        # flock needs no write access: an account that may read but not
+        # write the lock file still locks, it just can't record who it is.
+        writable = True
+        try:
+            fd = os.open(self.lock_file, os.O_RDWR | os.O_CREAT, 0o664)
+        except OSError:
+            writable = False
+            try:
+                fd = os.open(self.lock_file, os.O_RDONLY)
+            except OSError as e:
+                print(f"[prepump] WARNING: cannot use lock file {self.lock_file} ({e}) --"
+                      f" running {what} without protection against a parallel sequence")
+                yield
+                return
+        try:
+            if writable:
+                try:
+                    from eco.utilities.datafiles import ensure_group_writable
+
+                    ensure_group_writable(self.lock_file, warn=False)
+                except Exception:
+                    pass
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                holder = os.pread(fd, 400, 0).decode(errors="replace").strip()
+                raise RuntimeError(
+                    f"prepump busy, not starting {what}: another sequence is running"
+                    f" ({holder or 'holder unknown'})"
+                ) from None
+            info = (f"{what} by {getpass.getuser()}@{socket.gethostname()}"
+                    f" pid {os.getpid()} since {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            if writable:
+                os.ftruncate(fd, 0)
+                os.pwrite(fd, info.encode(), 0)
+            try:
+                yield
+            finally:
+                if writable:
+                    os.ftruncate(fd, 0)
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+    def running(self):
+        """Who currently runs a pump-down/vent sequence (from any process,
+        see :attr:`lock_file`), or ``None``."""
+        if not self.lock_file or not os.path.exists(self.lock_file):
+            return None
+        import fcntl
+
+        fd = os.open(self.lock_file, os.O_RDONLY)
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except OSError:
+                return os.pread(fd, 400, 0).decode(errors="replace").strip() or "unknown"
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return None
+        finally:
+            os.close(fd)
+
     def pump_down(self, line, timeout=700.0, poll=1.0):
         """Pump down one channel.
 
@@ -306,43 +412,60 @@ class PrepumpSystem(Assembly):
         closed), only one that was ``"pumped"``/``"pumping"`` gets its pump
         valve reopened. Returns ``True`` on success, ``False`` if `timeout`
         elapses first.
+
+        Interrupted (Ctrl-C, or the panel's process window closed), it closes
+        this channel's pump valve again and restores the others, as on a
+        timeout, then re-raises.
         """
         line = self._get_line(line)
+        self._require_valves(line, "pump_down")
+        with self._exclusive(f"pump_down('{line.name}')"):
+            return self._pump_down(line, timeout, poll)
+
+    def _pump_down(self, line, timeout, poll):
         others = [l for l in self.lines if l is not line]
         was_pumped = {other.name: self.line_state(other) in ("pumped", "pumping") for other in others}
 
         self._activity = f"pump_down('{line.name}'): isolating other channels"
         print(f"[prepump] pump down '{line.name}': isolating other channels "
               f"({', '.join(f'{o.name}={self.line_state(o)}' for o in others)})")
-        for other in others:
-            other.valve_prevac.close()
-
-        line.valve_vent.close()
-        time.sleep(1)  # let the vent valve actually close before opening the pump valve
-        line.valve_prevac.open()
 
         def restore_others():
             for other in others:
-                if was_pumped[other.name]:
+                if was_pumped[other.name] and _valve(other, "valve_prevac") is not None:
                     other.valve_prevac.open()
                 else:
                     print(f"[prepump] '{other.name}' was not pumped/connected before -- leaving it as is")
 
-        t0 = time.time()
-        # Gp against the system threshold, the channel's gauge against its
-        # own (a channel may override it, see PrepumpLine.p_target).
-        while not (self._is_pumped(self.gp_pressure()) and line.is_pumped()):
-            if time.time() - t0 > timeout:
-                self._activity = (f"pump_down('{line.name}') FAILED after {timeout:.0f}s "
-                                   f"(Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())})")
-                print(f"[prepump] '{line.name}' pump down FAILED after {timeout}s "
-                      f"(Gp={self.gp_pressure()}, G={line.pressure()}) -- isolating")
-                line.valve_prevac.close()
-                restore_others()
-                return False
-            self._activity = (f"pump_down('{line.name}') running: "
-                               f"Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())}")
-            time.sleep(poll)
+        try:
+            for other in others:
+                _close_if_present(other, "valve_prevac")
+
+            line.valve_vent.close()
+            time.sleep(1)  # let the vent valve actually close before opening the pump valve
+            line.valve_prevac.open()
+
+            t0 = time.time()
+            # Gp against the system threshold, the channel's gauge against its
+            # own (a channel may override it, see PrepumpLine.p_target).
+            while not (self._is_pumped(self.gp_pressure()) and line.is_pumped()):
+                if time.time() - t0 > timeout:
+                    self._activity = (f"pump_down('{line.name}') FAILED after {timeout:.0f}s "
+                                       f"(Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())})")
+                    print(f"[prepump] '{line.name}' pump down FAILED after {timeout}s "
+                          f"(Gp={self.gp_pressure()}, G={line.pressure()}) -- isolating")
+                    line.valve_prevac.close()
+                    restore_others()
+                    return False
+                self._activity = (f"pump_down('{line.name}') running: "
+                                   f"Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())}")
+                time.sleep(poll)
+        except BaseException:
+            self._activity = f"pump_down('{line.name}') ABORTED"
+            print(f"[prepump] '{line.name}' pump down ABORTED -- closing its pump valve")
+            _close_now(line.valve_prevac)
+            restore_others()
+            raise
 
         self._activity = (f"pump_down('{line.name}') succeeded "
                            f"(Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())})")
@@ -364,35 +487,57 @@ class PrepumpSystem(Assembly):
         # flow first, then throttle down as the channel nears atmosphere
         # (see the spec's "low overpressure, limited flow" GN2 vent line);
         # for now the vent valve is simply open, then closed.
+
+        Interrupted, it closes the vent valve again, then re-raises.
         """
         line = self._get_line(line)
+        self._require_valves(line, "vent")
+        with self._exclusive(f"vent('{line.name}')"):
+            return self._vent(line, timeout, poll)
+
+    def _vent(self, line, timeout, poll):
         others = [l for l in self.lines if l is not line]
 
         self._activity = f"vent('{line.name}'): closing other channels' vent valves"
         print(f"[prepump] venting '{line.name}': making sure other channels' vent valves are closed "
               f"({', '.join(f'{o.name}={self.line_state(o)}' for o in others)})")
         for other in others:
-            other.valve_vent.close()
+            _close_if_present(other, "valve_vent")
 
-        line.valve_prevac.close()
-        time.sleep(1)  # let the pump valve actually close before opening the vent valve
-        line.valve_vent.open()
+        try:
+            line.valve_prevac.close()
+            time.sleep(1)  # let the pump valve actually close before opening the vent valve
+            line.valve_vent.open()
 
-        t0 = time.time()
-        while not line.is_vented():
-            if time.time() - t0 > timeout:
-                self._activity = f"vent('{line.name}') FAILED after {timeout:.0f}s (G={_fmt_pressure(line.pressure())})"
-                print(f"[prepump] '{line.name}' venting FAILED after {timeout}s (G={line.pressure()})")
-                line.valve_vent.close()
-                return False
-            self._activity = f"vent('{line.name}') running: G={_fmt_pressure(line.pressure())}"
-            time.sleep(poll)
-        print(f"[prepump] '{line.name}' vented (G={line.pressure()}) -- waiting 60s for the channel to stabilize")
-        time.sleep(60)
+            t0 = time.time()
+            while not line.is_vented():
+                if time.time() - t0 > timeout:
+                    self._activity = f"vent('{line.name}') FAILED after {timeout:.0f}s (G={_fmt_pressure(line.pressure())})"
+                    print(f"[prepump] '{line.name}' venting FAILED after {timeout}s (G={line.pressure()})")
+                    line.valve_vent.close()
+                    return False
+                self._activity = f"vent('{line.name}') running: G={_fmt_pressure(line.pressure())}"
+                time.sleep(poll)
+            print(f"[prepump] '{line.name}' vented (G={line.pressure()}) -- waiting 60s for the channel to stabilize")
+            time.sleep(60)
+        except BaseException:
+            self._activity = f"vent('{line.name}') ABORTED"
+            print(f"[prepump] '{line.name}' venting ABORTED -- closing its vent valve")
+            _close_now(line.valve_vent)
+            raise
         self._activity = f"vent('{line.name}') succeeded (G={_fmt_pressure(line.pressure())})"
         print(f"[prepump] '{line.name}' vented (G={line.pressure()})")
         line.valve_vent.close()
         return True
+
+    @staticmethod
+    def _require_valves(line, method_name):
+        missing = [r for r in ("valve_prevac", "valve_vent") if _valve(line, r) is None]
+        if missing:
+            raise RuntimeError(
+                f"'{line.name}' has no {' / '.join(missing)} configured, so "
+                f"{method_name}() can't run on it (gauge-only channel?)."
+            )
 
     def isolate_all(self):
         """Safe state: close every channel off from pump and vent lines."""
@@ -768,25 +913,52 @@ def make_prepump_system(config, name="prepump"):
         lines=cfg.get("lines", {}),
         p_target=cfg.get("p_target", P_TARGET),
         p_vent_target=cfg.get("p_vent_target", P_VENT_TARGET),
+        lock_file=cfg.get("lock_file"),
     )
 
 
 # --------------------------------------------------------------------------
-# Bernina concrete config -- PV NAMES ARE PLACEHOLDERS, FILL THESE IN.
-# Edit this dict as a whole (here or copied into eco/bernina/bernina.py) and
-# hand it to make_prepump_system().
+# Bernina concrete config -- the single place these PVs are written down.
+# Used by the namespace (eco/bernina/bernina_vacuum.py, as `prepump`) and by
+# the caQtDM panel's buttons (prepump_cli.py), which import only this module.
+# Accesses as listed by the vacuum group (Alex, 2026-10-30). Not all of them
+# are on the VCS panel; access 5's valves are not connected yet.
 # --------------------------------------------------------------------------
 BERNINA_PREPUMP_CONFIG = {
-    "gp": None,          # common prevac-line gauge Gp base
-    "roots_pump": None,  # Roots pump base
-    "p_target": P_TARGET,          # "pumped" threshold [mbar]
+    "gp": "SARES21-VMCP142-620",  # common prevac-line gauge Gp base
+    "roots_pump": "SARES21-VPFO140-750",  # Roots pump base
+    "p_target": P_TARGET,  # "pumped" threshold [mbar]
     "p_vent_target": P_VENT_TARGET,  # "vented" threshold [mbar]
+    # one sequence at a time, across eco sessions, panel buttons and consoles
+    "lock_file": "/sf/bernina/code/gac-bernina/eco_cnf_bernina/prepump.lock",
     "lines": {
-        "line1": {"gauge": None, "valve_prevac": None, "valve_vent": None},
-        "line2": {"gauge": None, "valve_prevac": None, "valve_vent": None},
-        # further channels, not yet cabled:
-        # "line3": {"gauge": None, "valve_prevac": None, "valve_vent": None},
-        # "line4": {"gauge": None, "valve_prevac": None, "valve_vent": None},
+        "line1_usd": {
+            "gauge": "SARES21-VMCP140-600",  # G1 gauge base
+            "valve_prevac": "SARES21-VVPP140-300",  # P1 roughing valve
+            "valve_vent": "SARES21-VVPP142-340",  # V1 vent valve
+        },
+        "line2_lic": {
+            "gauge": "SARES21-VMCP141-610",  # G2 gauge base
+            "valve_prevac": "SARES21-VVPP141-320",  # P2 roughing valve
+            "valve_vent": "SARES21-VVPP142-370",  # V2 vent valve
+        },
+        "line3": {
+            "gauge": "SARES21-VMCP142-570",  # G3 gauge base
+            "valve_prevac": "SARES21-VVPG142-330",  # P3 roughing valve
+            "valve_vent": "SARES21-VVPG143-350",  # V3 vent valve
+        },
+        "line4": {
+            # the vacuum group's list says SAROP21-VMCP142-630; that PV does
+            # not exist, SARES21-VMCP142-630 does (checked 2026-11-06)
+            "gauge": "SARES21-VMCP142-630",  # G4 gauge base
+            "valve_prevac": "SARES21-VVPG142-360",  # P4 roughing valve
+            "valve_vent": "SARES21-VVPG142-280",  # V4 vent valve
+        },
+        "line5_kf16": {  # KF16, differential pumping
+            "gauge": "SARES21-VMCP142-640",  # G5 gauge base (same note as line4)
+            "valve_prevac": None,  # not connected yet
+            "valve_vent": None,  # not connected yet
+        },
     },
 }
 
@@ -794,10 +966,7 @@ BERNINA_PREPUMP_CONFIG = {
 def make_bernina_prepump_system(name="prepump"):
     """Build the Bernina prepump system from :data:`BERNINA_PREPUMP_CONFIG`.
 
-    All PVs there are ``None`` placeholders: fill them in (in the dict above, or
-    in a copy of it in ``bernina.py``) then this returns a ready
-    :class:`PrepumpSystem`. A channel whose PVs are still ``None`` instantiates
-    with its components simply absent, so the object is usable for
-    wiring/UI work before the PVs exist.
+    A channel whose PVs are ``None`` instantiates with those components
+    simply absent (e.g. access 5's valves, not connected yet).
     """
     return make_prepump_system(BERNINA_PREPUMP_CONFIG, name=name)

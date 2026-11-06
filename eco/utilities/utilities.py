@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 from eco.aliases.aliases import Alias
 import numpy as np
-import matplotlib.pyplot as plt
 from numbers import Number
 
 import inspect
@@ -201,6 +200,8 @@ def linlog_intervals(*args, verbose=True, plot=False):
     Returns:
         numpy ndarray: 1D array of intervals.
     """
+    if plot:
+        import matplotlib.pyplot as plt  # deferred: pyplot costs seconds on NFS
     limits = []
     idefs = []
     last_lim = False

@@ -21,49 +21,14 @@ namespace.mark_beamline(
 )
 
 # Consolidated prepump/venting system (see eco.devices_general.vacuum.prepump
-# for the model + spec this implements). One structured config dict holds
-# every channel's valve/gauge PV names, so the whole system can be edited
-# here as a single literal. A channel with all-None PVs still builds (just
-# empty). Lazy, so nothing here touches EPICS until `prepump` is accessed.
-# Turbo pumps are not modelled here -- they're served by the prepump system
-# but not part of it (see the module docstring).
-_prepump_config = {
-    "gp": "SARES21-VMCP142-620",  # common prevac-line gauge Gp base
-    "roots_pump": "SARES21-VPFO140-750",  # Roots pump base
-    "p_target": 0.5,  # "pumped" threshold [mbar]
-    "p_vent_target": 1000.0,  # "vented" threshold [mbar]
-    "lines": {
-        "line1_usd": {
-            "gauge": "SARES21-VMCP140-600",  # G1 gauge base
-            "valve_prevac": "SARES21-VVPP140-300",  # P1 roughing valve
-            "valve_vent": "SARES21-VVPP142-340",  # V1 vent valve
-        },
-        "line2_lic": {
-            "gauge": "SARES21-VMCP141-610",  # G2 gauge base
-            "valve_prevac": "SARES21-VVPP141-320",  # P2 roughing valve
-            "valve_vent": "SARES21-VVPP142-370",  # V2 vent valve
-        },
-        # channels 3-4: valve PVs noted from commissioning, gauges not yet
-        # assigned -- fill in the TODOs below, then uncomment.
-        "line3": {
-            "gauge": "SARES21-VMCP142-570",  # TODO: G3 gauge base
-            "valve_prevac": "SARES21-VVPG142-330",  # TODO: was noted as "...142-330"
-            "valve_vent": "SARES21-VVPG143-350",    # TODO: was noted as "...143-350"
-        },
-        "line4": {
-            # "gauge": SARES21-VVPG142-360 ,  # TODO: G4 gauge base
-            "valve_prevac": "SARES21-VVPG142-360",  # TODO: not yet noted
-            "valve_vent": "SARES21-VVPG142-280",    # TODO: was noted as "...142-340" -- looked
-        #                            # identical to line1_usd's, double check
-        },
-        # two more optional slots, not yet cabled:
-        # "line5": {"gauge": None, "valve_prevac": None, "valve_vent": None},
-        # "line6": {"gauge": None, "valve_prevac": None, "valve_vent": None},
-    },
-}
+# for the model + spec this implements). Its PVs live in one place,
+# BERNINA_PREPUMP_CONFIG in that module, shared with the caQtDM panel's
+# buttons (eco.devices_general.vacuum.prepump_cli), which import only that
+# module, not this namespace. Lazy, so nothing here touches EPICS until
+# `prepump` is accessed. Turbo pumps are not modelled here -- they're served
+# by the prepump system but not part of it (see the module docstring).
 namespace.append_obj(
-    "make_prepump_system",
-    _prepump_config,
+    "make_bernina_prepump_system",
     name="prepump",
     module_name="eco.devices_general.vacuum.prepump",
     lazy=True,

@@ -5,7 +5,6 @@ from pathlib import Path
 # from eco.elements.assembly import Assembly
 import json
 
-from pandas import DataFrame
 
 from eco.utilities.tables import format_table
 
@@ -874,6 +873,8 @@ def run_status_convenience(Obj):
             stat[runno] = dic
 
         if as_dataframe:
+            from pandas import DataFrame  # deferred: not needed to import eco
+
             return DataFrame.from_dict(stat)
 
         return stat

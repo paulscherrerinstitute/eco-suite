@@ -1,0 +1,38 @@
+#!/bin/bash
+# Run eco's prepump command line (eco/devices_general/vacuum/prepump_cli.py)
+# from the checkout this script lives in, in the Bernina Python environment,
+# without an eco session -- what the prepump buttons of the caQtDM vacuum
+# panel call. Examples:
+#   eco-prepump status
+#   eco-prepump pump_down 3
+#   eco-prepump vent line3
+#   eco-prepump abort
+#
+# Everything the process needs is set here, since a caQtDM button starts it
+# with whatever environment caQtDM itself was started with:
+#   * the bpy312 pixi environment is activated (as bpy-env does, without its
+#     banner), for PYEPICS_LIBCA and friends; the interpreter is still called
+#     by its full path, because the activation does not reliably reach PATH
+#     in a non-interactive shell;
+#   * PYTHONPATH puts this checkout first, ahead of the eco installed in the
+#     environment;
+#   * EPICS_CA_ADDR_LIST falls back to the SARESB gateways if unset.
+
+ECO_CHECKOUT="$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")"
+BPY_MANIFEST=/sf/bernina/applications/python/pixi.toml
+BPY_ENV=bpy312
+BPY_PYTHON=/sf/bernina/applications/python/.pixi/envs/${BPY_ENV}/bin/python
+
+PIXI=/usr/bin/pixi
+[ -x "$PIXI" ] || PIXI=/sf/bernina/bin/pixi
+if [ -x "$PIXI" ]; then
+    eval "$("$PIXI" shell-hook --as-is -e "$BPY_ENV" -s bash --manifest-path "$BPY_MANIFEST" 2>/dev/null)"
+fi
+
+export PYTHONPATH="${ECO_CHECKOUT}${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONUNBUFFERED=1
+if [ -z "$EPICS_CA_ADDR_LIST" ]; then
+    export EPICS_CA_ADDR_LIST="sf-saresb-cagw.psi.ch:5062 sf-saresb-cagw.psi.ch:5066"
+fi
+
+exec "$BPY_PYTHON" -m eco.devices_general.vacuum.prepump_cli "$@"
