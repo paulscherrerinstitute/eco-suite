@@ -1176,11 +1176,18 @@ def _print_answer(asst, question, **kwargs):
             print(text)
 
     streamed = []
+    # with glow the answer is shown once complete, rendered; meanwhile its
+    # last lines are a preview in the wait display
+    rendering = bool(waiting) and asst.config.get("render", "auto") == "auto" and glow_path() is not None
 
     def on_delta(piece):
+        streamed.append(piece)
+        if rendering and waiting:
+            waiting[0].label = f"{asst.model} is writing"
+            waiting[0].preview = "".join(streamed).rstrip().split("\n")[-PREVIEW_LINES:]
+            return
         if waiting:
             waiting.pop().stop()
-        streamed.append(piece)
         out.write(piece)
         out.flush()
 
@@ -1203,13 +1210,15 @@ def _print_answer(asst, question, **kwargs):
             if waiting:  # erased before anything else is printed
                 waiting.pop().stop()
     except KeyboardInterrupt:
+        if rendering and streamed:
+            print("".join(streamed))
         print("\neco.ei: interrupted")
         return None
     except Exception as exc:
         print(f"\neco.ei: {asst.model} at {asst.config['base_url']} failed: {type(exc).__name__}: {exc}")
         return None
     if ans.model:
-        rendered = _render_in_place(asst.config, out, "".join(streamed), ans.text)
+        rendered = _render(asst.config, out, ans.text) if rendering else False
         print(f"{'' if rendered else chr(10)}\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}")
         sources = source_list(ans, links=terminal_links())
         if sources:
@@ -1261,40 +1270,19 @@ def glow(text, width, config=None):
     return r.stdout if r.returncode == 0 and r.stdout.strip() else None
 
 
-def _rows(text, columns):
-    """Terminal rows `text` takes when printed from column 0."""
-    try:
-        from wcwidth import wcswidth
-    except ImportError:
-        wcswidth = len
-    rows = 0
-    for line in text.split("\n"):
-        width = max(wcswidth(line), 0) if wcswidth is not len else len(line)
-        rows += max(1, -(-width // columns))
-    return rows
+#: lines of the answer shown while it is being written (with glow)
+PREVIEW_LINES = 3
 
 
-def _render_in_place(config, out, streamed, text):
-    """Replace the streamed answer by glow's rendering of it; True if done.
-    Only in a terminal, with config "render" "auto" and glow found, and only
-    if the streamed text still fits on the screen (what scrolled away cannot
-    be erased)."""
+def _render(config, out, text):
+    """Print `text` rendered by glow; the plain text if glow fails. True if
+    rendered."""
     import shutil
 
-    from eco import ei_wait
-
-    if config.get("render", "auto") != "auto" or not streamed or not ei_wait.in_terminal(out):
-        return False
-    size = shutil.get_terminal_size()
-    rows = _rows(streamed, size.columns)
-    if rows >= size.lines - 1:
-        return False
-    rendered = glow(text, size.columns, config)
-    if rendered is None:
-        return False
-    out.write((f"\x1b[{rows - 1}A" if rows > 1 else "") + "\r\x1b[J" + rendered.rstrip("\n") + "\n")
+    rendered = glow(text, shutil.get_terminal_size().columns, config)
+    out.write(rendered.rstrip("\n") + "\n" if rendered else text)
     out.flush()
-    return True
+    return rendered is not None
 
 
 def _show_in_browser(asst):

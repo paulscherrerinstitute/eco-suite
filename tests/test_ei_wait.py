@@ -126,18 +126,29 @@ class _MarkdownBackend:
         return self.text
 
 
-def test_a_finished_answer_is_replaced_by_glows_rendering(tmp_path, monkeypatch):
+def test_with_glow_the_answer_is_previewed_then_rendered_whole(tmp_path, monkeypatch):
     import shutil
     import sys
 
     monkeypatch.setenv("TERM", "xterm-256color")
     monkeypatch.setattr(ew, "in_terminal", lambda out=None: isinstance(out, _Tty))
     monkeypatch.setattr(shutil, "get_terminal_size", lambda *a: shutil.os.terminal_size((80, 20)))
+    monkeypatch.setattr(ei, "glow_path", lambda: "/usr/bin/glow")
     monkeypatch.setattr(ei, "glow", lambda text, width, config=None: "  RENDERED\n  " + text.replace("**", "") + "\n\n")
+    previews = []
+    real = ew.Waiting._draw
+    monkeypatch.setattr(ew.Waiting, "_draw", lambda self, frame: previews.append(list(self.preview)) or real(self, frame))
 
-    def run(backend):
+    class Slow(_MarkdownBackend):
+        def chat(self, msgs, on_delta=None, stop=None):
+            for line in self.text.split("\n"):
+                on_delta(line + "\n")
+                time.sleep(0.03)
+            return self.text
+
+    def run(backend, render="auto"):
         a = _assistant(tmp_path, 0)
-        a.config["render"] = "auto"
+        a.config["render"] = render
         a._backend = backend
         tty = _Tty()
         monkeypatch.setattr(sys, "stdout", tty)
@@ -145,21 +156,13 @@ def test_a_finished_answer_is_replaced_by_glows_rendering(tmp_path, monkeypatch)
         ei._print_answer(a, "q")
         return _screen(tty.getvalue())
 
-    screen = run(_MarkdownBackend(3))
-    assert screen[:3] == ["In [1]: %ei q", "  RENDERED", "  line 0"]
+    screen = run(Slow(30))  # taller than the screen: rendered whole all the same
+    assert screen[:3] == ["In [1]: %ei q", "  RENDERED", "  line 0"] and "line 29" in screen
     assert not any("**" in line for line in screen) and any(line.startswith("-- ") for line in screen)
+    assert any(p and p[-1].startswith("**line") for p in previews) and max(map(len, previews)) <= ei.PREVIEW_LINES
 
-    screen = run(_MarkdownBackend(30))  # taller than the screen: left as streamed
+    screen = run(_MarkdownBackend(3), render="plain")  # streamed as it comes
     assert screen[1] == "**line 0**" and "  RENDERED" not in screen
-
-    # "plain" switches it off
-    a = _assistant(tmp_path, 0)
-    a.config["render"] = "plain"
-    a._backend = _MarkdownBackend(3)
-    tty = _Tty()
-    monkeypatch.setattr(sys, "stdout", tty)
-    ei._print_answer(a, "q")
-    assert "RENDERED" not in tty.getvalue()
 
 
 def test_glow_renders_when_it_is_there():

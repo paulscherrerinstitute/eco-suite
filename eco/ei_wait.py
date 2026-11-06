@@ -147,6 +147,7 @@ class Waiting:
         self.animation = animation
         self.tips = tips
         self._tips = None
+        self.preview = []  # lines shown under the status, e.g. the answer being written
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._height = 0  # lines of the frame on screen
@@ -171,7 +172,8 @@ class Waiting:
             elapsed = time.time() - self._t0
             art = frames[int(elapsed / delay) % len(frames)] if self.animation else ""
             lines = (art.split("\n") if art else []) + [f"{SPINNER[i % len(SPINNER)]} {self.label} {elapsed:.0f} s"]
-            lines += self._tip_lines(int(elapsed / self.TIP_S))
+            preview = list(self.preview)
+            lines += [f"  | {line}" for line in preview] if preview else self._tip_lines(int(elapsed / self.TIP_S))
             # a wrapped line could not be erased: cut every line to the width
             columns = shutil.get_terminal_size().columns - 1
             yield "\n".join(line[:columns] for line in lines), tick

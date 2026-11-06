@@ -253,10 +253,8 @@ and output that is not a terminal get neither.
 If [glow](https://github.com/charmbracelet/glow) is installed (on the
 SwissFEL consoles it is, as `/sf/daq/bin/glow`), a finished answer is shown
 rendered: headings, bold, lists and highlighted code instead of Markdown
-symbols. The answer streams in as plain text while the model writes it, and
-when it is complete glow's rendering replaces it. An answer taller than the
-terminal stays as it streamed, since what has scrolled away cannot be
-replaced. In `~/.eco/ei.json`, `"render": "plain"` switches this off, and
+symbols. While the model writes, the wait display shows the last lines of
+the answer; when it is complete, the whole answer is printed rendered. In `~/.eco/ei.json`, `"render": "plain"` switches this off, and
 `"glow_style": "light"` suits a terminal with a light background; the
 default, `"auto"`, picks light or dark from `$COLORFGBG` and otherwise dark.
 
