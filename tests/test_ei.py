@@ -221,6 +221,7 @@ def _config():
     cfg["reindex_interval"] = 1e9  # the test index is built by hand
     cfg["scilog_default"] = None  # no network
     cfg["elog_logbooks"] = None
+    cfg["check_code"] = False  # tests/test_ei_check.py
     return cfg
 
 

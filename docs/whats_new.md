@@ -54,6 +54,9 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   first index unasked: it says that its answers will be a search, shows the
   search syntax and asks once whether to index now. `%ei --index` builds it
   later ({doc}`ask_eco`).
+- `%ei` checks the code in its answers against eco's source and the
+  session (attributes, keywords, imports), has the model correct it once,
+  and marks what still does not fit as **Not verified** ({doc}`ask_eco`).
 - `%ei` shows its wait display from the moment you ask, naming the step
   (updating the index, searching, asking the model). An animation now comes
   with 40 % of the questions instead of 25 %.

@@ -196,6 +196,11 @@ Rules:
 users actually ran (marked ok / WARNING / FAILED with what came back), \
 logbook posts and notes. Prefer commands that worked. If the relevant \
 commands often gave warnings or failed, say so and quote the message.
+- Logbook posts and old commands may show code from older versions of eco. \
+Use only functions, methods, keywords and components that the [api ...] \
+items, the docs or the Namespace show today; where a logbook's code differs \
+from the API, follow the API. Your code is checked against eco's source \
+after you answer.
 - Never invent device names, attributes, PVs or functions. Use names from the \
 Namespace list and the context. If the context does not answer the question, \
 say so plainly and say what to look at (e.g. `dev.get_tree()`, `help(...)`).
@@ -529,6 +534,10 @@ class Answer:
     hits: list = field(default_factory=list)
     model: str = ""
     seconds: float = 0.0
+    #: what the code check found: [] all fine, None not checked (no code)
+    problems: list = None
+    #: the model rewrote its code after the check
+    revised: bool = False
 
     @property
     def code(self):
@@ -602,6 +611,8 @@ class Assistant:
         self._scilog_failed = False
         self._elog_failed = False
         self._index_lock = threading.Lock()
+        self.user_ns = None  # the session's names, for the code check (set by %ei)
+        self._symbols = None
 
     # model ---------------------------------------------------------------
 
@@ -811,7 +822,54 @@ class Assistant:
                 report(f"eco.ei: index has {result['items']} items ({result['files_indexed']} files updated, {time.time() - t0:.1f} s)")
             self._refresh_scilog(report, first_time=first_time)
             self._refresh_elog(report, first_time=first_time)
+            self._symbols = None  # the source may have changed: re-read changed files
             return result
+
+    # the code check ----------------------------------------------------------
+
+    def symbols(self):
+        """eco's (and the configured packages') classes and functions, for
+        the code check; cached per file."""
+        from eco import ei_check
+
+        if self._symbols is None:
+            self._symbols = ei_check.build(
+                ei_check.source_dirs(self.index_sources()), cache_path=Path(self.db_path).with_name(ei_check.SYMBOLS_NAME)
+            )
+        return self._symbols
+
+    def check_code(self, text):
+        """[ei_check.Problem] of the Python blocks in `text`; None if it has
+        none (or the check is switched off: config "check_code")."""
+        from eco import ei_check
+
+        if not self.config.get("check_code", True) or not _CODE_RX.search(text):
+            return None
+        try:
+            return ei_check.check_answer(text, self.symbols(), self.namespace.entries(), self.user_ns)
+        except Exception:
+            return None  # a check that fails must not cost the answer
+
+    def _revision_request(self, problems):
+        """The follow-up asking the model to correct its code, with the API
+        items of the names that did not fit."""
+        names = set()
+        for p in problems:
+            names.update(re.findall(r"[A-Za-z_]\w+", p.code)[-1:])
+            names.update(re.findall(r"did you mean ([\w, .]+)\?", p.message)[:1])
+        context = []
+        for name in sorted(names):
+            for hit in logs_ask.search(name.split(",")[0].strip(), k=3, db_path=self.db_path, kinds=("api",)):
+                if hit.text not in context:
+                    context.append(hit.text)
+        return (
+            "Your code was checked against eco's source code and the session (it was not run). "
+            "These lines do not fit eco as it is today:\n"
+            + "\n".join(f"- {p}" for p in problems)
+            + ("\n\nThe relevant API:\n" + "\n".join(context[:12]) if context else "")
+            + "\n\nWrite the answer again with code that uses only what exists. If something cannot be "
+            "done with the existing API, say so instead of guessing. Keep the same format."
+        )
 
     def rebuild_index(self, report=print):
         """The index from scratch: removed, then built again with SciLog and
@@ -1000,10 +1058,15 @@ class Assistant:
         return msgs
 
     def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print, on_waiting=None,
-            confirm=None, on_phase=None):
+            confirm=None, on_phase=None, on_revise=None):
         """Answer `question`. on_delta(text) receives the answer as it
         streams; on_waiting() is called just before the model is asked,
         on_phase(what) as each step starts ("updating the index", ...).
+        The answer's code is checked against eco (check_code); if something
+        does not fit, the model is asked once to correct it --
+        on_revise(problems) then announces the corrected version (default:
+        a separator through on_delta) -- and what still does not fit is
+        noted at the end of the answer.
         search_only (or no API key): the search hits, no model.
 
         When the answer will be a search and the first, long indexing is
@@ -1058,8 +1121,27 @@ class Assistant:
         if on_waiting:
             on_waiting()
         text = backend.chat(msgs, on_delta=on_delta, stop=stop)
+        problems, revised = self.check_code(text), False
+        if problems and self.config.get("revise_code", True) and not (stop is not None and stop.is_set()):
+            if on_phase:
+                on_phase(f"checking the code: {len(problems)} problem(s), {self.model} corrects it")
+            if on_revise:
+                on_revise(problems)
+            elif on_delta:
+                on_delta("\n\n---\n*Corrected after checking the code against eco:*\n\n")
+            revision = msgs + [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": self._revision_request(problems)},
+            ]
+            text = backend.chat(revision, on_delta=on_delta, stop=stop)
+            problems, revised = self.check_code(text), True
+        if problems:
+            note = unverified_note(problems)
+            if on_delta:
+                on_delta(note)
+            text += note
         self.history.append((question, text))
-        self.last = self.shown = Answer(question, text, hits, self.model, time.time() - t0)
+        self.last = self.shown = Answer(question, text, hits, self.model, time.time() - t0, problems, revised)
         return self.last
 
     def reset(self):
@@ -1083,6 +1165,15 @@ def _listing(hits, links=False):
     if lines:
         lines.append("-- `%ei --open N` shows one of them in its context")
     return "\n".join(lines)
+
+
+def unverified_note(problems):
+    """What an answer gets appended when its code still does not fit eco."""
+    lines = "\n".join(f"> - {p}" for p in problems[:8])
+    return (
+        "\n\n> **Not verified:** this code does not fully match eco's source as it is now:\n"
+        f"{lines}\n> Check with `help(...)` or `dev.get_tree()` before running it."
+    )
 
 
 def source_list(ans, markdown=False, links=False):
@@ -1207,6 +1298,14 @@ def _print_answer(asst, question, **kwargs):
                 return False
         return reply.strip().lower() not in ("n", "no")
 
+    def on_revise(problems):
+        # with glow nothing was printed yet: the corrected answer replaces it
+        streamed.clear()
+        if waiting:
+            waiting[0].preview = []
+
+    if rendering:
+        kwargs.setdefault("on_revise", on_revise)
     if ei_wait.in_terminal(out) and sys.stdin.isatty():
         kwargs.setdefault("confirm", confirm)
     kwargs.setdefault("report", report)
@@ -1226,7 +1325,10 @@ def _print_answer(asst, question, **kwargs):
         return None
     if ans.model:
         rendered = _render(asst.config, out, ans.text) if rendering else False
-        print(f"{'' if rendered else chr(10)}\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}")
+        checked = {None: "", True: "; code checked against eco", False: "; code NOT verified (see the note)"}[
+            None if ans.problems is None else not ans.problems
+        ] + (" after a correction" if ans.revised and not ans.problems else "")
+        print(f"{'' if rendered else chr(10)}\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}{checked}")
         sources = source_list(ans, links=terminal_links())
         if sources:
             print(sources)
@@ -1336,6 +1438,7 @@ def ei_magic(line, cell=None):
 
     shell = get_ipython()
     asst = assistant(_shell_namespace(shell))
+    asst.user_ns = getattr(shell, "user_ns", None)
     text = (line + ("\n" + cell if cell else "")).strip()
     try:
         args = shlex.split(text.split("\n")[0]) if text.startswith("-") else []

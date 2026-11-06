@@ -225,6 +225,41 @@ server's certificate gives, keeps it only if a root that certifi trusts
 signed it, and stores the completed bundle in `~/.eco/ca/`. Certificate
 checking stays on.
 
+## The code is checked against eco
+
+Logbook posts and old commands show code from older versions of eco, and
+the model sometimes takes it over. So every answer's code is read against
+eco as it is now, without running anything:
+
+- every attribute: does `mono.theta` have `home`? Does `mono` have
+  `thetaa`?
+- every keyword: does `scans.ascan` take `Npulses=`?
+- every `import` from eco, and whether the code is Python at all;
+- in a session, whether a device name exists.
+
+Objects the session has already built are looked at directly (without
+evaluating any property). Everything else is looked up in eco's source:
+each class's methods and their parameters, its attributes, the components
+it `_append`s with their classes. A lazy device is never built for this.
+Where eco builds something at run time, such as components named in a
+loop, nothing is claimed.
+
+If something does not fit, the model gets the list, with the real API of
+the names involved, and corrects its answer once; in a terminal with glow
+you only see the corrected answer. What still does not fit is listed at the
+end of the answer under **Not verified**. The last line says
+`code checked against eco` when everything fits. `"check_code": false` in
+`~/.eco/ei.json` switches the check off; `"revise_code": false` keeps the
+note but skips the correction.
+
+```{admonition} Did you know?
+:class: tip
+
+The check knows what class decorators add: `mv`, `umv` and `wm` on a
+motor come from `spec_convenience`, not from the class itself, and are
+still recognised.
+```
+
 ## Follow-up questions
 
 `%ei` keeps the conversation going, so a short follow-up works:
