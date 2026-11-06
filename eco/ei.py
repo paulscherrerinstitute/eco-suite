@@ -109,7 +109,7 @@ DEFAULT_CONFIG = {
     "max_tokens": 1500,
     # share of questions (0..1) that get a small animation instead of the
     # spinner while the model thinks (terminal only); 0: always the spinner
-    "wait_animations": 0.25,
+    "wait_animations": 0.4,
     # how a finished answer is shown in a terminal: "auto" renders it with
     # glow (https://github.com/charmbracelet/glow) when glow is found, "plain"
     # leaves the streamed text; "glow_style" "dark" or "light" ("auto": from
@@ -213,6 +213,11 @@ or starts an acquisition.
 # -- configuration ---------------------------------------------------------------
 
 
+#: values ~/.eco/ei.json got as defaults when it was written; they follow
+#: the current default instead of pinning the old one
+FORMER_DEFAULTS = {"wait_animations": (0.25,)}
+
+
 def load_config(path=None):
     """DEFAULT_CONFIG updated by ~/.eco/ei.json (created with the defaults
     on first use, so there is a file to edit)."""
@@ -225,6 +230,8 @@ def load_config(path=None):
             print(f"eco.ei: ignoring {path}: {exc}")
             user = {}
         for key, value in user.items():
+            if value in FORMER_DEFAULTS.get(key, ()):
+                continue  # written as the default then, never chosen: today's default applies
             if isinstance(value, dict) and isinstance(cfg.get(key), dict):
                 cfg[key].update(value)
             else:
@@ -1162,7 +1169,7 @@ def _print_answer(asst, question, **kwargs):
     waiting = []
     if ei_wait.in_terminal(out):
         animation = ei_wait.pick(asst.config.get("wait_animations", 0))
-        waiting.append(ei_wait.Waiting(out, label="getting ready", animation=animation, tips=True).start())
+        waiting.append(ei_wait.Waiting(out, label="getting ready", animation=animation).start())
 
     def paused():
         return waiting[0].paused() if waiting else contextlib.nullcontext()
@@ -1299,7 +1306,7 @@ def _show_in_browser(asst):
 
     waiting = None
     if ei_wait.in_terminal(sys.stdout):
-        waiting = ei_wait.Waiting(sys.stdout, label="making the page, with the SciLog posts it cites", tips=True).start()
+        waiting = ei_wait.Waiting(sys.stdout, label="making the page, with the SciLog posts it cites").start()
     try:
         path = ei_page.write(asst.shown, db_path=asst.db_path, report=None)
     except Exception as exc:

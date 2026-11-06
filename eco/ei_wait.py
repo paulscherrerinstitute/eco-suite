@@ -2,8 +2,7 @@
 
 A spinner with what %ei is doing ("updating the index", "searching",
 "asking <model>") and the seconds waited, from the moment the question is
-asked; below it a "Did you know?" tip, a new one every TIP_S seconds. Now
-and then (config "wait_animations", the share of questions) one of the
+asked. Now and then (config "wait_animations", the share of questions) one of the
 small animations below on top, picked at random and never the same twice
 in a row, so it stays a surprise. Drawn in place under the question and
 erased as soon as the answer starts, only in a real terminal; messages
@@ -14,7 +13,6 @@ import contextlib
 
 import math
 import random
-import re
 import sys
 import threading
 import time
@@ -138,15 +136,10 @@ class Waiting:
     stop(); stop() erases it. Thread-safe: stop() waits for a frame being
     drawn, so the answer never lands in the middle of one."""
 
-    #: seconds each tip is shown
-    TIP_S = 7
-
-    def __init__(self, out, label="", animation=None, tips=False):
+    def __init__(self, out, label="", animation=None):
         self.out = out
         self.label = label  # may be changed while it runs
         self.animation = animation
-        self.tips = tips
-        self._tips = None
         self.preview = []  # lines shown under the status, e.g. the answer being written
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -173,31 +166,11 @@ class Waiting:
             art = frames[int(elapsed / delay) % len(frames)] if self.animation else ""
             lines = (art.split("\n") if art else []) + [f"{SPINNER[i % len(SPINNER)]} {self.label} {elapsed:.0f} s"]
             preview = list(self.preview)
-            lines += [f"  | {line}" for line in preview] if preview else self._tip_lines(int(elapsed / self.TIP_S))
+            lines += [f"  | {line}" for line in preview]
             # a wrapped line could not be erased: cut every line to the width
             columns = shutil.get_terminal_size().columns - 1
             yield "\n".join(line[:columns] for line in lines), tick
             i += 1
-
-    def _tip_lines(self, n):
-        """Two lines of the n-th tip of a shuffled list: its title, and the
-        first line of its example (or of its text)."""
-        if not self.tips:
-            return []
-        if self._tips is None:
-            try:
-                from eco.utilities import tips
-
-                self._tips = tips.load_tips()
-                random.shuffle(self._tips)
-            except Exception:
-                self._tips = []
-        if not self._tips:
-            return []
-        tip = self._tips[n % len(self._tips)]
-        code = re.search(r"```[^\n]*\n(.*?)\n", tip.body)
-        example = code.group(1) if code else " ".join(tip.body.split())
-        return [f"  Did you know? {tip.title.strip('# ')}", f"    {example.strip()}"]
 
     @contextlib.contextmanager
     def paused(self):

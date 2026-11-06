@@ -347,6 +347,15 @@ def test_config_file_is_created_and_merged(tmp_path):
 # -- namespace context --------------------------------------------------------------
 
 
+def test_a_former_default_in_the_config_file_follows_the_new_one(tmp_path):
+    path = tmp_path / "ei.json"
+    path.write_text(json.dumps({"wait_animations": 0.25, "model": "mine"}))
+    cfg = ei.load_config(path)
+    assert cfg["wait_animations"] == ei.DEFAULT_CONFIG["wait_animations"] and cfg["model"] == "mine"
+    path.write_text(json.dumps({"wait_animations": 0.1}))  # chosen: kept
+    assert ei.load_config(path)["wait_animations"] == 0.1
+
+
 def test_namespace_info_never_touches_lazy_components():
     info = ei.NamespaceInfo(_FakeNamespace())
     assert info.entries() == [

@@ -201,4 +201,4 @@ def test_the_wait_is_shown_from_the_start_and_steps_aside_for_messages(tmp_path,
     screen = _screen(tty.getvalue())
     assert screen[:3] == ["In [1]: %ei q", "eco.ei: a message while indexing", "The answer."]
     assert labels[0] in ("getting ready", "updating the index") and "updating the index" in labels
-    assert any("Did you know?" in line for line in tty.getvalue().split("\x1b[J"))
+    assert "Did you know?" not in tty.getvalue()

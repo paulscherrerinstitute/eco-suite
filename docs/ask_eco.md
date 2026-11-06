@@ -247,7 +247,7 @@ waited -- and now and then, at random, a small animation instead (a
 chicken working on the chicken-and-egg question, an electron lasing
 through an undulator, a coffee brewing, a cat after a laser dot, a scan
 finding its peak). `"wait_animations"` in `~/.eco/ei.json` is the share of
-questions that get one (0.25; 0 for always the spinner). Jupyter, qtconsole
+questions that get one (0.4; 0 for always the spinner). Jupyter, qtconsole
 and output that is not a terminal get neither.
 
 If [glow](https://github.com/charmbracelet/glow) is installed (on the

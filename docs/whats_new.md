@@ -55,8 +55,8 @@ pip install -e . --no-deps     # only if you install it; new dependencies below
   search syntax and asks once whether to index now. `%ei --index` builds it
   later ({doc}`ask_eco`).
 - `%ei` shows its wait display from the moment you ask, naming the step
-  (updating the index, searching, asking the model), with a "Did you
-  know?" tip that changes every few seconds.
+  (updating the index, searching, asking the model). An animation now comes
+  with 40 % of the questions instead of 25 %.
 - `%ei --rebuild` builds the search index from scratch. Where `~/.eco` is a
   network share (gac-bernina), the index is kept in `~/.cache/eco`, since
   SQLite fails on such shares ({doc}`ask_eco`).
