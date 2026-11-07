@@ -547,6 +547,14 @@ class PrepumpSystem(Assembly):
             except Exception as e:
                 print(f"  (could not isolate {line.name}: {e})")
 
+    # caQtDM vacuum panel of the experimental station with this prepump
+    # system at the bottom; its prepump buttons run prepump_cli.py.
+    CAQTDM_PANEL = "/sf/bernina/config/caqtdm/S_VCS_SARES21-ES_Bernina.ui"
+
+    def gui(self):
+        """Open the caQtDM vacuum panel (station + prepump system)."""
+        self._run_cmd(f"caqtdm -noMsg -stylefile sfop.qss {self.CAQTDM_PANEL}")
+
     def get_current_value(self, *args, **kwargs):
         return {
             "Gp": self.gp_pressure(),
