@@ -187,6 +187,9 @@ def main(argv=None):
     ap.add_argument("--delay", type=float, default=5.0,
                     help="seconds to wait (and allow cancelling) before pump_down/vent starts [5]")
     ap.add_argument("--timeout", type=float, default=700.0, help="pump_down/vent timeout [s, 700]")
+    # caQtDM's script buttons pass their whole parameter as ONE argument
+    # with a trailing space ("pump_down 1 "): split into words again.
+    argv = " ".join(sys.argv[1:] if argv is None else argv).split()
     args = ap.parse_args(argv)
 
     for sig in (signal.SIGTERM, signal.SIGHUP):

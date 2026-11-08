@@ -142,6 +142,19 @@ def test_cli_resolves_lines_by_number_name_and_part(system):
         cli._resolve_line(system, "9")
 
 
+def test_cli_accepts_caqtdm_single_argument(monkeypatch):
+    """caQtDM passes "status " (whole parameter, trailing space) as one arg."""
+    seen = []
+    monkeypatch.setattr(pp, "make_bernina_prepump_system", lambda: "sys")
+    monkeypatch.setattr(cli, "print_status", seen.append)
+    assert cli.main(["status "]) == 0
+    assert seen == ["sys"]
+    monkeypatch.setattr(cli, "_resolve_line", lambda s, k: seen.append(k) or "x")
+    monkeypatch.setattr(cli, "run_sequence", lambda *a: seen.append(a[1:3]) or 0)
+    assert cli.main(["pump_down 1 "]) == 0
+    assert seen[-2:] == ["1", ("pump_down", "x")]
+
+
 def test_bernina_config_is_complete():
     cfg = pp.BERNINA_PREPUMP_CONFIG
     assert cfg["gp"] and cfg["roots_pump"] and cfg["lock_file"]
