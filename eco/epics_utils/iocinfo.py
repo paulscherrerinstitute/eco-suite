@@ -81,6 +81,11 @@ CONSOLE_PORT_OVERRIDES: dict[str, tuple[str, int]] = {
     "SARES20-CSSU-MF1": ("SARES20-CSSU-MF1", 50001),
     "SARES20-CSSU-MF2": ("SARES20-CSSU-MF2", 50001),
     "SARES20-CSSU-HXP": ("SARES20-CSSU-ESB1", 50001),
+    # Same physical Moxa box as SARES20-CSSU-HXP above, under the IOC's
+    # pre-rename name (still findable via search_ioc_names/find_ioc for
+    # anyone searching by the hostname rather than the current IOC name) --
+    # see search_ioc_names's docstring.
+    "SARES20-CSSU-ESB1": ("SARES20-CSSU-ESB1", 50001),
 }
 
 
@@ -204,6 +209,27 @@ def get_ioc(ioc_name: str, timeout: float = 10.0) -> IocBoot:
     return IocBoot.from_json(data)
 
 
+def search_ioc_names(pattern: str, timeout: float = 10.0, fuzzy: bool = True) -> list[str]:
+    """Find IOC/hostname identifiers matching *pattern*. Equivalent to
+    ``GET /ioc?pattern=...`` -- a *different* index from :func:`search_records`:
+    it matches against IOC name/hostname identifiers themselves (including an
+    IOC's former name/hostname from before a rename, as long as some boot
+    record for it still exists), not against the names of the PVs an IOC
+    currently serves.
+
+    Confirmed live (2026-11-08): the Bernina sample-stage hexapod's Moxa IOC
+    was renamed at some point from ``SARES20-CSSU-ESB1`` to
+    ``SARES20-CSSU-HXP`` (identical hardware/IP, old boot record still
+    datable to 2023-10-23 vs. the current one). ``search_records`` -- scoped
+    to recent activity (``startDate=2025-01-01``) and matched against PV
+    names -- finds neither the old name nor the IOC's own hostname; this
+    catches exactly that case, which is why :func:`find_ioc` consults it too.
+    """
+    query = _fuzzify(pattern) if fuzzy else pattern
+    data = _get("/ioc", {"pattern": query}, timeout)
+    return list(data)
+
+
 def resolve_console(ioc_name: str, boot: IocBoot | None = None, timeout: float = 10.0) -> tuple[str, int] | None:
     """Resolve an IOC's console ``(host, port)``, or ``None`` if unknown.
 
@@ -225,19 +251,49 @@ def resolve_console(ioc_name: str, boot: IocBoot | None = None, timeout: float =
 
 
 def find_ioc(pattern: str, timeout: float = 10.0, fuzzy: bool = True) -> list[IocMatch]:
-    """Search PVs/IOC names matching *pattern* and resolve each owning IOC's
-    console address. This is the main entry point -- equivalent to what
-    `cmdt.py -p <pattern>` resolves before offering you a debug session.
+    """Search PVs/IOC names/hostnames matching *pattern* and resolve each
+    owning IOC's console address. This is the main entry point -- equivalent
+    to what `cmdt.py -p <pattern>` resolves before offering you a debug
+    session.
 
     ``fuzzy=True`` (default) substring-matches a plain name via
     :func:`_fuzzify` (``find_ioc("XRD")`` finds every IOC with "XRD"
     anywhere in a PV/IOC name, matching `cmdt`'s behaviour); pass
     ``fuzzy=False`` to search with *pattern* as a literal regex instead.
+
+    Combines two independent indices: :func:`search_records` (PV name ->
+    owning IOC) and :func:`search_ioc_names` (IOC name/hostname identifiers,
+    including a retired former name/hostname). A pattern naming the current
+    device (e.g. a PV prefix) typically only hits the first; a pattern
+    naming the box itself (e.g. a hostname someone remembers it by, possibly
+    an outdated one) typically only hits the second -- see
+    :func:`search_ioc_names`'s docstring for the concrete case this was
+    added for.
+
+    When both indices resolve to IOCs sharing the same boot `ip_address`
+    (the signature of an IOC rename on the same hardware), only the one with
+    the most recent `boot_date` is kept, so a stale pre-rename boot record
+    doesn't show up as a second, confusingly console-less phantom entry
+    alongside the live one.
     """
     records = search_records(pattern, timeout=timeout, fuzzy=fuzzy)
     ioc2devices: dict[str, set[str]] = {}
     for r in records:
         ioc2devices.setdefault(r.ioc, set()).add(r.name.split(":")[0])
+
+    try:
+        name_matches = search_ioc_names(pattern, timeout=timeout, fuzzy=fuzzy)
+    except requests.RequestException:
+        name_matches = []
+    known_lower = {ioc.lower() for ioc in ioc2devices}
+    for name in name_matches:
+        # Normalize to the uppercase convention every other IOC identifier
+        # here uses (search_records/CONSOLE_PORT_OVERRIDES/get_ioc all see
+        # uppercase names) -- the /ioc?pattern= index returns them lowercase.
+        name = name.upper()
+        if name.lower() not in known_lower:
+            ioc2devices.setdefault(name, set())
+            known_lower.add(name.lower())
 
     # A pattern can also directly be an *exact* IOC name with no matching
     # records (e.g. it's currently not serving any registered PVs) -- try it
@@ -269,7 +325,26 @@ def find_ioc(pattern: str, timeout: float = 10.0, fuzzy: bool = True) -> list[Io
                 facility=boot.facility if boot else None,
             )
         )
-    return matches
+    return _dedup_by_ip(matches)
+
+
+def _dedup_by_ip(matches: list[IocMatch]) -> list[IocMatch]:
+    """Within a group of matches sharing the same known boot `ip_address`,
+    keep only the one with the most recent `boot_date` (string-sortable ISO
+    timestamps). Matches with no boot/IP info are never dropped -- there's
+    nothing safe to compare them against."""
+    by_ip: dict[str, list[IocMatch]] = {}
+    rest = []
+    for m in matches:
+        ip = m.boot.ip_address if m.boot else None
+        if ip:
+            by_ip.setdefault(ip, []).append(m)
+        else:
+            rest.append(m)
+    deduped = list(rest)
+    for group in by_ip.values():
+        deduped.append(max(group, key=lambda m: m.boot.boot_date or ""))
+    return deduped
 
 
 def check_console_reachable(host: str, port: int, timeout: float = 2.0) -> bool:
