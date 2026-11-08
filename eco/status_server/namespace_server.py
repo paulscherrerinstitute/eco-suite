@@ -117,6 +117,13 @@ def create_namespace_app(
             start=start_store,
         )
 
+    # Alarm monitor (eco/alarms/monitor.py): pages phones for raised alarms.
+    # Opt-in per server, so a test or second server never pages anyone.
+    if start_store and os.environ.get("ECO_ALARM_MONITOR") == "1":
+        from eco.alarms.monitor import start_in_status_server
+
+        start_in_status_server(store)
+
     app = Flask(config.module_name)
     # Status values are whatever the beamline's Detectors return - numpy
     # scalars and arrays are routine (waveform PVs, image stats), and

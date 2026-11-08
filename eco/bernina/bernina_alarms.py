@@ -4,8 +4,10 @@ from eco.utilities.config import NamespaceComponent
 # Alarm-overview panels mirroring the caqtdm "Alarms overview" launcher entry
 # (S_charts.json -> alarms_caqtdm -> alarms.ui) and its two Papamoll pump-laser
 # "Expert" sub-panels. See eco/devices_general/alarms/README.md.
+# "alarms" is the whole alarm system (overview panel as alarms.overview,
+# user-added alarms, shift plan, phone paging) -- see eco/alarms.
 namespace.append_obj(
-    "BerninaAlarmsOverview",
+    "BerninaAlarmSystem",
     lazy=True,
     name="alarms",
     module_name="eco.devices_general.alarms",

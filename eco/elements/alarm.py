@@ -1,44 +1,90 @@
-"""Generic alarm/threshold layer over Detector instances.
+"""Alarms on Detectors: thresholds, timing, and display.
 
-Introduces :class:`Alarm`: a Detector-protocol wrapper that watches another
-Detector's live value and reports whether it is "in alarm", either against an
-explicit soft ``[min, max]`` range -- mirroring the caQtDM alarm-overview
-panels' own ``NAME=...,PV=...,MIN=...,MAX=...`` macros, see
-:mod:`eco.devices_general.alarms` -- or, when no range is given, the wrapped
-detector's own EPICS alarm severity (the same ``get_severity()`` convention
-already used by :class:`eco.epics_utils.detector.DetectorPvData` and
-``eco.devices_general.vacuum.prepump._gauge_ok_state``).
+An :class:`Alarm` watches any Detector (anything with ``get_current_value()``)
+and turns its readings into a timed alarm state -- see
+:mod:`eco.alarms.tracker` for the state machine (ok -> pending -> active ->
+acked -> clearing -> ok, plus disabled/shelved/inhibited/unknown). Every
+parameter is a settable adjustable on the alarm itself::
 
-:class:`AlarmGroup` and :class:`AlarmPanel` build a tree of named ``Alarm``
-objects the same way any other eco device tree is built (``Assembly._append``),
-so a whole alarm-overview panel is a first-class eco object -- ``.status()``,
-``.get_tree()``, tab-completion, all of it -- and, via ``AlarmPanel._widget_svg_panel``, a
-clickable live panel through the same ``Assembly.show()`` hook
-``PrepumpSystem``/``XrayBeamline`` use (see ``eco/devices_general/vacuum/
-prepump.py``, ``eco/xoptics/beamline_assembly.py``).
+    a = alarms.overview.swissfel.Electron_Beam
+    a.min(5); a.delay(30); a.level("critical")      # or a.min.set_target_value(5)
+    a.shelve(60)          # silence for an hour
+    a.ack()               # acknowledge
+    a.settings()          # all parameters
+
+Parameter values set this way are operator *overrides*, stored in the shared
+alarm settings file (:mod:`eco.alarms.store`), so they reach every session
+and the alarm monitor; the constructor arguments are the defaults
+(``reset_settings()`` returns to them).
+
+Level decides who hears about it once raised:
+``display`` (only shown, the default), ``warning`` (a normal push message to
+whoever is on shift), ``critical`` (a repeating emergency push until
+acknowledged, with escalation) -- the sending is done by the alarm monitor
+(:mod:`eco.alarms.monitor`), never by a display.
+
+The timed state shown in displays comes from the monitor's ``state.json``
+while a monitor is running. Without one, displays evaluate locally on each
+look, so `delay` counting then only advances while somebody is looking.
+
+:class:`AlarmGroup` and :class:`AlarmPanel` are trees of alarms for an
+alarm-overview panel (see :mod:`eco.devices_general.alarms`);
+:class:`eco.alarms.system.AlarmSystem` is the namespace-level object.
 """
 
+from __future__ import annotations
+
+import getpass
 import re
+import time
 from enum import IntEnum
 
 import colorama
 
-from eco.aliases import Alias
+from eco.alarms import tracker as tr
+from eco.alarms.store import SETTINGS, STATE
+from eco.elements.adjustable import AdjustableGetSet
 from eco.elements.assembly import Assembly
+from eco.elements.detector import DetectorGet
 
 _RESET = colorama.Style.RESET_ALL
+_DIM = colorama.Style.DIM
 
-#: colour per 3-tier terminal-display state -- see Alarm._proximity_state().
-#: Deliberately separate from AlarmSeverity/get_severity() (which stays
-#: OK/ALARM-only for min/max bounds, used by worst_severity()/the SVG panel):
-#: this is purely a display concern, so a near-edge "warning" shading here
-#: never changes what .show()/worst_severity() report.
+LEVELS = ("display", "warning", "critical")
+
+#: seconds after which the monitor's state.json counts as stale
+MONITOR_STALE_S = 20.0
+
+# ---------------------------------------------------------------------------
+# colours / formatting
+
 _STATE_COLOR = {
-    "ok": colorama.Fore.GREEN,
-    "warning": colorama.Fore.YELLOW,
-    "alarm": colorama.Fore.RED + colorama.Style.BRIGHT,
-    "unknown": colorama.Style.DIM,
+    tr.ACTIVE: colorama.Fore.RED + colorama.Style.BRIGHT,
+    tr.CLEARING: colorama.Fore.MAGENTA,
+    tr.ACKED: colorama.Fore.RED,
+    tr.PENDING: colorama.Fore.YELLOW,
+    tr.STATE_OK: colorama.Fore.GREEN,
+    tr.STATE_UNKNOWN: _DIM,
+    tr.INHIBITED: colorama.Fore.BLUE,
+    tr.SHELVED: colorama.Fore.CYAN,
+    tr.DISABLED: _DIM,
+    # value-only nuances
+    "near": colorama.Fore.YELLOW,
 }
+
+_STATE_GLYPH = {
+    tr.ACTIVE: "●",
+    tr.CLEARING: "◐",
+    tr.ACKED: "◉",
+    tr.PENDING: "◔",
+    tr.STATE_OK: "●",
+    tr.STATE_UNKNOWN: "○",
+    tr.INHIBITED: "⊘",
+    tr.SHELVED: "◌",
+    tr.DISABLED: "·",
+}
+
+_LEVEL_TEXT = {"display": "display", "warning": "warning", "critical": "CRITICAL"}
 
 
 def _colored(text, state):
@@ -46,15 +92,42 @@ def _colored(text, state):
 
 
 def _fmt_num(v):
-    """Compact display form for a channel value/bound: `None` -> em-dash,
-    a float -> 4 significant digits (`AlarmPanel`/`AlarmGroup`'s terminal
-    table is meant for a quick glance, not full readback precision),
-    anything else left as `str()`."""
     if v is None:
         return "—"
+    if isinstance(v, bool):
+        return str(v)
     if isinstance(v, float):
         return f"{v:.4g}"
-    return str(v)
+    s = " ".join(str(v).split())
+    return s if len(s) <= 28 else s[:27] + "…"
+
+
+def fmt_duration(s):
+    """12s, 4m12s, 3h05m, 2d04h."""
+    if s is None:
+        return ""
+    s = int(max(0, s))
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    if s < 86400:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    return f"{s // 86400}d{(s % 86400) // 3600:02d}h"
+
+
+def _fmt_range(lo, hi):
+    if lo is None and hi is None:
+        return "(EPICS)"
+    if lo is None:
+        return f"≤ {_fmt_num(hi)}"
+    if hi is None:
+        return f"≥ {_fmt_num(lo)}"
+    return f"[{_fmt_num(lo)}, {_fmt_num(hi)}]"
+
+
+# ---------------------------------------------------------------------------
+# severity (instantaneous, kept for compatibility)
 
 
 class AlarmSeverity(IntEnum):
@@ -67,9 +140,8 @@ class AlarmSeverity(IntEnum):
         return self.name
 
 
-#: EPICS alarm severity (0=NO_ALARM, 1=MINOR, 2=MAJOR, 3=INVALID -- see
-#: `DetectorPvData.get_severity`) -> AlarmSeverity, used as the fallback when
-#: an `Alarm` has no explicit min/max of its own.
+#: EPICS alarm severity (0=NO_ALARM, 1=MINOR, 2=MAJOR, 3=INVALID) ->
+#: AlarmSeverity, for alarms without limits of their own.
 _EPICS_SEVERITY = {
     0: AlarmSeverity.OK,
     1: AlarmSeverity.WARNING,
@@ -77,107 +149,333 @@ _EPICS_SEVERITY = {
     3: AlarmSeverity.UNKNOWN,
 }
 
+_SEVERITY_CONDITION = {
+    AlarmSeverity.OK: tr.OK,
+    AlarmSeverity.WARNING: tr.OK,
+    AlarmSeverity.ALARM: tr.BAD,
+    AlarmSeverity.UNKNOWN: tr.UNKNOWN,
+}
 
-#: Terminal-table columns for AlarmGroup/AlarmPanel.get_display_str():
-#: a leading LED dot, the channel name, then Min/Value/Max -- replacing the
-#: generic Assembly table's single, full-precision "value" column with the
-#: three numbers that actually determine the alarm.
-_ALARM_TABLE_HEADERS = ["", "Channel", "Min", "Value", "Max"]
-_ALARM_TABLE_COLALIGN = ["center", "left", "right", "right", "right"]
+
+# ---------------------------------------------------------------------------
+# monitor snapshot
 
 
-def _alarm_row(name, alarm):
+def monitor_snapshot(max_age=MONITOR_STALE_S):
+    """The running monitor's ``state.json`` document, or `None` if there is
+    no monitor or its last heartbeat is older than `max_age` seconds."""
     try:
-        v = alarm.get_current_value()
+        doc = STATE.read()
     except Exception:
-        v = None
-    state = alarm._proximity_state()
-    led = _colored("●", state)
-    value_str = _colored(_fmt_num(v), state)
-    return [led, name, _fmt_num(alarm.min), value_str, _fmt_num(alarm.max)]
+        return None
+    hb = (doc or {}).get("monitor", {}).get("heartbeat")
+    if not hb or time.time() - hb > max_age:
+        return None
+    return doc
 
 
-def _render_alarm_table(rows, group_keys=None, tablefmt="simple"):
-    if not rows:
-        return ""
-    from eco.utilities.tables import format_table, section_row_styles
-
-    row_styles = section_row_styles(group_keys) if group_keys else None
-    return format_table(
-        rows,
-        headers=_ALARM_TABLE_HEADERS,
-        tablefmt=tablefmt,
-        # cap the Value column so one long free-text status message (e.g. a
-        # feedback-loop ":MSG" string, which has no min/max of its own) can't
-        # stretch the whole table -- same idea as the base Assembly table's
-        # own maxcolwidths for its description column.
-        maxcolwidths=[None, None, None, 40, None],
-        colalign=_ALARM_TABLE_COLALIGN,
-        row_styles=row_styles,
-    )
+def _current_user():
+    try:
+        return getpass.getuser()
+    except Exception:
+        return "unknown"
 
 
-def _safe_attr_name(label):
-    """Turn a free-text section label (e.g. "X-ray Pointing", "ESB_800nm
-    Pointing Feedback") into a valid, unique-enough Python identifier for use
-    as an `AlarmPanel` attribute name."""
-    s = re.sub(r"\W+", "_", label.strip()).strip("_").lower()
-    if not s or s[0].isdigit():
-        s = f"g_{s}"
-    return s
+# ---------------------------------------------------------------------------
 
 
-class Alarm:
-    """One alarm channel: a Detector-protocol wrapper around another
-    Detector's live value plus an optional soft alarm range.
+def _parse_level(v):
+    v = str(v).strip().lower()
+    if v not in LEVELS:
+        raise ValueError(f"alarm level must be one of {LEVELS}, not {v!r}")
+    return v
+
+
+def _parse_limit(v):
+    if v is None or (isinstance(v, str) and v.strip().lower() in ("", "none", "-")):
+        return None
+    return float(v)
+
+
+def _parse_seconds(v):
+    v = float(v or 0)
+    if v < 0:
+        raise ValueError("delay must be >= 0 s")
+    return v
+
+
+def _parse_bool(v):
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+
+
+def _parse_id_list(v):
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [s.strip() for s in v.split(",") if s.strip()]
+    return [str(s) for s in v]
+
+
+#: setting name -> parser. Order = order in .settings().
+_SETTINGS = {
+    "enabled": _parse_bool,
+    "min": _parse_limit,
+    "max": _parse_limit,
+    "delay": _parse_seconds,
+    "clear_delay": _parse_seconds,
+    "level": _parse_level,
+    "unknown_is_alarm": _parse_bool,
+    "inhibit_by": _parse_id_list,
+    "note": lambda v: "" if v is None else str(v),
+}
+
+
+class Alarm(Assembly):
+    """An alarm on one Detector.
 
     Parameters
     ----------
-    detector : Detector
-        Anything with ``get_current_value()`` -- typically a
-        ``DetectorPvData(pvname)``, but any Detector works (a computed
-        ``DetectorGet``, another Adjustable's readback, ...).
+    detector : Detector or str
+        Anything with ``get_current_value()``, or a dotted namespace path
+        (``"mon_kb.intensity"``) resolved on first use via `resolver`.
     min, max : float or None
-        Soft alarm bounds, as used by the caQtDM ``alarm_channel.ui``
-        NAME/PV/MIN/MAX macros this mirrors -- display-side thresholds set in
-        the panel config, not necessarily the underlying PV's own EPICS alarm
-        limits. Either/both may be `None` for a one-sided bound. If *both*
-        are `None`, severity instead falls back to ``detector.get_severity()``
-        when the detector has one, else stays `AlarmSeverity.UNKNOWN`.
-    name : str
-    unit : str, optional
+        Alarm range; the alarm condition is ``value < min`` or
+        ``value > max``. With neither, the detector's own EPICS severity is
+        used (MAJOR = alarm) if it has ``get_severity()``.
+    delay : float
+        Seconds the condition must persist before the alarm is raised.
+    clear_delay : float
+        Seconds the value must be fine again before a raised alarm clears.
+    level : "display" | "warning" | "critical"
+    unknown_is_alarm : bool
+        Treat an unreadable value (disconnected IOC) as an alarm condition.
+    inhibit_by : list of alarm ids
+        While any of these alarms is not ok (e.g. "no electron beam"), this
+        alarm is ``inhibited`` instead of raised.
+    label : str
+        Short human-readable name for messages; default the alarm name.
+    alarm_id : str
+        Key for the shared settings; default the full alias name.
     """
 
-    def __init__(self, detector, min=None, max=None, name=None, unit=None):
-        self.name = name
-        self.alias = Alias(name)
-        self.detector = detector
-        self.min = min
-        self.max = max
+    def __init__(
+        self,
+        detector,
+        min=None,
+        max=None,
+        name=None,
+        unit=None,
+        delay=10.0,
+        clear_delay=10.0,
+        level="display",
+        enabled=True,
+        unknown_is_alarm=False,
+        inhibit_by=(),
+        note="",
+        label=None,
+        alarm_id=None,
+        resolver=None,
+    ):
+        super().__init__(name=name)
+        self._detector = detector
+        self._resolver = resolver
         self.unit = unit
+        self.label = label or name
+        self._alarm_id = alarm_id
+        self._defaults = {
+            "enabled": _parse_bool(enabled),
+            "min": _parse_limit(min),
+            "max": _parse_limit(max),
+            "delay": _parse_seconds(delay),
+            "clear_delay": _parse_seconds(clear_delay),
+            "level": _parse_level(level),
+            "unknown_is_alarm": _parse_bool(unknown_is_alarm),
+            "inhibit_by": _parse_id_list(inhibit_by),
+            "note": note or "",
+        }
+        self.tracker = tr.AlarmTracker()
+        for key in _SETTINGS:
+            self._append(
+                AdjustableGetSet,
+                (lambda k=key: self.get_setting(k)),
+                (lambda v, k=key: self.set_setting(k, v)),
+                name=key,
+                is_setting=True,
+                is_display=False,
+                is_status=False,
+            )
+        self._append(
+            DetectorGet,
+            lambda: self.get_state(),
+            name="state",
+            is_setting=False,
+            is_display=False,
+            is_status=True,
+        )
 
+    # -- identity ---------------------------------------------------------
+    @property
+    def alarm_id(self):
+        if self._alarm_id:
+            return self._alarm_id
+        try:
+            return self.alias.get_full_name()
+        except Exception:
+            return self.name
+
+    @property
+    def detector(self):
+        if isinstance(self._detector, str):
+            if self._resolver is None:
+                raise RuntimeError(
+                    f"alarm {self.alarm_id}: no resolver for detector path "
+                    f"{self._detector!r}"
+                )
+            self._detector = self._resolver(self._detector)
+        return self._detector
+
+    @property
+    def detector_path(self):
+        """Dotted name of the watched detector, for messages/tables."""
+        if isinstance(self._detector, str):
+            return self._detector
+        alias = getattr(self._detector, "alias", None)
+        try:
+            return alias.get_full_name() if alias is not None else None
+        except Exception:
+            return None
+
+    # -- settings ---------------------------------------------------------
+    def _overrides(self):
+        try:
+            return SETTINGS.read().get(self.alarm_id, {})
+        except Exception:
+            return {}
+
+    def get_setting(self, key):
+        ov = self._overrides()
+        if key in ov:
+            return ov[key]
+        return self._defaults.get(key)
+
+    def get_settings(self):
+        ov = self._overrides()
+        return {k: ov.get(k, self._defaults.get(k)) for k in _SETTINGS}
+
+    def set_setting(self, key, value):
+        if key not in _SETTINGS:
+            raise KeyError(f"unknown alarm setting {key!r}; known: {list(_SETTINGS)}")
+        value = _SETTINGS[key](value)
+        aid = self.alarm_id
+
+        def upd(doc):
+            entry = doc.setdefault(aid, {})
+            if value == self._defaults.get(key):
+                entry.pop(key, None)
+            else:
+                entry[key] = value
+            entry["_changed"] = {"by": _current_user(), "at": time.time(), "key": key}
+
+        SETTINGS.update(upd)
+
+    def reset_settings(self):
+        """Forget all operator overrides (back to the code defaults)."""
+        aid = self.alarm_id
+
+        def upd(doc):
+            entry = doc.get(aid, {})
+            keep = {k: entry[k] for k in ("shelved_until", "shelved_by") if k in entry}
+            if keep:
+                doc[aid] = keep
+            else:
+                doc.pop(aid, None)
+
+        SETTINGS.update(upd)
+
+    @property
+    def min_value(self):
+        return self.get_setting("min")
+
+    @property
+    def max_value(self):
+        return self.get_setting("max")
+
+    # -- shelve / ack -----------------------------------------------------
+    def shelve(self, minutes=60, reason=""):
+        """Silence this alarm for `minutes` (it shows as ``shelved``, a
+        raised alarm is cleared, nobody is paged). ``unshelve()`` ends it."""
+        aid = self.alarm_id
+        until = time.time() + 60.0 * float(minutes)
+
+        def upd(doc):
+            e = doc.setdefault(aid, {})
+            e["shelved_until"] = until
+            e["shelved_by"] = {"by": _current_user(), "at": time.time(), "reason": reason}
+
+        SETTINGS.update(upd)
+        return until
+
+    def unshelve(self):
+        aid = self.alarm_id
+
+        def upd(doc):
+            e = doc.get(aid, {})
+            e.pop("shelved_until", None)
+            e.pop("shelved_by", None)
+
+        SETTINGS.update(upd)
+
+    def shelved_until(self):
+        t = self._overrides().get("shelved_until")
+        return t if t and t > time.time() else None
+
+    def ack(self, by=None):
+        """Acknowledge a raised alarm: stops repeating phone alarms and
+        escalation. Goes to the monitor through the shared settings file."""
+        by = by or _current_user()
+        now = time.time()
+        aid = self.alarm_id
+
+        def upd(doc):
+            doc.setdefault(aid, {})["ack_request"] = {"by": by, "at": now}
+
+        SETTINGS.update(upd)
+        self.tracker.ack(now, by=by)
+
+    # -- reading ----------------------------------------------------------
     def get_current_value(self):
         return self.detector.get_current_value()
 
-    value = property(get_current_value)
-
-    def get_severity(self):
-        """`AlarmSeverity` for the current reading."""
-        if self.min is not None or self.max is not None:
+    def get_condition(self, value=None, read=True):
+        """Instantaneous condition ``"ok"``/``"bad"``/``"unknown"``.
+        Returns (condition, value)."""
+        lo, hi = self.get_setting("min"), self.get_setting("max")
+        if lo is not None or hi is not None:
+            if read:
+                try:
+                    value = self.get_current_value()
+                except Exception:
+                    return tr.UNKNOWN, None
+            if value is None:
+                return tr.UNKNOWN, None
             try:
-                v = self.get_current_value()
-            except Exception:
-                return AlarmSeverity.UNKNOWN
-            if v is None:
-                return AlarmSeverity.UNKNOWN
-            try:
-                if self.min is not None and v < self.min:
-                    return AlarmSeverity.ALARM
-                if self.max is not None and v > self.max:
-                    return AlarmSeverity.ALARM
+                if lo is not None and value < lo:
+                    return tr.BAD, value
+                if hi is not None and value > hi:
+                    return tr.BAD, value
             except TypeError:
-                return AlarmSeverity.UNKNOWN
-            return AlarmSeverity.OK
+                return tr.UNKNOWN, value
+            return tr.OK, value
+        if read:
+            try:
+                value = self.get_current_value()
+            except Exception:
+                value = None
+        return _SEVERITY_CONDITION[self._epics_severity()], value
+
+    def _epics_severity(self):
         get_severity = getattr(self.detector, "get_severity", None)
         if get_severity is None:
             return AlarmSeverity.UNKNOWN
@@ -185,84 +483,269 @@ class Alarm:
             sev = get_severity()
         except Exception:
             sev = None
-        if sev is None:
-            return AlarmSeverity.UNKNOWN
         return _EPICS_SEVERITY.get(sev, AlarmSeverity.UNKNOWN)
+
+    def get_severity(self):
+        """Instantaneous `AlarmSeverity` (no delay, no latching)."""
+        lo, hi = self.get_setting("min"), self.get_setting("max")
+        if lo is None and hi is None:
+            return self._epics_severity()
+        cond, _ = self.get_condition()
+        return {tr.OK: AlarmSeverity.OK, tr.BAD: AlarmSeverity.ALARM}.get(
+            cond, AlarmSeverity.UNKNOWN
+        )
 
     def is_ok(self):
         return self.get_severity() == AlarmSeverity.OK
 
-    def _proximity_state(self):
-        """3-tier "how close to the alarm bounds is the live value" state
-        used for terminal-table colouring: "ok" (green), "warning" (yellow,
-        within 20% of either bound), "alarm" (red, outside the bounds), or
-        "unknown" (grey, unreadable / no bounds and no EPICS severity
-        available). Independent of `get_severity()` (OK/ALARM-only for
-        min/max bounds, used by `worst_severity()`/the SVG panel) -- this is
-        purely a display nuance, so it never changes what those report."""
-        if self.min is not None or self.max is not None:
+    def check(self, now=None, inhibited=False):
+        """Read the detector once and advance the local tracker. Returns the
+        tracker events of this step (``["raised"]``, ``["cleared"]``, ...)."""
+        now = time.time() if now is None else now
+        s = self.get_settings()
+        cond, value = self.get_condition()
+        ack = self._overrides().get("ack_request")
+        events = self.tracker.update(
+            cond,
+            now,
+            value=value,
+            delay=s["delay"],
+            clear_delay=s["clear_delay"],
+            enabled=s["enabled"],
+            shelved_until=self.shelved_until(),
+            inhibited=inhibited,
+            unknown_is_alarm=s["unknown_is_alarm"],
+        )
+        if (
+            ack
+            and self.tracker.raised
+            and not self.tracker.acked
+            and ack.get("at", 0) >= (self.tracker.active_since or 0)
+        ):
+            events += self.tracker.ack(now, by=ack.get("by"))
+        return events
+
+    # -- state for display --------------------------------------------------
+    def get_state_info(self, snapshot=None, evaluate=True):
+        """Tracker fields (dict) plus ``source``: ``"monitor"`` from a running
+        monitor's snapshot, else ``"local"`` (evaluated now if `evaluate`)."""
+        snap = monitor_snapshot() if snapshot is None else snapshot
+        if snap:
+            d = snap.get("alarms", {}).get(self.alarm_id)
+            if d is not None:
+                return dict(d, source="monitor")
+        if evaluate:
             try:
-                v = self.get_current_value()
+                self.check()
             except Exception:
-                return "unknown"
-            if v is None:
-                return "unknown"
-            try:
-                if (self.min is not None and v < self.min) or (
-                    self.max is not None and v > self.max
-                ):
-                    return "alarm"
-                if self.min is not None and self.max is not None:
-                    margin = 0.2 * (self.max - self.min)
-                    if v < self.min + margin or v > self.max - margin:
-                        return "warning"
-                return "ok"
-            except TypeError:
-                return "unknown"
-        return {
-            AlarmSeverity.OK: "ok",
-            AlarmSeverity.WARNING: "warning",
-            AlarmSeverity.ALARM: "alarm",
-            AlarmSeverity.UNKNOWN: "unknown",
-        }[self.get_severity()]
+                pass
+        return dict(self.tracker.to_dict(), source="local")
+
+    def get_state(self):
+        return self.get_state_info()["state"]
+
+    def _proximity(self, value, state):
+        """Colour key for the value cell: the state, or ``"near"`` within
+        20% of a bound while ok."""
+        if state != tr.STATE_OK:
+            return state
+        lo, hi = self.get_setting("min"), self.get_setting("max")
+        if lo is None or hi is None or value is None:
+            return state
+        try:
+            margin = 0.2 * (hi - lo)
+            if value < lo + margin or value > hi - margin:
+                return "near"
+        except TypeError:
+            pass
+        return state
+
+    def display_row(self, label=None, snapshot=None, now=None):
+        now = time.time() if now is None else now
+        info = self.get_state_info(snapshot=snapshot)
+        state = info.get("state") or tr.STATE_UNKNOWN
+        value = info.get("last_value")
+        s = self.get_settings()
+        if state in tr.RAISED_STATES:
+            since = info.get("active_since")
+        elif state == tr.PENDING:
+            since = info.get("violating_since")
+        else:
+            since = info.get("state_since")
+        dur = fmt_duration(now - since) if since else ""
+        state_txt = state.upper() if state in tr.RAISED_STATES else state
+        if state == tr.ACKED and info.get("acked_by"):
+            state_txt += f" ({info['acked_by']})"
+        if state == tr.SHELVED:
+            until = self.shelved_until()
+            if until:
+                dur = f"{fmt_duration(until - now)} left"
+        level = s["level"]
+        level_txt = _LEVEL_TEXT[level]
+        if level == "critical":
+            level_txt = colorama.Style.BRIGHT + level_txt + _RESET
+        elif level == "display":
+            level_txt = _DIM + level_txt + _RESET
+        unit = f" {self.unit}" if self.unit else ""
+        return [
+            _colored(_STATE_GLYPH.get(state, "?"), state),
+            label or self.label or self.name,
+            _colored(_fmt_num(value) + unit, self._proximity(value, state)),
+            _fmt_range(s["min"], s["max"]),
+            level_txt,
+            _colored(state_txt, state),
+            dur,
+            str(info.get("count") or 0),
+        ]
+
+    def get_display_str(self, tablefmt="simple", **kwargs):
+        rows = [self.display_row()]
+        table = _render_alarm_table(rows, tablefmt=tablefmt)
+        s = self.get_settings()
+        pv = getattr(self._detector, "pvname", None)
+        watching = self.detector_path or repr(self._detector)
+        extra = [f"watching: {pv} (PV)" if pv else f"watching: {watching}"]
+        extra.append(
+            f"delay {fmt_duration(s['delay'])}, clear after {fmt_duration(s['clear_delay'])}"
+            + (", unknown = alarm" if s["unknown_is_alarm"] else "")
+            + ("" if s["enabled"] else ", DISABLED")
+        )
+        if s["inhibit_by"]:
+            extra.append("inhibited while not ok: " + ", ".join(s["inhibit_by"]))
+        if s["note"]:
+            extra.append(f"note: {s['note']}")
+        info = self.get_state_info(evaluate=False)
+        if info.get("count"):
+            ta = info.get("total_active_s", 0) or 0
+            if info.get("active_since"):
+                ta += time.time() - info["active_since"]
+            extra.append(f"raised {info['count']}x, {fmt_duration(ta)} in alarm in total")
+        extra.append(f"state from: {info.get('source')}")
+        return table + "\n" + "\n".join(_DIM + "  " + e + _RESET for e in extra)
 
     def __repr__(self):
+        return self.get_display_str()
+
+
+# ---------------------------------------------------------------------------
+# tables
+
+ALARM_TABLE_HEADERS = ["", "Alarm", "Value", "Range", "Level", "State", "For", "#"]
+_ALARM_TABLE_COLALIGN = ["center", "left", "right", "left", "left", "left", "right", "right"]
+
+
+def _render_alarm_table(rows, group_keys=None, tablefmt="simple"):
+    if not rows:
+        return "(no alarms)"
+    from eco.utilities.tables import format_table, section_row_styles
+
+    row_styles = section_row_styles(group_keys) if group_keys else None
+    return format_table(
+        rows,
+        headers=ALARM_TABLE_HEADERS,
+        tablefmt=tablefmt,
+        maxcolwidths=[None, None, 30, None, None, None, None, None],
+        colalign=_ALARM_TABLE_COLALIGN,
+        row_styles=row_styles,
+    )
+
+
+def _safe_attr_name(label):
+    """Free-text section label -> valid Python identifier."""
+    s = re.sub(r"\W+", "_", label.strip()).strip("_").lower()
+    if not s or s[0].isdigit():
+        s = f"g_{s}"
+    return s
+
+
+def evaluate_alarms(alarms, now=None):
+    """Advance the local trackers of `alarms` (iterable of `Alarm`) one
+    step, resolving ``inhibit_by`` among them. Returns
+    ``{alarm_id: events}``. Alarms inhibiting others are checked first."""
+    now = time.time() if now is None else now
+    alarms = list(alarms)
+    by_id = {a.alarm_id: a for a in alarms}
+    done, out = set(), {}
+
+    def lookup(other):
+        # ids carry the namespace prefix ("bernina.alarms...."); accept
+        # "alarms.overview...." or any other dotted tail too
+        if other in by_id:
+            return by_id[other]
+        tail = "." + other.lower()
+        hits = [a for i, a in by_id.items() if i.lower().endswith(tail)]
+        return hits[0] if len(hits) == 1 else None
+
+    def run(a, stack=()):
+        aid = a.alarm_id
+        if aid in done:
+            return
+        inhibited = False
+        for other in a.get_setting("inhibit_by") or []:
+            o = lookup(other)
+            if o is None or o.alarm_id in stack:
+                continue
+            run(o, stack + (aid,))
+            if o.tracker.state not in (tr.STATE_OK,):
+                inhibited = True
         try:
-            v = self.get_current_value()
-        except Exception:
-            v = None
-        state = self._proximity_state()
-        bounds = (
-            f" [{_fmt_num(self.min)}, {_fmt_num(self.max)}]"
-            if (self.min is not None or self.max is not None)
-            else ""
-        )
-        unit = f" {self.unit}" if self.unit else ""
-        led = _colored("●", state)
-        value = _colored(_fmt_num(v), state)
-        return f"{led} {self.name}: {value}{unit}{bounds} -- {_colored(state.upper(), state)}"
+            out[aid] = a.check(now=now, inhibited=inhibited)
+        except Exception as e:
+            out[aid] = []
+            a.tracker.last_condition = f"error: {e}"
+        done.add(aid)
+
+    for a in alarms:
+        run(a)
+    return out
+
+
+def summary_counts(rows_states):
+    """Count states for a summary line."""
+    c = {}
+    for st in rows_states:
+        c[st] = c.get(st, 0) + 1
+    return c
+
+
+def summary_line(states):
+    c = summary_counts(states)
+    parts = []
+    n_raised = c.get(tr.ACTIVE, 0) + c.get(tr.ACKED, 0) + c.get(tr.CLEARING, 0)
+    if n_raised:
+        s = f"{n_raised} raised"
+        if c.get(tr.ACTIVE):
+            s += f" ({c[tr.ACTIVE]} unacknowledged)"
+        parts.append(_colored(s, tr.ACTIVE))
+    for st, word in (
+        (tr.PENDING, "pending"),
+        (tr.STATE_UNKNOWN, "unknown"),
+        (tr.INHIBITED, "inhibited"),
+        (tr.SHELVED, "shelved"),
+        (tr.DISABLED, "disabled"),
+        (tr.STATE_OK, "ok"),
+    ):
+        if c.get(st):
+            parts.append(_colored(f"{c[st]} {word}", st))
+    return " · ".join(parts) if parts else "no alarms"
 
 
 class AlarmGroup(Assembly):
-    """One labelled section of an alarm panel (a caQtDM group box, e.g.
-    "Oscillator"/"Amplifiers") -- a flat collection of named `Alarm`s built
-    through `Assembly._append` like any other eco device tree.
-    """
+    """One labelled section of an alarm panel -- a flat collection of
+    named `Alarm`s."""
 
-    def __init__(self, channels, name=None, label=None):
+    def __init__(self, channels, name=None, label=None, alarm_defaults=None):
         """`channels`: iterable of dicts, each either
-        ``{"name": ..., "detector": <Detector instance>, "min": ..., "max": ...}``
-        or ``{"name": ..., "pv": <PV name string>, "min": ..., "max": ...}``
-        (the ``pv`` form lazily builds a
-        `eco.epics_utils.detector.DetectorPvData`). ``label`` is the
-        human-readable section title if it differs from `name` (which must be
-        a valid attribute name); defaults to `name`.
-        """
+        ``{"name": ..., "detector": <Detector>, "min": ..., "max": ...}`` or
+        ``{"name": ..., "pv": <PV name>, ...}`` (builds a
+        `DetectorPvData`); any further keys are `Alarm` arguments.
+        `alarm_defaults` are `Alarm` arguments applied to every channel
+        unless the channel sets them itself."""
         super().__init__(name=name)
         self.label = label if label is not None else name
         self._channel_names = []
         for ch in channels:
-            ch = dict(ch)
+            ch = dict(alarm_defaults or {}, **ch)
             cname = ch.pop("name")
             detector = ch.pop("detector", None)
             if detector is None:
@@ -273,6 +756,9 @@ class AlarmGroup(Assembly):
             self._append(Alarm, detector=detector, name=cname, is_status=True, **ch)
             self._channel_names.append(cname)
 
+    def get_alarms(self):
+        return [getattr(self, n) for n in self._channel_names]
+
     def get_severities(self):
         return {n: getattr(self, n).get_severity() for n in self._channel_names}
 
@@ -280,28 +766,30 @@ class AlarmGroup(Assembly):
         sevs = list(self.get_severities().values())
         return max(sevs) if sevs else AlarmSeverity.UNKNOWN
 
+    def _rows(self, snapshot, now, prefix=""):
+        rows, states = [], []
+        if not snapshot:
+            evaluate_alarms(self.get_alarms(), now=now)
+        for cname in self._channel_names:
+            a = getattr(self, cname)
+            row = a.display_row(label=prefix + cname, snapshot=snapshot or {}, now=now)
+            rows.append(row)
+            states.append(a.get_state_info(snapshot=snapshot or {}, evaluate=False)["state"])
+        return rows, states
+
     def get_display_str(self, tablefmt="simple", **kwargs):
-        """Overrides `Assembly.get_display_str` (so `.status()`/`repr()`
-        pick this up automatically): a LED + Min/Value/Max table instead of
-        the generic single full-precision "value" column -- see
-        `_alarm_row`/`_render_alarm_table`. Extra kwargs (`with_base_name`,
-        `maxcolwidths`, `show_triggers`, ...) are accepted for interface
-        compatibility with the base method's callers but don't apply here:
-        every row in an `AlarmGroup` is a plain `Alarm` channel, never a
-        trigger or a further-nested sub-assembly."""
-        rows = [_alarm_row(cname, getattr(self, cname)) for cname in self._channel_names]
-        return _render_alarm_table(rows, tablefmt=tablefmt)
+        now = time.time()
+        snap = monitor_snapshot()
+        rows, states = self._rows(snap, now)
+        return summary_line(states) + "\n" + _render_alarm_table(rows, tablefmt=tablefmt)
 
 
 class AlarmPanel(Assembly):
-    """A full alarm-overview panel: a named collection of `AlarmGroup`
-    sections -- one eco object per caQtDM alarm-overview ``.ui`` file (see
-    `eco.devices_general.alarms`).
-    """
+    """A full alarm-overview panel: named `AlarmGroup` sections."""
 
-    def __init__(self, sections, name=None):
-        """`sections`: iterable of ``(section_label, channels)`` pairs, where
-        `channels` is the same list-of-dicts `AlarmGroup` takes."""
+    def __init__(self, sections, name=None, alarm_defaults=None):
+        """`sections`: iterable of ``(section_label, channels)`` pairs,
+        `channels` as for `AlarmGroup`."""
         super().__init__(name=name)
         self._group_names = []
         for label, channels in sections:
@@ -309,16 +797,25 @@ class AlarmPanel(Assembly):
             while gname in self._group_names:
                 gname += "_"
             self._append(
-                AlarmGroup, channels, name=gname, label=label, is_display="recursive"
+                AlarmGroup,
+                channels,
+                name=gname,
+                label=label,
+                alarm_defaults=alarm_defaults,
+                is_display="recursive",
             )
             self._group_names.append(gname)
 
+    def get_groups(self):
+        return [getattr(self, g) for g in self._group_names]
+
+    def get_alarms(self):
+        return [a for g in self.get_groups() for a in g.get_alarms()]
+
     def get_severities(self):
-        """``{"<group>.<channel>": AlarmSeverity}`` for every channel."""
         out = {}
         for gname in self._group_names:
-            group = getattr(self, gname)
-            for cname, sev in group.get_severities().items():
+            for cname, sev in getattr(self, gname).get_severities().items():
                 out[f"{gname}.{cname}"] = sev
         return out
 
@@ -326,58 +823,79 @@ class AlarmPanel(Assembly):
         sevs = list(self.get_severities().values())
         return max(sevs) if sevs else AlarmSeverity.UNKNOWN
 
+    def display_rows(self, snapshot, now, with_section=True):
+        if not snapshot:
+            evaluate_alarms(self.get_alarms(), now=now)
+        rows, keys, states = [], [], []
+        for g in self.get_groups():
+            for cname in g._channel_names:
+                a = getattr(g, cname)
+                label = f"{g.label}.{cname}" if with_section else cname
+                rows.append(a.display_row(label=label, snapshot=snapshot or {}, now=now))
+                keys.append(g.label)
+                states.append(
+                    a.get_state_info(snapshot=snapshot or {}, evaluate=False)["state"]
+                )
+        return rows, keys, states
+
     def get_display_str(self, tablefmt="simple", **kwargs):
-        """Same LED + Min/Value/Max table as `AlarmGroup.get_display_str`,
-        flattened across every section, with each section's rows given
-        their own background shade (`section_row_styles`, the same
-        convention `Assembly.get_display_str` itself uses for nested
-        sub-assemblies) keyed by the section's human label."""
-        rows, group_keys = [], []
-        for gname in self._group_names:
-            group = getattr(self, gname)
-            for cname in group._channel_names:
-                rows.append(_alarm_row(f"{group.label}.{cname}", getattr(group, cname)))
-                group_keys.append(group.label)
-        return _render_alarm_table(rows, group_keys=group_keys, tablefmt=tablefmt)
+        now = time.time()
+        snap = monitor_snapshot()
+        rows, keys, states = self.display_rows(snap, now)
+        return summary_line(states) + "\n" + _render_alarm_table(
+            rows, group_keys=keys, tablefmt=tablefmt
+        )
 
     # ---- clickable panel -------------------------------------------------
-    # `_widget_svg_panel()` is the dynamic-panel hook `Assembly.show()`
-    # looks for (see its docstring) -- same `_widget_`-prefixed convention
-    # as `PrepumpSystem._widget_svg_panel`/`XrayBeamline._widget_svg_panel`.
     def _widget_svg_panel(self, live=False, cols=6, path=None, **kwargs):
-        """Build a panel SVG (grouped by section, one cell per channel,
-        green/red by `AlarmSeverity` when ``live=True``) and return its file
-        path. Reuses `eco.xoptics.beamline_svg.build_beamline_svg` -- the same
-        grouped-grid-of-clickable-symbols renderer the beamline/vacuum panels
-        use -- rather than a parallel implementation."""
+        """Tile panel SVG (one tile per alarm: value, state colour, time in
+        state), grouped by section; returns its file path. Click a tile to
+        inspect that alarm."""
+        from eco.alarms.svg import build_alarm_svg
         from eco.utilities.tempfiles import user_temp_svg_path
-        from eco.xoptics.beamline_svg import build_beamline_svg
 
-        items = []
+        now = time.time()
+        snap = monitor_snapshot() if live else None
+        if live and not snap:
+            evaluate_alarms(self.get_alarms(), now=now)
+        tiles = []
         for gname in self._group_names:
-            group = getattr(self, gname)
-            for cname in group._channel_names:
-                alarm = getattr(group, cname)
-                state = None
-                if live:
-                    sev = alarm.get_severity()
-                    if sev == AlarmSeverity.OK:
-                        state = True
-                    elif sev in (AlarmSeverity.WARNING, AlarmSeverity.ALARM):
-                        state = False
-                items.append(
-                    {
-                        "relpath": f"{gname}.{cname}",
-                        "label": cname,
-                        "kind": "alarm",
-                        "section": group.label,
-                        "z": None,
-                        "state": state,
-                    }
-                )
-        svg_text = build_beamline_svg(items, title=self.name or "alarms", cols=cols)
+            g = getattr(self, gname)
+            for cname in g._channel_names:
+                a = getattr(g, cname)
+                tiles.append(alarm_tile(a, f"{gname}.{cname}", g.label, snap, now, live))
+        svg_text = build_alarm_svg(tiles, title=self.name or "alarms", cols=cols)
         if path is None:
             path = user_temp_svg_path("eco_alarms", self.name or id(self))
         with open(path, "w") as f:
             f.write(svg_text)
         return path
+
+
+def alarm_tile(alarm, relpath, section, snapshot, now, live=True):
+    """Dict for :func:`eco.alarms.svg.build_alarm_svg`."""
+    s = alarm.get_settings()
+    if live:
+        info = alarm.get_state_info(snapshot=snapshot or {}, evaluate=False)
+        state = info.get("state")
+        value = info.get("last_value")
+        if state in tr.RAISED_STATES:
+            since = info.get("active_since")
+        elif state == tr.PENDING:
+            since = info.get("violating_since")
+        else:
+            since = info.get("state_since")
+    else:
+        state, value, since, info = None, None, None, {}
+    unit = f" {alarm.unit}" if alarm.unit else ""
+    return {
+        "relpath": relpath,
+        "label": alarm.label or alarm.name,
+        "section": section,
+        "state": state,
+        "value": None if not live else _fmt_num(value) + unit,
+        "range": _fmt_range(s["min"], s["max"]),
+        "level": s["level"],
+        "duration": fmt_duration(now - since) if since else "",
+        "count": info.get("count") or 0,
+    }

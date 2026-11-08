@@ -11,11 +11,12 @@ See :mod:`eco.elements.alarm` for the generic `Alarm`/`AlarmGroup`/
 the concrete Bernina/Papamoll panels and their provenance/caveats.
 """
 
-from .panels import BerninaAlarmsOverview, PapamollAlarms
+from .panels import BerninaAlarmsOverview, BerninaAlarmSystem, PapamollAlarms
 from eco.elements.alarm import Alarm, AlarmGroup, AlarmPanel, AlarmSeverity
 
 __all__ = [
     "BerninaAlarmsOverview",
+    "BerninaAlarmSystem",
     "PapamollAlarms",
     "Alarm",
     "AlarmGroup",

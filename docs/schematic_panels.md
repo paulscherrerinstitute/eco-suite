@@ -6,7 +6,7 @@ the corresponding caQtDM panels. Open one with `.show()`:
 
 ```python
 prepump.show()                 # prepump P&ID: valves, gauges, pumps, per-line state
-alarms.show(live=True)         # Bernina alarm overview, green/red per channel
+alarms.show(live=True)         # Bernina alarms, one tile per channel
 beamline.svg_panel(live=True)  # X-ray beamline layout
 ```
 
@@ -40,14 +40,16 @@ are described in `eco/devices_general/vacuum/README.md` in the repository.
 
 ## Alarm panels
 
-`alarms` (the Bernina overview), `papamoll_alarms_35fs` and
-`papamoll_alarms_100fs` model the caQtDM alarm overviews. Each channel
-reports `OK`, `WARNING` or `ALARM`:
+`alarms.overview` (the Bernina overview), `papamoll_alarms_35fs` and
+`papamoll_alarms_100fs` model the caQtDM alarm overviews, one tile per
+channel with its value, state and time in state:
 
 ```python
-alarms.worst_severity()          # one value for the whole panel
-alarms.show(live=True)
+alarms.overview.worst_severity()   # one value for the whole panel
+alarms.show(live=True)             # overview plus user-added alarms
 ```
+
+Thresholds, delays and phone paging are described in {doc}`alarms`.
 
 Build your own panel from a list of channels with
 `eco.elements.alarm.AlarmPanel`. See `eco/devices_general/alarms/README.md` in

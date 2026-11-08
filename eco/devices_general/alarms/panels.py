@@ -19,6 +19,7 @@ under ``/sf/bernina/config/src/caqtdm/alarms/`` -- see that module's docstring
 for provenance and caveats.
 """
 
+from eco.alarms.system import AlarmSystem
 from eco.elements.alarm import AlarmPanel
 
 from .data import MAIN_ALARMS_SECTIONS, PAPAMOLL_ALARMS_SECTIONS, PAPAMOLL_LABELS
@@ -54,3 +55,21 @@ class PapamollAlarms(AlarmPanel):
         self.config = config
         self.config_label = PAPAMOLL_LABELS.get(config, config)
         super().__init__(PAPAMOLL_ALARMS_SECTIONS[config], name=name)
+
+
+class BerninaAlarmSystem(AlarmSystem):
+    """The namespace object ``alarms``: the overview panel as
+    ``alarms.overview``, user-added alarms as ``alarms.custom``, plus shift
+    plan and phone paging -- see `eco.alarms.system.AlarmSystem`.
+
+    The panel's channels start at level ``display`` (shown, never paged);
+    raise single ones with e.g.
+    ``alarms.overview.swissfel.Electron_Beam.level("critical")``.
+    """
+
+    def __init__(self, name="alarms", namespace="eco.bernina.bernina:namespace"):
+        super().__init__(
+            panels={"overview": (BerninaAlarmsOverview, (), {})},
+            name=name,
+            namespace=namespace,
+        )

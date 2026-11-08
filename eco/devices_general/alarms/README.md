@@ -27,6 +27,11 @@ This package turns that same idea into eco objects, generically:
   `PrepumpSystem`/`XrayBeamline` use — see
   `eco/devices_general/vacuum/prepump.py`.
 
+In the Bernina namespace the overview is `alarms.overview`, part of the
+alarm system (`BerninaAlarmSystem`, see `eco/alarms/` and `docs/alarms.md`):
+timed alarm states, settable thresholds and levels, shift plan, phone paging.
+Channels from these panels start at level `display` (never paged).
+
 ## The concrete panels
 
 | caQtDM panel | eco class | source |
