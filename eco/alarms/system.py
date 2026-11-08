@@ -133,6 +133,14 @@ class AlarmSystem(Assembly):
     ``"eco.bernina.bernina:namespace"``).
     """
 
+    _default_widget = "_widget_alarms"
+
+    def _widget_alarms(self, **kwargs):
+        """Alarm table with arm/disarm, on call, acknowledge/shelve (Qt)."""
+        from eco.elements.alarm import _qt_or_generic
+
+        return _qt_or_generic(self, "table", **kwargs)
+
     def __init__(self, panels=None, name="alarms", namespace=None):
         super().__init__(name=name)
         self._namespace = namespace

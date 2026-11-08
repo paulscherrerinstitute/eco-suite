@@ -99,7 +99,7 @@ def _fmt_num(v):
     if isinstance(v, float):
         return f"{v:.4g}"
     s = " ".join(str(v).split())
-    return s if len(s) <= 28 else s[:27] + "…"
+    return s if len(s) <= 24 else s[:23] + "…"
 
 
 def fmt_duration(s):
@@ -232,6 +232,22 @@ _SETTINGS = {
 }
 
 
+def _qt_or_generic(obj, kind, **kwargs):
+    """`_default_widget` target: the alarm Qt window, or the generic
+    property grid in a notebook / without Qt."""
+    from eco.utilities.utilities import is_notebook
+
+    if not is_notebook():
+        try:
+            from eco.widgets import alarms_qt
+        except ImportError:
+            alarms_qt = None
+        if alarms_qt is not None:
+            cls = alarms_qt.AlarmDetailQt if kind == "detail" else alarms_qt.AlarmTableQt
+            return cls(obj).start()
+    return obj._widget_assembly(**kwargs)
+
+
 class Alarm(Assembly):
     """An alarm on one Detector.
 
@@ -259,6 +275,12 @@ class Alarm(Assembly):
     alarm_id : str
         Key for the shared settings; default the full alias name.
     """
+
+    _default_widget = "_widget_alarm"
+
+    def _widget_alarm(self, **kwargs):
+        """Live state plus editable settings (Qt)."""
+        return _qt_or_generic(self, "detail", **kwargs)
 
     def __init__(
         self,
@@ -574,8 +596,8 @@ class Alarm(Assembly):
             since = info.get("state_since")
         dur = fmt_duration(now - since) if since else ""
         state_txt = state.upper() if state in tr.RAISED_STATES else state
-        if state == tr.ACKED and info.get("acked_by"):
-            state_txt += f" ({info['acked_by']})"
+        if state in tr.RAISED_STATES and info.get("acked_by"):
+            state_txt += f" · {info['acked_by']}"
         if state == tr.SHELVED:
             until = self.shelved_until()
             if until:
@@ -639,12 +661,14 @@ def _render_alarm_table(rows, group_keys=None, tablefmt="simple"):
         return "(no alarms)"
     from eco.utilities.tables import format_table, section_row_styles
 
-    row_styles = section_row_styles(group_keys) if group_keys else None
+    # no section shading: in an alarm table the colour is the state, and the
+    # section is already part of the alarm name
+    row_styles = [""]
     return format_table(
         rows,
         headers=ALARM_TABLE_HEADERS,
         tablefmt=tablefmt,
-        maxcolwidths=[None, None, 30, None, None, None, None, None],
+        maxcolwidths=[None, None, 26, None, None, None, None, None],
         colalign=_ALARM_TABLE_COLALIGN,
         row_styles=row_styles,
     )
@@ -734,6 +758,12 @@ class AlarmGroup(Assembly):
     """One labelled section of an alarm panel -- a flat collection of
     named `Alarm`s."""
 
+    _default_widget = "_widget_alarms"
+
+    def _widget_alarms(self, **kwargs):
+        """Alarm table with acknowledge/shelve (Qt)."""
+        return _qt_or_generic(self, "table", **kwargs)
+
     def __init__(self, channels, name=None, label=None, alarm_defaults=None):
         """`channels`: iterable of dicts, each either
         ``{"name": ..., "detector": <Detector>, "min": ..., "max": ...}`` or
@@ -786,6 +816,12 @@ class AlarmGroup(Assembly):
 
 class AlarmPanel(Assembly):
     """A full alarm-overview panel: named `AlarmGroup` sections."""
+
+    _default_widget = "_widget_alarms"
+
+    def _widget_alarms(self, **kwargs):
+        """Alarm table with acknowledge/shelve (Qt)."""
+        return _qt_or_generic(self, "table", **kwargs)
 
     def __init__(self, sections, name=None, alarm_defaults=None):
         """`sections`: iterable of ``(section_label, channels)`` pairs,

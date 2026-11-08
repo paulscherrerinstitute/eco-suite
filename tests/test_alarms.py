@@ -134,7 +134,7 @@ def test_alarm_check_ack_request_and_display():
     a.ack(by="tester")
     assert a.tracker.state == tr.ACKED
     s = _plain(a.get_display_str())
-    assert "ACKED (tester)" in s and "11 mJ" in s and "[0, 10]" in s
+    assert "ACKED · tester" in s and "11 mJ" in s and "[0, 10]" in s
     assert a.get_severity().name == "ALARM"
 
 
@@ -354,3 +354,37 @@ def test_system_display(setup_monitor):
     mon.step(now=_t("2026-11-12 08:00").timestamp())
     s = _plain(system.get_display_str())
     assert "ARMED" in s and "intensity" in s
+
+
+# ---------------------------------------------------------------- Qt
+
+
+def test_qt_alarm_windows(setup_monitor):
+    pytest.importorskip("qtpy")
+    import time as _time
+
+    from qtpy import QtWidgets
+
+    from eco.widgets.alarms_qt import AlarmDetailQt, AlarmTableQt
+
+    box, system, mon, backend = setup_monitor
+    box.v = 3.0
+    mon.step()
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    table = AlarmTableQt(system).start()
+    detail = AlarmDetailQt(system.find("intensity")).start()
+    t_end = _time.time() + 3
+    while _time.time() < t_end and table._table.rowCount() < 2:
+        app.processEvents()
+        _time.sleep(0.02)
+    # one section line + one alarm line
+    assert table._table.rowCount() == 2
+    assert table._lines[1][1]["state"] == "active"
+    assert table._arm_btn.text() == "Disarm…"
+    t_end = _time.time() + 3
+    while _time.time() < t_end and detail._loaded is None:
+        app.processEvents()
+        _time.sleep(0.02)
+    assert detail._editors["level"].currentText() == "critical"
+    table.stop()
+    detail.stop()
