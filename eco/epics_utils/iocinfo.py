@@ -28,6 +28,17 @@ What this can and can't tell you
   to a separate terminal server" topology. This is inferred from the API's
   `platform`/`epicsHostArchitecture` fields, not independently confirmed by
   reading that box's own asyn/startup config.
+* The same applies to the Bernina sample-table hexapod's IOC,
+  `SARES20-CSSU-HXP` (hostname `SARES20-CSSU-ESB1`, also a Moxa
+  DA-662A-16-LX) -- `shellbox` is null for it too. Confirmed directly
+  (2026-11-08) by passively reading port 50001 on that host: it is a live
+  procServ console for this IOC's `iocsh` child. This is a different IOC
+  from the one serving the hexapod's actual motion PVs
+  (`SARES20-HEXSYM:*`, owning IOC `SARES20-CPCL-HEXSYM`, a normal soft IOC
+  on `saresb-vserv-01.psi.ch` with a working `shellbox`) -- CA access to
+  `SARES20-HEXSYM:*` is unaffected by `SARES20-CSSU-HXP`'s console being
+  unresolvable; only the ioc-finder GUI's console/restart lookup for the
+  Moxa box itself was broken.
 
 Sending input to a console -- :func:`send_console_keys` / :func:`restart_ioc`
 --------------------------------------------------------------------------
@@ -69,6 +80,7 @@ RESTART_KEY = b"\x18"  # Ctrl-X
 CONSOLE_PORT_OVERRIDES: dict[str, tuple[str, int]] = {
     "SARES20-CSSU-MF1": ("SARES20-CSSU-MF1", 50001),
     "SARES20-CSSU-MF2": ("SARES20-CSSU-MF2", 50001),
+    "SARES20-CSSU-HXP": ("SARES20-CSSU-ESB1", 50001),
 }
 
 
