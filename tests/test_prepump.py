@@ -152,7 +152,7 @@ def test_cli_accepts_caqtdm_single_argument(monkeypatch):
     monkeypatch.setattr(cli, "_resolve_line", lambda s, k: seen.append(k) or "x")
     monkeypatch.setattr(cli, "run_sequence", lambda *a: seen.append(a[1:3]) or 0)
     assert cli.main(["pump_down 1 "]) == 0
-    assert seen[-2:] == ["1", ("pump_down", "x")]
+    assert seen[1:] == ["1", "sys", ("pump_down", "x")]  # resolve, status, run
 
 
 def test_bernina_config_is_complete():
