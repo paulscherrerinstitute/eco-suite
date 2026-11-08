@@ -424,15 +424,20 @@ def plot_table(tab, x="time", ax=None, title=None, **plot_kwargs):
     which places its ticks where the (time, run) pairs actually are, so gaps
     (nights, beam downtime) and runs written out of order stay correct;
     without escape a plain interpolated axis is used.
+
+    `ax` follows eco's usual "plot on my axis/figure/last plot" convention
+    (`eco.utilities.plot_mpl.resolve_plot_axes`): None (default) opens a new
+    figure; an existing Axes (e.g. `ax=plt.gca()`) or Figure draws into it
+    instead.
     """
     import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
+
+    from eco.utilities.plot_mpl import resolve_plot_axes
 
     if x not in ("time", "run"):
         raise ValueError(f"x must be 'time' or 'run', not {x!r}")
     tab = tab[tab["time"].notna()] if x == "time" else tab
-    if ax is None:
-        _, ax = plt.subplots()
+    ax = resolve_plot_axes(ax, default="new")
     xs = tab["time"] if x == "time" else tab.index
     plot_kwargs.setdefault("marker", ".")
     plotted = []

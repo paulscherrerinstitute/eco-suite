@@ -3,7 +3,12 @@ from eco import ecocnf
 
 def get_from_archive(Obj, attribute_name="pvname"):
     def get_archiver_time_range(self, start=None, end=None, plot=True, **kwargs):
-        """Try to retrieve data within timerange from archiver. A time delta from now is assumed if end time is missing."""
+        """Try to retrieve data within timerange from archiver. A time delta
+        from now is assumed if end time is missing.
+
+        `plot` (default True): plot the result into a new figure; pass an
+        existing Axes or Figure (e.g. `plot=plt.gca()` for your current/last
+        axes) to draw into it instead, or `plot=False` to skip plotting."""
         channelname = self.__dict__[attribute_name]
         return ecocnf.archiver.get_data_time_range(
             channels=[channelname],

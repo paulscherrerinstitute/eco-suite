@@ -854,22 +854,34 @@ def _ask_save_filename(default_name):
         return None
 
 
-def _plot_dataframe(data, channels, labels=None):
-    # A fresh figure, rather than `plt.gca()`: reusing an axes that already
-    # holds an unrelated, plain-numeric plot corrupts the shared data limits
-    # once date data is added (matplotlib unions old and new ranges), which
-    # silently blows up the visible x-range to spans of decades and leaves
-    # the tick labels showing that bogus range's raw internal day-numbers
-    # instead of the actual dates.
-    fig, ah = plt.subplots()
+def _plot_dataframe(data, channels, labels=None, plot=True):
+    """Draw `data`'s `channels` as a step-line plot and show it. `plot`
+    follows the shared "plot on my axis/figure/last plot" convention (see
+    `eco.utilities.plot_mpl.resolve_plot_axes`): True (default) opens a
+    fresh figure -- deliberately never `plt.gca()` on its own, since reusing
+    an axes that already holds an unrelated, plain-numeric plot corrupts the
+    shared data limits once date data is added (matplotlib unions old and
+    new ranges), which silently blows up the visible x-range to spans of
+    decades and leaves the tick labels showing that bogus range's raw
+    internal day-numbers instead of the actual dates. Pass an existing Axes
+    or Figure (e.g. `plot=plt.gca()`, `plot=plt.gcf()`) to draw into it
+    anyway -- that's then the caller's own choice. `plot=False`/`None` skips
+    plotting."""
+    from ..utilities.plot_mpl import resolve_plot_axes
+
+    ah = resolve_plot_axes(plot, default="skip")
+    if ah is None:
+        return
+    fig = ah.figure
+    plt.sca(ah)
     lines = _plot_dataframe_on(ah, data, channels, labels)
     plt.xticks(rotation=30)
     plt.legend()
     plt.tight_layout()
     plt.xlabel(data.index.name)
-    ah.figure.tight_layout()
+    fig.tight_layout()
     _attach_select_curves(fig, ah, lines)
-    _show_figure(ah.figure)
+    _show_figure(fig)
 
 
 def _plot_dataframe_on(ah, data, channels, labels=None):
@@ -2027,8 +2039,8 @@ class DataHub(Assembly):
                 if column in data.columns
             ]
             data = data[ordered + [c for c in data.columns if c not in ordered]]
-        if plot and data is not None:
-            _plot_dataframe(data, channel_ids, names)
+        if data is not None:
+            _plot_dataframe(data, channel_ids, names, plot=plot)
         if data is not None and column_names != "channel":
             data = _rename_columns(data, _display_names(channel_ids, names, column_names))
         return data
@@ -2119,6 +2131,10 @@ class DataHub(Assembly):
         name. A warning is printed when BS channels over a long range would
         mean millions of samples; `verbose=False` skips the explaining
         requests and logs that warning instead.
+
+        `plot=True` plots into a new figure; `plot=False`/`None` (default)
+        doesn't plot; pass an existing Axes or Figure (e.g. `plot=plt.gca()`
+        for your current/last axes, or a Figure) to draw into it instead.
         """
         targets, start, end = _positional_range(
             targets,
@@ -2259,8 +2275,8 @@ class DataHub(Assembly):
             data.index.name = "timestamp"
             if convert_timezone:
                 data.index = data.index.tz_convert("Europe/Zurich")
-        if plot and data is not None:
-            _plot_dataframe(data, channels, labels)
+        if data is not None:
+            _plot_dataframe(data, channels, labels, plot=plot)
         return data
 
     def strip_plot(

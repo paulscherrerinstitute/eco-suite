@@ -166,7 +166,10 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
         absolute times are local time, a trailing "Z" or a tz-aware datetime
         is taken as given.
 
-        `plot`: also plot the result. `force_type` "CA"/"BS": query one
+        `plot` (default True): plot the result into a new figure; pass an
+        existing Axes or Figure (e.g. `plot=plt.gca()` for your current/last
+        axes) to draw into it instead, or `plot=False` to skip plotting.
+        `force_type` "CA"/"BS": query one
         backend for all channels instead of using each channel's own type.
         `verbose` (default True): print the exact UTC range sent to the
         archiver and, per channel, whether data came back or why not (no
@@ -207,10 +210,10 @@ def get_from_archive(Obj, attribute_name="pvname", force_type=None, remove_nulls
             dropped = [c for c in channel_ids if c not in data.keys()]
             if dropped and kwargs.get("verbose", True):
                 print(f"  dropped (no data): {', '.join(dropped)}")
-        if plot and not data.empty:
+        if not data.empty:
             from ..dbase.archiver import _plot_dataframe
 
-            _plot_dataframe(data, channel_ids, labels)
+            _plot_dataframe(data, channel_ids, labels, plot=plot)
         if column_names != "channel":
             from ..dbase.archiver import _display_names, _rename_columns
 

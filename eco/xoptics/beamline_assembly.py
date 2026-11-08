@@ -957,15 +957,19 @@ class Beamline(Assembly):
         `add_zone_condition`) as a shaded band colored by their current
         live value -- yellow if active, gray if not, hatched red if the
         condition itself couldn't be evaluated (e.g. no EPICS connection).
+
+        `ax` follows eco's usual "plot on my axis/figure/last plot"
+        convention (`eco.utilities.plot_mpl.resolve_plot_axes`): None
+        (default) opens a new figure (sized by `figsize`); an existing Axes
+        (e.g. `ax=plt.gca()`) or Figure draws into it instead.
         """
-        import matplotlib.pyplot as plt
+        from eco.utilities.plot_mpl import resolve_plot_axes
 
         rows = [r for r in self.position_table(ref=ref, kinds=kinds) if r[2] is not None]
         points = [r for r in rows if r[3] is None]
         spans = [r for r in rows if r[3] is not None]
 
-        if ax is None:
-            _, ax = plt.subplots(figsize=figsize)
+        ax = resolve_plot_axes(ax, default="new", figsize=figsize)
 
         for name, _kind, z, z_end, _section, _desc in spans:
             component = self._find_component(name)
