@@ -79,6 +79,12 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
   `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
+## 8 November 2026
+
+- `eco.start_scilog()`: SciLog in the browser, one logbook as a flow of
+  days with an outline, typo-tolerant search with previews, images at their
+  set size and interactive plots inline ({doc}`scilog_viewer`).
+
 ## 5 and 6 November 2026
 
 **Asking eco (`%ei`)** — {doc}`ask_eco`

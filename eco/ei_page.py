@@ -34,33 +34,18 @@ AROUND = 3
 #: images larger than this are linked, not embedded
 MAX_IMAGE_BYTES = 8_000_000
 
-_TAGS = {
-    "p", "br", "b", "strong", "i", "em", "u", "s", "sub", "sup", "span", "div", "hr",
-    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "pre", "code",
-    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
-    "a", "img", "figure", "figcaption",
-}
-_ATTRIBUTES = {
-    "a": {"href"},
-    "img": {"title", "alt", "width", "height"},
-    "td": {"colspan", "rowspan"},
-    "th": {"colspan", "rowspan"},
-    "col": {"span"},
-    "ol": {"start"},
-}
 _IMG_RX = re.compile(r"<img\b([^>]*)>", re.I)
 _ATTR_RX = re.compile(r'(\w+)="([^"]*)"')
 
 
 def clean_html(text):
     """Untrusted HTML (a SciLog post, a model's answer) reduced to plain
-    formatting: no scripts, styles, event handlers or foreign URL schemes.
-    Without nh3, the text alone."""
-    try:
-        import nh3
-    except ImportError:
-        return f"<pre>{html.escape(logs_sources.html_to_text(text))}</pre>"
-    return nh3.clean(text, tags=_TAGS, attributes=_ATTRIBUTES, url_schemes={"http", "https", "mailto"})
+    formatting: no scripts, event handlers or foreign URL schemes. Uses nh3,
+    else bleach (the console environments have only bleach), else the text
+    alone -- see eco.scilog_app.content.sanitize."""
+    from eco.scilog_app.content import sanitize
+
+    return sanitize(text)
 
 
 # -- SciLog ---------------------------------------------------------------------------

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SciLog viewer</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header id="bar">
+  <button id="toggle-outline" title="Outline (o)" aria-label="Outline">&#9776;</button>
+  <button id="logbook-button" title="Choose a logbook (l)"><span id="logbook-name">Choose a logbook</span> &#9662;</button>
+  <div id="search-wrap">
+    <input id="search" type="search" placeholder="Search this logbook  ( / )" autocomplete="off" spellcheck="false">
+    <div id="results" hidden></div>
+  </div>
+  <a id="scilog-link" target="_blank" rel="noopener" title="This logbook in SciLog" hidden>SciLog &#8599;</a>
+  <span id="status"></span>
+</header>
+
+<div id="picker" hidden>
+  <input id="picker-filter" type="search" placeholder="Filter logbooks by name, pgroup or location" autocomplete="off">
+  <ol id="picker-list"></ol>
+</div>
+
+<div id="layout">
+  <nav id="outline" aria-label="Outline">
+    <div id="outline-tree"></div>
+  </nav>
+  <main id="flow" tabindex="-1">
+    <p class="hint">Loading ...</p>
+  </main>
+</div>
+<div id="day-banner" aria-hidden="true"></div>
+<div id="toast" role="status" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

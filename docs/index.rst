@@ -172,6 +172,7 @@ scientific Python libraries.
    status_server
    alarms
    run_history
+   scilog_viewer
    shared_files
 
 .. toctree::

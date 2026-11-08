@@ -1,0 +1,119 @@
+:root {
+  --bg: #ffffff; --fg: #1d1f23; --muted: #5f6672; --line: #dfe2e7; --panel: #f6f7f9;
+  --accent: #1f5fbf; --hit: #ffe58a; --flash: #fff4c2; --code: #f2f3f5; --shadow: rgba(0, 0, 0, .12);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171b; --fg: #e3e5e8; --muted: #9aa1ab; --line: #30343b; --panel: #1c1f24;
+    --accent: #7fb0ff; --hit: #6b5a12; --flash: #2f2a16; --code: #22252b; --shadow: rgba(0, 0, 0, .5);
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); }
+button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+button:hover { background: var(--panel); }
+
+#bar { position: fixed; inset: 0 0 auto 0; height: 48px; display: flex; align-items: center; gap: 8px;
+       padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); z-index: 20; }
+#logbook-button { max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+#search-wrap { position: relative; flex: 1; max-width: 640px; }
+#search { width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+#status { color: var(--muted); font-size: .85em; white-space: nowrap; margin-left: auto; }
+#scilog-link { white-space: nowrap; font-size: .9em; }
+
+#results { position: absolute; top: 40px; left: 0; right: 0; max-height: 70vh; overflow-y: auto; background: var(--bg);
+           border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow); }
+#results .result { padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+#results .result.active, #results .result:hover { background: var(--panel); }
+#results .meta { color: var(--muted); font-size: .82em; }
+#results .snippet { font-size: .92em; overflow-wrap: anywhere; }
+#results .count { padding: 6px 12px; color: var(--muted); font-size: .85em; }
+/* wide screens: the results as a column on the right, the flow stays visible beside it */
+@media (min-width: 1100px) {
+  #results { position: fixed; top: 48px; right: 0; bottom: 0; left: auto; width: 420px; max-height: none;
+             border-radius: 0; border-width: 0 0 0 1px; box-shadow: none; }
+  body.searching #layout { right: 420px; }
+}
+mark.hit { background: var(--hit); color: inherit; border-radius: 2px; }
+
+#picker { position: fixed; top: 52px; left: 12px; width: min(560px, calc(100vw - 24px)); max-height: 75vh; display: flex;
+          flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+          box-shadow: 0 8px 24px var(--shadow); z-index: 30; }
+#picker-filter { margin: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+#picker-list { list-style: none; margin: 0; padding: 0 0 8px; overflow-y: auto; }
+#picker-list li { padding: 6px 12px; cursor: pointer; }
+#picker-list li:hover, #picker-list li.active { background: var(--panel); }
+#picker-list .meta { color: var(--muted); font-size: .82em; }
+
+#layout { position: fixed; inset: 48px 0 0 0; display: flex; }
+#outline { width: 300px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); padding: 8px 6px 40px; font-size: .9em; }
+body.no-outline #outline { display: none; }
+#flow { flex: 1; overflow-y: auto; padding: 0 24px 80px; outline: none; }
+.hint { color: var(--muted); padding: 24px 0; }
+
+.o-month > .o-label { font-weight: 700; margin-top: 8px; }
+.o-day > .o-label { font-weight: 600; margin-top: 4px; color: var(--muted); }
+.o-label { cursor: pointer; padding: 2px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.o-label:hover { background: var(--panel); }
+.o-label.current { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+.o-post { padding-left: 10px; }
+.o-head { padding-left: 22px; color: var(--muted); }
+.o-head.h3 { padding-left: 32px; } .o-head.h4, .o-head.h5, .o-head.h6 { padding-left: 42px; }
+.o-collapsed > .o-children { display: none; }
+.o-toggle { display: inline-block; width: 1em; color: var(--muted); }
+
+.day { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0 6px; margin-top: 8px;
+       border-bottom: 1px solid var(--line); font-weight: 700; }
+.day .date { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: .9em; }
+.post, .body h1, .body h2, .body h3, .body h4, .body h5, .body h6 { scroll-margin-top: 48px; }
+.post { padding: 10px 12px; margin: 6px -12px; border-radius: 8px; content-visibility: auto; contain-intrinsic-size: auto 200px; }
+.post.flash { animation: flash 2.4s ease-out; }
+@keyframes flash { from { background: var(--flash); } to { background: transparent; } }
+.post:target, .post.current { box-shadow: inset 3px 0 0 var(--accent); }
+.post-head { display: flex; gap: 8px; align-items: baseline; color: var(--muted); font-size: .85em; flex-wrap: wrap; }
+.post-head .time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg); }
+.post-head .tag { border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; }
+.post-head .actions { margin-left: auto; opacity: 0; transition: opacity .15s; }
+.post:hover .post-head .actions, .post:focus-within .post-head .actions { opacity: 1; }
+.post-head .actions button { padding: 0 6px; font-size: .9em; }
+
+.body { overflow-wrap: anywhere; }
+.body > :first-child { margin-top: 4px; }
+.body h1, .body h2, .body h3, .body h4 { margin: .6em 0 .3em; line-height: 1.25; }
+.body pre { white-space: pre-wrap; background: var(--code); padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
+.body code { background: var(--code); border-radius: 3px; padding: 0 .2em; font-size: .92em; }
+.body pre code { background: none; padding: 0; }
+.body table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+.body td, .body th { border: 1px solid var(--line); padding: 2px 8px; vertical-align: top; }
+/* an image is never shown larger than the size it was given in SciLog */
+.body figure { margin: 8px 0; max-width: 100%; }
+.body figure.image-style-align-center, .body figure.image:not([class*="align"]) { margin-left: auto; margin-right: auto; }
+.body figure.image-style-side, .body figure.image-style-align-right { float: right; margin-left: 16px; max-width: 50%; }
+.body figure.image-style-align-left { float: left; margin-right: 16px; max-width: 50%; }
+.body img { max-width: 100%; height: auto; cursor: zoom-in; }
+.body figure.image_resized img { width: 100%; }
+.body::after { content: ""; display: block; clear: both; }
+.missing { color: var(--muted); font-style: italic; }
+.attachment::before { content: "📎 "; }
+
+.plot { display: block; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.plot .plot-bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: var(--panel); font-size: .9em; }
+.plot iframe { display: block; width: 100%; height: 480px; border: 0; background: #fff; resize: vertical; overflow: auto; }
+
+#day-banner { display: none; }
+#toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg);
+         padding: 6px 14px; border-radius: 6px; font-size: .9em; z-index: 40; }
+#lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, .85); display: flex; align-items: center; justify-content: center;
+            z-index: 50; cursor: zoom-out; }
+#lightbox img { max-width: 96vw; max-height: 96vh; }
+
+@media (max-width: 760px) {
+  #outline { position: fixed; inset: 48px auto 0 0; background: var(--bg); z-index: 15; box-shadow: 4px 0 16px var(--shadow); }
+  body:not(.outline-open) #outline { display: none; }
+  #flow { padding: 0 16px 80px; }
+  #logbook-button { max-width: 40vw; }
+  #status, #scilog-link { display: none; }
+}

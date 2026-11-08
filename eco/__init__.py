@@ -152,6 +152,16 @@ def stop_web():
     _stop_web()
 
 
+def start_scilog(port=8798, open_browser=None):
+    """Read SciLog in the browser: one logbook as a flow of days, with an
+    outline, fuzzy search and inline plots. Starts a separate server process
+    (ended with this session) and prints its address; from another machine
+    forward the port over SSH first. See eco.scilog_app."""
+    from eco.scilog_app import start as _start
+
+    return _start(port=port, open_browser=open_browser)
+
+
 def start_webapp(*args, **kwargs):
     """Serve eco's packaged notebook as a Voila dashboard, as a background
     subprocess (your terminal session keeps working). See
