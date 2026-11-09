@@ -144,6 +144,10 @@ def apply_view_changes(raw, changes):
     return payload
 
 
+#: SciLog's role of every logged-in user: in a readACL, readable by everyone with a PSI account
+EVERYONE_LOGGED_IN = "any-authenticated-user"
+
+
 def _epoch(iso):
     try:
         return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
@@ -263,6 +267,7 @@ class Store:
             "comments": [self.child_record(k) for k in sorted((k for k in kids if k.get("linkType") == "comment"),
                                                               key=lambda k: k.get("createdAt") or "")],
             "quote": dict(self.child_record(quote), of=raw.get("_quote_of")) if quote else None,
+            "shared": EVERYONE_LOGGED_IN in (raw.get("readACL") or ()),
             "created": created,
             "updated": updated,
             "edited": bool(updated and created and _epoch(updated) - _epoch(created) > 60),
@@ -464,25 +469,30 @@ class Store:
     #: the longest edit period a new post may be given, in days
     MAX_EDIT_DAYS = 3650
 
-    def _insert_order(self, logbook_id, after_id):
-        """A defaultOrder between `after_id` and the post that follows it
-        in SciLog's order: a post placed there after the fact."""
+    def _insert_order(self, logbook_id, after_id=None, before_id=None):
+        """A defaultOrder right after `after_id` (or right before
+        `before_id`) in SciLog's order: a post placed there after the fact."""
         book = self.logbooks.get(logbook_id) or {}
         orders = sorted(r.get("defaultOrder") for r in (book.get("raw") or {}).values()
                         if isinstance(r.get("defaultOrder"), (int, float)))
-        after = (book.get("raw") or {}).get(after_id)
-        if after is None or not isinstance(after.get("defaultOrder"), (int, float)):
-            raise ValueError("the post to insert after is not known")
-        a = after["defaultOrder"]
-        later = [o for o in orders if o > a]
-        if not later:
-            return None  # the last post: a new post goes after it anyway
-        b = later[0]
+        anchor = (book.get("raw") or {}).get(after_id or before_id)
+        if anchor is None or not isinstance(anchor.get("defaultOrder"), (int, float)):
+            raise ValueError("the post to insert next to is not known")
+        if before_id:
+            b = anchor["defaultOrder"]
+            earlier = [o for o in orders if o < b]
+            a = earlier[-1] if earlier else b - 2_000_000  # before the very first post: a second earlier
+        else:
+            a = anchor["defaultOrder"]
+            later = [o for o in orders if o > a]
+            if not later:
+                return None  # the last post: a new post goes after it anyway
+            b = later[0]
         if b - a < 2:
             raise ValueError("there is no room between these two posts")
         return int(a + (b - a) // 2)
 
-    def save(self, logbook_id, post_id, html, tags, expected_updated=None, edit_days=None, after=None):
+    def save(self, logbook_id, post_id, html, tags, expected_updated=None, edit_days=None, after=None, before=None):
         """Create (post_id None) or update a post from the editor's HTML;
         returns the post as the page shows it. With expected_updated, an
         update is refused if the post was changed meanwhile. A new post can
@@ -503,10 +513,10 @@ class Store:
                     raise ValueError(f"the edit period must be between 1 and {self.MAX_EDIT_DAYS} days")
                 until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
                 payload["expiresAt"] = until.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            if after:
-                if not _ID.match(str(after)):
+            if after or before:
+                if not _ID.match(str(after or before)):
                     raise ValueError("not a post id")
-                order = self._insert_order(logbook_id, after)
+                order = self._insert_order(logbook_id, after_id=after, before_id=before)
                 if order is not None:
                     payload["defaultOrder"] = order
             new = self.reader.create_post(payload)
@@ -527,6 +537,40 @@ class Store:
         book = self.logbooks.get(logbook_id)
         self.posts(logbook_id, book["since"] if book else None)
         return self.logbooks[logbook_id]["posts"][post_id]
+
+    def share(self, logbook_id, post_id, on=True):
+        """Make a post readable by everyone logged in to SciLog (any PSI
+        account), or no longer: its attachments, its comments and the post
+        itself, in that order, so the post is never visible with a broken
+        image. SciLog allows this to whoever may change the post, also after
+        its edit period."""
+        raw = self._raw(logbook_id, post_id)
+        self._check_write(logbook_id, raw)
+        current = self.reader.post(post_id)
+
+        def flip(acl):
+            acl = list(acl or ())
+            new = sorted(set(acl) | {EVERYONE_LOGGED_IN}) if on else [g for g in acl if g != EVERYONE_LOGGED_IN]
+            return new if set(new) != set(acl) else None
+
+        for f in {f.get("fileId") for f in current.get("files") or () if f.get("fileId")}:
+            new = flip(self.reader.file_snippet(f).get("readACL"))
+            if new is not None:
+                self.reader.set_read_acl("filesnippet", f, new)
+        for kid in raw.get("subsnippets") or ():
+            new = flip(kid.get("readACL"))
+            if new is not None:
+                self.reader.set_read_acl("basesnippets", kid["id"], new)
+                kid["readACL"] = new
+        new = flip(current.get("readACL"))
+        if new is not None:
+            self.reader.set_read_acl("basesnippets", post_id, new)
+            raw["readACL"] = new
+        elif current.get("readACL") is not None:
+            raw["readACL"] = list(current["readACL"])
+        record = self.record(raw)
+        self.logbooks[logbook_id]["posts"][post_id] = record
+        return record
 
     def set_heading(self, logbook_id, post_id, index, level):
         """Change one heading's level in place (from the outline)."""
@@ -681,7 +725,7 @@ class _Save(_Write):
     async def post(self):
         b = self.body()
         await self.run(self.app.store.save, b.get("logbook"), None, b.get("html", ""), b.get("tags"),
-                       None, b.get("edit_days"), b.get("after"))
+                       None, b.get("edit_days"), b.get("after"), b.get("before"))
 
     async def patch(self, post_id):
         b = self.body()
@@ -692,6 +736,12 @@ class _Heading(_Write):
     async def post(self, post_id):
         b = self.body()
         await self.run(self.app.store.set_heading, b.get("logbook"), post_id, int(b.get("index", -1)), b.get("level", ""))
+
+
+class _Share(_Write):
+    async def post(self, post_id):
+        b = self.body()
+        await self.run(self.app.store.share, b.get("logbook"), post_id, bool(b.get("on", True)))
 
 
 class _Views(_Base):
@@ -781,6 +831,7 @@ class ScilogApp:
                 (r"/api/save", _Save),
                 (r"/api/save/([0-9a-f]{24})", _Save),
                 (r"/api/heading/([0-9a-f]{24})", _Heading),
+                (r"/api/share/([0-9a-f]{24})", _Share),
                 (r"/api/write-logbook", _WriteLogbook),
                 (r"/api/views", _Views),
                 (r"/api/view/([0-9a-f]{24})", _View),

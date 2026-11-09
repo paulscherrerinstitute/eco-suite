@@ -106,19 +106,15 @@ function editable(p) { return p.can_edit && (!p.expires || p.expires * 1000 > Da
 function editableUntil(p) { return p.expires ? `${fullDate(p.expires)} ${clock(p.expires)}` : ""; }
 
 function postElement(p, pinned = false) {
-  const actions = pinned ? el("span", { class: "actions" },
-    el("button", { title: "Show this post in the main pane", onclick: (ev) => { ev.stopPropagation(); showPinnedInMain(p.id); } }, "⇠ main"))
-  : el("span", { class: "actions" },
-    el("button", { title: "Pin: keep this post open in a pane on the right, to compare with other places or logbooks", onclick: (ev) => { ev.stopPropagation(); pinPost(p.id); } }, "📌"),
-    editable(p) && canWrite() ? el("button", { title: `Edit this post (possible until ${editableUntil(p)})`, onclick: (ev) => { ev.stopPropagation(); editPost(p.id); } }, "✏️ Edit") : null,
-    canWrite() ? el("button", { title: "Insert a new post right after this one (e.g. a heading for the outline)", onclick: (ev) => { ev.stopPropagation(); insertAfter(p.id); } }, "⤓") : null,
-    el("button", { title: "Copy a link to this post in its context", onclick: (ev) => { ev.stopPropagation(); copyLink(p.id); } }, "🔗"),
-    el("button", { title: "Show only this post (and copy a link to it)", onclick: (ev) => { ev.stopPropagation(); showOnly(p.id); } }, "⧉"));
+  const actions = el("span", { class: "actions" },
+    el("button", { class: "more", title: "Edit, insert, link, share, pin …", "aria-label": "Actions for this post",
+      onclick: (ev) => { ev.stopPropagation(); openPostMenu(p, ev.currentTarget, pinned); } }, "⋯"));
   const head = el("div", { class: "post-head" },
     el("span", { class: "time", text: clock(p.t), title: new Date(p.t * 1000).toString() }),
     el("span", { class: "author", text: shortName(p.author), title: p.author }),
     ...p.tags.map((t) => el("span", { class: "tag", text: t })),
     p.edited ? el("span", { class: "edited", text: "edited", title: `${p.editor || ""} ${p.updated}` }) : null,
+    p.shared ? el("span", { class: "shared", text: "🌐", title: "Readable by everyone with a PSI account" }) : null,
     p.inserted ? el("span", { class: "inserted", text: `inserted ${shortDate(p.written)} ${clock(p.written)}`, title: `Written ${fullDate(p.written)} ${clock(p.written)}, placed here afterwards` }) : null,
     actions);
   const body = el("div", { class: "body" });
@@ -715,11 +711,11 @@ function newPost() {
   openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved });
 }
 
-function insertAfter(id) {
+function insertNear(id, where = "after") {
   if (!canWrite()) { askToAllowWriting(); return; }
   const p = state.byId.get(id);
   openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved,
-    after: { id, label: `${dayTitle(p.t)} ${clock(p.t)} ${p.title ? `“${p.title.slice(0, 50)}”` : ""}` } });
+    near: { id, where, label: `${dayTitle(p.t)} ${clock(p.t)} ${p.title ? `“${p.title.slice(0, 50)}”` : ""}` } });
 }
 
 function placeSaved(post) {

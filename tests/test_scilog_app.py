@@ -418,3 +418,36 @@ def test_comments_replies_and_scilogs_order_reach_the_page(tmp_path, monkeypatch
         store.save(LB, None, "<p>x</p>", [], edit_days=0)
     with pytest.raises(ValueError):
         store.save(LB, None, "<p>x</p>", [], after="../x")
+
+
+def test_sharing_with_everyone_logged_in_covers_files_and_comments_first(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Threads()
+    a = reader.rows[0]
+    a.update(readACL=["p1"], files=[{"fileId": "ab" * 12}])
+    a["subsnippets"][0]["readACL"] = ["p1"]
+    reader.rows[1].update(createdBy="bob@psi.ch", updateACL=["p2"])
+    reader.files = {"ab" * 12: {"readACL": ["p1"]}}
+    reader.file_snippet = lambda f: reader.files[f]
+    reader.set_read_acl = lambda kind, i, acl: reader.written.append(("acl", kind, i, acl))
+    reader.post = lambda i: json.loads(json.dumps(next(r for r in reader.rows if r["id"] == i)))
+    store = Store(reader, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+    assert not store.posts(LB)["posts"][0]["shared"]
+
+    out = store.share(LB, reader.A, True)
+    acl = [w for w in reader.written if w[0] == "acl"]
+    assert [(k, i) for _, k, i, _ in acl] == [("filesnippet", "ab" * 12), ("basesnippets", "d4" * 12), ("basesnippets", reader.A)]
+    assert all("any-authenticated-user" in w[3] and "p1" in w[3] for w in acl) and out["shared"]
+
+    # once shared, sharing again changes nothing; unsharing removes only that role
+    a["readACL"] = acl[-1][3]
+    reader.files["ab" * 12]["readACL"] = acl[0][3]
+    n = len(reader.written)
+    store.share(LB, reader.A, True)
+    assert len(reader.written) == n
+    out = store.share(LB, reader.A, False)
+    assert [w[3] for w in reader.written[n:]] == [["p1"], ["p1"], ["p1"]] and not out["shared"]
+
+    # someone else's post: SciLog would refuse, so does the viewer
+    with pytest.raises(PermissionError):
+        store.share(LB, reader.B, True)

@@ -72,13 +72,13 @@ function dropDraft(key) { try { localStorage.removeItem(key); } catch (e) { /* p
 // how long a new post stays editable; SciLog's own default is 3 days
 const EDIT_DAYS_DEFAULT = 30;
 
-async function openEditor({ logbook, logbookName, postId = null, onSaved, after = null }) {
+async function openEditor({ logbook, logbookName, postId = null, onSaved, near = null }) {
   if (document.getElementById("editor-dialog")) { document.getElementById("editor-dialog").showModal(); return; }
   let start = { html: "", tags: [], updated: null };
-  const key = draftKey(logbook, postId) + (after ? `:after:${after.id}` : "");
+  const key = draftKey(logbook, postId) + (near ? `:${near.where}:${near.id}` : "");
   const dialog = el("dialog", { id: "editor-dialog" });
   const statusLine = el("span", { class: "ed-status" });
-  const title = el("strong", { text: postId ? "Edit post" : after ? `New post, inserted after ${after.label}` : `New post in ${logbookName}` });
+  const title = el("strong", { text: postId ? "Edit post" : near ? `New post, inserted ${near.where === "before" ? "before" : "after"} ${near.label}` : `New post in ${logbookName}` });
   const days = el("input", { type: "number", min: "1", max: "3650", step: "1", class: "ed-days",
     value: storageGet("eco-scilog-edit-days") || String(EDIT_DAYS_DEFAULT) });
   const period = postId ? null : el("label", { class: "ed-period", title: "How long this post stays editable in SciLog (SciLog's own default is 3 days). Set once, when posting." },
@@ -181,7 +181,7 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, after 
         if (!(d >= 1 && d <= 3650)) { ctx.status("the edit period must be 1 to 3650 days", true); saveButton.disabled = false; return; }
         body.edit_days = d;
         storageSet("eco-scilog-edit-days", String(d));
-        if (after) body.after = after.id;
+        if (near) body[near.where === "before" ? "before" : "after"] = near.id;
       }
       const post = postId ? await writeApi(`/api/save/${postId}`, "PATCH", body) : await writeApi("/api/save", "POST", body);
       dropDraft(key);

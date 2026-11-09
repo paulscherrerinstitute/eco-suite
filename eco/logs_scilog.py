@@ -358,6 +358,17 @@ class Reader:
         """POST basesnippets: a new post (snippetType/linkType "paragraph")."""
         return self._send("POST", "/basesnippets", json=payload)
 
+    def file_snippet(self, file_id):
+        """GET filesnippet/<id>: an attachment's record (its ACLs among them)."""
+        return self.get(f"/filesnippet/{_quote(file_id)}")
+
+    def set_read_acl(self, kind, snippet_id, read_acl):
+        """PATCH only readACL ("basesnippets" or "filesnippet"): SciLog treats
+        that as sharing, allowed after a post's edit period too."""
+        if kind not in ("basesnippets", "filesnippet"):
+            raise ValueError(kind)
+        return self._send("PATCH", f"/{kind}/{_quote(snippet_id)}", json={"readACL": list(read_acl)})
+
     def update_post(self, post_id, payload):
         """PATCH basesnippets/<id>: change a post's textcontent, files, tags."""
         return self._send("PATCH", f"/basesnippets/{_quote(post_id)}", json=payload)
@@ -390,7 +401,7 @@ class Reader:
 
     #: what a comment or a reply's quote (children of a post) is read with
     CHILD_FIELDS = {"id": True, "parentId": True, "linkType": True, "createdAt": True, "createdBy": True,
-                    "updatedAt": True, "textcontent": True, "files": True, "deleted": True, "expiresAt": True}
+                    "updatedAt": True, "textcontent": True, "files": True, "deleted": True, "expiresAt": True, "readACL": True}
     CHILD_WHERE = {"snippetType": "paragraph", "linkType": {"inq": ["comment", "quote"]}}
 
     def posts(self, logbook_id, updated_after=None, limit=100000, children=False):
@@ -403,7 +414,7 @@ class Reader:
         if updated_after:
             where["updatedAt"] = {"gt": updated_after}
         fields = dict(self.POST_FIELDS, updatedAt=True, updatedBy=True, updateACL=True, ownerGroup=True,
-                      accessGroups=True, isPrivate=True, defaultOrder=True, expiresAt=True)
+                      accessGroups=True, isPrivate=True, defaultOrder=True, expiresAt=True, readACL=True)
         extra = {"include": [{"relation": "subsnippets", "scope": {"where": self.CHILD_WHERE, "fields": self.CHILD_FIELDS}}]} if children else {}
         out, skip = [], 0
         while len(out) < limit:
