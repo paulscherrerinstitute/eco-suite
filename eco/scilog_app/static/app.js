@@ -170,8 +170,15 @@ function commentsElement(p) {
 }
 
 function dayElement(t) {
-  return el("h2", { class: "day", "data-day": dayKey(t) }, dayLabel(t), el("span", { class: "date", text: dayLabel(t) === fullDate(t) ? "" : shortDate(t) }),
-    el("button", { class: "day-thumbs", title: "Small figures: every image as a thumbnail (click one to see it large)", "aria-pressed": "false",
+  return el("h2", { class: "day", "data-day": dayKey(t) }, dayLabel(t), el("span", { class: "date", text: dayLabel(t) === fullDate(t) ? "" : shortDate(t) }));
+}
+
+// tools that stay at the top right of the flow, level with the day header stuck there
+// (a zero-height sticky strip, so the day headers further down carry nothing)
+function flowTools() {
+  const on = document.body.classList.contains("thumbs");
+  return el("div", { id: "flow-tools" },
+    el("button", { class: "day-thumbs", title: "Small figures: every image as a thumbnail (click one to see it large)", "aria-pressed": String(on),
       onclick: (ev) => { ev.stopPropagation(); setThumbs(!document.body.classList.contains("thumbs")); } }, "🖼"));
 }
 
@@ -256,7 +263,7 @@ function renderFlow() {
     if (k !== day) { frag.append(dayElement(p.t)); day = k; }
     frag.append(postElement(p));
   }
-  flow.replaceChildren(frag);
+  flow.replaceChildren(flowTools(), frag);
   if (!state.posts.length) flow.append(el("p", { class: "hint", text: "This logbook has no posts yet." }));
   if (!state.only) flow.append(composerElement());
   observePosts();

@@ -423,9 +423,10 @@ body.ed-dock-bottom:not(.ed-folded) #to-bottom { bottom: calc(var(--ed-h, 42vh) 
 .body figure.image-style-block-align-right { margin-left: auto; margin-right: 0; }
 
 /* small figures: every image a thumbnail, side by side; a click shows it large */
-.day .day-thumbs { float: right; font-size: .55em; font-weight: 400; padding: 1px 7px; margin-top: 4px; opacity: .55; }
-.day .day-thumbs:hover { opacity: 1; }
-.day .day-thumbs[aria-pressed="true"] { opacity: 1; border-color: var(--accent); background: var(--panel); }
+#flow-tools { position: sticky; top: 0; height: 0; z-index: 6; }
+#flow-tools .day-thumbs { position: absolute; right: 0; top: 13px; font-size: .82em; padding: 1px 7px; opacity: .55; background: var(--bg); }
+#flow-tools .day-thumbs:hover { opacity: 1; }
+#flow-tools .day-thumbs[aria-pressed="true"] { opacity: 1; border-color: var(--accent); background: var(--panel); }
 body.thumbs .body figure.image, body.thumbs .body figure.image_resized { display: inline-block; width: auto !important; max-width: 46%;
   float: none; margin: 4px 8px 4px 0; vertical-align: top; }
 body.thumbs .body img { width: auto !important; max-width: 100%; max-height: 150px; border: 1px solid var(--line); border-radius: 4px; }
