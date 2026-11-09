@@ -446,3 +446,8 @@ body.thumbs .body figure.image, body.thumbs .body figure.image_resized { display
 body.thumbs .body img { width: auto !important; max-width: 100%; max-height: 150px; border: 1px solid var(--line); border-radius: 4px; }
 body.thumbs .body figure.image_resized img { width: auto !important; }
 body.thumbs .body figcaption { font-size: .8em; }
+
+/* posts written meanwhile from elsewhere: announced, never scrolled to */
+#to-bottom.news { background: color-mix(in srgb, var(--bg) 70%, transparent); border-color: var(--accent); color: var(--accent);
+  backdrop-filter: blur(3px); opacity: .9; }
+.post.fresh { box-shadow: inset 3px 0 0 #d08a00; transition: box-shadow 1.5s; }

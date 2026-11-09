@@ -609,9 +609,13 @@ function toNewest() {
 }
 
 function updateToBottom() {
-  const flow = $("#flow");
+  const flow = $("#flow"), button = $("#to-bottom");
   const far = flow.scrollHeight - flow.scrollTop - flow.clientHeight > flow.clientHeight;
-  $("#to-bottom").hidden = !far;
+  const n = state.unseen?.size || 0;
+  button.classList.toggle("news", n > 0);
+  button.innerHTML = n ? `&#8595; ${n} new post${n > 1 ? "s" : ""}` : "&#8595; Newest";
+  button.title = n ? "Posts written meanwhile, from elsewhere: go to the first one" : "To the newest post (End)";
+  button.hidden = !far && !n;
 }
 
 // The newest post is at the bottom. Images and posts only get their real
@@ -629,6 +633,75 @@ function holdBottom() {
   setTimeout(stop, 8000);
 }
 
+// Posts from elsewhere never move what is being read: the post at the top of the
+// flow is kept where it is across the redraw, and new posts are announced by the
+// "new posts" sign (bottom right) and a mark on them until they have been seen.
+function readingAnchor() {
+  const flow = $("#flow"), top = flow.getBoundingClientRect().top;
+  const node = [...flow.querySelectorAll(".post")].find((x) => x.getBoundingClientRect().bottom > top + 1);
+  return node ? { id: node.id, offset: node.getBoundingClientRect().top - top } : null;
+}
+
+function keepReading(anchor) {
+  const node = anchor && document.getElementById(anchor.id);
+  if (!node) return;
+  const flow = $("#flow");
+  flow.scrollTop += node.getBoundingClientRect().top - flow.getBoundingClientRect().top - anchor.offset;
+}
+
+state.unseen = new Set();
+let unseenObserver = null;
+function watchUnseen() {
+  if (unseenObserver) unseenObserver.disconnect();
+  unseenObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const id = e.target.dataset.id;
+      state.unseen.delete(id);
+      unseenObserver.unobserve(e.target);
+      setTimeout(() => e.target.classList.remove("fresh"), 4000);  // the mark fades once seen
+    }
+    updateToBottom();
+  }, { root: $("#flow"), threshold: 0.3 });
+  for (const id of state.unseen) {
+    const node = document.getElementById(`p-${id}`);
+    if (node) { node.classList.add("fresh"); unseenObserver.observe(node); }
+  }
+  updateToBottom();
+}
+
+function toUnseen() {
+  const first = state.posts.find((p) => state.unseen.has(p.id));
+  if (first) jumpToPost(first.id); else toNewest();
+}
+
+// a post put into the flow where it belongs, without redrawing the others (so
+// the heights the browser has measured, and with them the reading position, stay)
+function placeInFlow(p) {
+  if (!state.posts.some((x) => x.id === p.id)) return;  // not in the current view
+  const flow = $("#flow");
+  const i = state.posts.findIndex((x) => x.id === p.id);
+  const prev = state.posts[i - 1], next = state.posts.slice(i + 1).find((x) => document.getElementById(`p-${x.id}`));
+  const node = postElement(p);
+  const nextNode = next && document.getElementById(`p-${next.id}`);
+  const parts = [];
+  if (!prev || dayKey(prev.t) !== dayKey(p.t)) {
+    const existing = flow.querySelector(`.day[data-day="${dayKey(p.t)}"]`);
+    if (!existing) parts.push(dayElement(p.t));
+  }
+  parts.push(node);
+  if (nextNode) {
+    // before the next post, or before its day header when the next post starts another day
+    const header = nextNode.previousElementSibling;
+    const before = next && dayKey(next.t) !== dayKey(p.t) && header?.classList.contains("day") ? header : nextNode;
+    before.before(...parts);
+  } else {
+    const composer = document.getElementById("composer");
+    if (composer) composer.before(...parts); else flow.append(...parts);
+  }
+  flow.querySelector(".hint")?.remove();
+}
+
 async function refresh() {
   if (!state.logbook || document.hidden) return;
   let data;
@@ -636,27 +709,24 @@ async function refresh() {
   catch (e) { setStatus(`offline: ${e.message}`); return; }
   state.since = data.since;
   if (!data.posts.length && !data.removed.length) { setStatus(); return; }
-  const flow = $("#flow");
-  const atBottom = flow.scrollHeight - flow.scrollTop - flow.clientHeight < 80;
+  const anchor = readingAnchor();
   let appended = 0;
-  for (const id of data.removed) { state.byId.delete(id); document.getElementById(`p-${id}`)?.remove(); }
+  for (const id of data.removed) { state.byId.delete(id); state.unseen.delete(id); document.getElementById(`p-${id}`)?.remove(); }
   for (const p of data.posts) {
     const old = state.byId.get(p.id);
     state.byId.set(p.id, p);
     if (old) document.getElementById(`p-${p.id}`)?.replaceWith(postElement(p));
-    else appended++;
+    else { appended++; state.unseen.add(p.id); }
   }
   state.all = [...state.byId.values()].sort((a, b) => a.t - b.t);
   applyView();
   fillViews();
   prepareSearch();
-  if (appended) {
-    renderFlow();
-    if (atBottom) flow.scrollTop = flow.scrollHeight;
-    toast(`${appended} new post${appended > 1 ? "s" : ""}`);
-  }
+  if (appended) for (const p of data.posts) if (!document.getElementById(`p-${p.id}`)) placeInFlow(p);
+  keepReading(anchor);
   renderOutline();
   observePosts();
+  watchUnseen();
   setStatus();
 }
 
@@ -833,7 +903,7 @@ async function main() {
   if (storageGet("eco-scilog-outline") === "off") document.body.classList.add("no-outline");
   $("#logbook-button").onclick = () => showPicker($("#picker").hidden);
   $("#new-post").onclick = newPost;
-  $("#to-bottom").onclick = toNewest;
+  $("#to-bottom").onclick = () => (state.unseen.size ? toUnseen() : toNewest());
   $("#flow").addEventListener("scroll", updateToBottom, { passive: true });
   $("#views-button").onclick = () => openViewsDialog();  // views.js loads after this file
   $("#search-button").onclick = openSearch;
