@@ -362,6 +362,21 @@ class Reader:
         """PATCH basesnippets/<id>: change a post's textcontent, files, tags."""
         return self._send("PATCH", f"/basesnippets/{_quote(post_id)}", json=payload)
 
+    def views(self, parent_ids):
+        """SciLog's views (dashboard layouts) hanging on these logbooks or
+        locations, as stored."""
+        return self.get("/views", {"where": {"parentId": {"inq": list(parent_ids)}}, "limit": 1000})
+
+    def view(self, view_id):
+        return self.get(f"/views/{_quote(view_id)}")
+
+    def update_view(self, view_id, payload):
+        """PATCH views/<id> (name, description, configuration)."""
+        return self._send("PATCH", f"/views/{_quote(view_id)}", json=payload)
+
+    def delete_view(self, view_id):
+        return self._send("DELETE", f"/views/{_quote(view_id)}")
+
     def file(self, file_id):
         """(bytes, content type, file name) of any attachment."""
         r = self.session.get(

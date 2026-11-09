@@ -151,7 +151,8 @@ function fillViews() {
   select.replaceChildren(
     el("option", { value: "all", text: `All posts (${state.all.length})` }),
     el("option", { value: "mine", text: `My posts (${state.all.filter((p) => p.author === state.me.email).length})` }),
-    ...tags.map(([t, n]) => el("option", { value: `tag:${t}`, text: `# ${t} (${n})` })));
+    ...tags.map(([t, n]) => el("option", { value: `tag:${t}`, text: `# ${t} (${n})` })),
+    el("option", { value: "__views", text: "⚙ SciLog views …" }));
   if (![...select.options].some((o) => o.value === state.view)) state.view = "all";
   select.value = state.view;
   select.hidden = false;
@@ -702,7 +703,10 @@ async function main() {
   $("#new-post").onclick = newPost;
   $("#to-bottom").onclick = toNewest;
   $("#flow").addEventListener("scroll", updateToBottom, { passive: true });
-  $("#view").onchange = (e) => setView(e.target.value);
+  $("#view").onchange = (e) => {
+    if (e.target.value === "__views") { e.target.value = state.view; openViewsDialog(); }
+    else setView(e.target.value);
+  };
   $("#picker-filter").oninput = (e) => fillPicker(e.target.value);
   $("#picker-filter").onkeydown = (e) => {
     const items = [...document.querySelectorAll("#picker-list li[data-id]")];

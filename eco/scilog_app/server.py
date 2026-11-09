@@ -17,6 +17,7 @@ loads it only when asked to.
 
 import asyncio
 import datetime
+import hashlib
 import hmac
 import json
 import logging
@@ -66,6 +67,81 @@ def save_config(cfg, path=None):
     with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
         json.dump(cfg, f, indent=2)
     os.replace(tmp, path)
+
+
+def view_version(raw):
+    """A fingerprint of what a view says: legacy views carry no updatedAt."""
+    keep = {k: raw.get(k) for k in ("name", "description", "configuration", "parentId", "location")}
+    return hashlib.sha1(json.dumps(keep, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def view_summary(raw, logbook_id, names):
+    """A view as the page shows it: name, when made (from its id), panels in words."""
+    panels = []
+    for i, w in enumerate((raw.get("configuration") or {}).get("widgetConfig") or []):
+        cfg = w.get("config") or {}
+        general, filt = cfg.get("general") or {}, cfg.get("filter") or {}
+        others = []
+        for lid in filt.get("additionalLogbooks") or []:
+            if lid not in [o["id"] for o in others]:
+                others.append({"id": lid, "name": names.get(lid, ""), "readable": lid in names})
+        panels.append({"index": i, "type": general.get("type") or "", "title": general.get("title") or "",
+                       "target": filt.get("targetId") or "", "target_name": names.get(filt.get("targetId"), ""),
+                       "tags": list(filt.get("tags") or []), "excludeTags": list(filt.get("excludeTags") or []),
+                       "snippetType": list(filt.get("snippetType") or []), "logbooks": others,
+                       "duplicates": len(filt.get("additionalLogbooks") or []) - len(others),
+                       "size": [w.get("cols"), w.get("rows")], "at": [w.get("x"), w.get("y")]})
+    name = raw.get("name") or ""
+    return {"id": raw["id"], "name": name, "description": raw.get("description") or "", "owner": raw.get("ownerGroup") or "",
+            "created": int(raw["id"][:8], 16) if _ID.match(raw.get("id", "")) else 0,
+            "on": "logbook" if raw.get("parentId") == logbook_id else "location",
+            "personal": name.endswith("_personal"), "template": bool((raw.get("configuration") or {}).get("isTemplate")),
+            "panels": panels, "version": view_version(raw)}
+
+
+def _tag_list(value):
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(t, str) for t in value):
+        raise ValueError("tags must be a list of words")
+    return [t.strip() for t in value if t.strip()]
+
+
+def apply_view_changes(raw, changes):
+    """The PATCH payload for a view: name/description, and per panel
+    {"index", "title", "tags", "excludeTags", "logbooks": [ids]}. Everything
+    else of the view (layout, order, widget kinds) is kept as it is."""
+    config = json.loads(json.dumps(raw.get("configuration") or {}))
+    widgets = config.get("widgetConfig") or []
+    payload = {}
+    if "name" in changes:
+        name = str(changes["name"]).strip()
+        if not name:
+            raise ValueError("a view needs a name")
+        payload["name"] = name[:120]
+    if "description" in changes:
+        payload["description"] = str(changes["description"])[:500]
+    for ch in changes.get("panels") or []:
+        i = ch.get("index")
+        if not isinstance(i, int) or not 0 <= i < len(widgets):
+            raise ValueError("no such panel")
+        cfg = widgets[i].setdefault("config", {})
+        if "title" in ch:
+            cfg.setdefault("general", {})["title"] = str(ch["title"])[:120]
+        filt = cfg.setdefault("filter", {})
+        for key in ("tags", "excludeTags"):
+            if key in ch:
+                filt[key] = _tag_list(ch[key])
+        if "logbooks" in ch:
+            ids = ch["logbooks"]
+            if not isinstance(ids, list) or not all(isinstance(x, str) and _ID.match(x) for x in ids):
+                raise ValueError("logbooks must be logbook ids")
+            filt["additionalLogbooks"] = list(dict.fromkeys(ids))
+    if changes.get("panels"):
+        payload["configuration"] = config
+    if not payload:
+        raise ValueError("nothing to change")
+    return payload
 
 
 def _epoch(iso):
@@ -239,6 +315,57 @@ class Store:
             raise PermissionError(why)
         if raw is not None and not self.may_edit(raw):
             raise PermissionError("SciLog lets you edit only your own posts (or those of a group you are in)")
+
+    # -- SciLog's views (dashboard layouts) -------------------------------------------------
+
+    def views(self, logbook_id):
+        """The views SciLog offers for this logbook (its own and its
+        location's), each with its panels in words, plus the logbooks this
+        reader knows by name."""
+        if not _ID.match(logbook_id or ""):
+            raise ValueError("not a logbook id")
+        lb = self.reader.logbook(logbook_id)
+        parents = [logbook_id] + ([lb["location"]] if _ID.match(str(lb.get("location") or "")) else [])
+        names = {row["id"]: row["name"] for row in self.list_logbooks()}
+        rows = [r for r in self.reader.views(parents) if not r.get("deleted")]
+        return {"views": [view_summary(r, logbook_id, names) for r in sorted(rows, key=lambda r: r["id"])],
+                "logbooks": [{"id": k, "name": v} for k, v in sorted(names.items(), key=lambda kv: kv[1].lower())],
+                "can_edit": self.may_write_to(logbook_id)[0]}
+
+    def _view_for_change(self, logbook_id, view_id, version):
+        self._check_write(logbook_id)
+        if not _ID.match(view_id or ""):
+            raise ValueError("not a view id")
+        raw = self.reader.view(view_id)
+        if raw.get("parentId") not in (logbook_id, self.reader.logbook(logbook_id).get("location")):
+            raise PermissionError("this view does not belong to this logbook")
+        if version and view_version(raw) != version:
+            raise RuntimeError("the view was changed meanwhile (in SciLog or by someone else): reload the list")
+        self._backup_view(raw)
+        return raw
+
+    def _backup_view(self, raw):
+        folder = self.cache_dir.parent / "scilog_view_backups"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = folder / f"{raw['id']}-{stamp}.json"
+        with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            json.dump(raw, f, indent=1)
+        return path
+
+    def change_view(self, logbook_id, view_id, version, changes):
+        """Rename a view, or change its panels' titles, tags and other
+        logbooks; returns the view as the page shows it."""
+        raw = self._view_for_change(logbook_id, view_id, version)
+        payload = apply_view_changes(raw, changes or {})
+        self.reader.update_view(view_id, payload)
+        names = {row["id"]: row["name"] for row in self.list_logbooks()}
+        return view_summary(self.reader.view(view_id), logbook_id, names)
+
+    def remove_view(self, logbook_id, view_id, version):
+        raw = self._view_for_change(logbook_id, view_id, version)
+        self.reader.delete_view(view_id)
+        return {"deleted": view_id, "name": raw.get("name")}
 
     def for_editor(self, logbook_id, post_id):
         """The post as the editor opens it."""
@@ -469,6 +596,24 @@ class _Heading(_Write):
         await self.run(self.app.store.set_heading, b.get("logbook"), post_id, int(b.get("index", -1)), b.get("level", ""))
 
 
+class _Views(_Base):
+    async def get(self):
+        try:
+            self.finish(await self.blocking(self.app.store.views, self.get_query_argument("logbook")))
+        except (ValueError, PermissionError, RuntimeError, logs_scilog.TokenError) as exc:
+            self.set_status(400)
+            self.finish({"error": str(exc)})
+
+
+class _View(_Write):
+    async def post(self, view_id, action=None):
+        b = self.body()
+        if action == "delete":
+            await self.run(self.app.store.remove_view, b.get("logbook"), view_id, b.get("version"))
+        else:
+            await self.run(self.app.store.change_view, b.get("logbook"), view_id, b.get("version"), b.get("changes"))
+
+
 class _WriteLogbook(_Write):
     async def post(self):
         b = self.body()
@@ -539,6 +684,9 @@ class ScilogApp:
                 (r"/api/save/([0-9a-f]{24})", _Save),
                 (r"/api/heading/([0-9a-f]{24})", _Heading),
                 (r"/api/write-logbook", _WriteLogbook),
+                (r"/api/views", _Views),
+                (r"/api/view/([0-9a-f]{24})", _View),
+                (r"/api/view/([0-9a-f]{24})/(delete)", _View),
                 (r"/img/([0-9a-f]{24})", _Image),
                 (r"/file/([0-9a-f]{24})", _File),
             ],

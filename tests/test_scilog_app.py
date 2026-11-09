@@ -273,3 +273,85 @@ def test_writing_is_switched_on_per_logbook_and_remembered(tmp_path, monkeypatch
     beamline = Store(_Writer(identity="the beamline account x@psi.ch"), cache_dir=tmp_path / "h", config={"write_logbooks": []})
     with pytest.raises(PermissionError, match="personal token"):
         beamline.set_write_logbook(lb)
+
+
+def _view(i, name, others, parent=LB, title="Logbook view"):
+    return {"id": i, "snippetType": "view", "name": name, "parentId": parent, "ownerGroup": "p19734", "deleted": False,
+            "configuration": {"isTemplate": False, "widgetConfig": [
+                {"cols": 4, "rows": 4, "x": 1, "y": 0, "config": {"general": {"type": "logbook", "title": title},
+                 "filter": {"targetId": parent, "additionalLogbooks": others, "tags": [], "excludeTags": []},
+                 "view": {"order": ["defaultOrder ASC"]}}},
+                {"cols": 1, "rows": 4, "x": 0, "y": 0, "config": {"general": {"type": "tasks", "title": "Beamline tasks"},
+                 "filter": {"snippetType": ["task"]}, "view": {}}}]}}
+
+
+class _ViewReader(_Writer):
+    def __init__(self, views):
+        super().__init__()
+        self.stored = {v["id"]: v for v in views}
+
+    def logbook(self, logbook_id):
+        return {"ownerGroup": "p1", "accessGroups": ["p1"], "location": "c" * 24}
+
+    def logbooks(self):
+        return [{"id": LB, "name": "Test log"}, {"id": "a" * 24, "name": "Run A"}, {"id": "b" * 24, "name": "Run B"}]
+
+    def views(self, parents):
+        return [v for v in self.stored.values() if v["parentId"] in parents]
+
+    def view(self, view_id):
+        return json.loads(json.dumps(self.stored[view_id]))
+
+    def update_view(self, view_id, payload):
+        self.written.append(("update_view", view_id, payload))
+        self.stored[view_id].update(json.loads(json.dumps(payload)))
+
+    def delete_view(self, view_id):
+        self.written.append(("delete_view", view_id))
+        del self.stored[view_id]
+
+
+def test_scilog_views_are_listed_told_apart_changed_and_deleted(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    old = _view("68baa3c86f90f983d570fe6f", "general", ["a" * 24])
+    new = _view("68baa3ee6f90f9107e70fe70", "general", ["a" * 24, "b" * 24, "b" * 24, "d" * 24])
+    elsewhere = _view("68baa3ee6f90f9107e70fe71", "other", [], parent="e" * 24)
+    reader = _ViewReader([old, new, elsewhere])
+    store = Store(reader, cache_dir=tmp_path / "cache" / "files", config={"write_logbooks": [LB]})
+
+    listed = store.views(LB)
+    assert [v["id"] for v in listed["views"]] == [old["id"], new["id"]] and listed["can_edit"]
+    panel = listed["views"][1]["panels"][0]
+    assert panel["type"] == "logbook" and panel["duplicates"] == 1  # "b" listed twice
+    assert [(l["name"], l["readable"]) for l in panel["logbooks"]] == [("Run A", True), ("Run B", True), ("", False)]
+    assert listed["views"][0]["created"] == 0x68baa3c8
+
+    version = listed["views"][1]["version"]
+    out = store.change_view(LB, new["id"], version, {"name": "general (2026)", "panels": [{"index": 0, "logbooks": ["a" * 24, "b" * 24], "tags": [" x ", ""]}]})
+    kind, vid, payload = reader.written[-1]
+    assert kind == "update_view" and payload["name"] == "general (2026)"
+    w = payload["configuration"]["widgetConfig"]
+    assert w[0]["config"]["filter"]["additionalLogbooks"] == ["a" * 24, "b" * 24] and w[0]["config"]["filter"]["tags"] == ["x"]
+    assert w[0]["cols"] == 4 and w[1] == new["configuration"]["widgetConfig"][1]  # layout and the other panel kept
+    assert out["name"] == "general (2026)" and out["version"] != version
+    backups = list((tmp_path / "cache" / "scilog_view_backups").glob(f"{new['id']}-*.json"))
+    assert backups and json.loads(backups[0].read_text())["name"] == "general"
+    assert (backups[0].stat().st_mode & 0o777) == 0o600
+
+    with pytest.raises(RuntimeError, match="changed meanwhile"):
+        store.change_view(LB, new["id"], version, {"name": "again"})
+    with pytest.raises(PermissionError, match="does not belong"):
+        store.change_view(LB, elsewhere["id"], None, {"name": "x"})
+    with pytest.raises(ValueError):
+        store.change_view(LB, old["id"], None, {"panels": [{"index": 0, "logbooks": ["../x"]}]})
+    with pytest.raises(ValueError, match="nothing to change"):
+        store.change_view(LB, old["id"], None, {})
+
+    assert store.remove_view(LB, old["id"], store.views(LB)["views"][0]["version"]) == {"deleted": old["id"], "name": "general"}
+    assert old["id"] not in reader.stored
+
+    readonly = Store(_ViewReader([_view("68baa3c86f90f983d570fe6f", "general", [])]), cache_dir=tmp_path / "g",
+                     config={"write_logbooks": []})
+    assert not readonly.views(LB)["can_edit"]
+    with pytest.raises(PermissionError, match="not switched on"):
+        readonly.change_view(LB, "68baa3c86f90f983d570fe6f", None, {"name": "x"})

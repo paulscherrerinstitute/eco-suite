@@ -124,11 +124,11 @@ body.no-outline #outline { display: none; }
                border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; box-shadow: 0 4px 12px var(--shadow); }
 
 /* the editor: a dialog, not a panel that takes reading space */
-#editor-dialog { width: min(1000px, 96vw); height: min(780px, 92vh); padding: 0; border: 1px solid var(--line);
+#editor-dialog, #views-dialog { width: min(1000px, 96vw); height: min(780px, 92vh); padding: 0; border: 1px solid var(--line);
                  border-radius: 10px; background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
-#editor-dialog:not([open]) { display: none; }
+#editor-dialog:not([open]), #views-dialog:not([open]) { display: none; }
 #editor-dialog.full { width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; }
-#editor-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+#editor-dialog::backdrop, #views-dialog::backdrop { background: rgba(0, 0, 0, .35); }
 .ed-head, .ed-foot { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); }
 .ed-head { border-bottom: 1px solid var(--line); }
 .ed-foot { border-top: 1px solid var(--line); flex-wrap: wrap; }
@@ -199,3 +199,36 @@ button.primary:disabled { opacity: .5; }
 .m-plot svg { width: 100%; height: 100%; display: block; }
 .m-img img { display: block; max-width: 100%; max-height: 90px; object-fit: contain; border-radius: 2px; background: var(--panel); min-height: 12px; }
 .body .m-flash { animation: flash 2.4s ease-out; border-radius: 4px; }
+
+/* SciLog's views */
+.vw-list { flex: 1; overflow: auto; padding: 8px 14px 16px; }
+.vw-intro { color: var(--muted); margin: 4px 0 10px; }
+.vw-note { font-size: .88em; color: var(--muted); }
+.vw-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+.vw-card.vw-dup { border-left: 3px solid #d08a00; }
+.vw-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vw-name { font: inherit; font-weight: 700; font-size: 1.05em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); min-width: 12em; }
+.vw-name[readonly], .vw-title[readonly], .vw-tags[readonly] { border-color: transparent; background: transparent; }
+.vw-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.vw-badge { font-size: .8em; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; }
+.vw-badge.warn { color: #9a6200; border-color: #d08a00; }
+.vw-diff { margin: 8px 0 4px; padding: 6px 10px; background: var(--panel); border-radius: 6px; font-size: .9em; }
+.vw-diff ul { margin: 4px 0 0; padding-left: 20px; }
+.vw-panel { margin-top: 8px; padding: 6px 0 0 10px; border-top: 1px dashed var(--line); }
+.vw-ptitle { display: flex; gap: 8px; align-items: center; }
+.vw-type { font-size: .78em; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); min-width: 5.5em; }
+.vw-title, .vw-tags, .vw-add { font: inherit; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.vw-title { flex: 1; max-width: 22em; }
+.vw-size { color: var(--muted); font-size: .8em; margin-left: auto; }
+.vw-row { display: flex; gap: 8px; align-items: baseline; margin-top: 5px; }
+.vw-label { min-width: 6.5em; color: var(--muted); font-size: .88em; flex: none; }
+.vw-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.vw-chip { font-size: .85em; border: 1px solid var(--line); border-radius: 10px; padding: 0 4px 0 8px; background: var(--bg); }
+.vw-chip.main { font-weight: 600; padding-right: 8px; border-color: var(--accent); }
+.vw-chip.unknown { color: var(--muted); font-style: italic; }
+.vw-chip button { border: none; padding: 0 4px; margin-left: 2px; color: var(--muted); }
+.vw-hint { font-size: .85em; color: #9a6200; margin: 4px 0 0 7.2em; }
+.vw-tags { flex: 1; max-width: 26em; }
+.vw-add { width: 22em; }
+.vw-actions { display: flex; gap: 8px; margin-top: 10px; }
+.vw-delete { color: #c62828; }
