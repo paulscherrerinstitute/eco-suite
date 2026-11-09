@@ -1,6 +1,7 @@
 """eco.scilog_app: posts cleaned and pointed at the local server, kept up to
 date incrementally, served only with the token, plots in their own origin."""
 import builtins
+import datetime
 import http.cookiejar
 import json
 import urllib.error
@@ -66,7 +67,7 @@ class _FakeReader:
         return {"id": i, "createdAt": t, "updatedAt": updated or t, "createdBy": "ann@psi.ch", "updatedBy": "ann@psi.ch",
                 "tags": ["ARAMIS"], "textcontent": html, "files": [], "deleted": deleted, "parentId": LB}
 
-    def posts(self, logbook, updated_after=None):
+    def posts(self, logbook, updated_after=None, children=False):
         self.requests.append(updated_after)
         return [r for r in self.rows if not updated_after or r["updatedAt"] > updated_after]
 
@@ -355,3 +356,65 @@ def test_scilog_views_are_listed_told_apart_changed_and_deleted(tmp_path, monkey
     assert not readonly.views(LB)["can_edit"]
     with pytest.raises(PermissionError, match="not switched on"):
         readonly.change_view(LB, "68baa3c86f90f983d570fe6f", None, {"name": "x"})
+
+
+class _Threads(_Writer):
+    """Posts with SciLog's order, a comment, a reply quoting another post, and comments arriving later."""
+
+    A, B, R = "a1" * 12, "b2" * 12, "c3" * 12
+
+    def __init__(self):
+        super().__init__()
+        a = self.row(self.A, "2026-11-01T10:00:00Z", "<h1>Run</h1><p>offset fixed?</p>")
+        b = self.row(self.B, "2026-11-01T12:00:00Z", "<p>later</p>")
+        r = self.row(self.R, "2026-11-01T13:00:00Z", "<p>yes, fixed</p>")
+        for row in (a, b, r):
+            order = int(datetime.datetime.fromisoformat(row["createdAt"].replace("Z", "+00:00")).timestamp() * 1e6)
+            row.update(defaultOrder=order, expiresAt="2026-11-04T10:00:00Z", updateACL=["p1"])
+        a["subsnippets"] = [{"id": "d4" * 12, "parentId": self.A, "linkType": "comment", "createdAt": "2026-11-01T11:00:00Z",
+                             "createdBy": "bob@psi.ch", "textcontent": "<p>looks good</p>", "files": [], "deleted": False}]
+        # a reply: the copy of what it answers carries no link, only the same text (and the original's expiry)
+        r["subsnippets"] = [{"id": "e5" * 12, "parentId": self.R, "linkType": "quote", "createdAt": "2026-11-01T13:00:00Z",
+                             "createdBy": "ann@psi.ch", "textcontent": "<h1>Run</h1><p>offset fixed?</p>", "files": [], "deleted": False,
+                             "expiresAt": "2026-11-04T10:00:00Z"}]
+        self.rows = [a, b, r]
+        self.kids = []
+
+    def children_since(self, updated_after):
+        return [k for k in self.kids if k["updatedAt"] > updated_after]
+
+    def create_post(self, payload):
+        row = super().create_post(payload)
+        row["id"] = "f6" * 12
+        row.update(createdAt="2026-11-06T08:00:00Z", updatedAt="2026-11-06T08:00:00Z", defaultOrder=payload.get("defaultOrder", 1800000000000000), expiresAt=payload.get("expiresAt"))
+        return row
+
+
+def test_comments_replies_and_scilogs_order_reach_the_page(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Threads()
+    store = Store(reader, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+    first = store.posts(LB)
+    a, b, r = first["posts"]
+    assert [c["text"].strip() for c in a["comments"]] == ["looks good"] and a["comments"][0]["author"] == "bob@psi.ch"
+    assert r["quote"]["of"] == reader.A and "offset fixed?" in r["quote"]["text"] and not b["quote"]
+    assert a["t"] == a["written"] and not a["inserted"] and a["expires"] == datetime.datetime(2026, 11, 4, 10, tzinfo=datetime.timezone.utc).timestamp()
+
+    # a comment written later does not touch its post's updatedAt; it is found all the same
+    reader.kids = [{"id": "a7" * 12, "parentId": reader.B, "linkType": "comment", "createdAt": "2026-11-05T09:00:00Z",
+                    "updatedAt": "2026-11-05T09:00:00Z", "createdBy": "ann@psi.ch", "textcontent": "<p>and now?</p>", "files": [], "deleted": False}]
+    later = store.posts(LB, first["since"])
+    assert [p["id"] for p in later["posts"]] == [reader.B] and later["posts"][0]["comments"][0]["text"].strip() == "and now?"
+    assert store.posts(LB, later["since"])["posts"] == []  # seen once
+
+    # a post inserted after A lands between A and B in SciLog's order, with the edit period asked for
+    saved = store.save(LB, None, "<h2>Alignment</h2>", [], edit_days=30, after=reader.A)
+    payload = reader.written[-1][1]
+    assert a["order"] < payload["defaultOrder"] < b["order"]
+    until = datetime.datetime.fromisoformat(payload["expiresAt"].replace("Z", "+00:00"))
+    assert 29.9 < (until - datetime.datetime.now(datetime.timezone.utc)).total_seconds() / 86400 <= 30
+    assert saved["inserted"] and a["t"] < saved["t"] < b["t"]
+    with pytest.raises(ValueError):
+        store.save(LB, None, "<p>x</p>", [], edit_days=0)
+    with pytest.raises(ValueError):
+        store.save(LB, None, "<p>x</p>", [], after="../x")

@@ -69,13 +69,20 @@ function readDraft(key) { try { return JSON.parse(localStorage.getItem(key) || "
 function writeDraft(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* full or private */ } }
 function dropDraft(key) { try { localStorage.removeItem(key); } catch (e) { /* private */ } }
 
-async function openEditor({ logbook, logbookName, postId = null, onSaved }) {
+// how long a new post stays editable; SciLog's own default is 3 days
+const EDIT_DAYS_DEFAULT = 30;
+
+async function openEditor({ logbook, logbookName, postId = null, onSaved, after = null }) {
   if (document.getElementById("editor-dialog")) { document.getElementById("editor-dialog").showModal(); return; }
   let start = { html: "", tags: [], updated: null };
-  const key = draftKey(logbook, postId);
+  const key = draftKey(logbook, postId) + (after ? `:after:${after.id}` : "");
   const dialog = el("dialog", { id: "editor-dialog" });
   const statusLine = el("span", { class: "ed-status" });
-  const title = el("strong", { text: postId ? "Edit post" : `New post in ${logbookName}` });
+  const title = el("strong", { text: postId ? "Edit post" : after ? `New post, inserted after ${after.label}` : `New post in ${logbookName}` });
+  const days = el("input", { type: "number", min: "1", max: "3650", step: "1", class: "ed-days",
+    value: storageGet("eco-scilog-edit-days") || String(EDIT_DAYS_DEFAULT) });
+  const period = postId ? null : el("label", { class: "ed-period", title: "How long this post stays editable in SciLog (SciLog's own default is 3 days). Set once, when posting." },
+    "Edit period ", days, " days");
   const tagsInput = el("input", { class: "ed-tags", placeholder: "Tags, comma separated", autocomplete: "off" });
   const area = el("div", { class: "ed-area" }, el("p", { class: "hint", text: "Loading the editor ..." }));
   const saveButton = el("button", { class: "primary", title: "Save to SciLog (Ctrl+Enter)" }, postId ? "Save changes" : "Post");
@@ -90,7 +97,7 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved }) {
       el("button", { title: "Close (the draft is kept)", onclick: () => close() }, "✕")),
     area,
     el("div", { class: "ed-foot" },
-      tagsInput,
+      tagsInput, period,
       el("button", { title: "Attach files: HTML files become interactive plots", onclick: () => attach.click() }, "📎 Attach"),
       attach, statusLine, el("span", { class: "spacer" }),
       el("button", { onclick: () => close() }, "Cancel"), saveButton));
@@ -169,6 +176,13 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved }) {
     ctx.status("saving to SciLog ...");
     try {
       const body = { logbook, html, tags: tagList(), updated: start.updated };
+      if (!postId) {
+        const d = Number(days.value);
+        if (!(d >= 1 && d <= 3650)) { ctx.status("the edit period must be 1 to 3650 days", true); saveButton.disabled = false; return; }
+        body.edit_days = d;
+        storageSet("eco-scilog-edit-days", String(d));
+        if (after) body.after = after.id;
+      }
       const post = postId ? await writeApi(`/api/save/${postId}`, "PATCH", body) : await writeApi("/api/save", "POST", body);
       dropDraft(key);
       dirty = false;

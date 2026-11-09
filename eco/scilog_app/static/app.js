@@ -101,12 +101,17 @@ function fillPicker(filter) {
 
 // -- the flow -----------------------------------------------------------------------------
 
+// SciLog refuses changes once a post's edit period is over (3 days unless it was given another)
+function editable(p) { return p.can_edit && (!p.expires || p.expires * 1000 > Date.now()); }
+function editableUntil(p) { return p.expires ? `${fullDate(p.expires)} ${clock(p.expires)}` : ""; }
+
 function postElement(p, pinned = false) {
   const actions = pinned ? el("span", { class: "actions" },
     el("button", { title: "Show this post in the main pane", onclick: (ev) => { ev.stopPropagation(); showPinnedInMain(p.id); } }, "⇠ main"))
   : el("span", { class: "actions" },
     el("button", { title: "Pin: keep this post open in a pane on the right, to compare with other places or logbooks", onclick: (ev) => { ev.stopPropagation(); pinPost(p.id); } }, "📌"),
-    p.can_edit && canWrite() ? el("button", { title: "Edit this post", onclick: (ev) => { ev.stopPropagation(); editPost(p.id); } }, "✏️ Edit") : null,
+    editable(p) && canWrite() ? el("button", { title: `Edit this post (possible until ${editableUntil(p)})`, onclick: (ev) => { ev.stopPropagation(); editPost(p.id); } }, "✏️ Edit") : null,
+    canWrite() ? el("button", { title: "Insert a new post right after this one (e.g. a heading for the outline)", onclick: (ev) => { ev.stopPropagation(); insertAfter(p.id); } }, "⤓") : null,
     el("button", { title: "Copy a link to this post in its context", onclick: (ev) => { ev.stopPropagation(); copyLink(p.id); } }, "🔗"),
     el("button", { title: "Show only this post (and copy a link to it)", onclick: (ev) => { ev.stopPropagation(); showOnly(p.id); } }, "⧉"));
   const head = el("div", { class: "post-head" },
@@ -114,9 +119,10 @@ function postElement(p, pinned = false) {
     el("span", { class: "author", text: shortName(p.author), title: p.author }),
     ...p.tags.map((t) => el("span", { class: "tag", text: t })),
     p.edited ? el("span", { class: "edited", text: "edited", title: `${p.editor || ""} ${p.updated}` }) : null,
+    p.inserted ? el("span", { class: "inserted", text: `inserted ${shortDate(p.written)} ${clock(p.written)}`, title: `Written ${fullDate(p.written)} ${clock(p.written)}, placed here afterwards` }) : null,
     actions);
   const body = el("div", { class: "body" });
-  if (p.can_edit && !pinned) {
+  if (editable(p) && !pinned) {
     body.title = "Double-click to edit";
     body.addEventListener("dblclick", (ev) => {
       if (ev.target.closest("a, button, iframe, img")) return;
@@ -128,7 +134,43 @@ function postElement(p, pinned = false) {
   body.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((h, i) => (h.id = `${pinned ? "pin-" : ""}h-${p.id}-${i}`));
   body.querySelectorAll(".plot").forEach(preparePlot);
   body.querySelectorAll("img").forEach((img) => img.addEventListener("click", () => lightbox(img.src)));
-  return el("article", { class: "post", id: `${pinned ? "pin-" : ""}p-${p.id}`, "data-id": p.id }, head, body);
+  return el("article", { class: "post", id: `${pinned ? "pin-" : ""}p-${p.id}`, "data-id": p.id },
+    head, p.quote ? replyElement(p) : null, body, p.comments?.length ? commentsElement(p) : null);
+}
+
+// a reply: what it answers, as a one-line teaser that unfolds
+function replyElement(p) {
+  const q = p.quote, original = q.of ? state.byId.get(q.of) : null;
+  const who = original ? shortName(original.author) : "";
+  const teaser = q.text.replace(/\s+/g, " ").trim();
+  const full = el("blockquote", { class: "r-full" });
+  full.innerHTML = q.html;
+  full.querySelectorAll("img").forEach((img) => img.addEventListener("click", (ev) => { ev.stopPropagation(); lightbox(img.src); }));
+  const box = el("div", { class: "reply", title: "Click to unfold what this replies to" },
+    el("div", { class: "r-teaser" }, el("span", { class: "r-arrow", text: "↩" }),
+      el("span", { class: "r-who", text: `Reply${who ? ` to ${who}` : ""}${original ? ` (${shortDate(original.t)} ${clock(original.t)})` : ""}: ` }),
+      el("span", { class: "r-text", text: teaser.slice(0, 140) + (teaser.length > 140 ? " …" : "") || "(image)" })),
+    full,
+    original ? el("button", { class: "r-go", onclick: (ev) => { ev.stopPropagation(); jumpToPost(original.id); } }, "go to the original ↑") : null);
+  box.addEventListener("click", (ev) => { if (!ev.target.closest("a, button, img")) box.classList.toggle("open"); });
+  return box;
+}
+
+// comments: a chip that shows or hides them (c: all at once)
+function commentsElement(p) {
+  const n = p.comments.length;
+  const list = el("div", { class: "c-list" }, ...p.comments.map((c) => {
+    const body = el("div", { class: "c-body" });
+    body.innerHTML = c.html;
+    body.querySelectorAll("img").forEach((img) => img.addEventListener("click", () => lightbox(img.src)));
+    return el("div", { class: "comment", id: `c-${c.id}` },
+      el("div", { class: "c-head" }, el("strong", { text: shortName(c.author), title: c.author }), ` ${shortDate(c.t)} ${clock(c.t)}`), body);
+  }));
+  const box = el("div", { class: `comments${state.commentsOpen ? " open" : ""}` });
+  const chip = el("button", { class: "c-chip", title: "Show or hide the comments (c: all of them)", onclick: () => box.classList.toggle("open") },
+    `💬 ${n} comment${n > 1 ? "s" : ""}`);
+  box.append(chip, list);
+  return box;
 }
 
 function dayElement(t) {
@@ -257,7 +299,8 @@ function renderOutline() {
       const dayNode = el("div", { class: "o-day" },
         el("div", { class: "o-label", onclick: () => jumpTo(document.querySelector(`.day[data-day="${d.key}"]`)), text: dayTitle(d.t) }));
       for (const p of d.posts) {
-        dayNode.append(el("div", { class: "o-label o-post", "data-post": p.id, title: p.title, onclick: () => jumpToPost(p.id) }, `${clock(p.t)} ${p.title || (p.html.includes("<img") ? "🖼 image" : p.html.includes("plot") ? "📈 plot" : "(empty)")}`));
+        dayNode.append(el("div", { class: "o-label o-post", "data-post": p.id, title: p.title, onclick: () => jumpToPost(p.id) },
+          `${clock(p.t)} `, ...postMarks(p), `${p.title || (p.html.includes("<img") ? "🖼 image" : p.html.includes("plot") ? "📈 plot" : "(empty)")}`));
         const heads = [...p.html.matchAll(/<(h[1-6])\b[^>]*>(.*?)<\/h[1-6]>/gis)];
         heads.forEach((h, n) => {
           const text = h[2].replace(/<[^>]+>/g, "").trim();
@@ -278,6 +321,16 @@ function renderOutline() {
   });
   tree.replaceChildren(frag);
   if (typeof renderMap === "function") renderMap();
+  if (typeof renderHeadings === "function") renderHeadings();
+}
+
+// small marks for replies, comments and inserted posts (outline, map, headings)
+function postMarks(p) {
+  return [
+    p.quote ? el("span", { class: "mark-reply", text: "↩", title: "a reply" }) : null,
+    p.comments?.length ? el("span", { class: "mark-comments", text: `💬${p.comments.length}`, title: `${p.comments.length} comment${p.comments.length > 1 ? "s" : ""}` }) : null,
+    p.inserted ? el("span", { class: "mark-inserted", text: "⤓", title: "inserted afterwards" }) : null,
+  ].filter(Boolean);
 }
 
 let observer = null;
@@ -662,6 +715,13 @@ function newPost() {
   openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved });
 }
 
+function insertAfter(id) {
+  if (!canWrite()) { askToAllowWriting(); return; }
+  const p = state.byId.get(id);
+  openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved,
+    after: { id, label: `${dayTitle(p.t)} ${clock(p.t)} ${p.title ? `“${p.title.slice(0, 50)}”` : ""}` } });
+}
+
 function placeSaved(post) {
   state.byId.set(post.id, post);
   state.all = [...state.byId.values()].sort((a, b) => a.t - b.t);
@@ -709,6 +769,14 @@ function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   return { lb: h.get("lb"), post: h.get("post"), only: h.get("only") === "1" };
 }
+
+function toggleAllComments() {
+  state.commentsOpen = !state.commentsOpen;
+  storageSet("eco-scilog-comments", state.commentsOpen ? "open" : "closed");
+  document.querySelectorAll(".comments").forEach((c) => c.classList.toggle("open", state.commentsOpen));
+  toast(state.commentsOpen ? "Comments shown" : "Comments hidden");
+}
+state.commentsOpen = storageGet("eco-scilog-comments") === "open";
 
 // -- the left pane's width: drag the line between it and the flow ------------------------------
 
@@ -806,6 +874,7 @@ async function main() {
     else if (e.key === "l") showPicker(true);
     else if (e.key === "n") newPost();
     else if (e.key === "End" || e.key === "G") { e.preventDefault(); toNewest(); }
+    else if (e.key === "c") toggleAllComments();
     else if (e.key === "v") $("#view").focus();
     else if (e.key === "Escape") { $("#picker").hidden = true; document.getElementById("lightbox")?.remove(); }
   });

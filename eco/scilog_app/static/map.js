@@ -10,9 +10,12 @@ const mapState = { on: false, detached: false, visible: new Set(), cache: new Ma
 let mapObserver = null;
 
 function setPane(mode) {
+  if (!["outline", "map", "headings"].includes(mode)) mode = "outline";
   mapState.on = mode === "map";
-  $("#outline-tree").hidden = mapState.on;
-  $("#map").hidden = !mapState.on;
+  $("#outline-tree").hidden = mode !== "outline";
+  $("#map").hidden = mode !== "map";
+  $("#headings").hidden = mode !== "headings";
+  if (typeof setHeadingsPane === "function") setHeadingsPane(mode === "headings");
   document.querySelectorAll("#pane-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.pane === mode));
   storageSet("eco-scilog-pane", mode);
   renderMap();
@@ -37,7 +40,7 @@ function renderMap() {
       frag.append(el("div", { class: "m-day", title: "Go to this day", onclick: () => jumpTo(document.querySelector(`.day[data-day="${k}"]`)) }, dayTitle(p.t)));
       day = k;
     }
-    const key = `${p.id}|${p.updated || ""}|${cpl}`;
+    const key = `${p.id}|${p.updated || ""}|${cpl}|${p.comments?.length || 0}|${p.quote ? 1 : 0}`;
     let card = mapState.cache.get(p.id);
     if (!card || card.dataset.key !== key) {
       card = mapCard(p, cpl);
@@ -54,7 +57,8 @@ function renderMap() {
 
 function mapCard(p, cpl) {
   const card = el("div", { class: "m-post", "data-post": p.id, title: `${clock(p.t)} ${shortName(p.author)}${p.title ? " · " + p.title : ""}` });
-  card.append(el("div", { class: "m-meta", onclick: () => jumpToPost(p.id) }, `${clock(p.t)} ${shortName(p.author)}`));
+  card.append(el("div", { class: "m-meta", onclick: () => jumpToPost(p.id) }, `${clock(p.t)} ${shortName(p.author)} `, ...postMarks(p)));
+  if (p.quote) card.append(el("div", { class: "m-reply m-el", title: `reply to: ${p.quote.text.slice(0, 80)}` }));
   const t = document.createElement("template");
   t.innerHTML = p.html;  // a template: nothing in it loads or runs
   [...t.content.children].forEach((node, i) => {
@@ -64,6 +68,16 @@ function mapCard(p, cpl) {
     g.addEventListener("click", (ev) => { ev.stopPropagation(); jumpToElement(p.id, i); });
     card.append(g);
   });
+  if (p.comments?.length) {
+    const c = el("div", { class: "m-comments m-el", title: `${p.comments.length} comment${p.comments.length > 1 ? "s" : ""}` },
+      ...p.comments.slice(0, 4).map(() => el("span", { class: "m-line" })));
+    c.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const box = document.querySelector(`#p-${p.id} .comments`);
+      if (box) { box.classList.add("open"); box.scrollIntoView({ block: "center" }); }
+    });
+    card.append(c);
+  }
   card.addEventListener("click", () => jumpToPost(p.id));
   return card;
 }
@@ -219,9 +233,10 @@ function followReading() {
   });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable], select")) return;
-    if (e.key === "m") {
+    if (e.key === "m" || e.key === "h") {
       document.body.classList.remove("no-outline");
-      setPane(mapState.on ? "outline" : "map");
+      const want = e.key === "m" ? "map" : "headings";
+      setPane(storageGet("eco-scilog-pane") === want ? "outline" : want);
     }
   });
   window.addEventListener("resize", () => { clearTimeout(setUpMap.t); setUpMap.t = setTimeout(() => mapState.on && renderMap(), 300); });

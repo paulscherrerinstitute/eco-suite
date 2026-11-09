@@ -305,3 +305,50 @@ body.has-pin #to-bottom { right: calc(var(--pin-width, 36vw) + 24px); }
   body.has-pin #layout { right: 0; }
   .post-head .actions button[title^="Pin"] { display: none; }
 }
+
+/* replies: what they answer, as a teaser that unfolds */
+.reply { margin: 4px 0 6px; padding: 3px 10px; border-left: 3px solid var(--line); border-radius: 4px; background: var(--panel); cursor: pointer; font-size: .92em; }
+.reply .r-teaser { display: flex; gap: 6px; align-items: baseline; color: var(--muted); min-width: 0; }
+.reply .r-arrow { color: var(--accent); font-weight: 700; }
+.reply .r-who { white-space: nowrap; }
+.reply .r-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+.reply .r-full, .reply .r-go { display: none; }
+.reply.open { border-left-color: var(--accent); cursor: auto; }
+.reply.open .r-text { display: none; }
+.reply.open .r-full { display: block; margin: 6px 0 4px; padding: 0; color: var(--fg); }
+.reply.open .r-full img { max-width: 100%; height: auto; cursor: zoom-in; }
+.reply.open .r-go { display: inline-block; font-size: .85em; margin-bottom: 4px; }
+/* comments: shown or hidden per post (c: all) */
+.comments { margin-top: 6px; }
+.comments .c-chip { font-size: .82em; padding: 0 8px; border-radius: 10px; color: var(--muted); }
+.comments.open .c-chip { color: var(--accent); border-color: var(--accent); }
+.comments .c-list { display: none; margin: 6px 0 0 14px; border-left: 2px solid var(--accent); padding-left: 10px; }
+.comments.open .c-list { display: block; }
+.comment { margin: 4px 0 8px; }
+.comment .c-head { color: var(--muted); font-size: .82em; }
+.comment .c-body > :first-child { margin-top: 0; } .comment .c-body > :last-child { margin-bottom: 0; }
+.comment .c-body img { max-width: 100%; height: auto; cursor: zoom-in; }
+.post-head .inserted { color: #9a6200; border: 1px dashed #d08a00; border-radius: 3px; padding: 0 5px; }
+.mark-reply, .mark-comments, .mark-inserted { font-size: .78em; color: var(--accent); margin-right: 4px; font-weight: 400; }
+.mark-inserted { color: #9a6200; }
+.m-meta .mark-reply, .m-meta .mark-comments, .m-meta .mark-inserted { font-size: 9px; }
+.m-reply { height: 5px; border-left: 2px solid var(--accent); background: var(--panel); margin: 2px 0; }
+.m-comments { margin: 2px 0 2px 6px; padding-left: 3px; border-left: 2px solid var(--accent); }
+.m-comments .m-line { opacity: .3; }
+/* the headings pane */
+#pane-tabs button { padding: 2px 4px; }
+.hd-opts { display: flex; gap: 4px; flex-wrap: wrap; margin: 2px 0 6px; }
+.hd-opt { font-size: .78em; padding: 0 6px; border-radius: 10px; color: var(--muted); }
+.hd-opt.on { color: var(--accent); border-color: var(--accent); }
+.hd-date { font-size: .75em; font-weight: 700; color: var(--muted); margin: 8px 0 1px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.hd-item { display: flex; align-items: baseline; gap: 4px; padding: 1px 4px; border-radius: 4px; cursor: pointer; min-width: 0; }
+.hd-item:hover { background: var(--panel); }
+.hd-item.current { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+.hd-fold { flex: none; width: 1em; color: var(--muted); }
+.hd-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-time { flex: none; color: var(--muted); font-size: .78em; font-variant-numeric: tabular-nums; }
+.hd-l1 .hd-text { font-weight: 700; } .hd-l2 .hd-text { font-weight: 600; }
+.hd-l4 .hd-text, .hd-l5 .hd-text, .hd-l6 .hd-text { color: var(--muted); }
+.hd-loose .hd-text { color: var(--muted); font-style: italic; font-size: .92em; }
+.ed-period { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .88em; white-space: nowrap; }
+.ed-days { width: 4.5em; padding: 3px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }

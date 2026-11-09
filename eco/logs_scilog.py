@@ -388,25 +388,39 @@ class Reader:
         name = re.search(r'filename="?([^";]+)', disposition)
         return r.content, r.headers.get("content-type", "application/octet-stream"), name.group(1) if name else None
 
-    def posts(self, logbook_id, updated_after=None, limit=100000):
+    #: what a comment or a reply's quote (children of a post) is read with
+    CHILD_FIELDS = {"id": True, "parentId": True, "linkType": True, "createdAt": True, "createdBy": True,
+                    "updatedAt": True, "textcontent": True, "files": True, "deleted": True, "expiresAt": True}
+    CHILD_WHERE = {"snippetType": "paragraph", "linkType": {"inq": ["comment", "quote"]}}
+
+    def posts(self, logbook_id, updated_after=None, limit=100000, children=False):
         """Every post of a logbook as SciLog stores it (HTML, files, tags),
         oldest first; with updated_after (ISO) only those created or edited
-        since, deleted ones included so they can be removed."""
+        since, deleted ones included so they can be removed. With children,
+        each post comes with its comments and, for a reply, the copy of what
+        it quotes ("subsnippets", linkType "comment" / "quote")."""
         where = {"snippetType": "paragraph", "parentId": logbook_id}
         if updated_after:
             where["updatedAt"] = {"gt": updated_after}
         fields = dict(self.POST_FIELDS, updatedAt=True, updatedBy=True, updateACL=True, ownerGroup=True,
-                      accessGroups=True, isPrivate=True)
+                      accessGroups=True, isPrivate=True, defaultOrder=True, expiresAt=True)
+        extra = {"include": [{"relation": "subsnippets", "scope": {"where": self.CHILD_WHERE, "fields": self.CHILD_FIELDS}}]} if children else {}
         out, skip = [], 0
         while len(out) < limit:
             rows = self.get("/basesnippets", {
-                "where": where, "order": ["createdAt ASC"], "limit": PAGE, "skip": skip, "fields": fields,
+                "where": where, "order": ["createdAt ASC"], "limit": PAGE, "skip": skip, "fields": fields, **extra,
             })
             out += rows
             if len(rows) < PAGE:
                 break
             skip += PAGE
         return out[:limit]
+
+    def children_since(self, updated_after, limit=2000):
+        """Comments and reply quotes anywhere (that this token reads)
+        created or changed after updated_after (ISO), deleted ones included."""
+        return self.get("/basesnippets", {"where": {**self.CHILD_WHERE, "updatedAt": {"gt": updated_after}},
+                                          "order": ["updatedAt ASC"], "limit": limit, "fields": self.CHILD_FIELDS})
 
     def search(self, text, limit=20):
         """SciLog's own search over everything you can read, newest first.

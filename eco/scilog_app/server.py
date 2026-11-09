@@ -247,9 +247,22 @@ class Store:
         """What the page gets of one post."""
         text = logs_sources.html_to_text(raw.get("textcontent") or "")
         created, updated = raw.get("createdAt") or "", raw.get("updatedAt") or ""
+        written = _epoch(created)
+        order = raw.get("defaultOrder")
+        at = order / 1e6 if isinstance(order, (int, float)) and order > 0 else written
+        expires = _epoch(raw.get("expiresAt") or "")
+        kids = [k for k in raw.get("subsnippets") or () if not k.get("deleted")]
+        quote = next((k for k in kids if k.get("linkType") == "quote"), None)
         return {
             "id": raw["id"],
-            "t": _epoch(created),
+            "t": at,  # where SciLog places it (defaultOrder): the creation time, unless it was inserted
+            "written": written,
+            "inserted": abs(at - written) > 600,
+            "order": order if isinstance(order, (int, float)) else None,
+            "expires": expires,
+            "comments": [self.child_record(k) for k in sorted((k for k in kids if k.get("linkType") == "comment"),
+                                                              key=lambda k: k.get("createdAt") or "")],
+            "quote": dict(self.child_record(quote), of=raw.get("_quote_of")) if quote else None,
             "created": created,
             "updated": updated,
             "edited": bool(updated and created and _epoch(updated) - _epoch(created) > 60),
@@ -261,6 +274,49 @@ class Store:
             "title": _first_line(text),
             "can_edit": self._safe_may_edit(raw),
         }
+
+    def child_record(self, raw):
+        """A comment, or the copy of the post a reply quotes."""
+        text = logs_sources.html_to_text(raw.get("textcontent") or "")
+        return {"id": raw["id"], "t": _epoch(raw.get("createdAt") or ""), "author": raw.get("createdBy") or "",
+                "html": content.clean_post(raw.get("textcontent") or "", raw.get("files")), "text": text}
+
+    @staticmethod
+    def _link_quotes(book, raws):
+        """A reply's quote is a copy without a link to what it copies: find
+        the original by its text, else by the copied expiry (SciLog's
+        default, creation + 3 days)."""
+        by_text = None
+        for raw in raws:
+            quote = next((k for k in raw.get("subsnippets") or () if k.get("linkType") == "quote" and not k.get("deleted")), None)
+            if not quote:
+                continue
+            if by_text is None:
+                by_text = {}
+                for r in book["raw"].values():
+                    by_text.setdefault((r.get("textcontent") or "").strip(), r["id"])
+            found = by_text.get((quote.get("textcontent") or "").strip())
+            if not found and quote.get("expiresAt"):
+                born = _epoch(quote["expiresAt"]) - 3 * 86400
+                found = next((r["id"] for r in book["raw"].values() if abs(_epoch(r.get("createdAt") or "") - born) < 2), None)
+            raw["_quote_of"] = found if found != raw["id"] else None
+
+    def _changed_by_children(self, book, since, already):
+        """Posts of this logbook whose comments (or quote) changed since
+        `since`: a comment does not touch its post's updatedAt."""
+        if not since or not hasattr(self.reader, "children_since"):
+            return []
+        out = {}
+        for kid in self.reader.children_since(since):
+            parent = book["raw"].get(kid.get("parentId"))
+            if parent is None:
+                continue
+            book["since"] = max(book["since"], kid.get("updatedAt") or "", kid.get("createdAt") or "")
+            kids = [k for k in parent.get("subsnippets") or () if k["id"] != kid["id"]]
+            parent["subsnippets"] = kids + [kid]
+            if parent["id"] not in already:
+                out[parent["id"]] = parent
+        return list(out.values())
 
     def _safe_may_edit(self, raw):
         try:
@@ -276,12 +332,14 @@ class Store:
         with lock:
             book = self.logbooks.get(logbook_id)
             if book is None:
-                raw = self.reader.posts(logbook_id)
+                raw = self.reader.posts(logbook_id, children=True)
                 book = {"posts": {}, "raw": {}, "since": ""}
                 changed = raw
                 self.logbooks[logbook_id] = book
             else:
-                changed = self.reader.posts(logbook_id, updated_after=book["since"]) if book["since"] else []
+                old_since = book["since"]
+                changed = self.reader.posts(logbook_id, updated_after=old_since, children=True) if old_since else []
+                changed = list(changed) + self._changed_by_children(book, old_since, {r["id"] for r in changed})
             removed = []
             for r in changed:
                 book["since"] = max(book["since"], r.get("updatedAt") or "", r.get("createdAt") or "")
@@ -291,6 +349,10 @@ class Store:
                     removed.append(r["id"])
                 else:
                     book["raw"][r["id"]] = r
+                    book["posts"][r["id"]] = self.record(r)
+            self._link_quotes(book, [r for r in changed if not r.get("deleted")])
+            for r in changed:
+                if not r.get("deleted") and r["id"] in book["posts"]:
                     book["posts"][r["id"]] = self.record(r)
             if since is None:
                 posts = sorted(book["posts"].values(), key=lambda p: p["t"])
@@ -399,10 +461,33 @@ class Store:
         known = {f["fileId"]: f for f in (raw or {}).get("files") or () if f.get("fileId")}
         return {**self.uploads, **known}
 
-    def save(self, logbook_id, post_id, html, tags, expected_updated=None):
+    #: the longest edit period a new post may be given, in days
+    MAX_EDIT_DAYS = 3650
+
+    def _insert_order(self, logbook_id, after_id):
+        """A defaultOrder between `after_id` and the post that follows it
+        in SciLog's order: a post placed there after the fact."""
+        book = self.logbooks.get(logbook_id) or {}
+        orders = sorted(r.get("defaultOrder") for r in (book.get("raw") or {}).values()
+                        if isinstance(r.get("defaultOrder"), (int, float)))
+        after = (book.get("raw") or {}).get(after_id)
+        if after is None or not isinstance(after.get("defaultOrder"), (int, float)):
+            raise ValueError("the post to insert after is not known")
+        a = after["defaultOrder"]
+        later = [o for o in orders if o > a]
+        if not later:
+            return None  # the last post: a new post goes after it anyway
+        b = later[0]
+        if b - a < 2:
+            raise ValueError("there is no room between these two posts")
+        return int(a + (b - a) // 2)
+
+    def save(self, logbook_id, post_id, html, tags, expected_updated=None, edit_days=None, after=None):
         """Create (post_id None) or update a post from the editor's HTML;
         returns the post as the page shows it. With expected_updated, an
-        update is refused if the post was changed meanwhile."""
+        update is refused if the post was changed meanwhile. A new post can
+        be given an edit period (days; SciLog's own default is 3) and be
+        placed right after another post (`after`, a post id)."""
         raw = self._raw(logbook_id, post_id) if post_id else None
         self._check_write(logbook_id, raw)
         textcontent, files = content.to_scilog(html, self._known_files(raw))
@@ -412,6 +497,18 @@ class Store:
         if raw is None:
             payload = {"snippetType": "paragraph", "linkType": "paragraph", "parentId": logbook_id,
                        "textcontent": textcontent, "files": files, "tags": tags}
+            if edit_days is not None:
+                days = float(edit_days)
+                if not 0 < days <= self.MAX_EDIT_DAYS:
+                    raise ValueError(f"the edit period must be between 1 and {self.MAX_EDIT_DAYS} days")
+                until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
+                payload["expiresAt"] = until.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            if after:
+                if not _ID.match(str(after)):
+                    raise ValueError("not a post id")
+                order = self._insert_order(logbook_id, after)
+                if order is not None:
+                    payload["defaultOrder"] = order
             new = self.reader.create_post(payload)
             post_id = new["id"]
         else:
@@ -583,7 +680,8 @@ class _Upload(_Write):
 class _Save(_Write):
     async def post(self):
         b = self.body()
-        await self.run(self.app.store.save, b.get("logbook"), None, b.get("html", ""), b.get("tags"))
+        await self.run(self.app.store.save, b.get("logbook"), None, b.get("html", ""), b.get("tags"),
+                       None, b.get("edit_days"), b.get("after"))
 
     async def patch(self, post_id):
         b = self.body()

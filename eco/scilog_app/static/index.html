@@ -32,9 +32,11 @@
   <nav id="outline" aria-label="Outline">
     <div id="pane-tabs" role="tablist">
       <button data-pane="outline" class="active" title="Days, posts and headings">Outline</button>
+      <button data-pane="headings" title="The headings of all posts as one table of contents (h)">Headings</button>
       <button data-pane="map" title="The flow drawn small: figures, tables and lists by their look (m)">Map</button>
     </div>
     <div id="outline-tree"></div>
+    <div id="headings" hidden></div>
     <div id="map" hidden></div>
   </nav>
   <div id="pane-resizer" role="separator" aria-orientation="vertical" title="Drag to resize · double-click: default width"></div>
@@ -56,5 +58,6 @@
 <script src="/static/map.js"></script>
 <script src="/static/views.js"></script>
 <script src="/static/pin.js"></script>
+<script src="/static/headings.js"></script>
 </body>
 </html>
