@@ -451,3 +451,21 @@ def test_sharing_with_everyone_logged_in_covers_files_and_comments_first(tmp_pat
     # someone else's post: SciLog would refuse, so does the viewer
     with pytest.raises(PermissionError):
         store.share(LB, reader.B, True)
+
+
+def test_deleting_needs_a_delete_group_and_takes_the_post_off_the_page(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Threads()
+    reader.rows[0]["deleteACL"] = ["admin", "p1"]
+    reader.rows[1]["deleteACL"] = ["admin"]
+    reader.delete_post = lambda i: reader.written.append(("delete", i))
+    store = Store(reader, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+    a, b, _ = store.posts(LB)["posts"]
+    assert a["can_delete"] and not b["can_delete"]
+    assert store.delete(LB, reader.A) == {"removed": reader.A} and reader.written[-1] == ("delete", reader.A)
+    assert reader.A not in [p["id"] for p in store.posts(LB)["posts"]]
+    with pytest.raises(PermissionError):
+        store.delete(LB, reader.B)
+    store2 = Store(reader, cache_dir=tmp_path / "files2", config={"write_logbooks": []})
+    with pytest.raises(PermissionError):
+        store2.delete(LB, reader.B)

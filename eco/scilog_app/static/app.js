@@ -170,7 +170,20 @@ function commentsElement(p) {
 }
 
 function dayElement(t) {
-  return el("h2", { class: "day", "data-day": dayKey(t) }, dayLabel(t), el("span", { class: "date", text: dayLabel(t) === fullDate(t) ? "" : shortDate(t) }));
+  return el("h2", { class: "day", "data-day": dayKey(t) }, dayLabel(t), el("span", { class: "date", text: dayLabel(t) === fullDate(t) ? "" : shortDate(t) }),
+    el("button", { class: "day-thumbs", title: "Small figures: every image as a thumbnail (click one to see it large)", "aria-pressed": "false",
+      onclick: (ev) => { ev.stopPropagation(); setThumbs(!document.body.classList.contains("thumbs")); } }, "🖼"));
+}
+
+// all figures as thumbnails, or as their authors sized them; the reading position stays on the same post
+function setThumbs(on) {
+  const flow = $("#flow");
+  const anchor = [...flow.querySelectorAll(".post")].find((p) => p.getBoundingClientRect().bottom > flow.getBoundingClientRect().top + 60);
+  const offset = anchor ? anchor.getBoundingClientRect().top : 0;
+  document.body.classList.toggle("thumbs", on);
+  document.querySelectorAll(".day-thumbs").forEach((b) => b.setAttribute("aria-pressed", String(on)));
+  storageSet("eco-scilog-thumbs", on ? "on" : "off");
+  if (anchor) flow.scrollTop += anchor.getBoundingClientRect().top - offset;
 }
 
 // -- views: which posts are shown ---------------------------------------------------------
@@ -318,6 +331,7 @@ function renderOutline() {
   tree.replaceChildren(frag);
   if (typeof renderMap === "function") renderMap();
   if (typeof renderHeadings === "function") renderHeadings();
+  if (typeof renderMixed === "function") renderMixed();
 }
 
 // small marks for replies, comments and inserted posts (outline, map, headings)
@@ -773,6 +787,7 @@ function toggleAllComments() {
   toast(state.commentsOpen ? "Comments shown" : "Comments hidden");
 }
 state.commentsOpen = storageGet("eco-scilog-comments") === "open";
+if (storageGet("eco-scilog-thumbs") === "on") document.body.classList.add("thumbs");
 
 // -- the left pane's width: drag the line between it and the flow ------------------------------
 

@@ -268,6 +268,7 @@ class Store:
                                                               key=lambda k: k.get("createdAt") or "")],
             "quote": dict(self.child_record(quote), of=raw.get("_quote_of")) if quote else None,
             "shared": EVERYONE_LOGGED_IN in (raw.get("readACL") or ()),
+            "can_delete": self._safe_may_delete(raw),
             "created": created,
             "updated": updated,
             "edited": bool(updated and created and _epoch(updated) - _epoch(created) > 60),
@@ -322,6 +323,32 @@ class Store:
             if parent["id"] not in already:
                 out[parent["id"]] = parent
         return list(out.values())
+
+    def may_delete(self, raw):
+        """As SciLog decides: a member of one of the post's delete groups."""
+        me = self.me()
+        return me["writes"] and bool(me["roles"] & set(raw.get("deleteACL") or ()))
+
+    def _safe_may_delete(self, raw):
+        try:
+            return self.may_delete(raw)
+        except Exception:
+            return False
+
+    def delete(self, logbook_id, post_id):
+        """Delete a post in SciLog (it goes to the logbook's history, where
+        SciLog can restore it); returns {"removed": id}."""
+        raw = self._raw(logbook_id, post_id)
+        ok, why = self.may_write_to(logbook_id)
+        if not ok:
+            raise PermissionError(why)
+        if not self.may_delete(raw):
+            raise PermissionError("SciLog lets only the members of this post's delete groups delete it")
+        self.reader.delete_post(post_id)
+        book = self.logbooks[logbook_id]
+        book["raw"].pop(post_id, None)
+        book["posts"].pop(post_id, None)
+        return {"removed": post_id}
 
     def _safe_may_edit(self, raw):
         try:
@@ -738,6 +765,11 @@ class _Heading(_Write):
         await self.run(self.app.store.set_heading, b.get("logbook"), post_id, int(b.get("index", -1)), b.get("level", ""))
 
 
+class _Delete(_Write):
+    async def post(self, post_id):
+        await self.run(self.app.store.delete, self.body().get("logbook"), post_id)
+
+
 class _Share(_Write):
     async def post(self, post_id):
         b = self.body()
@@ -832,6 +864,7 @@ class ScilogApp:
                 (r"/api/save/([0-9a-f]{24})", _Save),
                 (r"/api/heading/([0-9a-f]{24})", _Heading),
                 (r"/api/share/([0-9a-f]{24})", _Share),
+                (r"/api/delete/([0-9a-f]{24})", _Delete),
                 (r"/api/write-logbook", _WriteLogbook),
                 (r"/api/views", _Views),
                 (r"/api/view/([0-9a-f]{24})", _View),

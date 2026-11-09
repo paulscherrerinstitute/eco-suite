@@ -358,6 +358,11 @@ class Reader:
         """POST basesnippets: a new post (snippetType/linkType "paragraph")."""
         return self._send("POST", "/basesnippets", json=payload)
 
+    def delete_post(self, post_id):
+        """DELETE basesnippets/<id>: SciLog marks the post deleted and moves it
+        into the logbook's history (it can be restored there)."""
+        return self._send("DELETE", f"/basesnippets/{_quote(post_id)}")
+
     def file_snippet(self, file_id):
         """GET filesnippet/<id>: an attachment's record (its ACLs among them)."""
         return self.get(f"/filesnippet/{_quote(file_id)}")
@@ -414,7 +419,7 @@ class Reader:
         if updated_after:
             where["updatedAt"] = {"gt": updated_after}
         fields = dict(self.POST_FIELDS, updatedAt=True, updatedBy=True, updateACL=True, ownerGroup=True,
-                      accessGroups=True, isPrivate=True, defaultOrder=True, expiresAt=True, readACL=True)
+                      accessGroups=True, isPrivate=True, defaultOrder=True, expiresAt=True, readACL=True, deleteACL=True)
         extra = {"include": [{"relation": "subsnippets", "scope": {"where": self.CHILD_WHERE, "fields": self.CHILD_FIELDS}}]} if children else {}
         out, skip = [], 0
         while len(out) < limit:

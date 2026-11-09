@@ -83,6 +83,7 @@ function openPostMenu(p, button, pinned = false) {
     menu.append(item("⧉", "Show only this post", () => showOnly(p.id)));
     if (!window.matchMedia("(max-width: 760px)").matches) menu.append(item("📌", "Pin beside the flow", () => pinPost(p.id)));
     if (p.comments?.length) menu.append(item("💬", "Show / hide comments", () => document.querySelector(`#p-${p.id} .comments`)?.classList.toggle("open")));
+    if (p.can_delete) menu.append(el("div", { class: "pm-sep" }), item("🗑", "Delete …", () => deletePost(p), { cls: "pm-danger", title: "SciLog moves it to the logbook's history, where it can be restored" }));
   }
   if (sheet) {
     const shade = el("div", { id: "post-menu-shade", onclick: closePostMenu });
@@ -97,3 +98,25 @@ document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#post-m
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePostMenu(); });
 window.addEventListener("resize", closePostMenu);
 document.getElementById("flow")?.addEventListener("scroll", () => { if (!document.querySelector("#post-menu.sheet")) closePostMenu(); }, { passive: true });
+
+async function deletePost(p) {
+  if (!canWrite()) { askToAllowWriting(); return; }
+  const what = `${dayTitle(p.t)} ${clock(p.t)} ${shortName(p.author)}${p.title ? `: “${p.title.slice(0, 60)}”` : ""}`;
+  if (!confirm(`Delete this post from SciLog?\n\n${what}\n\nIt disappears for everyone; SciLog keeps it in the logbook's history, from where it can be restored.`)) return;
+  try {
+    await writeApi(`/api/delete/${p.id}`, "POST", { logbook: state.logbook.id });
+  } catch (e) { toast(`Not deleted: ${e.message}`); return; }
+  state.byId.delete(p.id);
+  state.all = state.all.filter((x) => x.id !== p.id);
+  applyView();
+  prepareSearch();
+  // in place, so the reading position stays: the post, and its day header if it was the day's only post
+  const node = document.getElementById(`p-${p.id}`);
+  const prev = node?.previousElementSibling, next = node?.nextElementSibling;
+  node?.remove();
+  if (prev?.classList.contains("day") && (!next || !next.classList.contains("post"))) prev.remove();
+  renderOutline();
+  fillViews();
+  setStatus();
+  toast("Deleted");
+}

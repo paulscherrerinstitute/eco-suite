@@ -10,12 +10,14 @@ const mapState = { on: false, detached: false, visible: new Set(), cache: new Ma
 let mapObserver = null;
 
 function setPane(mode) {
-  if (!["outline", "map", "headings"].includes(mode)) mode = "outline";
+  if (!["outline", "map", "headings", "mixed"].includes(mode)) mode = "outline";
   mapState.on = mode === "map";
   $("#outline-tree").hidden = mode !== "outline";
   $("#map").hidden = mode !== "map";
   $("#headings").hidden = mode !== "headings";
+  $("#mixed").hidden = mode !== "mixed";
   if (typeof setHeadingsPane === "function") setHeadingsPane(mode === "headings");
+  if (typeof setMixedPane === "function") setMixedPane(mode === "mixed");
   document.querySelectorAll("#pane-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.pane === mode));
   storageSet("eco-scilog-pane", mode);
   renderMap();
@@ -233,9 +235,9 @@ function followReading() {
   });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable], select")) return;
-    if (e.key === "m" || e.key === "h") {
+    if (e.key === "m" || e.key === "h" || e.key === "x") {
       document.body.classList.remove("no-outline");
-      const want = e.key === "m" ? "map" : "headings";
+      const want = { m: "map", h: "headings", x: "mixed" }[e.key];
       setPane(storageGet("eco-scilog-pane") === want ? "outline" : want);
     }
   });

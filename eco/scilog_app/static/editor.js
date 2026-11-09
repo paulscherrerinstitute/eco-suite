@@ -72,8 +72,74 @@ function dropDraft(key) { try { localStorage.removeItem(key); } catch (e) { /* p
 // how long a new post stays editable; SciLog's own default is 3 days
 const EDIT_DAYS_DEFAULT = 30;
 
+// where the editor sits: in the middle (modal), docked at the bottom or the side
+// (the logbook stays readable and scrollable beside it), or full screen; it can be folded
+const DOCKS = { center: "In the middle", bottom: "Docked at the bottom: read the logbook while writing",
+                side: "Docked at the side: read the logbook while writing", full: "Full screen" };
+function editorDock() {
+  const d = storageGet("eco-scilog-editor-dock");
+  if (window.matchMedia("(max-width: 760px)").matches) return d === "center" ? "center" : "full";
+  return d in DOCKS ? d : "center";
+}
+
+function placeEditor(dialog, dock, folded = dialog.classList.contains("folded")) {
+  if (dialog.open) dialog.close();
+  for (const d of Object.keys(DOCKS)) dialog.classList.toggle(`dock-${d}`, d === dock);
+  dialog.classList.toggle("folded", folded);
+  dialog.dataset.dock = dock;
+  const docked = dock === "bottom" || dock === "side";
+  document.body.classList.toggle("ed-dock-bottom", dock === "bottom");
+  document.body.classList.toggle("ed-dock-side", dock === "side");
+  document.body.classList.toggle("ed-folded", docked && folded);
+  // never a modal dialog: CKEditor draws its toolbars for images, links and tables
+  // outside the editor, and a modal dialog's top layer would cover them; the middle
+  // and full screen get a shade of their own instead
+  document.body.classList.toggle("ed-modal", !docked);
+  if (!docked && !document.getElementById("editor-shade")) {
+    document.body.append(el("div", { id: "editor-shade" }));
+  }
+  if (docked) document.getElementById("editor-shade")?.remove();
+  dialog.show();
+  dialog.querySelectorAll(".ed-dock button").forEach((b) => b.classList.toggle("active", b.dataset.dock === dock));
+  const fold = dialog.querySelector(".ed-fold");
+  if (fold) { fold.textContent = folded ? "▴" : "▾"; fold.title = folded ? "Unfold the editor" : "Fold the editor away (the draft stays)"; fold.hidden = !docked; }
+}
+
+// drag the editor's inner edge to resize it while docked
+function editorGrip(dialog) {
+  const grip = el("div", { class: "ed-grip", title: "Drag to resize" });
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+    const side = dialog.dataset.dock === "side";
+    const move = (ev) => {
+      if (side) document.documentElement.style.setProperty("--ed-w", `${Math.max(320, Math.min(window.innerWidth - ev.clientX, window.innerWidth * 0.75))}px`);
+      else document.documentElement.style.setProperty("--ed-h", `${Math.max(180, Math.min(window.innerHeight - ev.clientY, window.innerHeight * 0.8))}px`);
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      document.body.classList.remove("resizing");
+      storageSet(side ? "eco-scilog-editor-w" : "eco-scilog-editor-h", getComputedStyle(document.documentElement).getPropertyValue(side ? "--ed-w" : "--ed-h").trim());
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+  });
+  return grip;
+}
+for (const [key, prop] of [["eco-scilog-editor-w", "--ed-w"], ["eco-scilog-editor-h", "--ed-h"]]) {
+  const v = storageGet(key);
+  if (v) document.documentElement.style.setProperty(prop, v);
+}
+
 async function openEditor({ logbook, logbookName, postId = null, onSaved, near = null }) {
-  if (document.getElementById("editor-dialog")) { document.getElementById("editor-dialog").showModal(); return; }
+  const open = document.getElementById("editor-dialog");
+  if (open) {  // one editor at a time: bring it back
+    placeEditor(open, open.dataset.dock || editorDock(), false);
+    toast("Finish or close the open editor first");
+    return;
+  }
   let start = { html: "", tags: [], updated: null };
   const key = draftKey(logbook, postId) + (near ? `:${near.where}:${near.id}` : "");
   const dialog = el("dialog", { id: "editor-dialog" });
@@ -92,8 +158,11 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
     status(text, bad = false) { statusLine.textContent = text; statusLine.classList.toggle("bad", bad); },
   };
   dialog.append(
+    editorGrip(dialog),
     el("div", { class: "ed-head" }, title, el("span", { class: "spacer" }),
-      el("button", { title: "Full screen", onclick: () => dialog.classList.toggle("full") }, "⤢"),
+      el("span", { class: "ed-dock" }, ...[["center", "▭"], ["bottom", "⬓"], ["side", "◨"], ["full", "⤢"]].map(([d, icon]) =>
+        el("button", { "data-dock": d, title: DOCKS[d], onclick: () => { storageSet("eco-scilog-editor-dock", d); placeEditor(dialog, d, false); } }, icon))),
+      el("button", { class: "ed-fold", onclick: () => placeEditor(dialog, dialog.dataset.dock, !dialog.classList.contains("folded")) }, "▾"),
       el("button", { title: "Close (the draft is kept)", onclick: () => close() }, "✕")),
     area,
     el("div", { class: "ed-foot" },
@@ -103,7 +172,13 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
       el("button", { onclick: () => close() }, "Cancel"), saveButton));
   document.body.append(dialog);
   dialog.addEventListener("cancel", (e) => { e.preventDefault(); close(); });
-  dialog.showModal();
+  // Escape closes (a non-modal dialog does not on its own), unless CKEditor uses it for one of its balloons
+  dialog.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !document.querySelector(".ck-balloon-panel_visible")) { e.preventDefault(); close(); }
+  });
+  placeEditor(dialog, editorDock(), false);
+  // the folded title bar unfolds on a click
+  title.addEventListener("click", () => { if (dialog.classList.contains("folded")) placeEditor(dialog, dialog.dataset.dock, false); });
 
   let editor = null;
   let dirty = false;
@@ -113,6 +188,8 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
     editor?.destroy();
     dialog.close();
     dialog.remove();
+    document.body.classList.remove("ed-dock-bottom", "ed-dock-side", "ed-folded", "ed-modal");
+    document.getElementById("editor-shade")?.remove();
   }
 
   try {
