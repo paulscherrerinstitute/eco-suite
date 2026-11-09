@@ -10,11 +10,14 @@
 <header id="bar">
   <button id="toggle-outline" title="Outline (o)" aria-label="Outline">&#9776;</button>
   <button id="logbook-button" title="Choose a logbook (l)"><span id="logbook-name">Choose a logbook</span> &#9662;</button>
+  <button id="search-button" title="Search this logbook" aria-label="Search">&#128269;</button>
   <div id="search-wrap">
-    <input id="search" type="search" placeholder="Search this logbook  ( / )" autocomplete="off" spellcheck="false">
+    <input id="search" type="search" placeholder="Search this logbook  ( / )" autocomplete="off" spellcheck="false" enterkeyhint="search">
+    <button id="search-cancel" type="button">Cancel</button>
     <div id="results" hidden></div>
   </div>
-  <select id="view" title="Which posts to show (v)" hidden></select>
+  <select id="view" title="Which posts to show (v)" aria-label="Which posts to show" hidden></select>
+  <button id="views-button" title="SciLog's own views of this logbook: list, compare, rename, change, delete" hidden>&#9881;<span class="lbl"> SciLog views</span></button>
   <button id="new-post" title="Write a new post (n)" hidden>&#10010; New post</button>
   <a id="scilog-link" target="_blank" rel="noopener" title="This logbook in SciLog" hidden>SciLog &#8599;</a>
   <span id="status"></span>
@@ -34,10 +37,16 @@
     <div id="outline-tree"></div>
     <div id="map" hidden></div>
   </nav>
+  <div id="pane-resizer" role="separator" aria-orientation="vertical" title="Drag to resize · double-click: default width"></div>
   <main id="flow" tabindex="-1">
     <p class="hint">Loading ...</p>
   </main>
 </div>
+<aside id="pin-pane" hidden aria-label="Pinned">
+  <div id="pin-resizer" role="separator" aria-orientation="vertical" title="Drag to resize · double-click: default width"></div>
+  <div id="pin-head"></div>
+  <div id="pin-flow" tabindex="-1"></div>
+</aside>
 <div id="day-banner" aria-hidden="true"></div>
 <div id="only-banner" hidden></div>
 <button id="to-bottom" title="To the newest post (End)" hidden>&#8595; Newest</button>
@@ -46,5 +55,6 @@
 <script src="/static/editor.js"></script>
 <script src="/static/map.js"></script>
 <script src="/static/views.js"></script>
+<script src="/static/pin.js"></script>
 </body>
 </html>

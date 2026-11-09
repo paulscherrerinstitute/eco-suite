@@ -2,10 +2,11 @@
 // outline it can replace. Headings, text, lists, tables, code, plots and
 // images keep their shape, so a figure or a table is found by its look; a
 // click jumps to that element in the flow. The posts in view are marked and
-// the map follows the reading position (except while the mouse is on it).
+// the map follows the reading position -- until the map is scrolled by hand;
+// then it stays put until the flow is clicked again.
 "use strict";
 
-const mapState = { on: false, hover: false, visible: new Set(), cache: new Map() };
+const mapState = { on: false, detached: false, visible: new Set(), cache: new Map() };
 let mapObserver = null;
 
 function setPane(mode) {
@@ -188,7 +189,7 @@ function observeForMap() {
 }
 
 function followReading() {
-  if (mapState.hover || !mapState.visible.size) return;
+  if (mapState.detached || !mapState.visible.size) return;
   const pane = $("#outline");
   const cards = [...mapState.visible].map((id) => mapState.cache.get(id)).filter(Boolean);
   if (!cards.length) return;
@@ -204,8 +205,18 @@ function followReading() {
 (function setUpMap() {
   document.querySelectorAll("#pane-tabs button").forEach((b) => (b.onclick = () => setPane(b.dataset.pane)));
   const map = $("#map");
-  map.addEventListener("mouseenter", () => (mapState.hover = true));
-  map.addEventListener("mouseleave", () => { mapState.hover = false; followReading(); });
+  // scrolling the map by hand (wheel, touch, its scroll bar) stops it following the flow;
+  // a click into the flow brings it back to the reading position
+  const pane = $("#outline");
+  const detach = () => { if (mapState.on) mapState.detached = true; };
+  pane.addEventListener("wheel", detach, { passive: true });
+  pane.addEventListener("touchstart", detach, { passive: true });
+  pane.addEventListener("pointerdown", (e) => { if (e.target === pane) detach(); });  // the scroll bar
+  $("#flow").addEventListener("pointerdown", () => {
+    if (!mapState.detached) return;
+    mapState.detached = false;
+    followReading();
+  });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable], select")) return;
     if (e.key === "m") {

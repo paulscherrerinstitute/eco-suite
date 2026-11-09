@@ -101,8 +101,11 @@ function fillPicker(filter) {
 
 // -- the flow -----------------------------------------------------------------------------
 
-function postElement(p) {
-  const actions = el("span", { class: "actions" },
+function postElement(p, pinned = false) {
+  const actions = pinned ? el("span", { class: "actions" },
+    el("button", { title: "Show this post in the main pane", onclick: (ev) => { ev.stopPropagation(); showPinnedInMain(p.id); } }, "⇠ main"))
+  : el("span", { class: "actions" },
+    el("button", { title: "Pin: keep this post open in a pane on the right, to compare with other places or logbooks", onclick: (ev) => { ev.stopPropagation(); pinPost(p.id); } }, "📌"),
     p.can_edit && canWrite() ? el("button", { title: "Edit this post", onclick: (ev) => { ev.stopPropagation(); editPost(p.id); } }, "✏️ Edit") : null,
     el("button", { title: "Copy a link to this post in its context", onclick: (ev) => { ev.stopPropagation(); copyLink(p.id); } }, "🔗"),
     el("button", { title: "Show only this post (and copy a link to it)", onclick: (ev) => { ev.stopPropagation(); showOnly(p.id); } }, "⧉"));
@@ -113,7 +116,7 @@ function postElement(p) {
     p.edited ? el("span", { class: "edited", text: "edited", title: `${p.editor || ""} ${p.updated}` }) : null,
     actions);
   const body = el("div", { class: "body" });
-  if (p.can_edit) {
+  if (p.can_edit && !pinned) {
     body.title = "Double-click to edit";
     body.addEventListener("dblclick", (ev) => {
       if (ev.target.closest("a, button, iframe, img")) return;
@@ -122,10 +125,10 @@ function postElement(p) {
     });
   }
   body.innerHTML = p.html;  // cleaned by the server (content.clean_post)
-  body.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((h, i) => (h.id = `h-${p.id}-${i}`));
+  body.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((h, i) => (h.id = `${pinned ? "pin-" : ""}h-${p.id}-${i}`));
   body.querySelectorAll(".plot").forEach(preparePlot);
   body.querySelectorAll("img").forEach((img) => img.addEventListener("click", () => lightbox(img.src)));
-  return el("article", { class: "post", id: `p-${p.id}`, "data-id": p.id }, head, body);
+  return el("article", { class: "post", id: `${pinned ? "pin-" : ""}p-${p.id}`, "data-id": p.id }, head, body);
 }
 
 function dayElement(t) {
@@ -156,6 +159,7 @@ function fillViews() {
   if (![...select.options].some((o) => o.value === state.view)) state.view = "all";
   select.value = state.view;
   select.hidden = false;
+  $("#views-button").hidden = false;
 }
 
 function setView(view) {
@@ -292,7 +296,7 @@ function observePosts() {
       }
     }
   }, { root: $("#flow"), rootMargin: "-10% 0px -80% 0px" });
-  document.querySelectorAll(".post").forEach((p) => observer.observe(p));
+  document.querySelectorAll("#flow .post").forEach((p) => observer.observe(p));
 }
 
 function jumpTo(target, flash = false) {
@@ -442,13 +446,28 @@ function showResults(q) {
 const docked = () => window.matchMedia("(min-width: 1100px)").matches;
 function closeResults() { $("#results").hidden = true; document.body.classList.remove("searching"); }
 
+// narrow screens: the search takes the whole bar and its results the whole page while it is in use
+const narrow = () => window.matchMedia("(max-width: 760px)").matches;
+function openSearch() {
+  document.body.classList.add("search-open");
+  const input = $("#search");
+  input.focus();
+  if (input.value.trim()) showResults(input.value);
+}
+function endSearch() {
+  closeResults();
+  document.body.classList.remove("search-open");
+  $("#search").blur();
+}
+
 function openResult(i) {
   const r = state.results[i];
   if (!r) return;
   state.active = i;
   document.querySelectorAll("#results .result").forEach((x, n) => x.classList.toggle("active", n === i));
   jumpToPost(r.post.id, r.words);
-  if (!docked()) closeResults();  // an overlay would cover the post
+  if (narrow()) endSearch();  // keyboard away, the post on the whole screen
+  else if (!docked()) closeResults();  // an overlay would cover the post
 }
 
 function clearMarks() {
@@ -601,7 +620,7 @@ function writeBlocker() {
 function updateWriteUi() {
   const button = $("#new-post"), why = writeBlocker();
   button.hidden = !state.logbook || (why && why !== "off-here");
-  button.innerHTML = why === "off-here" ? "&#9998; Allow writing here" : "&#10010; New post";
+  button.innerHTML = why === "off-here" ? '&#9998;<span class="lbl"> Allow writing here</span>' : '&#10010;<span class="lbl"> New post</span>';
   button.title = why === "off-here" ? "Writing to this logbook is off: switch it on to post and to edit your own posts" : "Write a new post (n)";
   const old = document.getElementById("composer");
   if (old) old.replaceWith(composerElement());
@@ -691,6 +710,40 @@ function fromHash() {
   return { lb: h.get("lb"), post: h.get("post"), only: h.get("only") === "1" };
 }
 
+// -- the left pane's width: drag the line between it and the flow ------------------------------
+
+const PANE_DEFAULT = 300;
+function setPaneWidth(px, save = true) {
+  const w = Math.round(Math.max(160, Math.min(px, window.innerWidth * 0.6)));
+  document.documentElement.style.setProperty("--pane-width", `${w}px`);
+  if (save) storageSet("eco-scilog-pane-width", String(w));
+}
+
+function setUpResizer() {
+  const saved = parseInt(storageGet("eco-scilog-pane-width") || "", 10);
+  if (saved > 0) setPaneWidth(saved, false);
+  const bar = $("#pane-resizer");
+  bar.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    bar.setPointerCapture(e.pointerId);
+    const left = $("#outline").getBoundingClientRect().left;
+    document.body.classList.add("resizing");
+    const move = (ev) => setPaneWidth(ev.clientX - left, false);
+    const up = (ev) => {
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", up);
+      bar.removeEventListener("pointercancel", up);
+      document.body.classList.remove("resizing");
+      setPaneWidth(ev.clientX - left);
+      if (typeof mapState !== "undefined" && mapState.on) renderMap();
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", up);
+    bar.addEventListener("pointercancel", up);
+  });
+  bar.addEventListener("dblclick", () => { setPaneWidth(PANE_DEFAULT); try { localStorage.removeItem("eco-scilog-pane-width"); } catch (e) { /* */ } });
+}
+
 // -- start ---------------------------------------------------------------------------------------
 
 async function main() {
@@ -703,6 +756,10 @@ async function main() {
   $("#new-post").onclick = newPost;
   $("#to-bottom").onclick = toNewest;
   $("#flow").addEventListener("scroll", updateToBottom, { passive: true });
+  $("#views-button").onclick = () => openViewsDialog();  // views.js loads after this file
+  $("#search-button").onclick = openSearch;
+  $("#search-cancel").onclick = endSearch;
+  setUpResizer();
   $("#view").onchange = (e) => {
     if (e.target.value === "__views") { e.target.value = state.view; openViewsDialog(); }
     else setView(e.target.value);
@@ -734,15 +791,17 @@ async function main() {
       document.querySelectorAll("#results .result")[state.active]?.scrollIntoView({ block: "nearest" });
       if (docked()) openResult(state.active);  // the post beside the list follows
     } else if (e.key === "Enter") { e.preventDefault(); openResult(state.active); }
-    else if (e.key === "Escape") { closeResults(); input.blur(); }
+    else if (e.key === "Escape") endSearch();
   };
   document.addEventListener("click", (e) => {
-    if (!e.target.closest("#search-wrap, #flow") || (!docked() && !e.target.closest("#search-wrap"))) closeResults();
+    if (!e.target.closest("#search-wrap, #flow, #search-button") || (!docked() && !e.target.closest("#search-wrap, #search-button"))) {
+      if (document.body.classList.contains("search-open")) endSearch(); else closeResults();
+    }
     if (!e.target.closest("#picker, #logbook-button")) $("#picker").hidden = true;
   });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable]")) return;
-    if (e.key === "/") { e.preventDefault(); input.focus(); input.select(); }
+    if (e.key === "/") { e.preventDefault(); if (narrow()) openSearch(); input.focus(); input.select(); }
     else if (e.key === "o") $("#toggle-outline").click();
     else if (e.key === "l") showPicker(true);
     else if (e.key === "n") newPost();
