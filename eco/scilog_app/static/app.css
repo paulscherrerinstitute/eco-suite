@@ -182,8 +182,10 @@ button.primary:disabled { opacity: .5; }
 .m-meta { font-size: 9px; line-height: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .m-el { margin: 3px 0; border-radius: 2px; }
 .m-el:hover { outline: 1px solid var(--accent); outline-offset: 1px; }
-.m-h { height: 5px; background: var(--fg); opacity: .8; border-radius: 1px; margin-top: 4px; }
-.m-h3 { height: 4px; opacity: .7; } .m-h4, .m-h5, .m-h6 { height: 3px; opacity: .65; }
+.m-h { font-size: 9px; line-height: 11px; font-weight: 700; color: var(--fg); margin-top: 4px;
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-h1, .m-h2 { font-size: 10px; line-height: 12px; }
+.m-h3 { opacity: .85; } .m-h4, .m-h5, .m-h6 { font-weight: 600; opacity: .7; }
 .m-line { display: block; height: 2px; margin: 2px 0; background: var(--muted); opacity: .45; border-radius: 1px; }
 .m-quote { border-left: 2px solid var(--accent); padding-left: 4px; }
 .m-list .m-li { display: flex; align-items: center; gap: 3px; height: 4px; }
@@ -407,24 +409,7 @@ body.ed-dock-bottom:not(.ed-folded) #to-bottom { bottom: calc(var(--ed-h, 42vh) 
 #outline-tree .o-month > .o-label { position: sticky; top: 28px; z-index: 2; background: var(--bg); }
 #outline-tree .o-day > .o-label:first-child { position: sticky; top: 52px; z-index: 1; background: var(--bg); }
 #outline-tree .o-month.o-collapsed > .o-label { position: static; }
-.hd-date, .m-day, .mx-day { position: sticky; top: 28px; z-index: 1; background: var(--bg); }
-
-/* the Mixed pane */
-#pane-tabs { gap: 2px; }
-#pane-tabs button { font-size: .82em; padding: 2px 2px; }
-.mx-day { font-size: .75em; font-weight: 700; color: var(--muted); margin: 8px 0 1px; padding: 1px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
-.mx-item { display: flex; align-items: baseline; gap: 5px; padding: 1px 4px; border-radius: 4px; cursor: pointer; min-width: 0; }
-.mx-item:hover { background: var(--panel); }
-.mx-item.current { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
-.mx-time { flex: none; width: 2.9em; color: var(--muted); font-size: .78em; font-variant-numeric: tabular-nums; }
-.mx-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mx-head.hd-l1 .mx-text { font-weight: 700; } .mx-head.hd-l2 .mx-text { font-weight: 600; }
-.mx-head.hd-l3 .mx-text, .mx-head.hd-l4 .mx-text { font-weight: 500; }
-.mx-post .mx-text { color: var(--muted); font-size: .92em; }
-.mx-who { flex: none; color: var(--muted); font-size: .72em; opacity: .7; max-width: 6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mx-run .mx-text { color: var(--muted); font-style: italic; font-size: .92em; }
-.mx-fold { flex: none; color: var(--muted); width: .8em; }
-.mx-count { flex: none; font-size: .72em; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 0 5px; }
+.hd-date, .m-day { position: sticky; top: 28px; z-index: 1; background: var(--bg); }
 
 /* the editor in the middle or full screen: a shade of its own (not a modal dialog, so CKEditor's balloons stay on top) */
 #editor-shade { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 29; }

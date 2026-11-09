@@ -31,14 +31,12 @@
 <div id="layout">
   <nav id="outline" aria-label="Outline">
     <div id="pane-tabs" role="tablist">
-      <button data-pane="outline" class="active" title="Days, posts and headings">Outline</button>
-      <button data-pane="headings" title="The headings of all posts as one table of contents (h)">Headings</button>
-      <button data-pane="mixed" title="Headings and dated posts together; similar runs of posts folded (x)">Mixed</button>
+      <button data-pane="headings" class="active" title="The headings of all posts as one table of contents, with the days (h)">Outline</button>
+      <button data-pane="outline" title="Every post by month and day, with its headings (s)">Stream</button>
       <button data-pane="map" title="The flow drawn small: figures, tables and lists by their look (m)">Map</button>
     </div>
-    <div id="outline-tree"></div>
-    <div id="headings" hidden></div>
-    <div id="mixed" hidden></div>
+    <div id="headings"></div>
+    <div id="outline-tree" hidden></div>
     <div id="map" hidden></div>
   </nav>
   <div id="pane-resizer" role="separator" aria-orientation="vertical" title="Drag to resize · double-click: default width"></div>
@@ -61,7 +59,6 @@
 <script src="/static/views.js"></script>
 <script src="/static/pin.js"></script>
 <script src="/static/headings.js"></script>
-<script src="/static/mixed.js"></script>
 <script src="/static/postmenu.js"></script>
 </body>
 </html>

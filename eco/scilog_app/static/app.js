@@ -331,7 +331,6 @@ function renderOutline() {
   tree.replaceChildren(frag);
   if (typeof renderMap === "function") renderMap();
   if (typeof renderHeadings === "function") renderHeadings();
-  if (typeof renderMixed === "function") renderMixed();
 }
 
 // small marks for replies, comments and inserted posts (outline, map, headings)

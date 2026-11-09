@@ -10,14 +10,12 @@ const mapState = { on: false, detached: false, visible: new Set(), cache: new Ma
 let mapObserver = null;
 
 function setPane(mode) {
-  if (!["outline", "map", "headings", "mixed"].includes(mode)) mode = "outline";
+  if (!["headings", "outline", "map"].includes(mode)) mode = "headings";
   mapState.on = mode === "map";
   $("#outline-tree").hidden = mode !== "outline";
   $("#map").hidden = mode !== "map";
   $("#headings").hidden = mode !== "headings";
-  $("#mixed").hidden = mode !== "mixed";
   if (typeof setHeadingsPane === "function") setHeadingsPane(mode === "headings");
-  if (typeof setMixedPane === "function") setMixedPane(mode === "mixed");
   document.querySelectorAll("#pane-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.pane === mode));
   storageSet("eco-scilog-pane", mode);
   renderMap();
@@ -139,11 +137,9 @@ function plotGlyph() {
 function glyph(node, cpl) {
   const tag = node.tagName.toLowerCase();
   if (/^h[1-6]$/.test(tag)) {
-    const len = node.textContent.trim().length;
-    if (!len) return null;
-    const bar = el("div", { class: `m-h m-${tag}` });
-    bar.style.width = `${Math.min(100, Math.max(12, Math.round(len * 100 / (cpl * (tag === "h1" || tag === "h2" ? 0.55 : 0.7)))))}%`;
-    return bar;
+    const text = node.textContent.replace(/\s+/g, " ").trim();
+    if (!text) return null;
+    return el("div", { class: `m-h m-${tag}`, text, title: text });  // headings readable, in small type
   }
   if (tag === "hr") return el("div", { class: "m-hr" });
   if (node.classList.contains("plot") || node.querySelector(".plot")) return plotGlyph();
@@ -235,12 +231,11 @@ function followReading() {
   });
   document.addEventListener("keydown", (e) => {
     if (e.target.closest("input, textarea, [contenteditable], select")) return;
-    if (e.key === "m" || e.key === "h" || e.key === "x") {
+    if (e.key === "m" || e.key === "h" || e.key === "s") {
       document.body.classList.remove("no-outline");
-      const want = { m: "map", h: "headings", x: "mixed" }[e.key];
-      setPane(storageGet("eco-scilog-pane") === want ? "outline" : want);
+      const want = { m: "map", h: "headings", s: "outline" }[e.key];
+      setPane(storageGet("eco-scilog-pane") === want && want !== "headings" ? "headings" : want);
     }
   });
   window.addEventListener("resize", () => { clearTimeout(setUpMap.t); setUpMap.t = setTimeout(() => mapState.on && renderMap(), 300); });
-  if (storageGet("eco-scilog-pane") === "map") setPane("map");
 })();

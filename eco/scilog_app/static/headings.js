@@ -6,8 +6,8 @@
 
 const hdState = {
   on: false,
-  dates: storageGet("eco-scilog-hd-dates") !== "off",
-  loose: storageGet("eco-scilog-hd-loose") === "on",
+  dates: storageGet("eco-scilog-outline-dates") !== "off",
+  loose: storageGet("eco-scilog-outline-loose") === "on",
   collapsed: new Set(),
   observer: null,
 };
@@ -43,7 +43,7 @@ function renderHeadings() {
   if (hdState.observer) { hdState.observer.disconnect(); hdState.observer = null; }
   if (!hdState.on) { box.replaceChildren(); return; }
   const toggle = (key, label, title) => el("button", { class: `hd-opt${hdState[key] ? " on" : ""}`, title,
-    onclick: () => { hdState[key] = !hdState[key]; storageSet(`eco-scilog-hd-${key}`, hdState[key] ? "on" : "off"); renderHeadings(); } }, label);
+    onclick: () => { hdState[key] = !hdState[key]; storageSet(`eco-scilog-outline-${key}`, hdState[key] ? "on" : "off"); renderHeadings(); } }, label);
   const frag = document.createDocumentFragment();
   frag.append(el("div", { class: "hd-opts" },
     toggle("dates", "📅 days", "Show the days and times between the headings"),
@@ -95,4 +95,8 @@ function renderHeadings() {
   document.querySelectorAll("#flow .post").forEach((p) => hdState.observer.observe(p));
 }
 
-if (storageGet("eco-scilog-pane") === "headings") setPane("headings");
+// the pane shown first: this one, unless another was chosen last time
+{
+  const pane = storageGet("eco-scilog-pane");
+  setPane(pane === "outline" || pane === "map" ? pane : "headings");
+}
