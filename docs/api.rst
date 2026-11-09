@@ -119,7 +119,16 @@ Ask eco
    :members: Reader, update, ca_bundle, parse_export
 
 .. automodule:: eco.ei_check
-   :members: check, check_answer, build, Problem
+   :members: check, check_answer, build, Problem, static_namespace
+
+.. automodule:: eco.ei_logcheck
+   :members: code_lines, Checker, check_index, report, Finding
+
+.. automodule:: eco.ei_tools
+   :members: Toolbox, describe
+
+.. automodule:: eco.utilities.storage_locations
+   :members: where, contents, check, load, Storage, Item, Location
 
 .. automodule:: eco.ei_page
    :members: render, write, open_page, clean_html

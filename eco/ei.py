@@ -41,9 +41,17 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei -b ...      answer in the browser   %ei -b       the last answer there
     %ei -m openai/gpt-oss-120b ...          another model (kept)
     %ei --paste     last answer's code to the next prompt
+    %ei -t QUESTION the model may also look things up while answering:
+                    search, describe an object, check its code, storage
+                    (eco.ei_tools; all read-only; "tools": true makes it
+                    the default)
     %ei --open 2    source [2] of the last answer in its context (the
                     commands around it, the neighbouring logbook posts, ...)
     %ei --bad att   commands like `att...` that gave warnings/errors
+    %ei --check-logs [DAYS | TEXT]   code in the logbooks that does not fit
+                    eco today (renamed devices, removed methods); checked,
+                    not run. Logbook hits with such code reach the model
+                    with a warning, so it does not copy them.
     %ei --examples PATH   index notebooks (code cells) as usage examples
     %ei --index | --rebuild | --scilog [pgroup] | --notes PATH | --models | --config
     %ei --elog [--rebuild]   update the elog entries now (or all again)
@@ -212,10 +220,48 @@ span ("since yesterday", "last week"), summarise what the logbook entries of \
 that span report, in order, with their times and tags; no code needed.
 - The user runs the code themselves. Warn when a suggestion moves hardware \
 or starts an acquisition.
+- A context item marked "!! code check" holds code that does not fit eco \
+today: never copy it; say it is outdated if it is the only source.
+- [storage] rows are the beamline's storage spreadsheet: answer where things \
+are kept from them, with cabinet and room.
 """
 
 
 # -- configuration ---------------------------------------------------------------
+
+#: knowledge packs: short guides to one area each (scans, motors, ...),
+#: given to the model with the questions about it; a file of the same name
+#: in USER_PACKS_DIR replaces the packaged one
+PACKS_DIR = Path(__file__).resolve().parent / "ei_packs"
+USER_PACKS_DIR = Path.home() / ".eco" / "ei_packs"
+
+
+def load_packs(dirs=None):
+    """[{"name", "title", "words", "text"}] of the knowledge packs."""
+    from eco.utilities.tips import _parse_front_matter
+
+    found = {}
+    for d in dirs or (PACKS_DIR, USER_PACKS_DIR):
+        try:
+            paths = sorted(Path(d).glob("*.md"))
+        except OSError:
+            continue
+        for path in paths:
+            try:
+                meta, text = _parse_front_matter(path.read_text())
+            except OSError:
+                continue
+            words = meta.get("words") or []
+            if isinstance(words, str):
+                words = [words]
+            found[path.stem] = {
+                "name": path.stem,
+                "title": meta.get("title") or path.stem,
+                "words": [w.strip().strip("\"'").lower() for w in words if w.strip()],
+                "text": text.strip(),
+            }
+    return list(found.values())
+
 
 
 #: values ~/.eco/ei.json got as defaults when it was written; they follow
@@ -538,6 +584,8 @@ class Answer:
     problems: list = None
     #: the model rewrote its code after the check
     revised: bool = False
+    #: lookups the model made while answering: [(tool, arguments, result)]
+    tool_calls: list = field(default_factory=list)
 
     @property
     def code(self):
@@ -613,6 +661,7 @@ class Assistant:
         self._index_lock = threading.Lock()
         self.user_ns = None  # the session's names, for the code check (set by %ei)
         self._symbols = None
+        self._logcheck = None
 
     # model ---------------------------------------------------------------
 
@@ -780,6 +829,22 @@ class Assistant:
         except OSError:
             return ""
 
+    def packs(self, question, follow_up=True):
+        """[(title, text)] of the knowledge packs the question is about:
+        at most config "packs" (default 2), most matching words first."""
+        limit = int(self.config.get("packs", 2) or 0)
+        if not limit:
+            return []
+        texts = [question] + ([self.history[-1][0]] if follow_up and self.history else [])
+        low = " " + " ".join(re.findall(r"[a-z0-9_%.-]+", " ".join(texts).lower())) + " "
+        scored = []
+        for pack in load_packs():
+            n = sum(f" {w} " in low for w in pack["words"])
+            if n:
+                scored.append((n, pack["title"], pack["text"]))
+        scored.sort(key=lambda x: -x[0])
+        return [(title, text) for _n, title, text in scored[:limit]]
+
     def first_index_steps(self):
         """The long first-time parts of the next refresh_index():
         [(what, rough seconds)], empty once everything is indexed."""
@@ -822,7 +887,7 @@ class Assistant:
                 report(f"eco.ei: index has {result['items']} items ({result['files_indexed']} files updated, {time.time() - t0:.1f} s)")
             self._refresh_scilog(report, first_time=first_time)
             self._refresh_elog(report, first_time=first_time)
-            self._symbols = None  # the source may have changed: re-read changed files
+            self._symbols = self._logcheck = None  # the source may have changed: re-read changed files
             return result
 
     # the code check ----------------------------------------------------------
@@ -1023,21 +1088,86 @@ class Assistant:
 
     # asking --------------------------------------------------------------
 
-    def messages(self, question, hits):
-        context = []
-        for h in hits:
-            if h.kind == "command":
-                flag = f" -- {h.flags[:200]}" if h.flags else ""
-                out = f"\n    -> {h.context[:200]}" if h.context else ""
-                context.append(f"{h.cite()} ({logs_ask._status_label(h)}{flag}) >>> {h.text[:400]}{out}")
-            elif h.kind == "note_command":
-                context.append(f"{h.cite()} (from notes, outcome unknown) >>> {h.text[:400]}")
-            elif h.kind == "api":
-                context.append(f"{h.cite()} {h.text[:1500 if 'components: ' in h.text else 700]}")
-            elif h.kind == "example":
-                context.append(f"{h.cite()}\n```python\n{h.text[:1200]}\n```")
+    def logcheck(self):
+        """An ei_logcheck.Checker for logbook and history code (None if the
+        code check is off or cannot be set up)."""
+        from eco import ei_check, ei_logcheck
+
+        if not self.config.get("check_code", True):
+            return None
+        if self._logcheck is None:
+            try:
+                self._logcheck = ei_logcheck.Checker(
+                    self.symbols(), self.namespace.entries() or ei_check.static_namespace()
+                )
+            except Exception:
+                return None
+        return self._logcheck
+
+    def check_logs(self, days=None, contains=None, report=print):
+        """[ei_logcheck.Finding] over the logbooks and notes in the index:
+        code that does not fit eco today. days: only the last N days;
+        contains: only findings whose code contains that text."""
+        from eco import ei_check, ei_logcheck
+
+        findings = ei_logcheck.check_index(
+            self.symbols(), db_path=self.db_path,
+            since=time.time() - days * 86400 if days else None,
+            namespace=self.namespace.entries() or ei_check.static_namespace(),
+            progress=_every(PROGRESS_S, report, "eco.ei: {0}/{1} logbook items checked ...") if report else None,
+        )
+        if contains:
+            findings = [f for f in findings if contains in f.code]
+        return findings
+
+    def outdated(self, hit):
+        """The code-check note for a logbook post or command whose code does
+        not fit eco today, else ""."""
+        from eco import ei_logcheck
+
+        checker = self.logcheck()
+        if checker is None or hit.kind not in ("command", "note_command", *ei_logcheck.LOG_KINDS):
+            return ""
+        try:
+            if hit.kind in ("command", "note_command"):
+                problems = checker.command_problems(hit.text)
             else:
-                context.append(f"{h.cite()}\n{h.text[:1200]}")
+                problems = [p for _code, ps in checker.problems_of(hit.text[:1200]) for p in ps]
+        except Exception:
+            return ""
+        return f"\n    !! {ei_logcheck.annotation(problems)}" if problems else ""
+
+    def storage_context(self, question):
+        """The storage sheet's rows for a "where is ... stored" question
+        (config "storage": false switches it off)."""
+        if not self.config.get("storage", True):
+            return ""
+        try:
+            from eco.utilities import storage_locations
+
+            return storage_locations.context_for(question)
+        except Exception:
+            return ""
+
+    def context_item(self, h):
+        """One search hit as the model sees it."""
+        if h.kind == "command":
+            flag = f" -- {h.flags[:200]}" if h.flags else ""
+            out = f"\n    -> {h.context[:200]}" if h.context else ""
+            return f"{h.cite()} ({logs_ask._status_label(h)}{flag}) >>> {h.text[:400]}{out}{self.outdated(h)}"
+        if h.kind == "note_command":
+            return f"{h.cite()} (from notes, outcome unknown) >>> {h.text[:400]}{self.outdated(h)}"
+        if h.kind == "api":
+            return f"{h.cite()} {h.text[:1500 if 'components: ' in h.text else 700]}"
+        if h.kind == "example":
+            return f"{h.cite()}\n```python\n{h.text[:1200]}\n```"
+        return f"{h.cite()}\n{h.text[:1200]}{self.outdated(h)}"
+
+    def messages(self, question, hits):
+        context = [self.context_item(h) for h in hits]
+        storage = self.storage_context(question)
+        if storage:
+            context.insert(0, storage)
         ns_text = self.namespace.text(question)
         user = (
             time.strftime("Now: %a %Y-%m-%d %H:%M\n\n")
@@ -1051,6 +1181,8 @@ class Assistant:
         primer = self.primer(topic) if topic else ""
         if primer:
             system += f"\n{topic} primer (written by its maintainers, authoritative):\n{primer}\n"
+        for title, text in self.packs(question):
+            system += f"\n{title} -- eco's maintainers' guide, current and authoritative:\n{text}\n"
         msgs = [{"role": "system", "content": system}]
         for q, a in self.history[-self.config["history_turns"]:]:
             msgs += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
@@ -1058,7 +1190,7 @@ class Assistant:
         return msgs
 
     def ask(self, question, on_delta=None, stop=None, new=False, search_only=False, report=print, on_waiting=None,
-            confirm=None, on_phase=None, on_revise=None):
+            confirm=None, on_phase=None, on_revise=None, tools=None):
         """Answer `question`. on_delta(text) receives the answer as it
         streams; on_waiting() is called just before the model is asked,
         on_phase(what) as each step starts ("updating the index", ...).
@@ -1072,7 +1204,10 @@ class Assistant:
         When the answer will be a search and the first, long indexing is
         due, the search syntax is reported first, and confirm(steps) --
         steps as from first_index_steps() -- decides whether to index now
-        (once per session; without confirm it goes ahead)."""
+        (once per session; without confirm it goes ahead).
+
+        tools (default: config "tools"): the model may look things up while
+        it answers (eco.ei_tools), at most config "tool_calls" times."""
         question = question.strip()
         if new:
             self.history = []
@@ -1120,7 +1255,12 @@ class Assistant:
             on_phase(f"asking {self.model}")
         if on_waiting:
             on_waiting()
-        text = backend.chat(msgs, on_delta=on_delta, stop=stop)
+        use_tools = self.config.get("tools", False) if tools is None else tools
+        calls = []
+        if use_tools and hasattr(backend, "chat_round"):
+            text, calls = self._answer_with_tools(backend, msgs, on_delta, stop, on_phase, report)
+        else:
+            text = backend.chat(msgs, on_delta=on_delta, stop=stop)
         problems, revised = self.check_code(text), False
         if problems and self.config.get("revise_code", True) and not (stop is not None and stop.is_set()):
             if on_phase:
@@ -1141,8 +1281,45 @@ class Assistant:
                 on_delta(note)
             text += note
         self.history.append((question, text))
-        self.last = self.shown = Answer(question, text, hits, self.model, time.time() - t0, problems, revised)
+        self.last = self.shown = Answer(question, text, hits, self.model, time.time() - t0, problems, revised, calls)
         return self.last
+
+    def _answer_with_tools(self, backend, msgs, on_delta, stop, on_phase, report):
+        """(text, calls): rounds in which the model may call eco.ei_tools,
+        until it answers or the budget is spent (then one round without
+        tools). If the endpoint refuses tools, the ordinary answer."""
+        from eco import ei_tools
+
+        box = ei_tools.Toolbox(self)
+        msgs = list(msgs)
+        budget = int(self.config.get("tool_calls", ei_tools.MAX_CALLS))
+        while True:
+            offer = ei_tools.TOOLS if len(box.calls) < budget else None
+            try:
+                text, calls = backend.chat_round(msgs, tools=offer, on_delta=on_delta, stop=stop)
+            except Exception as exc:
+                if box.calls or not offer:
+                    raise
+                if report:
+                    report(f"eco.ei: lookups not possible ({type(exc).__name__}: {exc}); answering without them")
+                return backend.chat(msgs, on_delta=on_delta, stop=stop), []
+            if not calls or (stop is not None and stop.is_set()):
+                return text, box.calls
+            if text and on_delta:
+                on_delta("\n\n")  # what it said before looking up stays shown
+            turn = {"role": "assistant", "content": text or None, "tool_calls": [
+                {"id": c["id"] or f"call_{len(box.calls) + i}", "type": "function",
+                 "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}}
+                for i, c in enumerate(calls)]}
+            msgs.append(turn)
+            for c, sent in zip(calls, turn["tool_calls"]):
+                if len(box.calls) < budget:
+                    if on_phase:
+                        on_phase(f"looking up {c['name']} {_short_args(c['arguments'])}")
+                    result = box.run(c["name"], c["arguments"])
+                else:
+                    result = "error: no more lookups for this question; answer with what you have"
+                msgs.append({"role": "tool", "tool_call_id": sent["id"], "content": result})
 
     def reset(self):
         self.history = []
@@ -1329,6 +1506,8 @@ def _print_answer(asst, question, **kwargs):
             None if ans.problems is None else not ans.problems
         ] + (" after a correction" if ans.revised and not ans.problems else "")
         print(f"{'' if rendered else chr(10)}\n-- {ans.model}, {ans.seconds:.1f} s; context: {ans.sources()}{checked}")
+        if ans.tool_calls:
+            print("-- looked up: " + "; ".join(f"{n} {_short_args(a, 40)}" for n, a, _r in ans.tool_calls))
         sources = source_list(ans, links=terminal_links())
         if sources:
             print(sources)
@@ -1545,6 +1724,11 @@ def ei_magic(line, cell=None):
     if opt.startswith("--scilog-"):
         _scilog_magic(asst, opt, rest)
         return None
+    if opt == "--check-logs":
+        days = int(rest) if rest.isdigit() else None
+        findings = asst.check_logs(days=days, contains=None if days or not rest else rest)
+        print(ei_logcheck_report(findings))
+        return findings if shell is None else None
     if opt == "--bad":
         rows = logs_ask.command_outcomes(rest or None, db_path=asst.db_path, min_runs=2, limit=20)
         for r in rows:
@@ -1560,6 +1744,8 @@ def ei_magic(line, cell=None):
         return _print_answer(asst, rest)
     if opt in ("-n", "--new"):
         return _print_answer(asst, rest, new=True)
+    if opt in ("-t", "--tools"):
+        return _print_answer(asst, rest, tools=True)
     if opt in ("-s", "--search"):
         return _print_answer(asst, rest, search_only=True)
     if opt in ("-b", "--browser"):
@@ -1568,6 +1754,23 @@ def ei_magic(line, cell=None):
         _show_in_browser(asst)
         return None
     return _print_answer(asst, text)
+
+
+def _short_args(arguments, width=50):
+    """A tool call's arguments for the wait line: values only, shortened."""
+    try:
+        values = json.loads(arguments or "{}").values()
+        text = ", ".join(str(v) for v in values)
+    except (ValueError, AttributeError):
+        text = str(arguments)
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[: width - 3] + "..."
+
+
+def ei_logcheck_report(findings):
+    from eco import ei_logcheck
+
+    return ei_logcheck.report(findings, links=terminal_links())
 
 
 def _scilog_default(asst, pgroup=""):
@@ -1670,7 +1873,7 @@ def _status(asst, key_where):
         f"eco.ei: model {asst.model} at {asst.config['base_url']}, "
         f"API key {'from ' + key_where if key_where else 'MISSING -- search only, `%ei --key` once you have one'}; "
         f"{len(asst.history)} earlier question(s) in this conversation.\n"
-        "%ei <question> | -n new | -s search only | -b browser | -m MODEL | --paste | --bad TEXT | "
+        "%ei <question> | -n new | -t with lookups | -s search only | -b browser | -m MODEL | --paste | --bad TEXT | --check-logs | "
         "--scan FILES | --scan-image VAR | --webcam | --key | --index | --rebuild | --scilog [pgroup] | --notes PATH | "
         "--scilog-token | --scilog-logbooks | --scilog-index | --scilog-search TEXT | "
         "--examples PATH | --models | --config | --help"
@@ -1700,6 +1903,12 @@ def register_magic(shell):
     if shell is None or not enabled():
         return
     shell.register_magic_function(ei_magic, magic_kind="line_cell", magic_name="ei")
+    try:  # %storage: where things are kept (its own module; also cheap until used)
+        from eco.utilities import storage_locations
+
+        storage_locations.register_magic(shell)
+    except Exception:
+        pass
     cleanup = getattr(shell, "input_transformers_cleanup", None)
     if cleanup is not None and _question_mark_transform not in cleanup:
         cleanup.append(_question_mark_transform)

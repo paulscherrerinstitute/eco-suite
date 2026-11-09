@@ -327,6 +327,76 @@ motor come from `spec_convenience`, not from the class itself, and are
 still recognised.
 ```
 
+### Code in the logbooks
+
+The same check runs over the logbooks. Any logbook post or command that
+`%ei` gives the model and that uses a name eco no longer has reaches the
+model with a warning not to copy it. `%ei --check-logs` lists all of them
+at once:
+
+```python
+%ei --check-logs          # everything indexed
+%ei --check-logs 90       # posts of the last 90 days
+%ei --check-logs las      # only code containing "las"
+```
+
+```text
+eco.ei: 129 kinds of outdated or wrong code in 1199 logbook lines (checked against eco's source, not run):
+
+  `las.pulse_energy_pump` -- LaserBernina has no pulse_energy_pump  (284x, last 2024-05-25)
+      newest: [scilog 2024-05-25 22:57 swissfelaramis-bernina@psi.ch [24d_qiu_p21619 (p21619)]]
+  `mono.mono_und_energy_time_corrected.energy_delay_c` -- MonoTimecompensation has no energy_delay_c (did you mean energy_delay_corr, mono_delay_corr?)  (10x, last 2026-01-29)
+  ...
+```
+
+Code lines are found where Python parses and uses a top-level name of the
+instrument, and names mentioned in prose ("then use `las.wp_att`") are
+checked as attribute chains. Addresses and file names (`elog.psi.ch`,
+`run0552_.json`) are left alone. A name in a table cell that was cut off
+(`mono.mono_und_energy_ti`) is not counted. Outside a session the
+instrument's names come from its definition in `eco/bernina/`.
+`eco.ei_logcheck.check_index(...)` returns the findings with every post
+they occur in.
+
+## Lookups while answering: `%ei -t`
+
+With `-t` the model gets the usual context and may in addition look things
+up before it answers, up to five times per question:
+
+| Lookup | What the model gets |
+|---|---|
+| `search` | more of the index: docs, API, commands, logbook posts |
+| `describe` | an object's components and methods with their parameters (`mono`, `xrd.nu`, `scans.ascan`) |
+| `check_code` | the code check, on its own code before it answers |
+| `storage` | where something is kept (see {doc}`storage`) |
+
+```python
+%ei -t which method of las sets the pump pulse energy?
+```
+
+The wait line shows each lookup as it happens, and the last line of the
+answer lists them. An answer with lookups takes longer (often 30 to 60 s
+instead of 15), and finds things the first search missed: for the question
+above, plain `%ei` only said which names are outdated, `-t` found the
+present `las.wp_att`. `"tools": true` in `~/.eco/ei.json` makes it the
+default and `"tool_calls"` sets the limit.
+
+All lookups only read. None runs code, moves anything, reads a device's
+value or builds a lazy device: `describe` looks at objects the session has
+built already (no property is evaluated) and at eco's source otherwise.
+What they return goes to the model endpoint like the usual context.
+
+## Guides for the model
+
+For questions about scans and queues, motors, the DAQ and runs, or the
+logbooks, the model also gets a short guide written for it: the calls that
+exist today and the mistakes answers tend to make. They are the
+Markdown files in `eco/ei_packs/`. A test checks their code against eco, so
+a guide that goes out of date fails the test suite. A file of the same name
+in `~/.eco/ei_packs/` replaces one (to try a change), and a new file there
+adds a guide. Its front matter's `words` decide which questions get it.
+`"packs": 0` switches them off.
+
 ## Follow-up questions
 
 `%ei` keeps the conversation going, so a short follow-up works:
@@ -415,11 +485,13 @@ indexes a notes folder.
 | `%%ei` | Ask a question longer than one line. |
 | `%ei -n QUESTION`, `--new` | Start a new conversation. |
 | `%ei -b [QUESTION]`, `--browser` | Ask and show the answer in the browser, with each SciLog source between its neighbouring posts; without a question, the last answer or listing. |
+| `%ei -t QUESTION`, `--tools` | Ask, and let the model look things up while it answers (read-only). |
 | `%ei -s WORDS`, `--search` | Only search, without the model: the matching docs, API, command history, logbook entries and notes. |
 | `%ei -m MODEL [QUESTION]`, `--model` | Switch the model (kept for the session). |
 | `%ei --paste` | Put the last answer's code at the next prompt. |
 | `%ei --open N` | Source N of the last answer (or listing) in its context. |
 | `%ei --bad TEXT` | Commands containing TEXT that gave warnings or errors, worst first. |
+| `%ei --check-logs [DAYS\|TEXT]` | Code in the indexed logbooks that does not fit eco today, most frequent first. |
 | `%ei --index` | Update the search index now. |
 | `%ei --rebuild` | Remove the search index and build it again from scratch (minutes). |
 | `%ei --scilog [pgroup]` | Index the logbooks of one pgroup (no pgroup: the last choice, else Bernina's). |

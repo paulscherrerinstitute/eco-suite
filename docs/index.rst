@@ -173,6 +173,7 @@ scientific Python libraries.
    alarms
    run_history
    scilog_viewer
+   storage
    shared_files
 
 .. toctree::

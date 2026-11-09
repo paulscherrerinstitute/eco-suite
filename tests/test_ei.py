@@ -222,6 +222,7 @@ def _config():
     cfg["scilog_default"] = None  # no network
     cfg["elog_logbooks"] = None
     cfg["check_code"] = False  # tests/test_ei_check.py
+    cfg["storage"] = False  # no network: tests/test_ei_tools.py
     return cfg
 
 

@@ -252,7 +252,9 @@ def build(src_dirs, cache_path=None):
         if not root.is_dir():
             continue
         for path in root.rglob("*.py"):
-            if any(part in ("__pycache__", "textual test") or part.startswith(".") for part in path.parts):
+            # only below the package: a checkout under ~/.cache is fine
+            if any(part in ("__pycache__", "textual test") or part.startswith(".")
+                   for part in path.relative_to(root).parts):
                 continue
             try:
                 st = path.stat()
@@ -529,6 +531,9 @@ class _Checker:
         if root in self.imported:
             kind, name = self.imported[root]
             return self.walk_static(node, kind, name, root, attrs)
+        if root == "eco" and root not in self.local and "eco" in self.symbols.modules:
+            # a session has eco imported: `eco.utilities.foo(...)` needs no import line
+            return self.walk_static(node, "module", "eco", root, attrs)
         if root in self.local or root in _EXTERNAL or hasattr(builtins, root):
             return None
         if self.user_ns is not None and root in self.user_ns:
@@ -640,6 +645,45 @@ def check_answer(text, symbols, namespace=(), user_ns=None):
     out = []
     for block in re.findall(r"```(?:python|py|ipython)?[ \t]*\n(.*?)```", text, re.S):
         out += check(block, symbols, namespace, user_ns)
+    return out
+
+
+#: where an instrument's top-level names are defined (append_obj calls)
+NAMESPACE_DIRS = (Path(logs_ask.SRC_DIR) / "bernina",)
+
+
+def static_namespace(dirs=NAMESPACE_DIRS):
+    """[(name, class name, module, state)] like NamespaceInfo.entries(),
+    read from the `namespace.append_obj(...)` calls of the instrument
+    definition, for checking code outside a session (logbook posts). A
+    factory function counts as a class that is not in the table: names
+    below it are not judged."""
+    out, seen = [], set()
+    for d in dirs:
+        for path in sorted(Path(d).glob("*.py")):
+            try:
+                tree = ast.parse(path.read_text(errors="replace"))
+            except (OSError, SyntaxError, ValueError):
+                continue
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "append_obj" and node.args):
+                    continue
+                kw = {k.arg: k.value for k in node.keywords if k.arg}
+                name = kw.get("name")
+                if not (isinstance(name, ast.Constant) and isinstance(name.value, str)):
+                    continue
+                factory = node.args[0]
+                if isinstance(factory, ast.Constant) and isinstance(factory.value, str):
+                    cls = factory.value
+                else:
+                    cls = _name_of(factory) or ""
+                    cls = cls.rpartition(".")[2]
+                module = kw.get("module_name")
+                module = module.value if isinstance(module, ast.Constant) and isinstance(module.value, str) else ""
+                if name.value not in seen:
+                    seen.add(name.value)
+                    out.append((name.value, cls, module, "lazy"))
     return out
 
 

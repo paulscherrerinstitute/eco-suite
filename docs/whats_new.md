@@ -81,6 +81,18 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
 
 ## 9 November 2026
 
+- `%ei -t`: the model may look things up while it answers (search,
+  describe an object, check its own code, storage), up to five times, all
+  read-only ({doc}`ask_eco`).
+- `%ei --check-logs`: code in the logbooks that does not fit eco today
+  (129 kinds in Bernina's logbooks, most of them renamed laser
+  components). Such posts reach the model with a warning not to copy them.
+- `%ei` gives the model short guides for scans, motors, the DAQ and the
+  logbooks (`eco/ei_packs/`); a test keeps their code current.
+- `%storage hexapod`: where things are kept, from the beamline's storage
+  spreadsheet ({doc}`storage`).
+- `features()` and `eco.tip()` show the tips again in the eco installed into
+  the Python environment; it has no `docs/` folder and found none.
 - The SciLog viewer writes: new posts and edits in a CKEditor dialog,
   images uploaded at once and kept at a fixed pixel size, drafts kept in
   the browser, heading levels changed from the outline, views (mine, by

@@ -971,5 +971,44 @@ class OpenAICompatibleBackend:
                     on_delta(piece)
         return "".join(parts)
 
+    def chat_round(self, messages, tools=None, on_delta=None, stop=None):
+        """One round with tools the model may call: (text, [tool call]),
+        each call {"id", "name", "arguments" (str, JSON)}. The text is
+        streamed to on_delta as it comes; tool calls arrive in pieces and
+        are put together. tools=None: an ordinary answer, no calls."""
+        body = {"model": self.model, "messages": messages, "max_tokens": self.max_tokens,
+                "temperature": 0.1, "stream": True}
+        body.update(self.options)
+        if tools:
+            body["tools"] = tools
+        parts, calls = [], {}
+        with self._request("/chat/completions", body) as r:
+            for raw in r:
+                if stop is not None and stop.is_set():
+                    break
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    choices = json.loads(data).get("choices") or [{}]
+                except ValueError:
+                    continue
+                delta = choices[0].get("delta") or {}
+                piece = delta.get("content")
+                if piece:
+                    parts.append(piece)
+                    if on_delta:
+                        on_delta(piece)
+                for tc in delta.get("tool_calls") or ():
+                    call = calls.setdefault(tc.get("index", len(calls)), {"id": "", "name": "", "arguments": ""})
+                    call["id"] = tc.get("id") or call["id"]
+                    fn = tc.get("function") or {}
+                    call["name"] += fn.get("name") or ""
+                    call["arguments"] += fn.get("arguments") or ""
+        return "".join(parts), [calls[i] for i in sorted(calls)]
+
     def complete(self, prompt):
         return self.chat([{"role": "user", "content": prompt}])
