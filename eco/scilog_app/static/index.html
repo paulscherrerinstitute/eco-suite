@@ -27,7 +27,12 @@
 
 <div id="layout">
   <nav id="outline" aria-label="Outline">
+    <div id="pane-tabs" role="tablist">
+      <button data-pane="outline" class="active" title="Days, posts and headings">Outline</button>
+      <button data-pane="map" title="The flow drawn small: figures, tables and lists by their look (m)">Map</button>
+    </div>
     <div id="outline-tree"></div>
+    <div id="map" hidden></div>
   </nav>
   <main id="flow" tabindex="-1">
     <p class="hint">Loading ...</p>
@@ -39,5 +44,6 @@
 <div id="toast" role="status" hidden></div>
 <script src="/static/app.js"></script>
 <script src="/static/editor.js"></script>
+<script src="/static/map.js"></script>
 </body>
 </html>

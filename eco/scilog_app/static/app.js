@@ -272,6 +272,7 @@ function renderOutline() {
     frag.append(node);
   });
   tree.replaceChildren(frag);
+  if (typeof renderMap === "function") renderMap();
 }
 
 let observer = null;
