@@ -45,15 +45,16 @@ function renderHeadings() {
   const toggle = (key, label, title) => el("button", { class: `hd-opt${hdState[key] ? " on" : ""}`, title,
     onclick: () => { hdState[key] = !hdState[key]; storageSet(`eco-scilog-outline-${key}`, hdState[key] ? "on" : "off"); renderHeadings(); } }, label);
   const frag = document.createDocumentFragment();
-  frag.append(el("div", { class: "hd-opts" },
-    toggle("dates", "📅 days", "Show the days and times between the headings"),
-    toggle("loose", "· posts without heading", "Also list the posts that have no heading, under the heading before them"),
+  // the options stay at the top right, in the day line stuck there (a zero-height sticky strip)
+  frag.append(el("div", { class: `hd-opts${hdState.dates ? "" : " no-dates"}` }, el("span", { class: "hd-opts-row" },
+    toggle("dates", "📅", "Days and times between the headings: on/off"),
+    toggle("loose", "¶", "Also the posts without heading (under the heading before them): on/off"),
     el("button", { class: "hd-opt", title: "Fold everything to the top level / unfold all", onclick: () => {
       const items = headingItems();
       if (hdState.collapsed.size) hdState.collapsed.clear();
       else items.filter((i) => i.hasChildren && i.depth === 0).forEach((i) => hdState.collapsed.add(i.key));
       renderHeadings();
-    } }, "⇕")));
+    } }, "⇕"))));
   const items = headingItems();
   if (!items.length) frag.append(el("p", { class: "hint", text: "No post here has a heading. Headings (H1–H3 in the editor) make this table of contents; ⤓ on a post inserts one after it." }));
   let day = null;

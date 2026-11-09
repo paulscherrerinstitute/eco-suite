@@ -339,9 +339,12 @@ body.has-pin #to-bottom { right: calc(var(--pin-width, 36vw) + 24px); }
 .m-comments .m-line { opacity: .3; }
 /* the headings pane */
 #pane-tabs button { padding: 2px 4px; }
-.hd-opts { display: flex; gap: 4px; flex-wrap: wrap; margin: 2px 0 6px; }
-.hd-opt { font-size: .78em; padding: 0 6px; border-radius: 10px; color: var(--muted); }
-.hd-opt.on { color: var(--accent); border-color: var(--accent); }
+.hd-opts { position: sticky; top: 28px; height: 0; z-index: 3; }
+.hd-opts.no-dates { height: 22px; }  /* no day line to sit in: a line of its own */
+.hd-opts-row { position: absolute; right: 0; top: -1px; display: flex; gap: 3px; background: var(--bg); padding-left: 4px; }
+.hd-opt { font-size: .74em; line-height: 1.3; padding: 0 6px; border-radius: 9px; color: var(--muted); opacity: .75; }
+.hd-opt:hover { opacity: 1; }
+.hd-opt.on { color: var(--accent); border-color: var(--accent); opacity: 1; }
 .hd-date { font-size: .75em; font-weight: 700; color: var(--muted); margin: 8px 0 1px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .hd-item { display: flex; align-items: baseline; gap: 4px; padding: 1px 4px; border-radius: 4px; cursor: pointer; min-width: 0; }
 .hd-item:hover { background: var(--panel); }
