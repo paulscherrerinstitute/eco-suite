@@ -1,4 +1,10 @@
-"""Reciprocal-space calculations behind ``RecSpace``, on top of hklforge.
+"""TEMPORARY local copy of ``escape.bernina.recspace`` (see ``recspace_calc``).
+
+Used only while the installed escape has no ``escape.bernina`` (or hklforge
+is older than 0.1.0). Delete this file, and the fallback in
+``recspace_calc``, once the beamline environments have both.
+
+Reciprocal-space calculations behind ``RecSpace``, on top of hklforge.
 
 Pure numpy + hklforge, no eco, EPICS or file access, so everything here can
 be tested and benchmarked on its own (``tests/test_recspace_hklforge.py``,

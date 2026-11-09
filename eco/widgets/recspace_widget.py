@@ -1,8 +1,8 @@
 """Visualisation for ``RecSpaceCrystal`` (eco.utilities.recspace_hklforge).
 
 Two front-ends around the same 3D reciprocal-space view
-(``eco/utilities/diffractometer_3d.html``, vendored from
-swissfel/bernina-scripts ``bernina_prep/diffractometer_3d.html``; a self-contained
+(``escape.bernina.VIEWER_HTML``, or eco's copy
+``eco/utilities/diffractometer_3d.html`` until escape has it; a self-contained
 three.js page that polls a hidden ``#diff3d-payload`` element in its parent
 document for the angles, UB, abs(k), surface normal and target reflections):
 
@@ -32,7 +32,7 @@ import numpy as np
 from eco.utilities import recspace_calc as rc
 from eco.utilities.tempfiles import user_temp_path
 
-VIEWER_HTML = Path(__file__).resolve().parent.parent / "utilities" / "diffractometer_3d.html"
+VIEWER_HTML = rc.VIEWER_HTML     # escape.bernina's 3D page (or eco's copy until escape has it)
 
 CIRCLES = ("gamma", "delta", "mu", "eta", "chi", "phi")
 VIRTUAL_CONSTRAINTS = ("qaz", "naz", "alpha", "beta", "betain", "betaout", "psi", "omega")

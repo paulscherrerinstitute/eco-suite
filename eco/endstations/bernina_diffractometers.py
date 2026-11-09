@@ -452,26 +452,25 @@ def append_recspace(obj, configuration):
     """Append the hklforge-based ``recspace`` next to ``diffcalc``.
 
     Runs in parallel to diffcalc for now: on whenever diffcalc is configured,
-    unless the configuration has its own ``recspace`` flag. Optional, so a
-    missing hklforge (or any other failure) leaves the diffractometer intact.
+    unless the configuration has its own ``recspace`` flag. Optional: any
+    failure (hklforge or escape missing or too old, a broken import, a failing
+    RecSpace) prints one line and leaves the diffractometer intact.
     """
-    from ..utilities.recspace_hklforge import _config_flag
-
-    if not _config_flag(configuration, "recspace", default=_config_flag(configuration, "diffcalc")):
-        return
     try:
-        from ..utilities.recspace_hklforge import RecSpace
-    except ImportError as e:
-        print(f"recspace not added (hklforge not available: {e})")
-        return
-    obj._append(
-        RecSpace,
-        diffractometer_you=obj,
-        name="recspace",
-        is_setting=False,
-        is_display=False,
-        optional=True,
-    )
+        from ..utilities.recspace_hklforge import RecSpace, _config_flag
+
+        if not _config_flag(configuration, "recspace", default=_config_flag(configuration, "diffcalc")):
+            return
+        obj._append(
+            RecSpace,
+            diffractometer_you=obj,
+            name="recspace",
+            is_setting=False,
+            is_display=False,
+            optional=True,
+        )
+    except Exception as e:
+        print(f"recspace not added to {getattr(obj, 'name', obj)!s}: {type(e).__name__}: {e}")
 
 
 @get_from_archive

@@ -18,6 +18,13 @@ Why a successor:
 - **A view of what is going on**: a 3D drawing of the diffractometer with the
   reciprocal lattice, clickable per solution.
 
+The calculations themselves (the Bernina geometry, UB from reflections and
+orientations, solving, the 3D page) are escape's `escape.bernina.recspace`,
+shared with the bernina-scripts prep apps; `eco.utilities.recspace_calc`
+re-exports them. Until the beamline environment has an escape with
+`escape.bernina` (and hklforge 0.1.0), eco uses its own copy of the same code
+(`recspace_calc.SOURCE` says which one is in use).
+
 ## The smallest example (no hardware)
 
 Without a diffractometer, `RecSpace` uses six dummy circles. Pass a fixed

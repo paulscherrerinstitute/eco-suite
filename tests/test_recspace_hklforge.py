@@ -506,3 +506,31 @@ def test_geom_page_without_ub_says_so(rs):
         c.calc_ub()
     page = c.widget_geom(open_browser=False).read_text()
     assert "showCell: true" in page and '"ub"' in page
+
+
+def test_append_recspace_never_breaks_the_diffractometer(monkeypatch, capsys):
+    """recspace is optional: a broken import or a failing RecSpace only prints."""
+    import sys
+    append_recspace = pytest.importorskip("eco.endstations.bernina_diffractometers").append_recspace   # beamline deps
+
+    class Obj:
+        name = "xrd"
+        appended = []
+
+        def _append(self, *args, **kwargs):
+            self.appended.append(kwargs["name"])
+
+    obj = Obj()
+    append_recspace(obj, {"diffcalc": True})
+    assert obj.appended == ["recspace"]
+    monkeypatch.setitem(sys.modules, "eco.utilities.recspace_hklforge", None)   # import fails
+    append_recspace(obj, {"diffcalc": True})
+    assert "recspace not added to xrd: ModuleNotFoundError" in capsys.readouterr().out
+    monkeypatch.undo()
+
+    class Failing(Obj):
+        def _append(self, *args, **kwargs):
+            raise RuntimeError("no motors")
+
+    append_recspace(Failing(), {"diffcalc": True})
+    assert "RuntimeError: no motors" in capsys.readouterr().out

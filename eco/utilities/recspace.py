@@ -32,11 +32,16 @@ from epics import PV
 
 logger = logging.getLogger(__name__)
 
-# Vendored from swissfel/bernina-scripts bernina_prep/diffractometer_3d.html: a
-# self-contained Three.js reciprocal-space viewer that needs no server, only
-# a JSON payload (angles, UB matrix, k-magnitude, surface normal) written
+# escape.bernina's diffractometer_3d.html (a local copy until escape has it):
+# a self-contained Three.js reciprocal-space viewer that needs no server,
+# only a JSON payload (angles, UB matrix, k-magnitude, surface normal) written
 # into a hidden element it polls every 150ms.
-_GEOM_WIDGET_HTML_PATH = Path(__file__).parent / "diffractometer_3d.html"
+def _geom_widget_html_path() -> Path:
+    try:
+        from eco.utilities.recspace_calc import VIEWER_HTML
+        return VIEWER_HTML
+    except Exception:      # the diffcalc widget must not depend on the hklforge code
+        return Path(__file__).parent / "diffractometer_3d.html"
 
 
 def _build_geom_widget_html(entries):
@@ -44,7 +49,7 @@ def _build_geom_widget_html(entries):
     ``entries`` (each ``{"label": str, "payload": dict}``), writing the
     clicked entry's payload into the "#diff3d-payload" element the viewer
     polls."""
-    scene_html = _GEOM_WIDGET_HTML_PATH.read_text()
+    scene_html = _geom_widget_html_path().read_text()
     srcdoc = html_lib.escape(scene_html)
     entries_json = json.dumps(entries)
     return f"""<!doctype html>

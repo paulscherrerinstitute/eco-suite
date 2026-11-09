@@ -177,6 +177,7 @@
       <label class="chk"><input type="checkbox" id="show-hkl-bz"> Brillouin zones around Q and the target reflections</label>
       <label class="chk"><input type="checkbox" id="show-ewald"> show Ewald sphere (radius |k|)</label>
       <label class="chk"><input type="checkbox" id="show-det-patch"> show detector cut of the Ewald sphere</label>
+      <label class="chk"><input type="checkbox" id="show-ghost-det" checked> two reflections: the detector also on the other reflection</label>
       <label class="chk"><input type="checkbox" id="show-det-cells"> show all cells the detector sees <span id="det-cells-count"></span></label>
       <label class="chk" style="margin-left:18px"><input type="checkbox" id="show-det-cell-labels"> &hellip; with their hkl (up to 12 cells)</label>
       <label class="chk"><input type="checkbox" id="show-det-bz"> show all Brillouin zones the detector sees <span id="det-bz-count"></span></label>
@@ -1666,6 +1667,43 @@
     }
     rebuildArm(500);
 
+    // --- two reflections: the detector as it would sit on the other
+    // reflection(s) (msg.ghosts: gamma, delta, label, which = 1 or 2), on
+    // its own gamma -> delta chain, translucent, in that reflection's colour
+    const GHOST_COLORS = { 1: 0x0a8f6a, 2: 0xb5179e };
+    const ghostGroup = new THREE.Group();
+    scene.add(ghostGroup);
+    let ghostDeltas = [];          // {group, color}: for the Ewald-sphere cut
+    function updateGhosts() {
+      clearGroup(ghostGroup);
+      ghostDeltas = [];
+      if (!recipState.showGhostDet) return;
+      const armLen = lastTdetMm * SCENE_MM_SCALE;
+      for (const g of recipState.ghosts || []) {
+        const color = GHOST_COLORS[g.which] || 0x888888;
+        const gg = new THREE.Group();
+        gg.rotation.x = deg(g.gamma);
+        const dg = new THREE.Group();
+        dg.rotation.z = -deg(g.delta);
+        gg.add(dg);
+        const arm = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+          [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, armLen, 0)]),
+          new THREE.LineDashedMaterial({ color, dashSize: 0.15, gapSize: 0.1 }));
+        arm.computeLineDistances();
+        dg.add(arm);
+        const body = new THREE.Mesh(
+          new THREE.BoxGeometry(detHmm * SCENE_MM_SCALE, 0.06, detWmm * SCENE_MM_SCALE),
+          new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }));
+        body.position.y = armLen;
+        dg.add(body);
+        const label = makeTextSprite(g.label || "", "#" + new THREE.Color(color).getHexString());
+        label.position.set(0, armLen + 0.35, 0);
+        dg.add(label);
+        ghostGroup.add(gg);
+        ghostDeltas.push({ group: dg, color });
+      }
+    }
+
     // --- ground grid: horizontal = Y-Z(diffcalc) plane, since X(diffcalc) is up ---
     const grid = new THREE.GridHelper(16, 16, 0xcccccc, 0xe5e5e5);
     grid.rotation.z = -Math.PI / 2;
@@ -1704,6 +1742,7 @@
     const recipState = { show: false, showCell: false, showHklCell: false,
                          showEwald: false, showDetPatch: false, showDetCells: false, showDetCellLabels: false,
                          showHklBz: false, showDetBz: false, showRealCell: false, centring: "P",
+                         ghosts: [], showGhostDet: true,
                          cmPerInvAng: 5, kMag: null, ub: null,
                          detW: 77, detH: 77 };
 
@@ -1875,9 +1914,10 @@
         }
 
         // --- the patch of that sphere the detector actually sees ---
-        if (recipState.showDetPatch) {
+        // (and, with two reflections, the one the detector would see on the
+        // other reflection: same face, in that reflection's colour)
+        const addDetPatch = (q, color, opacity) => {
           const armLen = lastTdetMm * SCENE_MM_SCALE;
-          const q = deltaGroup.getWorldQuaternion(new THREE.Quaternion());
           const w = detWmm * SCENE_MM_SCALE;
           const hgt = detHmm * SCENE_MM_SCALE;
           const N = 20;
@@ -1905,9 +1945,16 @@
           geo.setIndex(idx);
           geo.computeVertexNormals();
           recipGroup.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-            color: 0xdd2222, transparent: true, opacity: 0.35,
+            color, transparent: true, opacity,
             side: THREE.DoubleSide, depthWrite: false,
           })));
+        };
+        if (recipState.showDetPatch) {
+          addDetPatch(deltaGroup.getWorldQuaternion(new THREE.Quaternion()), 0xdd2222, 0.35);
+          if (recipState.showGhostDet) {
+            ghostGroup.updateMatrixWorld(true);
+            for (const g of ghostDeltas) addDetPatch(g.group.getWorldQuaternion(new THREE.Quaternion()), g.color, 0.3);
+          }
         }
       }
 
@@ -2296,6 +2343,7 @@
         detHmm = newH;
         rebuildArm(lastTdetMm);
       }
+      updateGhosts();
       updateRecip();
     }
 
@@ -2323,6 +2371,7 @@
 
     function setDetectorDistance(tdetMm) {
       rebuildArm(tdetMm);
+      updateGhosts();
       updateRecip();   // the detector patch depends on the arm length
     }
 
@@ -2506,6 +2555,20 @@
           ? { width_along_SF_x: lastDetectorMesh.geometry.parameters.depth,
               height_along_SF_y: lastDetectorMesh.geometry.parameters.width } : null,
         arcSweeps: Object.keys(circles).reduce((o, n) => (o[n] = circles[n].angle, o), {}),
+        // per drawn second detector: angle [deg] between its arm and the line
+        // from the Ewald centre to its reflection's node (0 when it sits on it)
+        ghostOffsets: ghostDeltas.map((g, i) => {
+          const gh = (recipState.ghosts || [])[i];
+          const h = gh && (recipState.targets || [])[gh.which - 1];
+          if (!h || !recipState.ub || !recipState.kMag) return null;
+          phiGroup.updateMatrixWorld(true);
+          ghostGroup.updateMatrixWorld(true);
+          const node = phiGroup.localToWorld(
+            mul3(recipState.ub, new THREE.Vector3(h[0], h[1], h[2])).multiplyScalar(recScale()));
+          const centre = new THREE.Vector3(0, -recipState.kMag * recScale(), 0);
+          const arm = new THREE.Vector3(0, 1, 0).applyQuaternion(g.group.getWorldQuaternion(new THREE.Quaternion()));
+          return THREE.MathUtils.radToDeg(arm.angleTo(node.sub(centre)));
+        }),
         // |node - Ewald centre| / |k| per target: exactly 1 in Bragg condition
         targetsOnSphere: (recipState.targets || []).map((h) => {
           if (!recipState.ub || !recipState.kMag) return null;
@@ -2599,6 +2662,7 @@
   const showDetCellLabelsEl = document.getElementById("show-det-cell-labels");
   const showHklBzEl = document.getElementById("show-hkl-bz");
   const showRealCellEl = document.getElementById("show-real-cell");
+  const showGhostDetEl = document.getElementById("show-ghost-det");
   const showDetBzEl = document.getElementById("show-det-bz");
   const showAngleCtrlEl = document.getElementById("show-angle-controls");
   const enhancedEl = document.getElementById("enhanced-3d");
@@ -2740,6 +2804,7 @@
       showDetCellLabels: showDetCellLabelsEl.checked,
       showHklBz: showHklBzEl.checked,
       showRealCell: showRealCellEl.checked,
+      showGhostDet: showGhostDetEl.checked,
       showDetBz: showDetBzEl.checked,
       cmPerInvAng: cm,
       detW: parseFloat(detWEl.value) || 77,
@@ -2775,6 +2840,7 @@
   showDetCellLabelsEl.addEventListener("change", refreshRecip);
   showHklBzEl.addEventListener("change", refreshRecip);
   showRealCellEl.addEventListener("change", refreshRecip);
+  showGhostDetEl.addEventListener("change", refreshRecip);
   showDetBzEl.addEventListener("change", refreshRecip);
   detWEl.addEventListener("input", refreshRecip);
   detHEl.addEventListener("input", refreshRecip);
@@ -2799,7 +2865,7 @@
     showCircles: showCirclesEl, showRecip: showRecipEl, showCell: showCellEl,
     showHklCell: showHklCellEl, showEwald: showEwaldEl, showDetPatch: showDetPatchEl,
     showDetCells: showDetCellsEl, showDetCellLabels: showDetCellLabelsEl,
-    showHklBz: showHklBzEl, showDetBz: showDetBzEl, showRealCell: showRealCellEl, enhanced3d: enhancedEl, rock3d: rockEl,
+    showHklBz: showHklBzEl, showDetBz: showDetBzEl, showRealCell: showRealCellEl, showGhostDet: showGhostDetEl, enhanced3d: enhancedEl, rock3d: rockEl,
     showAngleControls: showAngleCtrlEl, controlsBelow: controlsBelowEl,
   };
 
@@ -2866,42 +2932,142 @@
   let lastPayload = null;
 
   // --- the app's state, remembered in this browser ---------------------
-  // The app sends its full state with every push (msg.autosave); it is kept
-  // in localStorage together with this page's display settings. When a new
-  // session starts, the stored state is offered back once through a hidden
-  // text widget (class diff3d-state-in) - the app only starts sending
-  // autosaves after that, so its defaults never overwrite the stored state.
-  // Per browser and per web address (each Binder server has its own).
+  // Three things are kept in localStorage (per browser and per web address,
+  // never sent anywhere):
+  //   STATE_KEY  the app's latest state (msg.autosave) and this page's display
+  //              settings, offered back once when a new session starts;
+  //   SNAP_KEY   snapshots: named ones the user takes, automatic ones (the
+  //              last session's state when a new one starts, every
+  //              AUTO_EVERY of work, before "start fresh" / a restore);
+  //   PREF_KEY   whether to remember at all ("0" = only explicit snapshots).
+  // The page talks back through a hidden text widget (class diff3d-state-in):
+  // first {kind:"offer", ...}, then {kind:"memory", ...} whenever the
+  // snapshots change. The app only starts sending autosaves after the offer,
+  // so its defaults never overwrite the stored state. The app's requests
+  // come as msg.memory.ops, numbered; each is done once.
   const STATE_KEY = "bernina-reflections-state";
+  const SNAP_KEY = "bernina-reflections-snapshots";
+  const PREF_KEY = "bernina-reflections-remember";
+  const AUTO_EVERY = 10 * 60 * 1000, MAX_AUTO = 20;
   let stateOffered = false, lastAutosave = null, lastStored = null, forgetting = false;
+  let doneSeq = 0, reportN = 0, lastAutoTime = Date.now();
+
+  function lsGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+  function lsSet(key, value) {
+    try { window.localStorage.setItem(key, value); return true; } catch (e) { return false; }
+  }
+  function lsDel(key) { try { window.localStorage.removeItem(key); } catch (e) { /* nothing */ } }
+  function remembering() { return lsGet(PREF_KEY) !== "0"; }
+
+  function loadSnapshots() {
+    try {
+      const list = JSON.parse(lsGet(SNAP_KEY) || "[]");
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+  function saveSnapshots(list) {
+    const autos = list.filter((s) => s.auto);
+    if (autos.length > MAX_AUTO) {                 // drop the oldest automatic ones
+      const drop = new Set(autos.slice(0, autos.length - MAX_AUTO).map((s) => s.id));
+      list = list.filter((s) => !drop.has(s.id));
+    }
+    if (!lsSet(SNAP_KEY, JSON.stringify(list))) {  // full: give up automatic ones first
+      list = list.filter((s) => !s.auto);
+      lsSet(SNAP_KEY, JSON.stringify(list));
+    }
+    return list;
+  }
+  function sameContent(a, b) {
+    return !!a && !!b && JSON.stringify([a.state, a.display]) === JSON.stringify([b.state, b.display]);
+  }
+  function addSnapshot(name, state, display, auto) {
+    if (!state) return false;
+    const list = loadSnapshots();
+    const snap = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                   name, saved: Date.now(), auto: !!auto, state, display };
+    if (auto) {   // an automatic one only if something changed since the newest one
+      const newest = list.length ? list[list.length - 1] : null;
+      if (sameContent(newest, snap)) return false;
+    }
+    list.push(snap);
+    saveSnapshots(list);
+    return true;
+  }
+
+  function sendToApp(doc, obj) {
+    const input = doc.querySelector(".diff3d-state-in input");
+    if (!input) return false;
+    input.value = JSON.stringify(obj);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+  function memoryReport() {
+    return { remember: remembering(), ack: doneSeq, n: ++reportN, snapshots: loadSnapshots() };
+  }
+  function reportMemory() {
+    try {
+      const doc = window.parent && window.parent !== window ? window.parent.document : null;
+      if (doc) sendToApp(doc, Object.assign({ kind: "memory" }, memoryReport()));
+    } catch (e) { /* standalone */ }
+  }
 
   function offerState(doc) {
-    const input = doc.querySelector(".diff3d-state-in input");
-    if (!input) return;
+    if (!doc.querySelector(".diff3d-state-in input")) return;
     stateOffered = true;
-    let stored = null;
-    try { stored = window.localStorage.getItem(STATE_KEY); } catch (e) { /* storage blocked */ }
-    let offer = "{}";
+    const offer = Object.assign({ kind: "offer" }, memoryReport());
     try {
+      const stored = remembering() ? lsGet(STATE_KEY) : null;
       const rec = stored ? JSON.parse(stored) : null;
       if (rec && rec.state) {
-        offer = JSON.stringify({ state: rec.state, display: rec.display,
-                                 savedText: new Date(rec.saved).toLocaleString() });
+        const when = new Date(rec.saved).toLocaleString();
+        offer.state = rec.state;
+        offer.display = rec.display;
+        offer.savedText = when;
+        // the end of the last session is kept as a snapshot as well
+        if (addSnapshot("last session, " + when, rec.state, rec.display, true)) {
+          offer.snapshots = loadSnapshots();
+        }
       }
     } catch (e) { /* unreadable: start fresh */ }
-    input.value = offer;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    sendToApp(doc, offer);
   }
 
   function storeState() {
-    if (!lastAutosave || forgetting) return;
+    if (!lastAutosave || forgetting || !remembering()) return;
     const display = getDisplay();
     const key = JSON.stringify([lastAutosave, display]);
     if (key === lastStored) return;
     lastStored = key;
-    try {
-      window.localStorage.setItem(STATE_KEY, JSON.stringify({ saved: Date.now(), state: lastAutosave, display }));
-    } catch (e) { /* storage blocked or full */ }
+    lsSet(STATE_KEY, JSON.stringify({ saved: Date.now(), state: lastAutosave, display }));
+    if (Date.now() - lastAutoTime >= AUTO_EVERY) {
+      lastAutoTime = Date.now();
+      if (addSnapshot("autosave " + new Date().toLocaleString(), lastAutosave, display, true)) reportMemory();
+    }
+  }
+
+  // the app's requests (msg.memory): remember on/off and numbered operations
+  function handleMemory(mem) {
+    let changed = false;
+    if (typeof mem.remember === "boolean" && mem.remember !== remembering()) {
+      lsSet(PREF_KEY, mem.remember ? "1" : "0");
+      if (!mem.remember) { lsDel(STATE_KEY); lastStored = null; }
+      changed = true;
+    }
+    for (const op of mem.ops || []) {
+      if (typeof op.seq !== "number" || op.seq <= doneSeq) continue;
+      doneSeq = op.seq;
+      changed = true;
+      if (op.op === "add") {
+        addSnapshot(op.name || ("snapshot " + new Date().toLocaleString()), op.state || lastAutosave, op.display || getDisplay(), !!op.auto);
+      } else if (op.op === "delete") {
+        saveSnapshots(loadSnapshots().filter((s) => s.id !== op.id));
+      } else if (op.op === "clear") {
+        lsDel(SNAP_KEY);
+        lsDel(STATE_KEY);
+        lastStored = null;
+      }
+    }
+    if (changed) reportMemory();
   }
 
   function pollParent() {
@@ -2926,9 +3092,11 @@
       // own toggles are not overwritten
       if (msg.display) applyDisplay(msg.display);
       applyDetectorMsg(msg);
+      if (msg.memory) handleMemory(msg.memory);
       if (msg.forgetState && !forgetting) {
         forgetting = true;
-        try { window.localStorage.removeItem(STATE_KEY); } catch (e) { /* nothing stored */ }
+        if (remembering()) addSnapshot("before start fresh", lastAutosave, getDisplay(), true);
+        lsDel(STATE_KEY);
         window.parent.location.reload();
         return;
       }
@@ -2954,6 +3122,7 @@
       if (typeof msg.kMag === "number") opts.kMag = msg.kMag;
       if (msg.ub) opts.ub = msg.ub;
       if (typeof msg.centring === "string") opts.centring = msg.centring;
+      if (Array.isArray(msg.ghosts)) opts.ghosts = msg.ghosts;
       if (Array.isArray(msg.targets)) opts.targets = msg.targets;
       if (msg.nPhi) app.setSurfaceNormal(msg.nPhi);
       if (Object.keys(opts).length) app.setRecip(opts);
