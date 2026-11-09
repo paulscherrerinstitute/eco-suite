@@ -251,3 +251,25 @@ def test_a_write_needs_the_page_s_own_header(tmp_path, monkeypatch):
         assert err.value.code == 403
     finally:
         app.stop()
+
+
+def test_writing_is_switched_on_per_logbook_and_remembered(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    cfg_path = tmp_path / "scilog_app.json"
+    cfg_path.write_text(json.dumps({"other": 1}))
+    store = Store(_Writer(), cache_dir=tmp_path / "f", config=load_config(cfg_path))
+    store.config_path = cfg_path
+    lb = "a" * 24
+    assert not store.may_write_to(lb)[0]
+    me = store.set_write_logbook(lb)
+    assert lb in me["write_logbooks"] and "roles" not in me and store.may_write_to(lb)[0]
+    saved = json.loads(cfg_path.read_text())
+    assert saved["other"] == 1 and lb in saved["write_logbooks"]  # other settings kept
+    assert (cfg_path.stat().st_mode & 0o777) == 0o600
+    store.set_write_logbook(lb, on=False)
+    assert not store.may_write_to(lb)[0]
+    with pytest.raises(ValueError):
+        store.set_write_logbook("../etc")
+    beamline = Store(_Writer(identity="the beamline account x@psi.ch"), cache_dir=tmp_path / "h", config={"write_logbooks": []})
+    with pytest.raises(PermissionError, match="personal token"):
+        beamline.set_write_logbook(lb)

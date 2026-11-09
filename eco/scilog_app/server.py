@@ -58,6 +58,16 @@ def load_config(path=None):
     return cfg
 
 
+def save_config(cfg, path=None):
+    """Write the config (only this user may read it)."""
+    path = Path(path or CONFIG_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, path)
+
+
 def _epoch(iso):
     try:
         return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
@@ -83,6 +93,8 @@ class Store:
         self._lock = threading.Lock()
         self.cache_dir = Path(cache_dir or logs_ask.index_dir() / "scilog_files")
         self.config = config if config is not None else load_config()
+        #: where set_write_logbook() saves (none for a store given its config, e.g. in tests)
+        self.config_path = CONFIG_PATH if config is None else None
         self.uploads = {}  # fileId -> file container, uploaded while editing
         self._me = None
 
@@ -122,6 +134,31 @@ class Store:
         if allowed != "all" and logbook_id not in (allowed or ()):
             return False, f"writing to this logbook is not switched on ({CONFIG_PATH}: \"write_logbooks\")"
         return True, ""
+
+    def set_write_logbook(self, logbook_id, on=True):
+        """Switch writing to one logbook on or off (in CONFIG_PATH): what the
+        page's "Allow writing here" does, after the user confirmed it."""
+        if not isinstance(logbook_id, str) or not _ID.match(logbook_id):
+            raise ValueError("not a logbook id")
+        me = self.me()
+        if not me["writes"]:
+            raise PermissionError(me["why_not"])
+        allowed = self.config.get("write_logbooks")
+        if allowed == "all":
+            if on:
+                return self._public_me()
+            raise ValueError(f"all logbooks are switched on in {CONFIG_PATH}; edit it to switch single ones off")
+        allowed = [x for x in (allowed or ()) if x != logbook_id] + ([logbook_id] if on else [])
+        self.config["write_logbooks"] = allowed
+        saved = load_config(self.config_path) if self.config_path else {}
+        saved["write_logbooks"] = allowed
+        if self.config_path:
+            save_config(saved, self.config_path)
+        self._me = None
+        return self._public_me()
+
+    def _public_me(self):
+        return {k: v for k, v in self.me().items() if k != "roles"}
 
     def may_edit(self, raw):
         """As SciLog decides: the author, or a member of one of the post's update groups."""
@@ -358,8 +395,7 @@ class _Static(tornado.web.StaticFileHandler):
 
 class _Me(_Base):
     async def get(self):
-        me = await self.blocking(self.app.store.me)
-        self.finish({k: v for k, v in me.items() if k != "roles"})
+        self.finish(await self.blocking(self.app.store._public_me))
 
 
 class _Write(_Base):
@@ -433,6 +469,12 @@ class _Heading(_Write):
         await self.run(self.app.store.set_heading, b.get("logbook"), post_id, int(b.get("index", -1)), b.get("level", ""))
 
 
+class _WriteLogbook(_Write):
+    async def post(self):
+        b = self.body()
+        await self.run(self.app.store.set_write_logbook, b.get("logbook"), bool(b.get("on", True)))
+
+
 class _Logbooks(_Base):
     async def get(self):
         self.finish({"logbooks": await self.blocking(self.app.store.list_logbooks)})
@@ -496,6 +538,7 @@ class ScilogApp:
                 (r"/api/save", _Save),
                 (r"/api/save/([0-9a-f]{24})", _Save),
                 (r"/api/heading/([0-9a-f]{24})", _Heading),
+                (r"/api/write-logbook", _WriteLogbook),
                 (r"/img/([0-9a-f]{24})", _Image),
                 (r"/file/([0-9a-f]{24})", _File),
             ],

@@ -113,6 +113,14 @@ function postElement(p) {
     p.edited ? el("span", { class: "edited", text: "edited", title: `${p.editor || ""} ${p.updated}` }) : null,
     actions);
   const body = el("div", { class: "body" });
+  if (p.can_edit) {
+    body.title = "Double-click to edit";
+    body.addEventListener("dblclick", (ev) => {
+      if (ev.target.closest("a, button, iframe, img")) return;
+      if (canWrite()) { window.getSelection()?.removeAllRanges(); editPost(p.id); }
+      else askToAllowWriting();
+    });
+  }
   body.innerHTML = p.html;  // cleaned by the server (content.clean_post)
   body.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((h, i) => (h.id = `h-${p.id}-${i}`));
   body.querySelectorAll(".plot").forEach(preparePlot);
@@ -194,6 +202,7 @@ function renderFlow() {
   }
   flow.replaceChildren(frag);
   if (!state.posts.length) flow.append(el("p", { class: "hint", text: "This logbook has no posts yet." }));
+  if (!state.only) flow.append(composerElement());
   observePosts();
 }
 
@@ -498,14 +507,27 @@ async function openLogbook(id, postId, only = false) {
   renderFlow();
   renderOutline();
   setStatus();
-  $("#new-post").hidden = !canWrite();
-  $("#new-post").title = canWrite() ? "Write a new post (n)" : "";
+  updateWriteUi();
   $("#only-banner").hidden = true;
   if (state.only) showOnly(postId);
   else if (postId && state.byId.has(postId)) jumpToPost(postId);
   else holdBottom();
   if (!state.only) history.replaceState(null, "", `#lb=${id}${postId ? `&post=${postId}` : ""}`);
   state.poll = setInterval(refresh, POLL_MS);
+}
+
+// -- to the newest post ------------------------------------------------------------------------
+
+function toNewest() {
+  const flow = $("#flow");
+  flow.scrollTo({ top: flow.scrollHeight, behavior: "smooth" });
+  setTimeout(holdBottom, 400);  // lazily shown posts keep growing the bottom
+}
+
+function updateToBottom() {
+  const flow = $("#flow");
+  const far = flow.scrollHeight - flow.scrollTop - flow.clientHeight > flow.clientHeight;
+  $("#to-bottom").hidden = !far;
 }
 
 // The newest post is at the bottom. Images and posts only get their real
@@ -566,7 +588,55 @@ function editPost(id) {
   openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, postId: id, onSaved: placeSaved });
 }
 
+// Where writing is not switched on, say why and how instead of hiding it.
+function writeBlocker() {
+  const me = state.me;
+  if (!state.logbook) return "no logbook";
+  if (!me.writes) return me.why_not || "writing is off";
+  return canWrite() ? "" : "off-here";
+}
+
+function updateWriteUi() {
+  const button = $("#new-post"), why = writeBlocker();
+  button.hidden = !state.logbook || (why && why !== "off-here");
+  button.innerHTML = why === "off-here" ? "&#9998; Allow writing here" : "&#10010; New post";
+  button.title = why === "off-here" ? "Writing to this logbook is off: switch it on to post and to edit your own posts" : "Write a new post (n)";
+  const old = document.getElementById("composer");
+  if (old) old.replaceWith(composerElement());
+}
+
+function composerElement() {
+  const why = writeBlocker();
+  if (!why) {
+    return el("div", { id: "composer", tabindex: "0", role: "button", onclick: newPost,
+      onkeydown: (e) => { if (e.key === "Enter") newPost(); } },
+      el("span", { class: "c-box", text: "Write a new post ..." }),
+      el("span", { class: "c-hint", text: "n · double-click one of your posts to edit it" }));
+  }
+  if (why === "off-here") {
+    return el("div", { id: "composer", class: "off" },
+      el("span", { text: "Writing to this logbook is off. " }),
+      el("button", { onclick: askToAllowWriting }, "✎ Allow writing here"));
+  }
+  return el("div", { id: "composer", class: "off" }, el("span", { class: "c-hint", text: `Writing is not possible: ${why}.` }));
+}
+
+async function askToAllowWriting() {
+  if (writeBlocker() !== "off-here") return;
+  if (!confirm(`Allow writing to "${state.logbook.name}"?\n\nYou can then post here and edit your own posts. ` +
+               "This is remembered for you (in ~/.eco/scilog_app.json) and can be switched off again there.")) return;
+  try {
+    state.me = await writeApi("/api/write-logbook", "POST", { logbook: state.logbook.id, on: true });
+  } catch (e) { toast(`Not switched on: ${e.message}`); return; }
+  renderFlow();
+  renderOutline();
+  updateWriteUi();
+  setStatus();
+  toast("Writing switched on for this logbook");
+}
+
 function newPost() {
+  if (writeBlocker() === "off-here") { askToAllowWriting(); return; }
   if (!canWrite()) return;
   openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved });
 }
@@ -629,6 +699,8 @@ async function main() {
   if (storageGet("eco-scilog-outline") === "off") document.body.classList.add("no-outline");
   $("#logbook-button").onclick = () => showPicker($("#picker").hidden);
   $("#new-post").onclick = newPost;
+  $("#to-bottom").onclick = toNewest;
+  $("#flow").addEventListener("scroll", updateToBottom, { passive: true });
   $("#view").onchange = (e) => setView(e.target.value);
   $("#picker-filter").oninput = (e) => fillPicker(e.target.value);
   $("#picker-filter").onkeydown = (e) => {
@@ -669,6 +741,7 @@ async function main() {
     else if (e.key === "o") $("#toggle-outline").click();
     else if (e.key === "l") showPicker(true);
     else if (e.key === "n") newPost();
+    else if (e.key === "End" || e.key === "G") { e.preventDefault(); toNewest(); }
     else if (e.key === "v") $("#view").focus();
     else if (e.key === "Escape") { $("#picker").hidden = true; document.getElementById("lightbox")?.remove(); }
   });
