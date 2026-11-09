@@ -121,3 +121,133 @@ def test_the_server_needs_the_token_and_sandboxes_plots(server):
     assert download.headers["Content-Type"] == "application/octet-stream" and "attachment" in download.headers["Content-Disposition"]
     with pytest.raises(urllib.error.HTTPError):
         opener.open(f"{base}/api/posts?logbook=../../etc")
+
+
+# -- writing -----------------------------------------------------------------------------------
+
+import base64  # noqa: E402
+
+from eco.scilog_app.server import load_config  # noqa: E402
+
+WIDE = ('<figure class="image image_resized"><img src="" title="H1" width="1483" height="556" '
+        'style="aspect-ratio:1483/556;"></figure>')
+
+
+def test_the_width_scilog_keeps_in_files_reaches_the_figure():
+    files = [dict(FILES[0], style={"width": "51.2%", "height": ""})]
+    html = content.clean_post(WIDE, files)
+    assert '<figure class="image image_resized" style="width:51.2%">' in html
+
+
+def test_editor_html_goes_back_to_what_scilog_stores():
+    files = [dict(FILES[0], style={"width": "300px", "height": ""}), FILES[2]]
+    edited = content.editor_html(WIDE + '<p><a class="fileLink" href="file:H3">d.json</a></p>', files)
+    assert f'src="img/{"a" * 24}"' in edited and f'href="file/{"c" * 24}"' in edited
+    edited = edited.replace("width:300px", "width:420px")  # resized with the mouse
+    text, out = content.to_scilog(edited, {f["fileId"]: f for f in files})
+    assert 'style="width:420px"' in text and 'title="H1"' in text and 'src=""' in text
+    assert 'href="file:H3"' in text and 'class="fileLink"' in text
+    assert out[0]["style"] == {"width": "420px", "height": ""} and out[1]["fileHash"] == "H3"
+    with pytest.raises(content.Unresolved, match="still being uploaded"):
+        content.to_scilog('<p><img src="data:image/png;base64,AAAA"></p>', {})
+    with pytest.raises(content.Unresolved, match="not a file of this post"):
+        content.to_scilog(f'<figure class="image"><img src="img/{"d" * 24}"></figure>', {})
+
+
+def test_a_heading_level_changes_in_place():
+    text = "<h2>A</h2><p>x</p><h3 class='c'>B</h3><h2>C</h2>"
+    assert content.set_heading(text, 1, "h4") == "<h2>A</h2><p>x</p><h4 class='c'>B</h4><h2>C</h2>"
+    assert content.set_heading(text, 2, "p") == "<h2>A</h2><p>x</p><h3 class='c'>B</h3><p>C</p>"
+    with pytest.raises(ValueError):
+        content.set_heading(text, 3, "h2")
+
+
+def _token(email="ann@psi.ch", roles=("p1",)):
+    payload = base64.urlsafe_b64encode(json.dumps({"email": email, "roles": list(roles)}).encode()).decode().rstrip("=")
+    return f"x.{payload}.y"
+
+
+class _Writer(_FakeReader):
+    def __init__(self, identity="Ann <ann@psi.ch> (token from test)", roles=("p1",)):
+        super().__init__()
+        self.identity, self.token = identity, _token(roles=roles)
+        self.written = []
+        self.rows[0]["updateACL"] = ["p1"]
+        self.rows[1]["createdBy"], self.rows[1]["updateACL"] = "bob@psi.ch", ["p2"]
+
+    def logbook(self, logbook_id):
+        return {"ownerGroup": "p1", "accessGroups": ["p1", "unx-x"]}
+
+    def upload_file(self, data, filename, content_type, fields):
+        self.written.append(("upload", filename, fields))
+        return {"id": "e" * 24, "accessHash": "hash"}
+
+    def create_post(self, payload):
+        self.written.append(("create", payload))
+        row = self.row("p9", "2026-11-04T10:00:00Z", payload["textcontent"])
+        row.update(files=payload["files"], tags=payload["tags"], updateACL=["p1"])
+        self.rows.append(row)
+        return row
+
+    def update_post(self, post_id, payload):
+        self.written.append(("update", post_id, payload))
+
+    def post(self, post_id):
+        return next(r for r in self.rows if r["id"] == post_id)
+
+
+def test_writing_goes_only_where_it_is_allowed(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Writer()
+    store = Store(reader, cache_dir=tmp_path / "f", config={"write_logbooks": [LB]})
+    posts = {p["id"]: p for p in store.posts(LB)["posts"]}
+    assert posts["p1"]["can_edit"] and not posts["p2"]["can_edit"]  # p2: bob's, another group
+
+    up = store.upload(LB, None, "shot.png", b"\x89PNG", "image/png")
+    assert up == {"fileId": "e" * 24, "url": f"img/{'e' * 24}", "name": "shot.png", "image": True}
+    assert reader.written[-1][2] == {"ownerGroup": "p1", "accessGroups": ["p1", "unx-x"], "fileExtension": "png"}
+    new = store.save(LB, None, f'<h2>New</h2><figure class="image image_resized" style="width:300px"><img src="{up["url"]}"></figure>',
+                     ["eco-test", " "])
+    kind, payload = reader.written[-1]
+    assert kind == "create" and payload["parentId"] == LB and payload["tags"] == ["eco-test"]
+    assert payload["files"][0]["fileId"] == "e" * 24 and payload["files"][0]["style"]["width"] == "300px"
+    assert new["id"] == "p9" and new["title"] == "New"
+
+    with pytest.raises(PermissionError, match="only your own"):
+        store.save(LB, "p2", "<p>not mine</p>", [])
+    store.save(LB, "p1", "<p>mine, edited</p>", ["t"], expected_updated="2026-11-01T10:00:00Z")
+    assert reader.written[-1][:2] == ("update", "p1")
+    with pytest.raises(RuntimeError, match="changed meanwhile"):
+        store.save(LB, "p1", "<p>again</p>", [], expected_updated="2020-01-01T00:00:00Z")
+
+    other = Store(_Writer(), cache_dir=tmp_path / "g", config={"write_logbooks": ["f" * 24]})
+    with pytest.raises(PermissionError, match="not switched on"):
+        other.save(LB, None, "<p>x</p>", [])
+    beamline = Store(_Writer(identity="the beamline account swissfelaramis-bernina@psi.ch"), cache_dir=tmp_path / "h",
+                     config={"write_logbooks": "all"})
+    with pytest.raises(PermissionError, match="personal token"):
+        beamline.save(LB, None, "<p>x</p>", [])
+    assert load_config(tmp_path / "missing.json")["write_logbooks"] == ["68afe9fe6f90f96e7370f9b3"]
+
+
+def test_a_write_needs_the_page_s_own_header(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    app = ScilogApp(port=0, store=Store(_Writer(), cache_dir=tmp_path / "f", config={"write_logbooks": "all"}), token="sesame").start()
+    try:
+        base = f"http://localhost:{app.port}"
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        opener.open(f"{base}/?token=sesame")
+        body = json.dumps({"logbook": LB, "html": "<p>hello</p>", "tags": []}).encode()
+        with pytest.raises(urllib.error.HTTPError) as err:
+            opener.open(urllib.request.Request(f"{base}/api/save", data=body, method="POST"))
+        assert err.value.code == 403
+        req = urllib.request.Request(f"{base}/api/save", data=body, method="POST",
+                                     headers={"X-Eco-Scilog": "1", "Content-Type": "application/json"})
+        assert json.load(opener.open(req))["id"] == "p9"
+        evil = urllib.request.Request(f"{base}/api/save", data=body, method="POST",
+                                      headers={"X-Eco-Scilog": "1", "Origin": "http://evil.example"})
+        with pytest.raises(urllib.error.HTTPError) as err:
+            opener.open(evil)
+        assert err.value.code == 403
+    finally:
+        app.stop()

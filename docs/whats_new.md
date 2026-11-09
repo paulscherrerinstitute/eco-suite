@@ -79,6 +79,14 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
   `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
+## 9 November 2026
+
+- The SciLog viewer writes: new posts and edits in a CKEditor dialog,
+  images uploaded at once and kept at a fixed pixel size, drafts kept in
+  the browser, heading levels changed from the outline, views (mine, by
+  tag) and links to a single post ({doc}`scilog_viewer`). Writing is on
+  only for the logbooks listed in `~/.eco/scilog_app.json`.
+
 ## 8 November 2026
 
 - `eco.start_scilog()`: SciLog in the browser, one logbook as a flow of

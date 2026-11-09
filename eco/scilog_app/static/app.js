@@ -3,7 +3,8 @@
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);
-const state = { logbooks: [], logbook: null, posts: [], byId: new Map(), since: null, poll: null, results: [], active: -1 };
+const state = { logbooks: [], logbook: null, posts: [], all: [], byId: new Map(), since: null, poll: null, results: [], active: -1,
+                me: {}, view: "all", only: null };
 const POLL_MS = 20000;
 
 // -- helpers -------------------------------------------------------------------------
@@ -102,7 +103,9 @@ function fillPicker(filter) {
 
 function postElement(p) {
   const actions = el("span", { class: "actions" },
-    el("button", { title: "Copy a link to this post", onclick: (ev) => { ev.stopPropagation(); copyLink(p.id); } }, "🔗"));
+    p.can_edit && canWrite() ? el("button", { title: "Edit this post", onclick: (ev) => { ev.stopPropagation(); editPost(p.id); } }, "✏️ Edit") : null,
+    el("button", { title: "Copy a link to this post in its context", onclick: (ev) => { ev.stopPropagation(); copyLink(p.id); } }, "🔗"),
+    el("button", { title: "Show only this post (and copy a link to it)", onclick: (ev) => { ev.stopPropagation(); showOnly(p.id); } }, "⧉"));
   const head = el("div", { class: "post-head" },
     el("span", { class: "time", text: clock(p.t), title: new Date(p.t * 1000).toString() }),
     el("span", { class: "author", text: shortName(p.author), title: p.author }),
@@ -119,6 +122,65 @@ function postElement(p) {
 
 function dayElement(t) {
   return el("h2", { class: "day", "data-day": dayKey(t) }, dayLabel(t), el("span", { class: "date", text: dayLabel(t) === fullDate(t) ? "" : shortDate(t) }));
+}
+
+// -- views: which posts are shown ---------------------------------------------------------
+
+function applyView() {
+  const v = state.view;
+  state.posts = state.all.filter((p) =>
+    state.only ? p.id === state.only
+      : v === "mine" ? p.author === state.me.email
+      : v.startsWith("tag:") ? p.tags.includes(v.slice(4))
+      : true);
+}
+
+function fillViews() {
+  const select = $("#view");
+  const counts = new Map();
+  for (const p of state.all) for (const t of p.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  const tags = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
+  select.replaceChildren(
+    el("option", { value: "all", text: `All posts (${state.all.length})` }),
+    el("option", { value: "mine", text: `My posts (${state.all.filter((p) => p.author === state.me.email).length})` }),
+    ...tags.map(([t, n]) => el("option", { value: `tag:${t}`, text: `# ${t} (${n})` })));
+  if (![...select.options].some((o) => o.value === state.view)) state.view = "all";
+  select.value = state.view;
+  select.hidden = false;
+}
+
+function setView(view) {
+  state.view = view;
+  storageSet(`eco-scilog-view:${state.logbook.id}`, view);
+  applyView();
+  prepareSearch();
+  renderFlow();
+  renderOutline();
+  holdBottom();
+  setStatus();
+}
+
+function showOnly(id) {
+  state.only = id;
+  applyView();
+  renderFlow();
+  renderOutline();
+  const banner = $("#only-banner");
+  banner.replaceChildren("Only this post is shown · ",
+    el("a", { href: "#", onclick: (e) => { e.preventDefault(); showInContext(id); } }, "show it in its context"));
+  banner.hidden = false;
+  const url = `${location.origin}/#lb=${state.logbook.id}&post=${id}&only=1`;
+  history.replaceState(null, "", `#lb=${state.logbook.id}&post=${id}&only=1`);
+  navigator.clipboard?.writeText(url).then(() => toast("Link to this post alone copied"), () => {});
+}
+
+function showInContext(id) {
+  state.only = null;
+  $("#only-banner").hidden = true;
+  applyView();
+  renderFlow();
+  renderOutline();
+  jumpToPost(id);
 }
 
 function renderFlow() {
@@ -185,7 +247,14 @@ function renderOutline() {
         const heads = [...p.html.matchAll(/<(h[1-6])\b[^>]*>(.*?)<\/h[1-6]>/gis)];
         heads.forEach((h, n) => {
           const text = h[2].replace(/<[^>]+>/g, "").trim();
-          if (text && text !== p.title) dayNode.append(el("div", { class: `o-label o-head ${h[1].toLowerCase()}`, title: text, onclick: () => jumpTo(document.getElementById(`h-${p.id}-${n}`)), text }));
+          if (!text || (n === 0 && text === p.title)) return;  // the post's own title is the line above
+          const level = h[1].toLowerCase();
+          const item = el("div", { class: `o-label o-head ${level}`, title: text, onclick: () => jumpTo(document.getElementById(`h-${p.id}-${n}`)) }, text);
+          if (p.can_edit && canWrite()) {
+            item.append(el("button", { class: "o-level", title: "Change this heading's level",
+              onclick: (ev) => { ev.stopPropagation(); headingMenu(ev, p.id, n, level); } }, level.toUpperCase()));
+          }
+          dayNode.append(item);
         });
       }
       days.append(dayNode);
@@ -399,7 +468,7 @@ function markWords(root, words) {
 
 // -- loading and live updates ------------------------------------------------------------------
 
-async function openLogbook(id, postId) {
+async function openLogbook(id, postId, only = false) {
   showPicker(false);
   const lb = state.logbooks.find((x) => x.id === id) || { id, name: id };
   state.logbook = lb;
@@ -413,20 +482,29 @@ async function openLogbook(id, postId) {
   clearInterval(state.poll);
   try {
     const data = await api(`/api/posts?logbook=${id}`);
-    state.posts = data.posts;
+    state.all = data.posts;
     state.since = data.since;
   } catch (e) {
     $("#flow").replaceChildren(el("p", { class: "hint", text: `SciLog could not be read: ${e.message}` }));
     return;
   }
-  state.byId = new Map(state.posts.map((p) => [p.id, p]));
+  state.byId = new Map(state.all.map((p) => [p.id, p]));
+  state.view = storageGet(`eco-scilog-view:${id}`) || "all";
+  state.only = only && postId ? postId : null;
+  fillViews();
+  applyView();
+  if (postId && !state.posts.some((p) => p.id === postId)) { state.view = "all"; $("#view").value = "all"; applyView(); }
   prepareSearch();
   renderFlow();
   renderOutline();
   setStatus();
-  if (postId && state.byId.has(postId)) jumpToPost(postId);
+  $("#new-post").hidden = !canWrite();
+  $("#new-post").title = canWrite() ? "Write a new post (n)" : "";
+  $("#only-banner").hidden = true;
+  if (state.only) showOnly(postId);
+  else if (postId && state.byId.has(postId)) jumpToPost(postId);
   else holdBottom();
-  history.replaceState(null, "", `#lb=${id}${postId ? `&post=${postId}` : ""}`);
+  if (!state.only) history.replaceState(null, "", `#lb=${id}${postId ? `&post=${postId}` : ""}`);
   state.poll = setInterval(refresh, POLL_MS);
 }
 
@@ -462,7 +540,9 @@ async function refresh() {
     if (old) document.getElementById(`p-${p.id}`)?.replaceWith(postElement(p));
     else appended++;
   }
-  state.posts = [...state.byId.values()].sort((a, b) => a.t - b.t);
+  state.all = [...state.byId.values()].sort((a, b) => a.t - b.t);
+  applyView();
+  fillViews();
   prepareSearch();
   if (appended) {
     renderFlow();
@@ -474,9 +554,58 @@ async function refresh() {
   setStatus();
 }
 
+// -- writing (editor.js) ------------------------------------------------------------------------
+
+function canWrite() {
+  const me = state.me, lb = state.logbook;
+  if (!me.writes || !lb) return false;
+  return me.write_logbooks === "all" || (me.write_logbooks || []).includes(lb.id);
+}
+
+function editPost(id) {
+  openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, postId: id, onSaved: placeSaved });
+}
+
+function newPost() {
+  if (!canWrite()) return;
+  openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved });
+}
+
+function placeSaved(post) {
+  state.byId.set(post.id, post);
+  state.all = [...state.byId.values()].sort((a, b) => a.t - b.t);
+  applyView();
+  if (!state.posts.some((p) => p.id === post.id)) { setView("all"); }
+  prepareSearch();
+  renderFlow();
+  renderOutline();
+  fillViews();
+  setStatus();
+  jumpToPost(post.id);
+  toast("Saved to SciLog");
+}
+
+function headingMenu(ev, postId, index, level) {
+  document.querySelector(".o-menu")?.remove();
+  const menu = el("div", { class: "o-menu" });
+  for (const [lv, label] of [["h2", "Heading"], ["h3", "Subheading"], ["h4", "Minor heading"], ["p", "Normal text"]]) {
+    if (lv === level) continue;
+    menu.append(el("div", { onclick: async () => {
+      menu.remove();
+      try { placeSaved(await setHeading(state.logbook.id, postId, index, lv)); }
+      catch (e) { toast(`Not changed: ${e.message}`); }
+    } }, label));
+  }
+  menu.style.left = `${ev.clientX}px`;
+  menu.style.top = `${ev.clientY}px`;
+  document.body.append(menu);
+  setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
+}
+
 function setStatus(extra) {
   const now = new Date();
-  $("#status").textContent = extra || `${state.posts.length} posts · ${state.identity || ""} · ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const shown = state.posts.length === state.all.length ? `${state.all.length} posts` : `${state.posts.length} of ${state.all.length} posts`;
+  $("#status").textContent = extra || `${shown} · ${state.identity || ""}${canWrite() ? " · can write" : ""} · ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
 function copyLink(id) {
@@ -487,7 +616,7 @@ function copyLink(id) {
 
 function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
-  return { lb: h.get("lb"), post: h.get("post") };
+  return { lb: h.get("lb"), post: h.get("post"), only: h.get("only") === "1" };
 }
 
 // -- start ---------------------------------------------------------------------------------------
@@ -499,6 +628,8 @@ async function main() {
   };
   if (storageGet("eco-scilog-outline") === "off") document.body.classList.add("no-outline");
   $("#logbook-button").onclick = () => showPicker($("#picker").hidden);
+  $("#new-post").onclick = newPost;
+  $("#view").onchange = (e) => setView(e.target.value);
   $("#picker-filter").oninput = (e) => fillPicker(e.target.value);
   $("#picker-filter").onkeydown = (e) => {
     const items = [...document.querySelectorAll("#picker-list li[data-id]")];
@@ -537,25 +668,30 @@ async function main() {
     if (e.key === "/") { e.preventDefault(); input.focus(); input.select(); }
     else if (e.key === "o") $("#toggle-outline").click();
     else if (e.key === "l") showPicker(true);
+    else if (e.key === "n") newPost();
+    else if (e.key === "v") $("#view").focus();
     else if (e.key === "Escape") { $("#picker").hidden = true; document.getElementById("lightbox")?.remove(); }
   });
   window.addEventListener("hashchange", () => {
     const { lb, post } = fromHash();
-    if (lb && (!state.logbook || lb !== state.logbook.id)) openLogbook(lb, post);
-    else if (post) jumpToPost(post);
+    const { only } = fromHash();
+    if (lb && (!state.logbook || lb !== state.logbook.id)) openLogbook(lb, post, only);
+    else if (post && only) showOnly(post);
+    else if (post) { if (state.only) showInContext(post); else jumpToPost(post); }
   });
 
   try {
     const [me, books] = await Promise.all([api("/api/me"), api("/api/logbooks")]);
     state.identity = me.identity.split("<")[0].trim();
+    state.me = me;
     state.logbooks = books.logbooks;
   } catch (e) {
     $("#flow").replaceChildren(el("p", { class: "hint", text: `SciLog could not be read: ${e.message}` }));
     return;
   }
-  const { lb, post } = fromHash();
+  const { lb, post, only } = fromHash();
   const last = lb || storageGet("eco-scilog-last");
-  if (last && state.logbooks.some((x) => x.id === last)) openLogbook(last, post);
+  if (last && state.logbooks.some((x) => x.id === last)) openLogbook(last, post, only);
   else { $("#flow").replaceChildren(el("p", { class: "hint", text: "Choose a logbook: the most recently active come first." })); showPicker(true); }
 }
 

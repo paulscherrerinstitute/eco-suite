@@ -20,11 +20,12 @@ import datetime
 import hmac
 import json
 import logging
+import mimetypes
 import os
 import re
 import secrets
 import threading
-import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -41,6 +42,20 @@ COOKIE = "eco_scilog_token"
 DEFAULT_PORT = 8798
 SCILOG_WEB = "https://scilog.psi.ch"
 _ID = re.compile(r"^[0-9a-f]{24}$")
+#: which logbooks may be written to: ~/.eco/scilog_app.json {"write_logbooks": [ids] or "all"}
+CONFIG_PATH = Path.home() / ".eco" / "scilog_app.json"
+#: until a user says otherwise, writing goes only to the test logbook (p22891)
+DEFAULT_WRITE_LOGBOOKS = ["68afe9fe6f90f96e7370f9b3"]
+MAX_UPLOAD = 50 * 1024 * 1024
+
+
+def load_config(path=None):
+    try:
+        cfg = json.loads(Path(path or CONFIG_PATH).read_text())
+    except (OSError, ValueError):
+        cfg = {}
+    cfg.setdefault("write_logbooks", DEFAULT_WRITE_LOGBOOKS)
+    return cfg
 
 
 def _epoch(iso):
@@ -61,12 +76,15 @@ class Store:
     """Posts of the logbooks looked at, kept up to date incrementally (posts
     created or edited since the last look), and a file cache."""
 
-    def __init__(self, reader=None, cache_dir=None):
+    def __init__(self, reader=None, cache_dir=None, config=None):
         self._reader = reader
-        self.logbooks = {}  # id -> {"posts": {id: record}, "since": iso}
+        self.logbooks = {}  # id -> {"posts": {id: record}, "raw": {id: post as SciLog has it}, "since": iso}
         self._locks = {}
         self._lock = threading.Lock()
         self.cache_dir = Path(cache_dir or logs_ask.index_dir() / "scilog_files")
+        self.config = config if config is not None else load_config()
+        self.uploads = {}  # fileId -> file container, uploaded while editing
+        self._me = None
 
     @property
     def reader(self):
@@ -80,8 +98,39 @@ class Store:
             lb["url"] = f"{SCILOG_WEB}/logbooks/{lb['id']}/dashboard"
         return rows
 
-    @staticmethod
-    def record(raw):
+    # -- who is reading, and may they write --------------------------------------
+
+    def me(self):
+        """{"identity", "email", "roles", "writes", "why_not", "write_logbooks"}."""
+        if self._me is None:
+            reader = self.reader
+            claims = logs_scilog.claims(reader.token)
+            writes, why = True, ""
+            if reader.identity.startswith("the beamline account"):
+                writes, why = False, "SciLog is read as the beamline account here; writing needs your personal token"
+            elif logs_scilog._shared_account():
+                writes, why = False, "writing is off on a shared account"
+            self._me = {"identity": reader.identity, "email": claims.get("email", ""), "roles": set(claims.get("roles") or ()),
+                        "writes": writes, "why_not": why, "write_logbooks": self.config.get("write_logbooks")}
+        return self._me
+
+    def may_write_to(self, logbook_id):
+        me = self.me()
+        allowed = me["write_logbooks"]
+        if not me["writes"]:
+            return False, me["why_not"]
+        if allowed != "all" and logbook_id not in (allowed or ()):
+            return False, f"writing to this logbook is not switched on ({CONFIG_PATH}: \"write_logbooks\")"
+        return True, ""
+
+    def may_edit(self, raw):
+        """As SciLog decides: the author, or a member of one of the post's update groups."""
+        me = self.me()
+        if not me["writes"]:
+            return False
+        return raw.get("createdBy") == me["email"] or bool(me["roles"] & set(raw.get("updateACL") or ()))
+
+    def record(self, raw):
         """What the page gets of one post."""
         text = logs_sources.html_to_text(raw.get("textcontent") or "")
         created, updated = raw.get("createdAt") or "", raw.get("updatedAt") or ""
@@ -97,7 +146,14 @@ class Store:
             "html": content.clean_post(raw.get("textcontent") or "", raw.get("files")),
             "text": text,
             "title": _first_line(text),
+            "can_edit": self._safe_may_edit(raw),
         }
+
+    def _safe_may_edit(self, raw):
+        try:
+            return self.may_edit(raw)
+        except Exception:
+            return False
 
     def posts(self, logbook_id, since=None):
         """{"posts": [...], "removed": [ids], "since": iso}: everything the
@@ -108,7 +164,7 @@ class Store:
             book = self.logbooks.get(logbook_id)
             if book is None:
                 raw = self.reader.posts(logbook_id)
-                book = {"posts": {}, "since": ""}
+                book = {"posts": {}, "raw": {}, "since": ""}
                 changed = raw
                 self.logbooks[logbook_id] = book
             else:
@@ -118,8 +174,10 @@ class Store:
                 book["since"] = max(book["since"], r.get("updatedAt") or "", r.get("createdAt") or "")
                 if r.get("deleted"):
                     book["posts"].pop(r["id"], None)
+                    book["raw"].pop(r["id"], None)
                     removed.append(r["id"])
                 else:
+                    book["raw"][r["id"]] = r
                     book["posts"][r["id"]] = self.record(r)
             if since is None:
                 posts = sorted(book["posts"].values(), key=lambda p: p["t"])
@@ -127,6 +185,96 @@ class Store:
                 ids = {r["id"] for r in changed if not r.get("deleted")}
                 posts = sorted((book["posts"][i] for i in ids), key=lambda p: p["t"])
             return {"posts": posts, "removed": removed, "since": book["since"]}
+
+    # -- writing ----------------------------------------------------------------------
+
+    def _raw(self, logbook_id, post_id):
+        if logbook_id not in self.logbooks:
+            self.posts(logbook_id)
+        raw = self.logbooks[logbook_id]["raw"].get(post_id)
+        if raw is None:
+            raise KeyError(f"no post {post_id} in this logbook")
+        return raw
+
+    def _check_write(self, logbook_id, raw=None):
+        ok, why = self.may_write_to(logbook_id)
+        if not ok:
+            raise PermissionError(why)
+        if raw is not None and not self.may_edit(raw):
+            raise PermissionError("SciLog lets you edit only your own posts (or those of a group you are in)")
+
+    def for_editor(self, logbook_id, post_id):
+        """The post as the editor opens it."""
+        raw = self._raw(logbook_id, post_id)
+        self._check_write(logbook_id, raw)
+        return {"html": content.editor_html(raw.get("textcontent") or "", raw.get("files")), "tags": list(raw.get("tags") or ()),
+                "updated": raw.get("updatedAt") or ""}
+
+    def upload(self, logbook_id, post_id, filename, data, content_type=None):
+        """Upload a file to SciLog at once (not only when the post is saved),
+        with the access of the post or else the logbook; returns what the
+        editor inserts."""
+        raw = self._raw(logbook_id, post_id) if post_id else None
+        self._check_write(logbook_id, raw)
+        if len(data) > MAX_UPLOAD:
+            raise ValueError(f"{filename} is larger than {MAX_UPLOAD // 2**20} MB")
+        content_type = content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        acl = raw or self.reader.logbook(logbook_id)
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else content_type.split("/")[-1]
+        is_image = content_type.startswith("image/")
+        fields = {k: acl[k] for k in ("ownerGroup", "accessGroups", "isPrivate") if acl.get(k) is not None}
+        fields["fileExtension"] = content_type.split("/")[1] if is_image else ext
+        snippet = self.reader.upload_file(data, filename, content_type, fields)
+        container = {"fileHash": str(uuid.uuid4()), "fileId": snippet["id"], "accessHash": snippet.get("accessHash"),
+                     "fileExtension": content_type if is_image else f"file/{ext}"}
+        self.uploads[snippet["id"]] = container
+        return {"fileId": snippet["id"], "url": f"{'img' if is_image else 'file'}/{snippet['id']}", "name": filename,
+                "image": is_image}
+
+    def _known_files(self, raw):
+        known = {f["fileId"]: f for f in (raw or {}).get("files") or () if f.get("fileId")}
+        return {**self.uploads, **known}
+
+    def save(self, logbook_id, post_id, html, tags, expected_updated=None):
+        """Create (post_id None) or update a post from the editor's HTML;
+        returns the post as the page shows it. With expected_updated, an
+        update is refused if the post was changed meanwhile."""
+        raw = self._raw(logbook_id, post_id) if post_id else None
+        self._check_write(logbook_id, raw)
+        textcontent, files = content.to_scilog(html, self._known_files(raw))
+        if not textcontent.strip():
+            raise ValueError("the post is empty")
+        tags = [t.strip() for t in tags or () if t and t.strip()]
+        if raw is None:
+            payload = {"snippetType": "paragraph", "linkType": "paragraph", "parentId": logbook_id,
+                       "textcontent": textcontent, "files": files, "tags": tags}
+            new = self.reader.create_post(payload)
+            post_id = new["id"]
+        else:
+            current = self.reader.post(post_id)
+            if expected_updated and current.get("updatedAt") and current["updatedAt"] != expected_updated:
+                raise RuntimeError(f"the post was changed meanwhile (by {current.get('updatedBy')} at "
+                                   f"{current.get('updatedAt')}); reload it before saving")
+            self.reader.update_post(post_id, {"textcontent": textcontent, "files": files, "tags": tags})
+        for f in files:
+            self.uploads.pop(f["fileId"], None)
+        return self._reread(logbook_id, post_id)
+
+    def _reread(self, logbook_id, post_id):
+        """The post as the page shows it, after a write: what changed since
+        the last look is read (the whole logbook if it was not read yet)."""
+        book = self.logbooks.get(logbook_id)
+        self.posts(logbook_id, book["since"] if book else None)
+        return self.logbooks[logbook_id]["posts"][post_id]
+
+    def set_heading(self, logbook_id, post_id, index, level):
+        """Change one heading's level in place (from the outline)."""
+        raw = self._raw(logbook_id, post_id)
+        self._check_write(logbook_id, raw)
+        current = self.reader.post(post_id)
+        text = content.set_heading(current.get("textcontent") or "", index, level)
+        self.reader.update_post(post_id, {"textcontent": text})
+        return self._reread(logbook_id, post_id)
 
     def _cached(self, kind, file_id, fetch):
         """(bytes, content type, name) from the cache, else fetched and kept."""
@@ -210,8 +358,79 @@ class _Static(tornado.web.StaticFileHandler):
 
 class _Me(_Base):
     async def get(self):
-        reader = await self.blocking(lambda: self.app.store.reader)
-        self.finish({"identity": reader.identity})
+        me = await self.blocking(self.app.store.me)
+        self.finish({k: v for k, v in me.items() if k != "roles"})
+
+
+class _Write(_Base):
+    """Writes need a header a plain form or another site's page cannot set,
+    and must come from this server's own page."""
+
+    def prepare(self):
+        super().prepare()
+        if self.request.headers.get("X-Eco-Scilog") != "1":
+            raise tornado.web.HTTPError(403, reason="missing X-Eco-Scilog header")
+        origin = self.request.headers.get("Origin")
+        if origin and origin.split("://", 1)[-1] != self.request.host:
+            raise tornado.web.HTTPError(403, reason="foreign origin")
+
+    async def run(self, fn, *args):
+        try:
+            self.finish(await self.blocking(fn, *args))
+        except content.Unresolved as exc:
+            self.set_status(400)
+            self.finish({"error": f"not saved: {exc}"})
+        except PermissionError as exc:
+            self.set_status(403)
+            self.finish({"error": str(exc)})
+        except (KeyError, ValueError, RuntimeError, logs_scilog.TokenError) as exc:
+            self.set_status(409 if "changed meanwhile" in str(exc) else 400)
+            self.finish({"error": str(exc).strip("'")})
+
+    def body(self):
+        try:
+            return json.loads(self.request.body or b"{}")
+        except ValueError:
+            raise tornado.web.HTTPError(400, reason="not JSON")
+
+
+class _Edit(_Base):
+    async def get(self, post_id):
+        logbook = self.get_query_argument("logbook")
+        try:
+            self.finish(await self.blocking(self.app.store.for_editor, logbook, post_id))
+        except PermissionError as exc:
+            self.set_status(403)
+            self.finish({"error": str(exc)})
+        except KeyError as exc:
+            self.set_status(404)
+            self.finish({"error": str(exc).strip("'")})
+
+
+class _Upload(_Write):
+    async def post(self):
+        files = self.request.files.get("file") or []
+        if not files:
+            raise tornado.web.HTTPError(400, reason="no file")
+        f = files[0]
+        await self.run(self.app.store.upload, self.get_query_argument("logbook"), self.get_query_argument("post", None),
+                       f["filename"] or "file", f["body"], f.get("content_type"))
+
+
+class _Save(_Write):
+    async def post(self):
+        b = self.body()
+        await self.run(self.app.store.save, b.get("logbook"), None, b.get("html", ""), b.get("tags"))
+
+    async def patch(self, post_id):
+        b = self.body()
+        await self.run(self.app.store.save, b.get("logbook"), post_id, b.get("html", ""), b.get("tags"), b.get("updated"))
+
+
+class _Heading(_Write):
+    async def post(self, post_id):
+        b = self.body()
+        await self.run(self.app.store.set_heading, b.get("logbook"), post_id, int(b.get("index", -1)), b.get("level", ""))
 
 
 class _Logbooks(_Base):
@@ -272,6 +491,11 @@ class ScilogApp:
                 (r"/api/me", _Me),
                 (r"/api/logbooks", _Logbooks),
                 (r"/api/posts", _Posts),
+                (r"/api/edit/([0-9a-f]{24})", _Edit),
+                (r"/api/upload", _Upload),
+                (r"/api/save", _Save),
+                (r"/api/save/([0-9a-f]{24})", _Save),
+                (r"/api/heading/([0-9a-f]{24})", _Heading),
                 (r"/img/([0-9a-f]{24})", _Image),
                 (r"/file/([0-9a-f]{24})", _File),
             ],
@@ -300,7 +524,7 @@ class ScilogApp:
         asyncio.set_event_loop(asyncio.new_event_loop())
         self._loop = IOLoop.current()
         try:
-            self._server = self.make_app().listen(self.port, address=self.host)
+            self._server = self.make_app().listen(self.port, address=self.host, max_body_size=MAX_UPLOAD + 2**20)
             if self.port == 0:  # tests: an ephemeral port
                 self.port = next(iter(self._server._sockets.values())).getsockname()[1]
         except Exception as exc:

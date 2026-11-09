@@ -14,6 +14,8 @@
     <input id="search" type="search" placeholder="Search this logbook  ( / )" autocomplete="off" spellcheck="false">
     <div id="results" hidden></div>
   </div>
+  <select id="view" title="Which posts to show (v)" hidden></select>
+  <button id="new-post" title="Write a new post (n)" hidden>&#10010; New post</button>
   <a id="scilog-link" target="_blank" rel="noopener" title="This logbook in SciLog" hidden>SciLog &#8599;</a>
   <span id="status"></span>
 </header>
@@ -32,7 +34,9 @@
   </main>
 </div>
 <div id="day-banner" aria-hidden="true"></div>
+<div id="only-banner" hidden></div>
 <div id="toast" role="status" hidden></div>
 <script src="/static/app.js"></script>
+<script src="/static/editor.js"></script>
 </body>
 </html>

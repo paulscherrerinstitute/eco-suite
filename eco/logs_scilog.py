@@ -322,6 +322,46 @@ class Reader:
         r.raise_for_status()
         return r.content, r.headers.get("content-type", "application/octet-stream")
 
+    # -- writing (eco.scilog_app); SciLog checks every write against the token --
+
+    def _send(self, method, path, **kwargs):
+        r = self.session.request(
+            method, self.url + path, timeout=self.timeout,
+            headers={"Authorization": "Bearer " + self.token, "Accept": "application/json"}, **kwargs,
+        )
+        if r.status_code == 401:
+            _functional.clear()
+            raise TokenError(f"SciLog refused the token ({describe(self.token)}) -- get a new one:\n{TOKEN_STEPS}")
+        if r.status_code >= 400:
+            try:
+                detail = r.json().get("error", {}).get("message") or r.text
+            except ValueError:
+                detail = r.text
+            raise PermissionError(f"SciLog: {r.status_code} {detail[:300]}") if r.status_code == 403 else RuntimeError(
+                f"SciLog: {r.status_code} {detail[:300]}")
+        return r.json() if r.content else None
+
+    def logbook(self, logbook_id):
+        """One logbook as SciLog stores it (name, ownerGroup, accessGroups, ACLs)."""
+        return self.get(f"/logbooks/{_quote(logbook_id)}")
+
+    def upload_file(self, data, filename, content_type, fields):
+        """A new file snippet, as SciLog's editor makes one (POST
+        filesnippet/files: the file and its ACL fields); returns it (id,
+        accessHash, fileExtension)."""
+        # "fields" must be a plain form field: sent as a part with a content
+        # type, SciLog ignores it and the file is readable by its uploader only
+        return self._send("POST", "/filesnippet/files", files={"file": (filename, data, content_type)},
+                          data={"fields": json.dumps(fields)})
+
+    def create_post(self, payload):
+        """POST basesnippets: a new post (snippetType/linkType "paragraph")."""
+        return self._send("POST", "/basesnippets", json=payload)
+
+    def update_post(self, post_id, payload):
+        """PATCH basesnippets/<id>: change a post's textcontent, files, tags."""
+        return self._send("PATCH", f"/basesnippets/{_quote(post_id)}", json=payload)
+
     def file(self, file_id):
         """(bytes, content type, file name) of any attachment."""
         r = self.session.get(
@@ -340,7 +380,8 @@ class Reader:
         where = {"snippetType": "paragraph", "parentId": logbook_id}
         if updated_after:
             where["updatedAt"] = {"gt": updated_after}
-        fields = dict(self.POST_FIELDS, updatedAt=True, updatedBy=True)
+        fields = dict(self.POST_FIELDS, updatedAt=True, updatedBy=True, updateACL=True, ownerGroup=True,
+                      accessGroups=True, isPrivate=True)
         out, skip = [], 0
         while len(out) < limit:
             rows = self.get("/basesnippets", {

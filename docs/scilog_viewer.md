@@ -1,9 +1,10 @@
 # SciLog in the browser: `eco.start_scilog()`
 
 SciLog's own web page is slow to navigate and loses formatting. This is a
-second way to read the same logbooks: one logbook as a single flow, with an
-outline and a search that tolerates typos. SciLog stays the database; this
-page only reads it, with your own access rights.
+second way to read and write the same logbooks: one logbook as a single
+flow, with an outline, a search that tolerates typos, and an editor that
+keeps image sizes and your drafts. SciLog stays the database, with your own
+access rights.
 
 ```python
 eco.start_scilog()          # prints the address and opens it where a browser can start
@@ -57,10 +58,54 @@ needs the key from the printed address.
 
 Arrow keys in the search results move the logbook to each match in turn, so
 you can read the matches in their context without leaving the search.
+In the editor, an image's size menu sets it to a fixed 300, 500 or 800 px.
 ```
 
-## Coming next
+## Writing
 
-Writing posts (new and edited, with a robust editor, heading levels from
-the outline, fixed image sizes set with the mouse), and search across all
-the logbooks you can read.
+**✚ New post** (`n`) and **✏️ Edit** on a post open the editor in a dialog,
+so it never takes reading space; ⤢ makes it full screen. It is CKEditor 5,
+the editor SciLog itself uses, in the same version, so a post looks the same
+in SciLog and here.
+
+- **Images**: paste, drop or 🖼 upload them; each goes to SciLog at once, not
+  only when you save. Drag an image's corner, or choose 300, 500 or 800 px
+  in its toolbar: the size is in pixels and stays fixed, here and in SciLog,
+  only ever shrunk to fit a narrow screen. The toolbar also places it left,
+  centred, right or with text around it.
+- **📎 Attach** adds any file as a link; an HTML file (a plot exported with
+  plotly or bokeh) is shown as an interactive plot.
+- **Your text is kept** in this browser after every change. If the browser
+  closes or the dialog is closed without saving, the next time the editor
+  opens it offers to restore the draft.
+- **Saving** (`Ctrl+Enter`) is refused while an image is still uploading or
+  refers to something that is not a file of the post, so nothing is saved
+  with broken images. An edit is refused if someone changed the post in the
+  meantime; your version stays in the editor.
+- **Headings from the outline**: hover a heading in the outline of a post you
+  may edit and click its level to turn it into a heading, subheading, minor
+  heading or normal text.
+
+You can edit what SciLog lets you edit: your own posts, and those whose
+groups include one of yours. Writing needs your personal SciLog token; read
+as the beamline account (always on gac-bernina) the page only reads.
+
+Writing is switched on per logbook in `~/.eco/scilog_app.json`:
+
+```json
+{"write_logbooks": ["68afe9fe6f90f96e7370f9b3"]}
+```
+
+The default is only the test logbook above (p22891); `"all"` allows every
+logbook you can write to.
+
+## Views and links
+
+The **view** menu next to the search shows all posts, only your own, or those
+with one tag; the choice is kept per logbook. 🔗 copies a link to a post in
+its context, ⧉ shows the post alone and copies a link to that.
+
+## Not yet
+
+Search across all your logbooks, and SciLog's comments and replies (they are
+not shown).
