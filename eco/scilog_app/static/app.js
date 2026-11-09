@@ -843,6 +843,64 @@ function setStatus(extra) {
   const now = new Date();
   const shown = state.posts.length === state.all.length ? `${state.all.length} posts` : `${state.posts.length} of ${state.all.length} posts`;
   $("#status").textContent = extra || `${shown} · ${state.identity || ""}${canWrite() ? " · can write" : ""} · ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  updateTokenBadge();
+}
+
+// -- the SciLog token: entered here, renewed here ------------------------------------------------
+// SciLog's token lasts 14 days from the login and cannot be renewed: then a new one is needed.
+
+const TOKEN_BOOKMARKLET = "javascript:void(prompt('SciLog token (select all, copy):',localStorage.id_token))";
+
+function updateTokenBadge() {
+  const t = state.token, badge = $("#token-badge");
+  if (!badge) return;
+  const left = t?.expires ? (t.expires * 1000 - Date.now()) / 86400000 : null;
+  badge.hidden = !(t && t.personal && left !== null && left < 3);
+  if (!badge.hidden) badge.textContent = left > 1 ? `🔑 token: ${Math.floor(left)} days left` : left > 0 ? `🔑 token: ${Math.max(1, Math.round(left * 24))} h left` : "🔑 token expired";
+}
+
+function openTokenDialog(status = state.token || {}) {
+  document.getElementById("token-dialog")?.remove();
+  const until = status.expires ? new Date(status.expires * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : null;
+  const input = el("textarea", { class: "tk-input", rows: "3", placeholder: "Paste the token here (eyJ…)", autocomplete: "off", spellcheck: "false" });
+  const note = el("div", { class: "tk-note" });
+  const save = el("button", { class: "primary" }, "Use this token");
+  const bm = el("code", { class: "tk-code", text: TOKEN_BOOKMARKLET });
+  const dialog = el("dialog", { id: "token-dialog" },
+    el("div", { class: "ed-head" }, el("strong", { text: "SciLog token" }), el("span", { class: "spacer" }),
+      el("button", { title: "Close", onclick: () => dialog.close() }, "✕")),
+    el("div", { class: "tk-body" },
+      el("p", { class: status.ok ? "" : "bad", text: status.ok
+        ? `Reading SciLog as ${status.identity}${until ? `; this token is valid until ${until}` : ""}.`
+        : `${status.why || "No token"}.` }),
+      el("p", { text: "The viewer reads and writes SciLog with your own token. SciLog issues it when you log in, and it lasts 14 days; then log in again and enter the new one here." }),
+      el("ol", {},
+        el("li", {}, "Log in at ", el("a", { href: "https://scilog.psi.ch", target: "_blank", rel: "noopener" }, "scilog.psi.ch"), " (in this browser or any other)."),
+        el("li", {}, "Copy the token, either way:",
+          el("ul", {},
+            el("li", {}, "on a computer: press F12, open Console, type ", el("code", { text: "copy(localStorage.id_token)" }), " and Enter;"),
+            el("li", {}, "on a phone, or without the developer tools: once, make a bookmark with this address, then open it while SciLog is shown (Android: type the bookmark's name in the address bar and pick it). It shows the token to copy:",
+              el("div", { class: "tk-row" }, bm, el("button", { onclick: () => copyText(TOKEN_BOOKMARKLET, "Bookmark address") }, "Copy"))))),
+        el("li", {}, "Paste it here:")),
+      input, note),
+    el("div", { class: "ed-foot" }, el("span", { class: "tk-safe", text: "Kept only on this computer, readable only by you." }), el("span", { class: "spacer" }), save));
+  if (!status.can_set && status.can_set !== undefined) { input.disabled = true; save.disabled = true; note.textContent = "This is a shared account: a personal token must not be kept here."; }
+  save.onclick = async () => {
+    save.disabled = true;
+    note.textContent = "Checking the token with SciLog …";
+    try {
+      const r = await fetch("/api/token/set", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Eco-Scilog": "1" }, body: JSON.stringify({ token: input.value }) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || r.statusText);
+      note.textContent = `Accepted: ${data.identity}. Reloading …`;
+      setTimeout(() => location.reload(), 600);
+    } catch (e) { note.textContent = `Not accepted: ${e.message}`; note.classList.add("bad"); save.disabled = false; }
+  };
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
 }
 
 function copyLink(id) {
@@ -911,7 +969,10 @@ async function main() {
   $("#new-post").onclick = newPost;
   $("#to-bottom").onclick = () => (state.unseen.size ? toUnseen() : toNewest());
   $("#flow").addEventListener("scroll", updateToBottom, { passive: true });
-  $("#views-button").onclick = () => openViewsDialog();  // views.js loads after this file
+  $("#views-button").onclick = () => openViewsDialog();
+  $("#token-badge").onclick = () => openTokenDialog();
+  $("#status").onclick = () => openTokenDialog();
+  $("#status").title = "Click: the SciLog token (whose, until when, enter a new one)";  // views.js loads after this file
   $("#search-button").onclick = openSearch;
   $("#search-cancel").onclick = endSearch;
   setUpResizer();
@@ -973,6 +1034,15 @@ async function main() {
     else if (post) { if (state.only) showInContext(post); else jumpToPost(post); }
   });
 
+  let tok;
+  try { tok = await api("/api/token"); } catch (e) { tok = { ok: false, why: e.message, can_set: true }; }
+  state.token = tok;
+  if (!tok.ok) {
+    $("#flow").replaceChildren(el("div", { class: "hint" }, `SciLog cannot be read: ${tok.why}. `,
+      el("button", { onclick: () => openTokenDialog(tok) }, "Enter a SciLog token")));
+    openTokenDialog(tok);
+    return;
+  }
   try {
     const [me, books] = await Promise.all([api("/api/me"), api("/api/logbooks")]);
     state.identity = me.identity.split("<")[0].trim();

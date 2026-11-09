@@ -26,6 +26,7 @@ import os
 import re
 import secrets
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -189,6 +190,41 @@ class Store:
         for lb in rows:
             lb["url"] = f"{SCILOG_WEB}/logbooks/{lb['id']}/dashboard"
         return rows
+
+    # -- the token ------------------------------------------------------------------------
+
+    def token_status(self):
+        """{"ok", "identity", "personal", "expires" (epoch), "why", "can_set"}:
+        whether SciLog can be read, as whom, and until when."""
+        can_set = not logs_scilog._shared_account()
+        try:
+            r = self.reader
+        except logs_scilog.TokenError as exc:
+            why = "SciLog refused the token (expired?)" if "refused" in str(exc) else "There is no SciLog token here yet"
+            return {"ok": False, "why": why, "can_set": can_set}
+        exp = logs_scilog.claims(r.token).get("exp")
+        personal = not r.identity.startswith("the beamline account")
+        if personal and exp and exp < time.time():
+            return {"ok": False, "why": "the SciLog token has expired", "expires": exp, "can_set": can_set}
+        return {"ok": True, "identity": r.identity, "personal": personal, "expires": exp if personal else None, "can_set": can_set}
+
+    def set_token(self, value):
+        """Check a token with SciLog, keep it (mode 600) and read SciLog
+        with it from now on; returns the new token_status()."""
+        value = logs_scilog._clean(value)
+        if value.count(".") != 2:
+            raise ValueError("that is not a SciLog token (expected three dot-separated parts)")
+        exp = logs_scilog.claims(value).get("exp")
+        if exp and exp < time.time():
+            raise ValueError("this token has already expired: log in to SciLog again and copy the new one")
+        probe = logs_scilog.Reader(value, timeout=30)
+        probe.get("/logbooks", {"limit": 1, "fields": {"id": True}})  # TokenError if SciLog refuses it
+        logs_scilog.save_token(value)  # refuses a shared account
+        with self._lock:
+            self._reader = None
+            self._me = None
+            self.logbooks.clear()  # what may be read depends on whose token it is
+        return self.token_status()
 
     # -- who is reading, and may they write --------------------------------------
 
@@ -645,8 +681,15 @@ class _Base(tornado.web.RequestHandler):
         given = self.get_query_argument("token", None) or self.get_cookie(COOKIE)
         return bool(given) and hmac.compare_digest(given, self.app.token)
 
+    def local_host(self):
+        """The page was asked for by a local name. A web site that points its
+        own domain at 127.0.0.1 (DNS rebinding) is turned away here: its
+        requests carry its own name in Host."""
+        host = self.request.host.rsplit(":", 1)[0] if not self.request.host.startswith("[") else self.request.host.split("]")[0] + "]"
+        return host in ("localhost", "127.0.0.1", "[::1]")
+
     def prepare(self):
-        if not self.authorized():
+        if not self.local_host() or not self.authorized():
             raise tornado.web.HTTPError(403)
 
     def set_default_headers(self):
@@ -663,7 +706,8 @@ class _Base(tornado.web.RequestHandler):
 
 class _Index(_Base):
     def prepare(self):
-        pass  # checks the token itself, to set the cookie
+        if not self.local_host():  # the token it checks itself, to set the cookie
+            raise tornado.web.HTTPError(403)
 
     def get(self):
         token = self.get_query_argument("token", None)
@@ -794,6 +838,18 @@ class _View(_Write):
             await self.run(self.app.store.change_view, b.get("logbook"), view_id, b.get("version"), b.get("changes"))
 
 
+class _Token(_Base):
+    async def get(self):
+        self.finish(await self.blocking(self.app.store.token_status))
+
+
+class _TokenSet(_Write):
+    """The token comes from the page: the same checks as for writes."""
+
+    async def post(self):
+        await self.run(self.app.store.set_token, str(self.body().get("token") or ""))
+
+
 class _WriteLogbook(_Write):
     async def post(self):
         b = self.body()
@@ -856,6 +912,8 @@ class ScilogApp:
                 (r"/", _Index),
                 (r"/static/(.*)", _Static, {"path": STATIC_DIR}),
                 (r"/api/me", _Me),
+                (r"/api/token", _Token),
+                (r"/api/token/set", _TokenSet),
                 (r"/api/logbooks", _Logbooks),
                 (r"/api/posts", _Posts),
                 (r"/api/edit/([0-9a-f]{24})", _Edit),

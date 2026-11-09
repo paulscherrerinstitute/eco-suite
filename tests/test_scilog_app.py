@@ -15,6 +15,7 @@ ensure_eco_importable()
 
 pytest.importorskip("tornado")
 
+from eco import logs_scilog
 from eco.scilog_app import content
 from eco.scilog_app.server import ScilogApp, Store
 
@@ -469,3 +470,56 @@ def test_deleting_needs_a_delete_group_and_takes_the_post_off_the_page(tmp_path,
     store2 = Store(reader, cache_dir=tmp_path / "files2", config={"write_logbooks": []})
     with pytest.raises(PermissionError):
         store2.delete(LB, reader.B)
+
+
+def test_the_token_is_checked_with_scilog_before_it_is_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Writer()
+    store = Store(reader, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+    store.logbooks["x"] = {}
+    status = store.token_status()
+    assert status["ok"] and status["personal"] and status["can_set"]
+
+    def claim(**c):
+        body = base64.urlsafe_b64encode(json.dumps(c).encode()).decode().rstrip("=")
+        return f"x.{body}.y"
+
+    with pytest.raises(ValueError, match="not a SciLog token"):
+        store.set_token("nonsense")
+    with pytest.raises(ValueError, match="expired"):
+        store.set_token(claim(exp=1))
+    kept, probed = [], []
+
+    class Probe:
+        def __init__(self, value, timeout=30):
+            self.value = value
+
+        def get(self, path, filt=None):
+            probed.append(self.value)
+            if self.value.endswith("refused"):
+                raise logs_scilog.TokenError("SciLog refused the token")
+
+    monkeypatch.setattr("eco.logs_scilog.Reader", Probe)
+    monkeypatch.setattr("eco.logs_scilog.save_token", lambda v, path=None: kept.append(v))
+    with pytest.raises(logs_scilog.TokenError):
+        store.set_token(claim(exp=4102444800)[:-1] + "refused")
+    assert kept == []  # refused by SciLog: not kept
+    good = claim(exp=4102444800, email="ann@psi.ch")
+    monkeypatch.setattr(Store, "token_status", lambda self: {"ok": True})
+    store.set_token(" Bearer " + good + "\n")
+    assert kept == [good] and probed[-1] == good and store.logbooks == {} and store._reader is None
+
+
+def test_pages_asked_for_under_another_name_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    app = ScilogApp(port=0, store=Store(_Writer(), cache_dir=tmp_path / "files", config={}), token="sesame").start()
+    try:
+        for host, code in (("localhost", 200), ("127.0.0.1", 200), ("evil.example", 403)):
+            req = urllib.request.Request(f"http://127.0.0.1:{app.port}/api/token?token=sesame", headers={"Host": f"{host}:{app.port}"})
+            try:
+                got = urllib.request.urlopen(req, timeout=10).status
+            except urllib.error.HTTPError as e:
+                got = e.code
+            assert got == code, host
+    finally:
+        app.stop()

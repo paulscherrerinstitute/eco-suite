@@ -440,3 +440,18 @@ body.thumbs .body figcaption { font-size: .8em; }
 #to-bottom.news { background: color-mix(in srgb, var(--bg) 70%, transparent); border-color: var(--accent); color: var(--accent);
   backdrop-filter: blur(3px); opacity: .9; }
 .post.fresh { box-shadow: inset 3px 0 0 #d08a00; transition: box-shadow 1.5s; }
+
+/* the SciLog token */
+#status { cursor: pointer; }
+#token-badge { white-space: nowrap; font-size: .85em; color: #9a6200; border-color: #d08a00; }
+#token-dialog { width: min(640px, 96vw); max-height: 92vh; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); }
+#token-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.tk-body { padding: 8px 16px; overflow-y: auto; }
+.tk-body p.bad { color: #c62828; font-weight: 600; }
+.tk-body ol { padding-left: 20px; } .tk-body li { margin: 4px 0; }
+.tk-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.tk-code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; background: var(--code); padding: 3px 6px; border-radius: 4px; font-size: .8em; }
+.tk-input { width: 100%; font: .85em ui-monospace, monospace; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); word-break: break-all; }
+.tk-note { min-height: 1.4em; margin: 6px 0; color: var(--muted); font-size: .9em; } .tk-note.bad { color: #c62828; }
+.tk-safe { color: var(--muted); font-size: .85em; }
+@media (max-width: 760px) { #token-badge { font-size: .75em; padding: 2px 6px; } }
