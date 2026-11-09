@@ -874,6 +874,9 @@ function openTokenDialog(status = state.token || {}) {
         ? `Reading SciLog as ${status.identity}${until ? `; this token is valid until ${until}` : ""}.`
         : `${status.why || "No token"}.` }),
       el("p", { text: "The viewer reads and writes SciLog with your own token. SciLog issues it when you log in, and it lasts 14 days; then log in again and enter the new one here." }),
+      // in the Android app: SciLog's own login inside the app, which hands the token over by itself
+      window.ScilogAndroid ? el("p", {}, el("button", { class: "primary", onclick: () => { dialog.close(); window.ScilogAndroid.login(); } }, "Log in to SciLog here"),
+        el("span", { class: "tk-safe", text: " — the token is taken over by itself. Or by hand:" })) : null,
       el("ol", {},
         el("li", {}, "Log in at ", el("a", { href: "https://scilog.psi.ch", target: "_blank", rel: "noopener" }, "scilog.psi.ch"), " (in this browser or any other)."),
         el("li", {}, "Copy the token, either way:",
