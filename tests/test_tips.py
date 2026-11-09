@@ -100,6 +100,27 @@ def test_no_docs_folder_is_quiet(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_tip_says_where_it_looked(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(tips, "TIPS_DIR", tmp_path / "missing")
+    monkeypatch.setattr(tips, "history", tips.TipHistory())
+    assert tips.tip(window=False) is None
+    out = capsys.readouterr().out
+    assert "no \"Did you know?\" tips found" in out and "ECO_TIPS_DIR" in out
+
+
+def test_installed_eco_finds_the_shared_checkout(tmp_path, monkeypatch):
+    # an eco in site-packages has no docs/ next to it: the shared checkout's tips
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "2026-01-01-x.md").write_text("# X\n\nbody\n")
+    monkeypatch.delenv("ECO_TIPS_DIR", raising=False)
+    monkeypatch.setattr(tips, "__file__", str(tmp_path / "site" / "eco" / "utilities" / "tips.py"))
+    monkeypatch.setattr(tips, "SHARED_TIPS_DIRS", (str(tmp_path / "nothing"), str(shared)))
+    assert tips._find_tips_dir() == shared
+    monkeypatch.setenv("ECO_TIPS_DIR", str(tmp_path / "nothing"))
+    assert tips._find_tips_dir() == shared  # an empty ECO_TIPS_DIR is passed over
+
+
 def test_window_navigation(tip_dir, monkeypatch):
     pytest.importorskip("qtpy")
     pytest.importorskip("markdown")

@@ -89,10 +89,12 @@ class TipWindowQt:
 
         if self.window is None:
             return
-        tip = history.current
+        from eco.utilities.tips import no_tips_message
+
+        tip = history.current if history.current is not None else history.next()
         try:
             if tip is None:
-                self._text.setHtml("<p>No tips found (this eco has no docs/did_you_know folder).</p>")
+                self._text.setPlainText(no_tips_message())
             else:
                 self._text.setHtml(_render(tip))
             pos, n = history.position()

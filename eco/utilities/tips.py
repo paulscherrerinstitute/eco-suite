@@ -12,9 +12,10 @@ The tips are the Markdown files in ``docs/did_you_know/`` (one per feature,
 Links to other docs pages (``{doc}`../scanning``` in a tip) point at the
 docs site, ``ECO_DOCS_URL`` (default: the server on saresb-cons-04).
 
-The tips are read from the checkout this package lives in. An eco installed
-without its ``docs/`` folder has no tips; everything here then quietly does
-nothing.
+The tips are read from ``$ECO_TIPS_DIR`` if set, else from the checkout this
+package lives in, else -- for the eco installed into an environment, which has
+no ``docs/`` folder -- from the shared beamline checkout (SHARED_TIPS_DIRS).
+Without any of them there are no tips, and ``eco.tip()`` says where it looked.
 """
 import os
 import random
@@ -27,7 +28,34 @@ from pathlib import Path
 
 DOCS_URL = os.environ.get("ECO_DOCS_URL", "http://saresb-cons-04.psi.ch:8095/")
 
-TIPS_DIR = Path(__file__).resolve().parents[2] / "docs" / "did_you_know"
+#: where an installed eco (site-packages, no docs/) finds the tips
+SHARED_TIPS_DIRS = (
+    "/sf/bernina/code/gac-bernina/eco/docs/did_you_know",
+    "/sf/bernina/config/src/python/eco/docs/did_you_know",
+)
+
+
+def _tips_dir_candidates():
+    env = os.environ.get("ECO_TIPS_DIR")
+    return ([Path(env).expanduser()] if env else []) + [
+        Path(__file__).resolve().parents[2] / "docs" / "did_you_know",
+        *map(Path, SHARED_TIPS_DIRS),
+    ]
+
+
+def _find_tips_dir():
+    """The first candidate that has tips (else the checkout's, missing)."""
+    candidates = _tips_dir_candidates()
+    for d in candidates:
+        try:
+            if d.is_dir() and any(d.glob("20*.md")):
+                return d
+        except OSError:
+            continue
+    return candidates[0]
+
+
+TIPS_DIR = _find_tips_dir()
 
 _DOC_ROLE = re.compile(r"\{doc\}`([^`]+)`")
 
@@ -238,6 +266,11 @@ def as_text(tip, width=None, color=None):
     return "\n".join(out)
 
 
+def no_tips_message():
+    places = ", ".join(str(d) for d in dict.fromkeys([TIPS_DIR, *_tips_dir_candidates()]))
+    return f"eco: no \"Did you know?\" tips found (looked in {places}); set ECO_TIPS_DIR to a docs/did_you_know folder."
+
+
 def print_tip(tip=None):
     """Print `tip` (default: the next one in this session's history, see
     TipHistory) in the terminal, framed as a "Did you know?" with a pointer
@@ -272,7 +305,10 @@ def tip(name=None, window=None):
 
         window = display_available()
     if not window:
-        return print_tip(chosen)
+        shown = print_tip(chosen)
+        if shown is None:
+            print(no_tips_message())
+        return shown
     from eco.widgets.tip_qt import show_tip_window
 
     if chosen is not None:
