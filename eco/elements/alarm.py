@@ -710,7 +710,14 @@ def evaluate_alarms(alarms, now=None):
             if o is None or o.alarm_id in stack:
                 continue
             run(o, stack + (aid,))
-            if o.tracker.state not in (tr.STATE_OK,):
+            st = o.tracker.state
+            if st in (tr.DISABLED, tr.SHELVED, tr.INHIBITED):
+                # switched off for display/paging, but its reading still
+                # counts: a shelved "beam" alarm must not mean "beam is fine",
+                # nor a disabled one silence everything that depends on it
+                if o.tracker.last_condition != tr.OK:
+                    inhibited = True
+            elif st != tr.STATE_OK:
                 inhibited = True
         try:
             out[aid] = a.check(now=now, inhibited=inhibited)

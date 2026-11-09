@@ -176,6 +176,15 @@ def test_inhibit_by_with_partial_id():
     assert a_beam.tracker.state == tr.CLEARING and a_x.tracker.state == tr.INHIBITED
     evaluate_alarms([a_x, a_beam], now=13)
     assert a_beam.tracker.state == tr.STATE_OK and a_x.tracker.state == tr.ACTIVE
+    # a shelved or disabled beam alarm still inhibits while there is no beam,
+    # and stops inhibiting once there is
+    a_beam.shelve(60)
+    beam.v = 0
+    evaluate_alarms([a_x, a_beam], now=14)
+    assert a_beam.tracker.state == tr.SHELVED and a_x.tracker.state == tr.INHIBITED
+    beam.v = 5
+    evaluate_alarms([a_x, a_beam], now=15)
+    assert a_x.tracker.state != tr.INHIBITED
 
 
 # ---------------------------------------------------------------- shifts

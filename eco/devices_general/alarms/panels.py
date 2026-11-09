@@ -31,8 +31,29 @@ class BerninaAlarmsOverview(AlarmPanel):
     the mono/laser/timetool feedback-loop status messages, and the timetool
     edge-fit health."""
 
+    #: sections that only make sense with X-rays on the sample; their alarms
+    #: are inhibited while any of `NO_BEAM_INHIBIT` is not ok
+    NEEDS_BEAM = ("X-ray Pointing", "Timetool")
+    NO_BEAM_INHIBIT = [
+        "swissfel.Electron_Beam",
+        "swissfel.Photon_Shutter",
+        "swissfel.Bernina_Shutter",
+    ]
+
     def __init__(self, name=None):
-        super().__init__(MAIN_ALARMS_SECTIONS, name=name)
+        sections = [
+            (
+                title,
+                [
+                    dict({"inhibit_by": list(self.NO_BEAM_INHIBIT)}, **ch)
+                    if title in self.NEEDS_BEAM
+                    else ch
+                    for ch in channels
+                ],
+            )
+            for title, channels in MAIN_ALARMS_SECTIONS
+        ]
+        super().__init__(sections, name=name)
 
 
 class PapamollAlarms(AlarmPanel):
