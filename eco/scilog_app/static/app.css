@@ -228,6 +228,18 @@ button.primary:disabled { opacity: .5; }
 .vw-chip.unknown { color: var(--muted); font-style: italic; }
 .vw-chip button { border: none; padding: 0 4px; margin-left: 2px; color: var(--muted); }
 .vw-hint { font-size: .85em; color: #9a6200; margin: 4px 0 0 7.2em; }
+.vw-chips { align-items: center; }
+.vw-chip.tag { background: var(--panel); }
+.vw-none { color: var(--muted); font-size: .85em; font-style: italic; }
+.vw-plus { font-size: .82em; padding: 0 8px; border-style: dashed; border-radius: 10px; color: var(--accent); }
+#views-dialog { position: fixed; }
+.vw-choose { position: absolute; z-index: 5; width: 370px; max-height: 340px; display: flex; flex-direction: column; background: var(--bg);
+             border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow); }
+.vw-choose input { margin: 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+.vw-choose ol { list-style: none; margin: 0; padding: 0 0 6px; overflow-y: auto; }
+.vw-choose li { padding: 4px 10px; cursor: pointer; }
+.vw-choose li:hover, .vw-choose li.active { background: var(--panel); }
+.vw-choose .meta { color: var(--muted); font-size: .8em; }
 .vw-tags { flex: 1; max-width: 26em; }
 .vw-add { width: 22em; }
 .vw-actions { display: flex; gap: 8px; margin-top: 10px; }

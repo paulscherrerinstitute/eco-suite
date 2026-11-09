@@ -21,13 +21,17 @@ async function openViewsDialog() {
   await loadViews(list, note);
 }
 
+const viewsState = { views: [], reload: null };
+
 async function loadViews(list, note) {
+  viewsState.reload = () => loadViews(list, note);
   let data;
   try { data = await api(`/api/views?logbook=${state.logbook.id}`); }
   catch (e) { list.replaceChildren(el("p", { class: "hint bad", text: `SciLog's views could not be read: ${e.message}` })); return; }
   note.replaceChildren(data.can_edit
     ? el("span", { text: "Changes apply in SciLog for everyone who uses this logbook. A copy of each view is kept on this computer before it is changed or deleted." })
     : el("span", {}, "Read only: writing to this logbook is off. ", el("button", { onclick: () => askToAllowWriting().then(() => loadViews(list, note)) }, "✎ Allow writing here")));
+  viewsState.views = data.views;
   if (!data.views.length) { list.replaceChildren(el("p", { class: "hint", text: "SciLog has no views for this logbook." })); return; }
   const byName = new Map();
   for (const v of data.views) byName.set(v.name, [...(byName.get(v.name) || []), v]);
@@ -103,32 +107,42 @@ function viewCard(v, sameName, data, names, reload) {
     if (p.type === "logbook") {
       const ids = p.logbooks.map((l) => l.id);
       const chips = el("div", { class: "vw-chips" });
+      const changed = () => { panelChange(p.index).logbooks = [...ids]; drawChips(); dirty(); };
       const drawChips = () => {
         chips.replaceChildren(el("span", { class: "vw-chip main", text: p.target_name || (p.target === state.logbook.id ? state.logbook.name : "this logbook") }),
-          ...ids.map((id, k) => el("span", { class: `vw-chip${names.has(id) ? "" : " unknown"}`, title: id }, logbookName(names, id),
-            editable ? el("button", { title: "Remove from this panel", onclick: () => { ids.splice(k, 1); panelChange(p.index).logbooks = [...ids]; drawChips(); dirty(); } }, "×") : null)));
+          ...ids.map((id) => el("span", { class: `vw-chip${names.has(id) ? "" : " unknown"}`, title: id }, logbookName(names, id),
+            editable ? el("button", { title: "Remove from this panel", onclick: () => { ids.splice(ids.indexOf(id), 1); changed(); } }, "×") : null)),
+          el("button", { class: "vw-plus", title: "Show another logbook in this panel", onclick: (ev) => {
+            if (!editable) { allowThenReload(); return; }
+            choose(ev.currentTarget, {
+              placeholder: "Logbook name, pgroup or location",
+              items: () => state.logbooks.filter((l) => l.id !== p.target && !ids.includes(l.id))
+                .map((l) => ({ value: l.id, label: l.name || l.id, meta: [l.pgroup, l.location].filter(Boolean).join(" · ") })),
+              pick: (id) => { ids.push(id); if (!names.has(id)) names.set(id, state.logbooks.find((l) => l.id === id)?.name || id); changed(); },
+            });
+          } }, "＋ Add logbook"));
       };
       drawChips();
-      box.append(el("div", { class: "vw-row" }, el("span", { class: "vw-label", text: `Shows (${ids.length + 1}):` }), chips));
+      box.append(el("div", { class: "vw-row" }, el("span", { class: "vw-label", text: "Shows:" }), chips));
       if (p.duplicates > 0) box.append(el("div", { class: "vw-hint", text: `${p.duplicates} logbook${p.duplicates > 1 ? "s are" : " is"} listed twice; saving this panel drops the doubles.` }));
-      if (editable) {
-        const listId = `vw-lbs-${v.id}-${p.index}`;
-        const add = el("input", { class: "vw-add", placeholder: "Add a logbook: type its name", list: listId });
-        const options = el("datalist", { id: listId }, ...data.logbooks.map((l) => el("option", { value: l.name })));
-        add.onchange = () => {
-          const hit = data.logbooks.find((l) => l.name === add.value);
-          if (!hit) return;
-          if (!ids.includes(hit.id) && hit.id !== p.target) { ids.push(hit.id); panelChange(p.index).logbooks = [...ids]; drawChips(); dirty(); }
-          add.value = "";
-        };
-        box.append(el("div", { class: "vw-row" }, el("span", { class: "vw-label" }), add, options));
-      }
     }
     for (const [key, label] of [["tags", "Only tags"], ["excludeTags", "Hide tags"]]) {
-      const input = el("input", { class: "vw-tags", value: p[key].join(", "), placeholder: key === "tags" ? "(all)" : "(none)" });
-      if (!editable) input.setAttribute("readonly", "");
-      input.oninput = () => { panelChange(p.index)[key] = input.value.split(",").map((t) => t.trim()).filter(Boolean); dirty(); };
-      box.append(el("div", { class: "vw-row" }, el("span", { class: "vw-label", text: `${label}:` }), input));
+      const list = [...p[key]];
+      const chips = el("div", { class: "vw-chips" });
+      const draw = () => chips.replaceChildren(
+        ...(list.length ? [] : [el("span", { class: "vw-none", text: key === "tags" ? "all posts" : "none" })]),
+        ...list.map((t) => el("span", { class: "vw-chip tag" }, `# ${t}`,
+          editable ? el("button", { title: "Remove", onclick: () => { list.splice(list.indexOf(t), 1); panelChange(p.index)[key] = [...list]; draw(); dirty(); } }, "×") : null)),
+        el("button", { class: "vw-plus", title: key === "tags" ? "Show only posts with this tag" : "Hide posts with this tag", onclick: (ev) => {
+          if (!editable) { allowThenReload(); return; }
+          choose(ev.currentTarget, {
+            placeholder: "Tag (pick or type a new one)", free: true,
+            items: () => knownTags().filter(([t]) => !list.includes(t)).map(([t, n]) => ({ value: t, label: `# ${t}`, meta: n ? `${n} post${n > 1 ? "s" : ""} here` : "used in a view" })),
+            pick: (t) => { if (!list.includes(t)) { list.push(t); panelChange(p.index)[key] = [...list]; draw(); dirty(); } },
+          });
+        } }, "＋ Tag"));
+      draw();
+      box.append(el("div", { class: "vw-row" }, el("span", { class: "vw-label", text: `${label}:` }), chips));
     }
     card.append(box);
   }
@@ -150,4 +164,57 @@ function viewCard(v, sameName, data, names, reload) {
     card.append(el("div", { class: "vw-actions" }, del, el("span", { class: "spacer" }), save));
   }
   return card;
+}
+
+// tags in use: this logbook's posts (with counts), then the ones SciLog's views already filter by
+function knownTags() {
+  const counts = new Map();
+  for (const p of state.all) for (const t of p.tags) counts.set(t, (counts.get(t) || 0) + 1);
+  for (const v of viewsState.views) for (const pa of v.panels) for (const t of [...pa.tags, ...pa.excludeTags]) if (!counts.has(t)) counts.set(t, 0);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+async function allowThenReload() {
+  if (writeBlocker() !== "off-here") { toast(writeBlocker() ? `Not possible: ${writeBlocker()}` : "Reload the list"); return; }
+  await askToAllowWriting();
+  if (!writeBlocker()) viewsState.reload?.();
+}
+
+// a small list to pick from, filtered as you type, under the button that opened it
+function choose(anchor, { items, pick, placeholder, free = false }) {
+  document.querySelector(".vw-choose")?.remove();
+  const input = el("input", { placeholder, autocomplete: "off" });
+  const list = el("ol");
+  const box = el("div", { class: "vw-choose" }, input, list);
+  let shown = [], active = 0;
+  const done = () => { box.remove(); document.removeEventListener("pointerdown", outside, true); };
+  const take = (value) => { if (value) pick(value); done(); };
+  const fill = () => {
+    const f = input.value.trim().toLowerCase();
+    shown = items().filter((it) => !f || `${it.label} ${it.meta || ""}`.toLowerCase().includes(f)).slice(0, 200);
+    if (free && f && !shown.some((it) => it.value.toLowerCase() === f)) shown.unshift({ value: input.value.trim(), label: `# ${input.value.trim()}`, meta: "new tag" });
+    active = 0;
+    list.replaceChildren(...shown.map((it, i) => el("li", { class: i === 0 ? "active" : "", onclick: () => take(it.value) },
+      el("div", { text: it.label }), it.meta ? el("div", { class: "meta", text: it.meta }) : null)));
+    if (!shown.length) list.append(el("li", { class: "meta", text: "Nothing matches." }));
+  };
+  input.oninput = fill;
+  input.onkeydown = (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      list.children[active]?.classList.remove("active");
+      active = Math.max(0, Math.min(shown.length - 1, active + (e.key === "ArrowDown" ? 1 : -1)));
+      list.children[active]?.classList.add("active");
+      list.children[active]?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") { e.preventDefault(); take(shown[active]?.value); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); }
+  };
+  const outside = (e) => { if (!box.contains(e.target) && e.target !== anchor) done(); };
+  document.addEventListener("pointerdown", outside, true);
+  anchor.closest("dialog").append(box);
+  const a = anchor.getBoundingClientRect(), d = anchor.closest("dialog").getBoundingClientRect();
+  box.style.left = `${Math.min(a.left - d.left, d.width - 380)}px`;
+  box.style.top = `${a.bottom - d.top + 4}px`;
+  fill();
+  input.focus();
 }
