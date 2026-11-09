@@ -22,7 +22,11 @@ if args.quiet:
 
 from eco.scilog_app.server import ScilogApp  # noqa: E402
 
-app = ScilogApp(port=args.port, token=os.environ.pop(TOKEN_ENV, None)).start()
+try:
+    app = ScilogApp(port=args.port, token=os.environ.pop(TOKEN_ENV, None)).start()
+except OSError:  # the port is taken (another viewer?): any free one
+    print(f"port {args.port} is in use, taking another", flush=True)
+    app = ScilogApp(port=0, token=os.environ.pop(TOKEN_ENV, None)).start()
 print(f"eco scilog: {app.url}", flush=True)
 if not args.no_browser:
     from eco.ei_page import can_open_browser
