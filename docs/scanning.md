@@ -214,5 +214,7 @@ You can try any of these scans without a beamline: `sim.peak.x` and
 - {doc}`adaptive_scans`: scans that choose their next points from the live
   data.
 
+- {doc}`optimize`: maximise a signal over several coupled axes.
+
 - {doc}`status_server`: every scan also records the full update history of
   the namespace (`namespace_monitor.ixp.h5`).

@@ -45,6 +45,7 @@ scans.adaptive_scan(*axes, exposure_def=..., feedback=..., budget=... or max_poi
 | `budget` | time limit: seconds or `"90s"`, `"10min"`, `"1h"` |
 | `max_points` | point limit. Give `budget`, `max_points` or both. |
 | `strategy` | what to look for, see the table below |
+| `mesh` | `"grid"` (default): points only on the axis grid. `"free"`: anywhere between the axis' first and last position, see below |
 | `batch` | points planned at a time (default 5) |
 | `exposure` | `"fixed"`: always `exposure_def`. `"auto"`: 0.5 to 8 times `exposure_def`, chosen per point. Or a list of allowed values. |
 | `motion` | `"auto"` (default): learned from the scan's own moves. Or escape `Axis` objects in seconds, or `None` for "moves cost nothing". |
@@ -202,8 +203,25 @@ partly empty (NaN). A point can be measured more than once. On the grid, the
 last value of such a cell is shown for now. With a `BsStreamCounter` among the
 counters, cells are not revisited, because that counter bins by grid cell.
 
-Freer layouts (points anywhere, averaging of revisits, scattered 2-D data) are
-a proposal for now: [Multi-dimensional scan data](multidim_scan_data.md).
+## Points anywhere: `mesh="free"`
+
+With `mesh="free"` there is no grid. The strategy picks its points from a
+lattice four times finer than the axis step, so it can follow a tilted, narrow
+ridge between grid cells. The axis step becomes the mesh *resolution*: targets
+closer than it count as the same point when the data is loaded. No
+`grid_specs` are written; the scan's mesh has kind `line` (one axis) or `path`
+(two), and escape loads it with `arr.mesh` ([Multi-dimensional scan
+data](multidim_scan_data.md)). A bs counter then bins per step, so revisits
+are allowed with it too.
+
+```python
+scans.adaptive_scan([sim.peak2d.x, -2, 2, 0.2], [sim.peak2d.y, -2, 2, 0.2],
+                    exposure_def=0.2, feedback=sim.peak2d.signal,
+                    strategy="peak2d", max_points=60, mesh="free")
+```
+
+{doc}`optimize` uses the same machinery with points anywhere, for any number
+of axes.
 
 ## Time units
 

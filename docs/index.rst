@@ -66,6 +66,13 @@ scientific Python libraries.
       Scans that put the next points where the live data say they help
       most. Try them on the simulated targets in ``sim``.
 
+   .. grid-item-card:: :octicon:`zap` Optimizing scans
+      :link: optimize
+      :link-type: doc
+
+      Align several coupled axes at once: maximise a signal, find the axis
+      combinations that matter, let the delay follow.
+
    .. grid-item-card:: :octicon:`device-mobile` eco on a phone
       :link: web_app
       :link-type: doc
@@ -169,6 +176,7 @@ scientific Python libraries.
 
    scanning
    adaptive_scans
+   optimize
    simple_gui
    simulated_targets
    queues

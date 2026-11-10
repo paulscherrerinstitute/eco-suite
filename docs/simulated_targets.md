@@ -24,12 +24,35 @@ not involved.
 | `sim.peak` | `x` | a Gaussian peak on a background |
 | `sim.gradient` | `x` | mostly linear, slightly curved |
 | `sim.peak2d` | `x`, `y` | a tilted, asymmetric 2-D Gaussian |
+| `sim.thz_focus` | `par_x`, `par_z`, `par_rx`, `mir_rz`, `mir_rx`, `delay` | THz focused by a parabola onto a probe spot (below) |
 | `sim.oscillation` | `delay` | pump-probe: a step at t0 plus one damped oscillation |
 | `sim.oscillations` | `delay` | the same with three overlaid modes |
 
 Each one has its axes and a `signal` detector. A shared `sim.beam` multiplies
 every signal by the same shot-to-shot intensity, which `sim.beam.i0` reads,
 so normalising `signal / i0` works as on real data.
+
+### `sim.thz_focus`: a target for alignment
+
+The electro-optic signal of a single-cycle THz pulse (1 THz), focused by an
+off-axis parabola (f = 50 mm, waist 0.3 mm) onto a small probe spot, at the
+probe `delay` (ps). It is built for {doc}`optimize`, with the couplings that
+make the real alignment hard:
+
+- `par_x` moves the spot 1:1. A mirror tilt (`mir_rz`, `mir_rx`, deg) moves it
+  by 2 f × angle, a parabola tilt (`par_rx`) by f × angle. So a tilt can be
+  compensated by a translation or by the other tilt. Along these ridges only
+  the weak `aberration` (spot broadening by the off-axis incidence,
+  2 × mirror angle − parabola angle) picks out the right point.
+- `par_z` defocuses (Rayleigh length 1 mm).
+- Moving the parabola in x or z lengthens the THz path (1 mm = 3.34 ps), so
+  the waveform shifts against the probe delay. The delay has to follow.
+- The waveform's side lobes (±1 ps) are local maxima in the delay.
+
+All model parameters are settings (`sim.thz_focus.x0`, `.waist`, `.t0`, ...).
+At the defaults the maximum, 1.02, is at `par_x` 0.12, `par_z` 0.15, `par_rx`
+0.05, `mir_rz` 0.03, `mir_rx` −0.02 and `delay` 0.7, and all axes start at 0.
+
 
 The signal's parameters (`sim.peak.center`, `.fwhm`, `.amplitude`,
 `.background`, ...) are ordinary adjustables, read when each value is

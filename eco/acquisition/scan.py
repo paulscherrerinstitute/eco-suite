@@ -905,6 +905,7 @@ class Scans(Assembly):
         "meshscan",
         "scan",
         "adaptive_scan",
+        "optimize",
     )
 
     def _collect_callback_keywords_quiet(self):
@@ -1815,6 +1816,7 @@ class Scans(Assembly):
         motion="auto",
         plot=True,
         strategy_options=None,
+        mesh="grid",
         description="",
         counters=[],
         start_immediately=True,
@@ -1855,6 +1857,10 @@ class Scans(Assembly):
             counters' own plots.
         strategy_options: passed to the strategy class (e.g. n_initial,
             explore).
+        mesh: "grid" (default): points only on the axis grid. "free": points
+            anywhere between the first and last position, the axis step
+            being the resolution (targets closer than it count as one
+            point); no grid_specs are written.
         """
         exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "adaptive_scan", True)
         queued = self._route_to_queue(
@@ -1872,6 +1878,7 @@ class Scans(Assembly):
                 motion=motion,
                 plot=plot,
                 strategy_options=strategy_options,
+                mesh=mesh,
                 description=description,
                 counters=counters,
                 start_immediately=start_immediately,
@@ -1893,30 +1900,18 @@ class Scans(Assembly):
             raise ValueError("adaptive_scan: give exposure_def= (exposure per point)")
         if not 1 <= len(adj_specs) <= 2:
             raise ValueError("adaptive_scan: one or two axes ([adjustable, start, end, step] each)")
+        if mesh not in ("grid", "free"):
+            raise ValueError(f'adaptive_scan: mesh={mesh!r}, expected "grid" or "free"')
+        free = mesh == "free"
         adjustables = [resolve_lazy(spec[0]) for spec in adj_specs]
         axis_positions = [np.asarray(interpret_step_specification(spec[1:]), float) for spec in adj_specs]
 
-        if not counters:
-            counters = self._default_counters
-        from .counters import as_counters
-
-        # a feedback detector is converted together with the counters, so a
-        # monitored one joins the scan's one CounterValue
-        counters = list(counters)
-        source = feedback[0] if isinstance(feedback, tuple) else feedback
-        if adaptive.is_detector_like(source) and not any(c is source for c in counters):
-            counters.append(source)
-        counters, counter_options = as_counters(
-            counters, kwargs_callbacks.pop("counter_options", None) or []
-        )
-        kwargs_callbacks["counter_options"] = counter_options
-        feedback_counter, feedback_fn = adaptive.resolve_feedback(feedback, counters)
-        if feedback_counter is not None:
-            counters.append(feedback_counter)
+        counters, feedback_fn = self._feedback_counters(feedback, counters, kwargs_callbacks)
 
         strategy = adaptive.build_strategy(
-            strategy, axis_positions, exposure_def, exposure=exposure,
-            strategy_options=strategy_options,
+            strategy,
+            adaptive.free_candidates(axis_positions) if free else axis_positions,
+            exposure_def, exposure=exposure, strategy_options=strategy_options,
         )
         from eco.detector.bs_counter import BsStreamCounter
 
@@ -1924,16 +1919,18 @@ class Scans(Assembly):
             strategy, adjustables, axis_positions, feedback_fn, exposure_def,
             budget=budget, max_points=max_points, batch=batch, motion=motion,
             plot=plot,
-            # a bs counter keys its 2-D grid bins on new grid cells: no revisits
-            avoid_revisits=len(adjustables) > 1
+            # a bs counter keys its 2-D grid bins on new grid cells: no
+            # revisits (without a grid it bins per step)
+            avoid_revisits=not free and len(adjustables) > 1
             and any(isinstance(c, BsStreamCounter) for c in counters),
+            resolution=adaptive.axis_steps(axis_positions) if free else None,
         )
         steps = driver.initial_values()
         values = [v for v, _ in steps]
         pulses = [n for _, n in steps]
 
         gridspecs = None
-        if len(adjustables) > 1:
+        if len(adjustables) > 1 and not free:
             gridspecs = {
                 "shape": [len(p) for p in axis_positions],
                 "positions": axis_positions,
@@ -1958,6 +1955,142 @@ class Scans(Assembly):
             **kwargs_callbacks,
         )
         s.adaptive = driver
+
+        self._set_acquiring_scan(s)
+        if start_immediately:
+            s.scan_all(step_info=step_info)
+
+        return s
+
+    def _feedback_counters(self, feedback, counters, kwargs_callbacks):
+        """(counters, feedback function) of a scan steered by live data:
+        the counters (default ones if none) converted, a feedback detector
+        among them -- a monitored one joins the scan's one CounterValue --,
+        and the feedback counter appended if it is a new one."""
+        from eco.acquisition import adaptive
+        from .counters import as_counters
+
+        counters = list(counters or self._default_counters)
+        source = feedback[0] if isinstance(feedback, tuple) else feedback
+        if adaptive.is_detector_like(source) and not any(c is source for c in counters):
+            counters.append(source)
+        counters, counter_options = as_counters(
+            counters, kwargs_callbacks.pop("counter_options", None) or []
+        )
+        kwargs_callbacks["counter_options"] = counter_options
+        feedback_counter, feedback_fn = adaptive.resolve_feedback(feedback, counters)
+        if feedback_counter is not None:
+            counters.append(feedback_counter)
+        return counters, feedback_fn
+
+    def optimize(
+        self,
+        *axes,
+        exposure_def=None,
+        feedback=None,
+        follow=None,
+        limits=10,
+        budget=None,
+        max_points=None,
+        repeats=3,
+        pairs=True,
+        max_step=4.0,
+        cycles=4,
+        check=5,
+        restarts=1,
+        plot=True,
+        description="",
+        counters=[],
+        start_immediately=True,
+        settling_time=0,
+        step_info=None,
+        queue=None,
+        **kwargs_callbacks,
+    ):
+        """Maximise a live signal over several adjustables, recorded as an
+        ordinary step scan whose points are chosen while it runs. See
+        docs/optimize.md and ``eco.acquisition.optimize``.
+
+        axes: ``[adjustable, step]``, ``[adjustable, step, (low, high)]`` or
+            ``[adjustable, step, low, high]``. `step` is a move that changes
+            the signal clearly near the optimum (some 10 %); probes, line
+            searches and limits are counted in it.
+        exposure_def: exposure per point, in the unit of the first counter.
+        feedback: the signal to maximise (as for ``adaptive_scan``).
+        follow: ``{follower: {axis: coefficient, ...}}`` moves `follower`
+            (not one of the axes) along: by coefficient x the axis' change,
+            in follower units per axis unit. ``{axis: "calibrate"}``: an
+            axis (e.g. a delay) whose best value depends on the others is
+            calibrated from the measured model and from then on follows them
+            with the coefficients found.
+        limits: steps around the start allowed per axis (a number, or one
+            per axis), intersected with the adjustables' own limits; an
+            explicit range in an axis spec replaces it.
+        budget, max_points: optional limits (time as for adaptive_scan); the
+            optimisation also ends by itself. At the end the scan measures
+            the best point again and stays there.
+        repeats: measurements of each probe centre (noise estimate) and of
+            the final best point.
+        pairs: also probe axis pairs (couplings, calibration); False probes
+            each axis alone.
+        max_step: largest single move of a line search, in steps.
+        cycles: line-search cycles per local optimisation.
+        check: points measured after the optimisation where the model
+            allows a clearly better maximum; one of them better restarts the
+            local optimisation there (at most `restarts` times).
+        """
+        exposure_def = self._exposure_def(exposure_def, kwargs_callbacks, "optimize", True)
+        queued = self._route_to_queue(
+            queue,
+            "optimize",
+            axes,
+            dict(
+                exposure_def=exposure_def, feedback=feedback, follow=follow,
+                limits=limits, budget=budget, max_points=max_points,
+                repeats=repeats, pairs=pairs, max_step=max_step, cycles=cycles,
+                check=check, restarts=restarts, plot=plot,
+                description=description, counters=counters,
+                start_immediately=start_immediately,
+                settling_time=settling_time, step_info=step_info,
+                **kwargs_callbacks,
+            ),
+        )
+        if queued is not None:
+            return queued
+
+        from eco.acquisition import adaptive, optimize
+
+        budget = adaptive.parse_duration(budget)
+        setup = optimize.parse_setup(axes, follow=follow, limits=limits)
+        counters, feedback_fn = self._feedback_counters(feedback, counters, kwargs_callbacks)
+        strategy = optimize.Optimizer(
+            setup.start, setup.steps, setup.bounds, names=setup.names,
+            followers=setup.followers, calibrate=setup.calibrate,
+            exposure=exposure_def, repeats=repeats, pairs=pairs,
+            max_step=max_step, cycles=cycles, check=check, restarts=restarts,
+        )
+        driver = optimize.OptimizeDriver(
+            strategy, setup.adjustables, feedback_fn, exposure_def,
+            budget=budget, max_points=max_points, plot=plot,
+        )
+        steps = driver.initial_values()
+
+        s = StepScan(
+            setup.adjustables,
+            [v for v, _ in steps],
+            counters=counters + [driver],  # last: reads the others' results
+            Npulses=[n for _, n in steps],
+            description=description,
+            return_at_end=False,  # it ends at the best point
+            settling_time=settling_time,
+            callbacks_start_scan=self.callbacks_start_scan,
+            callbacks_start_step=self.callbacks_start_step,
+            callbacks_end_step=self.callbacks_end_step,
+            callbacks_end_scan=self.callbacks_end_scan,
+            name="acquiring_scan",
+            **kwargs_callbacks,
+        )
+        s.adaptive = s.optimizer = driver
 
         self._set_acquiring_scan(s)
         if start_immediately:

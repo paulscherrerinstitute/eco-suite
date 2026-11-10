@@ -17,6 +17,11 @@ User documentation: ``docs/adaptive_scans.md``. Entry point:
   the grid may be unevenly spaced. 2-D scans carry ``grid_specs`` whose
   ``index_plan`` grows with the scan and each step's ``grid_index``, which is
   what escape uses to place data on the grid.
+- With ``mesh="free"`` there is no grid: the strategy picks from a lattice
+  four times finer than the axis step (``free_candidates``), the axis step
+  becomes the mesh ``resolution`` (targets closer than it are one node), and
+  no ``grid_specs`` are written. ``eco.acquisition.optimize`` builds on the
+  same driver with points anywhere.
 
 Time units: the strategies plan in one time unit for exposure and motion.
 Here that unit is one ``N_pulses`` unit (shots for the DAQ, seconds for
@@ -240,7 +245,7 @@ class AdaptiveDriver:
     def __init__(
         self, strategy, adjustables, axis_positions, feedback, n_pulses,
         budget=None, max_points=None, batch=5, motion="auto", plot=True,
-        avoid_revisits=False, name="adaptive",
+        avoid_revisits=False, resolution=None, name="adaptive",
     ):
         self.name = name
         self.strategy = strategy
@@ -254,6 +259,9 @@ class AdaptiveDriver:
         self.motion_spec = motion
         self.plot = plot
         self.avoid_revisits = avoid_revisits
+        # None: points on the axis grid; else the mesh resolution of a
+        # scan without a grid (one value per adjustable)
+        self.resolution = resolution
         # a target change below a quarter of the finest grid spacing is no move
         tolerances = [
             0.25 * np.diff(np.unique(p)).min() if len(np.unique(p)) > 1 else 0.0
@@ -297,6 +305,8 @@ class AdaptiveDriver:
         return self._steps_from_plan(plan)
 
     def _steps_from_plan(self, plan):
+        if not len(plan):
+            return []
         positions = np.asarray(plan.positions, float).reshape(len(plan), -1)
         steps = []
         for pos, exposure in zip(positions, plan.exposures):
@@ -317,7 +327,10 @@ class AdaptiveDriver:
         self._previous = list(scan.initial_values())
         scan.adaptive = self
         mesh = getattr(scan, "mesh", None)
-        if mesh is not None:
+        if mesh is not None and self.resolution is not None:
+            # points anywhere ("line"/"path" as for any scan without a grid)
+            mesh.resolution = list(self.resolution)
+        elif mesh is not None:
             # a refined subset of the axis grid, nodes at its spacing
             mesh.kind = "adapted"
             mesh.resolution = [
@@ -446,6 +459,10 @@ class AdaptiveDriver:
         if not steps:
             self._done = True
             return
+        self._append_steps(scan, steps)
+
+    def _append_steps(self, scan, steps):
+        """Queue `steps` ((values, exposure) pairs) in the running scan."""
         gridspecs = scan.grid_specs.current_value
         for values, n_pulses in steps:
             scan._values_todo.append(values)
@@ -517,6 +534,39 @@ class AdaptiveDriver:
             if not getattr(self, "_plot_failed", False):
                 self._plot_failed = True
                 print(f"adaptive: plot failed ({type(exc).__name__}: {exc})")
+
+
+FREE_SUBDIVISION = 4  # candidate lattice of a free mesh: this much finer than the step
+MAX_FREE_CANDIDATES = 250_000
+
+
+def axis_steps(axis_positions):
+    """Finest spacing of each axis' positions (0 for a single position)."""
+    out = []
+    for p in axis_positions:
+        u = np.unique(np.asarray(p, float))
+        out.append(float(np.diff(u).min()) if len(u) > 1 else 0.0)
+    return out
+
+
+def free_candidates(axis_positions):
+    """Positions per axis for a free mesh: from the axis' first to last
+    position, `FREE_SUBDIVISION` times finer than its finest step (coarser
+    if all axes together would exceed `MAX_FREE_CANDIDATES` points)."""
+    steps = axis_steps(axis_positions)
+    spans = [np.ptp(np.asarray(p, float)) for p in axis_positions]
+    sub = FREE_SUBDIVISION
+    while sub > 1 and np.prod([s / st * sub + 1 for s, st in zip(spans, steps) if st]) > MAX_FREE_CANDIDATES:
+        sub -= 1
+    out = []
+    for p, st in zip(axis_positions, steps):
+        p = np.asarray(p, float)
+        if not st:
+            out.append(np.unique(p))
+            continue
+        n = int(round(np.ptp(p) / st * sub))
+        out.append(np.linspace(p.min(), p.max(), n + 1))
+    return out
 
 
 def build_strategy(strategy, axis_positions, n_pulses, exposure="fixed", strategy_options=None):

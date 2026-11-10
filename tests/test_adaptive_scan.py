@@ -105,6 +105,36 @@ def test_2d_stays_on_grid_with_growing_index_plan(sim):
         assert (gs["positions"][0][i], gs["positions"][1][j]) == pytest.approx(values)
 
 
+def test_2d_free_mesh_leaves_the_grid(sim):
+    s = _run(
+        [sim.peak2d.x, -2.0, 2.0, 0.2], [sim.peak2d.y, -2.0, 2.0, 0.2],
+        feedback=sim.peak2d.signal, strategy="peak2d", max_points=40, batch=5, mesh="free",
+    )
+    assert s.grid_specs.current_value is None
+    assert "grid_index" not in s.scan_info["scan_step_info"][-1]
+    mesh = s.scan_info["scan_parameters"]["mesh_specs"]
+    assert mesh["kind"] == "path" and mesh["resolution"] == pytest.approx([0.2, 0.2])
+    assert len(s._values_done) == 40
+    xy = np.array(s._values_done)
+    assert np.all((xy >= -2.0 - 1e-9) & (xy <= 2.0 + 1e-9))
+    # planned points are on the 4x finer lattice, not only on the 0.2 grid
+    off_grid = np.abs(xy / 0.2 - np.round(xy / 0.2)) > 1e-6
+    assert off_grid.any()
+    assert np.allclose(xy / 0.05, np.round(xy / 0.05))
+
+
+def test_free_candidates():
+    x, y = adaptive.free_candidates([np.arange(0.0, 1.01, 0.1), [0.0, 0.5, 2.0]])
+    assert len(x) == 41 and x[1] == pytest.approx(0.025)
+    assert y[0] == 0.0 and y[-1] == 2.0 and y[1] == pytest.approx(0.125)
+    assert adaptive.axis_steps([[0, 0.5, 2.0], [3.0]]) == [0.5, 0.0]
+
+
+def test_mesh_must_be_grid_or_free(sim):
+    with pytest.raises(ValueError, match="mesh"):
+        _run([sim.peak.x, -1.0, 2.0, 0.05], feedback=sim.peak.signal, max_points=5, mesh="loose")
+
+
 def test_2d_avoid_revisits(sim):
     strategy = adaptive.build_strategy("uniform", [np.arange(3.0), np.arange(3.0)], 0.05)
     driver = adaptive.AdaptiveDriver(

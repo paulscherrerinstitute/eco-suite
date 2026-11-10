@@ -16,6 +16,8 @@ axis/axes and a ``signal`` detector, plus a shared ``beam`` with an ``i0``:
 ``peak``           x          Gaussian peak on a background
 ``gradient``       x          mostly linear, slight curvature
 ``peak2d``         x, y       tilted, asymmetric 2-D Gaussian
+``thz_focus``      par_x ...  THz focus by a parabola: 5 coupled alignment axes
+                   delay      and the probe delay (``scans.optimize``)
 ``oscillation``    delay      pump-probe: step at t0 + one damped oscillation
 ``oscillations``   delay      same with three overlaid modes (own frequency,
                               damping and grow-in each)
@@ -517,6 +519,65 @@ class SimPeak2D(_SimSignal):
         return self._p("background") + self._p("amplitude") * np.exp(-0.5 * ((u / su) ** 2 + (v / sv) ** 2))
 
 
+class SimThzFocus(_SimSignal):
+    """Electro-optic signal of a THz pulse focused by an off-axis parabola
+    onto a small probe spot, at a fixed probe delay -- a target for
+    multi-axis alignment (``scans.optimize``). Axes: parabola ``par_x``,
+    ``par_z`` (mm), ``par_rx`` (deg), the steering mirror before it
+    ``mir_rz``, ``mir_rx`` (deg), and the probe ``delay`` (ps).
+
+    - Focus: Gaussian beam with waist ``waist`` and Rayleigh length
+      ``rayleigh`` at ``par_z = z0``; the field on axis falls as waist/w.
+    - Spot position on the probe: ``par_x`` moves it 1:1, a mirror tilt
+      by ``2 * focal_length * angle`` (horizontal: ``mir_rz``, vertical:
+      ``mir_rx``), a parabola tilt ``par_rx`` vertically by ``focal_length *
+      angle``. A tilt therefore can be compensated by a translation (x) or the
+      other tilt (y): ridges in the signal along which only the weak
+      ``aberration`` term (spot broadening by the off-axis incidence
+      ``2 * mirror angle - parabola angle``) selects the right point.
+    - Timing: moving the parabola in x or z lengthens the THz path by the
+      same amount (single pass, 1 mm = 3.34 ps), shifting the waveform
+      against the probe delay; the waveform is a single-cycle pulse
+      ``exp(-tau^2 / 2 duration^2) * cos(2 pi frequency tau)``, whose side
+      lobes are local maxima in the delay.
+
+    At the defaults the best signal is ``background + amplitude`` at x0, z0,
+    rx0, mir_rz0, mir_rx0 and delay t0; all axes start at 0."""
+
+    C_MM_PER_PS = 0.299792458
+    PARAMS = dict(
+        focal_length=50.0, waist=0.3, rayleigh=1.0, aberration=15.0,
+        frequency=1.0, duration=0.5, amplitude=1.0, background=0.02,
+        x0=0.12, z0=0.15, rx0=0.05, mir_rz0=0.03, mir_rx0=-0.02, t0=0.7,
+    )
+    AXES = dict(
+        par_x=("mm", (-5.0, 5.0)), par_z=("mm", (-5.0, 5.0)), par_rx=("deg", (-2.0, 2.0)),
+        mir_rz=("deg", (-2.0, 2.0)), mir_rx=("deg", (-2.0, 2.0)), delay=("ps", (-50.0, 50.0)),
+    )
+
+    def _build(self, beam, axis, detector):
+        for key, (unit, limits) in self.AXES.items():
+            self._append(SimAxis, 0.0, unit=unit, limits=limits, preset=axis, name=key, is_setting="recursive")
+        axes = [getattr(self, key) for key in self.AXES]
+        self._append(SimDetector, self.model, axes=axes, beam=beam, preset=detector, name="signal", is_setting="recursive")
+
+    def model(self, par_x, par_z, par_rx, mir_rz, mir_rx, delay):
+        p = self._p
+        f = p("focal_length")
+        a_mz = np.radians(mir_rz - p("mir_rz0"))
+        a_mx = np.radians(mir_rx - p("mir_rx0"))
+        a_p = np.radians(par_rx - p("rx0"))
+        dx, dz = par_x - p("x0"), par_z - p("z0")
+        x_spot = dx + 2 * f * a_mz
+        y_spot = f * a_p + 2 * f * a_mx
+        incidence2 = (2 * a_mz) ** 2 + (2 * a_mx - a_p) ** 2
+        w2 = p("waist") ** 2 * (1 + (dz / p("rayleigh")) ** 2) + p("aberration") ** 2 * incidence2
+        field = p("waist") / np.sqrt(w2) * np.exp(-(x_spot**2 + y_spot**2) / w2)
+        tau = delay - p("t0") - (dx + dz) / self.C_MM_PER_PS
+        wave = np.exp(-0.5 * (tau / p("duration")) ** 2) * np.cos(2 * np.pi * p("frequency") * tau)
+        return p("background") + p("amplitude") * field * wave
+
+
 class SimOscillationMode(Assembly):
     """One damped oscillation ``amplitude * (1 - exp(-u/rise)) * exp(-u/damping)
     * cos(2 pi frequency u + phase)``, u = time after t0 (ps, THz, rad)."""
@@ -607,6 +668,7 @@ class SimulatedSignals(Assembly):
         "peak": (SimPeak, "axis"),
         "gradient": (SimGradient, "axis"),
         "peak2d": (SimPeak2D, "axis"),
+        "thz_focus": (SimThzFocus, "axis"),
         "oscillation": (SimPumpProbe, "delay_axis"),
         "oscillations": (SimOscillations, "delay_axis"),
     }

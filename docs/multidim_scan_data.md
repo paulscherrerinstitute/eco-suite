@@ -1,7 +1,8 @@
 # Multi-dimensional scan data: grid and mesh
 
-Status: **steps 1 and 2 are implemented** (eco writes the mesh of every scan,
-escape reads it as `arr.mesh`); the rest is a **proposal**.
+Status: **steps 1, 2 and 4 are implemented** (eco writes the mesh of every
+scan, escape reads it as `arr.mesh`, adaptive scans can leave the grid); the
+rest is a **proposal**.
 
 ## Two words for an N-d space
 
@@ -98,7 +99,7 @@ node weights by number of events, i.e. by exposure. `arr.grid` is unchanged.
 Still open here: inverse-variance weights as an option, and fits on meshes
 (escape's adaptive-scan models already fit nodes directly).
 
-## 3. eco: adaptive scans leave the grid
+## 3. eco: adaptive scans leave the grid (implemented)
 
 With 1 and 2, `scans.adaptive_scan(..., mesh="free")`: the axes' step becomes
 the mesh `resolution` (the minimum distance at which two points count as one)
@@ -121,7 +122,8 @@ position list is not).
    plots. **Done** (escape-fel `dev`); fits on meshes still open.
 3. escape: a live mesh for `escape.stream`, for live plots of adaptive 2-D
    scans.
-4. eco: `adaptive_scan(..., mesh="free")`.
+4. eco: `adaptive_scan(..., mesh="free")`. **Done**; `scans.optimize`
+   records its points the same way ({doc}`optimize`).
 5. `regular` flags on `grid_specs`.
 
 Each step is useful on its own, and none breaks existing runs.
@@ -139,4 +141,4 @@ Each step is useful on its own, and none breaks existing runs.
   parameter (path length, momentum transfer).
 - **Size**: `points` grows with the nodes. For very long scans (10⁵ steps) it
   belongs in the aux h5 file rather than the json, behind the same accessor.
-- **Name of the free option**: `mesh="free"`, `layout=...`, or something else.
+- **Name of the free option**: decided, `mesh="free"`.
