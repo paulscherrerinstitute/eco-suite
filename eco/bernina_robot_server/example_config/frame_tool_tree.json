@@ -1,0 +1,29 @@
+{
+    "frames": {
+        "world": {
+            "f_SwissFELCoord": {
+                "f_ESBWorld": {
+                    "f_linearAxis": {
+                        "f_direct": {},
+                        "f_2mRad": {},
+                        "f_4mRad": {},
+                        "f_6mRad": {},
+                        "f_8mRad": {}
+                    }
+                }
+            }
+        }
+    },
+    "tools": {
+        "t_flange": {
+            "t_Adapter": {
+                "t_JF01T03det": {
+                    "t_JF01T03": {}
+                },
+                "t_JF07T32det": {
+                    "t_JF07T32": {}
+                }
+            }
+        }
+    }
+}
