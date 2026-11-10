@@ -1,7 +1,7 @@
 # Multi-dimensional scan data: grid and mesh
 
-Status: **step 1 is implemented** (eco writes the mesh of every scan); the rest
-is a **proposal**, for eco and escape together.
+Status: **steps 1 and 2 are implemented** (eco writes the mesh of every scan,
+escape reads it as `arr.mesh`); the rest is a **proposal**.
 
 ## Two words for an N-d space
 
@@ -73,26 +73,30 @@ when escape learns to read it. Older runs would be rebuilt from
 `scan_values` and `grid_specs` (section 2).
 ```
 
-## 2. escape: `Mesh` next to `Grid`
+## 2. escape: `arr.mesh` (implemented, escape-fel `dev`)
 
-escape gets a `Mesh` view of an `Array`, built from `mesh_specs` and the steps'
-`mesh_index`, and for older runs from `scan_values` (+ `grid_specs`):
+Every escape `Array` has `arr.mesh`, built from `mesh_specs` and the steps'
+`mesh_index`, for older runs from `grid_specs` + `grid_index`, or from the scan
+parameter values. User guide: escape's `docs/user_guide/mesh.md`.
 
-| Call | Returns | For |
-|---|---|---|
-| `arr.mesh(reduce="weighted")` | one value (and error, count, exposure) per node; repeated points **averaged** (weights: exposure, or 1/error²) | any scan |
-| `arr.mesh().on_grid()` | the N-d grid array, built from the nodes, revisits averaged instead of last-wins | grid and adapted kinds |
-| `arr.mesh().binned({"xrd.x": edges, ...})` | N-d histogram means with counts | any |
-| `arr.mesh().interpolated(grid)` | values on a regular grid through the mesh's triangulation, masked away from measured points | maps of unstructured meshes |
-| `arr.mesh().plot()` | `grid`: `pcolormesh` as today; otherwise the nodes coloured by value over their Delaunay triangulation (`tripcolor`), nothing drawn outside it; `path`: value against path length | |
+```python
+arr.mesh.mean()                  # one value per node, events of revisits pooled
+arr.mesh[:, 3].mean()            # a grid line (grids only)
+arr.mesh.as_grid(bins="auto")[:, 3].mean()   # any mesh, binned first
+arr.mesh.mean(bins=[ex, ey])     # events binned, then the method per bin
+arr.mesh.mean(interpolate=100)   # per node, then linear onto a grid (masked)
+arr.mesh.mean(merge=False)       # one per recorded step, in recorded order
+arr.mesh.select({"xrd.x": (0, 1)})           # by value, any mesh
+```
 
-The **cells** of an unstructured mesh (its triangles, simplices in N-d) are
-computed in escape from the nodes (Delaunay), not stored: they are a property
-of the points, and computing them is cheap.
+The results are plain numpy arrays carrying their coordinates (`.coords`,
+`.kind`, `.dimension_names`, `.units`, `.edges`, `.mask`; given vectors are
+linked, not copied): N-d for a grid, NaN where nothing was measured, otherwise
+one value per node. `plot=` works on every method. Pooling the events of a
+node weights by number of events, i.e. by exposure. `arr.grid` is unchanged.
 
-Fits do not need a grid: escape's adaptive-scan models already fit nodes
-directly with their errors (`fit_peak2d(points, y, yerr)`). They should be
-offered on any `Mesh`, so "where is the peak" never depends on the layout.
+Still open here: inverse-variance weights as an option, and fits on meshes
+(escape's adaptive-scan models already fit nodes directly).
 
 ## 3. eco: adaptive scans leave the grid
 
@@ -113,9 +117,10 @@ position list is not).
 ## Order of work
 
 1. eco writes `mesh_specs` and `mesh_index` for every scan. **Done.**
-2. escape: `Array.mesh()` with weighted averaging, and `on_grid()` from it.
-   This alone fixes repeated points of today's on-grid adaptive scans.
-3. escape: `binned`, `interpolated`, mesh plotting, fits on meshes.
+2. escape: `arr.mesh` with pooled revisits, binning, interpolation and
+   plots. **Done** (escape-fel `dev`); fits on meshes still open.
+3. escape: a live mesh for `escape.stream`, for live plots of adaptive 2-D
+   scans.
 4. eco: `adaptive_scan(..., mesh="free")`.
 5. `regular` flags on `grid_specs`.
 
