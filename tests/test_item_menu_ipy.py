@@ -1,6 +1,7 @@
 """Tests for eco.widgets.item_menu_ipy and the ipywidgets grid's row order.
 Fakes: test_item_menu. Separate from the Qt tests: run together in one
-process they hit the Qt+pytest+offscreen exit segfault (see CLAUDE.md)."""
+process they hit a segfault at interpreter exit (Qt + pytest + the
+offscreen platform)."""
 
 import time
 
