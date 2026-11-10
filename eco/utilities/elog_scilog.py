@@ -62,6 +62,27 @@ def write_dict_html(data, filepath=None, title="data", directory=""):
     return filepath
 
 
+def _again_if_expired(log, call, *args, **kwargs):
+    """`call` once more after a fresh login if SciLog says the token is no good.
+
+    The beamline account's token lasts 14 days. On a 401 the `scilog`
+    package deletes its token file (~/.scilogrestapi-tokens) but keeps using
+    the expired token it holds, so without this, creating `scilog` failed
+    once after every expiry and posting failed for good in a session older
+    than the token ("jwt expired")."""
+    try:
+        return call(*args, **kwargs)
+    except Exception as exc:
+        if "401" not in str(exc) and "Unauthorized" not in str(exc):
+            raise
+        client = log.http_client
+        client.reset_token()
+        if isinstance(getattr(client, "config", None), dict):
+            dict.clear(client.config)  # its copy of the (already deleted) token file
+        # the next request logs in with the password
+        return call(*args, **kwargs)
+
+
 def getDefaultElogInstance(
     url="https://scilog.psi.ch/api/v1",
     user="swissfelaramis-bernina@psi.ch",
@@ -84,7 +105,7 @@ def getDefaultElogInstance(
         kwargs.update(dict(password=_pw))
     log = SciLog(url, options := {"username": user, "password": kwargs["password"]})
     if pgroup:
-        lbs = log.get_logbooks(ownerGroup=pgroup)
+        lbs = _again_if_expired(log, log.get_logbooks, ownerGroup=pgroup)
         if len(lbs) > 1:
             print(f"Found more than one elog for user group {pgroup}")
             for lb in lbs:
@@ -166,7 +187,7 @@ class Elog(Assembly):
             log = self._log
         else:
             log = self._get_scilog_dynamically(self.scilog_url, pgroup)
-        return log.send_logbook_message(msg)
+        return _again_if_expired(log, log.send_logbook_message, msg)
 
     def _logbook_id(self):
         """The id of the current pgroup's logbook, None if it can't be found."""
