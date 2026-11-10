@@ -19,6 +19,7 @@ used from a plain Python process, a test, or the server in
 | `bernina.py` | `RobotBernina.py` | The TX200: frames, tools, safety whitelist, recordings. |
 | `simulation.py` | *(new)* | A fake controller, so all of the above runs with no hardware. |
 | `persistence.py` | `elements/adjustables.py` | JSON-file-backed values (`frame`, `tool`, recordings). |
+| `tree.py` | *(new)* | The frame/tool tree: load, validate, dotted paths, text rendering. |
 
 ## Quick start
 

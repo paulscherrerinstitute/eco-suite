@@ -37,6 +37,7 @@ The contract, in the order a client uses it
     ``stop``          motion was stopped
     ``shell``         driver-level messages, e.g. ``"Update error: ..."``
     ``robot_state``   the arm's own Ready/Busy/Paused/Offline
+    ``tree``          the frame/tool tree, at setup and on reload
 
 Endpoints beyond the pshell surface live under ``/api/`` and are the ones to
 prefer for anything new -- they return structured JSON and need no eval.
@@ -59,6 +60,10 @@ SSE_KEEPALIVE_INTERVAL = 15.0
 def create_app(server_app):
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
+    # Flask >= 2.3 ignores the config key above. Key order matters: the
+    # frame/tool tree is displayed in the order of its file.
+    if hasattr(app, "json"):
+        app.json.sort_keys = False
     robot = server_app.robot
     executor = server_app.executor
 
@@ -231,6 +236,19 @@ def create_app(server_app):
     @app.get("/api/config")
     def api_robot_config():
         return jsonify(robot.on_poll_info())
+
+    @app.get("/api/tree")
+    def api_tree():
+        """The frame/tool tree, with symbols missing on the controller."""
+        return jsonify(robot.get_tree())
+
+    @app.post("/api/tree/reload")
+    def api_tree_reload():
+        """Re-read the tree file without restarting; re-broadcasts ``tree``."""
+        try:
+            return jsonify(robot.reload_tree())
+        except Exception as exc:
+            return jsonify({"exception": f"{type(exc).__name__}: {exc}"}), 400
 
     @app.post("/api/move")
     def api_move():

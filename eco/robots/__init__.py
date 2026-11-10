@@ -57,6 +57,7 @@ from .protocol import (
     Val3ProtocolError,
     Val3Timeout,
 )
+from . import tree
 from .simulation import SimulatedController, SimulatedTransport
 from .staeubli import (
     CARTESIAN_AXES,
@@ -123,6 +124,6 @@ __all__ = [
     "sph2cart", "cart2sph",
     "connect_bernina_robot", "DEFAULT_ADJUSTABLES_PATH",
     "JOINT_AXES", "CARTESIAN_AXES", "SPHERICAL_AXES",
-    "KNOWN_POINTS", "TASKS", "FRAME_HIERARCHY", "PVBASE",
+    "KNOWN_POINTS", "TASKS", "FRAME_HIERARCHY", "PVBASE", "tree",
     "DEFAULT_REMOTE_ALLOWED_DELTAS",
 ]

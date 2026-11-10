@@ -28,7 +28,9 @@ from .motors import (
     LinearAxisMotor,
     SphericalMotor,
 )
+from . import tree
 from .persistence import JsonValue
+from .protocol import Val3Error
 from .staeubli import (
     CARTESIAN_AXES,
     JOINT_AXES,
@@ -101,9 +103,12 @@ class BerninaRobot(StaeubliRobot):
 
     def __init__(self, name="robot", link=None, adjustables_path=None,
                  override_remote_safety=False, value_factory=JsonValue,
-                 **kwargs):
+                 tree_file=None, **kwargs):
         self._value_factory = value_factory
         self._adjustables_path = adjustables_path
+        self.tree_file = tree_file
+        self.tree = self._load_tree()
+        self.tree_missing = {kind: [] for kind in tree.KINDS}
 
         tool = self._value("tool", "t_JF01T03")
         frame = self._value("frame", "f_4mRad")
@@ -145,12 +150,75 @@ class BerninaRobot(StaeubliRobot):
 
     # ------------------------------------------------------------ hierarchy
 
+    def _load_tree(self):
+        if self.tree_file:
+            return tree.load(self.tree_file)
+        return tree.from_chains(FRAME_HIERARCHY)
+
     def get_frame_tree(self, frame):
         """Expand a bare frame/tool symbol to its dotted path."""
-        for chain in FRAME_HIERARCHY:
-            if frame in chain:
-                return chain.split("." + frame + ".")[0] + "." + frame
-        return frame
+        kind = "tools" if str(frame).startswith("t_") else "frames"
+        return tree.path_of(self.tree, kind, frame)
+
+    def check_tree(self):
+        """Probe every symbol of the tree on the controller.
+
+        The tree file is the source of truth for what users are offered; this
+        only flags entries the VAL3 program does not (or no longer) define, so
+        they can be shown as missing and refused, instead of failing halfway
+        through a tool change.
+        """
+        missing = {kind: [] for kind in tree.KINDS}
+        for kind in tree.KINDS:
+            for name in tree.names(self.tree, kind):
+                try:
+                    self.link.get_trsf(name + ".trsf")
+                except Val3Error:
+                    missing[kind].append(name)
+                    logger.warning("%s %s in the tree is not defined on the "
+                                   "controller", kind[:-1], name)
+        self.tree_missing = missing
+        return missing
+
+    def get_tree(self):
+        """The tree as broadcast to clients."""
+        return {
+            "frames": self.tree["frames"],
+            "tools": self.tree["tools"],
+            "missing": self.tree_missing,
+            "source": self.tree_file or "built-in",
+        }
+
+    def reload_tree(self):
+        """Re-read the tree file, re-check it, and re-broadcast it."""
+        self.tree = self._load_tree()
+        self.check_tree()
+        self.emit("tree", self.get_tree())
+        return self.get_tree()
+
+    def _checked_symbol(self, kind, name):
+        """Bare symbol of ``name``, refused unless it is a usable tree entry."""
+        name = tree.bare(name)
+        known = tree.names(self.tree, kind)
+        if name not in known:
+            raise RobotError(f"{name!r} is not in the {kind[:-1]} tree "
+                             f"({self.tree_file or 'built-in'}); valid: {known}")
+        if name in self.tree_missing.get(kind, []):
+            raise RobotError(f"{name!r} is in the {kind[:-1]} tree but not "
+                             f"defined on the controller")
+        return name
+
+    def set_tool(self, tool, validate=True):
+        # Validated before anything is written: the generic set_tool persists
+        # the value first, so a typo used to end up in tool_persistent.
+        if validate:
+            tool = self._checked_symbol("tools", tool)
+        return super().set_tool(tool)
+
+    def set_frame(self, frame, name=None, change_default=True, validate=True):
+        if validate and change_default:
+            frame = self._checked_symbol("frames", frame)
+        return super().set_frame(frame, name=name, change_default=change_default)
 
     # ---------------------------------------------------------- coordinates
 
@@ -814,9 +882,18 @@ class BerninaRobot(StaeubliRobot):
         self.set_state(RobotState.INITIALIZING)
         self.default_desc = DESC_DEFAULT
         self.default_speed = DEFAULT_SPEED
-        self.set_frame(self._frame_persistent())
+        self.check_tree()
+        self.emit("tree", self.get_tree())
+        # The persisted selection is applied even if the tree disagrees with
+        # it -- refusing here would leave the server in Fault over a file edit.
+        for kind, value in (("frames", self._frame_persistent()),
+                            ("tools", self._tool_persistent())):
+            if tree.bare(value) not in tree.names(self.tree, kind):
+                logger.warning("persisted %s %s is not in the tree",
+                               kind[:-1], value)
+        self.set_frame(self._frame_persistent(), validate=False)
         self.set_frame(self.frame(), name="tcp_f_spherical", change_default=False)
-        self.set_tool(self._tool_persistent())
+        self.set_tool(self._tool_persistent(), validate=False)
         self.update()
         self.get_current_point()
         self.set_motors_enabled(True, ["cartesian", "spherical", "linear"])

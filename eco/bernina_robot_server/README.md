@@ -133,6 +133,7 @@ another's scan, while everybody's value reads keep working.
 | `reset_motion` | text | Queued motions were discarded, with the reason. |
 | `stop` | text | Motion stopped. |
 | `shell` | text | Driver messages, e.g. `"Update error: …"` — eco treats this as a disconnect signal. |
+| `tree` | `{"frames", "tools", "missing", "source"}` | The frame/tool tree (§3.6). Sent at setup and on reload; replayed on connect. |
 
 Each subscriber gets its own **bounded** queue (256 frames). A client that
 stops reading has its oldest frames dropped and a counter bumped; it can never
@@ -168,9 +169,29 @@ No eval, plain JSON:
 | `GET /api/positions` | Every axis, all coordinate systems |
 | `GET /api/poll` | Exactly the `polling` SSE payload |
 | `GET /api/config` | Which broadcast fields are read-only vs settable |
+| `GET /api/tree` | The frame/tool tree, with symbols missing on the controller |
+| `POST /api/tree/reload` | Re-read `tree_file`, re-check it, re-broadcast `tree` |
 | `POST /api/move` | `{"gamma": 20, "delta": 3, "wait": true}` |
 | `POST /api/stop` | Abort + stop + reset queue + resume |
 | `GET /api/subscribers`, `/api/commands` | Introspection |
+
+### 3.6 The frame/tool tree
+
+The frames and tools clients may select, and their hierarchy, come from a JSON
+file the server owns (`tree_file` in the config; format in
+`example_config/frame_tool_tree.json`, nested `symbol: {children}` under
+`"frames"` and `"tools"`). Without `tree_file` the built-in tree
+(`FRAME_HIERARCHY` in `eco/robots/bernina.py`) is used.
+
+The file, not the controller, is the source of truth, so an ad-hoc edit to the
+VAL3 program never changes what users are offered. At `setup()` the server
+probes every symbol (`get_trf <symbol>.trsf`) and lists the ones the controller
+does not define under `missing`. `robot.set_tool` / `robot.set_frame` refuse
+anything that is not in the tree or is missing (before persisting it), and
+accept a dotted path as well as a bare symbol. After editing the file, call
+`POST /api/tree/reload` instead of restarting.
+
+In eco: `rob.show_tree()`, `rob.select_tool()`, `rob.select_frame()`.
 
 ---
 

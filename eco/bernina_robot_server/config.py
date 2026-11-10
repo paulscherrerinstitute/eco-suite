@@ -52,6 +52,10 @@ class RobotServerConfig:
 
     # --- behaviour ----------------------------------------------------
     adjustables_path: str = DEFAULT_ADJUSTABLES_PATH
+    #: JSON file with the frame/tool tree clients browse and select from (see
+    #: eco.robots.tree). The file, not the controller, is the source of truth;
+    #: setup only checks each symbol exists. None uses the built-in tree.
+    tree_file: str | None = None
     #: Start with the recorded-trajectory whitelist disabled. Operator choice,
     #: normally False -- see BerninaRobot.remote_allowed.
     override_remote_safety: bool = False

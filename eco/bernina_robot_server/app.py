@@ -44,9 +44,10 @@ VERSION = "1.0.0"
 
 #: Robot events forwarded verbatim to SSE clients. "robot_state" is included;
 #: "state" is reserved for the *server* state, which is what eco's client
-#: gates its commands on.
+#: gates its commands on. "tree" is sent at setup and on reload, and reaches
+#: later clients through the EventBus replay.
 FORWARDED_EVENTS = ("polling", "motion", "reset_motion", "stop", "shell",
-                    "robot_state")
+                    "robot_state", "tree")
 
 
 class RingLogHandler(logging.Handler):
@@ -103,6 +104,7 @@ class RobotServerApp:
             persist=config.persist_state,
             override_remote_safety=config.override_remote_safety,
             env_polling_interval=config.env_polling_interval,
+            tree_file=config.tree_file,
         )
         self.robot.polling_interval = config.polling_interval
         self.robot.link.latency = config.robot_latency

@@ -15,6 +15,7 @@
     "epics_prefix": "SARES20-ROB:",
 
     "adjustables_path": "/sf/bernina/config/src/python/bernina_robot/adjustables_fs/",
+    "tree_file": "/sf/bernina/config/src/python/bernina_robot/frame_tool_tree.json",
     "override_remote_safety": false,
     "setup_on_start": true,
     "command_time_to_live": 600.0,

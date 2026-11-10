@@ -6,11 +6,14 @@ from eco.devices_general.motors import PshellMotor
 from eco.elements.detector import DetectorGet
 from eco.elements.adj_obj import AdjustableObject, DetectorObject
 from eco.devices_general.utilities import Changer
+import threading
 from threading import Thread
 import time
 import numpy as np
 import os
 from eco.detector.jungfrau import Jungfrau
+from eco.robots import tree
+from eco.utilities import user_input
 
 os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
@@ -19,6 +22,43 @@ from requests import HTTPError
 
 class RobotError(Exception):
     pass
+
+
+def _navigate_tree(tr, kind, active, missing, choices):
+    """Full tree in the terminal; arrow keys move, Enter selects, q/Esc cancels."""
+    from simple_term_menu import TerminalMenu
+
+    names = tree.names(tr, kind)
+    # The menu draws its own cursor, so the tree goes in without one.
+    lines = [line[1:] for line in tree.render(tr, kind, active=active, missing=missing)]
+    menu = TerminalMenu(
+        lines,
+        cursor_index=names.index(active) if active in names else 0,
+        title=f"Select {kind[:-1]} (● active)   ↑/↓ navigate   enter: select   q/esc: quit",
+    )
+    picked = menu.show()
+    if picked is None:
+        return None
+    if names[picked] not in choices:
+        raise RobotError(f"{names[picked]} is not defined on the controller")
+    return names[picked]
+
+
+def _choose_numbered(tr, kind, active, missing, choices):
+    """Fallback without a terminal: numbered tree, answer through user_input.ask."""
+    lines = tree.render(tr, kind, active=active, missing=missing)
+    numbered = []
+    for line, (_, name, _, _) in zip(lines, tree.flatten(tr, kind)):
+        tag = f"{choices.index(name):3d}" if name in choices else "   "
+        numbered.append(f"{tag} {line}")
+    print(f"Select {kind[:-1]} (● active):\n" + "\n".join(numbered))
+    answer = user_input.ask("Number (empty to cancel): ").strip()
+    if not answer:
+        return None
+    try:
+        return choices[int(answer)]
+    except (ValueError, IndexError):
+        raise RobotError(f"Invalid choice: {answer}")
 
 
 class RobotMotors(Assembly):
@@ -49,6 +89,7 @@ class StaeubliTx200(Assembly):
         """Robot arm at SwissFEL Bernina.\
         """
         super().__init__(name=name)
+        self._tree = None
         self.pc = PShellClient(pshell_url)
         self.pc.start_sse_event_loop_task(None, self._on_event)
         self.rc = robot_config
@@ -371,6 +412,65 @@ class StaeubliTx200(Assembly):
                 f"The current tool {self.config.tool()} is different from the expected detector tool {tool}"
             )
 
+    ######## Frame/tool tree ##########
+    def _get_tree(self):
+        """The tree the server broadcasts; asked for directly if not yet received."""
+        if self._tree is None:
+            try:
+                self._tree = self.get_eval_result("robot.get_tree()")
+            except RobotError as e:
+                raise RobotError(f"The robot server does not provide a frame/tool tree: {e}")
+        return self._tree
+
+    def show_tree(self, kind=None):
+        """
+        Print the frame and/or tool tree (kind = "frame" or "tool"), with the
+        active one marked by ● and entries missing on the controller flagged.
+        """
+        tr = self._get_tree()
+        kinds = ["frames", "tools"] if kind is None else [kind.rstrip("s") + "s"]
+        for k in kinds:
+            active = getattr(self.config, k[:-1])()
+            print(f"{k} (source: {tr.get('source')})")
+            print("\n".join(tree.render(tr, k, active=active, missing=tr["missing"][k])))
+
+    def select_tool(self, elog=False):
+        """
+        Navigate the tool tree with the arrow keys and apply the selection with Enter
+        (Esc or q cancels). Returns the selected tool, or None when cancelled.
+        """
+        return self._select("tools", elog=elog)
+
+    def select_frame(self, elog=False):
+        """
+        Navigate the frame tree with the arrow keys and apply the selection with Enter
+        (Esc or q cancels). Returns the selected frame, or None when cancelled.
+        """
+        return self._select("frames", elog=elog)
+
+    def _select(self, kind, elog=False):
+        tr = self._get_tree()
+        adj = getattr(self.config, kind[:-1])
+        active = tree.bare(adj())
+        missing = tr["missing"][kind]
+        choices = [n for n in tree.names(tr, kind) if n not in missing]
+        if not choices:
+            raise RobotError(f"No usable {kind} in the tree")
+        if threading.current_thread() is threading.main_thread() and os.sys.stdin.isatty():
+            name = _navigate_tree(tr, kind, active, missing, choices)
+        else:
+            name = _choose_numbered(tr, kind, active, missing, choices)
+        if name is None or name == active:
+            return name
+        if elog:
+            try:
+                adj.mv_elog(name)
+                return name
+            except Exception as e:
+                print(f"Elog posting failed ({e}), changing {kind[:-1]} without it")
+        adj(name)
+        return name
+
     ######## Motion recording ##########
     def record_motion(self, **kwargs):
         """
@@ -672,6 +772,8 @@ class StaeubliTx200(Assembly):
             print(value)
         elif name == "motion":
             print(value)
+        elif name == "tree":
+            self._tree = value
         else:
             self._check_disconnect_event(name, value)
 

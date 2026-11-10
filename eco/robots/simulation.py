@@ -35,8 +35,13 @@ class SimulatedController(BaseTransport):
     simulated = True
 
     def __init__(self, joints=None, frame="f_4mRad", tool="t_JF01T03",
-                 mode=1, status_code=6, powered=False, speed=100):
+                 mode=1, status_code=6, powered=False, speed=100,
+                 known_symbols=None):
         self._connected = False
+        #: Frame/tool symbols the fake VAL3 program defines. None accepts any
+        #: name; a set makes ``get_trf <unknown>.trsf`` an error reply, the way
+        #: the real controller answers for an undefined symbol.
+        self.known_symbols = None if known_symbols is None else set(known_symbols)
         self._lock = threading.RLock()
 
         # Pose. Cartesian is derived from a stored pose rather than solved.
@@ -181,6 +186,10 @@ class SimulatedController(BaseTransport):
         name = args[0]
         if name.endswith(".trsf"):
             base = name[:-5]
+            if (self.known_symbols is not None and base[:2] in ("f_", "t_")
+                    and base not in self.known_symbols
+                    and base not in ("f_actualFrame", "t_actualTool")):
+                raise Val3Error(f"undefined symbol {base}")
             if base in ("f_actualFrame", self.frame):
                 return self._fmt(self.frame_trsf)
             if base in ("t_actualTool", self.tool):
