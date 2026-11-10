@@ -582,6 +582,7 @@ class CounterValue:
     # (scan.step_window), else the start()/stop() calls.
     follows = True
     exposure_doc = "collection time per step, in seconds"
+    exposure_keyword = "collection_time"
 
     def start(self, scan=None, **kwargs):
         if scan is None:
@@ -773,6 +774,30 @@ def exposure_doc(obj):
     except ImportError:
         pass
     return CounterValue.exposure_doc
+
+
+def exposure_keyword(obj):
+    """The keyword under which `obj`, as a scan's first counter, takes the
+    exposure: its declared ``exposure_keyword``, else the first keyword of its
+    ``acquire`` after ``scan`` (the convention -- not the DAQ's, whose first
+    one is ``run_number``, hence the declaration), else ``Npulses``. A detector
+    gets its counter's: ``Npulses`` for a bs detector, ``collection_time``
+    otherwise."""
+    obj = resolve_lazy(obj)
+    keyword = getattr(obj, "exposure_keyword", None)
+    if keyword:
+        return keyword
+    if _is_counter(obj):
+        names = [n for n in inspect.signature(obj.acquire).parameters if n != "scan"]
+        names = [
+            n for n in names
+            if inspect.signature(obj.acquire).parameters[n].kind
+            in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        ]
+        return names[0] if names else "Npulses"
+    if "shots" in exposure_doc(obj):
+        return "Npulses"
+    return CounterValue.exposure_keyword
 
 
 def as_counters(objs, options=None):

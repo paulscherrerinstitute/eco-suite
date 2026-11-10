@@ -491,17 +491,34 @@ def _build_common_extra_kwargs_qt(
     return box, read
 
 
+def _exposure_widget_qt(scans_obj):
+    """The exposure_def field, labelled with the first default counter's own
+    keyword: shots as an integer, seconds as a decimal."""
+    label, doc, integer = getattr(
+        scans_obj, "exposure_field", lambda: ("N_pulses", "", True)
+    )()
+    if integer:
+        w = QtWidgets.QSpinBox()
+        w.setRange(1, 10000000)
+        w.setValue(100)
+    else:
+        w = QtWidgets.QDoubleSpinBox()
+        w.setDecimals(3)
+        w.setRange(0.001, 1e6)
+        w.setValue(1.0)
+    w.setToolTip(f"exposure_def: {doc}" if doc else "exposure_def")
+    return w, f"{label}:"
+
+
 def _build_acquire_form_qt(scans_obj, root, bookmarks, recent):
     box = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(box)
     top = QtWidgets.QFormLayout()
-    n_pulses_w = QtWidgets.QSpinBox()
-    n_pulses_w.setRange(1, 10000000)
-    n_pulses_w.setValue(100)
+    n_pulses_w, exposure_label = _exposure_widget_qt(scans_obj)
     n_rep_w = QtWidgets.QSpinBox()
     n_rep_w.setRange(1, 100000)
     n_rep_w.setValue(1)
-    top.addRow("N_pulses:", n_pulses_w)
+    top.addRow(exposure_label, n_pulses_w)
     top.addRow("N_repetitions:", n_rep_w)
     layout.addLayout(top)
     extra_box, read_extra = _build_common_extra_kwargs_qt(
@@ -535,13 +552,11 @@ def _build_ascan_like_form_qt(scans_obj, root, bookmarks, recent):
     n_w = QtWidgets.QSpinBox()
     n_w.setRange(1, 100000)
     n_w.setValue(10)
-    n_pulses_w = QtWidgets.QSpinBox()
-    n_pulses_w.setRange(1, 10000000)
-    n_pulses_w.setValue(100)
+    n_pulses_w, exposure_label = _exposure_widget_qt(scans_obj)
     grid.addRow("start:", start_w)
     grid.addRow("end:", end_w)
     grid.addRow("N_intervals:", n_w)
-    grid.addRow("N_pulses:", n_pulses_w)
+    grid.addRow(exposure_label, n_pulses_w)
     layout.addLayout(grid)
     extra_box, read_extra = _build_common_extra_kwargs_qt(root, bookmarks, recent)
     layout.addWidget(extra_box)
@@ -564,10 +579,8 @@ def _build_ascan_position_list_form_qt(scans_obj, root, bookmarks, recent):
     positions_w.setPlaceholderText("e.g. 0,0.5,1,2,5 or [0,0.5,1,2,5]")
     layout.addWidget(positions_w)
     form = QtWidgets.QFormLayout()
-    n_pulses_w = QtWidgets.QSpinBox()
-    n_pulses_w.setRange(1, 10000000)
-    n_pulses_w.setValue(100)
-    form.addRow("N_pulses:", n_pulses_w)
+    n_pulses_w, exposure_label = _exposure_widget_qt(scans_obj)
+    form.addRow(exposure_label, n_pulses_w)
     layout.addLayout(form)
     extra_box, read_extra = _build_common_extra_kwargs_qt(root, bookmarks, recent)
     layout.addWidget(extra_box)
@@ -662,11 +675,9 @@ def _build_a2scan_form_qt(scans_obj, root, bookmarks, recent):
     n_w = QtWidgets.QSpinBox()
     n_w.setRange(1, 100000)
     n_w.setValue(10)
-    n_pulses_w = QtWidgets.QSpinBox()
-    n_pulses_w.setRange(1, 10000000)
-    n_pulses_w.setValue(100)
+    n_pulses_w, exposure_label = _exposure_widget_qt(scans_obj)
     form2.addRow("N_intervals:", n_w)
-    form2.addRow("N_pulses:", n_pulses_w)
+    form2.addRow(exposure_label, n_pulses_w)
     layout.addLayout(form2)
     extra_box, read_extra = _build_common_extra_kwargs_qt(root, bookmarks, recent)
     layout.addWidget(extra_box)
@@ -701,12 +712,10 @@ def _build_grid_form_qt(allow_simultaneous: bool):
         )
         layout.addWidget(builder)
         form = QtWidgets.QFormLayout()
-        n_pulses_w = QtWidgets.QSpinBox()
-        n_pulses_w.setRange(1, 10000000)
-        n_pulses_w.setValue(100)
+        n_pulses_w, exposure_label = _exposure_widget_qt(scans_obj)
         order_w = QtWidgets.QComboBox()
         order_w.addItems(["last_fastest", "first_fastest"])
-        form.addRow("N_pulses:", n_pulses_w)
+        form.addRow(exposure_label, n_pulses_w)
         form.addRow("scanning_order:", order_w)
         layout.addLayout(form)
         extra_box, read_extra = _build_common_extra_kwargs_qt(root, bookmarks, recent)
@@ -715,7 +724,7 @@ def _build_grid_form_qt(allow_simultaneous: bool):
 
         def get_call():
             kwargs = read_extra()
-            kwargs["N_pulses"] = n_pulses_w.value()
+            kwargs["exposure_def"] = n_pulses_w.value()
             kwargs["scanning_order"] = order_w.currentText()
             return builder.get_adj_specs(), kwargs
 

@@ -992,6 +992,20 @@ class Scans(Assembly):
             wrapper.__name__ = method_name
             setattr(self, method_name, wrapper)
 
+    def exposure_field(self):
+        """(label, description, integer) of ``exposure_def`` for forms: the
+        first default counter's own keyword (e.g. ``Npulses`` for the DAQ,
+        ``collection_time`` for a monitor counter), what it means, and
+        whether it counts shots (an integer) or not (seconds)."""
+        try:
+            from .counters import exposure_doc, exposure_keyword
+
+            lead = self._default_counters[0]
+            keyword = exposure_keyword(lead)
+            return keyword, exposure_doc(lead), keyword == "Npulses"
+        except Exception:
+            return "exposure_def", "the exposure of the first counter", False
+
     def append_counter(self, counter):
         """Add `counter` -- a counter or a detector, e.g. ``mon_opt.intensity``
         -- to the counters every scan uses by default, after the main ones

@@ -149,6 +149,7 @@ class Daq(Assembly):
 
     # what a scan's exposure_def means with this counter first (Scans help)
     exposure_doc = "number of pulses (shots) recorded per step"
+    exposure_keyword = "Npulses"
 
     def __init__(
         self,

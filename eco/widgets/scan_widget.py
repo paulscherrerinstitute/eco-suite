@@ -196,10 +196,21 @@ def _build_common_extra_kwargs(
     return box, read
 
 
-def _build_acquire_form(scans_obj, root, bookmarks, recent):
-    n_pulses_w = widgets.IntText(
-        value=100, description="N_pulses:", layout=widgets.Layout(width="180px")
+def _exposure_widget(scans_obj, width):
+    """The exposure_def field, labelled with the first default counter's own
+    keyword: shots as an integer, seconds as a decimal."""
+    label, doc, integer = getattr(
+        scans_obj, "exposure_field", lambda: ("N_pulses", "", True)
+    )()
+    cls, value = (widgets.IntText, 100) if integer else (widgets.FloatText, 1.0)
+    return cls(
+        value=value, description=f"{label}:", tooltip=f"exposure_def: {doc}",
+        style={"description_width": "initial"}, layout=widgets.Layout(width=width),
     )
+
+
+def _build_acquire_form(scans_obj, root, bookmarks, recent):
+    n_pulses_w = _exposure_widget(scans_obj, "180px")
     n_rep_w = widgets.IntText(
         value=1, description="N_repetitions:", layout=widgets.Layout(width="200px")
     )
@@ -224,7 +235,7 @@ def _build_ascan_like_form(scans_obj, root, bookmarks, recent):
     start_w = widgets.FloatText(value=0.0, description="start:", layout=widgets.Layout(width="160px"))
     end_w = widgets.FloatText(value=1.0, description="end:", layout=widgets.Layout(width="160px"))
     n_w = widgets.IntText(value=10, description="N_intervals:", layout=widgets.Layout(width="160px"))
-    n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="160px"))
+    n_pulses_w = _exposure_widget(scans_obj, "160px")
     top = widgets.VBox(
         [
             widgets.HTML("<b>Adjustable</b>"),
@@ -251,7 +262,7 @@ def _build_ascan_position_list_form(scans_obj, root, bookmarks, recent):
         description="positions:",
         layout=widgets.Layout(width="100%"),
     )
-    n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="160px"))
+    n_pulses_w = _exposure_widget(scans_obj, "160px")
     top = widgets.VBox(
         [widgets.HTML("<b>Adjustable</b>"), picker, positions_w, n_pulses_w]
     )
@@ -307,7 +318,7 @@ def _build_a2scan_form(scans_obj, root, bookmarks, recent):
     start1_w = widgets.FloatText(value=0.0, description="start1:", layout=widgets.Layout(width="150px"))
     end1_w = widgets.FloatText(value=1.0, description="end1:", layout=widgets.Layout(width="150px"))
     n_w = widgets.IntText(value=10, description="N_intervals:", layout=widgets.Layout(width="160px"))
-    n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="160px"))
+    n_pulses_w = _exposure_widget(scans_obj, "160px")
     top = widgets.VBox(
         [
             widgets.HTML("<b>Adjustable 0</b>"),
@@ -350,7 +361,7 @@ def _build_grid_form(allow_simultaneous: bool):
         builder = ScanBuilderWidget(
             root, allow_simultaneous=allow_simultaneous, bookmarks=bookmarks, recent=recent
         )
-        n_pulses_w = widgets.IntText(value=100, description="N_pulses:", layout=widgets.Layout(width="180px"))
+        n_pulses_w = _exposure_widget(scans_obj, "180px")
         order_w = widgets.Dropdown(
             options=["last_fastest", "first_fastest"],
             value="last_fastest",
@@ -364,7 +375,7 @@ def _build_grid_form(allow_simultaneous: bool):
 
         def get_call():
             kwargs = read_extra()
-            kwargs["N_pulses"] = n_pulses_w.value
+            kwargs["exposure_def"] = n_pulses_w.value
             kwargs["scanning_order"] = order_w.value
             return builder.get_adj_specs(), kwargs
 

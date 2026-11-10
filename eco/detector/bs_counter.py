@@ -595,6 +595,7 @@ class BsStreamCounter:
         # acquisition (see stop()), no exposure of its own
         self.follows = True
         self.exposure_doc = "number of bs shots per step"
+        self.exposure_keyword = "Npulses"
 
         self.callbacks_start_scan = [self._on_scan_start]
         self.callbacks_start_step = []

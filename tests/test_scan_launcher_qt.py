@@ -401,7 +401,7 @@ def test_build_grid_form_qt_meshscan_get_call(qapp):
     widget.findChildren(slq.ComponentPickerQt)[0].value = m1
     args, kwargs = get_call()
     assert args == [(m1, 0.0, 1.0, 10)]
-    assert kwargs["N_pulses"] == 100
+    assert kwargs["exposure_def"] == 100
     assert kwargs["scanning_order"] == "last_fastest"
 
 

@@ -222,3 +222,30 @@ def test_append_and_clear_auxiliary_counters(sim):
     scans.clear_auxiliary_counters()
     assert scans._default_counters == [main] and scans.auxiliary_counters == []
     assert Scans()._default_counters == []  # the shared default list untouched
+
+
+def test_exposure_field_names_the_first_counters_keyword(sim):
+    from eco.acquisition.counters import exposure_keyword
+    from eco.acquisition.daq_client import Daq
+
+    assert Scans(default_counters=[sim.peak.signal]).exposure_field() == (
+        "collection_time", "collection time per step, in seconds", False
+    )
+    assert Daq.exposure_keyword == "Npulses"  # declared: its first keyword is run_number
+
+    class Plain:  # the convention: the first keyword after scan
+        def acquire(self, scan=None, exposure_s=1.0, **kwargs):
+            pass
+
+    assert exposure_keyword(Plain()) == "exposure_s"
+    assert Scans().exposure_field()[0] == "exposure_def"  # no counters
+
+
+def test_forms_use_the_keyword(sim):
+    pytest.importorskip("ipywidgets")
+    from eco.widgets import scan_widget
+
+    w = scan_widget._exposure_widget(Scans(default_counters=[sim.peak.signal]), "180px")
+    assert w.description == "collection_time:" and isinstance(w.value, float)
+    w = scan_widget._exposure_widget(None, "180px")
+    assert w.description == "N_pulses:" and w.value == 100
