@@ -2,6 +2,32 @@
 
 Plots normally go to Qt windows or notebook widgets. Where neither is possible, most commonly a plain `ssh` session without X, eco can render them as text in the terminal. This page records how that is done and what is still missing.
 
+## Using it
+
+Three plots have a text version. They switch to it by themselves where no window can appear (plain ssh, `ECO_NO_X=1`), and on request otherwise:
+
+```python
+mirror.strip_plot(plot="text")                          # live strip chart
+mirror.get_archiver_time_range(start=-3600, plot="text")  # history chart
+mot.tweak(0.1, detectors=[diode], ui="terminal", plot="text")
+```
+
+`export ECO_PLOT=text` makes text the default for all of them (`ECO_TWEAK_PLOT` for the tweak alone). `strip_plot` works for any detector too, EPICS or not: `from eco.utilities.strip_plot import strip_plot; strip_plot(sim.peak.signal, plot="text")`.
+
+The strip and history charts draw one panel per channel over a shared time axis, values as steps, and take keys until `q` (the last picture stays):
+
+| Key | Does |
+|---|---|
+| ← → | pan in time by a quarter of the shown span |
+| + − | zoom in / out in time |
+| ↑ ↓ | zoom in / out in y |
+| a | autoscale y again |
+| f | live: follow now again; history: show everything |
+| space | live: pause / resume |
+| q | quit |
+
+A text strip chart runs in the session itself (no subprocess) and returns `{label: (times, values)}` of what it collected; the window's Record/Save buttons and "More channels..." have no text counterpart. In the windows, matplotlib's toolbar zooms and pans; the strip plot window's "Autoscale X/Y" buttons switch autoscaling back on after a zoom, "Window ×2 / /2" change the span.
+
 ## Current approach: uniplot as a dependency
 
 Terminal plots use [uniplot](https://github.com/olavolav/uniplot) (MIT, pure Python, needs only numpy and `readchar`). It is in the Bernina `sfb312` environment (conda) but not declared in `pyproject.toml`.
@@ -20,7 +46,7 @@ uniplot sits behind `eco.utilities.termplot`, an eco-shaped layer that callers u
 - `panel_stack()` stacks plots over a shared x range, with x tick labels only under the last one.
 - `LiveRegion` / `LivePlotter` keep a plot just above the current terminal line and redraw it in place. Other code can keep rewriting a status line with `\r` meanwhile, as the terminal tweaks do. While active, `LiveRegion` replaces `sys.stdout` with a proxy so it can tell whether anything else printed a newline. If so, it prints a fresh copy and restores the status line under it.
 
-First user: the terminal tweak's detector plot when there is no display (`ECO_NO_X=1` or plain ssh, see `eco.widgets.tweak_recorder.terminal_plot_text`). Strip charts, counters and archiver traces are meant to follow. If the gaps below start to hurt, replace the renderer with an own copy (MIT allows it; keep the copyright notice) without touching the callers.
+Users: the terminal tweak's detector plot (`eco.widgets.tweak_recorder.terminal_plot_text`), and the strip and history charts (`eco.utilities.text_charts`, which also has the key loop). Counters are meant to follow. If the gaps below start to hurt, replace the renderer with an own copy (MIT allows it; keep the copyright notice) without touching the callers.
 
 ## Shortcomings to address in an own copy
 
@@ -28,7 +54,7 @@ Add to this list whenever a terminal plot runs into a limit.
 
 1. **No subplots or shared axes.** Stacks (the tweak recorder's detectors over adjustables) are built by concatenating one `plot_to_string` per panel. The x range has to be passed to every panel by hand (`x_min` / `x_max`). Repeated x tick labels can be avoided with `x_labels=False` on all but the bottom panel, but each panel still has its own frame, so a stack takes more height than it needs.
 2. **No y-axis title.** Only `title` (above) and units on the tick labels. In a stack the panel name has to go into `title`, which costs one line per panel.
-3. **Interactive pan/zoom only works on static data, and takes over the terminal.** `plot(..., interactive=True)` runs its own blocking `readkey()` loop: arrows / `hjkl` / `wasd` pan, `q` / Esc quits. That cannot update while new data arrives (live strip charts, counters, tweak), and it can't share the keyboard with another key loop. The tweak uses the same arrow keys. An own version should drive zoom from the caller's key loop, on live data.
+3. **Interactive pan/zoom only works on static data, and takes over the terminal.** `plot(..., interactive=True)` runs its own blocking `readkey()` loop: arrows / `hjkl` / `wasd` pan, `q` / Esc quits. That cannot update while new data arrives (live strip charts, counters, tweak), and it can't share the keyboard with another key loop. The tweak uses the same arrow keys. *Worked around for the strip and history charts:* `eco.utilities.text_charts` runs its own key loop and passes the range to uniplot (`x_min`/`x_max`/`y_min`/`y_max`) on every redraw, live data included. The tweak plot still has no zoom (its arrow keys move the motor).
 4. **No managed live region.** `plot_gen()` redraws in place, but knows nothing about other output on the same terminal (status lines written with `\r`, log messages). eco needs one "live region" helper that owns the cursor movement for plots and status lines together.
 5. **Limited control over ticks.** `x_labels` / `y_labels` only switch the labels on or off; their number and position are chosen automatically.
 6. **Few ways to style points.** `lines` can be set per series (line or scatter), so a highlighted point such as the tweak's current one can be an extra scatter series with its own color. There are no marker shapes or sizes beyond that.

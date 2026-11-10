@@ -202,6 +202,7 @@ def strip_plot(
     poll_interval=0.2,
     step=True,
     grid=True,
+    plot="auto",
 ):
     """Open a live, rolling strip plot mixing arbitrary monitorables (any
     objects satisfying `eco.elements.protocols.Detector`, e.g. Adjustables/
@@ -231,12 +232,30 @@ def strip_plot(
     `.record()` / `.stop_recording()` / `.is_recording()` / `.to_dataset()`
     mirror the window's own "Record"/"Save..." buttons and populate the
     handle's `.dataset`.
+
+    `plot="text"` draws it in the terminal instead, with keys to zoom and
+    pan, until q (eco.utilities.text_charts) -- as does the default "auto"
+    where no window can appear (no display, ECO_NO_X=1) or with
+    ECO_PLOT=text. It then returns {label: (times, values)} of what was
+    collected.
     """
-    monitorables = list(monitorables_args) + list(monitorables)
+    monitorables = [resolve_lazy(m) for m in list(monitorables_args) + list(monitorables)]
     channels = list(channels)
     polled_names = [_monitorable_name(m) for m in monitorables]
     if labels is None:
         labels = polled_names + channels
+    from . import text_charts
+
+    mode = text_charts.plot_mode(plot)
+    if mode == "none":
+        return None
+    if mode == "text":
+        feed = text_charts.LiveFeed(
+            channels=channels, force_type=force_type, channel_types=channel_types,
+            labels=list(labels), monitorables=monitorables, monitorable_names=polled_names,
+            keep=max(3600, 20 * window), duration=duration, poll_interval=poll_interval,
+        )
+        return text_charts.show_live(feed, window=window, max_rate=max_rate)
 
     cmd_parent, cmd_child = multiprocessing.Pipe()
     data_parent, data_child = multiprocessing.Pipe()

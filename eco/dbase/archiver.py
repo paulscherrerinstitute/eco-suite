@@ -866,9 +866,21 @@ def _plot_dataframe(data, channels, labels=None, plot=True):
     internal day-numbers instead of the actual dates. Pass an existing Axes
     or Figure (e.g. `plot=plt.gca()`, `plot=plt.gcf()`) to draw into it
     anyway -- that's then the caller's own choice. `plot=False`/`None` skips
-    plotting."""
+    plotting. `plot="text"` draws it in the terminal, with keys to zoom and
+    pan (eco.utilities.text_charts) -- as does True where no window can
+    appear (no display, ECO_NO_X=1) or with ECO_PLOT=text; "window" forces
+    a figure."""
     from ..utilities.plot_mpl import resolve_plot_axes
+    from ..utilities import text_charts
 
+    if plot is True or isinstance(plot, str):
+        mode = text_charts.plot_mode(plot)
+        if mode == "none":
+            return
+        if mode == "text":
+            text_charts.show_history(data, channels, labels)
+            return
+        plot = True
     ah = resolve_plot_axes(plot, default="skip")
     if ah is None:
         return
@@ -2291,6 +2303,7 @@ class DataHub(Assembly):
         step=True,
         grid=True,
         extra_channels=None,
+        plot="auto",
     ):
         """Open a live, rolling strip plot for `channels`, streamed from the
         bsread Dispatcher ("BS" channels) and/or directly from EPICS ("CA"
@@ -2324,9 +2337,26 @@ class DataHub(Assembly):
         `.stop_recording()` / `.is_recording()` / `.to_dataset()` mirror the
         window's own "Record"/"Save..." buttons, over a pipe to the
         subprocess, and populate the handle's `.dataset`.
+
+        `plot="text"` draws it in the terminal instead, with keys to zoom
+        and pan, until q (eco.utilities.text_charts) -- as does the default
+        "auto" where no window can appear (no display, ECO_NO_X=1) or with
+        ECO_PLOT=text. It then returns {label: (times, values)} of what was
+        collected; `extra_channels` are not offered there.
         """
         if labels is None:
             labels = channels
+        from ..utilities import text_charts
+
+        mode = text_charts.plot_mode(plot)
+        if mode == "none":
+            return None
+        if mode == "text":
+            feed = text_charts.LiveFeed(
+                channels=list(channels), force_type=force_type, channel_types=channel_types,
+                labels=list(labels), keep=max(3600, 20 * window), duration=duration,
+            )
+            return text_charts.show_live(feed, window=window, max_rate=max_rate)
         # subprocess.Popen with an explicit command, deliberately not
         # multiprocessing.Process - see _strip_plot_subprocess_bootstrap's
         # docstring for why the latter breaks under this session's IPython

@@ -74,5 +74,6 @@ mot.tweak(0.1, detectors=[diode], ui="terminal", plot="text")
 `plot=` is `"auto"` (default: a window if there is a display, else text),
 `"text"`, `"window"` or `"none"` (record without a live plot). The
 environment variable `ECO_TWEAK_PLOT` sets the default, e.g.
-`export ECO_TWEAK_PLOT=text`. Unlike `ECO_NO_X`, it changes only the tweak
-plot, not other windows.
+`export ECO_TWEAK_PLOT=text`; `ECO_PLOT=text` does it for the strip and
+history charts too (see {doc}`terminal_plots`). Unlike `ECO_NO_X`, neither
+changes other windows.

@@ -322,14 +322,15 @@ PLOT_MODES = ("auto", "window", "text", "none")
 
 def plot_mode(plot=None):
     """Where a terminal tweak's live plot goes: `plot` if given, else the
-    environment variable ECO_TWEAK_PLOT, else "auto" -- a Qt window where a
+    environment variable ECO_TWEAK_PLOT, else ECO_PLOT (the default of all
+    eco's charts), else "auto" -- a Qt window where a
     display is available, text in the terminal otherwise. "window" and
     "text" force one, "none" (or False) records without a live plot."""
     import os
 
     if plot is False:
         return "none"
-    mode = plot or os.environ.get("ECO_TWEAK_PLOT", "") or "auto"
+    mode = plot or os.environ.get("ECO_TWEAK_PLOT", "") or os.environ.get("ECO_PLOT", "") or "auto"
     mode = str(mode).strip().lower()
     if mode not in PLOT_MODES:
         raise ValueError(f"plot={plot!r}: one of {PLOT_MODES}")
