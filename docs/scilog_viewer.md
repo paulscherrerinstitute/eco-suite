@@ -75,7 +75,56 @@ offers what is possible where the viewer runs:
 
 On gac-bernina the window comes first, before anything is read. A personal
 PSI account cannot log in to SciLog with a username and password from a
-program (PSI's single sign-on only works in a browser), hence the token. The page gets each post's HTML cleaned of anything
+program (PSI's single sign-on only works in a browser), hence the token.
+
+### Getting your SciLog token
+
+SciLog's own page keeps the token in the browser after you log in (local
+storage, `id_token`). The viewer's token window shows these steps for the
+device you are on.
+
+**On a computer** (Chrome, Edge, Firefox, Safari):
+
+1. Open <https://scilog.psi.ch> in a new tab and log in with your PSI
+   account, until you see your logbooks.
+2. In *that SciLog tab*, open the developer tools: `F12` (Mac `⌥⌘I`; Safari
+   first needs Settings → Advanced → "Show features for web developers").
+3. Open the **Console** tab.
+4. Type `copy(localStorage.id_token)` and press Enter. Nothing seems to happen:
+   the token is now on the clipboard. Type it rather than paste it; browsers
+   refuse pasting into the console until you type `allow pasting`.
+5. Paste it into the viewer's token window.
+
+Without the console: developer tools → **Application** (Firefox: **Storage**)
+→ Local storage → `https://scilog.psi.ch` → `id_token`, copy its value.
+
+**On an Android phone:** in the Android app, tap **Log in to SciLog here**:
+the token is taken over by itself. In Chrome, a bookmark reads it (phones
+have no developer tools):
+
+1. Make a bookmark (⋮ → ☆), edit it (⋮ → Bookmarks → ⋮ → Edit): name
+   `SciLog token`, address
+   `javascript:void(prompt('SciLog token (select all, copy):',localStorage.id_token))`.
+2. Open <https://scilog.psi.ch> and log in.
+3. In the SciLog tab, tap the address bar, type `SciLog token` and tap the
+   bookmark among the suggestions (from the bookmark list it does not run).
+4. Copy the token from the box that appears.
+
+Firefox for Android does not run such bookmarks.
+
+**On an iPhone or iPad** (Safari): the same bookmark (Share → Add Bookmark,
+then edit its address), opened from the bookmarks while SciLog is shown.
+
+**If it does not work:**
+
+- *"null" or "undefined"*: it ran on the wrong page (the viewer, or SciLog
+  before the login). Run it in the SciLog tab once your logbooks are shown.
+- *"not accepted" or "expired"*: a token lasts 14 days from the login and
+  cannot be renewed. Log out of SciLog, log in again, copy the new one.
+- *The bookmark starts a web search*: its address must begin with
+  `javascript:`; some phones drop that when pasting.
+- Keep the token to yourself: for up to 14 days it lets anyone read and
+  write SciLog as you. Never paste it into a chat, an e-mail or a logbook. The page gets each post's HTML cleaned of anything
 executable, and the server fetches images and attachments, keeping them in
 a private cache. The server listens only on the machine itself, and the page
 needs the key from the printed address.

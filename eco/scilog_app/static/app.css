@@ -532,3 +532,17 @@ body.has-tasks #to-bottom { right: calc(var(--tasks-width, 340px) + 24px); }
 .tk-card .tk-who { color: var(--muted); font-size: .9em; }
 .tk-keep { display: block; margin-top: 8px; font-size: .9em; }
 .ed-as { font-size: .82em; color: #9a6200; white-space: nowrap; }
+
+/* the step-by-step guide to the token, one fold per device */
+.tk-guides { margin: 8px 0 4px; }
+.tk-guide { border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; padding: 0 10px; }
+.tk-guide > summary { cursor: pointer; padding: 7px 0; font-weight: 600; }
+.tk-guide[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tk-guide .tk-here { font-weight: normal; color: var(--muted); font-size: .9em; }
+.tk-guide ol, .tk-guide ul { padding-left: 1.3em; margin: 6px 0; }
+.tk-guide li { margin: 5px 0; line-height: 1.45; }
+.tk-guide code { background: var(--code); padding: 0 4px; border-radius: 3px; }
+.tk-guide kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: .9em; }
+.tk-guide .tk-row { margin-top: 4px; }
+.tk-alt { color: var(--muted); font-size: .9em; }
+.tk-paste { margin: 10px 0 4px; font-weight: 600; }

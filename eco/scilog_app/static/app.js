@@ -1019,6 +1019,59 @@ function updateTokenBadge() {
   badge.title = "Whose SciLog access the viewer uses: click to change";
 }
 
+// How to get the token out of SciLog's page, step by step, for the device in hand (the others folded).
+// SciLog's page keeps it in its local storage (and a cookie) as "id_token" after the login.
+function tokenGuide() {
+  const ua = navigator.userAgent;
+  const device = /Android/i.test(ua) ? "android" : /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "ios" : "computer";
+  const code = (text) => el("code", { text });
+  const copyBtn = (text, what) => el("button", { class: "tk-copy", onclick: () => copyText(text, what) }, "Copy");
+  const scilog = () => el("a", { href: "https://scilog.psi.ch", target: "_blank", rel: "noopener" }, "scilog.psi.ch");
+  const bookmark = () => el("div", { class: "tk-row" }, el("code", { class: "tk-code", text: TOKEN_BOOKMARKLET }), copyBtn(TOKEN_BOOKMARKLET, "Bookmark address"));
+  const section = (key, title, ...body) => el("details", { class: "tk-guide", ...(key === device && !window.ScilogAndroid ? { open: "" } : {}) },
+    el("summary", {}, title, key === device ? el("span", { class: "tk-here", text: " — this device" }) : null), ...body);
+  return el("div", { class: "tk-guides" },
+    section("computer", "On a computer (Chrome, Edge, Firefox, Safari)",
+      el("ol", {},
+        el("li", {}, "Open ", scilog(), " in a new tab and log in with your PSI account, until you see your logbooks."),
+        el("li", {}, "In ", el("b", { text: "that SciLog tab" }), " (not this one), open the developer tools: ", el("kbd", { text: "F12" }),
+          " — on a Mac ", el("kbd", { text: "⌥⌘I" }), ". Safari first needs Settings → Advanced → “Show features for web developers”."),
+        el("li", {}, "Click the ", el("b", { text: "Console" }), " tab."),
+        el("li", {}, "Type ", code("copy(localStorage.id_token)"), " and press Enter. Nothing seems to happen: the token is now on the clipboard. ",
+          el("span", { class: "tk-safe", text: "Type it rather than paste it: browsers refuse pasting into the console until you type “allow pasting”." })),
+        el("li", {}, "Come back here, paste it into the box below (", el("kbd", { text: "Ctrl+V" }), ", on a Mac ", el("kbd", { text: "⌘V" }), ") and press “Use this token”.")),
+      el("p", { class: "tk-alt" }, "Without the console: in the developer tools open ", el("b", { text: "Application" }), " (Firefox: ", el("b", { text: "Storage" }),
+        ") → Local storage → https://scilog.psi.ch → ", code("id_token"), ", double-click its value and copy it.")),
+    section("android", "On an Android phone",
+      window.ScilogAndroid ? el("p", {}, "In this app: close this part and tap “Log in to SciLog here” above — the token is taken over by itself.") : null,
+      el("p", {}, "In Chrome (phones have no developer tools, so a bookmark reads the token):"),
+      el("ol", {},
+        el("li", {}, "Copy this bookmark address:", bookmark()),
+        el("li", {}, "In Chrome, bookmark any page (⋮ → ☆), then edit that bookmark (⋮ → Bookmarks → ⋮ beside it → Edit): name it ", code("SciLog token"),
+          ", replace its address with the copied one, save."),
+        el("li", {}, "Open ", scilog(), " and log in."),
+        el("li", {}, "In the SciLog tab, tap the address bar, type ", code("SciLog token"), " and tap the bookmark among the suggestions. ",
+          el("span", { class: "tk-safe", text: "It has to be started from the address bar while SciLog is shown; opening it from the bookmark list does not work." })),
+        el("li", {}, "A box shows the token, already selected: copy it, come back here and paste it.")),
+      el("p", { class: "tk-alt", text: "Firefox for Android does not run such bookmarks: use Chrome for this step." })),
+    section("ios", "On an iPhone or iPad (Safari)",
+      el("ol", {},
+        el("li", {}, "Copy this bookmark address:", bookmark()),
+        el("li", {}, "Bookmark any page (Share → Add Bookmark), then in the bookmarks tap Edit, choose it, name it ", code("SciLog token"),
+          " and replace its address with the copied one."),
+        el("li", {}, "Open ", scilog(), " and log in."),
+        el("li", {}, "With SciLog shown, open the bookmarks and tap “SciLog token”."),
+        el("li", {}, "A box shows the token: copy it, come back here and paste it."))),
+    el("details", { class: "tk-guide" }, el("summary", {}, "If it does not work"),
+      el("ul", {},
+        el("li", {}, el("b", { text: "“null” or “undefined”, or nothing to paste:" }), " it ran on the wrong page — this viewer, or SciLog before the login. Run it in the SciLog tab once your logbooks are shown."),
+        el("li", {}, el("b", { text: "“Don't paste code …” in the console:" }), " type ", code("allow pasting"), " and Enter, or type the command by hand."),
+        el("li", {}, el("b", { text: "“not accepted” or “expired”:" }), " a token lasts 14 days from the login and cannot be renewed. Log out of SciLog, log in again and copy the new one."),
+        el("li", {}, el("b", { text: "The bookmark opens a web search instead of a box:" }), " its address must start with ", code("javascript:"),
+          ". Some phones drop that part when pasting: type it back in front."),
+        el("li", {}, el("b", { text: "Keep the token to yourself:" }), " for up to 14 days it lets anyone read and write SciLog as you. Never paste it into a chat, an e-mail or a logbook."))));
+}
+
 // Whose SciLog access the viewer uses: the beamline account, a personal token kept here (not on a
 // shared account), or a personal token lent for at most a few hours (held by the viewer's server only).
 function openTokenDialog(status = state.token || {}) {
@@ -1029,7 +1082,6 @@ function openTokenDialog(status = state.token || {}) {
   const note = el("div", { class: "tk-note" });
   const keep = el("input", { type: "checkbox", ...(shared ? { disabled: "" } : { checked: "" }) });
   const save = el("button", { class: "primary" }, "Use this token");
-  const bm = el("code", { class: "tk-code", text: TOKEN_BOOKMARKLET });
   const dialog = el("dialog", { id: "token-dialog" });
   const choose = async (kind, button) => {
     button.disabled = true;
@@ -1074,14 +1126,8 @@ function openTokenDialog(status = state.token || {}) {
         // in the Android app: SciLog's own login inside the app, which hands the token over by itself
         window.ScilogAndroid ? el("p", {}, el("button", { class: "primary", onclick: () => { dialog.close(); window.ScilogAndroid.login(); } }, "Log in to SciLog here"),
           el("span", { class: "tk-safe", text: " — the token is taken over by itself. Or by hand:" })) : null,
-        el("ol", {},
-          el("li", {}, "Log in at ", el("a", { href: "https://scilog.psi.ch", target: "_blank", rel: "noopener" }, "scilog.psi.ch"), " (in this browser or any other)."),
-          el("li", {}, "Copy the token, either way:",
-            el("ul", {},
-              el("li", {}, "on a computer: press F12, open Console, type ", el("code", { text: "copy(localStorage.id_token)" }), " and Enter;"),
-              el("li", {}, "on a phone, or without the developer tools: once, make a bookmark with this address, then open it while SciLog is shown (Android: type the bookmark's name in the address bar and pick it). It shows the token to copy:",
-                el("div", { class: "tk-row" }, bm, el("button", { onclick: () => copyText(TOKEN_BOOKMARKLET, "Bookmark address") }, "Copy"))))),
-          el("li", {}, "Paste it here:")),
+        tokenGuide(),
+        el("p", { class: "tk-paste", text: "Paste the token here:" }),
         input,
         shared ? null : el("label", { class: "tk-keep" }, keep, ` Keep it on this computer (readable only by you); otherwise for ${hours} hours, in memory only`)),
       note),
