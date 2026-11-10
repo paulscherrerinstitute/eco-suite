@@ -19,12 +19,14 @@ import asyncio
 import datetime
 import hashlib
 import hmac
+import html
 import json
 import logging
 import mimetypes
 import os
 import re
 import secrets
+import socket
 import threading
 import time
 import uuid
@@ -922,8 +924,10 @@ class _Base(tornado.web.RequestHandler):
         return host in ("localhost", "127.0.0.1", "[::1]")
 
     def prepare(self):
-        if not self.local_host() or not self.authorized():
-            raise tornado.web.HTTPError(403)
+        if not self.local_host():
+            raise tornado.web.HTTPError(403, reason="not a local address: open the viewer as http://localhost:<port>/")
+        if not self.authorized():
+            raise tornado.web.HTTPError(403, reason="no valid key: open the address the viewer printed when it started")
 
     def set_default_headers(self):
         self.set_header("X-Content-Type-Options", "nosniff")
@@ -937,22 +941,54 @@ class _Base(tornado.web.RequestHandler):
         self.finish({"error": f"{type(exc).__name__}: {exc}" if exc and status_code >= 500 else self._reason})
 
 
+_REFUSED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>SciLog viewer: not opened</title>
+<style>body{{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:3em auto;padding:0 16px;color:#1d1f23;background:#fff}}
+code{{background:#f2f3f5;padding:0 4px;border-radius:3px}}@media(prefers-color-scheme:dark){{body{{color:#e3e5e8;background:#15171b}}
+code{{background:#22252b}}}}</style></head><body><h1>The SciLog viewer did not open</h1>{body}</body></html>"""
+
+
 class _Index(_Base):
+    """The page. It refuses with an explanation rather than a bare 403: the two refusals that
+    happen in practice are an address with an old key and an address by the machine's name."""
+
     def prepare(self):
         if not self.local_host():  # the token it checks itself, to set the cookie
-            raise tornado.web.HTTPError(403)
+            self.refuse(
+                f"<p>It was asked for as <code>{html.escape(self.request.host)}</code>. For your safety it only "
+                "answers to <code>localhost</code> (or <code>127.0.0.1</code>), so that no web site can reach it.</p>"
+                f"<p>Open <code>http://localhost:{self.app.port}/?token=…</code> as the viewer printed it. "
+                "From another computer, forward the port first: "
+                f"<code>ssh -L {self.app.port}:localhost:{self.app.port} {html.escape(socket.gethostname())}</code>, "
+                "then open the printed address there.</p>")
+
+    def refuse(self, body):
+        self.set_status(403)
+        self.set_header("Content-Type", "text/html; charset=utf-8")
+        self.set_header("Cache-Control", "no-store")
+        self.finish(_REFUSED_PAGE.format(body=body))
+
+    def stale(self):
+        self.refuse(
+            "<p>This address carries a key this viewer does not know. Every start of the viewer has a new key, "
+            "so this is most likely an address from an earlier start: from the browser's history, a bookmark or "
+            "a tab left open. On a shared console it can also be another user's viewer on this port.</p>"
+            "<p>Open the address the viewer printed <b>this time</b> (<code>scilog.viewer()</code> prints it "
+            "again; it may be on another port than before). Bookmark the page itself, not that address.</p>")
 
     def get(self):
+        if self._finished:
+            return
         token = self.get_query_argument("token", None)
         if token is not None:
             if not hmac.compare_digest(token, self.app.token):
-                raise tornado.web.HTTPError(403)
+                self.stale()
+                return
             self.set_cookie(COOKIE, token, httponly=True, samesite="Strict", expires_days=30)
             self.redirect("/" + (f"#{self.get_query_argument('go')}" if self.get_query_argument("go", None) else ""))
             return
         if not self.authorized():
-            self.set_status(403)
-            self.finish("eco scilog: open the URL with ?token=... that scilog.viewer() printed")
+            self.stale()
             return
         self.set_header("Cache-Control", "no-store")
         with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:

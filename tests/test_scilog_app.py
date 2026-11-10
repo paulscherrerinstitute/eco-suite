@@ -722,6 +722,28 @@ def test_the_token_is_checked_with_scilog_before_it_is_kept(tmp_path, monkeypatc
     assert kept == [good] and probed[-1] == good and store.logbooks == {} and store._reader is None
 
 
+def test_a_refused_page_says_why(server):
+    def refused(url, host=None):
+        req = urllib.request.Request(url, headers={"Host": host} if host else {})
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(req, timeout=10)
+        assert err.value.code == 403
+        return err.value.read().decode()
+
+    base = f"http://localhost:{server.port}"
+    # an address from an earlier start (another key), or none at all: what to open instead
+    for url in (f"{base}/?token=old-key", f"{base}/"):
+        page = refused(url)
+        assert "earlier start" in page and "this time" in page and "sesame" not in page
+    # asked for by the machine's name: only localhost, and how to forward the port
+    page = refused(f"http://127.0.0.1:{server.port}/?token=sesame", host=f"saresb-cons-05:{server.port}")
+    assert "saresb-cons-05" in page and f"ssh -L {server.port}:localhost:{server.port}" in page
+    # the API says it in a sentence too
+    with pytest.raises(urllib.error.HTTPError) as err:
+        urllib.request.urlopen(f"{base}/api/logbooks", timeout=10)
+    assert "printed" in json.loads(err.value.read())["error"]
+
+
 def test_pages_asked_for_under_another_name_are_refused(tmp_path, monkeypatch):
     monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
     app = ScilogApp(port=0, store=Store(_Writer(), cache_dir=tmp_path / "files", config={}), token="sesame").start()
