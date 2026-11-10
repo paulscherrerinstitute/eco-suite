@@ -80,6 +80,11 @@ alarms.shelve("mon_kb.intensity", 120)   # silence for two hours
 alarms.events()            # what was raised, cleared, acknowledged, sent
 ```
 
+The X-ray Pointing and Timetool alarms of the overview are inhibited while
+there is no electron beam or a shutter (photon or Bernina) is closed, so a
+beam stop does not page anybody for wandering beam positions. This holds even
+when the beam alarm itself is shelved or disabled.
+
 ## Who gets paged: the shift plan
 
 The plan is a Google Sheet next to the run tables (`alarms.shift_sheet()`
