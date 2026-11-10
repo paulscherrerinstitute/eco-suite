@@ -133,25 +133,27 @@ for (const [key, prop] of [["eco-scilog-editor-w", "--ed-w"], ["eco-scilog-edito
   if (v) document.documentElement.style.setProperty(prop, v);
 }
 
-async function openEditor({ logbook, logbookName, postId = null, onSaved, near = null }) {
+async function openEditor({ logbook, logbookName, postId = null, onSaved, near = null, comment = null, reply = null, isComment = false }) {
   const open = document.getElementById("editor-dialog");
   if (open) {  // one editor at a time: bring it back
     placeEditor(open, open.dataset.dock || editorDock(), false);
     toast("Finish or close the open editor first");
     return;
   }
-  let start = { html: "", tags: [], updated: null };
-  const key = draftKey(logbook, postId) + (near ? `:${near.where}:${near.id}` : "");
+  let start = { html: "", tags: (comment || reply)?.tags || [], updated: null };
+  const key = draftKey(logbook, postId) + (near ? `:${near.where}:${near.id}` : "") + (comment ? `:comment:${comment.id}` : "") + (reply ? `:reply:${reply.id}` : "");
   const dialog = el("dialog", { id: "editor-dialog" });
   const statusLine = el("span", { class: "ed-status" });
-  const title = el("strong", { text: postId ? "Edit post" : near ? `New post, inserted ${near.where === "before" ? "before" : "after"} ${near.label}` : `New post in ${logbookName}` });
+  const title = el("strong", { text: postId ? (isComment ? "Edit comment" : "Edit post")
+    : comment ? `Comment on ${comment.label}` : reply ? `Reply to ${reply.label}`
+    : near ? `New post, inserted ${near.where === "before" ? "before" : "after"} ${near.label}` : `New post in ${logbookName}` });
   const days = el("input", { type: "number", min: "1", max: "3650", step: "1", class: "ed-days",
     value: storageGet("eco-scilog-edit-days") || String(EDIT_DAYS_DEFAULT) });
   const period = postId ? null : el("label", { class: "ed-period", title: "How long this post stays editable in SciLog (SciLog's own default is 3 days). Set once, when posting." },
     "Edit period ", days, " days");
   const tagsInput = el("input", { class: "ed-tags", placeholder: "Tags, comma separated", autocomplete: "off" });
   const area = el("div", { class: "ed-area" }, el("p", { class: "hint", text: "Loading the editor ..." }));
-  const saveButton = el("button", { class: "primary", title: "Save to SciLog (Ctrl+Enter)" }, postId ? "Save changes" : "Post");
+  const saveButton = el("button", { class: "primary", title: "Save to SciLog (Ctrl+Enter)" }, postId ? "Save changes" : comment ? "Comment" : reply ? "Reply" : "Post");
   const attach = el("input", { type: "file", multiple: "", hidden: "" });
   const ctx = {
     logbook, postId, pending: 0,
@@ -259,6 +261,8 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
         body.edit_days = d;
         storageSet("eco-scilog-edit-days", String(d));
         if (near) body[near.where === "before" ? "before" : "after"] = near.id;
+        if (comment) body.comment_on = comment.id;
+        if (reply) body.reply_to = reply.id;
       }
       const post = postId ? await writeApi(`/api/save/${postId}`, "PATCH", body) : await writeApi("/api/save", "POST", body);
       dropDraft(key);

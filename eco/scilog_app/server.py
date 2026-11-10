@@ -304,6 +304,7 @@ class Store:
                                                               key=lambda k: k.get("createdAt") or "")],
             "quote": dict(self.child_record(quote), of=raw.get("_quote_of")) if quote else None,
             "shared": EVERYONE_LOGGED_IN in (raw.get("readACL") or ()),
+            "groups": sorted(raw.get("readACL") or ()),
             "can_delete": self._safe_may_delete(raw),
             "created": created,
             "updated": updated,
@@ -320,8 +321,14 @@ class Store:
     def child_record(self, raw):
         """A comment, or the copy of the post a reply quotes."""
         text = logs_sources.html_to_text(raw.get("textcontent") or "")
-        return {"id": raw["id"], "t": _epoch(raw.get("createdAt") or ""), "author": raw.get("createdBy") or "",
-                "html": content.clean_post(raw.get("textcontent") or "", raw.get("files")), "text": text}
+        created, updated = raw.get("createdAt") or "", raw.get("updatedAt") or ""
+        return {"id": raw["id"], "t": _epoch(created), "author": raw.get("createdBy") or "",
+                "html": content.clean_post(raw.get("textcontent") or "", raw.get("files")), "text": text,
+                "created": created, "updated": updated, "editor": raw.get("updatedBy") or "",
+                "edited": bool(updated and created and _epoch(updated) - _epoch(created) > 60),
+                "expires": _epoch(raw.get("expiresAt") or ""), "tags": list(raw.get("tags") or ()),
+                "can_edit": raw.get("linkType") == "comment" and self._safe_may_edit(raw),
+                "can_delete": raw.get("linkType") == "comment" and self._safe_may_delete(raw)}
 
     @staticmethod
     def _link_quotes(book, raws):
@@ -374,7 +381,7 @@ class Store:
     def delete(self, logbook_id, post_id):
         """Delete a post in SciLog (it goes to the logbook's history, where
         SciLog can restore it); returns {"removed": id}."""
-        raw = self._raw(logbook_id, post_id)
+        raw, parent = self._raw_or_comment(logbook_id, post_id)
         ok, why = self.may_write_to(logbook_id)
         if not ok:
             raise PermissionError(why)
@@ -382,6 +389,10 @@ class Store:
             raise PermissionError("SciLog lets only the members of this post's delete groups delete it")
         self.reader.delete_post(post_id)
         book = self.logbooks[logbook_id]
+        if parent is not None:  # a comment: its post is shown again without it
+            parent["subsnippets"] = [k for k in parent.get("subsnippets") or () if k["id"] != post_id]
+            book["posts"][parent["id"]] = self.record(parent)
+            return {"removed": post_id, "post": book["posts"][parent["id"]]}
         book["raw"].pop(post_id, None)
         book["posts"].pop(post_id, None)
         return {"removed": post_id}
@@ -438,6 +449,18 @@ class Store:
         if raw is None:
             raise KeyError(f"no post {post_id} in this logbook")
         return raw
+
+    def _raw_or_comment(self, logbook_id, snippet_id):
+        """(snippet, None) for a post, (comment, its post) for a comment."""
+        try:
+            return self._raw(logbook_id, snippet_id), None
+        except KeyError:
+            pass
+        for post in self.logbooks[logbook_id]["raw"].values():
+            for kid in post.get("subsnippets") or ():
+                if kid["id"] == snippet_id and kid.get("linkType") == "comment" and not kid.get("deleted"):
+                    return kid, post
+        raise KeyError(f"no post or comment {snippet_id} in this logbook")
 
     def _check_write(self, logbook_id, raw=None):
         ok, why = self.may_write_to(logbook_id)
@@ -498,8 +521,8 @@ class Store:
         return {"deleted": view_id, "name": raw.get("name")}
 
     def for_editor(self, logbook_id, post_id):
-        """The post as the editor opens it."""
-        raw = self._raw(logbook_id, post_id)
+        """The post (or comment) as the editor opens it."""
+        raw, _ = self._raw_or_comment(logbook_id, post_id)
         self._check_write(logbook_id, raw)
         return {"html": content.editor_html(raw.get("textcontent") or "", raw.get("files")), "tags": list(raw.get("tags") or ()),
                 "updated": raw.get("updatedAt") or ""}
@@ -555,14 +578,23 @@ class Store:
             raise ValueError("there is no room between these two posts")
         return int(a + (b - a) // 2)
 
-    def save(self, logbook_id, post_id, html, tags, expected_updated=None, edit_days=None, after=None, before=None):
+    def save(self, logbook_id, post_id, html, tags, expected_updated=None, edit_days=None, after=None, before=None,
+             comment_on=None, reply_to=None):
         """Create (post_id None) or update a post from the editor's HTML;
         returns the post as the page shows it. With expected_updated, an
         update is refused if the post was changed meanwhile. A new post can
         be given an edit period (days; SciLog's own default is 3) and be
-        placed right after another post (`after`, a post id)."""
-        raw = self._raw(logbook_id, post_id) if post_id else None
+        placed right after another post (`after`, a post id).
+
+        As SciLog's own page writes them: `comment_on` (a post id) makes it a
+        comment under that post (the post is returned); `reply_to` a new post
+        at the end that quotes that post, i.e. carries a copy of it."""
+        raw, parent = self._raw_or_comment(logbook_id, post_id) if post_id else (None, None)
         self._check_write(logbook_id, raw)
+        for target in (comment_on, reply_to):
+            if target and not _ID.match(str(target)):
+                raise ValueError("not a post id")
+        on = self._raw(logbook_id, comment_on or reply_to) if (comment_on or reply_to) else None
         textcontent, files = content.to_scilog(html, self._known_files(raw))
         if not textcontent.strip():
             raise ValueError("the post is empty")
@@ -570,13 +602,15 @@ class Store:
         if raw is None:
             payload = {"snippetType": "paragraph", "linkType": "paragraph", "parentId": logbook_id,
                        "textcontent": textcontent, "files": files, "tags": tags}
+            if comment_on:
+                payload.update(linkType="comment", parentId=comment_on)
             if edit_days is not None:
                 days = float(edit_days)
                 if not 0 < days <= self.MAX_EDIT_DAYS:
                     raise ValueError(f"the edit period must be between 1 and {self.MAX_EDIT_DAYS} days")
                 until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
                 payload["expiresAt"] = until.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            if after or before:
+            if (after or before) and not comment_on:
                 if not _ID.match(str(after or before)):
                     raise ValueError("not a post id")
                 order = self._insert_order(logbook_id, after_id=after, before_id=before)
@@ -584,6 +618,10 @@ class Store:
                     payload["defaultOrder"] = order
             new = self.reader.create_post(payload)
             post_id = new["id"]
+            if reply_to:
+                quoted = self.reader.post(reply_to)
+                copy = {k: quoted[k] for k in ("textcontent", "files", "tags", "expiresAt", "isPrivate") if k in quoted}
+                self.reader.create_post({**copy, "snippetType": "paragraph", "linkType": "quote", "parentId": post_id})
         else:
             current = self.reader.post(post_id)
             if expected_updated and current.get("updatedAt") and current["updatedAt"] != expected_updated:
@@ -592,6 +630,8 @@ class Store:
             self.reader.update_post(post_id, {"textcontent": textcontent, "files": files, "tags": tags})
         for f in files:
             self.uploads.pop(f["fileId"], None)
+        if comment_on or parent is not None:  # a comment: the post it belongs to, with it
+            return self._reread(logbook_id, comment_on or parent["id"])
         return self._reread(logbook_id, post_id)
 
     def _reread(self, logbook_id, post_id):
@@ -796,7 +836,7 @@ class _Save(_Write):
     async def post(self):
         b = self.body()
         await self.run(self.app.store.save, b.get("logbook"), None, b.get("html", ""), b.get("tags"),
-                       None, b.get("edit_days"), b.get("after"), b.get("before"))
+                       None, b.get("edit_days"), b.get("after"), b.get("before"), b.get("comment_on"), b.get("reply_to"))
 
     async def patch(self, post_id):
         b = self.body()

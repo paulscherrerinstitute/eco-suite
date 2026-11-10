@@ -61,6 +61,8 @@ function openPostMenu(p, button, pinned = false) {
         ? item("✏️", "Edit", () => (writing ? editPost(p.id) : askToAllowWriting()), { hint: p.expires ? `until ${shortDate(p.expires)}` : "" })
         : item("✏️", "Edit", () => {}, { disabled: true, hint: "edit period over", title: `SciLog allows changes only until ${editableUntil(p)}` }));
     }
+    menu.append(item("💬", "Add comment", () => commentOn(p.id), { title: "A note under this post, as in SciLog" }),
+      item("↩", "Reply", () => replyTo(p.id), { title: "A new post at the end that quotes this one, as in SciLog" }));
     menu.append(...group("T", "Insert a post", [
       item("↑", "above this one", () => insertNear(p.id, "before"), { title: "e.g. a heading for the outline" }),
       item("↓", "below this one", () => insertNear(p.id, "after")),
@@ -82,7 +84,8 @@ function openPostMenu(p, button, pinned = false) {
     menu.append(...group("🔗", "Link & sharing", shareItems));
     menu.append(item("⧉", "Show only this post", () => showOnly(p.id)));
     if (!window.matchMedia("(max-width: 760px)").matches) menu.append(item("📌", "Pin beside the flow", () => pinPost(p.id)));
-    if (p.comments?.length) menu.append(item("💬", "Show / hide comments", () => document.querySelector(`#p-${p.id} .comments`)?.classList.toggle("open")));
+    menu.append(item("ℹ️", "Info", () => showInfo(p), { title: "Who wrote and changed it, when, the edit period, who can read it" }));
+    if (p.comments?.length) menu.append(item("🗨", "Show / hide comments", () => document.querySelector(`#p-${p.id} .comments`)?.classList.toggle("open")));
     if (p.can_delete) menu.append(el("div", { class: "pm-sep" }), item("🗑", "Delete …", () => deletePost(p), { cls: "pm-danger", title: "SciLog moves it to the logbook's history, where it can be restored" }));
   }
   if (sheet) {

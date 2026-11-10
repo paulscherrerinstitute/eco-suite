@@ -159,8 +159,14 @@ function commentsElement(p) {
     const body = el("div", { class: "c-body" });
     body.innerHTML = c.html;
     body.querySelectorAll("img").forEach((img) => img.addEventListener("click", () => lightbox(img.src)));
+    const tools = el("span", { class: "c-tools" },
+      c.can_edit ? (editable(c)
+        ? el("button", { title: `Edit this comment (until ${editableUntil(c)})`, onclick: () => editComment(p, c) }, "✏️")
+        : el("button", { disabled: "", title: `SciLog allowed changes only until ${editableUntil(c)}` }, "✏️")) : null,
+      c.can_delete ? el("button", { title: "Delete this comment", onclick: () => deleteComment(p, c) }, "🗑") : null);
     return el("div", { class: "comment", id: `c-${c.id}` },
-      el("div", { class: "c-head" }, el("strong", { text: shortName(c.author), title: c.author }), ` ${shortDate(c.t)} ${clock(c.t)}`), body);
+      el("div", { class: "c-head" }, el("strong", { text: shortName(c.author), title: c.author }), ` ${shortDate(c.t)} ${clock(c.t)}`,
+        c.edited ? el("span", { class: "edited", text: " edited", title: `${c.editor || ""} ${c.updated}` }) : null, tools), body);
   }));
   const box = el("div", { class: `comments${state.commentsOpen ? " open" : ""}` });
   const chip = el("button", { class: "c-chip", title: "Show or hide the comments (c: all of them)", onclick: () => box.classList.toggle("open") },
@@ -524,6 +530,7 @@ function openSearch() {
   if (input.value.trim()) showResults(input.value);
 }
 function endSearch() {
+  state.fromSearch = false;
   closeResults();
   document.body.classList.remove("search-open");
   $("#search").blur();
@@ -537,6 +544,18 @@ function openResult(i) {
   jumpToPost(r.post.id, r.words);
   if (narrow()) endSearch();  // keyboard away, the post on the whole screen
   else if (!docked()) closeResults();  // an overlay would cover the post
+  state.fromSearch = !docked();  // a phone's Back brings the results back
+}
+
+// the results again, as they were, without the keyboard popping up
+function reopenResults() {
+  const q = $("#search").value;
+  if (!q.trim()) return false;
+  if (narrow()) document.body.classList.add("search-open");
+  showResults(q);
+  const active = document.querySelectorAll("#results .result")[state.active];
+  if (active) { document.querySelectorAll("#results .result").forEach((x) => x.classList.remove("active")); active.classList.add("active"); active.scrollIntoView({ block: "nearest" }); }
+  return true;
 }
 
 function clearMarks() {
@@ -808,7 +827,67 @@ function insertNear(id, where = "after") {
     near: { id, where, label: `${dayTitle(p.t)} ${clock(p.t)} ${p.title ? `“${p.title.slice(0, 50)}”` : ""}` } });
 }
 
-function placeSaved(post) {
+function commentOn(id) {
+  if (!canWrite()) { askToAllowWriting(); return; }
+  const p = state.byId.get(id);
+  openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: (post) => placeSaved(post, "Comment saved", true),
+    comment: { id, tags: p.tags, label: postLabel(p) } });
+}
+
+function replyTo(id) {
+  if (!canWrite()) { askToAllowWriting(); return; }
+  const p = state.byId.get(id);
+  openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, onSaved: placeSaved,
+    reply: { id, tags: p.tags, label: postLabel(p) } });
+}
+
+function editComment(p, c) {
+  if (!canWrite()) { askToAllowWriting(); return; }
+  openEditor({ logbook: state.logbook.id, logbookName: state.logbook.name, postId: c.id, isComment: true,
+    onSaved: (post) => placeSaved(post, "Comment saved", true) });
+}
+
+async function deleteComment(p, c) {
+  if (!canWrite()) { askToAllowWriting(); return; }
+  const teaser = c.text.replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!confirm(`Delete this comment from SciLog?\n\n${shortName(c.author)}, ${shortDate(c.t)} ${clock(c.t)}: “${teaser}”\n\nSciLog keeps it in the logbook's history, from where it can be restored.`)) return;
+  try {
+    const r = await writeApi(`/api/delete/${c.id}`, "POST", { logbook: state.logbook.id });
+    if (r.post) placeSaved(r.post, "Comment deleted", true);
+  } catch (e) { toast(`Not deleted: ${e.message}`); }
+}
+
+function postLabel(p) { return `${dayTitle(p.t)} ${clock(p.t)} ${shortName(p.author)}${p.title ? ` “${p.title.slice(0, 50)}”` : ""}`; }
+
+function showInfo(p) {
+  const when = (t) => (t ? `${fullDate(t)} ${clock(t)}` : "");
+  const iso = (s) => (s ? when(Date.parse(s) / 1000) : "");
+  const rows = [
+    ["Written by", p.author],
+    ["Written", iso(p.created)],
+    p.inserted ? ["Placed at", `${when(p.t)} (inserted there afterwards)`] : null,
+    p.edited ? ["Last changed by", p.editor] : null,
+    p.edited ? ["Last changed", iso(p.updated)] : null,
+    ["Editable until", p.expires ? `${when(p.expires)}${p.expires * 1000 < Date.now() ? " (over)" : ""}` : "no limit"],
+    ["Tags", p.tags.join(", ") || "none"],
+    ["Comments", String(p.comments?.length || 0)],
+    p.quote ? ["Reply to", p.quote.of && state.byId.get(p.quote.of) ? postLabel(state.byId.get(p.quote.of)) : "a post (not found here)"] : null,
+    ["Readable by", ((p.groups || []).join(", ") || "not given by SciLog") + (p.shared ? " (shared with everyone with a PSI account)" : "")],
+    ["You may", [p.can_edit ? (editable(p) ? "edit" : "edit (period over)") : "", p.can_delete ? "delete" : ""].filter(Boolean).join(", ") || "only read"],
+    ["Id", p.id],
+  ].filter(Boolean);
+  const dialog = el("dialog", { class: "info-dialog" },
+    el("h3", { text: "Post info" }),
+    el("table", {}, ...rows.map(([k, v]) => el("tr", {}, el("th", { text: k }), el("td", { text: v })))),
+    el("div", { class: "info-foot" },
+      el("button", { onclick: () => copyText(p.id, "Id") }, "Copy id"),
+      el("button", { class: "primary", onclick: () => dialog.close() }, "Close")));
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+function placeSaved(post, message = "Saved to SciLog", openComments = false) {
   state.byId.set(post.id, post);
   state.all = [...state.byId.values()].sort((a, b) => a.t - b.t);
   applyView();
@@ -819,7 +898,8 @@ function placeSaved(post) {
   fillViews();
   setStatus();
   jumpToPost(post.id);
-  toast("Saved to SciLog");
+  if (openComments) document.querySelector(`#p-${post.id} .comments`)?.classList.add("open");
+  toast(message);
 }
 
 function headingMenu(ev, postId, index, level) {
@@ -1081,6 +1161,7 @@ function pageBack() {
   }
   if (!$("#picker").hidden && state.logbook) { showPicker(false); return true; }
   if (document.body.classList.contains("search-open") || document.body.classList.contains("searching")) { endSearch(); return true; }
+  if (state.fromSearch) { state.fromSearch = false; if (reopenResults()) return true; }
   if (document.body.classList.contains("outline-open")) { document.body.classList.remove("outline-open"); return true; }
   if (!$("#pin-pane").hidden) { unpin(); return true; }
   if (state.only) { showInContext(state.only); return true; }

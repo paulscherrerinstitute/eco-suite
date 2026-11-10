@@ -406,7 +406,8 @@ class Reader:
 
     #: what a comment or a reply's quote (children of a post) is read with
     CHILD_FIELDS = {"id": True, "parentId": True, "linkType": True, "createdAt": True, "createdBy": True,
-                    "updatedAt": True, "textcontent": True, "files": True, "deleted": True, "expiresAt": True, "readACL": True}
+                    "updatedAt": True, "updatedBy": True, "textcontent": True, "files": True, "tags": True, "deleted": True,
+                    "expiresAt": True, "readACL": True, "updateACL": True, "deleteACL": True}
     CHILD_WHERE = {"snippetType": "paragraph", "linkType": {"inq": ["comment", "quote"]}}
 
     def posts(self, logbook_id, updated_after=None, limit=100000, children=False):

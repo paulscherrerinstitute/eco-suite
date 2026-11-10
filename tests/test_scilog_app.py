@@ -472,6 +472,83 @@ def test_deleting_needs_a_delete_group_and_takes_the_post_off_the_page(tmp_path,
         store2.delete(LB, reader.B)
 
 
+class _Talk(_Threads):
+    """_Threads where comments and replies are written as SciLog's own page writes them."""
+
+    def __init__(self):
+        super().__init__()
+        self.n = 0
+        self.rows[0]["subsnippets"][0].update(updatedAt="2026-11-01T11:00:00Z", expiresAt="2099-01-01T00:00:00Z",
+                                              createdBy="ann@psi.ch", updateACL=["p1"], deleteACL=["p1"])
+        self.rows[0]["deleteACL"] = ["p1"]
+        self.post = lambda i: json.loads(json.dumps(self.find(i)))
+        self.delete_post = lambda i: self.written.append(("delete", i))
+
+    def find(self, i):
+        for r in self.rows:
+            if r["id"] == i:
+                return r
+            for k in r.get("subsnippets") or ():
+                if k["id"] == i:
+                    return k
+        raise KeyError(i)
+
+    def create_post(self, payload):
+        self.written.append(("create", payload))
+        self.n += 1
+        t = f"2026-11-06T08:00:{self.n:02d}Z"
+        row = {**payload, "id": f"{self.n:02d}" * 12, "createdAt": t, "updatedAt": t, "createdBy": "ann@psi.ch",
+               "updatedBy": "ann@psi.ch", "deleted": False, "updateACL": ["p1"], "deleteACL": ["p1"]}
+        if payload["linkType"] == "comment":
+            self.kids.append(row)
+        elif payload["linkType"] == "quote":
+            self.find(payload["parentId"]).setdefault("subsnippets", []).append(row)
+        else:
+            row["defaultOrder"] = 1800000000000000 + self.n
+            self.rows.append(row)
+        return row
+
+    def update_post(self, post_id, payload):
+        self.written.append(("update", post_id, payload))
+        row = self.find(post_id)
+        row.update(payload, updatedAt="2026-11-07T09:00:00Z")
+        if row.get("linkType") == "comment":
+            self.kids.append(row)
+
+
+def test_comments_and_replies_are_written_as_scilog_writes_them(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Talk()
+    store = Store(reader, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+    a, b, _ = store.posts(LB)["posts"]
+    own = a["comments"][0]
+    assert own["can_edit"] and own["can_delete"] and own["expires"] > 0
+
+    # a comment: a paragraph under the post, with the edit period; the post comes back with it
+    post = store.save(LB, None, "<p>noted</p>", ["ARAMIS"], edit_days=10, comment_on=reader.B)
+    payload = reader.written[-1][1]
+    assert payload["linkType"] == "comment" and payload["parentId"] == reader.B and "defaultOrder" not in payload
+    assert "expiresAt" in payload and post["id"] == reader.B and [c["text"].strip() for c in post["comments"]] == ["noted"]
+
+    # a reply: a new post at the end, then a copy of the post it answers, attached as its quote
+    reply = store.save(LB, None, "<p>yes</p>", [], reply_to=reader.A)
+    (_, top), (_, quote) = reader.written[-2:]
+    assert top["linkType"] == "paragraph" and top["parentId"] == LB
+    assert quote["linkType"] == "quote" and quote["parentId"] == reply["id"] and "offset fixed?" in quote["textcontent"]
+    assert quote["expiresAt"] == "2026-11-04T10:00:00Z" and "id" not in quote and "createdBy" not in quote
+    assert reply["quote"]["of"] == reader.A
+
+    # one's own comment: edited in place, deleted (its post shown without it)
+    edited = store.save(LB, own["id"], "<p>looks very good</p>", ["ARAMIS"])
+    assert reader.written[-1][:2] == ("update", own["id"]) and edited["id"] == reader.A
+    assert [c["text"].strip() for c in edited["comments"]] == ["looks very good"]
+    assert store.for_editor(LB, own["id"])["html"]
+    out = store.delete(LB, own["id"])
+    assert reader.written[-1] == ("delete", own["id"]) and out["post"]["comments"] == []
+    with pytest.raises(ValueError):
+        store.save(LB, None, "<p>x</p>", [], comment_on="../x")
+
+
 def test_the_token_is_checked_with_scilog_before_it_is_kept(tmp_path, monkeypatch):
     monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
     reader = _Writer()
