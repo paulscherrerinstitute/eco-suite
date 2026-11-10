@@ -163,6 +163,40 @@ archiver.search("*PBPG050*INTENSITY*")            # all backends
 archiver.search("*ARES*", backend="sf-databuffer")  # BS only
 ```
 
+### GLS / OSFA building-climate channels
+
+A few room-climate sensors (temperature, humidity — PSI's building-automation
+system, not the accelerator control system) are archived under
+`backend="sf-archiver"` too, but **not reachable live at all**: `caget` of
+the equivalent-looking PV name times out ("not found"), since the
+accelerator and building-management networks are separate and only the
+archiver side of this one crosses over. Their channel ids also don't look
+like EPICS PV names:
+
+```python
+archiver.search("*OSFA*", backend="sf-archiver")
+# e.g. "IKLUM-8701-EB01904:M01_A_D-OSFA" -- building "IKLUM", room "8701",
+# device "EB01904", point "M01"
+```
+
+`eco.epics_utils.gls` has the search/name-conversion helpers for this
+convention (`find_gls_channels`, `list_gls_channels`,
+`guess_to_gls_channels`), and `eco.epics_utils.detector` has two Detector
+classes built on it:
+- `DetectorArchiverOnly` — a channel with no live PV at all; reads the
+  latest archived sample instead.
+- `DetectorGls` — an EPICS PV with a GLS channel as fallback (used when
+  there's no PV, it has never connected, or isn't currently connected).
+  `.get_archiver_time_range()` plots both sources' history together.
+
+Only a small, fixed set of building/room/device combinations is bridged in
+at all (`list_gls_channels()` for the current list) — most guessed ids
+resolve to nothing, so search first rather than guessing a channel name.
+Where a channel *is* bridged its history goes back as far as any other
+`sf-archiver` channel, but its sampling is markedly coarser than a
+comparable EPICS-archived value (observed ~110 s vs ~30 s for a nearby
+EPICS sensor).
+
 ### By pulse id
 
 For beam-synchronous channels you can query a pulse-id range instead. With no

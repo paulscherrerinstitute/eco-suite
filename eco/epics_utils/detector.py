@@ -1,7 +1,9 @@
+import datetime
 import threading
 from enum import IntEnum
 from time import time, sleep
 
+import eco
 import numpy as np
 from epics import PV
 from eco.epics_utils.adjustable import _read_pv
@@ -220,6 +222,115 @@ class DetectorPvString:
             print_output=print_output,
             **kwargs,
         )
+
+
+@get_from_archive
+class DetectorArchiverOnly(Assembly):
+    """A Detector for a channel that exists only in a historical archive, with
+    no live EPICS process variable behind it at all -- e.g. PSI's
+    building-automation ("OSFA") room-climate sensors. They show up in
+    datahub's "sf-archiver" backend under their own channel-id convention
+    (e.g. "IKLUM-8701-EB01904:M01_A_D-OSFA"), not as an EPICS PV name, and a
+    `caget` of the equivalent-looking PV name times out with "not found": the
+    accelerator control network and PSI's building-management network are
+    separate, and only the archiver side crosses over.
+
+    `get_current_value()` therefore reads the latest archived sample within
+    `lookback` seconds, rather than a live channel -- the usual
+    `get_from_archive` historical API (`.get_archiver_time_range()`) works
+    exactly as for a live PV-backed Detector, since all it needs is this
+    object's `channel` alias. `.strip_plot()` (also inherited) has no live
+    source to stream from here and will not show anything -- only
+    `get_archiver_time_range()` is meaningful for a channel like this.
+    """
+
+    def __init__(self, channel, name=None, lookback=1800):
+        super().__init__(name=name)
+        self.Id = channel
+        self.pvname = channel  # keeps get_archiver_channels' pvname fallback working
+        self.channel = channel
+        self.lookback = lookback
+        self.alias = Alias(self.name, channel=self.channel, channeltype="CA")
+
+    def get_current_value(self):
+        end = datetime.datetime.now(datetime.timezone.utc)
+        start = end - datetime.timedelta(seconds=self.lookback)
+        data = eco.defaults.ARCHIVER.get_data_time_range(
+            channels=[self.channel],
+            start=start,
+            end=end,
+            plot=False,
+            verbose=False,
+            force_type="CA",
+        )
+        if data is None or data.empty or self.channel not in data:
+            return float("nan")
+        values = data[self.channel].dropna()
+        return float(values.iloc[-1]) if len(values) else float("nan")
+
+    def __call__(self):
+        return self.get_current_value()
+
+
+@get_from_archive
+class DetectorGls(Assembly):
+    """A Detector combining a live EPICS PV with a GLS/building-automation
+    channel (see `eco.epics_utils.gls`) that duplicates or stands in for it.
+    `get_current_value()` reads the EPICS PV live whenever it exists and is
+    connected; it falls back to the archived GLS value -- the latest sample
+    within `gls_lookback` seconds -- when there is no PV at all
+    (`pvname=None`), it has never connected, or it is not currently
+    connected. There is no automatic judgment of "EPICS is significantly
+    worse than GLS" beyond connectivity: if that distinction matters for a
+    specific channel (e.g. an EPICS PV that connects but updates far slower
+    than the GLS channel does), decide and wire it for that channel
+    specifically rather than assuming a general rule here.
+
+    Both sources are kept as sub-Detectors -- `.epics` (only if `pvname` was
+    given) and `.gls` (always) -- so the inherited `.get_archiver_time_range()`
+    (see `get_from_archive`) plots *both* traces together: directly useful
+    for judging, on a given channel, whether GLS's coarser sampling (see the
+    `eco.epics_utils.gls` module docstring) actually matters there. The
+    inherited `.strip_plot()` only ever has live data to show for `.epics` --
+    GLS has none.
+    """
+
+    def __init__(self, gls_channel, pvname=None, name=None, gls_lookback=1800):
+        super().__init__(name=name)
+        self.pvname = pvname
+        self.gls_channel = gls_channel
+        if pvname:
+            self._append(DetectorPvDataStream, pvname, name="epics", is_setting=False)
+        self._append(
+            DetectorArchiverOnly,
+            gls_channel,
+            name="gls",
+            is_setting=False,
+            lookback=gls_lookback,
+        )
+
+    def _epics_connected(self):
+        pv = getattr(getattr(self, "epics", None), "_pv", None)
+        if pv is None:
+            return False
+        try:
+            return bool(pv.connected)
+        except Exception:
+            return False
+
+    @property
+    def source(self):
+        """Which sub-Detector `get_current_value()` is currently reading
+        from: "epics" or "gls"."""
+        return "epics" if self._epics_connected() else "gls"
+
+    def get_current_value(self):
+        if self._epics_connected():
+            return self.epics.get_current_value()
+        return self.gls.get_current_value()
+
+    def __call__(self):
+        return self.get_current_value()
 
 
 # @call_convenience
