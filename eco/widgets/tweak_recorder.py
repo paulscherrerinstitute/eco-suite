@@ -317,12 +317,34 @@ def _start_text_plot(recorder):
     ).start()
 
 
+PLOT_MODES = ("auto", "window", "text", "none")
+
+
+def plot_mode(plot=None):
+    """Where a terminal tweak's live plot goes: `plot` if given, else the
+    environment variable ECO_TWEAK_PLOT, else "auto" -- a Qt window where a
+    display is available, text in the terminal otherwise. "window" and
+    "text" force one, "none" (or False) records without a live plot."""
+    import os
+
+    if plot is False:
+        return "none"
+    mode = plot or os.environ.get("ECO_TWEAK_PLOT", "") or "auto"
+    mode = str(mode).strip().lower()
+    if mode not in PLOT_MODES:
+        raise ValueError(f"plot={plot!r}: one of {PLOT_MODES}")
+    return mode
+
+
 @contextlib.contextmanager
-def terminal_recording(axes, detectors, owner=None, label=None):
-    """Record (and, where a display is available, live-plot in a Qt window)
-    `detectors` during a terminal tweak of `axes`. The recorder is left on
-    `owner._tweak_recorder` (if given) for later access, `label` says where
-    in the final message; the plot window stays open after the tweak ends."""
+def terminal_recording(axes, detectors, owner=None, label=None, plot=None):
+    """Record (and live-plot) `detectors` during a terminal tweak of `axes`.
+    `plot`: where the live plot goes, see plot_mode -- by default a Qt
+    window where a display is available, else text in the terminal. The
+    recorder is left on `owner._tweak_recorder` (if given) for later access,
+    `label` says where in the final message; a plot window stays open after
+    the tweak ends."""
+    mode = plot_mode(plot)
     detectors = _as_detector_list(detectors)
     if not detectors:
         yield None
@@ -334,14 +356,19 @@ def terminal_recording(axes, detectors, owner=None, label=None):
         except Exception:
             pass
     text_plotter = None
-    if display_available():
+    if mode == "window" and not display_available():
+        print("tweak: no display for a plot window, plotting as text")
+        mode = "text"
+    if mode == "auto":
+        mode = "window" if display_available() else "text"
+    if mode == "window":
         try:
             from eco.widgets.tweak_panel_qt import show_tweak_plot_qt
 
             recorder._plot_window = show_tweak_plot_qt(recorder)
         except Exception as exc:
             print(f"tweak: no live plot ({exc}); still recording")
-    else:
+    elif mode == "text":
         text_plotter = _start_text_plot(recorder)
     try:
         yield recorder

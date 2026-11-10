@@ -64,3 +64,15 @@ camera viewers) keep updating.
 Over plain ssh without X, or with `ECO_NO_X=1` set, no Qt windows are opened
 and the detector plot is drawn as text right in the terminal. See
 {doc}`terminal_plots`.
+
+To get the text plot in the terminal also where a display is available:
+
+```python
+mot.tweak(0.1, detectors=[diode], ui="terminal", plot="text")
+```
+
+`plot=` is `"auto"` (default: a window if there is a display, else text),
+`"text"`, `"window"` or `"none"` (record without a live plot). The
+environment variable `ECO_TWEAK_PLOT` sets the default, e.g.
+`export ECO_TWEAK_PLOT=text`. Unlike `ECO_NO_X`, it changes only the tweak
+plot, not other windows.

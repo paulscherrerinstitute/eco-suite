@@ -259,3 +259,49 @@ def test_terminal_plot_text_has_the_panel_layout(monkeypatch):
     titles = [l.strip() for l in text.split("\n") if l.strip() in ("d", "x", "y   (x: step)")]
     assert titles == ["d", "x", "y   (x: step)"]
     assert len(text.split("\n")) <= 40 - 12
+
+
+# -- where the terminal tweak's live plot goes (plot= / ECO_TWEAK_PLOT) ---------
+class _Det:
+    name = "d"
+
+    def get_current_value(self):
+        return 1.0
+
+
+def _where_it_plotted(monkeypatch, plot=None, display=True, env=None):
+    from eco.widgets import tweak_recorder as tr
+
+    calls = []
+    monkeypatch.setattr(tr, "display_available", lambda: display)
+    monkeypatch.setattr(tr, "_start_text_plot", lambda rec: calls.append("text"))
+    import eco.widgets.tweak_panel_qt as qt_panel
+
+    monkeypatch.setattr(qt_panel, "show_tweak_plot_qt", lambda rec: calls.append("window"))
+    if env is None:
+        monkeypatch.delenv("ECO_TWEAK_PLOT", raising=False)
+    else:
+        monkeypatch.setenv("ECO_TWEAK_PLOT", env)
+    with tr.terminal_recording([Axis("x")], [_Det()], plot=plot) as rec:
+        assert rec is not None  # recording, whatever the plot
+    return calls
+
+
+def test_plot_goes_to_a_window_with_a_display_by_default(monkeypatch):
+    assert _where_it_plotted(monkeypatch) == ["window"]
+    assert _where_it_plotted(monkeypatch, display=False) == ["text"]
+
+
+def test_plot_text_forces_the_terminal_also_with_a_display(monkeypatch):
+    assert _where_it_plotted(monkeypatch, plot="text") == ["text"]
+    assert _where_it_plotted(monkeypatch, env="text") == ["text"]
+    assert _where_it_plotted(monkeypatch, plot="window", env="text") == ["window"]
+
+
+def test_plot_none_and_window_without_display(monkeypatch, capsys):
+    assert _where_it_plotted(monkeypatch, plot="none") == []
+    assert _where_it_plotted(monkeypatch, plot=False) == []
+    assert _where_it_plotted(monkeypatch, plot="window", display=False) == ["text"]
+    assert "plotting as text" in capsys.readouterr().out
+    with pytest.raises(ValueError):
+        _where_it_plotted(monkeypatch, plot="sideways")
