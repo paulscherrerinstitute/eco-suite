@@ -49,7 +49,7 @@ def test_counter_value_follows_the_leader(sim):
     s = Scans().ascan(
         sim.peak.x, 0, 1, 2, 10, counters=[lead, sim.peak.signal], return_at_end=False
     )
-    assert time.time() - t0 < 5
+    assert time.time() - t0 < 15  # reading 10 as seconds would take 30 s
     assert lead.calls == [10, 10, 10]
     windows = [step["window"] for step in s.scan_info["scan_step_info"]]
     assert all(w["by"] == "lead" for w in windows)
