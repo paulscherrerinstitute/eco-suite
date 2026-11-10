@@ -8,6 +8,14 @@ const CKE_VERSION = "48.5.2";
 const CKE_BASE = `https://cdn.jsdelivr.net/npm/ckeditor5@${CKE_VERSION}/dist/browser`;
 let ckeLoading = null;
 
+// where this logbook may be written to, the editor's code is fetched while nothing else happens,
+// so that "New post" opens without waiting for the download
+function preloadEditor() {
+  if (window.CKEDITOR || ckeLoading || !canWrite()) return;
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
+  setTimeout(() => idle(() => { if (canWrite()) loadEditorCode().catch(() => {}); }), 3000);
+}
+
 function loadEditorCode() {
   if (window.CKEDITOR) return Promise.resolve(window.CKEDITOR);
   if (ckeLoading) return ckeLoading;
@@ -152,7 +160,7 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
   const period = postId ? null : el("label", { class: "ed-period", title: "How long this post stays editable in SciLog (SciLog's own default is 3 days). Set once, when posting." },
     "Edit period ", days, " days");
   const tagsInput = el("input", { class: "ed-tags", placeholder: "Tags, comma separated", autocomplete: "off" });
-  const area = el("div", { class: "ed-area" }, el("p", { class: "hint", text: "Loading the editor ..." }));
+  const area = el("div", { class: "ed-area" }, el("p", { class: "hint" }, el("span", { class: "spinner", "aria-hidden": "true" }), " Loading the editor …"));
   const saveButton = el("button", { class: "primary", title: "Save to SciLog (Ctrl+Enter)" }, postId ? "Save changes" : comment ? "Comment" : reply ? "Reply" : "Post");
   const attach = el("input", { type: "file", multiple: "", hidden: "" });
   const ctx = {
@@ -252,12 +260,15 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
     if (/<img[^>]+src="(data|blob):/.test(html)) { ctx.status("an image has not been uploaded yet", true); return; }
     if (!html.trim()) { ctx.status("the post is empty", true); return; }
     saveButton.disabled = true;
+    const label = saveButton.textContent;
+    saveButton.replaceChildren(el("span", { class: "spinner", "aria-hidden": "true" }), " Saving …");
+    const unbusy = () => { saveButton.textContent = label; saveButton.disabled = false; };
     ctx.status("saving to SciLog ...");
     try {
       const body = { logbook, html, tags: tagList(), updated: start.updated };
       if (!postId) {
         const d = Number(days.value);
-        if (!(d >= 1 && d <= 3650)) { ctx.status("the edit period must be 1 to 3650 days", true); saveButton.disabled = false; return; }
+        if (!(d >= 1 && d <= 3650)) { ctx.status("the edit period must be 1 to 3650 days", true); unbusy(); return; }
         body.edit_days = d;
         storageSet("eco-scilog-edit-days", String(d));
         if (near) body[near.where === "before" ? "before" : "after"] = near.id;
@@ -271,7 +282,7 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
       onSaved && onSaved(post);
     } catch (e) {
       ctx.status(`not saved: ${e.message}`, true);  // the draft stays
-      saveButton.disabled = false;
+      unbusy();
     }
   }
   saveButton.onclick = save;

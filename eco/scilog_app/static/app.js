@@ -417,7 +417,24 @@ function jumpToPost(id, words) {
 
 const fold = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+// The search runs in a worker (search-worker.js), so a large logbook never freezes the page;
+// where workers are not available, here (search() below).
+let searchWorker = null, searchSeq = 0;
+const searchPending = new Map();
+function startSearchWorker() {
+  try {
+    searchWorker = new Worker("/static/search-worker.js");
+    searchWorker.onmessage = searchAnswered;
+    searchWorker.onerror = () => { searchWorker = null; searchPending.forEach((w) => w.resolve()); searchPending.clear(); prepareSearch(); };
+  } catch (e) { searchWorker = null; }
+}
+
 function prepareSearch() {
+  if (searchWorker === null && !prepareSearch.tried) { prepareSearch.tried = true; startSearchWorker(); }
+  if (searchWorker) {
+    searchWorker.postMessage({ posts: state.posts.map((p) => ({ id: p.id, t: p.t, text: `${p.text}\n${p.author}\n${p.tags.join(" ")}` })) });
+    return;
+  }
   for (const p of state.posts) {
     p._text = fold(`${p.text}\n${p.author}\n${p.tags.join(" ")}`);
     p._words = null;
@@ -500,11 +517,42 @@ function snippet(p, words) {
   return (start > 0 ? "… " : "") + s + (end < text.length ? " …" : "");
 }
 
+// returns a promise that is fulfilled once the results are shown
 function showResults(q) {
+  if (!q.trim()) { state.results = []; state.active = -1; closeResults(); return Promise.resolve(); }
+  if (!searchWorker) { renderResults(search(q)); return Promise.resolve(); }
+  const seq = ++searchSeq;
+  // only a search that takes a moment says so: a quick one would just flicker
+  const slow = setTimeout(() => { if (seq === searchSeq) searchingSign(); }, 150);
+  return new Promise((resolve) => {
+    searchPending.set(seq, { resolve, slow });
+    searchWorker.postMessage({ seq, q });
+  });
+}
+
+function searchAnswered(e) {
+  const { seq, results } = e.data;
+  const waiting = searchPending.get(seq);
+  searchPending.delete(seq);
+  if (!waiting) return;
+  clearTimeout(waiting.slow);
+  if (seq === searchSeq && $("#search").value.trim()) {  // an older answer is not shown over a newer question
+    renderResults(results.map((r) => ({ post: state.byId.get(r.id), score: r.score, words: r.words })).filter((r) => r.post));
+  }
+  waiting.resolve();
+}
+
+function searchingSign() {
   const box = $("#results");
-  state.results = q.trim() ? search(q) : [];
+  box.replaceChildren(el("div", { class: "count" }, el("span", { class: "spinner", "aria-hidden": "true" }), " Searching …"));
+  box.hidden = false;
+  document.body.classList.add("searching");
+}
+
+function renderResults(results) {
+  const box = $("#results");
+  state.results = results;
   state.active = state.results.length ? 0 : -1;
-  if (!q.trim()) { closeResults(); return; }
   box.replaceChildren(el("div", { class: "count", text: state.results.length ? `${state.results.length}${state.results.length === 60 ? "+" : ""} posts · ↑↓ Enter · typos are allowed, "quotes" for exact` : "Nothing found." }));
   state.results.forEach((r, i) => {
     const item = el("div", { class: `result${i === 0 ? " active" : ""}`, onclick: () => openResult(i) },
@@ -524,15 +572,16 @@ function closeResults() { $("#results").hidden = true; document.body.classList.r
 // narrow screens: the search takes the whole bar and its results the whole page while it is in use
 const narrow = () => window.matchMedia("(max-width: 760px)").matches;
 function openSearch() {
-  document.body.classList.add("search-open");
+  $("#bar").classList.add("search-open");
   const input = $("#search");
-  input.focus();
-  if (input.value.trim()) showResults(input.value);
+  const focused = document.activeElement === input;
+  input.focus();  // its focus handler shows the results of what is typed there
+  if (focused && input.value.trim()) showResults(input.value);
 }
 function endSearch() {
   state.fromSearch = false;
   closeResults();
-  document.body.classList.remove("search-open");
+  $("#bar").classList.remove("search-open");
   $("#search").blur();
 }
 
@@ -551,10 +600,14 @@ function openResult(i) {
 function reopenResults() {
   const q = $("#search").value;
   if (!q.trim()) return false;
-  if (narrow()) document.body.classList.add("search-open");
-  showResults(q);
-  const active = document.querySelectorAll("#results .result")[state.active];
-  if (active) { document.querySelectorAll("#results .result").forEach((x) => x.classList.remove("active")); active.classList.add("active"); active.scrollIntoView({ block: "nearest" }); }
+  if (narrow()) $("#bar").classList.add("search-open");
+  const was = state.active;
+  showResults(q).then(() => {
+    state.active = Math.min(Math.max(was, 0), state.results.length - 1);
+    const items = document.querySelectorAll("#results .result");
+    items.forEach((x, n) => x.classList.toggle("active", n === state.active));
+    items[state.active]?.scrollIntoView({ block: "nearest" });
+  });
   return true;
 }
 
@@ -617,6 +670,7 @@ async function openLogbook(id, postId, only = false) {
   renderOutline();
   setStatus();
   updateWriteUi();
+  preloadEditor();
   $("#only-banner").hidden = true;
   if (state.only) showOnly(postId);
   else if (postId && state.byId.has(postId)) jumpToPost(postId);
@@ -727,6 +781,13 @@ function placeInFlow(p) {
   flow.querySelector(".hint")?.remove();
 }
 
+// the outline redrawn once the page has answered (it takes a while for a large logbook)
+let outlineTimer = null;
+function laterOutline() {
+  clearTimeout(outlineTimer);
+  outlineTimer = setTimeout(() => { outlineTimer = null; renderOutline(); }, 60);
+}
+
 async function refresh() {
   if (!state.logbook || document.hidden) return;
   let data;
@@ -749,7 +810,7 @@ async function refresh() {
   prepareSearch();
   if (appended) for (const p of data.posts) if (!document.getElementById(`p-${p.id}`)) placeInFlow(p);
   keepReading(anchor);
-  renderOutline();
+  laterOutline();
   observePosts();
   watchUnseen();
   setStatus();
@@ -810,6 +871,7 @@ async function askToAllowWriting() {
   renderFlow();
   renderOutline();
   updateWriteUi();
+  preloadEditor();
   setStatus();
   toast("Writing switched on for this logbook");
 }
@@ -887,14 +949,21 @@ function showInfo(p) {
   dialog.showModal();
 }
 
+// a saved post (or the post a saved comment belongs to) into the page: only that post is drawn
+// anew, the rest of a large logbook stays as it is; the outline follows a moment later
 function placeSaved(post, message = "Saved to SciLog", openComments = false) {
   state.byId.set(post.id, post);
   state.all = [...state.byId.values()].sort((a, b) => a.t - b.t);
   applyView();
-  if (!state.posts.some((p) => p.id === post.id)) { setView("all"); }
+  if (!state.posts.some((p) => p.id === post.id)) {
+    setView("all");  // not in the current view: the whole flow, once
+  } else {
+    const node = document.getElementById(`p-${post.id}`);
+    if (node) node.replaceWith(postElement(post)); else placeInFlow(post);
+    observePosts();
+    laterOutline();
+  }
   prepareSearch();
-  renderFlow();
-  renderOutline();
   fillViews();
   setStatus();
   jumpToPost(post.id);
@@ -1094,7 +1163,7 @@ async function main() {
   };
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#search-wrap, #flow, #search-button") || (!docked() && !e.target.closest("#search-wrap, #search-button"))) {
-      if (document.body.classList.contains("search-open")) endSearch(); else closeResults();
+      if ($("#bar").classList.contains("search-open")) endSearch(); else closeResults();
     }
     if (!e.target.closest("#picker, #logbook-button")) $("#picker").hidden = true;
   });
@@ -1160,7 +1229,7 @@ function pageBack() {
     return true;
   }
   if (!$("#picker").hidden && state.logbook) { showPicker(false); return true; }
-  if (document.body.classList.contains("search-open") || document.body.classList.contains("searching")) { endSearch(); return true; }
+  if ($("#bar").classList.contains("search-open") || document.body.classList.contains("searching")) { endSearch(); return true; }
   if (state.fromSearch) { state.fromSearch = false; if (reopenResults()) return true; }
   if (document.body.classList.contains("outline-open")) { document.body.classList.remove("outline-open"); return true; }
   if (!$("#pin-pane").hidden) { unpin(); return true; }
