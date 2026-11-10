@@ -109,7 +109,8 @@ Google outage does not leave the monitor without a plan.
 
 ## Phones
 
-Paging goes through [Pushover](https://pushover.net). Each person installs the
+Paging goes through [Pushover](https://pushover.net) (setup for phone owners:
+[Getting Bernina alarms on your phone](alarm_phones.md)). Each person installs the
 Pushover app (a one-off licence of about $5 per platform after a 30-day trial)
 and registers their *user key* once:
 

@@ -180,6 +180,7 @@ scientific Python libraries.
    recspace_crystals
    status_server
    alarms
+   alarm_phones
    run_history
    scilog_viewer
    storage
