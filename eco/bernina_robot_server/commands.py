@@ -258,7 +258,7 @@ def build_namespace(robot):
 
 
 def _motion_functions(robot):
-    """Ports of ``script/motion/{tools,move_home,move_park,tweak}.py``."""
+    """Ports of ``script/motion/tools.py``."""
 
     def is_manual_mode():
         return robot.working_mode == "manual"
@@ -286,38 +286,10 @@ def _motion_functions(robot):
             robot.cancellation.raise_if_cancelled()
             time.sleep(0.01)
 
-    def _prepare():
-        robot.assert_no_task()
-        robot.reset_motion()
-        robot.wait_ready(timeout=1.0)
-        enable_motion()
-
-    def move_home():
-        _prepare()
-        if not robot.is_home():
-            robot.move_home()
-
-    def move_park():
-        _prepare()
-        if not robot.is_park():
-            robot.move_park()
-
-    def tweak_x(offset):
-        _prepare()
-        return robot.tweak_x(offset)
-
-    def tweak_y(offset):
-        _prepare()
-        return robot.tweak_y(offset)
-
     return {
         "is_manual_mode": is_manual_mode,
         "release_safety": release_safety,
         "system_check": system_check,
         "enable_motion": enable_motion,
         "wait_end_of_move": wait_end_of_move,
-        "move_home": move_home,
-        "move_park": move_park,
-        "tweak_x": tweak_x,
-        "tweak_y": tweak_y,
     }

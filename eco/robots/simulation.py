@@ -71,7 +71,6 @@ class SimulatedController(BaseTransport):
         #: VAL3 scratch variables, including the ``tcp_p_spherical[i]`` points.
         self.variables = {"n_actPosLinAx": self.z_lin, "n_moveAbsPos": self.z_lin}
         self.points = {}                   # name -> 6-list
-        self.named_points = {"park": [0.0] * 6, "home": [100.0] * 6}
         self.profile = "default"
         self.log = []                      # every (cmd, args) seen, for tests
 
@@ -305,7 +304,7 @@ class SimulatedController(BaseTransport):
             return self._start_move()
         if expr.startswith("distance"):
             names = re.findall(r"[\w\[\]]+", expr[expr.index("(") + 1:])
-            poses = [self.points.get(n) or self.named_points.get(n) for n in names[:2]]
+            poses = [self.points.get(n) for n in names[:2]]
             if all(p is not None for p in poses):
                 return math.dist(poses[0][:3], poses[1][:3])
             return 10000.0
@@ -346,7 +345,7 @@ class SimulatedController(BaseTransport):
     def _cmd_dist_pnt(self, args):
         current = self.cartesian[:3]
         return self._fmt([
-            math.dist(current, (self.named_points.get(n) or [0.0] * 6)[:3])
+            math.dist(current, self.points.get(n, [0.0] * 6)[:3])
             for n in args
         ])
 

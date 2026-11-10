@@ -42,16 +42,11 @@ from .staeubli import (
 logger = logging.getLogger(__name__)
 
 PVBASE = "SARES20-ROB:"
-P_PARK, P_HOME = "park", "home"
-KNOWN_POINTS = [P_PARK, P_HOME]
-MOVE_PARK, MOVE_HOME, TWEAK_X, TWEAK_Y = "movePark", "moveHome", "tweakX", "tweakY"
-TASKS = [MOVE_PARK, MOVE_HOME, TWEAK_X, TWEAK_Y]
 
 DESC_FAST = DESC_SLOW = "mNomSpeed"
 DESC_DEFAULT = DESC_FAST
 
 DEFAULT_ROBOT_POLLING = 0.2      # s; pshell said 200 ms
-TASK_WAIT_ROBOT_POLLING = 0.05   # s; pshell said 50 ms
 DEFAULT_SPEED = 100
 
 SPHERICAL_AXES = ["r", "gamma", "delta"]
@@ -118,9 +113,6 @@ class BerninaRobot(StaeubliRobot):
                          polling_interval=DEFAULT_ROBOT_POLLING, **kwargs)
         self._tool_persistent = self._value("tool_persistent", "t_JF01T03")
         self._frame_persistent = self._value("frame_persistent", "f_4mRad")
-
-        self.set_tasks(TASKS)
-        self.set_known_points(KNOWN_POINTS)
 
         self.override_remote_safety = bool(override_remote_safety)
         self.last_remote_motion = "None"
@@ -715,47 +707,6 @@ class BerninaRobot(StaeubliRobot):
     def on_recording_finished(self):
         self.emit("motion", "Finished, recording")
 
-    # ------------------------------------------------------- named motions
-
-    def move_home(self):
-        if not self.is_in_point(P_HOME):
-            self.start_task(MOVE_HOME)
-            self.wait_task_finished(TASK_WAIT_ROBOT_POLLING)
-            self.assert_home()
-
-    def move_park(self):
-        if not self.is_in_point(P_PARK):
-            self.start_task(MOVE_PARK)
-            self.wait_task_finished(TASK_WAIT_ROBOT_POLLING)
-            self.assert_park()
-
-    def tweak_x(self, offset):
-        self.start_task(TWEAK_X, offset)
-        return self.wait_task_finished(TASK_WAIT_ROBOT_POLLING)
-
-    def tweak_y(self, offset):
-        self.start_task(TWEAK_Y, offset)
-        return self.wait_task_finished(TASK_WAIT_ROBOT_POLLING)
-
-    def is_park(self):
-        return self.is_in_point(P_PARK)
-
-    def is_home(self):
-        return self.is_in_point(P_HOME)
-
-    def is_cleared(self):
-        return self.get_current_point() is not None
-
-    def assert_park(self):
-        self.assert_in_point(P_PARK)
-
-    def assert_home(self):
-        self.assert_in_point(P_HOME)
-
-    def assert_cleared(self):
-        if not self.is_cleared():
-            raise RobotError("robot not in a cleared position")
-
     def set_remote_mode(self):
         self.set_profile("remote")
 
@@ -895,7 +846,6 @@ class BerninaRobot(StaeubliRobot):
         self.set_frame(self.frame(), name="tcp_f_spherical", change_default=False)
         self.set_tool(self._tool_persistent(), validate=False)
         self.update()
-        self.get_current_point()
         self.set_motors_enabled(True, ["cartesian", "spherical", "linear"])
         self.set_joint_motors_enabled(True)
         logger.info("%s setup complete: frame=%s tool=%s", self.name,

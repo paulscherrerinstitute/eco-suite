@@ -33,10 +33,8 @@ and with no hardware at all::
 from .bernina import (
     DEFAULT_REMOTE_ALLOWED_DELTAS,
     FRAME_HIERARCHY,
-    KNOWN_POINTS,
     PVBASE,
     SPHERICAL_AXES,
-    TASKS,
     BerninaRobot,
 )
 from .kinematics import cart2sph, sph2cart
@@ -124,6 +122,6 @@ __all__ = [
     "sph2cart", "cart2sph",
     "connect_bernina_robot", "DEFAULT_ADJUSTABLES_PATH",
     "JOINT_AXES", "CARTESIAN_AXES", "SPHERICAL_AXES",
-    "KNOWN_POINTS", "TASKS", "FRAME_HIERARCHY", "PVBASE", "tree",
+    "FRAME_HIERARCHY", "PVBASE", "tree",
     "DEFAULT_REMOTE_ALLOWED_DELTAS",
 ]

@@ -101,7 +101,7 @@ class TestEvalNamespace:
             assert isinstance(result["return"], float)
 
     def test_motion_script_functions_exist(self, client):
-        for name in ("move_home", "move_park", "tweak_x", "tweak_y"):
+        for name in ("enable_motion", "wait_end_of_move"):
             assert submit(client, f"callable({name})")["return"] is True
 
     def test_kwargs_splatting_works(self, client):

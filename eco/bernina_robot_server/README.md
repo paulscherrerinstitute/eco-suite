@@ -150,8 +150,8 @@ waiting a poll period. Inspect with `GET /api/subscribers`.
 * every pseudo-motor under its **bare axis name**: `gamma`, `delta`, `r`, `x`,
   `y`, `z`, `rx`, `ry`, `rz`, `j1`…`j6`, `z_lin`
   (`PshellMotor` sends `gamma.moveAsync(20.0)` and `gamma.stop()`)
-* the motion functions ported from `script/motion/*.py`: `move_home`,
-  `move_park`, `tweak_x`, `tweak_y`, `enable_motion`, `wait_end_of_move`
+* the motion functions ported from `script/motion/tools.py`:
+  `enable_motion`, `wait_end_of_move`
 
 > ⚠️ **`/eval` is remote code execution by design**, exactly as pshell's was.
 > The builtins are restricted (no `__import__`, no `open`), which raises the
