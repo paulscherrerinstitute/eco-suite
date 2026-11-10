@@ -114,12 +114,6 @@ not currently sitting on a spherical pose (a previous cartesian move left it
 pointing elsewhere), the whole thing degrades to one cartesian move, because
 arcing from an off-sphere start is meaningless.
 
-`kinematics.sph2cart`/`cart2sph` are pure functions and were verified against
-the pshell originals over 22 059 grid points: **max deviation 2.8 × 10⁻¹⁴**,
-i.e. identical. They additionally return a value at 84 points where the
-original raised `math domain error` or `ZeroDivisionError` (the `|delta| → 90`
-pole). See "Fixes" below.
-
 ## Pseudo-motor semantics
 
 Writing one axis has to become a whole-pose move, and three rules govern that:

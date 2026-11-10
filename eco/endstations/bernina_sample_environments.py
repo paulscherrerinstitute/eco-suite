@@ -1069,8 +1069,51 @@ class Organic_crystal_breadboard(Assembly):
             mot.speed(0)
             sleep(0.5)
             mot.calibrate_sensor()
+
+
+class THzVirtualStages_In_Air(Assembly):
+    def __init__(self, name=None, mz=None, pz=None):
+        super().__init__(name=name)
+        self._mz = mz
+        self._pz = pz
+        self._append(
+            AdjustableFS,
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/offset_par_z.json",
+            name="offset_par_z",
+            default_value=0,
+            is_setting=True,
+        )
+        self._append(
+            AdjustableFS,
+            "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/offset_foc_z.json",
+            name="offset_foc_z",
+            default_value=0,
+            is_setting=True,
+        )
+
+        def get_focus_z(mz, pz):
+            return pz - self.offset_par_z()
+
+        def set_focus_z(z):
+            mz = self.offset_foc_z() + z
+            pz = self.offset_par_z() + z
+            return mz, pz
+
+        self._append(
+            AdjustableVirtual,
+            [mz, pz],
+            get_focus_z,
+            set_focus_z,
+            reset_current_value_to=True,
+            name="focus_virtual",
+        )
+
+    def set_offsets_to_current_value(self):
+        self.offset_foc_z.mv(self._mz())
+        self.offset_par_z.mv(self._pz())
+
 class Terahertz_In_Air(Assembly):
-    def __init__(self, delay_offset_detector=None, x_adjustable=None, name=None):
+    def __init__(self, delay_offset_detector=None, x_adjustable=None, name=None,mx=None,mz=None):
         super().__init__(name=name)
         self.delay_offset_detector = None,#delay_offset_detector
         self._x_adjustable = None,#x_adjustable
@@ -1147,9 +1190,9 @@ class Terahertz_In_Air(Assembly):
                 "direction": 1,
                 "home_direction": "back",
             },
-            "par_x": {
+            "par_z": {
                 "id": "SARES20-MCS2:MOT_5",
-                "pv_descr": "Module1:1 NIR Mirr2 Ry",
+                "pv_descr": "par z",
                 "sensor": 2,
                 "speed": 250,
                 "direction": 1,
@@ -1158,7 +1201,7 @@ class Terahertz_In_Air(Assembly):
             "par_ry": {
                 # "id": "-USR:MOT_4",
                 "id": "SARES20-MCS2:MOT_2",
-                "pv_descr": "Module3:1 NIR Mirr2 rx",
+                "pv_descr": "Par RY",
                 "sensor": 53,
                 "direction": 0,
                 "speed": 250,
@@ -1197,19 +1240,19 @@ class Terahertz_In_Air(Assembly):
                 "pvname": "SLAAR21-LMOT-ELL1",
             },
             "waveplate_ir": {
-                "pvname": "SLAAR21-LMOT-ELL5",
+                "pvname": "SLAAR21-LMOT-ELL4",
             },
-            "eos_block": {
-                "pvname": "SLAAR21-LMOT-ELL2",
-            },
+            # "eos_block": {
+            #     "pvname": "SLAAR21-LMOT-ELL2",
+            # },
             "crystal": {
                 "pvname": "SLAAR21-LMOT-ELL3",
             },
             "thz_filter": {
-                "pvname": "SLAAR21-LMOT-ELL4",
+                "pvname": "SLAAR21-LMOT-ELL2",
             },
             "waveplate_Thz": {
-                "pvname": "SLAAR21-LMOT-ELL6",
+                "pvname": "SLAAR21-LMOT-ELL5",
             },
         }
 
@@ -1230,23 +1273,23 @@ class Terahertz_In_Air(Assembly):
                 name=name,
                 is_setting=True,
             )
-        self._append(
-            MotorRecord,
-            pvname="SLAAR21-LMOT-M522:MOTOR_1",
-            name="delaystage_thz",
-            is_setting=True,
-            is_display=False,
-            is_status=True,
-        )
-        self._append(
-            DelayTime,
-            self.delaystage_thz,
-            name="delay_thz",
-            # offset_detector=self.delay_offset_detector,
-            is_setting=False,
-            is_display=True,
-            is_status=True,
-        )
+        # self._append(
+        #     MotorRecord,
+        #     pvname="SLAAR21-LMOT-M522:MOTOR_1",
+        #     name="delaystage_thz",
+        #     is_setting=True,
+        #     is_display=False,
+        #     is_status=True,
+        # )
+        # self._append(
+        #     DelayTime,
+        #     self.delaystage_thz,
+        #     name="delay_thz",
+        #     # offset_detector=self.delay_offset_detector,
+        #     is_setting=False,
+        #     is_display=True,
+        #     is_status=True,
+        # )
 
         self._append(
             DelayTime,
@@ -1293,6 +1336,13 @@ class Terahertz_In_Air(Assembly):
             self.home_smaract_stages,
             name="home_smaract_stages",
             button_label="Home Smaract Stages",
+        )
+        self._append(
+            THzVirtualStages_In_Air,
+            name="focus_virtual",
+            mz=self.par_z,
+            pz=self.foc_z,
+            is_setting=False,
         )
 
     def _thz_pol_set(self, val):
@@ -1403,17 +1453,16 @@ class Terahertz_In_Air(Assembly):
     #                 )
     #                 mot.home_reverse(1)
 
-    def get_adjustable_positions_str(self):
-        ostr = "*****Organic Crystal Breadboard positions******\n"
+    # def get_adjustable_positions_str(self):
+    #     ostr = "*****Organic Crystal Breadboard positions******\n"
 
-        for tkey, item in self.__dict__.items():
-            if hasattr(item, "get_current_value"):
-                pos = item.get_current_value()
-                ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
-        return ostr
+    #     for tkey, item in self.__dict__.items():
+    #         if hasattr(item, "get_current_value"):
+    #             pos = item.get_current_value()
+    #             ostr += "  " + tkey.ljust(17) + " : % 14g\n" % pos
+    #     return ostr
 
-    # def __repr__(self):
-    #     return self.get_adjustable_positions_str()
+
 
 
 class LiNbO3_crystal_breadboard:
