@@ -9,8 +9,8 @@ words: [elog, scilog, logbook, logbooks, post, posting, screenshot, entry, entri
   `scilog.screenshot()` posts a screenshot.
 - Scans and runs post their own entries (run number, command, scan info);
   nothing needs doing for that.
-- Reading logbooks from the session: `eco.start_scilog()` opens the SciLog
-  viewer in the browser (search, outline, writing with a personal token);
+- Reading logbooks from the session: `scilog.viewer()` (or `scilog.widget()`) opens the
+  pgroup's logbook in the SciLog viewer in the browser (search, outline, writing with a personal token);
   `%ei` searches the indexed SciLog and elog entries.
 - Code in old logbook posts may use names that eco no longer has;
   `%ei --check-logs` lists them.

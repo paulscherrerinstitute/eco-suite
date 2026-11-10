@@ -1,7 +1,11 @@
 """eco.scilog_app -- read (and, later, write) SciLog in the browser.
 
-    eco.start_scilog()                      # from a session: a separate server process
+    scilog.viewer()                         # in a session: the pgroup's logbook
+    from eco.scilog_app import start; start()   # anywhere else: a separate server process
     python -m eco.scilog_app [--port 8798]  # on its own, without a session
+
+Nothing in eco imports this package except scilog.viewer()/widget(), and
+only when they are called.
 
 The page shows a logbook as one flow, oldest at the top and the newest at
 the bottom, under day headers ("Today", "Yesterday", "Friday", ...), with:

@@ -719,7 +719,7 @@ class _Index(_Base):
             return
         if not self.authorized():
             self.set_status(403)
-            self.finish("eco scilog: open the URL with ?token=... that eco.start_scilog() printed")
+            self.finish("eco scilog: open the URL with ?token=... that scilog.viewer() printed")
             return
         self.set_header("Cache-Control", "no-store")
         with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:

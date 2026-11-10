@@ -1,4 +1,4 @@
-# SciLog in the browser: `eco.start_scilog()`
+# SciLog in the browser: `scilog.viewer()`
 
 SciLog's own web page is slow to navigate and loses formatting. This is a
 second way to read and write the same logbooks: one logbook as a single
@@ -7,7 +7,17 @@ keeps image sizes and your drafts. SciLog stays the database, with your own
 access rights.
 
 ```python
-eco.start_scilog()          # prints the address and opens it where a browser can start
+scilog.viewer()             # the pgroup's logbook; prints the address and opens it where a browser can start
+scilog.widget()             # the same
+scilog.viewer.stop()        # end the viewer's server; scilog.viewer.log(): its last output
+```
+
+outside the Bernina namespace (any session, a script), the package is only
+loaded when imported:
+
+```python
+from eco.scilog_app import start
+start()                     # or start(logbook="<id>")
 ```
 
 or without an eco session:
@@ -44,7 +54,7 @@ there. It contains a one-time key; after the first visit a cookie keeps it.
 
 ## How it works
 
-`eco.start_scilog()` starts a server as a separate process, so it never
+`scilog.viewer()` (or `start()`) starts a server as a separate process, so it never
 competes with the eco session; it ends when the session ends. The server
 reads SciLog as you: with your personal token, or as the beamline account
 where that applies (see {doc}`ask_eco` for both). Your SciLog token never

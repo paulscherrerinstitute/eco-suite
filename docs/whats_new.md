@@ -79,6 +79,14 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
   `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
+## 10 November 2026
+
+- The SciLog viewer moved from `eco.start_scilog()` (removed) to
+  `scilog.viewer()`, which opens the pgroup's logbook; `scilog.widget()`
+  does the same, and `scilog.viewer.stop()` / `.log()` end it or show its
+  output. Outside the namespace: `from eco.scilog_app import start`; the
+  package is imported only when used ({doc}`scilog_viewer`).
+
 ## 9 November 2026
 
 - `%ei -t`: the model may look things up while it answers (search,

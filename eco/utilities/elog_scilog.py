@@ -118,6 +118,7 @@ class Elog(Assembly):
             )
         )
         self._screenshot = Screenshot(screenshot_directory)
+        self.viewer = ScilogViewer(self._logbook_id)
         # self.read = self._log.read
 
     @lru_cache
@@ -174,15 +175,6 @@ class Elog(Assembly):
         except Exception:
             return None
 
-    def viewer(self, open_browser=None, port=8798):
-        """Open the current pgroup's logbook in eco's SciLog viewer (a flow of
-        days with outline, map, search and writing; see eco.scilog_app). The
-        viewer reads with your own SciLog token, which its page asks for.
-        Returns the address."""
-        from eco.scilog_app import start
-
-        return start(port=port, open_browser=open_browser, logbook=self._logbook_id())
-
     def widget(self, open_browser=None, port=8798, **kwargs):
         """The SciLog viewer (see viewer()) instead of the generic widget;
         the generic widget's options (dock_in, ...) don't apply to it."""
@@ -207,6 +199,48 @@ class Elog(Assembly):
             return self.post(text, filepath, **kwargs)
         finally:
             filepath.unlink(missing_ok=True)
+
+
+class ScilogViewer:
+    """eco's SciLog viewer for this logbook (a flow of days with outline, map,
+    search and writing; it reads with your own SciLog token, which its page
+    asks for).
+
+        scilog.viewer()          # open the pgroup's logbook, returns the address
+        scilog.viewer.stop()     # end the viewer's server
+        scilog.viewer.log()      # the server's last output lines
+
+    Everything else of eco.scilog_app is reachable here too
+    (scilog.viewer.content, ...). That package is imported on first use only.
+    """
+
+    def __init__(self, logbook_id=lambda: None):
+        self._logbook_id = logbook_id
+
+    @property
+    def _module(self):
+        import eco.scilog_app
+
+        return eco.scilog_app
+
+    def __call__(self, open_browser=None, port=8798):
+        return self._module.start(port=port, open_browser=open_browser, logbook=self._logbook_id())
+
+    def start(self, open_browser=None, port=8798, logbook=None):
+        """Start (once) and open `logbook` (an id), by default this one."""
+        return self._module.start(port=port, open_browser=open_browser,
+                                  logbook=logbook or self._logbook_id())
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return getattr(self._module, name)
+
+    def __dir__(self):
+        return sorted(set(object.__dir__(self)) | {"start", "stop", "log"})
+
+    def __repr__(self):
+        return "SciLog viewer: scilog.viewer() opens this pgroup's logbook"
 
 
 class Screenshot:
