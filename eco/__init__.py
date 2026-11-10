@@ -152,14 +152,15 @@ def stop_web():
     _stop_web()
 
 
-def start_scilog(port=8798, open_browser=None):
+def start_scilog(port=8798, open_browser=None, logbook=None):
     """Read SciLog in the browser: one logbook as a flow of days, with an
     outline, fuzzy search and inline plots. Starts a separate server process
     (ended with this session) and prints its address; from another machine
-    forward the port over SSH first. See eco.scilog_app."""
+    forward the port over SSH first. `logbook` (an id) opens that logbook.
+    See eco.scilog_app."""
     from eco.scilog_app import start as _start
 
-    return _start(port=port, open_browser=open_browser)
+    return _start(port=port, open_browser=open_browser, logbook=logbook)
 
 
 def start_webapp(*args, **kwargs):

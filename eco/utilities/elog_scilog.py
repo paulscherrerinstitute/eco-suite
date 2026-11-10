@@ -167,6 +167,27 @@ class Elog(Assembly):
             log = self._get_scilog_dynamically(self.scilog_url, pgroup)
         return log.send_logbook_message(msg)
 
+    def _logbook_id(self):
+        """The id of the current pgroup's logbook, None if it can't be found."""
+        try:
+            return self._log.logbook.id
+        except Exception:
+            return None
+
+    def viewer(self, open_browser=None, port=8798):
+        """Open the current pgroup's logbook in eco's SciLog viewer (a flow of
+        days with outline, map, search and writing; see eco.scilog_app). The
+        viewer reads with your own SciLog token, which its page asks for.
+        Returns the address."""
+        from eco.scilog_app import start
+
+        return start(port=port, open_browser=open_browser, logbook=self._logbook_id())
+
+    def widget(self, open_browser=None, port=8798, **kwargs):
+        """The SciLog viewer (see viewer()) instead of the generic widget;
+        the generic widget's options (dock_in, ...) don't apply to it."""
+        return self.viewer(open_browser=open_browser, port=port)
+
     def screenshot(self, message="", window=False, desktop=False, delay=3, **kwargs):
         filepath = self._screenshot.shoot()[0]
         kwargs.update({"attachments": [filepath]})

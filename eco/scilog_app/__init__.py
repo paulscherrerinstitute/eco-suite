@@ -43,10 +43,11 @@ _url = None
 _output = collections.deque(maxlen=200)
 
 
-def start(port=DEFAULT_PORT, open_browser=None, timeout=60):
+def start(port=DEFAULT_PORT, open_browser=None, timeout=60, logbook=None):
     """Start the server as a separate process (once per session) and print
     its address; opens a browser where one can be started (a display, not
-    over ssh). The process ends when this session does."""
+    over ssh). The process ends when this session does. `logbook` (an id)
+    makes the address open that logbook."""
     global _process, _url
     if _process is None or _process.poll() is not None:
         token = secrets.token_urlsafe(24)
@@ -71,7 +72,8 @@ def start(port=DEFAULT_PORT, open_browser=None, timeout=60):
             raise RuntimeError(f"eco scilog server did not start: {rest.strip()[-500:]}")
         _url = line.split(": ", 1)[1].strip()
         threading.Thread(target=_drain, args=(_process,), name="eco-scilog-output", daemon=True).start()
-    print(f"eco scilog: {_url}")
+    url = f"{_url.split('#', 1)[0]}#lb={logbook}" if logbook else _url
+    print(f"eco scilog: {url}")
     if os.environ.get("SSH_CONNECTION"):
         print(f"  from your machine: ssh -L {port}:localhost:{port} {socket.gethostname()}, then open the address")
     from eco.ei_page import can_open_browser
@@ -79,8 +81,8 @@ def start(port=DEFAULT_PORT, open_browser=None, timeout=60):
     if open_browser or (open_browser is None and can_open_browser()):
         import webbrowser
 
-        webbrowser.open(_url)
-    return _url
+        webbrowser.open(url)
+    return url
 
 
 def _drain(process):
