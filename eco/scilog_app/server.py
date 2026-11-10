@@ -171,6 +171,7 @@ class Store:
         self._reader = reader
         self.logbooks = {}  # id -> {"posts": {id: record}, "raw": {id: post as SciLog has it}, "since": iso}
         self._locks = {}
+        self._tasks = {}  # logbook id -> {task id: task as SciLog has it}, as last read
         self._lock = threading.Lock()
         self.cache_dir = Path(cache_dir or logs_ask.index_dir() / "scilog_files")
         self.config = config if config is not None else load_config()
@@ -468,6 +469,123 @@ class Store:
             raise PermissionError(why)
         if raw is not None and not self.may_edit(raw):
             raise PermissionError("SciLog lets you edit only your own posts (or those of a group you are in)")
+
+    # -- tasks ----------------------------------------------------------------------------------
+    # A logbook's to-do list. SciLog applies no edit period to tasks, so they can be changed
+    # at any time; their order is SciLog's defaultOrder (as for posts), which the viewer sets
+    # when a task is dragged. SciLog's own page lists them in creation order for now.
+
+    #: room left between two tasks' orders when they are spread out again (µs, as SciLog's)
+    TASK_STEP = 1_000_000
+
+    def task_record(self, raw):
+        order = raw.get("defaultOrder")
+        if not isinstance(order, (int, float)):
+            order = _epoch(raw.get("createdAt") or "") * 1e6
+        return {"id": raw["id"], "text": raw.get("content") or "", "done": bool(raw.get("isDone")), "order": order,
+                "author": raw.get("createdBy") or "", "created": raw.get("createdAt") or "",
+                "editor": raw.get("updatedBy") or "", "updated": raw.get("updatedAt") or "",
+                "can_edit": self._safe_may_edit(raw), "can_delete": self._safe_may_delete(raw)}
+
+    def tasks(self, logbook_id):
+        """{"tasks": [...]}: the logbook's tasks in their order."""
+        if not _ID.match(logbook_id or ""):
+            raise ValueError("not a logbook id")
+        raws = self.reader.tasks(logbook_id)
+        self._tasks[logbook_id] = {r["id"]: r for r in raws}
+        records = sorted((self.task_record(r) for r in raws), key=lambda t: (t["order"], t["created"]))
+        return {"tasks": records}
+
+    def _task(self, logbook_id, task_id, edit=True):
+        if not _ID.match(str(task_id)):
+            raise ValueError("not a task id")
+        ok, why = self.may_write_to(logbook_id)
+        if not ok:
+            raise PermissionError(why)
+        if logbook_id not in self._tasks or task_id not in self._tasks[logbook_id]:
+            self.tasks(logbook_id)
+        raw = self._tasks[logbook_id].get(task_id)
+        if raw is None:
+            raise KeyError(f"no task {task_id} in this logbook")
+        if edit and not self.may_edit(raw):
+            raise PermissionError("SciLog lets you change only your own tasks (or those of a group you are in)")
+        return raw
+
+    def add_task(self, logbook_id, text, first=False):
+        """A new task, at the end of the list (or at its top)."""
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("the task is empty")
+        if not _ID.match(logbook_id or ""):
+            raise ValueError("not a logbook id")
+        ok, why = self.may_write_to(logbook_id)
+        if not ok:
+            raise PermissionError(why)
+        book = self.reader.logbook(logbook_id)
+        payload = {k: book[k] for k in ("ownerGroup", "accessGroups", "isPrivate") if book.get(k) is not None}
+        payload.update(parentId=logbook_id, snippetType="task", content=text, isDone=False)
+        current = self.tasks(logbook_id)["tasks"]
+        if first and current:
+            payload["defaultOrder"] = int(current[0]["order"] - self.TASK_STEP)
+        elif current:  # after the last one, also when the list was reordered into the future
+            payload["defaultOrder"] = int(max(current[-1]["order"] + self.TASK_STEP, time.time() * 1e6))
+        self.reader.create_task(payload)
+        return self.tasks(logbook_id)
+
+    def update_task(self, logbook_id, task_id, text=None, done=None):
+        """Change a task's text and/or whether it is done."""
+        self._task(logbook_id, task_id)
+        payload = {}
+        if text is not None:
+            if not text.strip():
+                raise ValueError("the task is empty")
+            payload["content"] = text.strip()
+        if done is not None:
+            payload["isDone"] = bool(done)
+        if payload:
+            self.reader.update_task(task_id, payload)
+        return self.tasks(logbook_id)
+
+    def move_task(self, logbook_id, task_id, before=None, after=None):
+        """Put a task right before `before` (or after `after`, a task id) by giving it an order in
+        between; where there is no room left, the list is spread out again first."""
+        self._task(logbook_id, task_id)
+        tasks = [t for t in self.tasks(logbook_id)["tasks"] if t["id"] != task_id]
+        ids = [t["id"] for t in tasks]
+        anchor = before or after
+        if anchor not in ids:
+            raise KeyError(f"no task {anchor} in this logbook")
+        i = ids.index(anchor) + (0 if before else 1)  # the moved task's place in `tasks`
+        lo = tasks[i - 1]["order"] if i > 0 else None
+        hi = tasks[i]["order"] if i < len(tasks) else None
+        if lo is not None and hi is not None and hi - lo < 2:
+            # spread out, keeping the order: only the tasks whose order changes are written --
+            # which needs the right to change each of them (all of them, or none is touched)
+            if not all(t["can_edit"] for t in tasks):
+                raise PermissionError("there is no room between these two tasks, and making room would change "
+                                      "tasks SciLog does not let you change; move them the other way round")
+            for n, t in enumerate(tasks):
+                new = int(tasks[0]["order"]) + n * self.TASK_STEP
+                if t["order"] != new:
+                    self.reader.update_task(t["id"], {"defaultOrder": new})
+                    t["order"] = new
+            lo = tasks[i - 1]["order"] if i > 0 else None
+            hi = tasks[i]["order"] if i < len(tasks) else None
+        if lo is None:
+            order = hi - self.TASK_STEP
+        elif hi is None:
+            order = lo + self.TASK_STEP
+        else:
+            order = lo + (hi - lo) // 2
+        self.reader.update_task(task_id, {"defaultOrder": int(order)})
+        return self.tasks(logbook_id)
+
+    def delete_task(self, logbook_id, task_id):
+        raw = self._task(logbook_id, task_id, edit=False)
+        if not self.may_delete(raw):
+            raise PermissionError("SciLog lets only the members of this task's delete groups delete it")
+        self.reader.delete_task(task_id)
+        return self.tasks(logbook_id)
 
     # -- SciLog's views (dashboard layouts) -------------------------------------------------
 
@@ -843,6 +961,29 @@ class _Save(_Write):
         await self.run(self.app.store.save, b.get("logbook"), post_id, b.get("html", ""), b.get("tags"), b.get("updated"))
 
 
+class _Tasks(_Base):
+    async def get(self):
+        try:
+            self.finish(await self.blocking(self.app.store.tasks, self.get_query_argument("logbook")))
+        except ValueError as exc:
+            self.set_status(400)
+            self.finish({"error": str(exc)})
+
+
+class _TaskWrite(_Write):
+    async def post(self, task_id=None, action=None):
+        b = self.body()
+        store, lb = self.app.store, b.get("logbook")
+        if task_id is None:
+            await self.run(store.add_task, lb, b.get("text", ""), bool(b.get("first")))
+        elif action == "delete":
+            await self.run(store.delete_task, lb, task_id)
+        elif action == "move":
+            await self.run(store.move_task, lb, task_id, b.get("before"), b.get("after"))
+        else:
+            await self.run(store.update_task, lb, task_id, b.get("text"), b.get("done"))
+
+
 class _Heading(_Write):
     async def post(self, post_id):
         b = self.body()
@@ -963,6 +1104,10 @@ class ScilogApp:
                 (r"/api/heading/([0-9a-f]{24})", _Heading),
                 (r"/api/share/([0-9a-f]{24})", _Share),
                 (r"/api/delete/([0-9a-f]{24})", _Delete),
+                (r"/api/tasks", _Tasks),
+                (r"/api/task", _TaskWrite),
+                (r"/api/task/([0-9a-f]{24})", _TaskWrite),
+                (r"/api/task/([0-9a-f]{24})/(delete|move)", _TaskWrite),
                 (r"/api/write-logbook", _WriteLogbook),
                 (r"/api/views", _Views),
                 (r"/api/view/([0-9a-f]{24})", _View),

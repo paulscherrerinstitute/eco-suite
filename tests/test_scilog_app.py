@@ -549,6 +549,89 @@ def test_comments_and_replies_are_written_as_scilog_writes_them(tmp_path, monkey
         store.save(LB, None, "<p>x</p>", [], comment_on="../x")
 
 
+class _Tasks(_Writer):
+    """A logbook's tasks, as SciLog keeps them."""
+
+    def __init__(self):
+        super().__init__()
+        self.task_rows = []
+        for n, (text, order) in enumerate([("align the KB", 100), ("check the timing", 101), ("pump laser", 5000000)]):
+            self.task_rows.append({"id": f"{n + 1:02d}" * 12, "parentId": LB, "content": text, "isDone": False, "defaultOrder": order,
+                                   "createdAt": f"2026-11-0{n + 1}T10:00:00Z", "createdBy": "ann@psi.ch" if n < 2 else "bob@psi.ch",
+                                   "updateACL": ["p1"] if n < 2 else ["p1", "p2"], "deleteACL": ["p1"] if n < 2 else ["p2"], "deleted": False})
+
+    def tasks(self, logbook_id):
+        return [dict(r) for r in self.task_rows if r["parentId"] == logbook_id and not r["deleted"]]
+
+    def create_task(self, payload):
+        self.written.append(("create_task", payload))
+        row = {**payload, "id": f"{len(self.task_rows) + 1:02d}" * 12, "createdAt": "2026-11-09T10:00:00Z", "createdBy": "ann@psi.ch",
+               "updateACL": ["p1"], "deleteACL": ["p1"], "deleted": False}
+        row.setdefault("defaultOrder", 9_000_000_000_000_000)
+        self.task_rows.append(row)
+        return row
+
+    def update_task(self, task_id, payload):
+        self.written.append(("update_task", task_id, payload))
+        next(r for r in self.task_rows if r["id"] == task_id).update(payload)
+
+    def delete_task(self, task_id):
+        self.written.append(("delete_task", task_id))
+        next(r for r in self.task_rows if r["id"] == task_id)["deleted"] = True
+
+
+def test_tasks_are_added_changed_reordered_and_deleted_in_scilog(tmp_path, monkeypatch):
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
+    reader = _Tasks()
+    store = Store(reader, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+    names = lambda out: [t["text"] for t in out["tasks"]]
+    first = store.tasks(LB)
+    assert names(first) == ["align the KB", "check the timing", "pump laser"]
+    assert first["tasks"][0]["can_edit"] and first["tasks"][2]["can_edit"] and not first["tasks"][2]["can_delete"]
+
+    # added as SciLog's page adds them (with the logbook's groups), at the end or at the top
+    out = store.add_task(LB, "  new detector  ")
+    payload = reader.written[-1][1]
+    assert payload["snippetType"] == "task" and payload["parentId"] == LB and payload["ownerGroup"] == "p1" and not payload["isDone"]
+    assert names(out)[-1] == "new detector"
+    assert names(store.add_task(LB, "urgent", first=True))[0] == "urgent"
+    with pytest.raises(ValueError):
+        store.add_task(LB, "   ")
+
+    # changed at any time: text, done
+    one = first["tasks"][0]["id"]
+    out = store.update_task(LB, one, text="align the KB mirrors", done=True)
+    assert reader.written[-1] == ("update_task", one, {"content": "align the KB mirrors", "isDone": True})
+    assert [t for t in out["tasks"] if t["id"] == one][0]["done"]
+
+    # moved: between two neighbours; with no room between 100 and 101 the list is spread out first
+    two, three = first["tasks"][1]["id"], first["tasks"][2]["id"]
+    out = store.move_task(LB, three, before=two)
+    order = names(out)
+    assert order.index("pump laser") == order.index("check the timing") - 1
+    out = store.move_task(LB, one, after=three)
+    order = names(out)
+    assert order.index("align the KB mirrors") == order.index("pump laser") + 1
+    assert len({t["order"] for t in out["tasks"]}) == len(out["tasks"])  # all distinct after spreading
+
+    # a task of another group: not changed, not deleted; one changeable by the group is not deleted by others
+    with pytest.raises(PermissionError):
+        store.delete_task(LB, three)
+    reader.task_rows.append({"id": "0a" * 12, "parentId": LB, "content": "theirs", "isDone": False, "defaultOrder": 7_000_000_000_000_000,
+                             "createdAt": "2026-11-08T10:00:00Z", "createdBy": "carl@psi.ch", "updateACL": ["p3"], "deleteACL": ["p3"],
+                             "deleted": False})
+    with pytest.raises(PermissionError):
+        store.update_task(LB, "0a" * 12, done=True)
+    with pytest.raises(PermissionError):
+        store.move_task(LB, "0a" * 12, before=two)
+    out = store.delete_task(LB, one)
+    assert reader.written[-1] == ("delete_task", one) and "align the KB mirrors" not in names(out)
+    # writing off for this logbook: nothing goes to SciLog
+    store2 = Store(reader, cache_dir=tmp_path / "f2", config={"write_logbooks": []})
+    with pytest.raises(PermissionError):
+        store2.add_task(LB, "x")
+
+
 def test_the_token_is_checked_with_scilog_before_it_is_kept(tmp_path, monkeypatch):
     monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
     reader = _Writer()

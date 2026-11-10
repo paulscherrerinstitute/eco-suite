@@ -374,6 +374,29 @@ class Reader:
             raise ValueError(kind)
         return self._send("PATCH", f"/{kind}/{_quote(snippet_id)}", json={"readACL": list(read_acl)})
 
+    # -- tasks (a logbook's to-do list; SciLog lets them be changed at any time) --
+
+    TASK_FIELDS = {"id": True, "parentId": True, "content": True, "isDone": True, "defaultOrder": True,
+                   "createdAt": True, "createdBy": True, "updatedAt": True, "updatedBy": True, "deleted": True,
+                   "updateACL": True, "deleteACL": True}
+
+    def tasks(self, logbook_id):
+        """GET tasks: the logbook's tasks, not deleted ones."""
+        rows = self.get("/tasks", {"where": {"parentId": logbook_id}, "fields": self.TASK_FIELDS, "limit": 5000})
+        return [r for r in rows if not r.get("deleted")]
+
+    def create_task(self, payload):
+        """POST tasks: a new task (snippetType "task", content, isDone)."""
+        return self._send("POST", "/tasks", json=payload)
+
+    def update_task(self, task_id, payload):
+        """PATCH tasks/<id>: content, isDone or defaultOrder; SciLog applies no edit period to tasks."""
+        return self._send("PATCH", f"/tasks/{_quote(task_id)}", json=payload)
+
+    def delete_task(self, task_id):
+        """DELETE tasks/<id>: into the logbook's history, as a post."""
+        return self._send("DELETE", f"/tasks/{_quote(task_id)}")
+
     def update_post(self, post_id, payload):
         """PATCH basesnippets/<id>: change a post's textcontent, files, tags."""
         return self._send("PATCH", f"/basesnippets/{_quote(post_id)}", json=payload)

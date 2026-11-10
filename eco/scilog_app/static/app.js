@@ -671,6 +671,8 @@ async function openLogbook(id, postId, only = false) {
   setStatus();
   updateWriteUi();
   preloadEditor();
+  loadTasks(true);
+  if (!narrow() && storageGet("eco-scilog-tasks") === "open") openTasks(true);
   $("#only-banner").hidden = true;
   if (state.only) showOnly(postId);
   else if (postId && state.byId.has(postId)) jumpToPost(postId);
@@ -1232,6 +1234,10 @@ function pageBack() {
   if ($("#bar").classList.contains("search-open") || document.body.classList.contains("searching")) { endSearch(); return true; }
   if (state.fromSearch) { state.fromSearch = false; if (reopenResults()) return true; }
   if (document.body.classList.contains("outline-open")) { document.body.classList.remove("outline-open"); return true; }
+  if (taskState.open) {
+    if (taskState.editing !== null) { document.querySelector(".task-edit")?.blur(); return true; }
+    openTasks(false); return true;
+  }
   if (!$("#pin-pane").hidden) { unpin(); return true; }
   if (state.only) { showInContext(state.only); return true; }
   return false;

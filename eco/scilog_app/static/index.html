@@ -19,6 +19,7 @@
   <select id="view" title="Which posts to show (v)" aria-label="Which posts to show" hidden></select>
   <button id="views-button" title="SciLog's own views of this logbook: list, compare, rename, change, delete" hidden>&#9881;<span class="lbl"> SciLog views</span></button>
   <button id="new-post" title="Write a new post (n)" hidden>&#10010; New post</button>
+  <button id="tasks-button" title="The logbook's tasks (t)" hidden>&#9745;<span class="lbl"> Tasks</span> <span id="tasks-count" class="count-badge" hidden></span></button>
   <a id="scilog-link" target="_blank" rel="noopener" title="This logbook in SciLog" hidden>SciLog &#8599;</a>
   <button id="token-badge" title="SciLog's token runs out soon: renew it" hidden></button>
   <span id="status"></span>
@@ -50,6 +51,7 @@
   <div id="pin-head"></div>
   <div id="pin-flow" tabindex="-1"></div>
 </aside>
+<aside id="task-pane" hidden aria-label="Tasks"></aside>
 <div id="day-banner" aria-hidden="true"></div>
 <div id="only-banner" hidden></div>
 <button id="to-bottom" title="To the newest post (End)" hidden>&#8595; Newest</button>
@@ -61,5 +63,6 @@
 <script src="/static/pin.js"></script>
 <script src="/static/headings.js"></script>
 <script src="/static/postmenu.js"></script>
+<script src="/static/tasks.js"></script>
 </body>
 </html>
