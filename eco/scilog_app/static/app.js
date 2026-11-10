@@ -1061,4 +1061,31 @@ async function main() {
   else { $("#flow").replaceChildren(el("p", { class: "hint", text: "Choose a logbook: the most recently active come first." })); showPicker(true); }
 }
 
+// A phone's Back button (the Android app calls this): close what is open on top, the topmost first.
+// Returns true if something was closed; false means there is nothing left to close (the app then leaves).
+// Overlays open without history entries, so this replaces the browser's own Back.
+function pageBack() {
+  const box = document.getElementById("lightbox");
+  if (box) { box.remove(); return true; }
+  if (document.getElementById("post-menu")) { closePostMenu(); return true; }
+  if (document.querySelector(".ck-balloon-panel_visible")) {
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return true;
+  }
+  const dialog = [...document.querySelectorAll("dialog[open]")].pop();
+  if (dialog) {
+    const ev = new Event("cancel", { cancelable: true });
+    dialog.dispatchEvent(ev);  // the editor closes itself (keeping the draft)
+    if (!ev.defaultPrevented && dialog.open) dialog.close();
+    return true;
+  }
+  if (!$("#picker").hidden && state.logbook) { showPicker(false); return true; }
+  if (document.body.classList.contains("search-open") || document.body.classList.contains("searching")) { endSearch(); return true; }
+  if (document.body.classList.contains("outline-open")) { document.body.classList.remove("outline-open"); return true; }
+  if (!$("#pin-pane").hidden) { unpin(); return true; }
+  if (state.only) { showInContext(state.only); return true; }
+  return false;
+}
+window.scilogBack = pageBack;
+
 main();
