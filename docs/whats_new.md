@@ -81,6 +81,14 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
 
 ## 10 November 2026
 
+- eco desktop builds small GUIs without code ({doc}`simple_gui`):
+  **⋯ → Add indicator** now docks the gadget in the desktop window, not in a
+  separate dashboard. The workspace and **Save Startup Script...** keep
+  gadgets, sub-device grids, strip charts and Designer panels
+  (**Tools → Edit Gadgets in Qt Designer...** / **Load Designer Panel**).
+  The script runs the Python and checkout that wrote it, so it works without
+  `eco` on PATH. Two fixes: a widget closed before saving no longer comes
+  back, and the saved panel sizes are restored, not reset to a grid.
 - The SciLog viewer moved from `eco.start_scilog()` (removed) to
   `scilog.viewer()`, which opens the pgroup's logbook; `scilog.widget()`
   does the same, and `scilog.viewer.stop()` / `.log()` end it or show its

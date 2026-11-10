@@ -93,6 +93,10 @@ last one back:
   in the script (`--workspace-json`), so there is one file to share. With lazy
   loading, nothing else in the namespace is initialized: a fast, minimal
   dashboard, e.g. for a control-room screen.
+- **Show Namespace Panel**: bring the Namespace panel back after closing it.
+
+{doc}`simple_gui` walks through building such a panel step by step, with
+gadgets (dials, gauges, strip charts) and an optional Qt Designer layout.
 
 **Tools → Scan Launcher** docks a form for building scans and appending them to
 a task queue (see {doc}`queues`). **Tools → Log Viewer** opens the command

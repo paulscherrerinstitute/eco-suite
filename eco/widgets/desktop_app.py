@@ -122,6 +122,25 @@ def _str_to_qbytearray(s):
     return QtCore.QByteArray(base64.b64decode(s.encode("ascii")))
 
 
+def _eco_launch_prefix():
+    """Start of the command a saved startup script runs: this very
+    interpreter running eco's launcher (``-m eco_cli``, what ``eco`` on
+    PATH is), with this checkout prepended to PYTHONPATH when eco is not
+    the environment's installed copy. So the script starts the same eco
+    the session that wrote it ran, even from a shell where the Bernina
+    environment isn't activated (no ``eco`` on PATH at all)."""
+    import shlex
+    import sys
+
+    import eco
+
+    root = Path(eco.__file__).resolve().parent.parent
+    prefix = ""
+    if "site-packages" not in root.parts and (root / "eco_cli.py").exists():
+        prefix = 'env PYTHONPATH={}"${{PYTHONPATH:+:$PYTHONPATH}}" '.format(shlex.quote(str(root)))
+    return "{}{} -m eco_cli ".format(prefix, shlex.quote(sys.executable))
+
+
 def build_namespace(scope="bernina", lazy=True):
     """Build (or fetch, if already built) the same `namespace` *tracking*
     object startup_inline.py's ``import eco.<scope> as <scope>; from
@@ -278,6 +297,12 @@ class _NamespaceLauncher(QtWidgets.QWidget):
         self.namespace = namespace
         self.on_open = on_open  # (name) -> None
         self._loading = set()  # names currently initializing
+        # names whose widget should open once their background init is
+        # done (a click / open_by_name), vs. names only initialized for
+        # someone else's sake (initialize(), e.g. a workspace gadget of a
+        # child item) -- see _on_init_done
+        self._open_after_init = set()
+        self._after_init = {}  # name -> [callback(), ...], see initialize()
         self._spinner_frame = 0
         self._init_bridge = _InitDoneBridge()
         self._init_bridge.done.connect(self._on_init_done)
@@ -490,7 +515,28 @@ class _NamespaceLauncher(QtWidgets.QWidget):
             return
         if state != "lazy":
             return  # failed, or not a name on this namespace at all
+        self._open_after_init.add(name)
         self._start_loading(name)
+
+    def initialize(self, name, then=None):
+        """Make sure `name` is built, without opening its widget: `then()`
+        runs on the GUI thread right away if it already is, or after the
+        same background init a click would start (spinner included).
+        Nothing runs if `name` failed or isn't in the namespace. Used to
+        restore a workspace gadget or panel for a *child* of a lazy
+        component without opening the whole component's grid."""
+        state = self._current_states().get(name)
+        if state == "initialized" and name not in self._loading:
+            if then is not None:
+                then()
+            return
+        if state != "lazy" and name not in self._loading:
+            logger.warning("eco desktop: %r is not available (%s) -- not restored", name, state or "unknown")
+            return
+        if then is not None:
+            self._after_init.setdefault(name, []).append(then)
+        if name not in self._loading:
+            self._start_loading(name)
 
     def _start_loading(self, name):
         self._loading.add(name)
@@ -523,15 +569,28 @@ class _NamespaceLauncher(QtWidgets.QWidget):
             except Exception:
                 logger.exception("initializing %r failed", name)
             finally:
-                self._init_bridge.done.emit(name)
+                try:
+                    self._init_bridge.done.emit(name)
+                except RuntimeError:
+                    pass  # the window (and this launcher) closed meanwhile
 
         threading.Thread(target=_init, daemon=True).start()
 
     def _on_init_done(self, name):
         self._loading.discard(name)
         self._refresh()
-        if self._current_states().get(name) == "initialized":
+        callbacks = self._after_init.pop(name, [])
+        wants_open = name in self._open_after_init
+        self._open_after_init.discard(name)
+        if self._current_states().get(name) != "initialized":
+            return
+        if wants_open:
             self.on_open(name)
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                logger.exception("restoring something of %r failed", name)
 
     def _on_init_all_clicked(self):
         batch = set(getattr(self.namespace, "lazy_names", ())) - self._loading
@@ -753,6 +812,21 @@ class EcoDesktopApp:
         # workspace save/reload (only which *names* were open is; see
         # _opened_names), since reopening a name rebuilds this fresh.
         self._widget_docks = []
+        # indicator gadgets docked here ("⋯" -> Add indicator in a grid
+        # that lives in this window, see add_gadget) and Qt Designer
+        # panels (load_ui_panel): {"entry": <what the workspace saves>,
+        # "dock": QDockWidget} each, saved with the workspace and the
+        # startup script alongside _opened_names
+        self._gadgets = []
+        self._ui_panels = []
+        # sub-device grids and views opened from inside this window (see
+        # host_widget), same shape
+        self._views = []
+        # while a workspace is being restored: the saved dock layout,
+        # re-applied each time one of its docks appears (they arrive one
+        # by one, many only after a background init) -- see
+        # load_workspace_data/_reapply_pending_layout
+        self._pending_layout = None
         # the "no console" central-area placeholder (see
         # _build_no_console_placeholder) -- torn out the moment the first
         # real dock claims that space (see _dock_widget_object), so it
@@ -825,23 +899,7 @@ class EcoDesktopApp:
             launcher = _NamespaceLauncher(self.namespace, self._open_widget, parent=self.window)
             self._launcher = launcher
             if self.with_namespace_panel:
-                # Closable (unlike before) -- closing it only hides the
-                # browsing UI, see _on_namespace_dock_closed: the launcher
-                # itself (and its live-refresh timer, and open_by_name) keep
-                # running headlessly, so nothing that depends on it --
-                # workspace reload included -- breaks.
-                dock = _ManagedDockWidget("Namespace", self._on_namespace_dock_closed, parent=self.window)
-                # saveState()/restoreState() (see save_workspace/load_workspace
-                # below) match docks up by objectName -- Qt warns without one
-                dock.setObjectName("namespace_launcher")
-                dock.setWidget(launcher)
-                dock.setFeatures(
-                    QtWidgets.QDockWidget.DockWidgetMovable
-                    | QtWidgets.QDockWidget.DockWidgetFloatable
-                    | QtWidgets.QDockWidget.DockWidgetClosable
-                )
-                self.window.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
-                self._launcher_dock = dock
+                self.show_namespace_panel()
 
         self._build_workspace_menu()
         self._build_tools_menu()
@@ -878,6 +936,10 @@ class EcoDesktopApp:
         )
         save_action.triggered.connect(lambda: self.save_workspace())
 
+        show_ns_action = menu.addAction("Show Namespace Panel")
+        show_ns_action.setToolTip("Bring the Namespace panel back after closing it, to open more devices")
+        show_ns_action.triggered.connect(self.show_namespace_panel)
+
         menu.addSeparator()
         script_action = menu.addAction("Save Startup Script...")
         script_action.setToolTip(
@@ -894,6 +956,9 @@ class EcoDesktopApp:
 
     def _on_new_workspace(self):
         self._opened_names = []
+        self._views = []
+        self._gadgets = []
+        self._ui_panels = []
         print(
             "eco desktop: cleared the tracked open-widget list for this session "
             "(the dock layout itself is unchanged -- close and reopen the window "
@@ -929,6 +994,21 @@ class EcoDesktopApp:
             "back out."
         )
         tabify_action.triggered.connect(self._on_combine_into_tabs)
+
+        menu.addSeparator()
+        designer_action = menu.addAction("Edit Gadgets in Qt Designer...")
+        designer_action.setToolTip(
+            "Write the gadgets docked here (⋯ -> Add indicator) as a Qt Designer "
+            ".ui file and open Designer on it -- arrange them there, save, and "
+            "load the result with 'Load Designer Panel'"
+        )
+        designer_action.triggered.connect(self._on_export_gadgets_to_designer)
+        panel_action = menu.addAction("Load Designer Panel (.ui)...")
+        panel_action.setToolTip(
+            "Dock a panel saved from Qt Designer, with live gadgets in it -- kept "
+            "in the workspace and the startup script"
+        )
+        panel_action.triggered.connect(self._on_load_ui_panel)
 
     def _build_ask_menu(self):
         """"Ask" pulldown: eco.ei (the %ei magic) as a docked panel, the
@@ -1346,6 +1426,29 @@ class EcoDesktopApp:
             dock.setParent(None)
             dock.deleteLater()
 
+    def show_namespace_panel(self):
+        """Dock the Namespace panel (again) -- Workspace -> Show Namespace
+        Panel, e.g. in a panel started from a startup script without one.
+        Closable: closing it only hides the browsing UI, see
+        _on_namespace_dock_closed: the launcher itself (and its
+        live-refresh timer, and open_by_name) keep running headlessly, so
+        nothing that depends on it -- workspace reload included -- breaks."""
+        if self._launcher is None or self._launcher_dock is not None or self.window is None:
+            return
+        dock = _ManagedDockWidget("Namespace", self._on_namespace_dock_closed, parent=self.window)
+        # saveState()/restoreState() (see save_workspace/load_workspace
+        # below) match docks up by objectName -- Qt warns without one
+        dock.setObjectName("namespace_launcher")
+        dock.setWidget(self._launcher)
+        self._launcher.show()
+        dock.setFeatures(
+            QtWidgets.QDockWidget.DockWidgetMovable
+            | QtWidgets.QDockWidget.DockWidgetFloatable
+            | QtWidgets.QDockWidget.DockWidgetClosable
+        )
+        self.window.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
+        self._launcher_dock = dock
+
     def _on_namespace_dock_closed(self):
         """Runs when the Namespace dock is closed via its own title-bar X.
         Unlike the Console (see _on_console_dock_closed), this only hides
@@ -1432,9 +1535,17 @@ class EcoDesktopApp:
         # as script" (see eco.widgets.log_timeline_qt).
         if self._kernel_session is not None:
             self._kernel_session.log_widget_control(f"{name}.widget()")
-        self._dock_widget_object(name, widget_obj)
+        self._dock_widget_object(name, widget_obj, opened_name=name)
 
-    def _dock_widget_object(self, name, widget_obj):
+    def _forget_opened_name(self, name):
+        """A top-level widget dock was closed: stop listing `name` as open
+        (what the workspace and the startup script reopen) unless another
+        dock for it is still there."""
+        still_open = any(getattr(d, "_eco_opened_name", None) == name for d in self._widget_docks)
+        if not still_open and name in self._opened_names:
+            self._opened_names.remove(name)
+
+    def _dock_widget_object(self, name, widget_obj, object_name=None, on_removed=None, opened_name=None):
         """Reparent `widget_obj`'s already-built top-level window into a
         new dock tile in this desktop window, instead of leaving it as its
         own separate window. Works for anything following eco's own Qt
@@ -1486,6 +1597,15 @@ class EcoDesktopApp:
             removed["done"] = True
             if dock in self._widget_docks:
                 self._widget_docks.remove(dock)
+            if opened_name is not None and not getattr(self, "_closing", False):
+                self._forget_opened_name(opened_name)
+            if on_removed is not None and not getattr(self, "_closing", False):
+                try:
+                    on_removed()
+                except Exception:
+                    logger.exception("bookkeeping for closed dock %r failed", name)
+            if self.window is None:
+                return
             self.window.removeDockWidget(dock)
             # removeDockWidget only detaches it from the dock-area layout
             # and hides it -- per its own docs, it deliberately leaves the
@@ -1509,8 +1629,9 @@ class EcoDesktopApp:
             widget_obj.stop = _stop_and_teardown
 
         dock = _ManagedDockWidget(name, _stop_and_teardown, parent=self.window)
+        dock._eco_opened_name = opened_name
         dock.setObjectName(
-            _dock_object_name(f"widget_{name}", [d.objectName() for d in self._widget_docks])
+            _dock_object_name(object_name or f"widget_{name}", [d.objectName() for d in self._widget_docks])
         )
         dock.setFeatures(
             QtWidgets.QDockWidget.DockWidgetClosable
@@ -1546,6 +1667,7 @@ class EcoDesktopApp:
         inner.show()
         dock.show()
         dock.raise_()
+        self._reapply_pending_layout()
 
         # Tag the widget with the container that just hosted it, so
         # anything IT spawns internally (e.g. DisplayQt._open_child_window,
@@ -1553,13 +1675,244 @@ class EcoDesktopApp:
         # instead of always popping a bare standalone window -- see those
         # call sites and host_widget below.
         widget_obj._eco_container = self
+        return dock
 
     # public alias: nested call sites (e.g. display_qt.py, camera_stream_qt.py)
     # reach a parent's container via `getattr(parent, "_eco_container", None)`
     # and then call `.host_widget(name, child)` on it -- same method as
     # _open_widget's own top-level docking, just under a name that isn't
     # private to this module.
-    host_widget = _dock_widget_object
+    def host_widget(self, name, widget_obj, item=None, view=None):
+        """Dock a widget that something inside this window opened (a
+        sub-device's grid from a grid row, a strip chart / history / view
+        from a row's "⋯" menu, ``device.widget(dock_in=...)``). With `item`
+        and `view` -- "grid", "widget", "strip_chart", "history" or a
+        ``_widget_*`` method name -- it is also saved with the workspace
+        and the startup script and opened again from there (see
+        _restore_view); without them it is docked but not saved."""
+        from eco.widgets.indicator_widgets import _sanitize_object_name, item_path
+
+        path = item_path(item, fallback="") if item is not None and view else ""
+        if not path:
+            return self._dock_widget_object(name, widget_obj)
+        record = {"entry": {"view": view, "item_path": path, "title": name}}
+        self._views.append(record)
+
+        def _removed():
+            if record in self._views:
+                self._views.remove(record)
+
+        dock = self._dock_widget_object(
+            name, widget_obj, object_name=_sanitize_object_name(f"view_{view}_{path}"), on_removed=_removed
+        )
+        record["dock"] = dock
+        return dock
+
+    def _restore_view(self, entry):
+        def _build(item):
+            from eco.widgets import item_menu_qt
+
+            view, title = entry["view"], entry.get("title") or entry["item_path"]
+            label = entry["item_path"].rsplit(".", 1)[-1]
+            get_container = lambda: self  # noqa: E731
+            if view == "grid":
+                from eco.widgets.display_qt import DisplayQt
+
+                child = DisplayQt(item, auto_start=False)
+                child._build_window()
+                self.host_widget(title, child, item=item, view="grid")
+            elif view == "widget":
+                item.widget(dock_in=self)
+            elif view == "strip_chart":
+                item_menu_qt.open_strip_chart(item, label, get_container)
+            elif view == "history":
+                item_menu_qt.open_history(item, label, get_container)
+            elif view.startswith("_widget_"):
+                item_menu_qt._open_view(item, label, view, get_container, self.window)
+            else:
+                logger.warning("eco desktop: unknown saved view %r of %r", view, entry["item_path"])
+
+        self._when_item_ready(entry["item_path"], _build)
+
+    # -- gadgets and Qt Designer panels -----------------------------------
+
+    def add_gadget(self, widget, title=None):
+        """Dock an eco.widgets.indicator_widgets gadget (what "⋯" -> Add
+        indicator in a grid docked here calls) and remember it for the
+        workspace and the startup script, which rebuild it from its kind,
+        item path, title and options. Returns the dock."""
+        from eco.widgets.indicator_widgets import _sanitize_object_name, item_path
+        from eco.widgets.item_menu_qt import _Handle
+
+        kind = getattr(widget, "indicator_kind", None) or type(widget).__name__
+        title = title or widget.windowTitle()
+        path = item_path(getattr(widget, "item", None), fallback="")
+        record = {
+            "entry": {
+                "kind": kind,
+                "item_path": path,
+                "title": title,
+                "kwargs": dict(getattr(widget, "export_kwargs", None) or {}),
+            },
+            "widget": widget,
+        }
+        self._gadgets.append(record)
+
+        def _removed():
+            if record in self._gadgets:
+                self._gadgets.remove(record)
+
+        dock = self._dock_widget_object(
+            f"{title} ({kind})",
+            _Handle(widget, on_stop=widget.stop),
+            object_name=_sanitize_object_name(f"gadget_{kind}_{path or title}"),
+            on_removed=_removed,
+        )
+        record["dock"] = dock
+        return dock
+
+    def _split_item_path(self, path):
+        """(top-level namespace name, [attribute, ...]) for an alias path
+        like "prepump.line1.pressure" (a leading scope segment, e.g.
+        "bernina.", is skipped); (None, []) if it names nothing here."""
+        segments = [seg for seg in (path or "").split(".") if seg]
+        states = self._launcher._current_states() if self._launcher is not None else {}
+        for start in (0, 1):
+            if len(segments) > start and segments[start] in states:
+                return segments[start], segments[start + 1 :]
+        return None, []
+
+    def _when_item_ready(self, path, then):
+        """Call `then(item)` for the item at alias `path` once its
+        top-level component is built -- at once if it already is,
+        otherwise after a background init that does *not* open the
+        component's own widget (see _NamespaceLauncher.initialize)."""
+        top, rest = self._split_item_path(path)
+        if top is None:
+            logger.warning("eco desktop: %r is not in this namespace -- not restored", path)
+            return
+
+        def _resolve_and_call():
+            try:
+                obj = _resolve_namespace_item(self.namespace, top)
+                for attr in rest:
+                    obj = getattr(obj, attr)
+                then(obj)
+            except RuntimeError as exc:  # its panel was closed meanwhile
+                logger.debug("restoring %r skipped: %s", path, exc)
+            except Exception:
+                logger.exception("eco desktop: restoring %r failed", path)
+
+        self._launcher.initialize(top, then=_resolve_and_call)
+
+    def _restore_gadget(self, entry):
+        from eco.widgets.indicator_widgets import create_indicator
+
+        def _build(item):
+            widget = create_indicator(entry["kind"], item, title=entry.get("title"), **entry.get("kwargs", {}))
+            self.add_gadget(widget, title=entry.get("title"))
+
+        self._when_item_ready(entry["item_path"], _build)
+
+    def load_ui_panel(self, path):
+        """Dock a Qt Designer panel (a .ui file saved from "Edit Gadgets in
+        Qt Designer...", or any .ui with eco gadget placeholders in it) and
+        bring each gadget in it to life as soon as its component is built.
+        Saved with the workspace and the startup script by its file path,
+        so later edits in Designer show up at the next start. Returns the
+        dock."""
+        from eco.widgets.dashboard_qt import attach_ui_placeholder, build_ui_panel
+        from eco.widgets.indicator_widgets import _sanitize_object_name
+        from eco.widgets.item_menu_qt import _Handle
+
+        path = Path(path).expanduser().resolve()
+        panel, placeholders = build_ui_panel(path)
+        record = {"entry": {"path": str(path)}}
+        self._ui_panels.append(record)
+
+        def _stop_gadgets():
+            for info in placeholders:
+                try:
+                    info["widget"].stop()
+                except RuntimeError:
+                    pass
+
+        def _removed():
+            if record in self._ui_panels:
+                self._ui_panels.remove(record)
+
+        dock = self._dock_widget_object(
+            path.stem,
+            _Handle(panel, on_stop=_stop_gadgets),
+            object_name=_sanitize_object_name(f"panel_{path.stem}"),
+            on_removed=_removed,
+        )
+        record["dock"] = dock
+        for info in placeholders:
+            if info["item_path"]:
+                self._when_item_ready(info["item_path"], lambda item, info=info: attach_ui_placeholder(info, item))
+        return dock
+
+    def export_gadgets_to_designer(self, path=None, launch=True):
+        """Write every gadget docked here as a Qt Designer .ui file (one
+        placeholder box per gadget, at its current size -- see
+        eco.widgets.dashboard_qt._write_promoted_ui) and open Designer on
+        it. Arrange it there, save, then load it back with "Load Designer
+        Panel (.ui)..." (load_ui_panel). Returns the file's path."""
+        from eco.widgets.dashboard_qt import CUSTOM_PANELS_DIR, _write_promoted_ui, open_in_designer
+
+        entries = []
+        for record in self._gadgets:
+            if not record["entry"]["item_path"]:
+                continue
+            entry = dict(record["entry"])
+            try:
+                entry["size"] = (record["widget"].width(), record["widget"].height())
+            except RuntimeError:
+                pass
+            entries.append(entry)
+        if not entries:
+            raise RuntimeError(
+                "No gadgets here to put into Qt Designer -- add some first: "
+                "'⋯' at the end of a row in a device panel -> Add indicator."
+            )
+        path = Path(path) if path else CUSTOM_PANELS_DIR / "panel.ui"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_promoted_ui(entries, path)
+        if launch:
+            open_in_designer(path)
+        return path
+
+    def _on_export_gadgets_to_designer(self):
+        from eco.widgets.dashboard_qt import CUSTOM_PANELS_DIR
+
+        CUSTOM_PANELS_DIR.mkdir(parents=True, exist_ok=True)
+        path_str, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self.window, "Gadget panel for Qt Designer", str(CUSTOM_PANELS_DIR / "panel.ui"),
+            "Qt Designer files (*.ui)",
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix != ".ui":
+            path = path.with_suffix(".ui")
+        try:
+            self.export_gadgets_to_designer(path)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self.window, "Qt Designer", str(exc))
+
+    def _on_load_ui_panel(self):
+        from eco.widgets.dashboard_qt import CUSTOM_PANELS_DIR
+
+        path_str, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self.window, "Load Designer panel", str(CUSTOM_PANELS_DIR), "Qt Designer files (*.ui)"
+        )
+        if not path_str:
+            return
+        try:
+            self.load_ui_panel(path_str)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self.window, "Load Designer panel", str(exc))
 
     # -- workspace persistence --------------------------------------------
 
@@ -1574,13 +1927,21 @@ class EcoDesktopApp:
             return False
         path = Path(path) if path else DEFAULT_WORKSPACE_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
+        path.write_text(json.dumps(self._workspace_data()))
+        return True
+
+    def _workspace_data(self):
+        """What save_workspace and save_startup_script store: the window's
+        geometry and dock layout, the open namespace entries, the docked
+        gadgets and the Designer panels."""
+        return {
             "geometry": _qbytearray_to_str(self.window.saveGeometry()),
             "state": _qbytearray_to_str(self.window.saveState()),
             "opened_names": list(self._opened_names),
+            "views": [dict(r["entry"]) for r in self._views],
+            "gadgets": [dict(r["entry"]) for r in self._gadgets if r["entry"]["item_path"]],
+            "ui_panels": [r["entry"]["path"] for r in self._ui_panels],
         }
-        path.write_text(json.dumps(data))
-        return True
 
     def load_workspace(self, path=None):
         """Restore a previously eco.widgets.desktop_app-saved workspace
@@ -1610,17 +1971,57 @@ class EcoDesktopApp:
         (reads the dict from a file) and the CLI's --workspace-json (the
         dict is embedded directly in the startup script, no companion file
         -- see save_startup_script)."""
+        names = data.get("opened_names", [])
+        views = data.get("views", [])
+        gadgets = data.get("gadgets", [])
+        panels = data.get("ui_panels", [])
         if self.window is not None:
             if data.get("geometry"):
                 self.window.restoreGeometry(_str_to_qbytearray(data["geometry"]))
             if data.get("state"):
                 self.window.restoreState(_str_to_qbytearray(data["state"]))
+                # The widget docks don't exist yet -- most appear only after
+                # a background init -- and restoreState can only place docks
+                # that exist. So it is applied again as each one arrives
+                # (see _reapply_pending_layout); without that the saved
+                # sizes and arrangement were silently lost.
+                expected = len(names) + len(views) + len(gadgets) + len(panels)
+                if expected and self._launcher is not None:
+                    self._pending_layout = {"state": data["state"], "left": expected}
+                    QtCore.QTimer.singleShot(self.LAYOUT_RESTORE_WINDOW_MS, self._end_pending_layout)
 
         if self._launcher is not None:
-            names = data.get("opened_names", [])
             self._workspace_restore_names.update(names)
             for name in names:
                 self._launcher.open_by_name(name)
+            for entry in views:
+                self._restore_view(entry)
+            for entry in gadgets:
+                self._restore_gadget(entry)
+            for panel_path in panels:
+                try:
+                    self.load_ui_panel(panel_path)
+                except Exception:
+                    logger.exception("eco desktop: could not load Designer panel %s", panel_path)
+                    self._reapply_pending_layout()  # still counts as arrived
+
+    #: how long after a workspace load late-arriving docks still get the
+    #: saved layout applied -- long enough for a slow device init, short
+    #: enough that an entry that never arrives (failed init) doesn't make
+    #: a much later manual open snap the window back to the saved layout
+    LAYOUT_RESTORE_WINDOW_MS = 120_000
+
+    def _reapply_pending_layout(self):
+        pending = self._pending_layout
+        if pending is None or self.window is None:
+            return
+        self.window.restoreState(_str_to_qbytearray(pending["state"]))
+        pending["left"] -= 1
+        if pending["left"] <= 0:
+            self._pending_layout = None
+
+    def _end_pending_layout(self):
+        self._pending_layout = None
 
     def save_startup_script(self, sh_path=None):
         """Write a single, standalone, executable shell script that
@@ -1655,11 +2056,7 @@ class EcoDesktopApp:
         if sh_path.suffix != ".sh":
             sh_path = sh_path.with_suffix(".sh")
 
-        workspace_data = {
-            "geometry": _qbytearray_to_str(self.window.saveGeometry()),
-            "state": _qbytearray_to_str(self.window.saveState()),
-            "opened_names": list(self._opened_names),
-        }
+        workspace_data = self._workspace_data()
         # A quoted heredoc delimiter ('EOF', not EOF) disables all shell
         # expansion of its body, so the JSON's own $, `, \, and " are safe
         # verbatim -- no escaping needed regardless of what's in geometry/
@@ -1680,6 +2077,7 @@ class EcoDesktopApp:
             if self.namespace is not None and self._launcher_dock is None
             else ""
         )
+        theme_flag = " --theme {}".format(self.theme) if self.theme in ("dark", "light") else ""
         script = (
             "#!/bin/bash\n"
             "# Auto-generated by eco desktop's Workspace menu (Save Startup\n"
@@ -1691,8 +2089,14 @@ class EcoDesktopApp:
             "read -r -d '' ECO_WORKSPACE_JSON <<'EOF'\n"
             "{}\n"
             "EOF\n"
-            'exec eco desktop {}{}{}{} --workspace-json "$ECO_WORKSPACE_JSON" "$@"\n'.format(
-                workspace_json, scope_arg, lazy_flag, console_flag, namespace_panel_flag
+            'exec {}desktop {}{}{}{}{} --workspace-json "$ECO_WORKSPACE_JSON" "$@"\n'.format(
+                workspace_json,
+                _eco_launch_prefix(),
+                scope_arg,
+                lazy_flag,
+                console_flag,
+                namespace_panel_flag,
+                theme_flag,
             )
         )
         sh_path.write_text(script)
@@ -1807,6 +2211,9 @@ class EcoDesktopApp:
             _live_desktop_apps.remove(self)
 
         self._autosave_workspace()
+        # docks closed from here on go down with the window -- they must
+        # not be dropped from what was just saved (see _dock_widget_object)
+        self._closing = True
         for dock in list(self._widget_docks):
             try:
                 dock.close()

@@ -120,6 +120,14 @@ scientific Python libraries.
       Talk to Newport XPS and Schneider MCode controllers directly,
       with no EPICS in the loop.
 
+   .. grid-item-card:: :octicon:`browser` Build a simple GUI
+      :link: simple_gui
+      :link-type: doc
+
+      Click a small control panel together in eco desktop (dials,
+      gauges, strip charts, optionally laid out in Qt Designer) and save
+      it as a startup script.
+
    .. grid-item-card:: :octicon:`device-desktop` Widget views
       :link: widget_views
       :link-type: doc
@@ -161,6 +169,7 @@ scientific Python libraries.
 
    scanning
    adaptive_scans
+   simple_gui
    simulated_targets
    queues
    tweak

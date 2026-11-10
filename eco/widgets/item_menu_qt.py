@@ -122,12 +122,13 @@ class _Handle:
                 pass
 
 
-def host(name, handle, get_container=None):
+def host(name, handle, get_container=None, item=None, view=None):
     """Show `handle` (``.window``/``.stop()``) docked in the grid's desktop
-    container if there is one, else as its own window."""
+    container if there is one, else as its own window. `item`/`view` let
+    the desktop save it with its workspace (EcoDesktopApp.host_widget)."""
     container = get_container() if get_container is not None else None
     if container is not None and hasattr(container, "host_widget"):
-        container.host_widget(name, handle)
+        container.host_widget(name, handle, item=item, view=view)
         return
     window = handle.window
     window.show()
@@ -225,7 +226,7 @@ class StripChartQt(QtWidgets.QWidget):
 def open_strip_chart(item, name=None, get_container=None):
     chart = StripChartQt(item, title=name)
     handle = _Handle(chart, on_stop=chart.stop)
-    host(f"strip chart: {chart.title}", handle, get_container)
+    host(f"strip chart: {chart.title}", handle, get_container, item=item, view="strip_chart")
     return handle
 
 
@@ -302,7 +303,7 @@ class HistoryPanelQt(QtWidgets.QWidget):
 def open_history(item, name=None, get_container=None):
     panel = HistoryPanelQt(item, title=name)
     handle = _Handle(panel, on_stop=panel.stop)
-    host(f"history: {panel.title}", handle, get_container)
+    host(f"history: {panel.title}", handle, get_container, item=item, view="history")
     return handle
 
 
@@ -317,9 +318,9 @@ def _open_view(item, name, method_name, get_container, parent):
         return
     title = f"{name} ({method_name[len('_widget_'):]})"
     if isinstance(getattr(result, "window", None), QtWidgets.QWidget):
-        host(title, result, get_container)
+        host(title, result, get_container, item=item, view=method_name)
     elif isinstance(result, QtWidgets.QWidget):
-        host(title, _Handle(result, on_stop=getattr(result, "stop", None)), get_container)
+        host(title, _Handle(result, on_stop=getattr(result, "stop", None)), get_container, item=item, view=method_name)
     # anything else showed itself (or is not a Qt view) -- nothing to host
 
 
@@ -410,7 +411,9 @@ def populate_menu(menu, item, name, get_container=None, parent=None):
             indicator_menu = menu.addMenu("Add indicator")
             for kind, _factory, _needs_range in INDICATOR_TYPES:
                 indicator_menu.addAction(kind).triggered.connect(
-                    lambda checked=False, k=kind: _create_and_add(item, name, k, None)
+                    lambda checked=False, k=kind: _create_and_add(
+                        item, name, k, None, get_container() if get_container is not None else None
+                    )
                 )
 
     if item_menu.has_memory(item):

@@ -901,11 +901,19 @@ def attach_indicator_menu(label_widget, item, name, dashboard=None):
     label_widget.customContextMenuRequested.connect(_show_menu)
 
 
-def _create_and_add(item, name, kind, dashboard):
+def _create_and_add(item, name, kind, dashboard, container=None):
+    """Build a `kind` gadget for `item` and show it: docked in `container`
+    (the eco desktop the grid lives in -- anything with ``add_gadget``,
+    which also saves it with the workspace and startup script) if there is
+    one and no explicit `dashboard`, else on `dashboard` (default: the
+    shared standalone dashboard window)."""
     try:
         widget = create_indicator(kind, item, title=name)  # already tags accessibleName/objectName
     except Exception:
         logger.exception("failed to create a %r indicator for %r", kind, name)
+        return
+    if dashboard is None and container is not None and hasattr(container, "add_gadget"):
+        container.add_gadget(widget, title=name)
         return
     if dashboard is None:
         from eco.widgets.dashboard_qt import get_default_dashboard

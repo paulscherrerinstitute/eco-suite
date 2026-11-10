@@ -31,17 +31,20 @@ meant for.
 
 "Edit in Qt Designer" / "Load custom panel" is the more ambitious one:
 export_to_designer writes the current gadgets out as a real Qt Designer
-.ui file, with each one as a genuinely promoted instance of its actual
-eco.widgets.indicator_widgets class (not a mockup -- Designer really
-constructs and renders them, inert/unattached, since promoted widgets are
-always built as ClassName(parent) with no other arguments -- see that
-module's docstring) so you can visually rearrange/resize/group them, then
-launches Designer on it. load_custom_panel loads a saved .ui back
-(uic.loadUi, which really instantiates the promoted classes again) and
-reattaches each gadget's live item the same way load_workspace does,
-via the accessibleName Qt property Designer preserves across edits. The
-result is added as a single dock, so a Designer-composed arrangement
-becomes one reusable named panel.
+.ui file, one promoted widget per gadget (class = its
+eco.widgets.indicator_widgets class, header = that module). Designer is a
+C++ program and cannot run Python classes, so in Designer each gadget is
+a labelled, empty placeholder box -- you arrange, group and size boxes,
+you don't see live values there. Each placeholder carries what is needed
+to rebuild the real gadget as dynamic properties (``ecoKind``,
+``ecoKwargs`` -- e.g. a dial's range) plus the item path as its
+accessibleName; Designer keeps all three when it saves. load_custom_panel
+loads the saved .ui (uic.loadUi) and replaces every placeholder, in place
+in whatever layout Designer put it, by a freshly built live gadget
+(build_ui_panel/attach_ui_placeholder). The result is added as a single
+dock, so a Designer-composed arrangement becomes one reusable named
+panel. eco desktop's Tools menu offers the same round trip for gadgets
+docked in the desktop.
 """
 import json
 import logging
@@ -412,32 +415,26 @@ class Dashboard:
         path = Path(path) if path else CUSTOM_PANELS_DIR / "dashboard_layout.ui"
         path.parent.mkdir(parents=True, exist_ok=True)
         _write_promoted_ui(self._gadget_entries(), path)
-        try:
-            subprocess.Popen(["designer", str(path)])
-        except FileNotFoundError as exc:
-            raise RuntimeError("Qt Designer ('designer') not found in PATH.") from exc
+        open_in_designer(path)
         return path
 
     def load_custom_panel(self, path, namespace=None, title=None):
         """Load a .ui file (typically one saved from Qt Designer via
         export_to_designer, possibly hand-rearranged) as a single
-        composite dock, reattaching each recognized
-        eco.widgets.indicator_widgets gadget inside it to a live item
-        resolved from `namespace` via its accessibleName (see
-        eco.widgets.indicator_widgets.resolve_item_path). Gadgets whose
-        item can't be resolved (no namespace given, or a stale/renamed
-        path) stay inert/unattached rather than failing the whole load."""
-        from PyQt5 import uic
+        composite dock, replacing each gadget placeholder in it by a live
+        gadget for the item resolved from `namespace` via its
+        accessibleName (see eco.widgets.indicator_widgets.resolve_item_path
+        and attach_ui_placeholder). Placeholders whose item can't be
+        resolved (no namespace given, or a stale/renamed path) stay
+        inert/unattached rather than failing the whole load."""
+        from eco.widgets.indicator_widgets import resolve_item_path
 
-        from eco.widgets.indicator_widgets import _IndicatorBase, resolve_item_path
-
-        widget = uic.loadUi(str(path))
-        for child in widget.findChildren(_IndicatorBase):
-            item_path_str = child.accessibleName()
-            item = resolve_item_path(namespace, item_path_str) if namespace is not None else None
+        panel, placeholders = build_ui_panel(path)
+        for info in placeholders:
+            item = resolve_item_path(namespace, info["item_path"]) if namespace is not None else None
             if item is not None:
-                child.set_item(item, title=child.windowTitle())
-        return self.add_widget(widget, title=title or Path(path).stem)
+                attach_ui_placeholder(info, item)
+        return self.add_widget(panel, title=title or Path(path).stem)
 
     # -- lifecycle (mirrors camserver_panel_qt.CamServerPanelQt) -----------
 
@@ -586,6 +583,23 @@ def _write_promoted_ui(gadget_entries, path):
         ):
             prop_el = ET.SubElement(widget_el, "property", attrib={"name": prop_name})
             ET.SubElement(prop_el, "string").text = value
+        # Designer shows a promoted Python class as an empty QWidget box
+        # with no size hint of its own -- give it the gadget's real size so
+        # the layout in Designer looks like the one it will produce
+        width, height = entry.get("size") or factory.MAX_SIZE
+        prop_el = ET.SubElement(widget_el, "property", attrib={"name": "minimumSize"})
+        size_el = ET.SubElement(prop_el, "size")
+        ET.SubElement(size_el, "width").text = str(int(width))
+        ET.SubElement(size_el, "height").text = str(int(height))
+        # dynamic properties (stdset="0"): Designer lists them under
+        # "Dynamic Properties" and keeps them on save; uic sets them back
+        # with setProperty -- what attach_ui_placeholder rebuilds from
+        for prop_name, value in (
+            ("ecoKind", kind),
+            ("ecoKwargs", json.dumps(entry.get("kwargs") or {})),
+        ):
+            prop_el = ET.SubElement(widget_el, "property", attrib={"name": prop_name, "stdset": "0"})
+            ET.SubElement(prop_el, "string").text = value
 
     custom_widgets = ET.SubElement(ui, "customwidgets")
     for class_name in sorted(classes_used):
@@ -600,6 +614,95 @@ def _write_promoted_ui(gadget_entries, path):
     tree = ET.ElementTree(ui)
     ET.indent(tree, space=" ")
     tree.write(path, encoding="UTF-8", xml_declaration=True)
+
+
+def designer_executable():
+    """Path of Qt Designer: the one shipped next to this Python
+    interpreter first (the pixi/conda env's own, matching its Qt and
+    PyQt), else ``designer`` on PATH. None if neither exists. The env's
+    own copy matters: on the workstations /usr/bin/designer is a
+    qtchooser stub without a Qt5 Designer behind it."""
+    import shutil
+    import sys
+
+    local = Path(sys.executable).parent / "designer"
+    if local.exists():
+        return str(local)
+    return shutil.which("designer")
+
+
+def open_in_designer(path):
+    """Start Qt Designer on `path` (non-blocking). RuntimeError if it
+    isn't installed."""
+    exe = designer_executable()
+    if exe is None:
+        raise RuntimeError("Qt Designer ('designer') not found next to Python or in PATH.")
+    try:
+        return subprocess.Popen([exe, str(path)])
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Qt Designer ({exe}) could not be started.") from exc
+
+
+def build_ui_panel(path):
+    """Load a gadget panel .ui file (see _write_promoted_ui) with uic.
+    Returns (panel, placeholders): `panel` is the top-level QWidget,
+    `placeholders` one dict per gadget placeholder in it --
+    {"widget", "kind", "item_path", "title", "kwargs"} -- to be brought to
+    life with attach_ui_placeholder once its item is available."""
+    from qtpy import uic
+
+    from eco.widgets.indicator_widgets import _FACTORY_BY_KIND, _IndicatorBase
+
+    kind_by_class = {factory.__name__: kind for kind, factory in _FACTORY_BY_KIND.items()}
+    panel = uic.loadUi(str(path))
+    placeholders = []
+    for child in panel.findChildren(_IndicatorBase):
+        kind = child.property("ecoKind") or kind_by_class.get(type(child).__name__)
+        try:
+            kwargs = json.loads(child.property("ecoKwargs") or "{}")
+        except ValueError:
+            kwargs = {}
+        placeholders.append(
+            {
+                "widget": child,
+                "kind": kind,
+                "item_path": child.accessibleName(),
+                "title": child.windowTitle(),
+                "kwargs": kwargs,
+            }
+        )
+    return panel, placeholders
+
+
+def attach_ui_placeholder(info, item):
+    """Replace one placeholder from build_ui_panel by a live gadget for
+    `item`, built with create_indicator from the saved kind/kwargs (so a
+    dial keeps its range -- uic itself can only call ``Class(parent)``),
+    at the same place in whatever layout Designer put it. Returns the new
+    gadget, or None if it couldn't be built (placeholder left in place)."""
+    from eco.widgets.indicator_widgets import create_indicator
+
+    old = info["widget"]
+    try:
+        new = create_indicator(info["kind"], item, title=info["title"] or None, **info["kwargs"])
+    except Exception:
+        logger.exception("could not build the %r gadget for %r", info["kind"], info["item_path"])
+        return None
+    new.setObjectName(old.objectName())
+    new.setAccessibleName(info["item_path"])
+    parent = old.parentWidget()
+    layout = parent.layout() if parent is not None else None
+    replaced = layout is not None and layout.replaceWidget(old, new) is not None
+    if not replaced:
+        new.setParent(parent)
+        new.setGeometry(old.geometry())
+    new.setMinimumSize(old.minimumSize())
+    new.show()
+    old.stop()
+    old.setParent(None)  # out of findChildren() at once, not only after deleteLater
+    old.deleteLater()
+    info["widget"] = new
+    return new
 
 
 def get_default_dashboard():

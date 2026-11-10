@@ -65,7 +65,7 @@ Entries only appear when the item supports them:
 | **Live strip chart** | a rolling time plot of `get_current_value()`, monitored where possible, polled otherwise; window 30 s – 1 h, pause, clear. Works for anything readable, EPICS or not |
 | **Strip plot window (archiver)** | the archiver's `strip_plot()` in its own process — full dispatcher/EPICS rate, record, save. Qt, or a notebook kernel with a display |
 | **History (archiver)** | `get_archiver_time_range()` for the last 10 min / 1 h / 12 h / 2 days / 7 days, fetched in the background |
-| **Add indicator** | an LED / gauge / tile / … gadget (see below) — onto the dashboard in Qt, below the row in a notebook |
+| **Add indicator** | an LED / gauge / tile / … gadget (see below) — docked in eco desktop when the grid is there (and saved with its startup script, see {doc}`simple_gui`), otherwise onto the dashboard window in Qt; below the row in a notebook |
 | **Memories** | the item's own memory browser, if it has one |
 | **Details** | full name, class, value, unit, limits, states, channels (PV names), views, doc |
 | **Copy name / Copy PV names / Find IOC** | Qt only |

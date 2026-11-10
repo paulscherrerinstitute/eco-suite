@@ -1771,7 +1771,16 @@ class Assembly:
         else:
             container = effective  # already an EcoDesktopApp instance
 
-        container.host_widget(self.alias.get_full_name(), widget_obj)
+        import inspect
+
+        try:
+            takes_item = "item" in inspect.signature(container.host_widget).parameters
+        except (TypeError, ValueError):
+            takes_item = False
+        if takes_item:  # the desktop then also saves it with its workspace
+            container.host_widget(self.alias.get_full_name(), widget_obj, item=self, view="widget")
+        else:
+            container.host_widget(self.alias.get_full_name(), widget_obj)
         return widget_obj
 
     def _widget_assembly(self, show_hidden: bool = False, **kwargs):

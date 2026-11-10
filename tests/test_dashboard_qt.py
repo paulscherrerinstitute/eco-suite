@@ -410,3 +410,46 @@ def test_add_widget_gives_each_dock_a_unique_object_name():
         assert dock1.objectName() != dock2.objectName()
     finally:
         board.stop()
+
+
+def test_load_custom_panel_keeps_a_dials_range_through_the_ui_file(tmp_path):
+    """uic can only call ``Dial(parent)`` (range 0-100); the panel is
+    rebuilt from the ecoKind/ecoKwargs dynamic properties instead, in the
+    same layout slot."""
+    pytest.importorskip("PyQt5.uic")
+    _app()
+    from eco.widgets.dashboard_qt import _write_promoted_ui
+    from eco.widgets.indicator_widgets import Dial, _IndicatorBase
+
+    ui_path = tmp_path / "layout.ui"
+    _write_promoted_ui(
+        [{"kind": "Dial / knob", "item_path": "cam_west.energy", "title": "E",
+          "kwargs": {"vmin": 4.0, "vmax": 20.0}}],
+        ui_path,
+    )
+    assert 'name="ecoKwargs" stdset="0"' in ui_path.read_text()
+    ns = _FakeNamespace()
+    ns.cam_west = type("C", (), {})()
+    ns.cam_west.energy = _FakeDetector("energy", value=7.0)
+
+    board = Dashboard(auto_start=False)
+    board._build_window()
+    try:
+        panel = board.load_custom_panel(ui_path, namespace=ns).widget()
+        dials = panel.findChildren(_IndicatorBase)
+        assert len(dials) == 1 and isinstance(dials[0], Dial)
+        assert (dials[0].vmin, dials[0].vmax) == (4.0, 20.0)
+        assert dials[0].item is ns.cam_west.energy
+        assert panel.layout().indexOf(dials[0]) == 0
+    finally:
+        board.stop()
+
+
+def test_designer_executable_prefers_the_one_next_to_python(tmp_path, monkeypatch):
+    import sys
+
+    from eco.widgets.dashboard_qt import designer_executable
+
+    (tmp_path / "designer").write_text("")
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python"))
+    assert designer_executable() == str(tmp_path / "designer")

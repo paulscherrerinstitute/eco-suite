@@ -1,3 +1,4 @@
+import json
 import time
 
 import pytest
@@ -1496,7 +1497,7 @@ def test_save_startup_script_writes_a_single_self_contained_executable_file(tmp_
         assert list(tmp_path.iterdir()) == [sh_path]
 
         script = sh_path.read_text()
-        assert "eco desktop -s bernina -l --workspace-json" in script
+        assert "-m eco_cli desktop -s bernina -l --workspace-json" in script
         assert "<<'EOF'" in script
 
         import json as _json
@@ -1528,7 +1529,7 @@ def test_save_startup_script_omits_scope_flag_when_no_scope(tmp_path):
         sh_path = gui.save_startup_script(tmp_path / "console_only.sh")
         script = sh_path.read_text()
         assert "-s " not in script
-        assert "eco desktop -l --workspace" in script
+        assert "-m eco_cli desktop -l --workspace" in script
     finally:
         gui.stop()
 
@@ -1769,3 +1770,88 @@ def test_scan_launcher_menu_without_scans_does_nothing(capsys):
     )
     EcoDesktopApp._open_scan_launcher(app)
     assert "no `scans`" in capsys.readouterr().out
+
+
+def test_closing_a_widget_dock_drops_it_from_the_saved_open_names(tmp_path):
+    """Otherwise a widget closed on purpose came back with the workspace
+    and the startup script."""
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["a", "b"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("a")
+        gui._open_widget("b")
+        gui._widget_docks[0].close()
+        assert gui._opened_names == ["b"]
+        gui.save_workspace(tmp_path / "ws.json")
+        assert json.loads((tmp_path / "ws.json").read_text())["opened_names"] == ["b"]
+    finally:
+        gui.stop()
+
+
+def test_window_close_keeps_the_open_names_it_just_saved(tmp_path):
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["a"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    gui._open_widget("a")
+    gui.stop()
+    assert json.loads(desktop_app.DEFAULT_WORKSPACE_FILE.read_text())["opened_names"] == ["a"]
+
+
+def test_workspace_restore_brings_back_dock_sizes(tmp_path):
+    """The widget docks appear only after restoreState ran (lazy init),
+    so the saved layout must be applied again as they arrive."""
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["a", "b"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui._build_window()
+    try:
+        gui._open_widget("a")
+        gui._open_widget("b")
+        gui.window.resizeDocks(gui._widget_docks, [700, 150], QtCore.Qt.Horizontal)
+        _pump(app, lambda: False, timeout=0.2)
+        before = [d.geometry().getRect() for d in gui._widget_docks]
+        data = gui._workspace_data()
+    finally:
+        gui.stop()
+    gui2 = EcoDesktopApp(namespace=ns, with_console=False, auto_start=False)
+    gui2._build_window()
+    try:
+        gui2.load_workspace_data(data)
+        _pump(app, lambda: False, timeout=0.2)
+        assert [d.geometry().getRect() for d in gui2._widget_docks] == before
+        assert gui2._pending_layout is None  # all arrived, nothing left pending
+    finally:
+        gui2.stop()
+
+
+def test_launcher_initialize_builds_without_opening():
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(lazy=["dev"])
+    opened, called = [], []
+    launcher = _NamespaceLauncher(ns, on_open=opened.append)
+    launcher.initialize("dev", then=lambda: called.append(1))
+    assert _pump(app, lambda: called)
+    assert opened == [] and ns.init_calls == ["dev"]
+    launcher.initialize("dev", then=lambda: called.append(2))  # already built: at once
+    assert called == [1, 2]
+
+
+def test_show_namespace_panel_brings_it_back_after_closing():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ns = _FakeNamespace(initialized=["a"])
+    gui = EcoDesktopApp(namespace=ns, with_console=False, with_namespace_panel=False, auto_start=False)
+    gui._build_window()
+    try:
+        assert gui._launcher_dock is None
+        gui.show_namespace_panel()
+        assert gui._launcher_dock is not None and gui._launcher_dock.widget() is gui._launcher
+        gui._launcher_dock.close()
+        assert gui._launcher_dock is None
+        gui.show_namespace_panel()
+        assert gui._launcher_dock.widget() is gui._launcher
+        assert not gui._launcher.isHidden()
+    finally:
+        gui.stop()

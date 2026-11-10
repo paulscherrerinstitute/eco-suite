@@ -899,7 +899,9 @@ class DisplayQt:
         container = getattr(self, "_eco_container", None)
         if container is not None and hasattr(container, "host_widget"):
             name = getattr(getattr(child_assembly, "alias", None), "get_full_name", None)
-            container.host_widget(name() if callable(name) else str(child_assembly), child)
+            container.host_widget(
+                name() if callable(name) else str(child_assembly), child, item=child_assembly, view="grid"
+            )
 
     def _open_memory_browser(self, checked=False):
         if self._memory_browser is not None and self._memory_browser.window is not None:
