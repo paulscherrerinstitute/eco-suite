@@ -63,7 +63,8 @@ function renderTasks() {
       onclick: () => { taskState.hideDone = !taskState.hideDone; storageSet("eco-scilog-tasks-hide-done", taskState.hideDone ? "1" : ""); renderTasks(); } },
     taskState.hideDone ? "Show done" : "Hide done") : null,
     el("button", { class: "task-close", title: "Close the tasks (Back on a phone)", "aria-label": "Close", onclick: () => openTasks(false) }, "✕"));
-  const input = el("input", { id: "task-new", placeholder: writing ? "Add a task … (Enter)" : "Writing is off for this logbook", autocomplete: "off",
+  const input = el("input", { id: "task-new", placeholder: !writing ? "Writing is off for this logbook"
+    : state.me?.as_beamline ? "Add a task … (as the beamline account)" : "Add a task … (Enter)", autocomplete: "off",
     enterkeyhint: "done", ...(writing ? {} : { disabled: "" }) });
   input.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter" || !input.value.trim()) return;

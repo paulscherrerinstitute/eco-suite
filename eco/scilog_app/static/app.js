@@ -794,7 +794,10 @@ async function refresh() {
   if (!state.logbook || document.hidden) return;
   let data;
   try { data = await api(`/api/posts?logbook=${state.logbook.id}&since=${encodeURIComponent(state.since || "")}`); }
-  catch (e) { setStatus(`offline: ${e.message}`); return; }
+  catch (e) {
+    if (/temporary token|choose whose/i.test(e.message)) { location.reload(); return; }  // a lent token ran out: the choice again
+    setStatus(`offline: ${e.message}`); return;
+  }
   state.since = data.since;
   if (!data.posts.length && !data.removed.length) { setStatus(); return; }
   const anchor = readingAnchor();
@@ -1006,47 +1009,88 @@ function updateTokenBadge() {
   const t = state.token, badge = $("#token-badge");
   if (!badge) return;
   const left = t?.expires ? (t.expires * 1000 - Date.now()) / 86400000 : null;
-  badge.hidden = !(t && t.personal && left !== null && left < 3);
-  if (!badge.hidden) badge.textContent = left > 1 ? `🔑 token: ${Math.floor(left)} days left` : left > 0 ? `🔑 token: ${Math.max(1, Math.round(left * 24))} h left` : "🔑 token expired";
+  const soon = left !== null && left < 3;
+  let text = "";
+  if (t?.access === "temporary") text = `🔑 ${(t.identity || "").split(/[<(]/)[0].trim()}: ${left > 1 / 24 ? `${Math.round(left * 24)} h` : `${Math.max(1, Math.round(left * 1440))} min`} left`;
+  else if (t?.access === "beamline" && t.options?.shared) text = "👥 beamline account";
+  else if (t?.personal && soon) text = left > 1 ? `🔑 token: ${Math.floor(left)} days left` : left > 0 ? `🔑 token: ${Math.max(1, Math.round(left * 24))} h left` : "🔑 token expired";
+  badge.hidden = !text;
+  badge.textContent = text;
+  badge.title = "Whose SciLog access the viewer uses: click to change";
 }
 
+// Whose SciLog access the viewer uses: the beamline account, a personal token kept here (not on a
+// shared account), or a personal token lent for at most a few hours (held by the viewer's server only).
 function openTokenDialog(status = state.token || {}) {
   document.getElementById("token-dialog")?.remove();
+  const opts = status.options || {}, shared = !!opts.shared, hours = opts.temporary_hours || 8;
   const until = status.expires ? new Date(status.expires * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : null;
   const input = el("textarea", { class: "tk-input", rows: "3", placeholder: "Paste the token here (eyJ…)", autocomplete: "off", spellcheck: "false" });
   const note = el("div", { class: "tk-note" });
+  const keep = el("input", { type: "checkbox", ...(shared ? { disabled: "" } : { checked: "" }) });
   const save = el("button", { class: "primary" }, "Use this token");
   const bm = el("code", { class: "tk-code", text: TOKEN_BOOKMARKLET });
-  const dialog = el("dialog", { id: "token-dialog" },
-    el("div", { class: "ed-head" }, el("strong", { text: "SciLog token" }), el("span", { class: "spacer" }),
+  const dialog = el("dialog", { id: "token-dialog" });
+  const choose = async (kind, button) => {
+    button.disabled = true;
+    note.textContent = "Switching …";
+    try {
+      const data = await writeApi("/api/access", "POST", { kind });
+      note.textContent = `Reading SciLog as ${data.identity}. Reloading …`;
+      setTimeout(() => location.reload(), 500);
+    } catch (e) { note.textContent = `Not switched: ${e.message}`; note.classList.add("bad"); button.disabled = false; }
+  };
+  const current = status.ok ? `Reading SciLog as ${status.identity}${until ? `, until ${until}` : ""}.` : `${status.why || "No SciLog access yet"}.`;
+  const cards = [];
+  if (opts.beamline?.available) {
+    const b = el("button", { class: status.access === "beamline" ? "" : "primary", onclick: () => choose("beamline", b) },
+      status.access === "beamline" ? "In use" : "Use the beamline account");
+    if (status.access === "beamline") b.disabled = true;
+    cards.push(el("div", { class: "tk-card" },
+      el("div", {}, el("strong", { text: "The beamline account" }), el("span", { class: "tk-who", text: ` ${opts.beamline.who}` })),
+      el("p", { text: "Reads the logbooks of this beamline's groups. What you write (posts, comments, tasks) is saved as the beamline account, not as you." }), b));
+  }
+  if (opts.stored?.available) {
+    const b = el("button", { class: status.access === "stored" ? "" : "primary", onclick: () => choose("stored", b) },
+      status.access === "stored" ? "In use" : "Use it");
+    if (status.access === "stored") b.disabled = true;
+    const exp = opts.stored.expires ? new Date(opts.stored.expires * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+    cards.push(el("div", { class: "tk-card" },
+      el("div", {}, el("strong", { text: "Your kept token" }), el("span", { class: "tk-who", text: ` ${opts.stored.who || ""}${exp ? `, valid until ${exp}` : ""}` })),
+      el("p", { text: "Reads and writes SciLog as you." }), b));
+  }
+  dialog.append(
+    el("div", { class: "ed-head" }, el("strong", { text: "Read SciLog as …" }), el("span", { class: "spacer" }),
       el("button", { title: "Close", onclick: () => dialog.close() }, "✕")),
     el("div", { class: "tk-body" },
-      el("p", { class: status.ok ? "" : "bad", text: status.ok
-        ? `Reading SciLog as ${status.identity}${until ? `; this token is valid until ${until}` : ""}.`
-        : `${status.why || "No token"}.` }),
-      el("p", { text: "The viewer reads and writes SciLog with your own token. SciLog issues it when you log in, and it lasts 14 days; then log in again and enter the new one here." }),
-      // in the Android app: SciLog's own login inside the app, which hands the token over by itself
-      window.ScilogAndroid ? el("p", {}, el("button", { class: "primary", onclick: () => { dialog.close(); window.ScilogAndroid.login(); } }, "Log in to SciLog here"),
-        el("span", { class: "tk-safe", text: " — the token is taken over by itself. Or by hand:" })) : null,
-      el("ol", {},
-        el("li", {}, "Log in at ", el("a", { href: "https://scilog.psi.ch", target: "_blank", rel: "noopener" }, "scilog.psi.ch"), " (in this browser or any other)."),
-        el("li", {}, "Copy the token, either way:",
-          el("ul", {},
-            el("li", {}, "on a computer: press F12, open Console, type ", el("code", { text: "copy(localStorage.id_token)" }), " and Enter;"),
-            el("li", {}, "on a phone, or without the developer tools: once, make a bookmark with this address, then open it while SciLog is shown (Android: type the bookmark's name in the address bar and pick it). It shows the token to copy:",
-              el("div", { class: "tk-row" }, bm, el("button", { onclick: () => copyText(TOKEN_BOOKMARKLET, "Bookmark address") }, "Copy"))))),
-        el("li", {}, "Paste it here:")),
-      input, note),
-    el("div", { class: "ed-foot" }, el("span", { class: "tk-safe", text: "Kept only on this computer, readable only by you." }), el("span", { class: "spacer" }), save));
-  if (!status.can_set && status.can_set !== undefined) { input.disabled = true; save.disabled = true; note.textContent = "This is a shared account: a personal token must not be kept here."; }
+      el("p", { class: status.ok ? "" : "bad", text: current }),
+      ...cards,
+      el("div", { class: "tk-card" },
+        el("div", {}, el("strong", { text: "Your own token" }),
+          el("span", { class: "tk-who", text: shared ? ` — lent for at most ${hours} hours` : "" })),
+        el("p", { text: shared
+          ? `This is a shared account, so your token is never written to disk here: the viewer holds it in memory for at most ${hours} hours, and forgets it when the eco session ends.`
+          : "SciLog issues a token when you log in; it lasts 14 days." }),
+        // in the Android app: SciLog's own login inside the app, which hands the token over by itself
+        window.ScilogAndroid ? el("p", {}, el("button", { class: "primary", onclick: () => { dialog.close(); window.ScilogAndroid.login(); } }, "Log in to SciLog here"),
+          el("span", { class: "tk-safe", text: " — the token is taken over by itself. Or by hand:" })) : null,
+        el("ol", {},
+          el("li", {}, "Log in at ", el("a", { href: "https://scilog.psi.ch", target: "_blank", rel: "noopener" }, "scilog.psi.ch"), " (in this browser or any other)."),
+          el("li", {}, "Copy the token, either way:",
+            el("ul", {},
+              el("li", {}, "on a computer: press F12, open Console, type ", el("code", { text: "copy(localStorage.id_token)" }), " and Enter;"),
+              el("li", {}, "on a phone, or without the developer tools: once, make a bookmark with this address, then open it while SciLog is shown (Android: type the bookmark's name in the address bar and pick it). It shows the token to copy:",
+                el("div", { class: "tk-row" }, bm, el("button", { onclick: () => copyText(TOKEN_BOOKMARKLET, "Bookmark address") }, "Copy"))))),
+          el("li", {}, "Paste it here:")),
+        input,
+        shared ? null : el("label", { class: "tk-keep" }, keep, ` Keep it on this computer (readable only by you); otherwise for ${hours} hours, in memory only`)),
+      note),
+    el("div", { class: "ed-foot" }, el("span", { class: "spacer" }), save));
   save.onclick = async () => {
     save.disabled = true;
     note.textContent = "Checking the token with SciLog …";
     try {
-      const r = await fetch("/api/token/set", { method: "POST", credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "X-Eco-Scilog": "1" }, body: JSON.stringify({ token: input.value }) });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || r.statusText);
+      const data = await writeApi("/api/token/set", "POST", { token: input.value, keep: !shared && keep.checked });
       note.textContent = `Accepted: ${data.identity}. Reloading …`;
       setTimeout(() => location.reload(), 600);
     } catch (e) { note.textContent = `Not accepted: ${e.message}`; note.classList.add("bad"); save.disabled = false; }
@@ -1054,7 +1098,7 @@ function openTokenDialog(status = state.token || {}) {
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
-  input.focus();
+  if (!cards.length) input.focus();
 }
 
 function copyLink(id) {
@@ -1191,9 +1235,10 @@ async function main() {
   let tok;
   try { tok = await api("/api/token"); } catch (e) { tok = { ok: false, why: e.message, can_set: true }; }
   state.token = tok;
+  updateTokenBadge();
   if (!tok.ok) {
-    $("#flow").replaceChildren(el("div", { class: "hint" }, `SciLog cannot be read: ${tok.why}. `,
-      el("button", { onclick: () => openTokenDialog(tok) }, "Enter a SciLog token")));
+    $("#flow").replaceChildren(el("div", { class: "hint" }, tok.must_choose ? "Choose whose SciLog access the viewer uses. " : `SciLog cannot be read: ${tok.why}. `,
+      el("button", { onclick: () => openTokenDialog(tok) }, tok.must_choose ? "Choose …" : "Enter a SciLog token")));
     openTokenDialog(tok);
     return;
   }

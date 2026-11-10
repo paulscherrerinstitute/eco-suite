@@ -179,12 +179,74 @@ class Store:
         self.config_path = CONFIG_PATH if config is None else None
         self.uploads = {}  # fileId -> file container, uploaded while editing
         self._me = None
+        # whose SciLog access: "beamline" (the functional account), "stored" (the personal token kept
+        # in ~/.eco/scilog_token), "temporary" (a token held in this process only) or "given" (tests);
+        # None: not chosen yet -- on a shared account nothing is read until it is
+        self.access = "given" if reader is not None else None
+        self._temporary = None  # (token, until): never written anywhere
+
+    #: the longest a temporary token is used (hours), whatever its own expiry says
+    TEMPORARY_HOURS = 8
+
+    class NotChosen(logs_scilog.TokenError):
+        """On a shared account, whose access to use has not been chosen yet."""
 
     @property
     def reader(self):
+        if self.access == "temporary" and self._temporary and self._temporary[1] < time.time():
+            self._forget_access()
+            raise logs_scilog.TokenError(f"the temporary token was used for {self.TEMPORARY_HOURS} hours and is forgotten now")
         if self._reader is None:
-            self._reader = logs_scilog.reader(timeout=60)
+            access = self.access
+            if access is None:
+                if logs_scilog._shared_account():
+                    raise self.NotChosen("choose whose SciLog access to use")
+                access = "stored" if logs_scilog.token()[0] else "beamline"
+            if access == "temporary":
+                value, until = self._temporary
+                r = logs_scilog.Reader(value, timeout=60)
+                hhmm = datetime.datetime.fromtimestamp(until).strftime("%H:%M")
+                r.identity = f"{logs_scilog.describe(value).split(',')[0]} (temporary, until {hhmm})"
+            else:
+                r = logs_scilog.reader(timeout=60, personal=access == "stored")
+            self._reader, self.access = r, access
         return self._reader
+
+    def _forget_access(self):
+        with self._lock:
+            self._reader = None
+            self._me = None
+            self.access = None if self.access != "given" else "given"
+            self._temporary = None
+            self.logbooks.clear()  # what may be read depends on whose access it is
+            self._tasks.clear()
+
+    def access_options(self):
+        """What can be chosen here: the beamline account (if its password is readable), the
+        stored personal token (not on a shared account), a temporary token (always)."""
+        shared = bool(logs_scilog._shared_account())
+        stored, _ = (None, None) if shared else logs_scilog.token()
+        out = {"shared": shared, "temporary_hours": self.TEMPORARY_HOURS,
+               "beamline": {"available": logs_scilog.functional_available(), "who": logs_scilog.FUNCTIONAL_USER},
+               "stored": {"available": bool(stored)}}
+        if stored:
+            exp = logs_scilog.claims(stored).get("exp")
+            out["stored"].update(who=logs_scilog.describe(stored).split(",")[0], expires=exp,
+                                 available=not (exp and exp < time.time()))
+        return out
+
+    def choose_access(self, kind):
+        """Read SciLog from now on as the beamline account ("beamline") or with the stored
+        personal token ("stored"); returns the new token_status()."""
+        opts = self.access_options()
+        if kind not in ("beamline", "stored"):
+            raise ValueError("choose 'beamline' or 'stored' (a temporary token is entered instead)")
+        if not opts[kind]["available"]:
+            raise ValueError("the beamline account's password is not readable here" if kind == "beamline"
+                             else "there is no valid personal token kept here")
+        self._forget_access()
+        self.access = kind
+        return self.token_status()
 
     def list_logbooks(self):
         rows = self.reader.logbooks()
@@ -195,23 +257,34 @@ class Store:
     # -- the token ------------------------------------------------------------------------
 
     def token_status(self):
-        """{"ok", "identity", "personal", "expires" (epoch), "why", "can_set"}:
-        whether SciLog can be read, as whom, and until when."""
+        """{"ok", "identity", "personal", "expires" (epoch), "why", "can_set" (a token may be
+        kept here), "access", "must_choose", "options"}: whether SciLog can be read, as whom,
+        until when, and what else could be chosen."""
         can_set = not logs_scilog._shared_account()
+        base = {"can_set": can_set, "options": self.access_options()}
         try:
             r = self.reader
+        except self.NotChosen:
+            return {**base, "ok": False, "must_choose": True, "why": "Choose whose SciLog access to use"}
         except logs_scilog.TokenError as exc:
-            why = "SciLog refused the token (expired?)" if "refused" in str(exc) else "There is no SciLog token here yet"
-            return {"ok": False, "why": why, "can_set": can_set}
+            text = str(exc)
+            why = (text if "temporary" in text else "SciLog refused the token (expired?)" if "refused" in text
+                   else "There is no SciLog token here yet")
+            return {**base, "ok": False, "why": why, "must_choose": logs_scilog._shared_account() is not None}
         exp = logs_scilog.claims(r.token).get("exp")
         personal = not r.identity.startswith("the beamline account")
+        if self.access == "temporary":
+            exp = min(exp or self._temporary[1], self._temporary[1])
         if personal and exp and exp < time.time():
-            return {"ok": False, "why": "the SciLog token has expired", "expires": exp, "can_set": can_set}
-        return {"ok": True, "identity": r.identity, "personal": personal, "expires": exp if personal else None, "can_set": can_set}
+            return {**base, "ok": False, "why": "the SciLog token has expired", "expires": exp}
+        return {**base, "ok": True, "identity": r.identity, "personal": personal, "access": self.access,
+                "expires": exp if personal else None}
 
-    def set_token(self, value):
-        """Check a token with SciLog, keep it (mode 600) and read SciLog
-        with it from now on; returns the new token_status()."""
+    def set_token(self, value, keep=True):
+        """Check a token with SciLog and read SciLog with it from now on; returns the new
+        token_status(). keep=True keeps it (mode 600, ~/.eco/scilog_token); otherwise, and
+        always on a shared account, it is held in this process only, for at most
+        TEMPORARY_HOURS."""
         value = logs_scilog._clean(value)
         if value.count(".") != 2:
             raise ValueError("that is not a SciLog token (expected three dot-separated parts)")
@@ -220,11 +293,14 @@ class Store:
             raise ValueError("this token has already expired: log in to SciLog again and copy the new one")
         probe = logs_scilog.Reader(value, timeout=30)
         probe.get("/logbooks", {"limit": 1, "fields": {"id": True}})  # TokenError if SciLog refuses it
-        logs_scilog.save_token(value)  # refuses a shared account
-        with self._lock:
-            self._reader = None
-            self._me = None
-            self.logbooks.clear()  # what may be read depends on whose token it is
+        if keep and not logs_scilog._shared_account():
+            logs_scilog.save_token(value)
+            self._forget_access()
+            self.access = "stored"
+        else:
+            self._forget_access()
+            self._temporary = (value, min(exp or float("inf"), time.time() + self.TEMPORARY_HOURS * 3600))
+            self.access = "temporary"
         return self.token_status()
 
     # -- who is reading, and may they write --------------------------------------
@@ -234,13 +310,12 @@ class Store:
         if self._me is None:
             reader = self.reader
             claims = logs_scilog.claims(reader.token)
-            writes, why = True, ""
-            if reader.identity.startswith("the beamline account"):
-                writes, why = False, "SciLog is read as the beamline account here; writing needs your personal token"
-            elif logs_scilog._shared_account():
-                writes, why = False, "writing is off on a shared account"
-            self._me = {"identity": reader.identity, "email": claims.get("email", ""), "roles": set(claims.get("roles") or ()),
-                        "writes": writes, "why_not": why, "write_logbooks": self.config.get("write_logbooks")}
+            # as the beamline account too (as scilog.post() does): the page says so before saving
+            as_beamline = reader.identity.startswith("the beamline account")
+            email = claims.get("email", "") or (logs_scilog.FUNCTIONAL_USER if as_beamline else "")
+            self._me = {"identity": reader.identity, "email": email, "roles": set(claims.get("roles") or ()),
+                        "writes": True, "why_not": "", "write_logbooks": self.config.get("write_logbooks"),
+                        "as_beamline": as_beamline, "access": self.access}
         return self._me
 
     def may_write_to(self, logbook_id):
@@ -1028,7 +1103,15 @@ class _TokenSet(_Write):
     """The token comes from the page: the same checks as for writes."""
 
     async def post(self):
-        await self.run(self.app.store.set_token, str(self.body().get("token") or ""))
+        b = self.body()
+        await self.run(self.app.store.set_token, str(b.get("token") or ""), bool(b.get("keep", True)))
+
+
+class _Access(_Write):
+    """Read SciLog as the beamline account or with the stored personal token."""
+
+    async def post(self):
+        await self.run(self.app.store.choose_access, str(self.body().get("kind") or ""))
 
 
 class _WriteLogbook(_Write):
@@ -1095,6 +1178,7 @@ class ScilogApp:
                 (r"/api/me", _Me),
                 (r"/api/token", _Token),
                 (r"/api/token/set", _TokenSet),
+                (r"/api/access", _Access),
                 (r"/api/logbooks", _Logbooks),
                 (r"/api/posts", _Posts),
                 (r"/api/edit/([0-9a-f]{24})", _Edit),

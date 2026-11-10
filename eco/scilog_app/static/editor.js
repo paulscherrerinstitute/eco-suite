@@ -177,6 +177,8 @@ async function openEditor({ logbook, logbookName, postId = null, onSaved, near =
     area,
     el("div", { class: "ed-foot" },
       tagsInput, period,
+      state.me?.as_beamline ? el("span", { class: "ed-as", title: "Whose access the viewer uses: the badge in the bar changes it",
+        text: "👥 saved as the beamline account" }) : null,
       el("button", { title: "Attach files: HTML files become interactive plots", onclick: () => attach.click() }, "📎 Attach"),
       attach, statusLine, el("span", { class: "spacer" }),
       el("button", { onclick: () => close() }, "Cancel"), saveButton));

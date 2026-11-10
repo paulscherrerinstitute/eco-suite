@@ -169,10 +169,17 @@ def _functional_password():
 _functional = {}  # url -> (token, exp)
 
 
-def reader(url=URL, session=None, timeout=30):
-    """A Reader as yourself (personal token) or, without one or on a shared
-    account, as the beamline account. Its `identity` says which."""
-    if not _shared_account():
+def functional_available():
+    """Whether the beamline account's password is readable here (so that
+    reader(personal=False) can log in)."""
+    return bool(_functional_password())
+
+
+def reader(url=URL, session=None, timeout=30, personal=True):
+    """A Reader as yourself (personal token) or, without one, on a shared
+    account or with personal=False, as the beamline account. Its `identity`
+    says which."""
+    if personal and not _shared_account():
         value, where = token()
         if value:
             r = Reader(value, url=url, timeout=timeout, session=session)

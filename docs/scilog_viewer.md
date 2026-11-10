@@ -55,10 +55,27 @@ there. It contains a one-time key; after the first visit a cookie keeps it.
 ## How it works
 
 `scilog.viewer()` (or `start()`) starts a server as a separate process, so it never
-competes with the eco session; it ends when the session ends. The server
-reads SciLog as you: with your personal token, or as the beamline account
-where that applies (see {doc}`ask_eco` for both). Your SciLog token never
-reaches the browser. The page gets each post's HTML cleaned of anything
+competes with the eco session; it ends when the session ends. Your SciLog
+token never reaches the browser.
+
+### Whose SciLog access
+
+The page's **Read SciLog as …** window (the badge in the bar opens it again)
+offers what is possible where the viewer runs:
+
+- **the beamline account** (swissfelaramis-bernina, where its password is
+  readable): reads this beamline's logbooks; what you write is saved as the
+  beamline account, and the editor says so;
+- **your kept token** (~/.eco/scilog_token, readable only by you): never on a
+  shared account;
+- **your own token, lent**: pasted in (or, in the Android app, taken over from
+  SciLog's own login). On a personal account you can keep it; on a shared
+  account (gac-bernina) it is never written to disk: the viewer's server holds
+  it in memory for at most 8 hours and forgets it when the eco session ends.
+
+On gac-bernina the window comes first, before anything is read. A personal
+PSI account cannot log in to SciLog with a username and password from a
+program (PSI's single sign-on only works in a browser), hence the token. The page gets each post's HTML cleaned of anything
 executable, and the server fetches images and attachments, keeping them in
 a private cache. The server listens only on the machine itself, and the page
 needs the key from the printed address.
@@ -97,8 +114,7 @@ in SciLog and here.
   heading or normal text.
 
 You can edit what SciLog lets you edit: your own posts, and those whose
-groups include one of yours. Writing needs your personal SciLog token; read
-as the beamline account (always on gac-bernina) the page only reads.
+groups include one of yours, as whoever the viewer reads SciLog as (see above).
 
 Writing is switched on per logbook in `~/.eco/scilog_app.json`:
 

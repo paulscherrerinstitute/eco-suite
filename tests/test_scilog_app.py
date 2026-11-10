@@ -4,6 +4,7 @@ import builtins
 import datetime
 import http.cookiejar
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -227,8 +228,9 @@ def test_writing_goes_only_where_it_is_allowed(tmp_path, monkeypatch):
         other.save(LB, None, "<p>x</p>", [])
     beamline = Store(_Writer(identity="the beamline account swissfelaramis-bernina@psi.ch"), cache_dir=tmp_path / "h",
                      config={"write_logbooks": "all"})
-    with pytest.raises(PermissionError, match="personal token"):
-        beamline.save(LB, None, "<p>x</p>", [])
+    # as the beamline account too (decided 2026-11-10): the page labels it; SciLog decides as for anyone
+    beamline.save(LB, None, "<p>x</p>", [])
+    assert beamline.me()["as_beamline"]
     assert load_config(tmp_path / "missing.json")["write_logbooks"] == ["68afe9fe6f90f96e7370f9b3"]
 
 
@@ -273,8 +275,8 @@ def test_writing_is_switched_on_per_logbook_and_remembered(tmp_path, monkeypatch
     with pytest.raises(ValueError):
         store.set_write_logbook("../etc")
     beamline = Store(_Writer(identity="the beamline account x@psi.ch"), cache_dir=tmp_path / "h", config={"write_logbooks": []})
-    with pytest.raises(PermissionError, match="personal token"):
-        beamline.set_write_logbook(lb)
+    beamline.set_write_logbook(lb)
+    assert beamline.may_write_to(lb)[0]
 
 
 def _view(i, name, others, parent=LB, title="Logbook view"):
@@ -630,6 +632,56 @@ def test_tasks_are_added_changed_reordered_and_deleted_in_scilog(tmp_path, monke
     store2 = Store(reader, cache_dir=tmp_path / "f2", config={"write_logbooks": []})
     with pytest.raises(PermissionError):
         store2.add_task(LB, "x")
+
+
+def test_on_a_shared_account_the_access_is_chosen_and_a_personal_token_only_lent(tmp_path, monkeypatch):
+    from eco.scilog_app import server as srv
+
+    monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: "gac-bernina")
+    monkeypatch.setattr("eco.logs_scilog.functional_available", lambda: True)
+    monkeypatch.setattr("eco.logs_scilog.token", lambda path=None: ("x.y.z", "~/.eco/scilog_token"))  # never offered here
+    beamline = _Writer(identity="the beamline account swissfelaramis-bernina@psi.ch", roles=("p23618",))
+    asked = []
+    monkeypatch.setattr("eco.logs_scilog.reader", lambda timeout=30, personal=True: asked.append(personal) or beamline)
+    monkeypatch.setattr("eco.logs_scilog.save_token", lambda value, path=None: pytest.fail("a token was stored on a shared account"))
+
+    class Probe(_Writer):
+        def __init__(self, value, timeout=30):
+            super().__init__(identity="?")
+            self.token = value
+
+        def get(self, path, filt=None):
+            return []
+
+    monkeypatch.setattr("eco.logs_scilog.Reader", Probe)
+    store = Store(None, cache_dir=tmp_path / "files", config={"write_logbooks": [LB]})
+
+    # nothing is read before a choice; the stored personal token is not offered on a shared account
+    status = store.token_status()
+    assert not status["ok"] and status["must_choose"] and asked == []
+    assert status["options"]["beamline"]["available"] and not status["options"]["stored"]["available"]
+    with pytest.raises(ValueError):
+        store.choose_access("stored")
+
+    # the beamline account: it may write, and the page is told it is the beamline account
+    status = store.choose_access("beamline")
+    assert status["ok"] and status["access"] == "beamline" and asked == [False]
+    me = store.me()
+    assert me["writes"] and me["as_beamline"] and store.may_write_to(LB)[0]
+
+    # a personal token: held in this process only, for at most 8 hours
+    claims = base64.urlsafe_b64encode(json.dumps({"name": "Ann", "email": "ann@psi.ch", "roles": ["p1"],
+                                                  "exp": time.time() + 14 * 86400}).encode()).decode().rstrip("=")
+    status = store.set_token(f"x.{claims}.y", keep=True)  # keep is ignored on a shared account
+    assert status["access"] == "temporary" and status["personal"]
+    assert time.time() + 7.9 * 3600 < status["expires"] <= time.time() + 8 * 3600 + 1
+    assert "temporary" in store.me()["identity"] and not store.me()["as_beamline"]
+
+    # 8 hours later it is forgotten and the choice comes again
+    later = time.time() + 8 * 3600 + 5
+    monkeypatch.setattr(srv.time, "time", lambda: later)
+    status = store.token_status()
+    assert not status["ok"] and status["must_choose"] and "forgotten" in status["why"] and store._temporary is None
 
 
 def test_the_token_is_checked_with_scilog_before_it_is_kept(tmp_path, monkeypatch):

@@ -81,6 +81,13 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
 
 ## 10 November 2026
 
+- SciLog viewer: a **Read SciLog as …** window chooses whose access it uses:
+  the beamline account (which may now write, labelled as such), your kept
+  token, or your own token lent for at most 8 hours (on gac-bernina only in
+  memory, never on disk). On gac-bernina it asks first. Also comments,
+  replies, post info and the logbook's tasks ({doc}`scilog_viewer`).
+- `scilog` no longer fails with "jwt expired" once the beamline account's
+  14-day token runs out: it logs in again.
 - eco desktop builds small GUIs without code ({doc}`simple_gui`):
   **⋯ → Add indicator** now docks the gadget in the desktop window, not in a
   separate dashboard. The workspace and **Save Startup Script...** keep

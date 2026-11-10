@@ -525,3 +525,10 @@ body.has-tasks #to-bottom { right: calc(var(--tasks-width, 340px) + 24px); }
   .task-grip { width: 26px; font-size: 1.25em; }
   .task-tip { display: none; }
 }
+
+/* whose access: the choice */
+.tk-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.tk-card p { margin: 6px 0 8px; color: var(--muted); font-size: .9em; }
+.tk-card .tk-who { color: var(--muted); font-size: .9em; }
+.tk-keep { display: block; margin-top: 8px; font-size: .9em; }
+.ed-as { font-size: .82em; color: #9a6200; white-space: nowrap; }
