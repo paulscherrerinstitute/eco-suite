@@ -188,6 +188,7 @@ class PulseLead:
 
 
 def test_bs_counter_takes_exactly_the_leaders_pulses(sim, bs_worker):
+    pytest.importorskip("bsread")
     from eco.detector.bs_counter import BsStreamCounter
 
     ctr = BsStreamCounter("i0", eventworker=bs_worker, timeout=5, live_plot=False, store=False)

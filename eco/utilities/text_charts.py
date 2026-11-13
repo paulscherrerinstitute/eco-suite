@@ -330,6 +330,37 @@ def show_history(data, channels, labels=None):
 
 
 # -- live: the strip chart ------------------------------------------------------------------
+class _SampleBuffer:
+    """Time-stamped samples per name, the last `window` seconds -- the part
+    of the archiver's _StripBuffer a text chart of polled objects needs,
+    without datahub."""
+
+    def __init__(self, window):
+        import threading
+
+        self.window = window
+        self._data = {}
+        self._lock = threading.Lock()
+
+    def on_channel_record(self, source, name, timestamp, pulse_id, value, **kwargs):
+        value = getattr(value, "id", getattr(value, "value", value))
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return
+        with self._lock:
+            self._data.setdefault(name, []).append((timestamp, value))
+
+    def snapshot(self):
+        cutoff = time.time() - self.window
+        out = {}
+        with self._lock:
+            for name, samples in self._data.items():
+                samples[:] = [s for s in samples if s[0] >= cutoff]
+                out[name] = ([s[0] for s in samples], [s[1] for s in samples])
+        return out
+
+
 class LiveFeed:
     """Live samples in this process: channels from the dispatcher/EPICS
     (the strip plot window's own sources) and `get_current_value()` of
@@ -341,13 +372,18 @@ class LiveFeed:
                  poll_interval=0.2):
         import threading
 
-        from eco.dbase.archiver import LIVE_SOURCES, _StripBuffer, _group_by_type
-
-        self.buffer = _StripBuffer(keep)
         self.names = list(monitorable_names) + list(channels)
         self.labels = list(labels) if labels else list(self.names)
         self._sources = []
-        for channel_type, group in _group_by_type(list(channels), force_type, channel_types).items():
+        if not channels:  # polled objects only: no datahub needed
+            self.buffer = _SampleBuffer(keep)
+            groups, LIVE_SOURCES = {}, None
+        else:
+            from eco.dbase.archiver import LIVE_SOURCES, _StripBuffer, _group_by_type
+
+            self.buffer = _StripBuffer(keep)
+            groups = _group_by_type(list(channels), force_type, channel_types)
+        for channel_type, group in groups.items():
             source = LIVE_SOURCES[channel_type](time_type="sec")
             source.add_listener(self.buffer)
             source.request(dict(channels=group, start=0.0, end=float(duration)), background=True)

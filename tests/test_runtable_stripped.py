@@ -20,6 +20,8 @@ import types
 
 import pytest
 
+pytest.importorskip("oauth2client")  # the run table module needs it to load
+
 
 @pytest.fixture(scope="module")
 def rts():

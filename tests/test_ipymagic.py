@@ -58,6 +58,7 @@ def _transform_source(source, root=None):
 
 
 def test_bare_ellipsis_expression_is_replaced_with_the_picked_path(monkeypatch):
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
         # relative to root, like the real picker
@@ -69,6 +70,7 @@ def test_bare_ellipsis_expression_is_replaced_with_the_picked_path(monkeypatch):
 
 
 def test_two_markers_are_resolved_left_to_right_in_source_order(monkeypatch):
+    pytest.importorskip("qtpy")
     picks = iter(["mono.energy", "attenuator.transmission"])
     seen_roots = []
 
@@ -90,6 +92,7 @@ def test_command_pick_is_used_verbatim_not_prefixed_with_root(monkeypatch):
     # a "command" pick is already a full expression string -- unlike a
     # "component" pick (a bare dotted path relative to root), it must not
     # be run through _full_path.
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
         lambda root, **kw: ("command", "mono.mv(5)", None),
@@ -100,6 +103,7 @@ def test_command_pick_is_used_verbatim_not_prefixed_with_root(monkeypatch):
 
 
 def test_subscript_slice_ellipsis_is_left_alone(monkeypatch):
+    pytest.importorskip("qtpy")
     def fail_if_called(root, **kw):
         raise AssertionError("picker should not be invoked for arr[...]")
 
@@ -112,6 +116,7 @@ def test_subscript_slice_ellipsis_is_left_alone(monkeypatch):
 def test_qt_modal_fallback_is_attempted_in_a_real_terminal_session(monkeypatch):
     # a terminal session alone must no longer skip the Qt modal -- only the
     # absence of a display does (see the next test).
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(ipymagic, "_has_display", lambda: True)
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
@@ -125,6 +130,7 @@ def test_qt_modal_fallback_is_attempted_in_a_real_terminal_session(monkeypatch):
 
 
 def test_qt_modal_fallback_is_skipped_without_a_display(monkeypatch, capsys):
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(ipymagic, "_has_display", lambda: False)
 
     def fail_if_called(root, **kw):
@@ -140,6 +146,7 @@ def test_qt_modal_fallback_is_skipped_without_a_display(monkeypatch, capsys):
 
 
 def test_cancelled_pick_leaves_the_literal_ellipsis_in_place(monkeypatch, capsys):
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(
         "eco.widgets.component_selector_qt.pick_component_modal",
         lambda root, **kw: (None, None, None),
@@ -164,6 +171,7 @@ def test_ast_transformer_cancels_execution_and_fills_next_input(monkeypatch):
     # own behavior once something was picked: the cell must not actually
     # run (empty body), and the expanded code must go to the next prompt
     # via set_next_input rather than being printed-then-executed.
+    pytest.importorskip("qtpy")
     ipymagic._state["root"] = _NamedRoot("bernina")
     ipymagic._state["kind_filter"] = "All"
     ipymagic._state["bookmarks"] = None

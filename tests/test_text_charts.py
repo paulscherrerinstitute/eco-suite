@@ -105,6 +105,7 @@ def test_history_series_reads_the_archiver_table():
 
 
 def test_history_plot_as_text(no_display, capsys):
+    pytest.importorskip("datahub")
     from eco.dbase.archiver import _plot_dataframe
 
     index = pd.date_range("2026-11-10 08:00", periods=60, freq="1min", tz="UTC")

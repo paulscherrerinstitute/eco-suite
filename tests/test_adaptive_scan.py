@@ -197,3 +197,21 @@ def test_feedback_detector_joins_the_counters(sim):
         sim.peak.signal.alias.get_full_name(), sim.step.signal.alias.get_full_name()
     }
     assert s.adaptive.strategy.n_points == 16
+
+
+def test_two_axes_default_to_peak2d_and_refuse_1d_strategies(sim):
+    s = _run([sim.peak2d.x, -2.0, 2.0, 0.5], [sim.peak2d.y, -2.0, 2.0, 0.5],
+             feedback=sim.peak2d.signal, max_points=27)
+    assert type(s.adaptive.strategy).__name__ == "PeakScan2D"
+    with pytest.raises(ValueError, match="with 2 axes use one of"):
+        _run([sim.peak2d.x, -2.0, 2.0, 0.5], [sim.peak2d.y, -2.0, 2.0, 0.5],
+             feedback=sim.peak2d.signal, max_points=27, strategy="modelfree")
+    with pytest.raises(ValueError, match="with 1 axes use one of"):
+        _run([sim.peak.x, -2.0, 3.0, 0.1], feedback=sim.peak.signal, max_points=10,
+             strategy="peak2d")
+
+
+def test_motion_model_is_reported_only_when_it_changes(sim, capsys):
+    s = _run([sim.peak.x, -2.0, 3.0, 0.02], feedback=sim.peak.signal, max_points=40)
+    lines = [l for l in capsys.readouterr().out.splitlines() if "motion model for" in l]
+    assert 1 <= len(lines) <= 3  # an ideal axis: once, not on every step

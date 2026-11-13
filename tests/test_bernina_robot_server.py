@@ -12,6 +12,8 @@ import time
 
 import pytest
 
+pytest.importorskip("flask")
+
 from eco.bernina_robot_server import RobotServerApp, RobotServerConfig, create_app
 
 

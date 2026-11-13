@@ -107,6 +107,7 @@ def bs_worker():
 
 
 def test_bs_detector_keeps_one_bs_counter(bs_worker):
+    pytest.importorskip("bsread")
     from escape.stream.escape_stream import Stream
 
     from eco.detector.bs_counter import BsStreamCounter

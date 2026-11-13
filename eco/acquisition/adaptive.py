@@ -48,6 +48,12 @@ STRATEGIES = {
     "oscillation": "OscillationScan",  # step + damped oscillation(s)
     "peak2d": "PeakScan2D",  # 2-D peak: centre, widths, tilt
 }
+# how many axes each strategy handles, and the default for 1 and 2 axes
+STRATEGY_AXES = {
+    "uniform": (1, 2), "modelfree": (1,), "gradient": (1,), "edge": (1,),
+    "oscillation": (1,), "peak2d": (2,),
+}
+DEFAULT_STRATEGY = {1: "modelfree", 2: "peak2d"}
 
 
 def adaptive_scan_module():
@@ -404,6 +410,8 @@ class AdaptiveDriver:
             if motion is not None:
                 self._set_motion(motion)
             for i in changed:
+                if not self._worth_saying(i, self.learner.axes[i]):
+                    continue
                 name = getattr(self.adjustables[i], "name", f"axis {i}")
                 print(
                     f"adaptive: motion model for {name} ({self.learner.sources[i]}): "
@@ -413,6 +421,26 @@ class AdaptiveDriver:
         elif self.motion_spec is not None and not getattr(self, "_motion_set", False):
             self._set_motion(self.motion_spec)
             self._motion_set = True
+
+    def _worth_saying(self, i, axis):
+        """Whether axis `i`'s learned motion differs noticeably from what was
+        last printed: speed by more than ~25 % (anything above 1e4 units/s
+        counts as instant), overhead by more than 20 % and 10 ms. Otherwise
+        every step's small refit printed a line."""
+        said = self.__dict__.setdefault("_said_motion", {})
+        speed = axis.speed if math.isfinite(axis.speed) and axis.speed < 1e4 else math.inf
+        now = (speed, axis.overhead)
+        before = said.get(i)
+        if before is not None:
+            (s0, o0), (s1, o1) = before, now
+            same_speed = (s0 == s1 == math.inf) or (
+                math.isfinite(s0) and math.isfinite(s1) and abs(math.log10(s1 / s0)) < 0.1
+            )
+            same_overhead = abs(o1 - o0) <= max(0.2 * max(abs(o0), abs(o1)), 0.01)
+            if same_speed and same_overhead:
+                return False
+        said[i] = now
+        return True
 
     def _set_motion(self, motion_seconds):
         self.strategy.motion = _to_planner_units(motion_seconds, self.sec_per_unit, self.strategy.ndim)
@@ -570,14 +598,25 @@ def free_candidates(axis_positions):
 
 
 def build_strategy(strategy, axis_positions, n_pulses, exposure="fixed", strategy_options=None):
-    """An escape strategy on the grid `axis_positions` (one array per axis)."""
+    """An escape strategy on the grid `axis_positions` (one array per axis).
+    `strategy` None: the default for that many axes (DEFAULT_STRATEGY); a
+    strategy made for another number of axes is refused -- a 1-D strategy
+    given 2-D bounds would otherwise run without complaint, and badly."""
     ads = adaptive_scan_module()
-    if not isinstance(strategy, str):
+    if strategy is not None and not isinstance(strategy, str):
         return strategy  # a ready strategy object
-    try:
-        cls = getattr(ads, STRATEGIES[strategy])
-    except KeyError:
-        raise ValueError(f"strategy {strategy!r}: one of {sorted(STRATEGIES)}") from None
+    ndim = len(axis_positions)
+    if strategy is None:
+        strategy = DEFAULT_STRATEGY[ndim]
+    if strategy not in STRATEGIES:
+        raise ValueError(f"strategy {strategy!r}: one of {sorted(STRATEGIES)}")
+    if ndim not in STRATEGY_AXES[strategy]:
+        fitting = sorted(k for k, n in STRATEGY_AXES.items() if ndim in n)
+        raise ValueError(
+            f"strategy {strategy!r} is for {' or '.join(map(str, STRATEGY_AXES[strategy]))}-axis "
+            f"scans; with {ndim} axes use one of {fitting}"
+        )
+    cls = getattr(ads, STRATEGIES[strategy])
     axes = [np.unique(np.asarray(p, float)) for p in axis_positions]
     bounds = [(a.min(), a.max()) for a in axes]
     mesh = np.meshgrid(*axes, indexing="ij")

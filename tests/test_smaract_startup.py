@@ -6,6 +6,8 @@ import time
 
 import pytest
 
+pytest.importorskip("bsread")  # eco.devices_general.motors pulls in eco.detector
+
 from eco.devices_general.motors import SmaractRecord
 from eco.elements.adjustable import AdjustableError, AdjustableTrigger
 from eco.motion.smaract import SmaractController

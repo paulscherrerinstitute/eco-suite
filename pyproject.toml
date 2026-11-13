@@ -72,6 +72,7 @@ dependencies = [
     "numpy-stl",
     "diffcalc-core",
     "hklforge",
+    "uniplot",  # text plots in the terminal (eco.utilities.termplot)
     "IPython",
     # eco/elements/assembly.py unconditionally imports eco.acquisition.scan_data,
     # which imports escape.swissfel -- so these two are load-bearing for a bare
@@ -141,7 +142,7 @@ docs = [
 ]
 dev = [
     "pytest",
-    "eco[docs]",
+    "eco-suite[docs]",  # this package by its PyPI name; "eco" is an unrelated one
 ]
 
 # The `eco` command re-execs IPython (a core dependency) with the eco profile

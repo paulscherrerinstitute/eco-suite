@@ -113,6 +113,41 @@ grouped into optional extras (`eco[gui]`, `eco[sheets]`, `eco[hardware]`,
 PSI conda channel, so a full installation is generally done on a beamline
 machine rather than a laptop.
 
+### On a laptop, without the beamline network
+
+The core install is enough to work with the simulated devices (`sim`, see
+{doc}`simulated_targets`) and run the tests, with no connection at all once
+installed:
+
+```bash
+uv venv --python 3.12 ~/eco-venv          # or python -m venv
+uv pip install --python ~/eco-venv/bin/python -e ".[dev]"
+```
+
+```python
+from eco.devices_general.simulated_signals import SimulatedSignals
+from eco.acquisition.scan import Scans
+
+sim = SimulatedSignals()
+scans = Scans()
+scans.ascan(sim.peak.x, -1, 2, 20, 0.05, counters=[sim.peak.signal])
+scans.adaptive_scan([sim.peak2d.x, -2, 2, 0.1], [sim.peak2d.y, -2, 2, 0.1],
+                    exposure_def=0.05, feedback=sim.peak2d.signal, max_points=60)
+```
+
+Works offline: scans and adaptive scans on `sim`, peak analysis, escape files
+and `arr.mesh`, the text charts (`plot="text"`), `sim.oscillation_tt.shots()`.
+Needs the beamline: real devices (EPICS), the DAQ, the archiver and anything
+beam-synchronous (`bsread`, PSI's `datahub`). Qt windows need the `gui` extra.
+
+Run the tests one file at a time (see the developer notes): tests that need a
+package the install doesn't have (Qt, flask, dash, `bsread`, `datahub`, ...)
+are skipped.
+
+```bash
+for f in tests/test_*.py; do ~/eco-venv/bin/python -m pytest -q "$f"; done
+```
+
 ----
 
 ## Development

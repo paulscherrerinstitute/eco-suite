@@ -1,3 +1,4 @@
+import pytest
 from eco.elements.assembly import Assembly
 
 
@@ -186,6 +187,7 @@ class _FakeContainer:
 
 
 def test_widget_dock_in_true_resolves_via_get_or_create_default_container(monkeypatch):
+    pytest.importorskip("qtpy")
     fake_container = _FakeContainer()
     monkeypatch.setattr(
         "eco.widgets.desktop_app.get_or_create_default_container",
@@ -207,6 +209,7 @@ def test_widget_dock_in_true_resolves_via_get_or_create_default_container(monkey
 
 
 def test_widget_dock_in_string_auto_also_resolves_via_registry(monkeypatch):
+    pytest.importorskip("qtpy")
     fake_container = _FakeContainer()
     monkeypatch.setattr(
         "eco.widgets.desktop_app.get_or_create_default_container",
@@ -227,6 +230,7 @@ def test_widget_dock_in_string_auto_also_resolves_via_registry(monkeypatch):
 
 
 def test_widget_dock_in_explicit_instance_used_as_is(monkeypatch):
+    pytest.importorskip("qtpy")
     def _boom():
         raise AssertionError("get_or_create_default_container should not be called")
 
@@ -248,6 +252,7 @@ def test_widget_dock_in_explicit_instance_used_as_is(monkeypatch):
 
 
 def test_widget_dock_in_none_forces_standalone_even_with_default_dock_in_true(monkeypatch):
+    pytest.importorskip("qtpy")
     def _boom():
         raise AssertionError("get_or_create_default_container should not be called")
 
@@ -269,6 +274,7 @@ def test_widget_dock_in_none_forces_standalone_even_with_default_dock_in_true(mo
 
 
 def test_widget_dock_in_omitted_uses_class_default_false(monkeypatch):
+    pytest.importorskip("qtpy")
     def _boom():
         raise AssertionError("get_or_create_default_container should not be called")
 
@@ -287,6 +293,7 @@ def test_widget_dock_in_omitted_uses_class_default_false(monkeypatch):
 
 
 def test_widget_dock_in_omitted_uses_class_default_true(monkeypatch):
+    pytest.importorskip("qtpy")
     fake_container = _FakeContainer()
     monkeypatch.setattr(
         "eco.widgets.desktop_app.get_or_create_default_container",

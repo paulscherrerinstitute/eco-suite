@@ -13,6 +13,8 @@ import types
 
 import pytest
 
+pytest.importorskip("dash")
+
 from eco.utilities import svg_interactor
 
 

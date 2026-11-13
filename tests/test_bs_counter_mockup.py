@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 pytest.importorskip("escape.stream")
+pytest.importorskip("bsread")  # eco.detector (DetectorBsStream) needs PSI's bsread
 
 from escape.stream.escape_stream import EventWorker, Stream, TestStream
 from escape.stream.es_wrappers import LocalEventHandler

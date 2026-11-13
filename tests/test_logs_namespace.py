@@ -292,6 +292,7 @@ def test_open_timeline_prefers_html_in_jupyter(monkeypatch):
 
 
 def test_open_timeline_prefers_qt_outside_jupyter(monkeypatch):
+    pytest.importorskip("qtpy")
     calls = []
     monkeypatch.setattr(logs, "_in_jupyter", lambda: False)
     monkeypatch.setattr(
@@ -305,6 +306,7 @@ def test_open_timeline_prefers_qt_outside_jupyter(monkeypatch):
 
 
 def test_open_timeline_falls_back_to_webapp_when_qt_unavailable(monkeypatch, tmp_path):
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(logs, "_in_jupyter", lambda: False)
 
     def _boom(*a, **kw):
@@ -319,6 +321,7 @@ def test_open_timeline_falls_back_to_webapp_when_qt_unavailable(monkeypatch, tmp
 
 
 def test_open_timeline_qt_forced_raises_instead_of_falling_back(monkeypatch):
+    pytest.importorskip("qtpy")
     monkeypatch.setattr(logs, "_in_jupyter", lambda: False)
 
     def _boom(*a, **kw):

@@ -4,6 +4,7 @@ import functools
 from itertools import product
 from numbers import Number
 import os
+import sys
 import json
 import numpy as np
 from time import sleep, time
@@ -1808,7 +1809,7 @@ class Scans(Assembly):
         *adj_specs,
         exposure_def=None,
         feedback=None,
-        strategy="modelfree",
+        strategy=None,
         budget=None,
         max_points=None,
         batch=5,
@@ -1843,8 +1844,10 @@ class Scans(Assembly):
             ``CounterValue``), a counter with ``step_feedback``
             (``CounterValue``, ``BsStreamCounter``), ``(counter, channel)``,
             or ``f(scan) -> (y, yerr)``. Never the DAQ data.
-        strategy: "modelfree" (default), "uniform", "gradient", "edge",
-            "oscillation", "peak2d", or an escape strategy object.
+        strategy: "modelfree" (default for 1 axis), "gradient", "edge",
+            "oscillation" (1 axis), "peak2d" (default for 2 axes), "uniform"
+            (1 or 2), or an escape strategy object. A strategy for another
+            number of axes is refused.
         budget: time limit, seconds or e.g. "10min"; max_points: point
             limit. At least one of the two.
         batch: points planned at a time.
@@ -1913,7 +1916,12 @@ class Scans(Assembly):
             adaptive.free_candidates(axis_positions) if free else axis_positions,
             exposure_def, exposure=exposure, strategy_options=strategy_options,
         )
-        from eco.detector.bs_counter import BsStreamCounter
+        # a bs counter exists only if its module was imported; importing it
+        # just to ask would pull in bsread (eco.detector), absent offline
+        bs_module = sys.modules.get("eco.detector.bs_counter")
+        has_bs_counter = bs_module is not None and any(
+            isinstance(c, bs_module.BsStreamCounter) for c in counters
+        )
 
         driver = adaptive.AdaptiveDriver(
             strategy, adjustables, axis_positions, feedback_fn, exposure_def,
@@ -1922,7 +1930,7 @@ class Scans(Assembly):
             # a bs counter keys its 2-D grid bins on new grid cells: no
             # revisits (without a grid it bins per step)
             avoid_revisits=not free and len(adjustables) > 1
-            and any(isinstance(c, BsStreamCounter) for c in counters),
+            and has_bs_counter,
             resolution=adaptive.axis_steps(axis_positions) if free else None,
         )
         steps = driver.initial_values()

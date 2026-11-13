@@ -33,7 +33,7 @@ own plot with the data and what it concludes from them.
 
 ```python
 scans.adaptive_scan(*axes, exposure_def=..., feedback=..., budget=... or max_points=...,
-                    strategy="modelfree", batch=5, exposure="fixed", motion="auto",
+                    strategy=None, batch=5, exposure="fixed", motion="auto",
                     plot=True, counters=[], queue=None, ...)
 ```
 
@@ -59,6 +59,16 @@ scans.adaptive_scan(*axes, exposure_def=..., feedback=..., budget=... or max_poi
 | `"edge"` | an edge: its position and width | 1 |
 | `"oscillation"` | a pump-probe trace: time zero, step, 1-3 damped oscillations | 1 |
 | `"peak2d"` | a 2-D peak: centre, widths, tilt, asymmetry | 2 |
+
+Without `strategy=`, one axis gets `"modelfree"` and two axes get `"peak2d"`. A
+strategy for the other number of axes is refused with a message.
+
+`peak2d` starts with a 5 × 5 survey of the grid and keeps exploring with a
+share of the later points (`explore=0.3`). A peak much smaller than the survey
+spacing can sit between the survey points; with a large area and a small peak,
+give it a denser survey, `strategy_options={"n_initial": 49}` (7 × 7), or
+narrow the axes' ranges. The axes' step only sets the finest resolution; it
+does not make the survey denser.
 
 A ready escape strategy object can be passed instead of a name, and
 `strategy_options={...}` passes options to the strategy class (for example

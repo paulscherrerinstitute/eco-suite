@@ -14,6 +14,8 @@ import types
 
 import pytest
 
+pytest.importorskip("flask")
+
 from eco.status_server import namespace_store as ns_store
 from eco.status_server.config import NamespaceServerConfig
 from eco.status_server.namespace_server import create_namespace_app

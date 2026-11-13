@@ -94,6 +94,7 @@ def test_entries_are_indexed_with_their_address_and_updated_incrementally(tmp_pa
 
 
 def test_a_logbook_asking_for_a_login_is_read_as_the_beamline_account(tmp_path, monkeypatch):
+    pytest.importorskip("passlib")
     db, server = tmp_path / "i.sqlite", _Server()
     monkeypatch.setattr(le, "_password", lambda: "pw")
     r = le.update(["Private book"], reader=_reader(server), db_path=db, report=None)

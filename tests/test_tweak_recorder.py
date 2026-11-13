@@ -275,9 +275,13 @@ def _where_it_plotted(monkeypatch, plot=None, display=True, env=None):
     calls = []
     monkeypatch.setattr(tr, "display_available", lambda: display)
     monkeypatch.setattr(tr, "_start_text_plot", lambda rec: calls.append("text"))
-    import eco.widgets.tweak_panel_qt as qt_panel
+    import sys
+    import types
 
-    monkeypatch.setattr(qt_panel, "show_tweak_plot_qt", lambda rec: calls.append("window"))
+    # a stand-in for the Qt plot window's module: no Qt needed for the choice
+    qt_panel = types.ModuleType("eco.widgets.tweak_panel_qt")
+    qt_panel.show_tweak_plot_qt = lambda rec: calls.append("window")
+    monkeypatch.setitem(sys.modules, "eco.widgets.tweak_panel_qt", qt_panel)
     if env is None:
         monkeypatch.delenv("ECO_TWEAK_PLOT", raising=False)
     else:

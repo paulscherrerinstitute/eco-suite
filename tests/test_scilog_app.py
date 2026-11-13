@@ -137,12 +137,14 @@ WIDE = ('<figure class="image image_resized"><img src="" title="H1" width="1483"
 
 
 def test_the_width_scilog_keeps_in_files_reaches_the_figure():
+    pytest.importorskip("bleach")
     files = [dict(FILES[0], style={"width": "51.2%", "height": ""})]
     html = content.clean_post(WIDE, files)
     assert '<figure class="image image_resized" style="width:51.2%">' in html
 
 
 def test_editor_html_goes_back_to_what_scilog_stores():
+    pytest.importorskip("bleach")
     files = [dict(FILES[0], style={"width": "300px", "height": ""}), FILES[2]]
     edited = content.editor_html(WIDE + '<p><a class="fileLink" href="file:H3">d.json</a></p>', files)
     assert f'src="img/{"a" * 24}"' in edited and f'href="file/{"c" * 24}"' in edited
@@ -200,6 +202,7 @@ class _Writer(_FakeReader):
 
 
 def test_writing_goes_only_where_it_is_allowed(tmp_path, monkeypatch):
+    pytest.importorskip("bleach")
     monkeypatch.setattr("eco.logs_scilog._shared_account", lambda: None)
     reader = _Writer()
     store = Store(reader, cache_dir=tmp_path / "f", config={"write_logbooks": [LB]})

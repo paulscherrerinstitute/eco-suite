@@ -120,6 +120,7 @@ def test_namespace_dashboard_log_viewer_opens_via_eco_logs_sidecar(monkeypatch):
     eco.logs.widget(prefer="sidecar") (not some parallel, duplicated
     rendering path) so it stays consistent with every other logs.widget()
     caller."""
+    pytest.importorskip("sidecar")
     import eco.logs
 
     calls = []
@@ -143,6 +144,7 @@ def test_namespace_dashboard_log_viewer_opens_via_eco_logs_sidecar(monkeypatch):
 
 
 def test_namespace_dashboard_log_viewer_reopen_replaces_not_piles_up(monkeypatch):
+    pytest.importorskip("sidecar")
     import eco.logs
 
     class _FakeSidecarPanel:
@@ -175,6 +177,7 @@ def test_namespace_dashboard_log_viewer_reopen_replaces_not_piles_up(monkeypatch
 
 
 def test_namespace_dashboard_close_tears_down_log_viewer_too(monkeypatch):
+    pytest.importorskip("sidecar")
     import eco.logs
 
     class _FakeSidecarPanel:

@@ -29,14 +29,22 @@ import time
 from matplotlib import pyplot as plt
 
 from ..elements.protocols import resolve_lazy
-from ..dbase.archiver import (
-    LIVE_SOURCES,
-    _group_by_type,
-    _StripBuffer,
-    _StripPlot,
-    _StripPlotHandle,
-    _strip_plot_ipc_loop,
-)
+try:
+    from ..dbase.archiver import (
+        LIVE_SOURCES,
+        _group_by_type,
+        _StripBuffer,
+        _StripPlot,
+        _StripPlotHandle,
+        _strip_plot_ipc_loop,
+    )
+except ImportError:  # no datahub (e.g. an install without PSI's packages):
+    # the window can't be built, the text chart of polled objects still works
+    LIVE_SOURCES = _group_by_type = _StripBuffer = _StripPlot = _strip_plot_ipc_loop = None
+
+    class _StripPlotHandle:  # stand-in; strip_plot() refuses the window first
+        def stop(self):
+            pass
 
 
 def _monitorable_name(obj):
@@ -256,6 +264,11 @@ def strip_plot(
             keep=max(3600, 20 * window), duration=duration, poll_interval=poll_interval,
         )
         return text_charts.show_live(feed, window=window, max_rate=max_rate)
+    if _StripPlot is None:
+        raise ImportError(
+            "the strip plot window needs PSI's datahub package; "
+            "plot='text' draws it in the terminal without it"
+        )
 
     cmd_parent, cmd_child = multiprocessing.Pipe()
     data_parent, data_child = multiprocessing.Pipe()
