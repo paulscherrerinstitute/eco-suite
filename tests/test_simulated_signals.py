@@ -194,3 +194,36 @@ def test_monitor_callback_collects_values():
     time.sleep(0.2)
     mon.stop()
     assert len(mon.data["values"]) >= 5
+
+
+# -- oscillation_tt: arrival-time jitter and a timetool ---------------------------
+def test_oscillation_tt_units_and_period():
+    o = ss.SimulatedSignals().oscillation_tt
+    assert (o.delay.unit, o.tt.unit, o.arrival.unit) == ("s", "fs", "fs")
+    t = np.arange(0, 600, 0.5)
+    y = o.signal.truth(t * 1e-15, np.zeros_like(t))
+    peaks = t[1:-1][(y[1:-1] > y[:-2]) & (y[1:-1] > y[2:])]
+    assert np.diff(peaks) == pytest.approx(100.0, abs=1.0)  # 100 fs period
+
+
+def test_oscillation_tt_timetool_explains_the_jitter(sim):
+    # sim: no detector noise, no beam fluctuation -- only the timing remains
+    o = sim.oscillation_tt
+    o.delay.set_target_value(25e-15).wait()  # on the oscillation's slope
+    shots = o.shots(3000)
+    assert (shots.tt - shots.arrival).std() == pytest.approx(5.0, rel=0.15)
+    assert shots.arrival.std() == pytest.approx(50.0, rel=0.1)
+    nominal = o.signal.truth(shots.delay, np.zeros(len(shots)))
+    corrected = o.signal.truth(shots.delay, shots.tt)
+    # the corrected delay explains the signal, the stage delay alone does not
+    assert (shots.signal - corrected).std() < 0.3 * (shots.signal - nominal).std()
+
+
+def test_oscillation_tt_presets_in_seconds():
+    sim = ss.SimulatedSignals()
+    o = sim.oscillation_tt
+    sim.apply_presets(axis="delay_stage", detector="epics_slow")
+    assert o.delay.speed.get_current_value() == pytest.approx(50e-12)
+    assert o.delay.jitter.get_current_value() == 0  # the arrival jitters, not the stage
+    assert o.arrival.jitter.get_current_value() == 50.0
+    assert o.tt.update_rate.get_current_value() == o.signal.update_rate.get_current_value() == 1.0

@@ -27,6 +27,7 @@ not involved.
 | `sim.thz_focus` | `par_x`, `par_z`, `par_rx`, `mir_rz`, `mir_rx`, `delay` | THz focused by a parabola onto a probe spot (below) |
 | `sim.oscillation` | `delay` | pump-probe: a step at t0 plus one damped oscillation |
 | `sim.oscillations` | `delay` | the same with three overlaid modes |
+| `sim.oscillation_tt` | `delay` (s) | pump-probe with arrival-time jitter and a timetool `tt` (fs), below |
 
 Each one has its axes and a `signal` detector. A shared `sim.beam` multiplies
 every signal by the same shot-to-shot intensity, which `sim.beam.i0` reads,
@@ -53,6 +54,36 @@ All model parameters are settings (`sim.thz_focus.x0`, `.waist`, `.t0`, ...).
 At the defaults the maximum, 1.02, is at `par_x` 0.12, `par_z` 0.15, `par_rx`
 0.05, `mir_rz` 0.03, `mir_rx` −0.02 and `delay` 0.7, and all axes start at 0.
 
+
+### `sim.oscillation_tt`: jitter and a timetool
+
+Pump-probe as at an XFEL: the laser `delay` stage is in **seconds**, every
+shot arrives a random `arrival` offset off its nominal time (50 fs rms,
+`sim.oscillation_tt.arrival.jitter`), and the timetool `tt` measures that
+offset per shot in fs (5 fs rms noise, `.tt.noise`). The `signal` sees the
+true delay, so per shot
+
+```text
+corrected delay [fs] = delay * 1e15 + tt
+```
+
+By default a step at t0 = 0 plus one damped oscillation with a 100 fs
+period (10 THz), time resolution 20 fs; `t0`, `resolution` and the mode
+parameters are in fs (`mode1.frequency` in 1/fs). With 50 fs jitter the
+oscillation is mostly washed out against the stage delay and comes back
+against the corrected one. `shots(n)` gives the last n shots with every
+value of each shot together, as the DAQ records them:
+
+```python
+o = sim.oscillation_tt
+o.delay.mv(25e-15)
+d = o.shots(2000)              # pulse_id, delay (s), tt (fs), signal, arrival (fs, the truth)
+d["t_corr"] = d.delay * 1e15 + d.tt
+```
+
+`arrival` is the true offset, which only a simulation knows. Scans read
+`signal` and `tt` like any detectors, but shot by shot only within the same
+shot; for shot-accurate pairs use `shots()`.
 
 The signal's parameters (`sim.peak.center`, `.fwhm`, `.amplitude`,
 `.background`, ...) are ordinary adjustables, read when each value is

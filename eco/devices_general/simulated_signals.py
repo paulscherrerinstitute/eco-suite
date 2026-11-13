@@ -380,6 +380,16 @@ class SimDetector(Assembly):
             y += noise * float(_normal(4 * self._seed + 2, tick)[0])
         return y
 
+    def at_ticks(self, ticks):
+        """The readings at the given ticks (shots), with readout noise, as
+        ``get_current_value`` gives them at each tick -- without the
+        low-pass filter of ``response_time``."""
+        ticks = np.asarray(ticks, dtype=np.int64)
+        rate = float(_value(self.update_rate))
+        y = self._clean(ticks.astype(float), rate)
+        noise = _value(self.noise) + _value(self.noise_rel) * np.abs(y)
+        return y + noise * _normal(4 * self._seed + 2, ticks)
+
     def _low_pass(self, tick, rate, tau):
         """First-order low-pass, caught up tick by tick since the last read
         (at most ~6 time constants back; older history no longer matters)."""
@@ -654,6 +664,92 @@ class SimOscillations(SimPumpProbe):
     ]
 
 
+class SimOscillationTT(SimPumpProbe):
+    """Pump-probe with arrival-time jitter and a timetool, as at an XFEL.
+
+    `delay` is the laser delay stage in **seconds**; every shot arrives
+    `arrival` fs off its nominal time (rms ``arrival.jitter``, default
+    50 fs, drawn per shot); the timetool `tt` measures that offset in fs,
+    shot by shot, with its own noise (``tt.noise``, default 5 fs); `signal`
+    sees the true delay ``delay * 1e15 + arrival`` fs. So per shot
+
+        corrected delay [fs] = delay * 1e15 + tt
+
+    t0, resolution and the oscillation modes are in fs (frequency in 1/fs):
+    by default a step at t0 plus one damped oscillation of 100 fs period
+    (10 THz). ``shots(n)`` gives the last n shots with all values of each
+    shot together, as the DAQ would record them.
+    """
+
+    FS_PER_UNIT = 1e15  # the delay axis is in seconds
+    AXIS_UNIT = "s"
+    AXIS_LIMITS = (-50e-12, 50e-12)
+    PARAMS = dict(t0=0.0, resolution=20.0, step_amplitude=-0.3, step_rise=0.0,
+                  step_decay=math.inf, background=1.0)
+    MODES = [dict(amplitude=0.25, frequency=0.01, damping=400.0, rise=0.0, phase=0.0)]
+    # the delay presets are in ps (AXIS_PRESETS); distances scaled to seconds
+    _DISTANCE_PARAMS = ("speed", "backlash", "readback_noise")
+
+    def _build(self, beam, axis, detector):
+        for i, mode in enumerate(self._modes, start=1):
+            self._append(SimOscillationMode, **mode, name=f"mode{i}", is_setting="recursive")
+        self._append(SimAxis, 0.0, unit="s", limits=self.AXIS_LIMITS, preset=axis,
+                     name="delay", is_setting="recursive")
+        self._scale_delay_axis()
+        self._append(SimAxis, 0.0, unit="fs", preset="ideal", jitter=50.0,
+                     name="arrival", is_setting="recursive")
+        self._append(SimDetector, self.model, axes=[self.delay, self.arrival], beam=beam,
+                     preset=detector, name="signal", is_setting="recursive")
+        self._append(SimDetector, lambda arrival: arrival, axes=[self.arrival], unit="fs",
+                     preset="ideal", noise=5.0, name="tt", is_setting="recursive")
+        self._sync_tt_rate()
+
+    def _scale_delay_axis(self):
+        """The ps presets as seconds; the stage itself does not jitter (the
+        arrival time does)."""
+        for key in self._DISTANCE_PARAMS:
+            item = getattr(self.delay, key)
+            value = _value(item)
+            if math.isfinite(value):
+                item.set_target_value(value * 1e-12).wait()
+        self.delay.jitter.set_target_value(0.0).wait()
+
+    def _sync_tt_rate(self):
+        # same shots as the signal: the same tick clock
+        self.tt.update_rate.set_target_value(_value(self.signal.update_rate)).wait()
+
+    def apply_presets(self, axis=None, detector=None):
+        if axis:
+            self.delay.apply_preset(axis)
+            self._scale_delay_axis()
+        if detector:
+            self.signal.apply_preset(detector)
+            self._sync_tt_rate()
+
+    def model(self, delay, arrival):
+        t = np.asarray(delay, float) * self.FS_PER_UNIT + np.asarray(arrival, float)
+        return super().model(t)
+
+    def shots(self, n=1000):
+        """The last `n` shots as a pandas DataFrame, one row per shot:
+        ``pulse_id`` (the tick), ``delay`` (s, the stage), ``tt`` (fs,
+        measured), ``signal``, and ``arrival`` (fs, the true offset the
+        timetool measures -- known only in a simulation)."""
+        import pandas as pd
+
+        rate = float(_value(self.signal.update_rate))
+        last = math.floor(time.time() * rate)
+        ticks = np.arange(last - int(n) + 1, last + 1, dtype=np.int64)
+        t = ticks / rate - _value(self.signal.dead_time)
+        return pd.DataFrame(dict(
+            pulse_id=ticks,
+            delay=self.delay.physical_position(t),
+            tt=self.tt.at_ticks(ticks),
+            signal=self.signal.at_ticks(ticks),
+            arrival=self.arrival.physical_position(t, jitter_ticks=ticks),
+        ))
+
+
 class SimulatedSignals(Assembly):
     """All simulated signal shapes with a shared beam; `axis` / `detector`
     pick presets (``AXIS_PRESETS`` / ``DETECTOR_PRESETS``) for all of them;
@@ -671,6 +767,7 @@ class SimulatedSignals(Assembly):
         "thz_focus": (SimThzFocus, "axis"),
         "oscillation": (SimPumpProbe, "delay_axis"),
         "oscillations": (SimOscillations, "delay_axis"),
+        "oscillation_tt": (SimOscillationTT, "delay_axis"),
     }
 
     def __init__(self, axis="ideal", detector="diode", delay_axis=None, name="sim"):
