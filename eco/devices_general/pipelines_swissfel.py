@@ -13,8 +13,6 @@ from pathlib import Path
 import time
 import cachebox
 
-sys.path.append("/sf/bernina/config/src/python/sf_databuffer/")
-import bufferutils
 
 CAM_CLIENT = None
 PIPELINE_CLIENT = None
@@ -119,6 +117,10 @@ class Pipeline(Assembly):
 
     def restart_pipeline(self):
         base_directory = "/sf/bernina/config/src/python/sf_databuffer/"
+        if base_directory not in sys.path:  # only on the beamline file system
+            sys.path.append(base_directory)
+        import bufferutils
+
         label = self.pipeline_name
 
         policies = bufferutils.read_files(base_directory / Path("policies"), "policies")
