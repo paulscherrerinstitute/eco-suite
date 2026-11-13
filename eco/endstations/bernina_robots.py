@@ -14,7 +14,8 @@ import os
 from eco.detector.jungfrau import Jungfrau
 from eco.robots import tree
 from eco.utilities import user_input
-
+#os.sys.path.insert(0, "/sf/bernina/code/gac-bernina/swift/")
+#os.sys.path.insert(0, "/sf/bernina/code/gac-bernina/robotics-toolbox-python/")
 os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
 from requests import HTTPError

@@ -1165,6 +1165,22 @@ class THzVirtualStages_In_Air(Assembly):
         self.offset_foc_z.mv(self._mz())
         self.offset_par_z.mv(self._pz())
 
+class TiaCameras(Assembly):
+    def __init__(self, name=None, camera_config={}):
+        super().__init__(name=name)
+        for name, cfg in camera_config.items():
+            self._append(
+                CameraBasler,
+                cfg["pvname"],
+                camserver_alias="TIA_" + name,
+                name=name,
+                is_setting=True,
+                is_display="recursive",
+            )
+            self.__dict__[name].serial_no.mv(cfg["serial_number"])
+
+
+
 class Terahertz_In_Air(Assembly):
     def __init__(self, delay_offset_detector=None, x_adjustable=None, name=None,mx=None,mz=None):
         super().__init__(name=name)
@@ -1397,6 +1413,22 @@ class Terahertz_In_Air(Assembly):
             pz=self.foc_z,
             is_setting=False,
         )
+        self.camera_configuration = {
+            "inline": {
+                "pvname": "SARES20-CAMS142-M2",
+                "serial_number": 40298884,
+            },
+            "sideview": {
+                "pvname": "SARES20-CAMS142-M1",
+                "serial_number": 22937745,
+            },
+         }
+
+        self._append(
+            TiaCameras,
+            name="samplecam",
+            camera_config=self.camera_configuration,
+            )
 
     def _thz_pol_set(self, val):
         return 1.0 * val, 1.0 / 2 * val
