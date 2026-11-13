@@ -157,9 +157,29 @@ both would hide a push that silently failed.
 
 ## 7. Checking it on a real server
 
+The production server has to be running a build that has these routes, and
+restarting it mid-beamtime to try them out is not reasonable. So the usual
+way in is a private second server on a port of its own, which
+`scripts/status_server_sandbox` starts, waits for, runs all three checks
+against and stops again:
+
 ```bash
 source /sf/bernina/bin/bpy-env
 cd <this checkout>
+scripts/status_server_sandbox
+```
+
+It initializes a single namespace component by default, which is ready in
+well under a minute and still exercises every route; `--names all` gives it
+the same required set the production server has (4-11 minutes), `--names
+a,b,c` a chosen few. Config, log, pid, handoff spool and output all live
+under `~/.cache/eco-work/status_sandbox`, and `--keep` leaves the server up
+(`scripts/status_server_sandbox stop` ends it).
+
+Against a server that is already running, the check script is used
+directly:
+
+```bash
 python scripts/status_server_handoff_check.py check
 python scripts/status_server_handoff_check.py bench --repeat 5
 python scripts/status_server_handoff_check.py check --record-seconds 15
@@ -187,6 +207,7 @@ covers the same channels as a plain `/status/snapshot`, whether the written
 | `tests/test_status_relay.py` | the relay, including a real detached child against a real server |
 | `tests/test_daq_client_write_mode.py` | the switch and the dispatch |
 | `scripts/status_server_handoff_check.py` | the against-a-real-server check |
+| `scripts/status_server_sandbox` | starts a private server, runs that check against it, stops it |
 
 ## 9. Open
 

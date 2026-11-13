@@ -1,0 +1,187 @@
+#!/bin/bash
+# Run the client-write checks against a private, throwaway status server.
+#
+# Starts a second namespace-mode server from this checkout, on its own port
+# and under the calling account, waits for it to become ready, runs
+# scripts/status_server_handoff_check.py against it, and stops it again. The
+# production server is never contacted, restarted or otherwise touched.
+#
+#   scripts/status_server_sandbox                 start, run the checks, stop
+#   scripts/status_server_sandbox --keep          leave it running afterwards
+#   scripts/status_server_sandbox --names all     full required set, not one
+#   scripts/status_server_sandbox stop            stop one left by --keep
+#
+# Everything lands under $ECO_SANDBOX_DIR (default
+# ~/.cache/eco-work/status_sandbox): the generated config, the server log,
+# its pid file, the handoff spool and the check output. Nothing is written
+# to a shared tree and nothing is uploaded.
+#
+# Which components the server initializes is the one knob that decides how
+# long this takes: a single component is ready in well under a minute and
+# exercises every route, the full required set takes the same 4-11 minutes
+# the production server takes to come up.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECKOUT="$(cd "$HERE/.." && pwd)"
+
+DIR="${ECO_SANDBOX_DIR:-$HOME/.cache/eco-work/status_sandbox}"
+PORT="${ECO_SANDBOX_PORT:-8192}"
+NAMES="${ECO_SANDBOX_NAMES:-beamline}"
+MODULE="${ECO_SANDBOX_MODULE:-eco.bernina.bernina}"
+PYTHON="${ECO_SANDBOX_PYTHON:-/sf/bernina/applications/python/.pixi/envs/bpy312/bin/python}"
+READY_TIMEOUT="${ECO_SANDBOX_READY_TIMEOUT:-1200}"
+RECORD_SECONDS="${ECO_SANDBOX_RECORD_SECONDS:-15}"
+KEEP=0
+
+CONFIG="$DIR/config.json"
+LOG="$DIR/server.log"
+PIDFILE="$DIR/server.pid"
+URL="http://localhost:$PORT"
+
+usage() {
+    sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 0
+}
+
+COMMAND=run
+while [ $# -gt 0 ]; do
+    case "$1" in
+        run|stop|start) COMMAND="$1"; shift ;;
+        --keep) KEEP=1; shift ;;
+        --port) PORT="$2"; URL="http://localhost:$PORT"; shift 2 ;;
+        --names) NAMES="$2"; shift 2 ;;
+        --module) MODULE="$2"; shift 2 ;;
+        --record-seconds) RECORD_SECONDS="$2"; shift 2 ;;
+        --python) PYTHON="$2"; shift 2 ;;
+        --dir) DIR="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+CONFIG="$DIR/config.json"
+LOG="$DIR/server.log"
+PIDFILE="$DIR/server.pid"
+
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+
+stop_server() {
+    [ -f "$PIDFILE" ] || return 0
+    local pid
+    pid="$(cat "$PIDFILE")"
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "stopping sandbox server (pid $pid)"
+        kill "$pid" 2>/dev/null || true
+        for _ in $(seq 1 20); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.5
+        done
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+}
+
+if [ "$COMMAND" = stop ]; then
+    stop_server
+    exit 0
+fi
+
+mkdir -p "$DIR/spool"
+chmod 700 "$DIR" 2>/dev/null || true
+
+# Refuse to run next to a server that is already on this port - it would
+# either be a leftover of a previous run (whose namespace may be stale) or
+# somebody else's, and silently reusing it would make the results a lie.
+if curl -s -m 2 "$URL/health" >/dev/null 2>&1; then
+    echo "something is already serving $URL."
+    echo "stop it first ($(basename "$0") stop) or pick another --port." >&2
+    exit 1
+fi
+
+if [ "$NAMES" = all ]; then
+    NAMES_LINE=
+else
+    NAMES_LINE="$(printf '%s' "$NAMES" | awk -F, '{for (i=1;i<=NF;i++) printf "%s\"%s\"", (i>1?", ":""), $i}')"
+    NAMES_LINE="  \"names\": [$NAMES_LINE],"
+fi
+
+cat > "$CONFIG" <<JSON
+{
+  "module_name": "$MODULE",
+  "attr_name": "namespace",
+  "init_required_only": true,
+$NAMES_LINE
+  "exclude_names": ["elog", "scilog", "daq", "scans", "opa_he"],
+  "instrument": "bernina",
+  "host": "127.0.0.1",
+  "port": $PORT,
+  "init_workers": 8,
+  "init_cycles": 4,
+  "init_retry_passes": 2,
+  "read_workers": 20,
+  "use_monitors": false,
+  "retry_workers": 1,
+  "handoff_spool_dir": "$DIR/spool"
+}
+JSON
+
+echo "sandbox status server"
+echo "====================="
+echo "  checkout   : $CHECKOUT"
+echo "  python     : $PYTHON"
+echo "  namespace  : $MODULE"
+echo "  components : $([ "$NAMES" = all ] && echo "full required set" || echo "$NAMES")"
+echo "  url        : $URL"
+echo "  workdir    : $DIR"
+echo
+
+PYTHONPATH="$CHECKOUT${PYTHONPATH:+:$PYTHONPATH}" \
+ECO_NO_HEARTBEAT=1 MPLBACKEND=Agg \
+nohup "$PYTHON" -m eco.status_server --mode namespace --config "$CONFIG" \
+    > "$LOG" 2>&1 &
+echo $! > "$PIDFILE"
+echo "started pid $(cat "$PIDFILE"), log $LOG"
+
+[ "$COMMAND" = start ] && exit 0
+[ "$KEEP" = 1 ] || trap stop_server EXIT
+
+printf "waiting for the namespace to initialize "
+deadline=$(( $(date +%s) + READY_TIMEOUT ))
+while :; do
+    if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo
+        echo "the server exited before becoming ready; last lines of $LOG:" >&2
+        tail -25 "$LOG" >&2
+        exit 1
+    fi
+    # The port is refused until werkzeug binds, and a half-written reply can
+    # come back mid-start: neither is an error here, so keep the pipeline's
+    # failure away from `set -e`.
+    state="$(curl -s -m 5 "$URL/health" 2>/dev/null \
+        | sed -n 's/.*"state": *"\([a-z_]*\)".*/\1/p' | head -1 || true)"
+    [ "$state" = ready ] && break
+    printf .
+    sleep 5
+    if [ "$(date +%s)" -gt "$deadline" ]; then
+        echo
+        echo "still '$state' after ${READY_TIMEOUT}s - see $LOG." >&2
+        echo "kill -USR1 $(cat "$PIDFILE") dumps every thread's stack there," >&2
+        echo "which names the component it is stuck in." >&2
+        exit 1
+    fi
+done
+echo " ready"
+echo
+
+CHECK="$CHECKOUT/scripts/status_server_handoff_check.py"
+"$PYTHON" "$CHECK" --url "$URL" check
+echo
+"$PYTHON" "$CHECK" --url "$URL" bench --repeat 5
+echo
+"$PYTHON" "$CHECK" --url "$URL" check --record-seconds "$RECORD_SECONDS"
+
+if [ "$KEEP" = 1 ]; then
+    echo
+    echo "server left running at $URL (pid $(cat "$PIDFILE"))."
+    echo "stop it with: $(basename "$0") stop"
+fi
