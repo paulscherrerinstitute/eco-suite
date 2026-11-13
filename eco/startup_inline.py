@@ -87,6 +87,14 @@ if scope:
         ecocnf.startup_lazy = True
     exec(f"import eco.{scope} as {scope}")
     exec(f"from eco.{scope} import *")
+else:
+    # no instrument (e.g. a laptop): simulated devices and plain scans to try
+    # things with, in memory only
+    from eco.devices_general.simulated_signals import SimulatedSignals
+    from eco.acquisition.scan import Scans
+
+    sim = SimulatedSignals()
+    scans = Scans()
 
 term.set_title()
 

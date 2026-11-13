@@ -124,6 +124,16 @@ uv venv --python 3.12 ~/eco-venv          # or python -m venv
 uv pip install --python ~/eco-venv/bin/python -e ".[dev]"
 ```
 
+Without the beamline file system the `bernina` scope cannot start, so make a
+bare `eco` start without an instrument, with an `~/.ecorc` of
+
+```ini
+[eco]
+scope =
+```
+
+Such a session has `sim` and a plain `scans` ready. In Python of your own:
+
 ```python
 from eco.devices_general.simulated_signals import SimulatedSignals
 from eco.acquisition.scan import Scans

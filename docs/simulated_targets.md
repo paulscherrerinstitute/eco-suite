@@ -1,11 +1,15 @@
 # Simulated scan targets: `sim`
 
 To try a scan, develop a scan feature or test an adaptive scan, you need
-something to scan that gives a known answer. `sim` in the bernina namespace
-holds in-memory motors and detectors with a signal behind them: no EPICS, no
-beam, no hardware. Its motors and detectors behave like real ones, with move
-overhead, settling, backlash, readback noise, slow update rates, lag and drift.
-Children are built on first use, like everything else in the namespace.
+something to scan that gives a known answer. `sim` holds in-memory motors and
+detectors with a signal behind them: no EPICS, no beam, no hardware. Its motors
+and detectors behave like real ones, with move overhead, settling, backlash,
+readback noise, slow update rates, lag and drift.
+
+`sim` is there in every session: in the bernina namespace, and in a session
+started without an instrument (`eco` with `scope =` empty in `.ecorc`, e.g. on
+a laptop), which has `sim` and a plain `scans`. Typing `sim` shows its
+signals, like any other device.
 
 ```python
 sim.peak.signal.scans.ascan(sim.peak.x, -2, 2, 41, 0.2)      # 41 points, 0.2 s each

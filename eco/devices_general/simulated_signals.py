@@ -5,8 +5,8 @@ except the one each move runs in.
 
     sim.peak.signal.scans.ascan(sim.peak.x, -2, 2, 41, 0.2)
 
-``sim`` is a lazy component of the bernina namespace (or build one with
-``SimulatedSignals()``); its children are built on first use.
+``sim`` is in every eco session started without an instrument scope, and a
+component of the bernina namespace (or build one with ``SimulatedSignals()``).
 
 ``SimulatedSignals`` holds one sub-assembly per signal shape, each with its own
 axis/axes and a ``signal`` detector, plus a shared ``beam`` with an ``i0``:
@@ -71,7 +71,6 @@ from eco.devices_general.utilities import Changer
 from eco.elements.adjustable import AdjustableMemory
 from eco.elements.assembly import Assembly
 from eco.elements.detector import CallbackTimedelta
-from eco.elements.protocols import resolve_lazy
 from eco.acquisition.decorators import scannable
 
 
@@ -753,11 +752,8 @@ class SimOscillationTT(SimPumpProbe):
 class SimulatedSignals(Assembly):
     """All simulated signal shapes with a shared beam; `axis` / `detector`
     pick presets (``AXIS_PRESETS`` / ``DETECTOR_PRESETS``) for all of them;
-    `delay_axis` (default: same as `axis`) for the two pump-probe ones.
-
-    Every child is built on first use, like a lazy namespace component (an
-    ``eco.utilities.config.Proxy`` holds its place until then), so only the
-    shapes actually touched exist and show up in ``status()``."""
+    `delay_axis` (default: same as `axis`) for the pump-probe ones.
+    An ordinary Assembly: all children are built at once (about 15 ms)."""
 
     SIGNALS = {
         "step": (SimStep, "axis"),
@@ -773,46 +769,18 @@ class SimulatedSignals(Assembly):
     def __init__(self, axis="ideal", detector="diode", delay_axis=None, name="sim"):
         super().__init__(name=name)
         self._presets = dict(axis=axis, delay_axis=delay_axis or axis, detector=detector)
-        self._build_lock = threading.RLock()
-        self._lazy("beam", lambda: self._append(SimBeam, name="beam", is_setting="recursive"))
+        self._append(SimBeam, name="beam", is_setting="recursive")
         for key, (cls, axis_kind) in self.SIGNALS.items():
-            self._lazy(key, self._signal_builder(key, cls, axis_kind))
-
-    def _signal_builder(self, key, cls, axis_kind):
-        def build():
             self._append(
-                cls, beam=resolve_lazy(self.beam), axis=self._presets[axis_kind],
-                detector=self._presets["detector"], name=key, is_setting="recursive",
+                cls, beam=self.beam, axis=self._presets[axis_kind],
+                detector=detector, name=key, is_setting="recursive",
             )
 
-        return build
-
-    def _lazy(self, key, build):
-        from eco.utilities.config import Proxy
-
-        def resolve():
-            with self._build_lock:
-                if isinstance(self.__dict__.get(key), Proxy):
-                    del self.__dict__[key]
-                    build()
-                return self.__dict__[key]
-
-        self.__dict__[key] = Proxy(resolve)
-
-    def built(self):
-        """Names of the children constructed so far."""
-        from eco.utilities.config import Proxy
-
-        return [k for k in ["beam", *self.SIGNALS] if not isinstance(self.__dict__[k], Proxy)]
-
     def apply_presets(self, axis=None, detector=None):
-        """Same timing/noise preset for every axis and/or signal detector,
-        including those not built yet."""
+        """Same timing/noise preset for every axis and/or signal detector."""
         if axis:
             self._presets.update(axis=axis, delay_axis=axis)
         if detector:
             self._presets["detector"] = detector
-        for key in self.built():
-            item = self.__dict__[key]
-            if isinstance(item, _SimSignal):
-                item.apply_presets(axis=axis, detector=detector)
+        for key in self.SIGNALS:
+            getattr(self, key).apply_presets(axis=axis, detector=detector)

@@ -17,21 +17,16 @@ def sim():
     return s
 
 
-def test_children_are_built_on_first_use():
+def test_an_ordinary_assembly_showing_all_its_children():
     s = ss.SimulatedSignals()
-    assert s.built() == []
-    dir(s.peak)
-    s.status()
-    assert s.built() == []
-    s.peak.x
-    assert sorted(s.built()) == ["beam", "peak"]
     assert isinstance(s.peak, ss.SimPeak)
     assert s.peak.signal._beam is s.beam
+    shown = repr(s)
+    assert all(key in shown for key in ["beam", *s.SIGNALS])
 
 
-def test_presets_reach_children_built_later():
+def test_presets_reach_all_children():
     s = ss.SimulatedSignals(axis="stepper")
-    s.step.x
     s.apply_presets(axis="piezo", detector="lockin")
     assert s.step.x.speed.get_current_value() == ss.AXIS_PRESETS["piezo"]["speed"]
     assert s.oscillation.delay.speed.get_current_value() == ss.AXIS_PRESETS["piezo"]["speed"]
