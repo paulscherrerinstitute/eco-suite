@@ -357,8 +357,13 @@ namespace.append_obj(
             "name": "illumination",
         }
     ],
+    # the chambers' cameras and motors; a part missing in config_bernina is
+    # taken from the fallback dicts in bernina_sample_environments.py
     thc_config=NamespaceComponent(
-        namespace, "config_bernina.thc_config", get_current_value=True
+        namespace, "config_bernina.thc_config", get_current_value=True, default=None
+    ),
+    gic_config=NamespaceComponent(
+        namespace, "config_bernina.gic_config", get_current_value=True, default=None
     ),
     event_master=NamespaceComponent(namespace, "event_master"),
     detectors_event_code=50,
@@ -413,6 +418,9 @@ namespace.append_obj(
     ],
     event_master=NamespaceComponent(namespace, "event_master"),
     detectors_event_code=50,
+    gic_config=NamespaceComponent(
+        namespace, "config_bernina.gic_config", get_current_value=True, default=None
+    ),
     name="xrd",
     lazy=True,
 )

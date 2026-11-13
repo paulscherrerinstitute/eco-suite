@@ -488,7 +488,8 @@ class GPS(Assembly):
         xp=None,
         helium_control_valve=None,
         illumination_mpod=None,
-        thc_config=[],
+        thc_config=None,
+        gic_config=None,
         event_master=None,
         detectors_event_code=None,
     ):
@@ -527,6 +528,7 @@ class GPS(Assembly):
                 name="gic",
                 xp=xp,
                 helium_control_valve=helium_control_valve,
+                configuration=gic_config,
                 is_setting=False,
                 is_display=True,
             )
@@ -684,6 +686,7 @@ class XRDYou(Assembly):
         recspace_conv_JFID="JF01T03V01",
         event_master=None,
         detectors_event_code=None,
+        gic_config=None,
     ):
         """X-ray diffractometer platform in SiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
@@ -723,6 +726,7 @@ class XRDYou(Assembly):
                 name="gic",
                 xp=xp,
                 helium_control_valve=helium_control_valve,
+                configuration=gic_config,
                 is_setting=False,
                 is_display=True,
             )
@@ -904,6 +908,7 @@ class XRD(Assembly):
         configuration=["base"],
         diff_detector=None,
         pgroup_adj=None,
+        gic_config=None,
     ):
         """X-ray diffractometer platform in AiwssFEL Bernina.\
                 <configuration> : list of elements mounted on 
@@ -1092,6 +1097,7 @@ class XRD(Assembly):
                 name="gic",
                 xp=xp,
                 helium_control_valve=helium_control_valve,
+                configuration=gic_config,
                 is_setting=False,
                 is_display=True,
             )

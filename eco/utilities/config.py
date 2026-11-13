@@ -92,10 +92,15 @@ class NamespaceComponent:
     everything is registered before anything is actually built.
     """
 
-    def __init__(self, namespace, namestring, get_current_value=False):
+    _NO_DEFAULT = object()
+
+    def __init__(self, namespace, namestring, get_current_value=False, default=_NO_DEFAULT):
+        """`default`: returned when the sub-attribute does not exist (e.g. a
+        key not yet in ``config_bernina``) instead of raising."""
         self.namespace = namespace
         self.namestring = namestring
         self._get_current_value = get_current_value
+        self._default = default
         self.obj_name = None
         self.sub_name = None
 
@@ -119,17 +124,20 @@ class NamespaceComponent:
     def get(self):
         self._resolve()
         obj = self.namespace.get_obj(self.obj_name)
-        if self._get_current_value:
-            if self.sub_name:
-                return eval(f"obj.{self.sub_name}").get_current_value()
-            else:
-                return obj.get_current_value()
-
-        else:
-            if self.sub_name:
-                return eval(f"obj.{self.sub_name}")
-            else:
-                return obj
+        if self.sub_name:
+            try:
+                obj = eval(f"obj.{self.sub_name}")
+            except AttributeError:
+                if self._default is self._NO_DEFAULT:
+                    raise
+                return self._default
+        if not self._get_current_value:
+            return obj
+        if not hasattr(obj, "get_current_value") and hasattr(obj, "_base_dict"):
+            # a dict field of an AdjustableObject (config_bernina.thc_config
+            # once it is a dict): its value is the dict
+            return obj._base_dict.get_current_value()
+        return obj.get_current_value()
 
 
 def _replace_NamespaceComponent(value):

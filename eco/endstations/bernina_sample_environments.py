@@ -34,6 +34,42 @@ from eco.epics_utils.detector import DetectorPvData
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+import copy
+import logging
+from eco.elements.protocols import resolve_lazy
+
+logger = logging.getLogger(__name__)
+
+
+def chamber_config(configuration, config_name, fallback, fallback_name):
+    """The parts of a chamber's configuration (cameras, motors, ...), from
+    `configuration` -- the chamber's dict in ``config_bernina`` (e.g.
+    ``config_bernina.thc_config``) -- with every part it lacks taken from
+    `fallback`, the hard-coded dict in this file, with one warning naming
+    what was taken. `configuration` may also be None (no entry in
+    config_bernina) or the older plain list of options, which has no parts."""
+    configuration = resolve_lazy(configuration)
+    given = configuration if isinstance(configuration, dict) else {}
+    missing = [part for part in fallback if part not in given]
+    if missing:
+        logger.warning(
+            f"Attention, no {config_name} {', '.join(missing)} defined in "
+            f"config_bernina, taking hard coded values ({fallback_name}) from "
+            f"{__file__}."
+        )
+    parts = {part: copy.deepcopy(fallback[part]) for part in missing}
+    parts.update({part: value for part, value in given.items() if part in fallback})
+    return parts
+
+
+def chamber_options(configuration):
+    """The options of a chamber configuration (``"cube"``, ``"ottifant"``,
+    ...): its ``options`` entry, or the configuration itself when it is the
+    older plain list of options."""
+    configuration = resolve_lazy(configuration)
+    if isinstance(configuration, dict):
+        return list(configuration.get("options", []))
+    return list(configuration or [])
 
 
 def addMotorRecordToSelf(self, name=None, Id=None):
@@ -106,13 +142,135 @@ class THz_cameras(Assembly):
             self.__dict__[name].serial_no.mv(cfg["serial_number"])
 
 
+# Fallback only: High_field_thz_chamber takes its cameras and motors from
+# config_bernina.thc_config (keys as here, plus "options": ["cube", ...]);
+# a part missing there is taken from here, with a warning.
+THC_CONFIG_FALLBACK = {
+    "cameras": {
+        "inline": {
+            "pvname": "SARES20-CAMS142-M2",
+            "serial_number": 23067644,
+        },
+        "sideview_45": {
+            "pvname": "SARES20-CAMS142-M3",
+            "serial_number": 23075971,
+        },
+    },
+    "motors": {
+        "inline_mirror": {
+            "id": "SARES23-USR:MOT_1",
+            "pv_descr": "THz Chamber Inline_Mirror",
+            "direction": 1,
+            "sensor": 1,
+            "speed": 250,
+            "offset": 2.150241,
+            "home_direction": "back",
+            "kwargs": {"accuracy": 0.01},
+        },
+        "rx": {
+            # "id": "SARES23-USR:MOT_13",
+            "id": "SARES23-USR:MOT_16",
+            "pv_descr": "Module6:1 THz Chamber Rx",
+            "direction": 1,
+            "sensor": 47,
+            "speed": 250,
+            "home_direction": "back",
+            "kwargs": {"accuracy": 0.01},
+        },
+        "x": {
+            # "id": "SARES23-USR:MOT_14",
+            "id": "SARES23-USR:MOT_17",
+            "pv_descr": "Module6:2 THz Chamber x ",
+            "direction": 1,
+            "sensor": 1,
+            "speed": 250,
+            "home_direction": "back",
+        },
+        "z": {
+            # "id": "SARES23-USR:MOT_10",
+            "id": "SARES23-USR:MOT_13",
+            "pv_descr": "Module5:1 THz Chamber z ",
+            "direction": 0,
+            "sensor": 1,
+            "speed": 250,
+            "home_direction": "forward",
+        },
+        "ry": {
+            # "id": "SARES23-USR:MOT_11",
+            "id": "SARES23-USR:MOT_14",
+            "pv_descr": "Module5:2 THz Chamber Ry",
+            "direction": 0,
+            "sensor": 2,
+            "speed": 250,
+            "home_direction": "back",
+        },
+        "rz": {
+            # "id": "SARES23-USR:MOT_12",
+            "id": "SARES23-USR:MOT_15",
+            "pv_descr": "Module5:3 THz Chamber Rz",
+            "direction": 0,
+            "sensor": 48,
+            "speed": 250,
+            "home_direction": "back",
+        },
+    },
+
+    "motors_cube": {
+        "inc_rz": {
+            "id": "SARES23-USR:MOT_11",
+            "pv_descr": "Module2:2 THz Inc Cube Rz",
+            "direction": 1,
+            "sensor": 53,
+            "speed": 250,
+            "home_direction": "back",
+            "kwargs": {"accuracy": 0.01},
+        },
+        "inc_z": {
+            "id": "SARES23-USR:MOT_10",
+            "pv_descr": "Module2:1 THz Inc Cube z ",
+            "direction": 1,
+            "sensor": 42,
+            "speed": 250,
+            "home_direction": "back",
+        },
+        "inc_x": {
+            "id": "SARES23-USR:MOT_12",
+            "pv_descr": "Module2:3 THz Inc Cube x ",
+            "direction": 1,
+            "sensor": 42,
+            "speed": 250,
+            "home_direction": "forward",
+        },
+        "inc_ry": {
+            "id": "SARES23-USR:MOT_18",
+            "pv_descr": "Module6:3 THz Inc Cube Ry ",
+            "direction": 0,
+            "sensor": 2,
+            "speed": 250,
+            "home_direction": "forward",
+        },
+    },
+
+    "motors_ocb": {
+        "inc_x": {
+            "id": "SARES23-USR:MOT_6",
+            "pv_descr": "Module2:3 THz Inc Cube x ",
+            "direction": 1,
+            "sensor": 42,
+            "speed": 250,
+            "home_direction": "forward",
+        },
+    },
+}
+
+
 class High_field_thz_chamber(Assembly):
     def __init__(
         self,
         delay_offset_detector=None,
         thc_x_adjustable=None,
         name=None,
-        configuration=[],
+        configuration=None,
         illumination_mpod=None,
         helium_control_valve=None,
     ):
@@ -120,121 +278,16 @@ class High_field_thz_chamber(Assembly):
         self.delay_offset_detector = delay_offset_detector
         self._thc_x_adjustable = thc_x_adjustable
         self.par_out_pos = [-20, -9.5]
-        self.camera_configuration = {
-            "inline": {
-                "pvname": "SARES20-CAMS142-M2",
-                "serial_number": 23067644,
-            },
-            "sideview_45": {
-                "pvname": "SARES20-CAMS142-M3",
-                "serial_number": 23075971,
-            },
-        }
-        self.motor_configuration = {
-            "inline_mirror": {
-                "id": "SARES23-USR:MOT_1",
-                "pv_descr": "THz Chamber Inline_Mirror",
-                "direction": 1,
-                "sensor": 1,
-                "speed": 250,
-                "offset": 2.150241,
-                "home_direction": "back",
-                "kwargs": {"accuracy": 0.01},
-            },
-            "rx": {
-                # "id": "SARES23-USR:MOT_13",
-                "id": "SARES23-USR:MOT_16",
-                "pv_descr": "Module6:1 THz Chamber Rx",
-                "direction": 1,
-                "sensor": 47,
-                "speed": 250,
-                "home_direction": "back",
-                "kwargs": {"accuracy": 0.01},
-            },
-            "x": {
-                # "id": "SARES23-USR:MOT_14",
-                "id": "SARES23-USR:MOT_17",
-                "pv_descr": "Module6:2 THz Chamber x ",
-                "direction": 1,
-                "sensor": 1,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "z": {
-                # "id": "SARES23-USR:MOT_10",
-                "id": "SARES23-USR:MOT_13",
-                "pv_descr": "Module5:1 THz Chamber z ",
-                "direction": 0,
-                "sensor": 1,
-                "speed": 250,
-                "home_direction": "forward",
-            },
-            "ry": {
-                # "id": "SARES23-USR:MOT_11",
-                "id": "SARES23-USR:MOT_14",
-                "pv_descr": "Module5:2 THz Chamber Ry",
-                "direction": 0,
-                "sensor": 2,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "rz": {
-                # "id": "SARES23-USR:MOT_12",
-                "id": "SARES23-USR:MOT_15",
-                "pv_descr": "Module5:3 THz Chamber Rz",
-                "direction": 0,
-                "sensor": 48,
-                "speed": 250,
-                "home_direction": "back",
-            },
-        }
-
-        self.motor_configuration_cube = {
-            "inc_rz": {
-                "id": "SARES23-USR:MOT_11",
-                "pv_descr": "Module2:2 THz Inc Cube Rz",
-                "direction": 1,
-                "sensor": 53,
-                "speed": 250,
-                "home_direction": "back",
-                "kwargs": {"accuracy": 0.01},
-            },
-            "inc_z": {
-                "id": "SARES23-USR:MOT_10",
-                "pv_descr": "Module2:1 THz Inc Cube z ",
-                "direction": 1,
-                "sensor": 42,
-                "speed": 250,
-                "home_direction": "back",
-            },
-            "inc_x": {
-                "id": "SARES23-USR:MOT_12",
-                "pv_descr": "Module2:3 THz Inc Cube x ",
-                "direction": 1,
-                "sensor": 42,
-                "speed": 250,
-                "home_direction": "forward",
-            },
-            "inc_ry": {
-                "id": "SARES23-USR:MOT_18",
-                "pv_descr": "Module6:3 THz Inc Cube Ry ",
-                "direction": 0,
-                "sensor": 2,
-                "speed": 250,
-                "home_direction": "forward",
-            },
-        }
-
-        self.motor_configuration_ocb = {
-            "inc_x": {
-                "id": "SARES23-USR:MOT_6",
-                "pv_descr": "Module2:3 THz Inc Cube x ",
-                "direction": 1,
-                "sensor": 42,
-                "speed": 250,
-                "home_direction": "forward",
-            },
-        }
+        # config_bernina.thc_config: {"options": [...], "cameras": ...,
+        # "motors": ..., "motors_cube": ..., "motors_ocb": ...}
+        parts = chamber_config(
+            configuration, "thc_config", THC_CONFIG_FALLBACK, "THC_CONFIG_FALLBACK"
+        )
+        self.camera_configuration = parts["cameras"]
+        self.motor_configuration = parts["motors"]
+        self.motor_configuration_cube = parts["motors_cube"]
+        self.motor_configuration_ocb = parts["motors_ocb"]
+        configuration = chamber_options(configuration)
 
         ### Cameras ###
         self._append(
@@ -2289,54 +2342,68 @@ class GicCameras(Assembly):
             self.__dict__[name].serial_no.mv(cfg["serial_number"])
 
 
+# Fallback only: GrazingIncidenceLowTemperatureChamber takes its cameras and
+# motors from config_bernina.gic_config (keys as here); a part missing there
+# is taken from here, with a warning.
+GIC_CONFIG_FALLBACK = {
+    "motors": {
+        "beam_block": {
+            "id": "SARES20-MCS3:MOT_18",
+            "pv_descr": "6:3 GIC Chamber Beam Block",
+            "direction": 0,
+            "sensor": 1,
+            "speed": 200,
+            "home_direction": "back",
+            "kwargs": {"accuracy": 0.000001},
+        },
+        "interferrometer_paddle": {
+            "id": "SARES20-MCS3:MOT_16",
+            "pv_descr": "6:1 GIC Interferrometer Paddle",
+            "direction": 0,
+            "sensor": 1,
+            "speed": 200,
+            "home_direction": "front",
+            "kwargs": {"accuracy": 0.000001},
+        },
+    },
+    "motors_openloop": {
+        "interferrometer_ver": {
+            "id": "SARES20-MCS3:asyn",
+            "pv_descr": "5:1 GIC interferrometer hor",
+            "channel": 13,
+        },
+        "interferrometer_hor": {
+            "id": "SARES20-MCS3:asyn",
+            "pv_descr": "5:2 GIC interferrometer ver",
+            "channel": 14,
+        },
+    },
+    "cameras": {
+        "inline": {
+            "pvname": "SARES20-CAMS142-M1",
+            "serial_number": 40298870,
+        },
+        "sideview": {
+            "pvname": "SARES20-CAMS142-M2",
+            "serial_number": 40298884,
+        },
+    },
+}
+
+
 class GrazingIncidenceLowTemperatureChamber(Assembly):
-    def __init__(self, xp=None, helium_control_valve=None, name=None):
+    def __init__(self, xp=None, helium_control_valve=None, configuration=None, name=None):
         super().__init__(name=name)
         self.name = name
 
-        ### SmarAct stages ###
-        self.motor_configuration = {
-            "beam_block": {
-                "id": "SARES20-MCS3:MOT_18",
-                "pv_descr": "6:3 GIC Chamber Beam Block",
-                "direction": 0,
-                "sensor": 1,
-                "speed": 200,
-                "home_direction": "back",
-                "kwargs": {"accuracy": 0.000001},
-            },
-            "interferrometer_paddle": {
-                "id": "SARES20-MCS3:MOT_16",
-                "pv_descr": "6:1 GIC Interferrometer Paddle",
-                "direction": 0,
-                "sensor": 1,
-                "speed": 200,
-                "home_direction": "front",
-                "kwargs": {"accuracy": 0.000001},
-            },
-        }
-        self.motor_configuration_openloop = {
-            "interferrometer_ver": {
-                "id": "SARES20-MCS3:asyn",
-                "pv_descr": "5:1 GIC interferrometer hor",
-                "channel": 13,
-            },
-            "interferrometer_hor": {
-                "id": "SARES20-MCS3:asyn",
-                "pv_descr": "5:2 GIC interferrometer ver",
-                "channel": 14,
-            },
-        }
-        self.camera_configuration = {
-            "inline": {
-                "pvname": "SARES20-CAMS142-M1",
-                "serial_number": 40298870,
-            },
-            "sideview": {
-                "pvname": "SARES20-CAMS142-M2",
-                "serial_number": 40298884,
-            },
-        }
+        # config_bernina.gic_config: {"cameras": ..., "motors": ...,
+        # "motors_openloop": ...}
+        parts = chamber_config(
+            configuration, "gic_config", GIC_CONFIG_FALLBACK, "GIC_CONFIG_FALLBACK"
+        )
+        self.motor_configuration = parts["motors"]
+        self.motor_configuration_openloop = parts["motors_openloop"]
+        self.camera_configuration = parts["cameras"]
 
         self._append(
             GicCameras,
