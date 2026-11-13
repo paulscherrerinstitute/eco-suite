@@ -41,10 +41,14 @@ excerpts, are sent to that endpoint -- nothing else leaves the machine.
     %ei -b ...      answer in the browser   %ei -b       the last answer there
     %ei -m openai/gpt-oss-120b ...          another model (kept)
     %ei --paste     last answer's code to the next prompt
-    %ei -t QUESTION the model may also look things up while answering:
-                    search, describe an object, check its code, storage
-                    (eco.ei_tools; all read-only; "tools": true makes it
-                    the default)
+    %ei -q QUESTION quick: one answer from the found context, without the
+                    lookups the model otherwise makes while answering
+                    (search, describe an object, check its code, storage;
+                    eco.ei_tools, all read-only, at most "tool_calls" per
+                    question). "tools": false in ~/.eco/ei.json makes -q
+                    the default, and -t then asks with lookups
+    Ctrl-C          while an answer is written for glow: the first shows it
+                    as it comes, the second stops it (without glow: stops)
     %ei --open 2    source [2] of the last answer in its context (the
                     commands around it, the neighbouring logbook posts, ...)
     %ei --bad att   commands like `att...` that gave warnings/errors
@@ -88,6 +92,7 @@ import contextlib
 import datetime
 import json
 import os
+import queue
 import re
 import shlex
 import stat
@@ -124,6 +129,11 @@ DEFAULT_CONFIG = {
     # $COLORFGBG, else dark)
     "render": "auto",
     "glow_style": "auto",
+    # the model may look things up while it answers (eco.ei_tools: search,
+    # describe, check_code, storage; all read-only), at most "tool_calls"
+    # times per question; `%ei -q` answers once without lookups
+    "tools": True,
+    "tool_calls": 5,
     # SciLog logbooks indexed (and kept up to date) before questions until
     # `%ei --scilog-index` chooses others; null: SciLog only when chosen
     "scilog_default": {"location": "bernina"},
@@ -382,6 +392,10 @@ KEY_RETRY_S = 300
 NO_MODEL_FOR_SCAN = (
     "eco.ei: reading notes from pictures needs the model (an API key) -- `%ei` says how to add one."
 )
+
+
+#: put between a streamed answer and its corrected version
+REVISED_NOTE = "\n\n---\n*Corrected after checking the code against eco:*\n\n"
 
 
 class NoModel(RuntimeError):
@@ -1241,6 +1255,9 @@ class Assistant:
         if on_phase:
             on_phase("searching")
         hits = self.retrieve(question, follow_up=not search_only)
+        if stop is not None and stop.is_set():  # stopped while indexing or searching: no model
+            self.shown = Answer(question, "(stopped before the model was asked)", hits, "", time.time() - t0)
+            return self.shown
         if backend is None:
             if not search_only and report and not explained:
                 # the full how-to once per session, then a reminder
@@ -1255,7 +1272,7 @@ class Assistant:
             on_phase(f"asking {self.model}")
         if on_waiting:
             on_waiting()
-        use_tools = self.config.get("tools", False) if tools is None else tools
+        use_tools = self.config.get("tools", True) if tools is None else tools
         calls = []
         if use_tools and hasattr(backend, "chat_round"):
             text, calls = self._answer_with_tools(backend, msgs, on_delta, stop, on_phase, report)
@@ -1268,7 +1285,7 @@ class Assistant:
             if on_revise:
                 on_revise(problems)
             elif on_delta:
-                on_delta("\n\n---\n*Corrected after checking the code against eco:*\n\n")
+                on_delta(REVISED_NOTE)
             revision = msgs + [
                 {"role": "assistant", "content": text},
                 {"role": "user", "content": self._revision_request(problems)},
@@ -1440,11 +1457,12 @@ def _print_answer(asst, question, **kwargs):
         waiting.append(ei_wait.Waiting(out, label="getting ready", animation=animation).start())
 
     def paused():
-        return waiting[0].paused() if waiting else contextlib.nullcontext()
+        shown = waiting[:1]  # the answering thread may take it off the screen meanwhile
+        return shown[0].paused() if shown else contextlib.nullcontext()
 
     def on_phase(what):
-        if waiting:
-            waiting[0].label = what
+        for shown in waiting[:1]:
+            shown.label = what
 
     def report(text):
         with paused():
@@ -1452,19 +1470,36 @@ def _print_answer(asst, question, **kwargs):
 
     streamed = []
     # with glow the answer is shown once complete, rendered; meanwhile its
-    # last lines are a preview in the wait display
+    # last lines are a preview in the wait display -- until Ctrl-C unfolds it
     rendering = bool(waiting) and asst.config.get("render", "auto") == "auto" and glow_path() is not None
+    state = {"unfolded": False, "abandoned": False}
+    lock = threading.Lock()  # on_delta runs in the answering thread
+    stop = threading.Event()
+    if waiting:
+        waiting[0].hint = ("Ctrl-C: show the answer as it is written · again: stop" if rendering else "Ctrl-C: stop")
 
     def on_delta(piece):
-        streamed.append(piece)
-        if rendering and waiting:
-            waiting[0].label = f"{asst.model} is writing"
-            waiting[0].preview = "".join(streamed).rstrip().split("\n")[-PREVIEW_LINES:]
-            return
-        if waiting:
-            waiting.pop().stop()
-        out.write(piece)
-        out.flush()
+        with lock:
+            if state["abandoned"]:
+                return
+            streamed.append(piece)
+            if rendering and not state["unfolded"] and waiting:
+                waiting[0].label = f"{asst.model} is writing"
+                waiting[0].preview = "".join(streamed).rstrip().split("\n")[-PREVIEW_LINES:]
+                return
+            if waiting:
+                waiting.pop().stop()
+            out.write(piece)
+            out.flush()
+
+    def unfold():
+        """The answer so far, then the rest as it comes (no glow rendering at the end)."""
+        with lock:
+            state["unfolded"] = True
+            if waiting:
+                waiting.pop().stop()
+            out.write("".join(streamed) or f"eco.ei: the answer appears here as {asst.model} writes it; Ctrl-C again stops\n")
+            out.flush()
 
     def confirm(steps):
         what = ", ".join(f"{name} ~{seconds} s" for name, seconds in steps)
@@ -1475,31 +1510,93 @@ def _print_answer(asst, question, **kwargs):
                 return False
         return reply.strip().lower() not in ("n", "no")
 
+    questions = queue.Queue()  # the answering thread asks through the session's own thread
+
+    def confirm_here(steps):
+        box = {"done": threading.Event(), "value": False}
+        questions.put((steps, box))
+        box["done"].wait()
+        return box["value"]
+
     def on_revise(problems):
         # with glow nothing was printed yet: the corrected answer replaces it
-        streamed.clear()
-        if waiting:
-            waiting[0].preview = []
+        with lock:
+            if state["unfolded"]:
+                streamed.append(REVISED_NOTE)
+                out.write(REVISED_NOTE)
+                out.flush()
+                return
+            streamed.clear()
+            if waiting:
+                waiting[0].preview = []
 
     if rendering:
         kwargs.setdefault("on_revise", on_revise)
     if ei_wait.in_terminal(out) and sys.stdin.isatty():
-        kwargs.setdefault("confirm", confirm)
+        kwargs.setdefault("confirm", confirm_here)
     kwargs.setdefault("report", report)
-    try:
+    result = {}
+    # not worker.join(): Ctrl-C inside Thread.join() can leave CPython's bookkeeping saying the
+    # thread has ended while it still runs; an Event's wait is safe to interrupt
+    done = threading.Event()
+
+    def work():
         try:
-            ans = asst.ask(question, on_delta=on_delta, on_phase=on_phase, **kwargs)
+            result["ans"] = asst.ask(question, on_delta=on_delta, on_phase=on_phase, stop=stop, **kwargs)
+        except BaseException as exc:  # handed to the session's thread
+            result["exc"] = exc
         finally:
-            if waiting:  # erased before anything else is printed
+            done.set()
+
+    # The answer is worked out in a thread and waited for in slices here, so that Ctrl-C reaches
+    # this loop instead of breaking off the request: the first unfolds a glow answer, the next stops.
+    worker = threading.Thread(target=work, name="eco-ei-answer", daemon=True)
+    worker.start()
+    interrupts = 0
+    try:
+        while not done.is_set():
+            try:
+                done.wait(0.1)
+                while not questions.empty():
+                    steps, box = questions.get()
+                    box["value"] = confirm(steps)
+                    box["done"].set()
+            except KeyboardInterrupt:
+                interrupts += 1
+                if rendering and not state["unfolded"] and interrupts == 1:
+                    unfold()
+                    continue
+                stop.set()
+                done.wait(3)  # a stream ends at its next piece
+                if not done.is_set():  # still indexing or searching: left to finish on its own
+                    with lock:
+                        state["abandoned"] = True
+                    while not questions.empty():
+                        questions.get()[1]["done"].set()
+                    print("\neco.ei: stopped")
+                    return None
+                break
+    finally:
+        with lock:  # erased before anything else is printed
+            if waiting:
                 waiting.pop().stop()
-    except KeyboardInterrupt:
-        if rendering and streamed:
+    if "exc" in result:
+        exc = result["exc"]
+        if isinstance(exc, KeyboardInterrupt):
+            print("\neco.ei: interrupted")
+        else:
+            print(f"\neco.ei: {asst.model} at {asst.config['base_url']} failed: {type(exc).__name__}: {exc}")
+        return None
+    ans = result.get("ans")
+    if ans is None:
+        print("\neco.ei: stopped")
+        return None
+    if stop.is_set():
+        if rendering and not state["unfolded"] and streamed:
             print("".join(streamed))
-        print("\neco.ei: interrupted")
+        print("\neco.ei: stopped" + (" -- the answer above is incomplete" if streamed else ""))
         return None
-    except Exception as exc:
-        print(f"\neco.ei: {asst.model} at {asst.config['base_url']} failed: {type(exc).__name__}: {exc}")
-        return None
+    rendering = rendering and not state["unfolded"]  # unfolded: already shown as it came
     if ans.model:
         rendered = _render(asst.config, out, ans.text) if rendering else False
         checked = {None: "", True: "; code checked against eco", False: "; code NOT verified (see the note)"}[
@@ -1744,8 +1841,10 @@ def ei_magic(line, cell=None):
         return _print_answer(asst, rest)
     if opt in ("-n", "--new"):
         return _print_answer(asst, rest, new=True)
-    if opt in ("-t", "--tools"):
+    if opt in ("-t", "--tools"):  # the default now; kept so that old habits still work
         return _print_answer(asst, rest, tools=True)
+    if opt in ("-q", "--quick", "--no-tools"):
+        return _print_answer(asst, rest, tools=False)
     if opt in ("-s", "--search"):
         return _print_answer(asst, rest, search_only=True)
     if opt in ("-b", "--browser"):

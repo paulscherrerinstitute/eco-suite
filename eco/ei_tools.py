@@ -1,8 +1,8 @@
 """eco.ei_tools -- what the %ei model may look up while it answers.
 
-With tools on (`%ei -t ...`, or "tools": true in ~/.eco/ei.json) the model
-gets the usual context and may in addition call these functions, a few
-times per question, before it answers:
+By default (config "tools", true; `%ei -q` answers without) the model gets
+the usual context and may in addition call these functions, a few times
+per question, before it answers:
 
 * search(query, where) -- more of the index: docs, eco's API, commands
   people ran, logbook posts;

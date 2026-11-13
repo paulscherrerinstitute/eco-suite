@@ -79,6 +79,14 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
   `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
+## 13 November 2026
+
+- `%ei` lets the model look things up while it answers by default (what
+  `-t` did); `%ei -q QUESTION` gives one quick answer without lookups, and
+  `"tools": false` in `~/.eco/ei.json` brings the old default back.
+- `%ei` with glow: the first Ctrl-C while the answer is written shows it as
+  it comes, the second stops it ({doc}`ask_eco`).
+
 ## 10 November 2026
 
 - SciLog viewer: a **Read SciLog as …** window chooses whose access it uses:

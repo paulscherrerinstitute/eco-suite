@@ -358,10 +358,10 @@ instrument's names come from its definition in `eco/bernina/`.
 `eco.ei_logcheck.check_index(...)` returns the findings with every post
 they occur in.
 
-## Lookups while answering: `%ei -t`
+## Lookups while answering (default), and `%ei -q`
 
-With `-t` the model gets the usual context and may in addition look things
-up before it answers, up to five times per question:
+The model gets the usual context and may in addition look things up before
+it answers, up to five times per question:
 
 | Lookup | What the model gets |
 |---|---|
@@ -371,15 +371,26 @@ up before it answers, up to five times per question:
 | `storage` | where something is kept (see {doc}`storage`) |
 
 ```python
-%ei -t which method of las sets the pump pulse energy?
+%ei which method of las sets the pump pulse energy?    # with lookups
+%ei -q which method of las sets the pump pulse energy? # quick: one answer, no lookups
 ```
 
-The wait line shows each lookup as it happens, and the last line of the
-answer lists them. An answer with lookups takes longer (often 30 to 60 s
-instead of 15), and finds things the first search missed: for the question
-above, plain `%ei` only said which names are outdated, `-t` found the
-present `las.wp_att`. `"tools": true` in `~/.eco/ei.json` makes it the
-default and `"tool_calls"` sets the limit.
+The wait line shows each lookup as it happens ("looking up describe las"),
+and the last line of the answer lists them. An answer with lookups takes
+longer (often 30 to 60 s instead of 15), and finds things the first search
+missed: for the question above, the answer without lookups only said which
+names are outdated, with lookups it found the present `las.wp_att`.
+
+- `%ei -q QUESTION` (`--quick`, `--no-tools`): one answer from the found
+  context, without lookups. Faster; good for questions the docs answer
+  directly.
+- `%ei -t QUESTION` (`--tools`): with lookups. It is the default, so `-t`
+  only matters when `"tools": false` is set.
+- In `~/.eco/ei.json`: `"tools": false` makes `-q` the default,
+  `"tool_calls"` (5) sets the limit per question.
+
+If the model endpoint does not support lookups, `%ei` says so once and
+answers without them.
 
 All lookups only read. None runs code, moves anything, reads a device's
 value or builds a lazy device: `describe` looks at objects the session has
@@ -429,7 +440,14 @@ If [glow](https://github.com/charmbracelet/glow) is installed (on the
 SwissFEL consoles it is, as `/sf/daq/bin/glow`), a finished answer is shown
 rendered: headings, bold, lists and highlighted code instead of Markdown
 symbols. While the model writes, the wait display shows the last lines of
-the answer; when it is complete, the whole answer is printed rendered. In
+the answer; when it is complete, the whole answer is printed rendered.
+
+**Ctrl-C while it writes:** the first Ctrl-C unfolds the answer: what is
+written so far is printed, and the rest follows as it comes (as plain
+Markdown, not rendered again at the end). A second Ctrl-C stops the
+request; what was written stays on the screen, marked incomplete. The line
+under the spinner says this while you wait. Without glow the answer is
+printed as it comes anyway, and Ctrl-C stops it. In
 `~/.eco/ei.json`, `"render": "plain"` switches this off, and
 `"glow_style": "light"` suits a terminal with a light background; the
 default, `"auto"`, picks light or dark from `$COLORFGBG` and otherwise dark.
@@ -485,7 +503,8 @@ indexes a notes folder.
 | `%%ei` | Ask a question longer than one line. |
 | `%ei -n QUESTION`, `--new` | Start a new conversation. |
 | `%ei -b [QUESTION]`, `--browser` | Ask and show the answer in the browser, with each SciLog source between its neighbouring posts; without a question, the last answer or listing. |
-| `%ei -t QUESTION`, `--tools` | Ask, and let the model look things up while it answers (read-only). |
+| `%ei -q QUESTION`, `--quick`, `--no-tools` | Ask for one quick answer, without the model's lookups. |
+| `%ei -t QUESTION`, `--tools` | Ask with lookups (the default; matters only with `"tools": false`). |
 | `%ei -s WORDS`, `--search` | Only search, without the model: the matching docs, API, command history, logbook entries and notes. |
 | `%ei -m MODEL [QUESTION]`, `--model` | Switch the model (kept for the session). |
 | `%ei --paste` | Put the last answer's code at the next prompt. |

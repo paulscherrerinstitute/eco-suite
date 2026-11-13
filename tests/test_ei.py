@@ -881,3 +881,80 @@ def test_scan_magic_with_a_model(tmp_path, monkeypatch, capsys):
     ei.ei_magic(f"--scan {photos}")
     out = capsys.readouterr().out
     assert "2 files indexed, 1 pictures transcribed" in out and "KB bender" in out
+
+
+# -- Ctrl-C while a glow answer is written; lookups by default ----------------------------------
+
+
+class _SlowBackend:
+    """Writes `pieces` words, one every `delay` s, and ends early when told to stop."""
+
+    def __init__(self, pieces=40, delay=0.05):
+        self.pieces, self.delay = pieces, delay
+
+    def chat(self, messages, on_delta=None, stop=None):
+        out = []
+        for i in range(self.pieces):
+            if stop is not None and stop.is_set():
+                break
+            piece = f"w{i} "
+            out.append(piece)
+            if on_delta:
+                on_delta(piece)
+            time.sleep(self.delay)
+        return "".join(out)
+
+
+def _glow_terminal(monkeypatch):
+    """As if in a terminal with glow: the answer is collected for rendering, previewed meanwhile."""
+    from eco import ei_wait
+
+    rendered = []
+    monkeypatch.setattr(ei_wait, "in_terminal", lambda out=None: True)
+    monkeypatch.setattr(ei, "glow_path", lambda: "/usr/bin/true")
+    monkeypatch.setattr(ei, "_render", lambda config, out, text: rendered.append(text) or True)
+    return rendered
+
+
+def _ctrl_c_after(*seconds):
+    import _thread
+
+    for s in seconds:
+        threading.Timer(s, _thread.interrupt_main).start()
+
+
+def test_ctrl_c_first_shows_a_glow_answer_as_it_comes(tmp_path, monkeypatch, capsys):
+    rendered = _glow_terminal(monkeypatch)
+    a = _assistant(tmp_path, _SlowBackend(pieces=30))
+    a.config["wait_animations"] = 0
+    _ctrl_c_after(0.5)
+    ei._print_answer(a, "how do I set the attenuator?", tools=False)
+    out = capsys.readouterr().out
+    assert "w0 w1" in out and "w29" in out  # what was written before, and the rest as it came
+    assert rendered == []  # not shown a second time with glow
+    assert "stopped" not in out and "Ctrl-C: show the answer as it is written" in out
+
+
+def test_ctrl_c_twice_stops_the_answer(tmp_path, monkeypatch, capsys):
+    rendered = _glow_terminal(monkeypatch)
+    a = _assistant(tmp_path, _SlowBackend(pieces=200))
+    a.config["wait_animations"] = 0
+    t0 = time.time()
+    _ctrl_c_after(0.5, 1.0)
+    ei._print_answer(a, "how do I set the attenuator?", tools=False)
+    out = capsys.readouterr().out
+    assert time.time() - t0 < 4  # 200 pieces would take 10 s
+    assert "w0" in out and "w199" not in out and "stopped" in out and rendered == []
+
+
+def test_lookups_are_the_default_and_q_answers_without(tmp_path, monkeypatch):
+    assert ei.DEFAULT_CONFIG["tools"] is True
+    seen = []
+    monkeypatch.setattr(ei, "_print_answer", lambda asst, q, **kw: seen.append((q, kw)))
+    a = _assistant(tmp_path, _FakeBackend())
+    monkeypatch.setattr(ei, "assistant", lambda namespace=None: a)
+    ei.ei_magic("-q how do I set the attenuator?")
+    ei.ei_magic("--no-tools how do I set the attenuator?")
+    ei.ei_magic("how do I set the attenuator?")
+    assert seen[0] == ("how do I set the attenuator?", {"tools": False}) and seen[1][1] == {"tools": False}
+    assert seen[2] == ("how do I set the attenuator?", {})  # config "tools" (true) decides

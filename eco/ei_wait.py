@@ -141,6 +141,7 @@ class Waiting:
         self.label = label  # may be changed while it runs
         self.animation = animation
         self.preview = []  # lines shown under the status, e.g. the answer being written
+        self.hint = ""  # a dim line under the status, e.g. what Ctrl-C does
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._height = 0  # lines of the frame on screen
@@ -169,7 +170,10 @@ class Waiting:
             lines += [f"  | {line}" for line in preview]
             # a wrapped line could not be erased: cut every line to the width
             columns = shutil.get_terminal_size().columns - 1
-            yield "\n".join(line[:columns] for line in lines), tick
+            lines = [line[:columns] for line in lines]
+            if self.hint:
+                lines.append(f"\x1b[2m  {self.hint[:columns - 2]}\x1b[0m")  # dim; escapes don't take columns
+            yield "\n".join(lines), tick
             i += 1
 
     @contextlib.contextmanager
