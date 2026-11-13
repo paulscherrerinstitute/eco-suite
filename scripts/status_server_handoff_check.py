@@ -193,8 +193,29 @@ def stage_status(client, out_dir, report, pgroup=None, run_number=None,
 
     written = json.loads(Path(result["path"]).read_text())
     block = written.get(key, {})
-    same = set(block.get("status", {})) == set(snap.get("status", {}))
+    collected, plain = set(block.get("status", {})), set(snap.get("status", {}))
+    same = collected == plain
     print(f"  same channel set as a plain snapshot: {same}")
+    if not same:
+        # Two consecutive snapshots of a freshly initialized namespace are
+        # not the same set - components keep appearing for a while after the
+        # server reports ready, and the first status walk sees fewer of them
+        # than the second. Since the handoff is always taken first here, that
+        # settling shows up as a handoff defect unless it is ruled out, so
+        # ask the server for one more snapshot and compare it to its own
+        # previous one.
+        t0 = time.time()
+        again = client.snapshot(save=False)
+        later = set(again.get("status", {}))
+        report.add("POST /status/snapshot (again)", time.time() - t0, None,
+                   f"{len(later)} status entries")
+        if later != plain:
+            print(f"    the server's own two snapshots differ as well "
+                  f"({len(plain)} then {len(later)}): the namespace is still "
+                  f"settling, which is what this difference is.")
+        else:
+            print(f"    the server's own two snapshots agree ({len(plain)}), "
+                  f"so this is a real difference in the handoff path.")
     if not same:
         only_file = set(block.get("status", {})) - set(snap.get("status", {}))
         only_snap = set(snap.get("status", {})) - set(block.get("status", {}))
@@ -296,7 +317,16 @@ def stage_recording(client, out_dir, report, seconds, pgroup=None,
     report.add("  of which: transfer+write", result.get("transfer_seconds"),
                None, "long poll, so it overlaps the encode")
     print(f"  file           : {describe_file(result['path'])}")
-    if meta.get("skipped"):
+    # The full list does not fit in the response header once a recording
+    # skips hundreds of channels, so the server sends a tally instead; print
+    # whichever of the two arrived.
+    if meta.get("skipped_reasons"):
+        print("  why channels were skipped:")
+        for why, n in meta["skipped_reasons"].items():
+            print(f"    {n:6d}  {why}")
+        for alias, why in list((meta.get("skipped_examples") or {}).items())[:3]:
+            print(f"    e.g. {alias}: {why}")
+    elif meta.get("skipped"):
         print("  skipped channels (first few):")
         for alias, why in list(meta["skipped"].items())[:5]:
             print(f"    {alias}: {why}")
@@ -455,10 +485,17 @@ def cmd_bench(args):
     print("  'POST /handoff/status' is what a scan boundary pays in "
           "client-write mode;")
     print("  'collect+write' is what the relay does afterwards, off the "
-          "scan's clock;")
-    print("  'POST /status/snapshot' is the same production work measured "
-          "the way the")
-    print("  server does it today, for comparison.")
+          "scan's clock.")
+    print()
+    print("  'POST /status/snapshot' is the snapshot itself, and is NOT what "
+          "a scan")
+    print("  boundary costs today: with status_server_async (the default) "
+          "/status/capture")
+    print("  also returns as soon as the job is queued. Both modes are "
+          "asynchronous at")
+    print("  the boundary - read this row as the cost of the work, not as "
+          "the cost of")
+    print("  the mode.")
     return 0
 
 

@@ -330,3 +330,31 @@ def test_the_server_write_routes_are_untouched(app_client, tmp_path):
         time.sleep(0.02)
     assert job["state"] == "done", job
     assert (tmp_path / "run0003" / "status.json").exists()
+
+
+def test_a_long_skip_list_is_replaced_by_a_tally_not_dropped(app_client):
+    """A recording that skips hundreds of channels must still say *why*.
+
+    The per-channel list does not fit in a response header at that size, and
+    the first version of this simply removed it - so a real run reporting
+    "887 skipped" gave no way to find out what they had in common without
+    going to the server. The header now carries a count per distinct reason
+    instead, and stays parseable JSON.
+    """
+    client, _, _ = app_client
+    hid = client.post("/handoff/status", json={}).get_json()["handoff_id"]
+    store = client.application.config["ECO_HANDOFF"]
+    slot = store.get(hid)
+    slot.meta["skipped"] = {
+        f"chan.{i}": ("TypeError: cannot store object dtype"
+                      if i % 3 else "value type not storable in h5")
+        for i in range(900)
+    }
+
+    resp = _collect(client, hid)
+    meta = json.loads(resp.headers["X-Eco-Handoff-Meta"])
+    assert meta["skipped_omitted"] is True
+    assert "skipped" not in meta
+    assert sum(meta["skipped_reasons"].values()) == 900
+    assert meta["skipped_reasons"]["TypeError"] == 600
+    assert meta["skipped_reasons"]["value type not storable in h5"] == 300

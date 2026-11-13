@@ -1131,7 +1131,36 @@ def create_namespace_app(
         if len(meta) > 6000:
             trimmed = {k: v for k, v in slot.meta.items() if k != "skipped"}
             trimmed["skipped_omitted"] = True
-            meta = json.dumps(trimmed, default=str)[:6000]
+            # Keep the shape of the problem even when the list itself cannot
+            # travel: a few examples, plus how many channels each distinct
+            # reason accounts for. Dropping "skipped" outright made a real
+            # run's "887 skipped" unanswerable without server-side digging -
+            # i.e. the header lost its information exactly when the number
+            # was large enough to be worth reading.
+            skipped = slot.meta.get("skipped") or {}
+            if isinstance(skipped, dict) and skipped:
+                reasons = {}
+                for why in skipped.values():
+                    kind = str(why).split(":")[0][:80]
+                    reasons[kind] = reasons.get(kind, 0) + 1
+                trimmed["skipped_reasons"] = dict(
+                    sorted(reasons.items(), key=lambda kv: -kv[1])[:5]
+                )
+                trimmed["skipped_examples"] = dict(list(skipped.items())[:3])
+            meta = json.dumps(trimmed, default=str)
+            if len(meta) > 6000:
+                # Still too long: the examples are the expendable part, the
+                # counts are not. Never truncate the string itself - a proxy
+                # forwards it fine, but the client cannot parse half a JSON
+                # object, which would lose the counts as well.
+                trimmed.pop("skipped_examples", None)
+                meta = json.dumps(trimmed, default=str)
+            if len(meta) > 6000:
+                meta = json.dumps({
+                    "handoff_meta_too_long": True,
+                    "n_written": slot.meta.get("n_written"),
+                    "n_skipped": slot.meta.get("n_skipped"),
+                }, default=str)
         resp.headers["X-Eco-Handoff-Meta"] = meta
         return resp
 
