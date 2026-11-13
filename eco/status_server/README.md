@@ -398,6 +398,9 @@ to answer them with.
 | `GET /recording`, `GET /recording/<id>` | list / live counters |
 | `POST /recording/start`, `POST /recording/stop` | start; stop and (by default) write `monitors.esc.h5` |
 | `POST /recording/capture` | stop a recording, then write it and upload it to the run in the background (job id); what a scan's end uses, writing `namespace_monitor.ixp.h5` |
+| `GET /handoff`, `GET /handoff/<id>`, `DELETE /handoff/<id>` | slots waiting to be collected by a client that writes the files itself (client-write mode) |
+| `GET /handoff/<id>/data` | collect a slot's payload; `wait=<s>` long-polls until it is ready, `release=1` frees it afterwards |
+| `POST /handoff/status`, `POST /handoff/aliases`, `POST /handoff/recording` | the `/…/capture` routes minus the write and the upload: produce, then park the bytes for the client. See [CLIENT_WRITE.md](CLIENT_WRITE.md) |
 | `POST /admin/reinit` | `mode` = `failed` / `names` / `full` / `init` / `reimport` |
 | `POST /admin/restart` | re-exec the process |
 
@@ -435,7 +438,11 @@ Recording numbers and the downthrottling analysis are in DESIGN.md §15.
 - The server writes into the pgroup's `res/` tree, so its account needs
   pgroup write access — and several bernina components authenticate to
   auxiliary machines over SSH during `__init__`, so its SSH credentials have
-  to work non-interactively.
+  to work non-interactively. (The next three caveats are all consequences of
+  that one. [CLIENT_WRITE.md](CLIENT_WRITE.md) describes an optional,
+  off-by-default mode in which the server writes nothing at all and the
+  session collects and writes the files itself — try it with
+  `ECO_STATUS_SERVER_WRITE_MODE=client`.)
 - **Which account runs the server matters for the run tree.** Writes go
   through `eco.utilities.datafiles`, so every directory level comes out
   `2775` and every file `0664` — but a level some *other* account created at

@@ -104,6 +104,15 @@ class NamespaceServerConfig:
     data_root_pattern: str = (
         "/sf/{instrument}/data/{pgroup}/res/run_data/daq/run{run_number:04d}/aux"
     )
+    # Client-write mode (the /handoff routes - see handoff.py and
+    # CLIENT_WRITE.md). None puts the spool in a per-user directory under
+    # the OS temp dir; set it to point somewhere with room if a beamline
+    # records waveform channels, where one handoff can be hundreds of MB.
+    # These only matter for clients that ask for a handoff; a server nobody
+    # asks keeps no slots and writes nothing here.
+    handoff_spool_dir: str | None = None
+    handoff_ttl: float = 3600.0
+    handoff_max_slots: int = 64
 
     @classmethod
     def from_file(cls, path: str | Path) -> "NamespaceServerConfig":

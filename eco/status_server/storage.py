@@ -168,6 +168,7 @@ def _as_storable_array(values):
 def write_monitor_recording(
     directory: Path, recording: dict, filename: str = "monitors.esc.h5",
     libver: str | None = "latest",
+    group_writable: bool = True,
 ) -> Path:
     """Write a recording (as returned by NamespaceMonitorStore.stop_recording,
     or MonitorStore.stop_recording) as one ``escape.ArrayTimestamps`` per
@@ -176,10 +177,21 @@ def write_monitor_recording(
     Returns the path; the number of channels actually written, and why any
     were skipped, is reported in ``recording["write_report"]`` which this
     function fills in.
+
+    ``group_writable=False`` writes a plain private file instead of going
+    through eco.utilities.datafiles. It is for a destination that is *not*
+    the shared pgroup tree - specifically the status server's own handoff
+    spool (see eco.status_server.handoff), where the group/setgid dance is
+    not just unnecessary but wrong: that directory is the server's alone,
+    and widening it would be the only thing in the whole client-write path
+    that still handed a second account access to the server's files.
     """
     import escape
 
-    ensure_dir(directory)
+    if group_writable:
+        ensure_dir(directory)
+    else:
+        Path(directory).mkdir(parents=True, exist_ok=True)
 
     # A recording isn't step-based like a scan, so there is exactly one
     # "interval" spanning the whole start/stop window - ArrayTimestamps
@@ -221,9 +233,10 @@ def write_monitor_recording(
                 skipped[alias] = f"{type(exc).__name__}: {exc}"
     finally:
         d.results_file.close()
-    # h5py/escape created this one, so fix it after the fact rather than
-    # opening it through open_group_writable.
-    ensure_group_writable(filepath)
+    if group_writable:
+        # h5py/escape created this one, so fix it after the fact rather than
+        # opening it through open_group_writable.
+        ensure_group_writable(filepath)
     recording["write_report"] = {
         "n_written": len(written),
         "n_skipped": len(skipped),

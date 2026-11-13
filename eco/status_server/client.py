@@ -548,6 +548,170 @@ class StatusServerClient:
             return started
         return self.wait_write_job(started["job_id"], timeout=timeout)
 
+    # -- handoff (client-write mode) ---------------------------------------
+    #
+    # The mirror image of capture()/capture_aliases()/capture_recording():
+    # the server produces, this side collects and writes. See
+    # eco/status_server/CLIENT_WRITE.md for when that is worth doing, and
+    # eco.status_server.relay for the piece that does the writing out of
+    # the session's way.
+
+    def supports_handoff(self) -> bool:
+        """Whether this server has the /handoff routes at all.
+
+        A straight feature probe, because the two modes are meant to
+        coexist during the trial: an older server simply 404s, and a client
+        configured for client-write mode then has to know to fall back
+        rather than fail the run.
+        """
+        try:
+            r = requests.get(f"{self.base_url}/handoff", timeout=self.timeout)
+        except requests.RequestException:
+            return False
+        return r.status_code == 200
+
+    def handoffs(self) -> dict:
+        """Slots currently waiting to be collected, plus the store's own
+        counters - the place to look when a relay died between asking and
+        fetching."""
+        return self._get("/handoff")
+
+    def handoff(self, handoff_id: str) -> dict:
+        return self._get(f"/handoff/{handoff_id}")
+
+    def release_handoff(self, handoff_id: str) -> dict:
+        r = requests.delete(f"{self.base_url}/handoff/{handoff_id}",
+                            timeout=self.timeout)
+        if r.status_code == 404:
+            return {"status": "error", "message": "no such handoff"}
+        r.raise_for_status()
+        return r.json()
+
+    def handoff_status(self, pgroup=None, run_number=None,
+                       key="status_run_start", client_status=None,
+                       allow_stale=False, max_workers=None, ttl=None) -> dict:
+        """Ask for a status snapshot to be parked for pickup. Returns at
+        once with ``handoff_id``/``job_id``; the snapshot itself runs on the
+        server.
+
+        pgroup/run_number are not needed to produce the block (this side
+        decides where it goes) but are passed anyway so a recording running
+        for the same run gets the same backfill /status/capture does.
+        """
+        body = {"key": key, "allow_stale": allow_stale}
+        if pgroup is not None:
+            body["pgroup"] = pgroup
+        if run_number is not None:
+            body["run_number"] = int(run_number)
+        if client_status:
+            body["client_status"] = client_status
+        if max_workers:
+            body["max_workers"] = int(max_workers)
+        if ttl:
+            body["ttl"] = float(ttl)
+        return self._post("/handoff/status", body, ok_codes=(200, 202))
+
+    def handoff_aliases(self, pgroup=None, run_number=None,
+                        channeltypes=None, ttl=None) -> dict:
+        body = {}
+        if pgroup is not None:
+            body["pgroup"] = pgroup
+        if run_number is not None:
+            body["run_number"] = int(run_number)
+        if channeltypes:
+            body["channeltypes"] = list(channeltypes)
+        if ttl:
+            body["ttl"] = float(ttl)
+        return self._post("/handoff/aliases", body, ok_codes=(200, 202))
+
+    def handoff_recording(self, recording_id, pgroup=None, run_number=None,
+                          format="h5", filename="namespace_monitor.ixp.h5",
+                          libver="latest", drop=True, ttl=None,
+                          timeout=None) -> dict:
+        """Stop a recording and have its data parked for pickup.
+
+        The stop happens before this returns (same as capture_recording), so
+        it gets the longer snapshot_timeout: detaching callbacks from
+        thousands of channels is not instant.
+        """
+        body = {"recording_id": recording_id, "format": format,
+                "filename": filename, "libver": libver, "drop": drop}
+        if pgroup is not None:
+            body["pgroup"] = pgroup
+        if run_number is not None:
+            body["run_number"] = int(run_number)
+        if ttl:
+            body["ttl"] = float(ttl)
+        return self._post(
+            "/handoff/recording", body,
+            timeout=timeout or self.snapshot_timeout, ok_codes=(200, 202),
+        )
+
+    def _handoff_response(self, handoff_id, wait, release):
+        params = []
+        if wait:
+            params.append(f"wait={float(wait)}")
+        if release:
+            params.append("release=1")
+        url = f"{self.base_url}/handoff/{handoff_id}/data"
+        if params:
+            url += "?" + "&".join(params)
+        # read timeout must outlast the long poll, or the client gives up on
+        # exactly the wait it asked the server for.
+        r = requests.get(url, stream=True,
+                         timeout=(self.timeout, (wait or 0) + self.timeout))
+        if r.status_code == 404:
+            raise StatusServerError(f"no such handoff '{handoff_id}'")
+        if r.status_code == 202:
+            raise TimeoutError(
+                f"handoff '{handoff_id}' still pending after {wait} s"
+            )
+        if r.status_code != 200:
+            raise StatusServerError(
+                f"handoff '{handoff_id}' failed: {r.text[:400]}"
+            )
+        return r
+
+    @staticmethod
+    def _handoff_meta(response) -> dict:
+        raw = response.headers.get("X-Eco-Handoff-Meta")
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return {"raw": raw}
+
+    def fetch_handoff(self, handoff_id, wait=600, release=True) -> tuple:
+        """Collect a slot's payload into memory: ``(bytes, meta)``.
+
+        ``wait`` long-polls on the server rather than busy-polling from
+        here, so a client can fire the request and immediately ask for the
+        answer.
+        """
+        r = self._handoff_response(handoff_id, wait, release)
+        return r.content, self._handoff_meta(r)
+
+    def fetch_handoff_to(self, handoff_id, fileobj, wait=600, release=True,
+                         chunk_size=1 << 20) -> dict:
+        """Stream a slot's payload into an already-open binary file object
+        and return its meta.
+
+        Takes a file object rather than a path because the whole point of
+        this mode is *who* creates the file: the caller opens it through
+        eco.utilities.datafiles.open_group_writable, under its own account,
+        with the group bits the shared tree needs.
+        """
+        r = self._handoff_response(handoff_id, wait, release)
+        n = 0
+        for chunk in r.iter_content(chunk_size=chunk_size):
+            if chunk:
+                fileobj.write(chunk)
+                n += len(chunk)
+        meta = self._handoff_meta(r)
+        meta["n_bytes"] = n
+        return meta
+
     # -- admin -------------------------------------------------------------
 
     def reinit(self, mode="restart", names=None, reload_modules=False,

@@ -16,6 +16,7 @@ Run with: python -m eco.status_server --mode namespace --config <path>
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -23,12 +24,24 @@ import threading
 import time
 import uuid
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 from .config import NamespaceServerConfig
+from .handoff import (
+    KIND_ALIASES,
+    KIND_RECORDING,
+    KIND_STATUS,
+    CONTENT_TYPES,
+    HandoffCapacity,
+    HandoffStore,
+    encode_recording_h5,
+    encode_recording_json,
+    encode_recording_npz,
+)
 from .namespace_store import READY, NamespaceMonitorStore, NotReady, ReinitInProgress
 from .query_stats import QueryStats
 from .storage import (
+    NumpyEncoder,
     json_default,
     write_aliases_file,
     write_monitor_recording,
@@ -144,6 +157,19 @@ def create_namespace_app(
     # `stats` command and the GUI's query-stats table - see query_stats.py's
     # module docstring for why this is separate from /health.
     stats = QueryStats()
+    # Results waiting to be collected and written by the client instead of
+    # by this process - the /handoff routes below, off by default in the
+    # sense that nothing calls them unless a client asks. See
+    # handoff.py's module docstring and CLIENT_WRITE.md.
+    handoffs = HandoffStore(
+        spool_dir=getattr(config, "handoff_spool_dir", None),
+        ttl=getattr(config, "handoff_ttl", 3600.0),
+        max_slots=getattr(config, "handoff_max_slots", 64),
+        janitor=start_store,
+    )
+    if start_store:
+        handoffs.clean_spool_dir()
+    app.config["ECO_HANDOFF"] = handoffs
 
     def _health_body():
         report = store.connection_report()
@@ -158,6 +184,7 @@ def create_namespace_app(
             "uptime_s": time.time() - app.config["ECO_START_TIME"],
             **_process_stats(),
             **{k: v for k, v in report.items() if k not in ("state", "ready")},
+            "handoff": handoffs.stats(),
         }
 
     @app.get("/health")
@@ -944,6 +971,356 @@ def create_namespace_app(
                      "recording_id": recording_id, "pgroup": pgroup,
                      "run_number": run_number, "upload": upload, **result}),
             202,
+        )
+
+    # -- handoff: the client writes, this process only produces ------------
+    #
+    # Same three products as /status/capture, /aliases/capture and
+    # /recording/capture, minus the two steps that need this account to have
+    # standing in the shared data tree: the write and the broker upload. The
+    # payload is parked in a handoff slot and collected by the client, which
+    # writes it under its own credentials. See handoff.py and
+    # CLIENT_WRITE.md; nothing below changes what the capture routes do, and
+    # a server nobody asks keeps no slots.
+
+    def _handoff_accepted(slot, job_id, **extra):
+        return (
+            jsonify({"status": "ok", "job_id": job_id,
+                     "handoff_id": slot.id, "kind": slot.kind,
+                     "filename": slot.filename,
+                     "expires_at": slot.expires_at, **extra}),
+            202,
+        )
+
+    def _start_handoff_job(slot, kind, work, **job_fields):
+        """Run `work()` in the background, completing `slot` with the bytes
+        (or path) it returns and recording the usual job/stats entries.
+
+        `work` returns either bytes, or (path, meta) for a spooled file, or
+        (bytes, meta).
+        """
+        job_id = uuid.uuid4().hex
+        with jobs_lock:
+            jobs[job_id] = {
+                "state": "running", "step": "produce", "kind": kind,
+                "handoff_id": slot.id, "started_at": time.time(),
+                **job_fields,
+            }
+
+        def _run():
+            rec = {}
+            t0 = time.time()
+            try:
+                result = work()
+                meta = {}
+                if isinstance(result, tuple):
+                    result, meta = result
+                meta = dict(meta or {})
+                # How long this server spent producing it - the part a
+                # client-write caller is waiting on and cannot measure for
+                # itself (its own clock also contains the transfer).
+                meta["produce_seconds"] = time.time() - t0
+                # Updated *before* completing: once the slot is ready a
+                # fetch can arrive at any moment, and it carries the meta.
+                slot.meta.update(meta)
+                if isinstance(result, (bytes, bytearray)):
+                    handoffs.complete_bytes(slot.id, result)
+                else:
+                    handoffs.complete_file(slot.id, result)
+                rec["n_bytes"] = slot.n_bytes
+                rec["state"] = "done"
+            except Exception as exc:  # noqa: BLE001 - reported via the job
+                logger.error("handoff %s (%s) failed", slot.id, kind,
+                             exc_info=True)
+                rec["state"] = "error"
+                rec["error"] = f"{type(exc).__name__}: {exc}"
+                handoffs.fail(slot.id, rec["error"])
+            rec["produce_seconds"] = time.time() - t0
+            rec["step"] = None
+            rec["finished_at"] = time.time()
+            with jobs_lock:
+                jobs[job_id].update(rec)
+            stats.record(
+                f"handoff_{kind}", rec["produce_seconds"], error=rec.get("error"),
+                n_bytes=rec.get("n_bytes"), handoff_id=slot.id,
+                **{k: v for k, v in job_fields.items()
+                   if k in ("pgroup", "run_number", "key", "recording_id")},
+            )
+
+        threading.Thread(
+            target=_run, name=f"handoff-{kind}-{slot.id[:8]}", daemon=True
+        ).start()
+        return job_id
+
+    @app.get("/handoff")
+    def handoff_list():
+        return jsonify({"handoffs": handoffs.report(), **handoffs.stats()})
+
+    @app.get("/handoff/<handoff_id>")
+    def handoff_get(handoff_id):
+        try:
+            return jsonify({"status": "ok", **handoffs.get(handoff_id).report()})
+        except KeyError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 404
+
+    @app.delete("/handoff/<handoff_id>")
+    def handoff_delete(handoff_id):
+        slot = handoffs.release(handoff_id, missing_ok=True)
+        if slot is None:
+            return jsonify({"status": "error", "message": "no such handoff"}), 404
+        return jsonify({"status": "ok", "handoff_id": handoff_id,
+                        "n_fetches": slot.n_fetches})
+
+    @app.get("/handoff/<handoff_id>/data")
+    def handoff_data(handoff_id):
+        """Collect a slot's payload.
+
+        `wait=<seconds>` long-polls: a client that asked for a snapshot a
+        millisecond ago can issue this immediately and block here until the
+        bytes exist, which is the whole point of the relay subprocess on the
+        other side - one request, one wait, one write.
+
+        `release=1` (what the relay uses) frees the slot the moment the body
+        has been sent. Without it the slot survives until its TTL, which is
+        what makes a retry possible at the cost of holding the bytes.
+        """
+        wait = request.args.get("wait", type=float) or 0.0
+        release = request.args.get("release") in ("1", "true", "yes")
+        try:
+            slot = handoffs.get(handoff_id)
+        except KeyError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 404
+        if wait > 0 and slot.state == "pending":
+            slot.wait(wait)
+        if slot.state == "pending":
+            # 202, not an error: "ask again" is a different thing from
+            # "this failed", and a client polling without `wait` needs to
+            # tell them apart.
+            return jsonify({"status": "pending", **slot.report()}), 202
+        if slot.state == "error":
+            return jsonify({"status": "error", **slot.report()}), 500
+
+        fh, n_bytes = slot.open()
+        handoffs.mark_fetched(handoff_id)
+
+        def _stream():
+            try:
+                while True:
+                    chunk = fh.read(1 << 20)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                fh.close()
+                if release:
+                    handoffs.release(handoff_id, missing_ok=True)
+
+        resp = Response(stream_with_context(_stream()),
+                        mimetype=slot.content_type)
+        resp.headers["Content-Length"] = str(n_bytes)
+        resp.headers["Content-Disposition"] = (
+            f'attachment; filename="{slot.filename}"'
+        )
+        resp.headers["X-Eco-Handoff-Id"] = handoff_id
+        resp.headers["X-Eco-Handoff-Kind"] = slot.kind
+        # The client records this next to the file it writes. Trimmed rather
+        # than dropped when a recording skipped a lot of channels: a header
+        # a proxy refuses to forward would lose the whole response, and the
+        # count is the part that matters.
+        meta = json.dumps(slot.meta, default=str)
+        if len(meta) > 6000:
+            trimmed = {k: v for k, v in slot.meta.items() if k != "skipped"}
+            trimmed["skipped_omitted"] = True
+            meta = json.dumps(trimmed, default=str)[:6000]
+        resp.headers["X-Eco-Handoff-Meta"] = meta
+        return resp
+
+    @app.post("/handoff/status")
+    def handoff_status():
+        """Snapshot the namespace and park the status block for pickup.
+
+        `pgroup`/`run_number` are optional here - this route writes nothing,
+        so it does not need to know where the file goes. Pass them anyway
+        (the client does) and a recording running for the same run gets the
+        same opportunistic backfill /status/capture already does.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        if store.state != READY:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "message": f"namespace store is '{store.state}'"}),
+                503,
+            )
+        key = body.get("key", "status_run_start")
+        pgroup = body.get("pgroup")
+        run_number = (int(body["run_number"])
+                      if body.get("run_number") is not None else None)
+        client_status = body.get("client_status") or {}
+        allow_stale = bool(body.get("allow_stale", False))
+        max_workers = body.get("max_workers")
+        try:
+            slot = handoffs.create(
+                KIND_STATUS, "status.json", CONTENT_TYPES["json"],
+                meta={"key": key, "pgroup": pgroup, "run_number": run_number},
+                ttl=body.get("ttl"),
+            )
+        except HandoffCapacity as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 503
+
+        def _work():
+            snap = store.snapshot(allow_stale=allow_stale,
+                                  max_workers=max_workers)
+            if client_status:
+                for k in ("status", "status_channels", "status_times"):
+                    block = client_status.get(k)
+                    if block:
+                        snap.setdefault(k, {}).update(block)
+            if pgroup is not None and run_number is not None:
+                try:
+                    store.backfill_running_recordings(
+                        pgroup, run_number, snap.get("status", {}),
+                        snap.get("status_times"),
+                    )
+                except Exception:
+                    logger.debug("recording backfill from status failed",
+                                 exc_info=True)
+            payload = {"key": key, "block": _status_payload(snap),
+                       "namespace": config.module_name,
+                       "generation": snap.get("generation")}
+            body_bytes = json.dumps(payload, cls=NumpyEncoder).encode("utf-8")
+            return body_bytes, {"n_status": len(snap.get("status", {})),
+                                "snapshot_seconds": snap.get("snapshot_seconds")}
+
+        job_id = _start_handoff_job(
+            slot, KIND_STATUS, _work,
+            pgroup=pgroup, run_number=run_number, key=key,
+        )
+        return _handoff_accepted(slot, job_id, key=key, pgroup=pgroup,
+                                 run_number=run_number)
+
+    @app.post("/handoff/aliases")
+    def handoff_aliases():
+        """Park the namespace's alias list for the client to write as
+        aliases.json."""
+        body = request.get_json(force=True, silent=True) or {}
+        if store.state != READY:
+            return (
+                jsonify({**_health_body(), "status": "error",
+                         "message": f"namespace store is '{store.state}'"}),
+                503,
+            )
+        ns = store.namespace
+        if ns is None:
+            return jsonify({"status": "error", "message": "no namespace"}), 503
+        channeltypes = body.get("channeltypes")
+        try:
+            slot = handoffs.create(
+                KIND_ALIASES, "aliases.json", CONTENT_TYPES["json"],
+                meta={"pgroup": body.get("pgroup"),
+                      "run_number": body.get("run_number")},
+                ttl=body.get("ttl"),
+            )
+        except HandoffCapacity as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 503
+
+        def _work():
+            alias_list = ns.alias.get_all(channeltypes=channeltypes)
+            payload = json.dumps(alias_list, cls=NumpyEncoder).encode("utf-8")
+            return payload, {"n_aliases": len(alias_list)}
+
+        job_id = _start_handoff_job(
+            slot, KIND_ALIASES, _work,
+            pgroup=body.get("pgroup"), run_number=body.get("run_number"),
+        )
+        return _handoff_accepted(slot, job_id)
+
+    @app.post("/handoff/recording")
+    def handoff_recording():
+        """Stop a recording and park its data for the client to write.
+
+        The recording is stopped synchronously, before this answers, exactly
+        as /recording/capture does - so "the recording is over" is true by
+        the time the caller gets an id, and only the encoding runs in the
+        background.
+
+        `format="h5"` (default) has the server build the very same
+        escape/h5 file /recording/capture would have written, into its own
+        spool directory, and the client copies those bytes to their
+        destination. "npz" and "json" hand over the raw buffers instead -
+        useful for measuring transport separately from encoding, and for a
+        client that wants the numbers rather than the file.
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        recording_id = body.get("recording_id")
+        fmt = body.get("format", "h5")
+        if fmt not in CONTENT_TYPES:
+            return (
+                jsonify({"status": "error",
+                         "message": f"unknown format {fmt!r}"}),
+                400,
+            )
+        filename = body.get("filename", "namespace_monitor.ixp.h5")
+        libver = body.get("libver", "latest")
+        drop = bool(body.get("drop", True))
+        try:
+            result = store.stop_recording(recording_id)
+        except KeyError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 409
+
+        data = result.pop("data")
+        result.pop("channels", None)
+        try:
+            slot = handoffs.create(
+                KIND_RECORDING, filename, CONTENT_TYPES[fmt],
+                meta={"recording_id": recording_id, "format": fmt,
+                      "pgroup": body.get("pgroup"),
+                      "run_number": body.get("run_number"),
+                      "started_at": result.get("started_at"),
+                      "stopped_at": result.get("stopped_at")},
+                ttl=body.get("ttl"),
+            )
+        except HandoffCapacity as exc:
+            # The recording is already stopped; refusing now would throw the
+            # data away. Say so loudly instead and let the caller retry the
+            # old way - /recording/stop with include_data still has it.
+            return jsonify({"status": "error", "message": str(exc),
+                            "recording_stopped": True, **result}), 503
+
+        def _work():
+            payload = {"started_at": result["started_at"],
+                       "stopped_at": result["stopped_at"], "data": data}
+            if fmt == "h5":
+                path = encode_recording_h5(
+                    payload, handoffs.slot_spool_dir(slot.id), filename,
+                    libver=libver,
+                )
+                out = path
+            elif fmt == "npz":
+                out = encode_recording_npz(payload)
+            else:
+                out = encode_recording_json(payload)
+            meta = dict(payload.get("write_report") or {})
+            meta["n_channels"] = len(data)
+            if drop:
+                try:
+                    store.drop_recording(recording_id)
+                except Exception:
+                    logger.debug("could not drop recording %s", recording_id,
+                                 exc_info=True)
+            return out, meta
+
+        job_id = _start_handoff_job(
+            slot, KIND_RECORDING, _work,
+            pgroup=body.get("pgroup"), run_number=body.get("run_number"),
+            recording_id=recording_id,
+        )
+        return _handoff_accepted(
+            slot, job_id, format=fmt,
+            # result carries recording_id itself (plus started_at, n_stored,
+            # ...) - splatting it next to an explicit one is a TypeError.
+            **result,
         )
 
     @app.post("/admin/reinit")

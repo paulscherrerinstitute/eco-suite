@@ -1,4 +1,5 @@
 import json
+import os
 import pickle
 import shutil
 import subprocess
@@ -40,6 +41,36 @@ from os.path import relpath
 _SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
 _SOUND_CHECKER_UNHAPPY = _SOUNDS_DIR / "cowbell.wav"
 _SOUND_CHECKER_RESUMED = _SOUNDS_DIR / "posthorn.wav"
+
+
+WRITE_MODES = ("server", "client")
+
+
+def resolve_write_mode(explicit=None):
+    """Which side writes a run's status files: the constructor argument, else
+    ``ECO_STATUS_SERVER_WRITE_MODE``, else "server" (today's behaviour).
+
+    The env var is what makes the alternative testable on a beamline console
+    without editing eco/bernina/bernina_daq.py:
+
+        ECO_STATUS_SERVER_WRITE_MODE=client scripts/eco-dev -s bernina
+
+    An unrecognised value is a typo, not a third mode - say so and keep the
+    safe one rather than silently behaving like "server" while the shell
+    says otherwise.
+    """
+    mode = (explicit or os.environ.get("ECO_STATUS_SERVER_WRITE_MODE")
+            or "server")
+    mode = str(mode).strip().lower()
+    if mode not in WRITE_MODES:
+        print(
+            colorama.Fore.YELLOW
+            + f"daq: unknown status_server_write_mode {mode!r}, using 'server' "
+              f"(expected one of {', '.join(WRITE_MODES)})"
+            + colorama.Fore.RESET
+        )
+        return "server"
+    return mode
 
 
 def _live_parse_cache_supported():
@@ -151,6 +182,16 @@ class Daq(Assembly):
     exposure_doc = "number of pulses (shots) recorded per step"
     exposure_keyword = "Npulses"
 
+    # Client-write mode's state, as class defaults so the feature is off
+    # for any Daq that did not go through __init__ - which is how the unit
+    # tests build one (Daq.__init__ opens PVs and builds an Assembly, so
+    # they drive the callbacks on a bare instance with only the attributes
+    # under test set). A new switch must not turn into an AttributeError
+    # halfway through a scan callback.
+    status_server_write_mode = "server"
+    status_server_relay_mode = "process"
+    _handoff_supported = None
+
     def __init__(
         self,
         broker_address="http://sf-daq:10002",
@@ -184,6 +225,8 @@ class Daq(Assembly):
         status_server_stale_action="ask",
         status_server_stale_timeout=20.0,
         status_server_async=True,
+        status_server_write_mode=None,
+        status_server_relay_mode="process",
         scan_monitoring=True,
         use_running_status_server=True,
         speak_run_number=False,
@@ -379,6 +422,38 @@ class Daq(Assembly):
         # to the run in the background, instead of making the scan wait for
         # all three. See Daq.write_status / POST /status/capture.
         self.status_server_async = status_server_async
+        # Who writes the run's aux files when a status server is in use.
+        #
+        # "server" (the default, unchanged behaviour): the server snapshots,
+        # writes status.json/aliases.json/namespace_monitor.ixp.h5 into the
+        # run directory and uploads them. Every one of those steps needs the
+        # *server account* to have standing in the shared data tree - pgroup
+        # membership, group-writable directories, and on NFSv4 sec=krb5 a
+        # Kerberos ticket a long-running service loses after days.
+        #
+        # "client": the server only produces; this session collects the
+        # bytes (POST /handoff/..., GET /handoff/<id>/data) and writes and
+        # uploads them itself, as the account actually running the
+        # experiment. The waiting and writing happen in a detached relay
+        # process (eco.status_server.relay), so the scan boundary still
+        # costs one round trip. Falls back to "server" if the server has no
+        # /handoff routes.
+        #
+        # Settable per session with ECO_STATUS_SERVER_WRITE_MODE=client, and
+        # live-toggleable (bernina.daq.status_server_write_mode = "client")
+        # like the switches above.
+        self.status_server_write_mode = resolve_write_mode(status_server_write_mode)
+        # How a relay job runs: "process" (detached child, the default and
+        # the only one that survives the session), "thread" (in-process,
+        # for tests) or "inline" (synchronous, for a standalone call).
+        self.status_server_relay_mode = status_server_relay_mode
+        # Remembered per (kind, run) so status_relays() and a failed run can
+        # be traced back to the child that was supposed to write the file.
+        self._status_relay_jobs = []
+        # Probed once per session on first use, so an older server without
+        # the /handoff routes degrades to server-write mode with one
+        # message rather than one per scan.
+        self._handoff_supported = None
         # Whether callbacks_start_scan/_end_scan attempt the namespace-wide
         # recording at all (start_scan_monitoring/end_scan_monitoring) -
         # live-toggleable (bernina.daq.scan_monitoring = False), not just a
@@ -1863,16 +1938,27 @@ class Daq(Assembly):
             use_server = self.use_status_server(verbose=True)
 
         statuspath = None
-        if use_server:
+        if use_server and self.use_client_write():
+            # Standalone call: run the relay here and now rather than
+            # detaching, so this returns the path it actually wrote.
+            job = self._relay_status(key, run_number, pgroup, mode="inline",
+                                     upload=upload)
+            if job is not None:
+                done = self._relay_job(job["job_id"]).result() or {}
+                if done.get("state") == "done":
+                    return Path(done.get("path") or job["path"])
+                self._status_server_failed(
+                    "the status relay", RuntimeError(done.get("error"))
+                )
+        elif use_server:
             if self.status_server_async:
                 job = self._capture_on_server(key, run_number, pgroup)
                 if job is not None:
                     # a standalone call should land before it returns, unlike
                     # a scan callback which deliberately does not wait
                     try:
-                        done = self.status_client.wait_write_job(
-                            job["job_id"],
-                            timeout=self.status_server_snapshot_timeout,
+                        done = self._wait_status_job(
+                            job, timeout=self.status_server_snapshot_timeout
                         )
                         return Path(done.get("path") or job["path"])
                     except Exception as exc:
@@ -2011,11 +2097,203 @@ class Daq(Assembly):
             self.append_aux(statuspath, pgroup=pgroup, run_number=runno)
         return True
 
+    # -- client-write mode (the /handoff routes + a relay process) ---------
+    #
+    # Same three products, same files, same upload - produced by the server,
+    # written here. See eco/status_server/CLIENT_WRITE.md; the switch is
+    # self.status_server_write_mode, default "server" (unchanged).
+
+    def aux_dir(self, pgroup, run_number) -> Path:
+        """The run's aux directory - the one place this convention lives on
+        the client side, instead of the four f-strings that spelled it out
+        before."""
+        return Path(
+            f"/sf/{self.instrument or 'bernina'}/data/{pgroup}"
+            f"/res/run_data/daq/run{int(run_number):04d}/aux"
+        )
+
+    def use_client_write(self, verbose=True):
+        """Whether this session writes the run's status files itself.
+
+        Three conditions: the mode is on, a status server is in use at all,
+        and that server actually has the /handoff routes. The last one is
+        probed once per session - during the trial the two modes coexist,
+        and a session pointed at an older server has to degrade quietly
+        rather than failing a run over a feature flag.
+        """
+        if str(self.status_server_write_mode).lower() != "client":
+            return False
+        client = self.status_client
+        if client is None:
+            return False
+        if self._handoff_supported is None:
+            try:
+                self._handoff_supported = client.supports_handoff()
+            except Exception:
+                self._handoff_supported = False
+            if not self._handoff_supported and verbose:
+                print(
+                    colorama.Fore.YELLOW
+                    + f"status server {client.base_url} has no /handoff routes; "
+                    "writing run status the server-side way instead "
+                    "(status_server_write_mode='client' ignored)."
+                    + colorama.Fore.RESET
+                )
+        return bool(self._handoff_supported)
+
+    def _relay_job(self, job_id):
+        """The live RelayJob behind one of the plain dicts stored in a
+        scan's scratch - kept here rather than in the scratch itself,
+        which is plain data that ends up in a run's bookkeeping."""
+        for job in reversed(self.__dict__.get("_status_relay_jobs") or []):
+            if job.job_id == job_id:
+                return job
+        return None
+
+    def _submit_relay(self, spec, what, mode=None, handoff_id=None):
+        from eco.status_server import relay
+
+        try:
+            job = relay.submit(spec, mode=mode or self.status_server_relay_mode)
+        except Exception as exc:
+            # Nothing has been written and the slot is still on the server;
+            # release it rather than leaving it to time out an hour later.
+            if handoff_id:
+                try:
+                    self.status_client.release_handoff(handoff_id)
+                except Exception:
+                    pass
+            return self._status_server_failed(f"starting the {what} relay", exc)
+        jobs = self.__dict__.setdefault("_status_relay_jobs", [])
+        jobs.append(job)
+        del jobs[:-50]
+        return job.as_dict()
+
+    def _relay_common(self):
+        return {
+            "broker_address_aux": self.broker_address_aux,
+            "timeout": self.status_server_timeout,
+            "snapshot_timeout": self.status_server_snapshot_timeout,
+            # The relay long-polls the server for the payload; give it the
+            # same budget a synchronous snapshot would have had.
+            "wait": self.status_server_snapshot_timeout,
+        }
+
+    def _relay_status(self, key, runno, pgroup, keep_status=False,
+                      client_status=None, mode=None, upload=True):
+        """Ask the server for a status block and have a relay write it.
+
+        Returns the same ``{"job_id", "path", ...}`` shape
+        :meth:`_capture_on_server` does, so every caller stays unchanged.
+        """
+        from eco.status_server import relay
+
+        try:
+            started = self.status_client.handoff_status(
+                pgroup=pgroup, run_number=runno, key=key,
+                client_status=client_status,
+            )
+        except Exception as exc:
+            return self._status_server_failed(f"status handoff for {key}", exc)
+        spec = relay.status_spec(
+            self.status_client.base_url, self.aux_dir(pgroup, runno),
+            pgroup=pgroup, run_number=int(runno),
+            handoff_id=started["handoff_id"], key=key, upload=upload,
+            keep_status=keep_status, **self._relay_common(),
+        )
+        return self._submit_relay(spec, f"status {key}", mode=mode,
+                                  handoff_id=started["handoff_id"])
+
+    def _relay_aliases(self, runno, pgroup, channeltypes=None, mode=None):
+        from eco.status_server import relay
+
+        try:
+            started = self.status_client.handoff_aliases(
+                pgroup=pgroup, run_number=runno, channeltypes=channeltypes,
+            )
+        except Exception as exc:
+            return self._status_server_failed("aliases handoff", exc)
+        spec = relay.aliases_spec(
+            self.status_client.base_url, self.aux_dir(pgroup, runno),
+            pgroup=pgroup, run_number=int(runno),
+            handoff_id=started["handoff_id"], upload=True,
+            **self._relay_common(),
+        )
+        return self._submit_relay(spec, "aliases", mode=mode,
+                                  handoff_id=started["handoff_id"])
+
+    def _relay_recording(self, recording_id, runno, pgroup, upload=True,
+                         filename="namespace_monitor.ixp.h5", mode=None):
+        """Stop a recording and have a relay write the file it produced.
+
+        The stop itself still happens inside the request (the server does it
+        before answering), so the recording is unambiguously over when this
+        returns - the same guarantee /recording/capture gives.
+        """
+        from eco.status_server import relay
+
+        try:
+            started = self.status_client.handoff_recording(
+                recording_id, pgroup=pgroup, run_number=runno,
+                filename=filename,
+            )
+        except Exception as exc:
+            return self._status_server_failed("recording handoff", exc)
+        spec = relay.recording_spec(
+            self.status_client.base_url, self.aux_dir(pgroup, runno),
+            pgroup=pgroup, run_number=int(runno),
+            handoff_id=started["handoff_id"], upload=upload,
+            filename=filename, **self._relay_common(),
+        )
+        job = self._submit_relay(spec, "recording", mode=mode,
+                                 handoff_id=started["handoff_id"])
+        if job is not None:
+            job.setdefault("recording_id", recording_id)
+        return job
+
+    def _wait_status_job(self, job, timeout=None, include_status=False):
+        """Wait for a capture job, whichever side is doing the writing.
+
+        Server-side jobs are polled over HTTP as before; relay jobs are
+        polled through their result file. Both return a dict with
+        ``state``/``path`` and, with ``include_status``, ``status``.
+        """
+        timeout = timeout or self.status_server_snapshot_timeout
+        if not job.get("relay"):
+            return self.status_client.wait_write_job(
+                job["job_id"], timeout=timeout, include_status=include_status
+            )
+        relay_job = self._relay_job(job.get("job_id"))
+        if relay_job is None:
+            raise RuntimeError(
+                f"no live relay job for {job.get('job_id')} in this session "
+                f"(result file: {job.get('result_path')})"
+            )
+        return relay_job.wait(timeout=timeout)
+
+    def status_relays(self, limit=20):
+        """Recent relay jobs this account ran, newest first - what wrote (or
+        failed to write) which run's aux files in client-write mode. Reads
+        ~/.eco/status_relay, so it also sees jobs from earlier sessions."""
+        from eco.status_server import relay
+
+        return relay.recent_jobs(limit=limit)
+
     def _capture_on_server(self, key, runno, pgroup, keep_status=False,
                             client_status=None):
         """Fire-and-forget: the server snapshots, writes status.json and
         uploads it to the run. Returns the job description, or None on
-        failure (so the caller can fall back)."""
+        failure (so the caller can fall back).
+
+        In client-write mode the same thing happens with the writing on
+        this side - see :meth:`_relay_status`; the returned dict has the
+        same shape either way, which is why no caller below branches.
+        """
+        if self.use_client_write():
+            return self._relay_status(
+                key, runno, pgroup, keep_status=keep_status,
+                client_status=client_status,
+            )
         try:
             return self.status_client.capture(
                 pgroup=pgroup, run_number=runno, key=key, upload=True,
@@ -2185,6 +2463,15 @@ class Daq(Assembly):
 
         Best-effort: a failed push must not break the run table append,
         which still gets everything under metadata.* regardless.
+
+        Returns the values it built, so the caller can merge them into the
+        run table row itself. In client-write mode that is the *only* way
+        they get there: /status/push parks them for the server-side capture
+        job to hand back, and in client-write mode there is no such job -
+        the block was collected and written by a relay the moment it was
+        ready, before this callback runs. Nothing is lost by merging
+        locally in both modes, since these are this session's own values
+        either way.
         """
         try:
             values = {
@@ -2204,14 +2491,25 @@ class Daq(Assembly):
                 ),
                 "scans.acquiring_scan.number_of_steps": metadata.get("steps"),
             }
-            self.status_client.push_status(
-                self.pgroup, runno, values, key="status_run_start"
-            )
         except Exception:
             print(
-                f"WARNING: could not push scans.acquiring_scan status for run {runno}"
+                f"WARNING: could not collect scans.acquiring_scan status for "
+                f"run {runno}"
             )
             traceback.print_exc()
+            return None
+        if not self.use_client_write(verbose=False):
+            try:
+                self.status_client.push_status(
+                    self.pgroup, runno, values, key="status_run_start"
+                )
+            except Exception:
+                print(
+                    f"WARNING: could not push scans.acquiring_scan status for "
+                    f"run {runno}"
+                )
+                traceback.print_exc()
+        return values
 
     def _create_runtable_metadata_append_status_to_runtable(
         self, scan, append_status_info=True, **kwargs
@@ -2272,11 +2570,19 @@ class Daq(Assembly):
         values = block.get("status") or {}
         job = (cs.get("status_jobs") or {}).get("status_run_start")
 
+        pushed = None
         if job is not None and self.status_client is not None:
-            self._push_acquiring_scan_status(scan, metadata, runno)
+            values_pushed = self._push_acquiring_scan_status(scan, metadata, runno)
+            # Only merged locally in client-write mode. In server-write mode
+            # /status/push already parks these for the capture job to hand
+            # back with the rest of the status, and merging them a second
+            # time here would hide a push that silently failed.
+            if job.get("relay"):
+                pushed = values_pushed
 
         if values or job is None:
-            self._append_run_to_runtable(runno, metadata, values)
+            self._append_run_to_runtable(runno, metadata,
+                                         {**values, **(pushed or {})})
             return
 
         # The status is being taken on the status server right now. Wait for
@@ -2286,8 +2592,8 @@ class Daq(Assembly):
         def _later():
             d = {}
             try:
-                done = self.status_client.wait_write_job(
-                    job["job_id"],
+                done = self._wait_status_job(
+                    job,
                     timeout=self.status_server_snapshot_timeout,
                     include_status=True,
                 )
@@ -2310,7 +2616,7 @@ class Daq(Assembly):
                 )
             # append either way: a run without a run-table row is worse than
             # one whose row was filled the slow way.
-            self._append_run_to_runtable(runno, metadata, d)
+            self._append_run_to_runtable(runno, metadata, {**d, **(pushed or {})})
 
         Thread(
             target=_later, name=f"runtable-run{runno}", daemon=True
@@ -2516,7 +2822,11 @@ class Daq(Assembly):
         """Fire-and-forget: the server computes the alias list from its own,
         already-initialized namespace and writes/uploads aux/aliases.json.
         Returns the job description, or None on failure so the caller can
-        fall back to the local namespace."""
+        fall back to the local namespace. In client-write mode the alias
+        list is collected and written here instead - see
+        :meth:`_relay_aliases`."""
+        if self.use_client_write():
+            return self._relay_aliases(runno, pgroup, channeltypes=channeltypes)
         try:
             return self.status_client.capture_aliases(
                 pgroup=pgroup, run_number=runno, upload=True,
@@ -2697,12 +3007,18 @@ class Daq(Assembly):
             runno = scan.daq_run_number.get_current_value()
         else:
             runno = self.daq.get_last_run_number()
-        try:
-            job = self.status_server.stop_monitoring(
-                recording_id, pgroup, runno, upload=upload,
-            )
-        except Exception as exc:
-            return self._status_server_failed("end monitoring", exc)
+        if self.use_client_write():
+            job = self._relay_recording(recording_id, runno, pgroup,
+                                        upload=upload)
+            if job is None:
+                return None
+        else:
+            try:
+                job = self.status_server.stop_monitoring(
+                    recording_id, pgroup, runno, upload=upload,
+                )
+            except Exception as exc:
+                return self._status_server_failed("end monitoring", exc)
         scan.counter_scratch(self.name).setdefault("status_jobs", {})[
             "recording"
         ] = job
