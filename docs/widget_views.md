@@ -20,6 +20,14 @@ are polled in parallel on background threads:
 ![Default Qt property-grid rows for a numeric Adjustable ("energy"), an enum Adjustable ("shutter"), and a read-only Detector ("intensity"). The numeric row has a step field, up/down tweak buttons, an absolute-value entry (commits on Enter/focus-out), and Stop/Reset buttons; the enum row is a dropdown with the same Stop/Reset pair; the Detector row is plain read-only text.](images/widget_default_row_qt.png)
 
 - **Detector-only** items are read-only text — no controls.
+- **Dict and list values** (`config_bernina.gps_config`, a camera configuration)
+  get **{…} Edit** (adjustables) or **{…} View** (detectors) instead of a text
+  field: a tree of the value in a dialog. Values keep their type (a float stays
+  a float, a bool takes true/false); entries can be added (typed as `1`, `2.5`,
+  `True`, `"text"` or plain text), removed and renamed at any level; anything
+  that is not a plain value (an array, an object) is shown and kept unchanged.
+  Nothing is written until **Save**, and then the whole value at once
+  (`eco.widgets.dict_editor_qt`).
 - **Numeric Adjustables** get, from left to right: the absolute-value
   entry (the setpoint, right next to the readback), a step-size field, ▲/▼
   tweak buttons (move relative to the *live* current value, not the

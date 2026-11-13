@@ -55,8 +55,11 @@ python -m eco.web --demo --writes
   view (›). Motor records show their value and controls on their row.
 - **Moves** (only with writes on): ▼/▲ with a step, tap the value to move to a
   number, a select for enums, ■ to stop.
-- **⋯ menu** on every row: pin a live strip chart, tweak, jog, details, copy
-  the name.
+- **Dict and list values** (configurations): tap the value to see it as a
+  tree; with writes on, edit, add and remove entries and **Save** the whole
+  value. Values keep their type, as in the desktop grid's editor.
+- **⋯ menu** on every row: pin a live strip chart, tweak, jog, edit or view a
+  dict/list value, details, copy the name.
 - **Pinned** (bottom): strip charts that keep running while you go elsewhere,
   with time window and running average. **+ Add** finds any item of the
   initialized components by name, for example a detector to watch while

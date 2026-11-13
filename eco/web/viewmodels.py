@@ -15,6 +15,7 @@ import numbers
 
 from eco.web.camera import camera_info
 from eco.widgets.live_values import format_value
+from eco.widgets.structured_values import coerce_like, is_structured, to_jsonable, type_name
 
 MAX_TEXT = 300  # characters of a value's text sent to the client (arrays, long strings)
 
@@ -27,7 +28,10 @@ def encode_value(value):
     finite real number (what the ▲/▼ buttons step from), "bool" for a bool,
     "enum" (the labels) for an enum, "cls" "green"/"red" for open/closed."""
     out = {"text": _clip(format_value(value))}
-    if isinstance(value, enum.Enum):
+    if is_structured(value):
+        # a dict/list: shown as text, edited through the "value"/"set_value" ops
+        out["struct"] = type_name(value)
+    elif isinstance(value, enum.Enum):
         out["enum"] = [member.name for member in type(value)]
     elif isinstance(value, bool) or getattr(getattr(value, "dtype", None), "kind", None) == "b":
         out["bool"] = bool(value)
@@ -85,6 +89,20 @@ def coerce_target(text_or_value, last_value):
     if isinstance(last_value, numbers.Real):
         return float(value)
     return value
+
+
+def structured_value(value):
+    """A dict/list value for the client's tree editor: the data, the paths
+    of leaves that are shown by their repr and kept unchanged, and the
+    container type (eco.widgets.structured_values)."""
+    data, read_only = to_jsonable(value)
+    return {"data": data, "read_only": read_only, "type": type_name(value)}
+
+
+def coerce_structured(data, last_value):
+    """Edited data from the client with the types of `last_value` restored
+    (an int typed into a float leaf, a tuple, a numpy scalar)."""
+    return coerce_like(data, last_value)
 
 
 def _clip(text):

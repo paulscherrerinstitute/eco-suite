@@ -215,3 +215,21 @@ a.btn:not(.primary) { color: var(--link); }
 .task-output { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; max-height: 65vh; overflow: auto;
   font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .follow { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }
+
+/* dict/list tree editor (structEditor) */
+dialog.struct { width: min(640px, calc(100vw - 16px)); }
+.struct-body { max-height: 62vh; overflow: auto; margin-bottom: 8px; font-size: 14px; }
+.struct-list { display: flex; flex-direction: column; gap: 4px; }
+.struct-block > .struct-list { margin-left: 14px; padding-left: 8px; border-left: 2px solid var(--line); }
+.struct-row { display: flex; align-items: center; gap: 6px; min-height: 36px; }
+.struct-row.head .struct-key { font-weight: 600; }
+.struct-key { flex: 0 1 34%; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.struct-value { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+dialog .struct-row input { height: 34px; margin: 0; padding: 0 8px; }
+input.struct-key { flex: 0 1 34%; }
+input.struct-value { width: auto; }
+.struct-value.ro { color: var(--muted); font-style: italic; }
+.struct-type { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+.struct-add { display: flex; gap: 6px; margin: 2px 0 6px; }
+.struct-status { font-size: 13px; }
+.struct-status.error { color: var(--err); }

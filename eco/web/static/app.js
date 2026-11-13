@@ -5,7 +5,7 @@
 
 import * as strip from "./strip.js";
 
-const VERSION = "0.3";
+const VERSION = "0.4";
 const STALE_AFTER = 35; // s without a fresh read -> greyed (monitored items are re-read at least every 10 s)
 const SHOW_AGE_AFTER = 12; // s
 const SVG_REFRESH = 3000; // ms
@@ -553,6 +553,13 @@ function refreshAges(view) {
 function buildControls(refs) {
   refs.ctlBuilt = true;
   const { row, value } = refs;
+  if (value.struct) {
+    // a dict/list: tapping the value opens the tree editor (view only without writes)
+    refs.valueEl.addEventListener("click", () => structEditor(row.name));
+    if (settable(row)) refs.ctl.append(el("button", { class: "btn stop", text: "■", title: "Stop", "aria-label": "stop",
+      onclick: () => request("stop", { name: row.name }).catch((e) => toast(e.message, true)) }));
+    return;
+  }
   if (!settable(row)) return;
   const name = row.name;
   const labels = row.enum || value.enum;
@@ -630,6 +637,9 @@ function rowMenu(row, refs) {
   if (settable(row) && row.jog) {
     actions.push(["Jog", () => (location.hash = `#/jog/${encodeURIComponent(row.name)}`)]);
   }
+  if (refs.value?.struct) {
+    actions.push([settable(row) ? "Edit value" : "View value", () => structEditor(row.name)]);
+  }
   actions.push(["Details", () => showDetails(row.name)]);
   if (navigator.clipboard && window.isSecureContext) {
     actions.push(["Copy name", () => navigator.clipboard.writeText(row.name).then(() => toast("copied"), () => {})]);
@@ -650,6 +660,148 @@ async function showDetails(name) {
   } catch (e) {
     body.textContent = e.message;
   }
+}
+
+// ---- dict/list values: a tree editor -------------------------------------------------------------
+
+/** A tree of the value: {kind: "dict"|"list"|"leaf", key, items, text, orig, type, ro, fresh}. */
+function structNode(key, value, path, readOnly) {
+  if (value !== null && typeof value === "object") {
+    const isList = Array.isArray(value);
+    const entries = isList ? value.map((v, i) => [i, v]) : Object.entries(value);
+    return { kind: isList ? "list" : "dict", key,
+      items: entries.map(([k, v]) => structNode(k, v, [...path, k], readOnly)) };
+  }
+  const ro = readOnly.has(JSON.stringify(path));
+  const type = value === null ? "null" : typeof value;
+  return { kind: "leaf", key, orig: value, type, ro, text: value === null ? "null" : String(value) };
+}
+
+/** A typed leaf: as the type it had; a new one as JSON (1, 2.5, true, null, "x") or else text. */
+function leafValue(node) {
+  if (node.ro) return node.orig;
+  const t = node.text;
+  if (node.fresh || node.type === "null") {
+    try { return JSON.parse(t); } catch (e) { return t; }
+  }
+  if (node.type === "number") {
+    const n = Number(t.trim());
+    if (t.trim() === "" || !Number.isFinite(n)) throw new Error(`${node.key}: not a number: ${t}`);
+    return n;
+  }
+  if (node.type === "boolean") {
+    const low = t.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(low)) return true;
+    if (["false", "0", "no", "off"].includes(low)) return false;
+    throw new Error(`${node.key}: not true/false: ${t}`);
+  }
+  return t;
+}
+
+function structData(node) {
+  if (node.kind === "list") return node.items.map(structData);
+  if (node.kind === "dict") {
+    const out = {};
+    for (const item of node.items) {
+      const key = String(item.key);
+      if (Object.prototype.hasOwnProperty.call(out, key)) throw new Error(`the key "${key}" appears twice`);
+      out[key] = structData(item);
+    }
+    return out;
+  }
+  return leafValue(node);
+}
+
+/** The dict/list value of `name` as an editable tree (view only if it cannot be written). */
+async function structEditor(name) {
+  const body = el("div", { class: "struct-body", text: "reading…" });
+  const status = el("p", { class: "struct-status" });
+  const actions = el("div", { class: "actions" });
+  const dialog = el("dialog", { class: "sheet struct" }, el("h2", { text: name }), body, status, actions);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  let reply;
+  try {
+    reply = await request("value", { name });
+  } catch (e) {
+    body.textContent = e.message;
+    actions.append(el("button", { class: "btn", text: "Close", onclick: () => dialog.close() }));
+    return;
+  }
+  const editable = reply.writable;
+  const root = structNode(null, reply.data, [], new Set(reply.read_only.map((p) => JSON.stringify(p))));
+
+  const render = () => body.replaceChildren(structList(root, editable, render));
+  render();
+  status.textContent = editable ? "Nothing is written until Save. New values: 1, 2.5, true, null, \"text\" or plain text."
+    : "Read-only.";
+  actions.append(el("button", { class: "btn", text: editable ? "Cancel" : "Close", onclick: () => dialog.close() }));
+  if (editable) {
+    actions.append(el("button", { class: "btn primary", text: "Save", onclick: () => {
+      let data;
+      try {
+        data = structData(root);
+      } catch (e) {
+        status.textContent = `not saved: ${e.message}`;
+        status.classList.add("error");
+        return;
+      }
+      dialog.close();
+      request("set_value", { name, data }).catch((e) => toast(e.message, true));
+    } }));
+  }
+}
+
+/** The entries of a dict/list node, each a row (leaves) or a foldable block (containers). */
+function structList(node, editable, render) {
+  const list = el("div", { class: "struct-list" });
+  node.items.forEach((item, index) => {
+    const keyCell = node.kind === "dict" && editable
+      ? el("input", { class: "struct-key", value: String(item.key), "aria-label": "key",
+        oninput: (e) => (item.key = e.target.value) })
+      : el("span", { class: "struct-key", text: node.kind === "dict" ? String(item.key) : `[${index}]` });
+    const remove = editable ? el("button", { class: "btn small", text: "✕", title: "remove", "aria-label": `remove ${item.key}`,
+      onclick: () => { node.items.splice(index, 1); if (node.kind === "list") node.items.forEach((it, i) => (it.key = i)); render(); } }) : null;
+    if (item.kind === "leaf") {
+      const valueCell = editable && !item.ro
+        ? el("input", { class: "struct-value", value: item.text, "aria-label": `value of ${item.key}`,
+          oninput: (e) => (item.text = e.target.value) })
+        : el("span", { class: "struct-value" + (item.ro ? " ro" : ""), text: item.text,
+          title: item.ro ? "not a plain value: shown, kept unchanged" : "" });
+      list.append(el("div", { class: "struct-row" }, keyCell, valueCell,
+        el("span", { class: "struct-type", text: item.fresh ? "new" : item.type }), remove));
+    } else {
+      // a fold button rather than <details>: a key input inside <summary> would toggle it
+      const inner = structList(item, editable, render);
+      inner.hidden = !!item.folded;
+      const fold = el("button", { class: "btn small fold", text: item.folded ? "▸" : "▾", "aria-label": `fold ${item.key}`,
+        onclick: () => { item.folded = !item.folded; inner.hidden = item.folded; fold.textContent = item.folded ? "▸" : "▾"; } });
+      list.append(el("div", { class: "struct-block" },
+        el("div", { class: "struct-row head" }, fold, keyCell,
+          el("span", { class: "struct-type", text: `${item.kind} (${item.items.length})` }), remove),
+        inner));
+    }
+  });
+  if (editable) {
+    const add = (kind) => {
+      const key = node.kind === "list" ? node.items.length : freeKey(node);
+      node.items.push(kind === "leaf" ? { kind: "leaf", key, text: "", type: "new", fresh: true } : { kind, key, items: [] });
+      render();
+    };
+    list.append(el("div", { class: "struct-add" },
+      el("button", { class: "btn small", text: "+ value", onclick: () => add("leaf") }),
+      el("button", { class: "btn small", text: "+ dict", onclick: () => add("dict") }),
+      el("button", { class: "btn small", text: "+ list", onclick: () => add("list") })));
+  }
+  return list;
+}
+
+function freeKey(node) {
+  const keys = new Set(node.items.map((i) => String(i.key)));
+  let key = "new";
+  for (let n = 2; keys.has(key); n++) key = `new${n}`;
+  return key;
 }
 
 // ---- picker: find any item by name -------------------------------------------------------------

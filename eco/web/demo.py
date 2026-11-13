@@ -442,6 +442,18 @@ def _broken(name=None):
     raise ConnectionError("simulated: IOC not reachable")
 
 
+# a dict-valued adjustable, like config_bernina's entries (the tree editor)
+DEMO_CONFIG = {
+    "options": ["cube"],
+    "cameras": {
+        "inline": {"pvname": "DEMO-CAM-M1", "serial_number": 40298870},
+        "sideview": {"pvname": "DEMO-CAM-M2", "serial_number": 40298884},
+    },
+    "speed": 250.0,
+    "enabled": True,
+}
+
+
 class DemoNamespace:
     """Just the parts of eco.utilities.config.Namespace the web backend uses."""
 
@@ -461,11 +473,12 @@ class DemoNamespace:
             "cam_demo": SimPTZCamera,
             "lxt": lambda name=None: SimMotor(0.0, speed=2e-12, limits=(-1e-9, 1e-9), unit="s", name=name),
             "slow_device": SlowDevice,
+            "config": lambda name=None: AdjustableMemory(dict(DEMO_CONFIG), name=name),
             "broken": _broken,
         }
         for name in ("mono", "lxt", "stage"):
             self.init_name(name)
-        for name in ("slits", "vacuum", "sample", "cam_demo", "slow_device", "broken"):
+        for name in ("slits", "vacuum", "sample", "cam_demo", "slow_device", "config", "broken"):
             self.lazy_items[name] = name
         self.init_name("broken")
 

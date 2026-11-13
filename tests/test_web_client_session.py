@@ -425,3 +425,39 @@ def test_task_lines_name_devices_instead_of_their_status_tables():
     stage = ns.resolve_item("stage")
     task = Task(lambda *a, **k: None, (stage.x, -1, [1, 2]), {"counters": [stage.diode], "step_info": None})
     assert task_source(task) == "test_task_lines_name_devices_instead_of_their_status_tables.<locals>.<lambda>(stage.x, -1, [1, 2], counters=[stage.diode], step_info=None)"
+
+
+# -- dict/list values: the tree editor's value / set_value ----------------------
+
+
+def test_a_dict_value_is_marked_and_read_whole(client):
+    client.call("describe", name="config")
+    client.call("subscribe", names=["config"])
+    assert client.values("config")["struct"] == "dict"
+    reply = client.call("value", name="config")["data"]
+    assert reply["type"] == "dict" and reply["read_only"] == []
+    assert reply["data"]["cameras"]["inline"]["serial_number"] == 40298870
+    assert reply["writable"] is False
+    assert not client.call("set_value", name="config", data=reply["data"])["ok"]
+
+
+def test_set_value_keeps_the_types(writer):
+    writer.call("describe", name="config")
+    data = writer.call("value", name="config")["data"]["data"]
+    assert writer.call("value", name="config")["data"]["writable"]
+    data["speed"] = 300  # an int from JSON into a float leaf
+    data["cameras"]["sideview"]["serial_number"] = 22937745
+    data["options"].append("ottifant")
+    assert writer.call("set_value", name="config", data=data)["ok"]
+    states = [e["state"] for e in writer.events("write", seconds=1.0)]
+    assert states[-1] == "idle"
+    value = writer.session._objects["config"].get_current_value()
+    assert value["speed"] == 300.0 and isinstance(value["speed"], float)
+    assert value["cameras"]["sideview"]["serial_number"] == 22937745
+    assert value["options"] == ["cube", "ottifant"]
+
+
+def test_value_of_a_plain_item_is_refused(writer):
+    writer.call("describe", name="mono")
+    assert not writer.call("value", name="mono.energy")["ok"]
+    assert not writer.call("set_value", name="mono.harmonic", data={"a": 1})["ok"]

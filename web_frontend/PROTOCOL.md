@@ -41,6 +41,8 @@ The client never sends expressions.
 | `unsubscribe` | `{names:[…]}` | |
 | `set` | `{name, value}` | (mode B, writes on) `start_write`; state via `ev: "write"` (`moving`/`done`/`error`) |
 | `step` | `{name, sign, step}` | relative move (▲/▼) |
+| `value` | `{name}` | for an item whose value is a dict/list (`struct` in its values): `{data, read_only: [path…], type: "dict"|"list"|"tuple", writable}` — the whole value as JSON; a leaf that is not plain (array, object) comes as its repr and its path is listed in `read_only` |
+| `set_value` | `{name, data}` | (writes on) writes the edited dict/list at once; the types of the current value are restored where the structure matches (an int into a float leaf, a tuple, numpy scalars; `read_only` leaves sent back as their repr stay unchanged — `eco.widgets.structured_values.coerce_like`); state via `ev: "write"` |
 | `stop` | `{name}` | `stop_move`; always allowed when writes are on |
 | `step_size` | `{name}` | `{step}` — the start value of the ▲/▼ step (the grids' `initial_step`) |
 | `trigger` | `{name}` | (writes on) runs an `AdjustableTrigger` |
@@ -64,7 +66,7 @@ The client never sends expressions.
 ```
 
 Value fields: `text` always; `num` for a finite real, `bool`, `enum` (labels), `cls`
-`"green"`/`"red"` for open/closed. Values are coalesced per item and flushed at most every 100 ms per client (latest
+`"green"`/`"red"` for open/closed, `struct` (`"dict"`/`"list"`/`"tuple"`) for a dict/list value (its whole value through `value`). Values are coalesced per item and flushed at most every 100 ms per client (latest
 value wins), so a 100 Hz channel cannot flood a phone over a tunnel. `t` is the
 read time on the gateway; the client shows age from it (clock skew: the gateway
 sends its own `now` in every `values` batch).

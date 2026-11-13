@@ -298,6 +298,29 @@ class _RowController(QtCore.QObject):
         holder = live_values.load_ioc_step(self.item, lambda value: self.step_loaded.emit(f"{value:g}"))
 
 
+def _structured(value):
+    from eco.widgets.structured_values import is_structured
+
+    return is_structured(value)
+
+
+def _structured_button(item, owner, write):
+    """"{…} Edit" (with `write`) or "{…} View" for a dict/list value: opens
+    eco.widgets.dict_editor_qt's tree editor, which reads the value itself
+    in the background."""
+    button = QtWidgets.QPushButton("{…} Edit" if write is not None else "{…} View")
+    button.setFixedWidth(100)
+    button.setToolTip("edit this value as a tree" if write is not None else "show this value as a tree")
+
+    def _open(checked=False):
+        from eco.widgets.dict_editor_qt import open_value_dialog
+
+        open_value_dialog(item, write=write, parent=owner.window())
+
+    button.clicked.connect(_open)
+    return button
+
+
 def _build_item_controls_qt(item, value_label, cur, controller=None):
     """Build the control area (everything right of name/value) for one
     item -- the exact branch logic DisplayQt._build_row applies per item
@@ -328,9 +351,12 @@ def _build_item_controls_qt(item, value_label, cur, controller=None):
     controls.controller = controller
     row.addWidget(controller.dot)
 
-    # Detector (non-Adjustable): read-only
+    # Detector (non-Adjustable): read-only; a dict/list value can be viewed
     if isinstance(item, Detector) and not isinstance(item, Adjustable):
-        row.addWidget(QtWidgets.QLabel("read-only (Detector)"))
+        if _structured(cur):
+            row.addWidget(_structured_button(item, controls, None))
+        else:
+            row.addWidget(QtWidgets.QLabel("read-only (Detector)"))
 
     # Adjustable: step field + up/down + absolute entry (commits on Enter/focus-out)
     elif isinstance(item, Adjustable):
@@ -392,6 +418,11 @@ def _build_item_controls_qt(item, value_label, cur, controller=None):
                     controller.write(lambda: target, flash=ie)
 
                 input_edit.editingFinished.connect(_apply_absolute)
+            elif _structured(cur):
+                # dicts/lists (config_bernina.thc_config, ...): a tree editor
+                input_edit = _structured_button(
+                    item, controls, lambda value: controller.write(lambda: value)
+                )
             else:
                 input_edit = QtWidgets.QLabel("n/a")
                 input_edit.setFixedWidth(100)

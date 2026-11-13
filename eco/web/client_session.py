@@ -248,6 +248,29 @@ class ClientSession:
         target = viewmodels.coerce_target(value, last) if last is not None else value
         return self._start_write(name, lambda: target)
 
+    def _op_value(self, name):
+        """The whole current value of a dict/list item, for the tree editor
+        (the values events only carry its text)."""
+        obj = self._object(name)
+        value = obj.get_current_value()
+        if not viewmodels.is_structured(value):
+            raise TypeError(f"{name} is not a dict or list")
+        out = viewmodels.structured_value(value)
+        out["writable"] = self._may_write(name) and viewmodels.kind_of(obj) in ("adjustable", "assembly")
+        return out
+
+    def _op_set_value(self, name, data):
+        """Write a dict/list edited in the tree editor: the whole value,
+        with the types of the current value restored where it matches."""
+        obj = self._check_write(name)
+        current = obj.get_current_value()
+        if not viewmodels.is_structured(current):
+            raise TypeError(f"{name} is not a dict or list")
+        if not isinstance(data, (dict, list)):
+            raise TypeError("expected a dict or list")
+        target = viewmodels.coerce_structured(data, current)
+        return self._start_write(name, lambda: target)
+
     def _op_step(self, name, sign, step):
         sign = 1 if float(sign) > 0 else -1
         step = abs(float(step))
