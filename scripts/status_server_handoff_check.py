@@ -312,8 +312,13 @@ def stage_recording(client, out_dir, report, seconds, pgroup=None,
                result.get("file_bytes"),
                f"{meta.get('n_written')} channels written, "
                f"{meta.get('n_skipped')} skipped")
-    report.add("  of which: server-side encode", meta.get("produce_seconds"),
-               None, "escape/h5, same work the server does today")
+    # Per channel, because that is the number that moves: the encode writes
+    # one escape dataset at a time, so it scales with the channel count and
+    # barely at all with the points in them.
+    enc, n_ch = meta.get("produce_seconds"), meta.get("n_written") or 0
+    per_ch = f", {enc / n_ch * 1000:.2f} ms/channel" if enc and n_ch else ""
+    report.add("  of which: server-side encode", enc, None,
+               f"escape/h5, same work the server does today{per_ch}")
     report.add("  of which: transfer+write", result.get("transfer_seconds"),
                None, "long poll, so it overlaps the encode")
     print(f"  file           : {describe_file(result['path'])}")
