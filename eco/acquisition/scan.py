@@ -10,6 +10,7 @@ import numpy as np
 from time import sleep, time
 import threading
 import traceback
+import weakref
 from pathlib import Path
 import colorama
 
@@ -256,6 +257,9 @@ class StepScan(Assembly):
         self.callbacks_kwargs = kwargs_callbacks
 
         self._have_run_callbacks_start_scan = False
+        # set once the end-of-scan callbacks ran: a scan_all() after that
+        # (resuming one that aborted) runs the counters' resume callbacks
+        self._have_run_callbacks_end_scan = False
 
         # Pause/resume: a checkpoint boundary between steps, reusing the
         # _values_todo/_values_done split that already exists -- resuming
@@ -350,6 +354,7 @@ class StepScan(Assembly):
                     tcb(self, **self.callbacks_kwargs)
 
     def run_callbacks_end_scan(self):
+        self._have_run_callbacks_end_scan = True
         if self.callbacks_end_scan:
             for caller in self.callbacks_end_scan:
                 caller(self, **self.callbacks_kwargs)
@@ -357,6 +362,81 @@ class StepScan(Assembly):
             if hasattr(ctr, "callbacks_end_scan") and ctr.callbacks_end_scan:
                 for tcb in ctr.callbacks_end_scan:
                     tcb(self, **self.callbacks_kwargs)
+
+    def run_callbacks_resume_scan(self):
+        """Undo what the end-of-scan callbacks stopped, before a scan that
+        ended unfinished continues (``scan_all()`` again): a counter lists
+        what to restart in its ``callbacks_resume_scan`` (CounterValue: its
+        monitors and the live plot; BsStreamCounter: its binning and plot).
+        The start-of-scan callbacks are not run again -- they would start
+        the scan's data afresh. A failing one is reported, not raised."""
+        for ctr in self.counters:
+            for tcb in getattr(ctr, "callbacks_resume_scan", None) or []:
+                try:
+                    tcb(self, **self.callbacks_kwargs)
+                except Exception as exc:
+                    name = getattr(ctr, "name", None) or repr(ctr)
+                    print(f"{name}: could not resume ({type(exc).__name__}: {exc})")
+        self._have_run_callbacks_end_scan = False
+
+    def resume_command(self):
+        """The command that resumes this scan, as typed at the session's
+        prompt (e.g. ``scans.acquiring_scan.scan_all()``), or None if the
+        scan cannot be reached by its name from there -- e.g. another scan
+        has replaced it as ``acquiring_scan`` already. Checked against the
+        session's namespace, never guessed."""
+        namespace = getattr(get_ipython(), "user_ns", None)
+        if namespace is None:
+            return None
+        for path in self._session_paths():
+            first, *rest = path.split(".")
+            if first not in namespace:
+                continue
+            obj = namespace[first]
+            try:
+                for part in rest:
+                    obj = getattr(obj, part)
+            except Exception:
+                continue
+            if resolve_lazy(obj) is self:
+                return f"{path}.scan_all()"
+        return None
+
+    def _session_paths(self):
+        """Names this scan may have in the session: by its alias, and for a
+        detector's own scans through that detector (``mon_opt.intensity``
+        -> ``mon_opt.intensity.scans.acquiring_scan``)."""
+        paths = []
+        try:
+            paths.append(self.alias.get_full_name())
+        except Exception:
+            pass
+        scans = getattr(self, "_started_by", lambda: None)()
+        owner = getattr(scans, "_owner", lambda: None)()
+        try:
+            if owner is not None:
+                paths.append(f"{owner.alias.get_full_name()}.scans.acquiring_scan")
+        except Exception:
+            pass
+        return [p for p in paths if p]
+
+    def _report_unfinished(self):
+        """A visible note for a scan that ended before its last step, with
+        the command that resumes it from the next step."""
+        try:
+            total = self.expected_number_of_steps()
+        except Exception:
+            total = None
+        how = "was stopped" if self._stop_requested else "aborted or crashed"
+        done = f" after {self.next_step} of {total} steps" if total else ""
+        command = self.resume_command()
+        if command:
+            hint = f"you may be able to resume it with\n  > {command}"
+        else:
+            hint = ("you may be able to resume it with .scan_all() on the scan "
+                    "object (the acquiring_scan of the scans that started it)")
+        print(f"{colorama.Style.BRIGHT}{colorama.Fore.RED}Scan {how}{done}; "
+              f"{hint}{colorama.Style.RESET_ALL}")
 
     # def get_filename(self, stepNo, Ndigits=4):
     #     fina = os.path.join(self.basepath, Path(self.fina).stem)
@@ -749,6 +829,10 @@ class StepScan(Assembly):
         if not self._have_run_callbacks_start_scan:
             self.run_callbacks_start_scan()
             self._have_run_callbacks_start_scan = True
+        elif self._have_run_callbacks_end_scan:
+            # resuming a scan that ended before its last step
+            self._stop_requested = False
+            self.run_callbacks_resume_scan()
         task_queue.register_scan(self)
         done = False
         first_step = self.next_step  # > 0 when resuming
@@ -807,6 +891,8 @@ class StepScan(Assembly):
                         for ch in chs:
                             ch.wait()
                     except KeyboardInterrupt:
+                        if not done:
+                            self._report_unfinished()
                         raise Exception("User-requested cancelling!")
                     else:
                         if o == "y":
@@ -824,6 +910,9 @@ class StepScan(Assembly):
 
                 else:
                     print("Staying at final scan value(s)!")
+
+                if not done:
+                    self._report_unfinished()
 
     def changeToInitialValues(self):
         c = []
@@ -1110,6 +1199,14 @@ class Scans(Assembly):
         if test_building():
             return
         self._append(scan, name="acquiring_scan", overwrite=True, delete_old=True, **kwargs)
+        scan._started_by = weakref.ref(self)  # for scan.resume_command()
+
+    def _set_owner(self, obj):
+        """`obj` has this Scans as its ``.scans`` (a detector's own scans):
+        its scans are then reached as ``<obj's name>.scans.acquiring_scan``,
+        which their resume command needs (this Scans has no name of its own
+        in the session)."""
+        self._owner = weakref.ref(obj)
 
     def _get_counter_names(self):
         """Get the names of the default counters."""

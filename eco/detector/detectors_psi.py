@@ -146,6 +146,7 @@ class DetectorBsStream(Assembly):
             counter = self._counter
         if not hasattr(self, "_scans"):
             self._scans = scan.Scans(default_counters=[counter])
+            self._scans._set_owner(self)  # its scans' resume command
         else:
             self._scans._default_counters = [counter]
             self._scans._augment_docstrings()

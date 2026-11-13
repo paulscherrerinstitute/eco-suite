@@ -297,6 +297,7 @@ def _make_scans_property(get_name):
             self._bs_counter = BsStreamCounter(self, name=get_name(self))
         if not hasattr(self, "_scans"):
             self._scans = scan.Scans(default_counters=[self._bs_counter])
+            self._scans._set_owner(self)  # its scans' resume command
         else:
             self._scans._default_counters = [self._bs_counter]
             self._scans._augment_docstrings()
@@ -602,6 +603,8 @@ class BsStreamCounter:
         self.callbacks_step_counting = []
         self.callbacks_end_step = [self._update_peak_analysis]
         self.callbacks_end_scan = [self._on_scan_end]
+        # a scan resumed after it ended unfinished (StepScan.scan_all again)
+        self.callbacks_resume_scan = [self._on_scan_resume]
 
     # -- the most recent scan's results ---------------------------------------
     @property
@@ -660,6 +663,24 @@ class BsStreamCounter:
         self._start_live_plot(bins)
         # n-d scans, several channels, or another analysing counter: no-op
         _peak.attach(scan, self.name, self._peak_settings, n_channels=len(self._raw))
+
+    def _on_scan_resume(self, scan=None, **kwargs):
+        """Bin again into the same bins, and restart their plot's redraw,
+        both stopped by `_on_scan_end` when the scan ended unfinished."""
+        bins = self.scan_bins(scan) if scan is not None else None
+        if bins is None:
+            return
+        bins.running = True
+        self._open_bins.add(bins)
+        if bins.plot is not None:
+            self._restart_live_plot(bins.plot)
+
+    @mainthread.on_main  # the redraw timer lives on the main thread
+    def _restart_live_plot(self, plot):
+        try:
+            plot.start()
+        except Exception as exc:
+            print(f"{self.name}: couldn't restart the live plot: {exc}")
 
     def _step_label(self, scan):
         """(name, unit) of the scanned adjustable for the (single) step

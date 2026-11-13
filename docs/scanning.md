@@ -201,6 +201,25 @@ less than half of the time goes into acquiring, a warning names where it
 goes, once per scan. Thresholds: `eco.acquisition.scan_timing`. The numbers
 are in `scan.timing`.
 
+## Resuming a scan that stopped early
+
+A scan that ends before its last step (an error in a step, Ctrl-C, a stop
+from a queue or the GUI) says so in red, with the command that continues it
+from the next step:
+
+```
+Scan aborted or crashed after 12 of 40 steps; you may be able to resume it with
+  > scans.acquiring_scan.scan_all()
+```
+
+The command is the scan's own name in the session, checked before it is
+shown: a scan started from a detector reads e.g.
+`mon_opt.intensity.scans.acquiring_scan.scan_all()`, and once a newer scan has
+replaced it as `acquiring_scan` no command is offered. Resuming continues the
+same scan: the counters' monitors and live plots carry on, and the data of
+all steps end up together. If the scan moved back to its start values when it
+ended, the next step moves to where it left off first.
+
 ```{admonition} Did you know?
 :class: tip
 

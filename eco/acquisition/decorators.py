@@ -19,6 +19,7 @@ def scannable(Obj):
         self._counter = CounterValue(self, name=self.alias.get_full_name())
         if not hasattr(self, "_scans"):
             self._scans = scan.Scans(default_counters=[self._counter])
+            self._scans._set_owner(self)  # its scans' resume command
         else:
             # Scans reads self._default_counters (leading underscore)
             # everywhere -- this used to set a same-named-minus-underscore

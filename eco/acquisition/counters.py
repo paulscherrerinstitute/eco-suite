@@ -70,6 +70,9 @@ class CounterValue:
             self.clear_detectors,
             self.store_arrays,
         ]
+        # a scan resumed after it ended unfinished (StepScan.scan_all again):
+        # the end callbacks above stopped the monitors and the plot
+        self.callbacks_resume_scan = [self.resume_monitoring, self.resume_animation]
         self.name = name
 
     @mainthread.on_main  # the animation's timer lives on the main thread
@@ -97,6 +100,32 @@ class CounterValue:
                 animation.event_source.stop()
         except Exception:
             pass
+
+    @mainthread.on_main  # the animation's timer lives on the main thread
+    def resume_animation(self, scan=None, **kwargs):
+        """Restart the live plot stopped by `stop_animation`; if its window
+        was closed meanwhile, the next step opens a new one."""
+        state = self._state(scan)
+        animation = getattr(state, "animation", None)
+        if animation is None:
+            return
+        figure = getattr(state, "fig", None)
+        if (
+            animation.event_source is not None
+            and figure is not None
+            and plt.fignum_exists(figure.number)
+        ):
+            animation.event_source.start()
+        else:
+            for attribute in ("animation", "fig", "axs"):
+                if hasattr(state, attribute):
+                    delattr(state, attribute)
+
+    def resume_monitoring(self, scan=None, **kwargs):
+        """Restart the monitors stopped at the end of the scan; they keep
+        what they collected and add to it."""
+        for tm in self._state(scan).monitors.values():
+            tm.start(add_current_value=False)
 
     def append_detectors(self, *detectors):
         for detector in detectors:
