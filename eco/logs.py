@@ -196,6 +196,7 @@ def frequent_commands(n=200, max_scan=5000):
 #: (hundreds of session files, 100k+ lines) are what made the viewer take
 #: many seconds to open; pass days=None for everything.
 DEFAULT_DAYS = 30
+TRACEBACK_LINES = 12  # of a caught error's traceback shown with it (log_caught_error)
 
 
 def kernel_loader(session=None, days=DEFAULT_DAYS):
@@ -345,6 +346,10 @@ def _kernel_record_to_entry(rec, session_label):
         kind, text = "widget_control", rec.get("code", "")
     elif event == "error":
         kind, text = "error", f"{rec.get('ename', '')}: {rec.get('evalue', '')}"
+        if rec.get("traceback"):
+            # caught errors (kernel_registry.log_caught_error): where it happened
+            lines = [l for l in str(rec["traceback"]).rstrip().splitlines() if l.strip()]
+            text += "\n" + "\n".join(lines[-TRACEBACK_LINES:])
     elif event == "warning":
         # see kernel_registry.install_warning_capture
         kind, text = "warning", f"{rec.get('category', 'Warning')}: {rec.get('text', '')}"

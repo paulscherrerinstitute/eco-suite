@@ -67,6 +67,13 @@ Every queue method is also a `%queue` sub-command:
 When a task fails, the queue pauses so later tasks don't run on a broken
 step. Look at the error, then `%queue resume`.
 
+A scan is different: it catches an error in one of its steps itself. In a
+queue it redoes the failed step once (`resume_tries`, default 1 there, see
+{doc}`scanning`); if that fails too, the scan ends early but the task counts
+as done and the queue goes on with the next one. The error is in the session
+log (`%ei`) and in the scan's `scan_info["errors"]` either way, and the scan
+prints the command that resumes it.
+
 ## Several queues
 
 ```python

@@ -212,6 +212,30 @@ def unregister(session):
             _registry.remove(session)
 
 
+def log_caught_error(ename, evalue, traceback=None, **fields):
+    """Record an error that eco caught and reported itself (a scan step
+    that failed) as an "error" event in this session's log, where a failed
+    command would have put it -- so eco.logs and %ei find it although no
+    command failed. `traceback`: the formatted traceback (eco.logs shows its
+    last lines with the error). The terminal session's logger is used, else
+    the first registered session of this process; nothing is raised."""
+    try:
+        from IPython import get_ipython
+
+        session = getattr(get_ipython(), "_eco_shell_logger_session", None)
+        if session is None:
+            sessions = all_sessions()
+            session = sessions[0] if sessions else None
+        if session is None:
+            return False
+        if traceback:
+            fields["traceback"] = traceback
+        session.log_output("error", ename=ename, evalue=evalue, caught=True, **fields)
+        return True
+    except Exception:
+        return False
+
+
 def all_sessions():
     with _registry_lock:
         return list(_registry)

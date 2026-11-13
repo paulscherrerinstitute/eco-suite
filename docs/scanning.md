@@ -220,6 +220,27 @@ same scan: the counters' monitors and live plots carry on, and the data of
 all steps end up together. If the scan moved back to its start values when it
 ended, the next step moves to where it left off first.
 
+**Resuming automatically.** `resume_tries=n` lets a scan get over a passing
+error by itself: a step that raises is taken back out and done again, up to
+`n` times per scan, before the scan ends as above:
+
+```python
+scans.ascan(mot, 0, 1, 40, 100, resume_tries=2)
+```
+
+Inside a queue the default is 1 (one retry, so an unattended scan survives a
+glitch and the queue goes on); elsewhere 0. Ctrl-C is never resumed.
+
+**Every failed step is recorded**, also one that was resumed:
+
+- as an error in the session log, with the scan, the step, the traceback and
+  the resume command -- so `eco.logs` and `%ei` find it although the scan
+  caught it and no command failed;
+- in the scan's info, `scan.scan_info["errors"]` (type, message, traceback,
+  step, whether resumed), next to `scan.scan_info["outcome"]` (`complete`,
+  `aborted`, `stopped` or `interrupted`, steps done, automatic resumes);
+  with the DAQ both are in the run's scan info file.
+
 ```{admonition} Did you know?
 :class: tip
 

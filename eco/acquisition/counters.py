@@ -73,6 +73,8 @@ class CounterValue:
         # a scan resumed after it ended unfinished (StepScan.scan_all again):
         # the end callbacks above stopped the monitors and the plot
         self.callbacks_resume_scan = [self.resume_monitoring, self.resume_animation]
+        # a step that raised is redone: drop what was recorded for it
+        self.callbacks_step_failed = [self.forget_failed_step]
         self.name = name
 
     @mainthread.on_main  # the animation's timer lives on the main thread
@@ -120,6 +122,15 @@ class CounterValue:
             for attribute in ("animation", "fig", "axs"):
                 if hasattr(state, attribute):
                     delattr(state, attribute)
+
+    def forget_failed_step(self, scan=None, **kwargs):
+        """Keep only the detector values and acquisition windows of the
+        steps the scan counts as done (``scan.next_step``)."""
+        state = self._state(scan)
+        for attribute in ("timestamp_intervals", "detector_values"):
+            recorded = getattr(state, attribute, None)
+            if recorded is not None and len(recorded) > scan.next_step:
+                del recorded[scan.next_step :]
 
     def resume_monitoring(self, scan=None, **kwargs):
         """Restart the monitors stopped at the end of the scan; they keep

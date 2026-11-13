@@ -121,6 +121,10 @@ class StepScan(Assembly):
             counters, kwargs_callbacks.pop("counter_options", None) or []
         )
         self.step_window = {}  # see set_step_window
+        # how often a failed step is retried by resuming automatically
+        # (None: 1 in a queue, else 0 -- see effective_resume_tries)
+        self.resume_tries = kwargs_callbacks.pop("resume_tries", None)
+        self._auto_resumes = 0
 
         self._append(
             DetectorGet, lambda: self._get_names(self.counters), name="counters_names"
@@ -378,6 +382,108 @@ class StepScan(Assembly):
                     name = getattr(ctr, "name", None) or repr(ctr)
                     print(f"{name}: could not resume ({type(exc).__name__}: {exc})")
         self._have_run_callbacks_end_scan = False
+
+    def effective_resume_tries(self):
+        """`resume_tries` as set, else 1 while running in a queue (an
+        unattended scan should get over a passing error) and 0 otherwise."""
+        if self.resume_tries is not None:
+            return int(self.resume_tries)
+        return 1 if task_queue.in_queue() else 0
+
+    def _rollback_failed_step(self):
+        """Take a step that raised back out, so redoing it (a resume) does
+        not leave a second entry: the step's scan info, and what counters
+        recorded for it (their ``callbacks_step_failed``)."""
+        info = self.scan_info.get("scan_step_info", [])
+        if len(info) > self.next_step:
+            try:
+                self.remove_last_scan_info_entry()
+            except Exception:
+                pass
+        for ctr in self.counters:
+            for tcb in getattr(ctr, "callbacks_step_failed", None) or []:
+                try:
+                    tcb(self, **self.callbacks_kwargs)
+                except Exception as exc:
+                    name = getattr(ctr, "name", None) or repr(ctr)
+                    print(f"{name}: could not drop the failed step ({type(exc).__name__}: {exc})")
+
+    def _scan_name(self):
+        command = self.resume_command()
+        if command:
+            return command[: -len(".scan_all()")]
+        try:
+            return self.alias.get_full_name()
+        except Exception:
+            return getattr(self, "name", "scan")
+
+    def _record_scan_error(self, exc, tb, resumed):
+        """A failed step, kept where it can be found later: in the scan's
+        info (``scan_info["errors"]``, written to its file when it has one)
+        and as an error in the session log (eco.logs, %ei) -- the scan
+        catches the error, so no failed command would show it there."""
+        try:
+            total = self.expected_number_of_steps()
+        except Exception:
+            total = None
+        entry = {
+            "time": time(),
+            "step": self.next_step,
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": tb,
+            "resumed": resumed,
+        }
+        self.scan_info.setdefault("errors", []).append(entry)
+        what = "resumed automatically" if resumed else "scan aborted"
+        where = f"step {self.next_step + 1}" + (f" of {total}" if total else "")
+        try:
+            from eco.widgets.kernel_registry import log_caught_error
+
+            log_caught_error(
+                type(exc).__name__,
+                f"{exc} [scan {self._scan_name()}, {where}, {what}]",
+                traceback=tb,
+                scan=self._scan_name(),
+                step=self.next_step,
+                resumed=resumed,
+                resume_command=self.resume_command(),
+            )
+        except Exception:
+            pass
+        self._write_scan_info_quietly()
+
+    def _record_outcome(self, done, interrupted=False):
+        """How the scan ended, in ``scan_info["outcome"]``: "complete",
+        "stopped" (request_stop), "interrupted" (Ctrl-C) or "aborted" (an
+        error), with the steps done and the automatic resumes."""
+        if done:
+            state = "complete"
+        elif interrupted:
+            state = "interrupted"
+        elif self._stop_requested:
+            state = "stopped"
+        else:
+            state = "aborted"
+        try:
+            total = self.expected_number_of_steps()
+        except Exception:
+            total = None
+        self.scan_info["outcome"] = {
+            "state": state,
+            "steps_done": self.next_step,
+            "steps_expected": total,
+            "automatic_resumes": self._auto_resumes,
+            "time": time(),
+        }
+        self._write_scan_info_quietly()
+
+    def _write_scan_info_quietly(self):
+        if getattr(self, "scan_info_filename", None):
+            try:
+                self.writeScanInfo()
+            except Exception as exc:
+                print(f"could not write the scan info ({type(exc).__name__}: {exc})")
 
     def resume_command(self):
         """The command that resumes this scan, as typed at the session's
@@ -832,9 +938,11 @@ class StepScan(Assembly):
         elif self._have_run_callbacks_end_scan:
             # resuming a scan that ended before its last step
             self._stop_requested = False
+            self._auto_resumes = 0
             self.run_callbacks_resume_scan()
         task_queue.register_scan(self)
         done = False
+        interrupted = False
         first_step = self.next_step  # > 0 when resuming
         # no live progress bar from a queue's worker thread: it would redraw
         # over the prompt the user is typing at
@@ -844,31 +952,20 @@ class StepScan(Assembly):
                 total=self.expected_number_of_steps() - first_step,
             )
             try:
-                while not done:
-                    # sliced while paused, so open Qt windows stay alive (see
-                    # eco.utilities.mainthread.wait_event)
-                    mainthread.wait_event(self._pause_event)
-                    if self._stop_requested:
-                        break
-                    done = not self.do_next_step(step_info=step_info)
-                    # total is re-read every step: steps can be added while
-                    # the scan runs (adaptive scans), and a repeated step
-                    # does not count as progress
-                    self._progress.update(
-                        pr_task,
-                        completed=self.next_step - first_step,
-                        total=self.expected_number_of_steps() - first_step,
-                    )
-            except:
+                done, tb = self._run_steps(step_info, pr_task, first_step)
+            except BaseException:  # Ctrl-C (an error in a step is handled in _run_steps)
+                interrupted = True
                 tb = traceback.format_exc()
-            else:
-                tb = "Ended all steps without interruption."
+                self._rollback_failed_step()  # it may have hit in the middle of a step
             finally:
                 self._progress.stop()
                 print(tb)
                 if self.timing.n_steps:
                     print(self.timing.summary())
 
+                # before the end callbacks: the DAQ's copy of the scan info
+                # then has it too
+                self._record_outcome(done, interrupted=interrupted)
                 self.run_callbacks_end_scan()
 
                 if self.return_at_end == "question":
@@ -913,6 +1010,49 @@ class StepScan(Assembly):
 
                 if not done:
                     self._report_unfinished()
+
+    def _run_steps(self, step_info, pr_task, first_step):
+        """The steps until the last one, a stop request, or an error that
+        is not resumed: (done, text to print). A step that raises is taken
+        back out and recorded (_record_scan_error); while
+        effective_resume_tries() allows, the scan goes on with that step
+        again, otherwise it ends there. Ctrl-C is not caught here."""
+        while True:
+            # sliced while paused, so open Qt windows stay alive (see
+            # eco.utilities.mainthread.wait_event)
+            mainthread.wait_event(self._pause_event)
+            if self._stop_requested:
+                return False, "Stopped before the last step."
+            try:
+                more = self.do_next_step(step_info=step_info)
+            except Exception as exc:
+                tb = traceback.format_exc()
+                self._rollback_failed_step()
+                resume = (
+                    self._auto_resumes < self.effective_resume_tries()
+                    and not self._stop_requested
+                )
+                self._record_scan_error(exc, tb, resumed=resume)
+                if not resume:
+                    return False, tb
+                self._auto_resumes += 1
+                print(tb)
+                print(
+                    f"{colorama.Style.BRIGHT}{colorama.Fore.YELLOW}Step {self.next_step + 1} failed "
+                    f"({type(exc).__name__}: {exc}); resuming automatically "
+                    f"({self._auto_resumes} of {self.effective_resume_tries()}){colorama.Style.RESET_ALL}"
+                )
+                continue
+            if not more:
+                return True, "Ended all steps without interruption."
+            # total is re-read every step: steps can be added while the
+            # scan runs (adaptive scans), and a repeated step does not
+            # count as progress
+            self._progress.update(
+                pr_task,
+                completed=self.next_step - first_step,
+                total=self.expected_number_of_steps() - first_step,
+            )
 
     def changeToInitialValues(self):
         c = []
