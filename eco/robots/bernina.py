@@ -105,13 +105,13 @@ class BerninaRobot(StaeubliRobot):
         self.tree = self._load_tree()
         self.tree_missing = {kind: [] for kind in tree.KINDS}
 
-        tool = self._value("tool", "t_JF01T03")
+        tool = self._value("tool", "t_JF01T03_ver")
         frame = self._value("frame", "f_4mRad")
         super().__init__(name=name, link=link, tool=tool, frame=frame,
                          default_desc=DESC_DEFAULT,
                          default_speed=DEFAULT_SPEED,
                          polling_interval=DEFAULT_ROBOT_POLLING, **kwargs)
-        self._tool_persistent = self._value("tool_persistent", "t_JF01T03")
+        self._tool_persistent = self._value("tool_persistent", "t_JF01T03_ver")
         self._frame_persistent = self._value("frame_persistent", "f_4mRad")
 
         self.override_remote_safety = bool(override_remote_safety)

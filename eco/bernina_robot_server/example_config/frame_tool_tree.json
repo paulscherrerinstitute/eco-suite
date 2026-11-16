@@ -16,12 +16,32 @@
     },
     "tools": {
         "t_flange": {
+            "t_onFlange01": {},
+            "t_onFlange02": {},
+            "t_onFlange03": {},
             "t_Adapter": {
-                "t_JF01T03det": {
-                    "t_JF01T03": {}
-                },
-                "t_JF07T32det": {
-                    "t_JF07T32": {}
+                "t_onAdapter01": {},
+                "t_onAdapter02": {},
+                "t_onAdapter03": {},
+                "t_Collision": {
+                    "t_onCollision01": {},
+                    "t_onCollision02": {},
+                    "t_onCollision03": {},
+                    "t_JF01T03det_v": {
+                        "t_JF01T03_ver": {}
+                    },
+                    "t_JF01T03det_h": {
+                        "t_JF01T03_hor": {}
+                    },
+                    "t_JF07T32det": {
+                        "t_JF07T32": {}
+                    },
+                    "t_JF__T01det_v": {
+                        "t_JF__T01_ver": {}
+                    },
+                    "t_JF__T01det_h": {
+                        "t_JF__T01_hor": {}
+                    }
                 }
             }
         }

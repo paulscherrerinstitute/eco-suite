@@ -213,20 +213,24 @@ class StaeubliTx200(Assembly):
         if robot_config is not None:
             if robot_config.jf_id():
                 try:
-                    if robot_config.jf_id():
-                        self._append(
-                            Jungfrau,
-                            robot_config.jf_id(),
-                            pgroup_adj=pgroup_adj,
-                            config_adj=jf_config,
-                            name=robot_config.jf_name(),
-                        )
-                        if "JF01" in robot_config.jf_id():
-                            self.config.tool("t_JF01T03")
-                            self.det_diff.shape = np.array([1030, 1614])
-                        elif "JF07" in robot_config.jf_id():
-                            self.config.tool("t_JF07T32")
-                            self.det_diff.shape = np.array([4432, 4215])
+                    self._append(
+                        Jungfrau,
+                        robot_config.jf_id(),
+                        pgroup_adj=pgroup_adj,
+                        config_adj=jf_config,
+                        name=robot_config.jf_name(),
+                    )
+                    if "JF01" in robot_config.jf_id():
+                        tool = "t_JF01T03"
+                        if robot_config.jf_vertical():
+                            tool = tool + "_ver"
+                        else: 
+                            tool = tool + "_hor"
+                        self.config.tool(tool)
+                        self.det_diff.shape = np.array([1030, 1614])
+                    elif "JF07" in robot_config.jf_id():
+                        self.config.tool("t_JF07T32")
+                        self.det_diff.shape = np.array([4432, 4215])
                 except Exception as e:
                     print("Adding of JF detector failed with:")
                     print(e)
