@@ -1,8 +1,9 @@
 """Visualisation for ``RecSpaceCrystal`` (eco.utilities.recspace_hklforge).
 
-Two front-ends around the same 3D reciprocal-space view
-(``escape.bernina.VIEWER_HTML``, or eco's copy
-``eco/utilities/diffractometer_3d.html`` until escape has it; a self-contained
+Two front-ends around the same 3D reciprocal-space view (``viewer_html()``:
+hklforge's view with the Bernina geometry via ``escape.bernina.diffraction.viewer_page``,
+or, with an older escape, the earlier page ``escape.bernina.VIEWER_HTML`` /
+eco's copy ``eco/utilities/diffractometer_3d.html``; a self-contained
 three.js page that polls a hidden ``#diff3d-payload`` element in its parent
 document for the angles, UB, abs(k), surface normal and target reflections):
 
@@ -32,7 +33,16 @@ import numpy as np
 from eco.utilities import recspace_calc as rc
 from eco.utilities.tempfiles import user_temp_path
 
-VIEWER_HTML = rc.VIEWER_HTML     # escape.bernina's 3D page (or eco's copy until escape has it)
+VIEWER_HTML = rc.VIEWER_HTML     # the earlier You-only page (used when escape has no viewer_page)
+VIEW_STORAGE = "eco-recspace"     # prefix of what the 3D page keeps in the browser
+
+
+def viewer_html() -> str:
+    """The 3D page: hklforge's view with the Bernina geometry when escape
+    provides it (``rc.NEW_VIEW``), else the earlier page."""
+    if rc.NEW_VIEW:
+        return rc.viewer_page(storage=VIEW_STORAGE)
+    return VIEWER_HTML.read_text()
 
 CIRCLES = ("gamma", "delta", "mu", "eta", "chi", "phi")
 VIRTUAL_CONSTRAINTS = ("qaz", "naz", "alpha", "beta", "betain", "betaout", "psi", "omega")
@@ -43,13 +53,19 @@ TABLE_ROWS = CIRCLES + ("theta", "ttheta", "qaz", "naz", "alpha", "beta", "psi",
 
 def payload(crystal, angles, energy, label="", targets=None, n=0):
     """The message the 3D view reads: angles (view naming), abs(k), UB, unit
-    surface normal in the phi frame, optional target reflections.
+    surface normal (and reference) in the phi frame, optional target reflections.
 
-    The view computes its mechanism on You's axes and only labels them in
-    the Bernina frame, so UB and the normal are handed over in the You frame.
+    hklforge's view (``rc.NEW_VIEW``) takes them in the lab frame and also
+    gets the reference vector; the
+    earlier page computes its mechanism on You's axes, so there UB and the
+    normal are handed over in the You frame.
     """
     ub = crystal._ub()
     n_surf = rc.vector_phi(crystal._surface, ub)   # None: no surface normal defined
+    if rc.NEW_VIEW:     # (no Brillouin-zone points: a crystal here has no space group)
+        return rc.view_message(angles, energy, ub=ub, surface=n_surf,
+                               reference=rc.vector_phi(crystal._reference, ub),
+                               label=label, targets=targets, n=n)
     msg = {
         "angles": {c: float(angles.get(c, 0.0)) for c in CIRCLES},
         "kMag": 2 * np.pi / rc.en2lam(energy),
@@ -143,7 +159,7 @@ def geom_entries(crystal, hkl=None, energy=None, h2=None, detector=None):
 
 
 def build_page(entries, title="Reciprocal space geometry"):
-    srcdoc = html.escape(VIEWER_HTML.read_text())
+    srcdoc = html.escape(viewer_html())
     return f"""<!doctype html>
 <html>
 <head>
@@ -364,7 +380,7 @@ class ReflectionsApp:
             self.solve_msg, self.buttons, self.table, self.show_stored, sim_box,
         ], layout=L(flex="0 0 auto", margin="0 0 0 12px"))
 
-        view = w.HTML(f'<iframe srcdoc="{html.escape(VIEWER_HTML.read_text())}" '
+        view = w.HTML(f'<iframe class="diff3d-frame" srcdoc="{html.escape(viewer_html())}" '
                       'style="width:100%;height:720px;border:1px solid #ddd;"></iframe>', layout=L(width="100%"))
         self.payload_holder = w.HTML()
         view_panel = w.VBox([view, self.payload_holder],
