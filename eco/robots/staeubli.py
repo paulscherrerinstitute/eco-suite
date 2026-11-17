@@ -232,7 +232,9 @@ class StaeubliRobot:
                     f"timed out after {timeout} s waiting for {self.name} to be "
                     f"ready (state={self._state})"
                 )
-            if not self._polling_active():
+            # A caller inside link.transaction() holds the lock the poller
+            # needs, so the poller cannot advance the state either.
+            if not self._polling_active() or self.link.transaction_depth:
                 now = time.time()
                 if now - last_self_update >= self.polling_interval:
                     last_self_update = now

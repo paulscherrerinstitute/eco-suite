@@ -195,6 +195,10 @@ class SimulatedController(BaseTransport):
                 return self._fmt(self.tool_trsf)
             if base in self.points:
                 return self._fmt(self.points[base])
+            # `eval tcp_p=jointToPoint(...)` stores the whole point as a
+            # variable; its .trsf is that value.
+            if isinstance(self.variables.get(base), list):
+                return self._fmt(self.variables[base])
             if base.startswith("f_"):
                 return self._fmt(self.frame_trsf)
             if base.startswith("t_"):

@@ -493,8 +493,11 @@ class BerninaRobot(StaeubliRobot):
                                                      coordinates=coordinates)
                         for i in range(11)]
             self.set_motion_queue_empty(False)
-            return self.movel("tcp_p_spherical[1]", tool=tool, desc=None,
-                              sync=sync)
+            result = self.movel("tcp_p_spherical[1]", tool=tool, desc=None)
+        # Wait outside the transaction: inside it the poller is locked out.
+        if sync:
+            self.wait_end_of_move()
+        return result
 
     def move_spherical(self, r=None, gamma=None, delta=None, tool=None,
                        frame=None, desc=None, sync=False, simulate=False,
@@ -569,7 +572,7 @@ class BerninaRobot(StaeubliRobot):
                 else:
                     self.set_motion_queue_empty(False)
                     result = self.movel("tcp_p_spherical[1]", tool=tool,
-                                        desc=None, sync=sync)
+                                        desc=None)
                     logger.info("moving radius")
 
             # --- leg 2: angular, at constant radius -----------------------
@@ -599,9 +602,10 @@ class BerninaRobot(StaeubliRobot):
                                                              coordinates=coordinates)
                                 for i in range(start, 11)]
                     else:
+                        self.set_motion_queue_empty(False)
                         result = self.movec("tcp_p_spherical[2]",
                                             "tcp_p_spherical[3]", tool=None,
-                                            desc=None, sync=sync)
+                                            desc=None)
                         logger.info("moving angle on a circle")
                 else:
                     # Arc too short to define a circle; go straight there.
@@ -613,9 +617,15 @@ class BerninaRobot(StaeubliRobot):
                     else:
                         self.set_motion_queue_empty(False)
                         result = self.movel("tcp_p_spherical[3]", tool=None,
-                                            desc=None, sync=sync)
+                                            desc=None)
                         logger.info("moving angle linearly")
-        return sim if simulate else result
+        if simulate:
+            return sim
+        # Both legs are queued; wait outside the transaction, where the poller
+        # can run.
+        if sync and result is not None:
+            self.wait_end_of_move()
+        return result
 
     def move_joint(self, j1=None, j2=None, j3=None, j4=None, j5=None, j6=None,
                    tool=None, desc=None, sync=False, simulate=False,
@@ -641,7 +651,10 @@ class BerninaRobot(StaeubliRobot):
         with self.link.transaction():
             self.link.set_jnt([target[k] for k in JOINT_AXES], name="tcp_j")
             self.set_motion_queue_empty(False)
-            return self.movej("tcp_j", tool=tool, desc=desc, sync=sync)
+            result = self.movej("tcp_j", tool=tool, desc=desc)
+        if sync:
+            self.wait_end_of_move()
+        return result
 
     def simulate_stored_commands(self):
         """Replay whatever motion the pseudo-motors currently have queued."""

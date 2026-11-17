@@ -8,6 +8,8 @@ just the port's self-consistency.
 """
 
 import math
+import threading
+import time
 
 import pytest
 
@@ -31,6 +33,18 @@ def robot():
     r.setup()
     r.update()
     return r
+
+
+@pytest.fixture
+def robot_on_sphere(robot):
+    """A robot whose tool sits on the detector sphere (r=3000, gamma=90,
+    delta=30), so spherical moves take the radial-leg-plus-arc path instead of
+    falling back to a single cartesian move."""
+    from eco.robots.bernina import CARTESIAN_AXES
+    pose = sph2cart(r=3000, gamma=90, delta=30, return_dict=True)
+    robot.link.transport.cartesian = [pose[k] for k in CARTESIAN_AXES]
+    robot.update()
+    return robot
 
 
 # --------------------------------------------------------------- protocol
@@ -287,7 +301,8 @@ class TestPseudoMotors:
 # ------------------------------------------------------------------ motion
 
 class TestMotion:
-    def test_spherical_move_is_a_radial_leg_plus_an_arc(self, robot):
+    def test_spherical_move_is_a_radial_leg_plus_an_arc(self, robot_on_sphere):
+        robot = robot_on_sphere
         robot.link.transport.log.clear()
         robot.move_spherical(r=2500, gamma=60, delta=10)
         issued = [a[0] for c, a in robot.link.transport.log
@@ -314,6 +329,47 @@ class TestMotion:
         robot.add_listener(lambda k, v: seen.append(str(v)))
         assert robot.general_motion(x=1.0, gamma=2.0) is None
         assert any("No unique coordinate system" in s for s in seen)
+
+    @pytest.mark.parametrize("axis, offset", [("j1", 5.0), ("x", 50.0),
+                                              ("gamma", 3.0)])
+    def test_sync_move_completes_while_the_poller_runs(self, robot_on_sphere,
+                                                       axis, offset):
+        # The moves are issued inside link.transaction(); waiting for the end
+        # of the move in there locked the poller out, so the state never left
+        # BUSY and general_motion() hung until aborted. The gamma case is an
+        # arc-only move (radial leg skipped), which must still count as busy.
+        from eco.robots.simulation import MOVE_DURATION
+        robot = robot_on_sphere
+        pos = {**robot.joint_pos, **robot.cartesian_pos, **robot.spherical_pos}
+        robot.polling_interval = 0.05
+        robot.start_polling()
+        try:
+            done = threading.Event()
+            start = time.time()
+            threading.Thread(
+                target=lambda: (robot.general_motion(**{axis: pos[axis] + offset}),
+                                done.set()),
+                daemon=True,
+            ).start()
+            finished = done.wait(MOVE_DURATION + 5)
+            if not finished:
+                robot.cancellation.cancel()
+            assert finished, f"{axis} move hung with the poller running"
+            # ...and it really waited for the move instead of returning early.
+            assert time.time() - start >= MOVE_DURATION * 0.8
+            assert robot.is_ready()
+        finally:
+            robot.stop_polling()
+
+    def test_waiting_inside_a_transaction_drives_the_update_itself(self, robot):
+        robot.start_polling()
+        try:
+            with robot.link.transaction():
+                robot.move_joint(j1=robot.joint_pos["j1"] + 5)
+                robot.wait_end_of_move(timeout=5)
+            assert robot.is_ready()
+        finally:
+            robot.stop_polling()
 
     def test_general_motion_picks_the_right_system(self, robot):
         assert robot._dispatch_motion({"gamma": 1})[0] == "spherical"

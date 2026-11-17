@@ -201,6 +201,7 @@ class Val3Link:
         self.array_separator = "|"
         self.cmd_separator = " "
         self._lock = threading.RLock()
+        self._transaction = threading.local()
         self._msg_id = 0
         self._last_msg_timestamp = 0.0
         self.cancellation = CancellationToken()
@@ -216,7 +217,20 @@ class Val3Link:
         state must not be observed or disturbed by the poller.
         """
         with self._lock:
-            yield self
+            self._transaction.depth = self.transaction_depth + 1
+            try:
+                yield self
+            finally:
+                self._transaction.depth -= 1
+
+    @property
+    def transaction_depth(self) -> int:
+        """How many transactions the calling thread currently holds open.
+
+        Non-zero means the poller thread is locked out until they close, so
+        anything that waits for a polled state change must poll itself.
+        """
+        return getattr(self._transaction, "depth", 0)
 
     @property
     def connected(self) -> bool:
