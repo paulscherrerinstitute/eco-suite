@@ -1049,11 +1049,18 @@ class BsStreamCounter:
         shot). A late channel -- a Jungfrau ROI arrives ~12 s after its
         pulse -- then only takes longer instead of failing every step, and
         a stream that stopped still fails after ``timeout`` s."""
-        delay = _expected_delay(bins)
         start = _time()
+        delay = _expected_delay(bins)
         last_change, last = start + delay, progress()
+        next_delay_check = start + 0.5
         while not done():
             now = _time()
+            if now >= next_delay_check:
+                # escape may measure the delay (and split the late channel
+                # off onto its own connection) only while this step runs
+                delay = max(delay, _expected_delay(bins))
+                last_change = max(last_change, start + delay)
+                next_delay_check = now + 0.5
             current = progress()
             if current != last:
                 last, last_change = current, now
