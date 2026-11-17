@@ -262,6 +262,51 @@ def _resolve_stream(source, eventworker=None):
     )
 
 
+def _real_channels(stream):
+    """The transport channels behind *stream*: for a computed stream (``a /
+    b``, ``x[mask]``) those it is built from (escape's ``Stream._channels``),
+    for a plain one its own name."""
+    channels = getattr(stream, "_channels", None)
+    if callable(channels):
+        try:
+            return list(channels())
+        except Exception:
+            pass
+    return [stream._source.name]
+
+
+def _subscribe(stream, owner):
+    ew = stream._source.eventWorker
+    if callable(getattr(ew, "subscribe", None)):
+        ew.subscribe(owner, *_real_channels(stream))
+    else:  # an escape before per-owner subscriptions
+        for channel in _real_channels(stream):
+            ew.registerSource(channel)
+
+
+def _unsubscribe(stream, owner):
+    ew = stream._source.eventWorker
+    if callable(getattr(ew, "unsubscribe", None)):
+        ew.unsubscribe(owner, *_real_channels(stream))
+    else:
+        for channel in _real_channels(stream):
+            ew.removeSource(channel)
+
+
+def _expected_delay(bins):
+    """How late the data of *bins*' channels arrives (s), as escape measured
+    it: a late channel (a Jungfrau ROI, ~12 s) has its own dispatcher
+    connection, and a stream computed from it is that late too. 0 if
+    unknown."""
+    try:
+        stream = next(iter(bins.channels.values()))
+        handler = getattr(stream._source.eventWorker, "_eventHandler", None)
+        channels = [c for s in bins.channels.values() for c in _real_channels(s)]
+        return float(handler.expected_delay(channels)) if hasattr(handler, "expected_delay") else 0.0
+    except Exception:
+        return 0.0
+
+
 def bs_scannable(Obj):
     """Class decorator giving a bs-stream-backed detector a lazy ``.scans``
     container powered by ``BsStreamCounter`` -- the bs-stream analogue of
@@ -490,8 +535,9 @@ class BsStreamCounter:
         Applied to the list of raw samples collected for a step (or, in
         standalone/no-scan use, for ``get_current_value()``).
     timeout : float, default 10
-        Seconds ``acquire()`` will wait for enough new samples to arrive
-        in the current step's bin before raising ``TimeoutError``.
+        Seconds without any new shot (after the channels' known delay)
+        before a step's wait raises ``TimeoutError`` -- a late channel
+        (a Jungfrau ROI, ~12 s) takes longer, it does not fail.
     eventworker : escape.stream.EventWorker, optional
         Defaults to the module-global worker shared by ``DetectorBsStream``
         for any *name*-string sources; ignored for sources that already
@@ -572,7 +618,7 @@ class BsStreamCounter:
         self.store = store
         self.storage_dir = storage_dir
         self._peak_settings = _peak.parse_settings(peak_analysis)
-        self.alias = Alias(self.name, channel=list(self._raw), channeltype="BS")
+        self.alias = Alias(self.name, channel=self.channels(), channeltype="BS")
 
         # Per-scan state lives on the scans (_ScanBins); the counter only
         # points at the most recent scan's, for grid()/last_arrays/... after
@@ -589,8 +635,10 @@ class BsStreamCounter:
         # Subscribe each channel with the transport exactly once, here, for
         # the life of this counter -- see the module docstring for why this
         # must not repeat on every scan.
+        # A computed stream (``a / b``) is subscribed through the channels
+        # it is built from: its own name is an expression, not a channel.
         for base in self._raw.values():
-            base._source.eventWorker.registerSource(base._source.name)
+            _subscribe(base, self)
 
         # following the scan's leading counter: start()/stop() around its
         # acquisition (see stop()), no exposure of its own
@@ -601,7 +649,7 @@ class BsStreamCounter:
         self.callbacks_start_scan = [self._on_scan_start]
         self.callbacks_start_step = []
         self.callbacks_step_counting = []
-        self.callbacks_end_step = [self._update_peak_analysis]
+        self.callbacks_end_step = [self._update_peak_analysis, self._retry_live_plot]
         self.callbacks_end_scan = [self._on_scan_end]
         # a scan resumed after it ended unfinished (StepScan.scan_all again)
         self.callbacks_resume_scan = [self._on_scan_resume]
@@ -764,8 +812,27 @@ class BsStreamCounter:
             # the plot with -- e.g. "mon_opt.intensity", not
             # "SAROP21-PBPS133:INTENSITY".
             bins.plot = bins.channels[name].plot_med(timeout=2, label=self.name)
+            bins.plot_retry = False
         except Exception as exc:
-            print(f"{self.name}: couldn't start a live plot: {exc}")
+            # tried again after each step (_retry_live_plot): a late
+            # channel's first data can come after the scan started
+            bins.plot_retry = True
+            print(f"{self.name}: no live plot yet ({str(exc).splitlines()[0]}); trying again after the next step.")
+
+    def _retry_live_plot(self, scan=None, **kwargs):
+        bins = self.scan_bins(scan) if scan is not None else None
+        if bins is None or bins.plot is not None or not getattr(bins, "plot_retry", False):
+            return
+        self._start_live_plot_quietly(bins)
+
+    @mainthread.on_main
+    def _start_live_plot_quietly(self, bins):
+        (name,) = bins.channels
+        try:
+            bins.plot = bins.channels[name].plot_med(timeout=0.5, label=self.name)
+            bins.plot_retry = False
+        except Exception:
+            pass  # still no data: the next step tries again
 
     def _on_scan_end(self, scan=None, **kwargs):
         bins = self.scan_bins(scan) if scan is not None else None
@@ -906,7 +973,15 @@ class BsStreamCounter:
         for bins in list(self._open_bins):
             self._close(bins)
         for base in self._raw.values():
-            base._source.eventWorker.removeSource(base._source.name)
+            _unsubscribe(base, self)
+
+    def channels(self):
+        """The real bs channels this counter reads -- for a computed stream
+        (``a / b``) the channels it is built from."""
+        out = []
+        for base in self._raw.values():
+            out.extend(c for c in _real_channels(base) if c not in out)
+        return out
 
     # -- reading a step's bin ---------------------------------------------------
     def _reduce_step(self, bins, step_index, n0=None, pulse_range=None):
@@ -958,15 +1033,35 @@ class BsStreamCounter:
         return mean_sem(samples[name])
 
     def _wait_for_n_new(self, bins, step_index, n0, n_new):
-        deadline = _time() + self.timeout
-        while any(len(bins.bin(name, step_index)) < n0[name] + n_new for name in bins.channels):
-            if _time() > deadline:
-                have = {
-                    name: len(bins.bin(name, step_index)) - n0[name] for name in bins.channels
-                }
+        def counts():
+            return {name: len(bins.bin(name, step_index)) - n0[name] for name in bins.channels}
+
+        self._wait_progressing(
+            bins, step_index,
+            done=lambda: all(n >= n_new for n in counts().values()),
+            progress=lambda: tuple(counts().values()),
+            describe=lambda waited: f"step {step_index} got {counts()}/{n_new} new bs shots",
+        )
+
+    def _wait_progressing(self, bins, step_index, done, progress, describe):
+        """Until `done()`; TimeoutError only once nothing new has arrived
+        for ``timeout`` s (plus the channels' known delay before the first
+        shot). A late channel -- a Jungfrau ROI arrives ~12 s after its
+        pulse -- then only takes longer instead of failing every step, and
+        a stream that stopped still fails after ``timeout`` s."""
+        delay = _expected_delay(bins)
+        start = _time()
+        last_change, last = start + delay, progress()
+        while not done():
+            now = _time()
+            current = progress()
+            if current != last:
+                last, last_change = current, now
+            if now - last_change > self.timeout:
+                note = f" (its data arrives ~{delay:.0f} s late)" if delay >= 1 else ""
                 raise TimeoutError(
-                    f"{self.name}: step {step_index} got {have}/{n_new} new bs shots "
-                    f"within {self.timeout}s -- is the stream still live?"
+                    f"{self.name}: {describe(now - start)}: nothing new for {self.timeout}s "
+                    f"after {now - start:.0f}s{note} -- is the stream still live?"
                 )
             bins.new_data.wait(timeout=0.05)
             bins.new_data.clear()
@@ -1104,22 +1199,26 @@ class BsStreamCounter:
 
     def _wait_for_pulse_id(self, bins, step_index, pulse_id):
         """Until every channel's bin of `step_index` has a shot with a pulse
-        id >= `pulse_id`; TimeoutError after ``timeout`` seconds."""
+        id >= `pulse_id`; TimeoutError once nothing new arrived for
+        ``timeout`` seconds (_wait_progressing)."""
+
+        def latest(name):
+            ids = bins.eventids(name, step_index)
+            return ids[-1] if ids and ids[-1] is not None else None
 
         def reached(name):
-            ids = bins.eventids(name, step_index)
-            return bool(ids) and ids[-1] is not None and ids[-1] >= pulse_id
+            pid = latest(name)
+            return pid is not None and pid >= pulse_id
 
-        deadline = _time() + self.timeout
-        while not all(reached(name) for name in bins.channels):
-            if _time() > deadline:
-                missing = [name for name in bins.channels if not reached(name)]
-                raise TimeoutError(
-                    f"{self.name}: step {step_index}: no shot up to pulse id {pulse_id} "
-                    f"from {missing} within {self.timeout}s -- is the stream still live?"
-                )
-            bins.new_data.wait(timeout=0.05)
-            bins.new_data.clear()
+        self._wait_progressing(
+            bins, step_index,
+            done=lambda: all(reached(name) for name in bins.channels),
+            progress=lambda: tuple(latest(name) for name in bins.channels),
+            describe=lambda waited: (
+                f"step {step_index}: no shot up to pulse id {pulse_id} from "
+                f"{[name for name in bins.channels if not reached(name)]}"
+            ),
+        )
 
     def _advance_step(self, bins, scan):
         """Point the bin key of *bins* at *scan*'s current step (or a single
