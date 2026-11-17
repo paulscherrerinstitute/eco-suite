@@ -420,9 +420,18 @@ class CounterValue:
             self._attach_escape_buttons(scan)
             self._publish(scan)
         else:
-            self._state(scan).fig.tight_layout()
-            self._state(scan).fig.canvas.draw()
-            self._state(scan).fig.canvas.flush_events()
+            # Without hold() the heartbeat may tick inside tight_layout/draw
+            # and fire the animation's timer: plotdat's ax.cla() then
+            # removes the artists tight_layout is walking ("'NoneType'
+            # object has no attribute 'bbox'"), which aborted scans. A
+            # plot that fails anyway must not abort the step either.
+            try:
+                with mainthread.hold():
+                    self._state(scan).fig.tight_layout()
+                    self._state(scan).fig.canvas.draw()
+                self._state(scan).fig.canvas.flush_events()
+            except Exception as exc:
+                print(f"{self.name}: live plot not updated ({type(exc).__name__}: {exc})")
 
     def _attach_escape_buttons(self, scan):
         """Attach escape's own Fit / Peak / Peak-params toolbar buttons
