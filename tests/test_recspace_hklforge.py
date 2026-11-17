@@ -534,3 +534,26 @@ def test_append_recspace_never_breaks_the_diffractometer(monkeypatch, capsys):
 
     append_recspace(Failing(), {"diffcalc": True})
     assert "RuntimeError: no motors" in capsys.readouterr().out
+
+
+def test_space_group_stored_and_sent_to_the_view(rs, tmp_path):
+    """set_space_group: stored with the cell (kept by set_unit_cell and a
+    reload), shown in the summary, and the 3D view gets the centring (and,
+    with hklforge's view, the Brillouin-zone special points)."""
+    from eco.widgets import recspace_widget as rw
+    c = rs.create_crystal("gaas", unit_cell=dict(a=5.653, b=5.653, c=5.653, alpha=90, beta=90, gamma=90),
+                          space_group="F-43m")
+    assert c._space_group.startswith("F -4 3 m")
+    c.set_unit_cell("gaas", 5.65, 5.65, 5.65, 90, 90, 90)
+    assert c._space_group.startswith("F -4 3 m")                 # kept
+    assert "space group: F -4 3 m" in c.summary()
+    again = RecSpace(diffractometer_you=rs.diffractometer, name="recspace", config_dir=tmp_path,
+                     energy_source=lambda: ENERGY)
+    assert again.gaas._space_group == c._space_group             # survives a reload
+    assert rw.lattice_centring(c._space_group) == "F"
+    assert rw.lattice_centring("R-3m:R") == "P" and rw.lattice_centring("R-3m") == "R"
+    assert rw.lattice_centring(None) == "P"
+    c.set_space_group(None)
+    assert c._space_group is None
+    with pytest.raises(ValueError):
+        c.set_space_group("not a group")

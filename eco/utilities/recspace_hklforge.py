@@ -123,6 +123,16 @@ DIFFCALC_FILES = ("unit_cell", "u_matrix", "ub_matrix", "orientations", "reflect
 _NAME_SPECIALS = "'\". /()[]{}|-*+"
 
 
+def _space_group_name(space_group) -> str:
+    """A space group as hklforge names it (raises for an unknown one)."""
+    from hklforge.crystal.spacegroups import SpaceGroup
+    text = str(space_group).strip()
+    try:
+        return SpaceGroup(text).name
+    except ValueError:
+        return SpaceGroup(text.replace("_", "")).name      # "P6_3/mmc" -> "P63/mmc"
+
+
 def _config_flag(cfg, key, default=False):
     """A diffractometer configuration flag, whether the configuration is an
     AdjustableObject (``cfg.kappa()``), a dict or a plain list of names (the
@@ -418,7 +428,7 @@ class RecSpace(Assembly):
             except (ValueError, IndexError):
                 continue
 
-    def create_crystal(self, name=None, unit_cell=None):
+    def create_crystal(self, name=None, unit_cell=None, space_group=None):
         """Create a new crystal on this diffractometer and return it.
 
         Without ``unit_cell`` everything is asked interactively (``new_ub``):
@@ -427,6 +437,7 @@ class RecSpace(Assembly):
         beta=.., gamma=..)`` (angstrom, degrees) only the lattice is set; add
         orientations or reflections and run ``calc_ub()`` next. The new
         crystal is then ``self.<name>``. See ``RecSpace`` for an example.
+        ``space_group`` (optional, e.g. "Fd-3m"): see ``set_space_group``.
         """
         if name is None:
             name = self._ask_name()
@@ -438,6 +449,8 @@ class RecSpace(Assembly):
             crystal.new_ub()
         else:
             crystal.set_unit_cell(unit_cell.get("name", name), **{k: v for k, v in unit_cell.items() if k != "name"})
+        if space_group is not None:
+            crystal.set_space_group(space_group)
         return crystal
 
     def delete_crystal(self, name=None):
@@ -664,7 +677,7 @@ class RecSpaceCrystal(Assembly):
       orientation with that index; a string is a tag, so
       ``calc_ub(0, "mount 1")`` mixes both); ``fit_ub()``: from 3 or
       more reflections; ``refine_ub(hkl)``: lattice and/or U from one peak
-    - ``set_unit_cell``, ``set_reference``, ``summary()``
+    - ``set_unit_cell``, ``set_space_group``, ``set_reference``, ``summary()``
 
     Calculating and moving: ``h``, ``k``, ``l``, ``hkl`` (adjustables),
     ``calc_angles``, ``calc_angles_two``, ``calc_angles_unique``,
@@ -944,13 +957,51 @@ class RecSpaceCrystal(Assembly):
         print(self.summary())
         print("UB was calculated - next please set the constraints (.constraints) and the limits of the diffractometer motors")
 
-    def set_unit_cell(self, name_crystal, a=None, b=None, c=None, alpha=None, beta=None, gamma=None):
+    def set_unit_cell(self, name_crystal, a=None, b=None, c=None, alpha=None, beta=None, gamma=None,
+                      space_group=None):
         """Set the lattice. An existing U is kept and UB recalculated with the
-        new lattice (diffcalc kept the old UB until the next calc_ub)."""
+        new lattice (diffcalc kept the old UB until the next calc_ub).
+        ``space_group`` (name or number) as in ``set_space_group``; without
+        it the stored one is kept."""
         uc = {"name": name_crystal, "a": a, "b": b, "c": c, "alpha": alpha, "beta": beta, "gamma": gamma}
+        if space_group is not None:
+            uc["space_group"] = _space_group_name(space_group)
+        elif self.unit_cell().get("space_group"):
+            uc["space_group"] = self.unit_cell()["space_group"]
         self.unit_cell.set_target_value(uc).wait()
         if len(self.u_matrix()):
             self._set_u(self.u_matrix(), uc)
+
+    def set_space_group(self, space_group=None):
+        """Space group of the crystal (name like "Fd-3m", "R-3m", "P6_3/mmc"
+        or number), stored with the unit cell; None removes it.
+
+        Not needed for angles. With it the 3D view (``widget``, ``geom``)
+        shows the Brillouin-zone special points and paths (Gamma, X, L, ...)
+        and draws the zones the detector sees with the right lattice
+        centring; it also warns about a cell that does not fit the group."""
+        uc = dict(self.unit_cell())
+        if space_group is None:
+            uc.pop("space_group", None)
+            self.unit_cell.set_target_value(uc).wait()
+            print(f"{self.name}: no space group")
+            return None
+        name = _space_group_name(space_group)
+        uc["space_group"] = name
+        self.unit_cell.set_target_value(uc).wait()
+        from hklforge.crystal.cell import check_cell
+        from hklforge.crystal.spacegroups import SpaceGroup
+        sg = SpaceGroup(name)
+        print(f"{self.name}: space group {sg.name} ({sg.system}, {sg.centring} lattice)")
+        cell = {k: float(uc[k]) for k in ("a", "b", "c", "alpha", "beta", "gamma")}
+        for note in check_cell(cell, sg):
+            print("  note:", note)
+        return sg.name
+
+    @property
+    def _space_group(self):
+        """The stored space group name, or None."""
+        return self.unit_cell().get("space_group") or None
 
     def set_reference(self, hkl=None, phi=None):
         """Reference vector behind alpha, beta, psi, naz and tau: Miller
@@ -1148,6 +1199,7 @@ class RecSpaceCrystal(Assembly):
         uc = self.unit_cell()
         lines = [f"crystal {self.name} ({uc.get('name', '')})",
                  "  lattice: " + ", ".join(f"{k}={uc[k]:g}" for k in ("a", "b", "c", "alpha", "beta", "gamma")),
+                 "  space group: " + (uc.get("space_group") or "not set (set_space_group)"),
                  "  surface normal: " + self._surface_text()]
         if len(self.ub_matrix()):
             ub = self._ub()

@@ -51,31 +51,53 @@ TABLE_ROWS = CIRCLES + ("theta", "ttheta", "qaz", "naz", "alpha", "beta", "psi",
                         "betaout", "omega")
 
 
+def lattice_centring(space_group) -> str:
+    """The centring letter of the lattice the view draws Brillouin zones of
+    ("P" without a space group; rhombohedral axes are primitive)."""
+    if not space_group:
+        return "P"
+    try:
+        from hklforge.crystal.spacegroups import SpaceGroup
+        sg = SpaceGroup(space_group)
+    except Exception:
+        return "P"
+    c = sg.centring
+    return "P" if (c == "R" and sg.rhombohedral_axes) or c not in "PABCIFR" else c
+
+
 def payload(crystal, angles, energy, label="", targets=None, n=0):
     """The message the 3D view reads: angles (view naming), abs(k), UB, unit
-    surface normal (and reference) in the phi frame, optional target reflections.
+    surface normal (and reference) in the phi frame, optional target
+    reflections, and with a space group (``crystal.set_space_group``) the
+    lattice centring for the Brillouin zones.
 
-    hklforge's view (``rc.NEW_VIEW``) takes them in the lab frame and also
-    gets the reference vector; the
-    earlier page computes its mechanism on You's axes, so there UB and the
-    normal are handed over in the You frame.
+    hklforge's view (``rc.NEW_VIEW``) takes the vectors in the lab frame and
+    also gets the reference vector and, with a space group, the zone's
+    special points and paths; the earlier page computes its mechanism on
+    You's axes, so there UB and the normal are handed over in the You frame.
     """
     ub = crystal._ub()
     n_surf = rc.vector_phi(crystal._surface, ub)   # None: no surface normal defined
-    if rc.NEW_VIEW:     # (no Brillouin-zone points: a crystal here has no space group)
-        return rc.view_message(angles, energy, ub=ub, surface=n_surf,
-                               reference=rc.vector_phi(crystal._reference, ub),
-                               label=label, targets=targets, n=n)
-    msg = {
-        "angles": {c: float(angles.get(c, 0.0)) for c in CIRCLES},
-        "kMag": 2 * np.pi / rc.en2lam(energy),
-        "ub": rc.to_you(ub).tolist(),
-        "nPhi": None if n_surf is None else rc.to_you(n_surf).tolist(),
-        "label": label,
-        "n": n,
-    }
-    if targets:
-        msg["targets"] = [list(map(float, t)) for t in targets]
+    sg = getattr(crystal, "_space_group", None)
+    if rc.NEW_VIEW:
+        cell = None
+        if sg:
+            cell = {k: float(crystal.unit_cell()[k]) for k in ("a", "b", "c", "alpha", "beta", "gamma")}
+        msg = rc.view_message(angles, energy, ub=ub, surface=n_surf,
+                              reference=rc.vector_phi(crystal._reference, ub),
+                              label=label, targets=targets, n=n, cell=cell, space_group=sg)
+    else:
+        msg = {
+            "angles": {c: float(angles.get(c, 0.0)) for c in CIRCLES},
+            "kMag": 2 * np.pi / rc.en2lam(energy),
+            "ub": rc.to_you(ub).tolist(),
+            "nPhi": None if n_surf is None else rc.to_you(n_surf).tolist(),
+            "label": label,
+            "n": n,
+        }
+        if targets:
+            msg["targets"] = [list(map(float, t)) for t in targets]
+    msg["centring"] = lattice_centring(sg)
     return msg
 
 
