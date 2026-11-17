@@ -281,3 +281,42 @@ def test_panel_in_process_uses_no_pyplot(mgr, plant):
     finally:
         panel.stop(join=True)
     assert not panel._thread.is_alive()
+
+
+def test_qt_panel_in_process(mgr, plant):
+    pytest.importorskip("qtpy")
+    from qtpy import QtWidgets
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    act, det = plant
+    add_loop(mgr, plant, setpoint=5.0)
+    panel = mgr.qt_panel(refresh_s=0.05)
+
+    def pump(cond, timeout=5.0):
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
+            app.processEvents()
+            if cond():
+                return True
+            time.sleep(0.02)
+        return False
+
+    try:
+        assert pump(lambda: panel.table.rowCount() == 1
+                    and panel.table.item(0, 2).text() == "off")
+        assert "fb_test_det" in panel.table.item(0, 1).text()
+        assert pump(lambda: panel._selected == "loop"
+                    and panel.fields["setpoint"].text() == "5")
+        panel.btn_enable.click()  # the write runs in a thread, not in the slot
+        assert pump(lambda: abs(det.get_current_value() - 5.0) < 1e-3)
+        assert pump(lambda: panel.table.item(0, 2).text() == "ON")
+        panel.fields["setpoint"].setText("1")
+        panel._apply()
+        assert pump(lambda: mgr.loops["loop"].setpoint == 1.0)
+        panel.btn_disable_all.click()
+        assert pump(lambda: not mgr.loops["loop"].enabled)
+        assert pump(lambda: "enabled" in panel._log.toPlainText()
+                    or panel._log.blockCount() > 1)
+    finally:
+        panel.stop(join=True)
+    assert not panel._thread.is_alive()

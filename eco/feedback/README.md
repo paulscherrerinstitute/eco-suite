@@ -20,6 +20,7 @@ fb.add("mono_hor", "mon_opt_new.xpos", "mono.roll1_piezo",   # alias names or ob
 fb                                  # one line per loop: off / ON / HELD / ALARM / ERROR
 fb.service.set("mono_hor", enabled=True)
 fb.service.history("mono_hor", n=20)
+fb.qt_panel()                       # Qt window (terminal / desktop sessions)
 fb.panel()                          # ipywidgets panel (JupyterLab / Voila / notebook UIs)
 fb.disable_all()                    # open every loop; threads keep monitoring
 ```
@@ -28,12 +29,15 @@ The loops run in threads of the session. `fb.service` has the same methods
 and return values as the HTTP client below, so a script written against
 one works with the other.
 
-From a terminal session (no ipywidgets display), serve and open the panel
-in a browser instead:
+The Qt panel is one window: loop table, settings and trend plot of the
+selected loop, Enable / Disable / Disable all, interlocks, alarms and the
+log. Matrix loops are listed there but set up from the ipywidgets panel or
+`fb.service`. To reach the loops from elsewhere, serve them:
 
 ```python
 srv = fb.serve(port=8010)           # background thread, 127.0.0.1 only
-# shell: python -m eco.feedback panel http://127.0.0.1:8010   -> Voila on :8866 (ssh -L)
+# shell: python -m eco.feedback panel http://127.0.0.1:8010 --qt   -> Qt window
+# shell: python -m eco.feedback panel http://127.0.0.1:8010        -> Voila on :8866 (ssh -L)
 srv.stop()
 ```
 
@@ -48,7 +52,8 @@ python -m eco.feedback panel http://127.0.0.1:8010
 
 A setup script defines `manager` or `build_manager()`; see `examples/`
 (raw PVs; Bernina namespace components). Clients:
-`eco.feedback.FeedbackClient(url, api_key=...)`, `FeedbackPanel(url, ...)`,
+`eco.feedback.FeedbackClient(url, api_key=...)`, `FeedbackPanelQt(url, ...)`,
+`FeedbackPanel(url, ...)`,
 the Swagger UI at `<url>/docs`. Needs `fastapi` and `uvicorn`
 (`pip install eco-suite[feedback]`); bpy312 has uvicorn but not fastapi.
 
@@ -85,7 +90,10 @@ Full references: [docs/API.md](docs/API.md) (HTTP routes),
 - **At interpreter exit** every manager disables and stops its loops, and
   panels stop refreshing. A panel thread still rendering during
   finalization segfaulted the process.
-- The panel refreshes from a background thread, so it uses neither pyplot
+- The Qt panel never calls the client in a slot: a worker thread polls
+  (the in-process service reads hardware, the HTTP client blocks) and a
+  QTimer shows the latest snapshot; each write runs in its own thread.
+- The ipywidgets panel refreshes from a background thread, so it uses neither pyplot
   nor `with output:`: plots are Agg-rendered PNGs, text is assigned to
   `Output.outputs`. Keep it that way: pyplot there would create Qt objects
   off the main thread in an eco session.
@@ -94,13 +102,14 @@ Full references: [docs/API.md](docs/API.md) (HTTP routes),
 
 `tests/test_feedback.py` (no hardware): loops on `AdjustableMemory`/
 `DetectorGet`, failure paths, interlocks, response matrix plus matrix
-loop, config round trip, server/client parity and the panel. The HTTP tests
+loop, config round trip, server/client parity and both panels. The HTTP tests
 skip without fastapi; a venv on top of bpy312 with fastapi added runs all
 of them.
 
 ## Open
 
-- No Qt panel yet (desktop / terminal sessions go through serve + Voila).
+- The Qt panel cannot create or edit matrix loops / response matrices yet,
+  and is not dockable in eco desktop yet.
 - The panel builds its loop tabs once; loops added later need a new panel.
 - Running a loop on real hardware: start in a session with small gains
   and clamps, then a server process.

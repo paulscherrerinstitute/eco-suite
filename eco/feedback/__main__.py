@@ -2,12 +2,13 @@
 
     python -m eco.feedback serve SETUP.py [--host H] [--port P] [--api-key K]
     python -m eco.feedback demo {eco,matrix,busy} [--host H] [--port P]
-    python -m eco.feedback panel URL [--api-key K] [--port P]
+    python -m eco.feedback panel URL [--api-key K] [--port P] [--qt]
 
 ``serve`` runs ``SETUP.py``, which must define ``manager`` (a
 FeedbackManager) or ``build_manager()`` returning one -- that is where the
 eco devices are created; see ``eco/feedback/examples/``. ``panel`` starts
-Voila on the control-panel notebook for a running server.
+Voila on the control-panel notebook for a running server, or with ``--qt``
+the Qt panel.
 
 The server binds 127.0.0.1 by default; reach it through ``ssh -L``.
 """
@@ -72,8 +73,19 @@ def main(argv=None):
     p.add_argument("url")
     p.add_argument("--api-key", default=os.environ.get("ECO_FEEDBACK_API_KEY"))
     p.add_argument("--port", type=int, default=8866)
+    p.add_argument("--qt", action="store_true", help="Qt panel instead of Voila")
 
     args = parser.parse_args(argv)
+
+    if args.command == "panel" and args.qt:
+        from qtpy import QtCore, QtWidgets
+
+        from .gui_qt import FeedbackPanelQt
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        panel = FeedbackPanelQt(url=args.url, api_key=args.api_key)
+        panel.window.setAttribute(QtCore.Qt.WA_QuitOnClose, True)
+        return app.exec_()
 
     if args.command == "panel":
         proc = voila_panel(args.url, args.api_key, args.port)

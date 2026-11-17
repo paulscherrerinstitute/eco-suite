@@ -4,11 +4,12 @@ A PID loop per detector/adjustable pair, response-matrix measurement and
 SVD matrix correction, interlocks, alarms and config save/restore -- the
 functionality of the DOOCS/Java feedback server, usable
 
-- in-process in an eco session: ``FeedbackManager`` + ``manager.panel()``
-  (ipywidgets) or ``manager.service`` (plain calls), no extra dependencies;
+- in-process in an eco session: ``FeedbackManager`` + ``manager.qt_panel()``
+  (Qt), ``manager.panel()`` (ipywidgets) or ``manager.service`` (plain
+  calls), no extra dependencies;
 - as an HTTP server (``manager.serve()`` in a session thread, or
   ``python -m eco.feedback serve setup.py`` as its own process) with
-  ``FeedbackClient`` / ``FeedbackPanel(url)`` / Voila as clients. Needs
+  ``FeedbackClient`` / ``FeedbackPanelQt(url)`` / ``FeedbackPanel(url)`` / Voila as clients. Needs
   ``fastapi`` and ``uvicorn``.
 
 See ``eco/feedback/README.md``. Not the same thing as the older
@@ -25,7 +26,7 @@ from .core import (
 )
 from .service import FeedbackError, FeedbackService
 
-# Only the eager names: the lazy ones below (FeedbackClient, FeedbackPanel,
+# Only the eager names: the lazy ones below (FeedbackClient, FeedbackPanel[Qt],
 # make_app, serve, serve_in_background, PersistentStore, save_config,
 # load_config) would make `import *` fail where fastapi/ipywidgets are missing.
 __all__ = [
@@ -48,6 +49,10 @@ def __getattr__(name):
         from .client import FeedbackClient
 
         return FeedbackClient
+    if name == "FeedbackPanelQt":
+        from .gui_qt import FeedbackPanelQt
+
+        return FeedbackPanelQt
     if name == "FeedbackPanel":
         from .gui import FeedbackPanel
 

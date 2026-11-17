@@ -943,6 +943,16 @@ class FeedbackManager:
         self._panels.append(panel)
         return panel.widget
 
+    def qt_panel(self, refresh_s=1.0):
+        """The Qt control panel on this manager, without a server (terminal
+        and desktop sessions); returns the panel (``.window``, ``.stop()``)."""
+        from .gui_qt import FeedbackPanelQt
+
+        panel = FeedbackPanelQt(client=self.service, refresh_s=refresh_s)
+        self._panels = [p for p in getattr(self, "_panels", []) if not p._stopped.is_set()]
+        self._panels.append(panel)
+        return panel
+
     def serve(self, host="127.0.0.1", port=8010, api_key=None):
         """Start the HTTP server for this manager in a background thread of
         this session; returns a handle with ``.url`` and ``.stop()``.
