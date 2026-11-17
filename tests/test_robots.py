@@ -290,6 +290,56 @@ class TestDriver:
 
 # ------------------------------------------------------------------ motors
 
+class TestLinearAxis:
+    # z_lin goes through comTcp's fixed lin_move/lin_stop commands; the old
+    # path called programs through $exec and never sent the MoveAbs edge.
+
+    def test_move_uses_the_lin_move_command(self, robot):
+        sim = robot.link.transport
+        sim.powered = True
+        sim.log.clear()
+        robot.motors["z_lin"].move(1200)
+        assert sim.log == [("lin_move", ["1200.0"])]
+        robot.update_fast()
+        assert robot.linear_axis_pos["z_lin"] == pytest.approx(1200)
+
+    @pytest.mark.parametrize("value, powered, reason", [
+        (1200, False, "not powered"),
+        (4.0, True, "out of range"),
+        (3913, True, "out of range"),
+    ])
+    def test_the_controller_refuses(self, robot, value, powered, reason):
+        robot.link.transport.powered = powered
+        with pytest.raises(Val3Error, match=reason):
+            robot.motors["z_lin"].move(value)
+
+    def test_stop_uses_the_lin_stop_command(self, robot):
+        sim = robot.link.transport
+        sim.log.clear()
+        robot.motors["z_lin"].stop()
+        assert sim.log == [("lin_stop", [])]
+
+
+class TestReachability:
+    def test_point_to_joint_returns_the_solution(self, robot):
+        sim = robot.link.transport
+        sim.log.clear()
+        solution = robot.point_to_joint(point="tcp_p")
+        assert solution == pytest.approx(sim.joints)
+        # The result goes into the last argument, which is what is read back.
+        evals = [a[0] for c, a in sim.log if c == "eval"]
+        assert evals[0].endswith("tcp_p, tcp_j)")
+        assert sim.log[-1] == ("get_jnt", ["tcp_j"])
+
+    def test_point_reachable_starts_from_the_current_joints(self, robot):
+        sim = robot.link.transport
+        sim.log.clear()
+        assert robot.point_reachable("tcp_p_spherical[1]")
+        evals = [a[0] for c, a in sim.log if c == "eval"]
+        assert evals == ["tcp_b=pointToJoint(t_JF01T03_ver,herej(),"
+                         "tcp_p_spherical[1],tcp_j)"]
+
+
 class TestPseudoMotors:
     def test_single_axis_write_keeps_the_other_setpoints_live(self, robot):
         robot.last_remote_motion = "spherical"

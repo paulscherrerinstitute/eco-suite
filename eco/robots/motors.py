@@ -232,8 +232,14 @@ class LinearAxisMotor(PseudoMotor):
     """The rail the arm is mounted on -- a real servo, driven over EtherCAT.
 
     Unlike the other three this is not a pseudo-motor at all: there is no
-    kinematics, the setpoint goes straight to an analogue output. It shares
-    the class only for a uniform interface.
+    kinematics, the setpoint goes to the PLC. It shares the class only for a
+    uniform interface.
+
+    Both commands are fixed code in comTcp rather than ``eval`` statements:
+    calling VAL3 programs (setEcAo/setEcDo) through ``$exec`` is version
+    dependent, and the PLC only starts a move on the MoveAbs edge, which the
+    controller now pulses itself. The controller refuses a position outside
+    [5, 3912] mm and an unpowered robot.
     """
 
     group = "linear_axis"
@@ -246,13 +252,10 @@ class LinearAxisMotor(PseudoMotor):
                 "robot.set_motors_enabled(True, ['linear']) first"
             )
         value = float(value)
+        # Setpoint, then the MoveAbs edge (~0.2 s on the controller).
+        self.robot.link.execute("lin_move", value, timeout=2.0)
         self.setpoint = value
         self.robot.linear_axis_destination[self.name] = value
-        # Setpoint and strobe are two separate VAL3 statements; the
-        # transaction keeps the poller from reading a half-applied setpoint.
-        with self.robot.link.transaction():
-            self.robot.link.evaluate(f"n_moveAbsPos = {value}")
-            self.robot.link.evaluate("setEcAo(ecao_posSet,n_moveAbsPos)")
         self.robot.last_remote_motion = self.group
         return value
 
@@ -261,11 +264,7 @@ class LinearAxisMotor(PseudoMotor):
 
     def stop(self):
         """Pulse the drive's stop input; it is edge- not level-triggered."""
-        with self.robot.link.transaction():
-            self.robot.link.evaluate("setEcDo(ecdo_linMotStop,true)")
-        self.robot.cancellation.sleep(0.1)
-        with self.robot.link.transaction():
-            self.robot.link.evaluate("setEcDo(ecdo_linMotStop,false)")
+        self.robot.link.execute("lin_stop", timeout=2.0)
 
 
 MOTOR_CLASSES = {

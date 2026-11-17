@@ -60,13 +60,13 @@ FRAME_HIERARCHY = [
     "world.f_SwissFELCoord.f_ESBWorld.f_linearAxis." + leaf
     for leaf in ("f_direct.", "f_2mRad.", "f_4mRad.", "f_6mRad.", "f_8mRad.")
 ] + [
-    "t_flange." + leaf
+    "t_Flange." + leaf
     for leaf in ("t_onFlange01.", "t_onFlange02.", "t_onFlange03.")
 ] + [
-    "t_flange.t_Adapter." + leaf
+    "t_Flange.t_Adapter." + leaf
     for leaf in ("t_onAdapter01.", "t_onAdapter02.", "t_onAdapter03.")
 ] + [
-    "t_flange.t_Adapter.t_Collision." + leaf
+    "t_Flange.t_Adapter.t_Collision." + leaf
     for leaf in ("t_onCollision01.", "t_onCollision02.", "t_onCollision03.",
                  "t_JF01T03det_v.t_JF01T03_ver.",
                  "t_JF01T03det_h.t_JF01T03_hor.",
@@ -285,9 +285,11 @@ class BerninaRobot(StaeubliRobot):
 
     def point_reachable(self, point, tool=None, verbose=True) -> bool:
         tool = self.tool() if tool is None else tool
-        self.herej()
+        # pointToJoint(tool, jInitial, point, jResult&): start from the current
+        # joints, write the solution into the scratch tcp_j. Passing an
+        # undeclared `j` relied on $exec resolving comTcp's local variable.
         reachable = self.link.eval_bool(
-            f"pointToJoint({tool},tcp_j,{point},j)"
+            f"pointToJoint({tool},herej(),{point},tcp_j)"
         )
         if verbose and not reachable:
             self.emit("motion", "Point is not in range")

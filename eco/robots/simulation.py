@@ -181,6 +181,26 @@ class SimulatedController(BaseTransport):
             + list(self.frame_trsf) + list(self.tool_trsf)
         ) + self._pop_event()
 
+    # --- linear axis --------------------------------------------------
+
+    def _cmd_lin_move(self, args):
+        """comTcp ``lin_move``: same checks; the axis arrives at once."""
+        try:
+            value = float(args[0])
+        except (IndexError, ValueError):
+            raise Val3Error(f"Invalid linear axis position: {args[:1]}")
+        if not 5 <= value <= 3912:
+            raise Val3Error(
+                f"Linear axis position out of range [5, 3912]: {args[0]}")
+        if not self.powered:
+            raise Val3Error("Robot not powered: the linear axis cannot move")
+        self.variables["n_moveAbsPos"] = value
+        self.z_lin = value
+        return ""
+
+    def _cmd_lin_stop(self, args):
+        return ""
+
     # --- pendant ------------------------------------------------------
 
     @property
@@ -301,9 +321,6 @@ class SimulatedController(BaseTransport):
             if statement.startswith(prefix):
                 action()
                 return
-        # setEcAo(ecao_posSet, n_moveAbsPos) commits the linear-axis setpoint
-        if "ecao_posSet" in statement:
-            self.z_lin = float(self.variables.get("n_moveAbsPos", self.z_lin))
 
     def _evaluate(self, expr, target=None):
         """Resolve the handful of VAL3 predicates the driver actually calls."""
@@ -320,7 +337,11 @@ class SimulatedController(BaseTransport):
         if expr.startswith("isInRange"):
             return True
         if expr.startswith("pointToJoint"):
-            return True                      # everything is reachable
+            # Everything is reachable; the solution goes into the last
+            # (jResult&) argument. No IK: the current joints stand in for it.
+            result = expr[expr.rindex(",") + 1:expr.rindex(")")].strip()
+            self.variables[result] = list(self.joints)
+            return True
         if expr.startswith("safetyFault"):
             return False
         if expr.endswith(".gripper"):

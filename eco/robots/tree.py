@@ -3,7 +3,7 @@
 A tree is a dict with two kinds, each a nested dict of VAL3 symbol -> children::
 
     {"frames": {"world": {"f_SwissFELCoord": {...}}},
-     "tools":  {"t_flange": {"t_Adapter": {...}}}}
+     "tools":  {"t_Flange": {"t_Adapter": {...}}}}
 
 It is read from a JSON file the server owns, rather than from the controller,
 so that ad-hoc changes to the VAL3 program never silently change what users are
@@ -96,7 +96,7 @@ def path_of(tree, kind, name):
 
 
 def bare(name):
-    """``"t_flange.t_Adapter.t_Collision.t_JF01T03det_v.t_JF01T03_ver"`` -> ``"t_JF01T03_ver"``."""
+    """``"t_Flange.t_Adapter.t_Collision.t_JF01T03det_v.t_JF01T03_ver"`` -> ``"t_JF01T03_ver"``."""
     return str(name).split(".")[-1]
 
 

@@ -339,7 +339,9 @@ class StaeubliRobot:
         return {1: "active", 2: "activated"}.get(code, "off")
 
     def get_safety_fault_signal(self):
-        return self.link.eval_bool("safetyFault(s)")
+        # Unused, and not verified on the controller: safetyFault() is not in
+        # the VAL3 6 manual. Its out-parameter was an undeclared `s`.
+        return self.link.eval_bool("safetyFault(tcp_s)")
 
     def save_program(self):
         ret = self.link.execute("save", timeout=5.0)
@@ -586,12 +588,19 @@ class StaeubliRobot:
         frame = self.frame() if frame is None else frame
         return self.link.eval_pnt(f"jointToPoint({tool}, {frame}, {joint})")
 
-    def point_to_joint(self, tool=None, initial_joint="tcp_j", point="tcp_p"):
+    def point_to_joint(self, tool=None, initial_joint="herej()", point="tcp_p"):
+        """Joint solution for ``point`` closest to ``initial_joint``, or None.
+
+        VAL3 ``pointToJoint(tool, jInitial, point, jResult&)`` writes the
+        solution into its last argument, here the scratch ``tcp_j``, which is
+        read back. (It used to pass an undeclared ``j`` and then read
+        ``tcp_j``, i.e. never the solution.)
+        """
         tool = self.tool() if tool is None else tool
         if self.link.eval_bool(
-            f"pointToJoint({tool}, {initial_joint}, {point}, j)"
+            f"pointToJoint({tool}, {initial_joint}, {point}, tcp_j)"
         ):
-            return self.link.get_jnt()
+            return self.link.get_jnt("tcp_j")
         return None
 
     def position(self, point, frame=None):

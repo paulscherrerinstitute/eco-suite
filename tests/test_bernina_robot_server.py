@@ -205,9 +205,7 @@ class TestStop:
         log = app.robot.link.transport.log
         log.clear()
         client.post("/api/stop")
-        sent = [a[0] for c, a in list(log) if c == "eval"]
-        assert "setEcDo(ecdo_linMotStop,true)" in sent
-        assert "setEcDo(ecdo_linMotStop,false)" in sent
+        assert "lin_stop" in [c for c, a in list(log)]
 
     def test_leaves_the_robot_ready_for_the_next_move(self, app, client):
         self._start_move(app, client)
