@@ -100,3 +100,9 @@ def test_a_computed_stream_subscribes_its_real_channels():
     assert ctr.alias.channel == ctr.channels()
     ctr.close()
     assert ew.subs == {}
+
+
+def test_a_computed_streams_name_makes_a_valid_file_name():
+    assert bs_counter._file_safe("(intensity_roi_stream / intensity_stream)") == "intensity_roi_stream_intensity_stream"
+    assert bs_counter._file_safe("mon_opt.intensity_stream") == "mon_opt.intensity_stream"
+    assert "/" not in bs_counter._file_safe("a/b") and bs_counter._file_safe("()") == "bs_counter"

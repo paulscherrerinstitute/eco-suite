@@ -130,6 +130,7 @@ it the way this module now does.
 
 from datetime import datetime
 from pathlib import Path
+import re
 import threading
 from threading import Event
 from time import time as _time
@@ -260,6 +261,12 @@ def _resolve_stream(source, eventworker=None):
         "Expected a bs channel name, an escape.stream.Stream, or an object "
         f"with a .stream attribute that is one, got {type(source)}"
     )
+
+
+def _file_safe(name):
+    """`name` as part of a file name: a computed stream's name, e.g.
+    ``(jf / i0)``, has a "/" that made storing its data fail."""
+    return re.sub(r"[^\w.+-]+", "_", str(name)).strip("_") or "bs_counter"
 
 
 def _real_channels(stream):
@@ -940,7 +947,7 @@ class BsStreamCounter:
             except Exception:
                 print(f"{self.name}: could not create directory {directory.resolve()} !")
 
-        filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + f".{self.name}.esc.h5"
+        filename = datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + f".{_file_safe(self.name)}.esc.h5"
         path = directory / filename
 
         d = DataSet.create_with_new_result_file(path, force_overwrite=False)
