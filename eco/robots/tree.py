@@ -96,7 +96,7 @@ def path_of(tree, kind, name):
 
 
 def bare(name):
-    """``"t_flange.t_Adapter.t_JF01T03"`` -> ``"t_JF01T03"``."""
+    """``"t_flange.t_Adapter.t_Collision.t_JF01T03det_v.t_JF01T03_ver"`` -> ``"t_JF01T03_ver"``."""
     return str(name).split(".")[-1]
 
 

@@ -84,7 +84,7 @@ class TestPshellContract:
 
 class TestEvalNamespace:
     def test_robot_is_reachable(self, client):
-        assert submit(client, "robot.get_tool()")["return"] == "t_JF01T03"
+        assert submit(client, "robot.get_tool()")["return"] == "t_JF01T03_ver"
 
     def test_poll_info_shape_drives_the_eco_config_object(self, client):
         info = submit(client, "robot.on_poll_info()")["return"]

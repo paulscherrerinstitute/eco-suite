@@ -54,12 +54,25 @@ LINEAR_AXES = ["z_lin"]
 
 #: Dotted parent chains, used to present a frame/tool as a path. A bare symbol
 #: that appears in one of these expands to everything up to and including it.
+#: The fallback when no ``tree_file`` is configured; mirrors
+#: ``bernina_robot_server/example_config/frame_tool_tree.json``.
 FRAME_HIERARCHY = [
     "world.f_SwissFELCoord.f_ESBWorld.f_linearAxis." + leaf
     for leaf in ("f_direct.", "f_2mRad.", "f_4mRad.", "f_6mRad.", "f_8mRad.")
 ] + [
+    "t_flange." + leaf
+    for leaf in ("t_onFlange01.", "t_onFlange02.", "t_onFlange03.")
+] + [
     "t_flange.t_Adapter." + leaf
-    for leaf in ("t_JF01T03det.t_JF01T03.", "t_JF07T32det.t_JF07T32.")
+    for leaf in ("t_onAdapter01.", "t_onAdapter02.", "t_onAdapter03.")
+] + [
+    "t_flange.t_Adapter.t_Collision." + leaf
+    for leaf in ("t_onCollision01.", "t_onCollision02.", "t_onCollision03.",
+                 "t_JF01T03det_v.t_JF01T03_ver.",
+                 "t_JF01T03det_h.t_JF01T03_hor.",
+                 "t_JF07T32det.t_JF07T32.",
+                 "t_JF__T01det_v.t_JF__T01_ver.",
+                 "t_JF__T01det_h.t_JF__T01_hor.")
 ]
 
 DEFAULT_REMOTE_ALLOWED_DELTAS = {

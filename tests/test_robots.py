@@ -436,3 +436,23 @@ class TestPersistence:
         # No temp files left behind, and the file parses.
         assert value.get_current_value()["big"][-1] == 999
         assert [p.name for p in tmp_path.iterdir()] == ["v"]
+
+
+# ---------------------------------------------------------- frame/tool tree
+
+class TestFrameToolTree:
+    def test_builtin_tree_matches_the_example_tree_file(self):
+        # FRAME_HIERARCHY is the fallback without a tree_file; it must not
+        # drift from the tree the server is deployed with.
+        import json
+        from pathlib import Path
+
+        from eco.robots import FRAME_HIERARCHY, tree
+        example = (Path(__file__).parents[1] / "eco" / "bernina_robot_server"
+                   / "example_config" / "frame_tool_tree.json")
+        assert tree.from_chains(FRAME_HIERARCHY) == json.loads(example.read_text())
+
+    def test_default_tool_is_in_the_builtin_tree(self, robot):
+        from eco.robots import tree
+        assert robot.get_tool() == "t_JF01T03_ver"
+        assert "t_JF01T03_ver" in tree.names(robot.tree, "tools")

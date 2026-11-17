@@ -34,7 +34,7 @@ class SimulatedController(BaseTransport):
 
     simulated = True
 
-    def __init__(self, joints=None, frame="f_4mRad", tool="t_JF01T03",
+    def __init__(self, joints=None, frame="f_4mRad", tool="t_JF01T03_ver",
                  mode=1, status_code=6, powered=False, speed=100,
                  known_symbols=None):
         self._connected = False
