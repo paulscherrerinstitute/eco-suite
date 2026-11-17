@@ -221,6 +221,20 @@ class TestStop:
         body = client.post("/api/stop").get_json()
         assert body["stopped"] and body["aborted"] == []
 
+    def test_announces_the_stop_once(self, app, client):
+        # eco prints the stop, motion and reset_motion notices; the stop
+        # used to come out twice (as "stop" and as "reset_motion").
+        notices = ("stop", "motion", "reset_motion")
+        subscriber = app.events.subscribe("test", list(notices))
+        try:
+            client.post("/api/stop")
+            frames = []
+            while not subscriber.queue.empty():
+                frames.append(subscriber.queue.get_nowait())
+        finally:
+            app.events.unsubscribe(subscriber)
+        assert len([f for f in frames if "stop requested" in f]) == 1
+
 
 class TestPollStall:
     """A poller blocked on the link froze every readback while the server
@@ -309,14 +323,26 @@ class TestEvents:
         finally:
             app.events.unsubscribe(subscriber)
 
-    def test_new_subscriber_gets_the_last_value_immediately(self, app):
-        app.events.publish("motion", "latest")
-        subscriber = app.events.subscribe("late", ["motion"])
+    def test_new_subscriber_gets_the_last_state_immediately(self, app):
+        app.events.publish("robot_state", {"state": "latest"})
+        subscriber = app.events.subscribe("late", ["robot_state"])
         try:
             frame = subscriber.queue.get(timeout=1)
         finally:
             app.events.unsubscribe(subscriber)
         assert "latest" in frame
+
+    @pytest.mark.parametrize("notice", ["shell", "stop", "motion",
+                                        "reset_motion"])
+    def test_one_off_notices_are_not_replayed(self, app, notice):
+        # A replayed "Update error" made every new eco client raise in its
+        # SSE thread and reconnect into the same replay, forever.
+        app.events.publish(notice, "Update error: old news")
+        subscriber = app.events.subscribe("late", [notice])
+        try:
+            assert subscriber.queue.empty()
+        finally:
+            app.events.unsubscribe(subscriber)
 
 
 class TestStructuredApi:

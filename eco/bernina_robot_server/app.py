@@ -51,6 +51,12 @@ VERSION = "1.0.0"
 FORWARDED_EVENTS = ("polling", "motion", "reset_motion", "stop", "shell",
                     "robot_state", "tree")
 
+#: Events whose last value a newly connected client receives at once: state
+#: only. The others are one-off notices; replaying them re-announced an old
+#: stop, and an old "Update error" made every new eco client raise in its
+#: SSE thread, reconnect, get the replay again -- a reconnect loop.
+REPLAYED_EVENTS = ("polling", "state", "robot_state", "tree")
+
 #: How long stop_all() waits for the arm to settle after stopMove() (s).
 STOP_SETTLE_TIMEOUT = 5.0
 
@@ -103,7 +109,7 @@ class RobotServerApp:
         self.config = config
         self.version = VERSION
         self.started = time.time()
-        self.events = EventBus()
+        self.events = EventBus(replayed=REPLAYED_EVENTS)
         self.log_handler = RingLogHandler(config.log_ring_size)
         logging.getLogger().addHandler(self.log_handler)
 
@@ -327,8 +333,8 @@ class RobotServerApp:
             if linear is not None:
                 attempt("stop linear axis", linear.stop)
             aborted = self.executor.abort_all()
-            attempt("reset motion queue",
-                    lambda: robot.reset_motion(msg=reason))
+            # No message here: robot.stop() above already announced it.
+            attempt("reset motion queue", robot.reset_motion)
             attempt("restart motion", robot.resume)
             # The arm decelerates after stopMove(); report READY only once it
             # has settled, so the caller can move again straight away.

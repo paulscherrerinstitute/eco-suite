@@ -53,18 +53,24 @@ class Subscriber:
 class EventBus:
     """Publish/subscribe with SSE framing."""
 
-    def __init__(self):
+    def __init__(self, replayed=None):
         self._subscribers = []
         self._lock = threading.Lock()
         #: Last value of each event, replayed to a client on connect so a fresh
         #: subscriber does not have to wait a full poll period to show anything.
         self._latest = {}
+        #: Event names whose last value is replayed; None replays all. Only
+        #: state belongs here: a replayed one-off notice is re-announced to
+        #: every new client as if it had just happened.
+        self.replayed = None if replayed is None else frozenset(replayed)
 
     def subscribe(self, name="client", events=None) -> Subscriber:
         subscriber = Subscriber(name, events)
         with self._lock:
             self._subscribers.append(subscriber)
-            replay = [(n, v) for n, v in self._latest.items() if subscriber.wants(n)]
+            replay = [(n, v) for n, v in self._latest.items()
+                      if subscriber.wants(n)
+                      and (self.replayed is None or n in self.replayed)]
         for event_name, value in replay:
             subscriber.put(self.format(event_name, value))
         logger.info("SSE subscriber %s connected (%d total)",

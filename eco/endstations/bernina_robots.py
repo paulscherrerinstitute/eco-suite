@@ -847,7 +847,10 @@ class StaeubliTx200(Assembly):
         if stopper is not None:
             try:
                 ch.wait()
-            except KeyboardInterrupt:
+            # Ctrl-C can arrive as SystemExit in an eco session (as handled
+            # in eco.elements.adjustable); uncaught it escaped to IPython's
+            # "use exit/quit/Ctrl-D" and left the server Busy with the move.
+            except (KeyboardInterrupt, SystemExit):
                 ch.stop()
                 print(f"\nAborted change:\n{stopper_msg}")
         else:
@@ -864,7 +867,10 @@ class StaeubliTx200(Assembly):
                             self._cache[k][k2] = None
                     else:
                         self._cache[k] = None
-                    self._cache["connected"] = False
-                raise RobotError(value)
+                self._cache["connected"] = False
+                # Report, don't raise: raising here, in the SSE thread, only
+                # made the client reconnect -- straight back into the same
+                # message. The next polling event restores the cache.
+                print(f"Robot server lost the controller: {value}")
         else:
             print(name, value)
