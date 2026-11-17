@@ -6,6 +6,14 @@ flow, with an outline, a search that tolerates typos, and an editor that
 keeps image sizes and your drafts. SciLog stays the database, with your own
 access rights.
 
+The viewer is its own package, `scilog-viewer`
+([github.com/swissfel/scilog-viewer](https://github.com/swissfel/scilog-viewer)),
+which eco starts with its own parts (the beamline account, your token in
+`~/.eco/scilog_token`, the settings in `~/.eco/scilog_app.json`;
+`eco.scilog_viewer_plugin`). Install it once with `pip install scilog-viewer`
+(or `pip install 'eco-suite[scilog]'`), update it with
+`pip install -U scilog-viewer`.
+
 ```python
 scilog.viewer()             # the pgroup's logbook; prints the address and opens it where a browser can start
 scilog.widget()             # the same

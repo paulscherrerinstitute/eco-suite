@@ -1,58 +1,17 @@
 """python -m eco.scilog_app [--port N] [--no-browser]: the SciLog viewer's
-server, in the foreground until Ctrl-C (or, with --parent, until that
-process has ended)."""
+server (python -m scilog_viewer) with eco's parts (--plugin
+eco.scilog_viewer_plugin)."""
 
-import argparse
-import os
-import time
+import runpy
+import sys
 
-from eco.scilog_app import DEFAULT_PORT, TOKEN_ENV
-
-parser = argparse.ArgumentParser(prog="python -m eco.scilog_app", description="The SciLog viewer's server.")
-parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-parser.add_argument("--no-browser", action="store_true", help="only print the address")
-parser.add_argument("--parent", type=int, help="end when this process has ended")
-parser.add_argument("--quiet", action="store_true", help="no request log")
-args = parser.parse_args()
-
-if args.quiet:
-    import logging
-
-    logging.getLogger("tornado.access").setLevel(logging.WARNING)
-
-from eco.scilog_app.server import ScilogApp  # noqa: E402
+from eco.scilog_app import INSTALL_HINT, PLUGIN
 
 try:
-    app = ScilogApp(port=args.port, token=os.environ.pop(TOKEN_ENV, None)).start()
-except OSError:  # the port is taken (another viewer?): any free one
-    print(f"port {args.port} is in use, taking another", flush=True)
-    app = ScilogApp(port=0, token=os.environ.pop(TOKEN_ENV, None)).start()
-print(f"eco scilog: {app.url}", flush=True)
-if not args.no_browser:
-    from eco.ei_page import can_open_browser
+    import scilog_viewer  # noqa: F401
+except ImportError:
+    raise SystemExit(INSTALL_HINT) from None
 
-    if can_open_browser():
-        import webbrowser
-
-        webbrowser.open(app.url)
-
-
-def parent_alive():
-    if args.parent is None:
-        return True
-    try:
-        os.kill(args.parent, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass  # exists, owned by someone else: cannot happen for our parent, keep going
-    return True
-
-
-try:
-    while parent_alive():
-        time.sleep(2)
-except KeyboardInterrupt:
-    pass
-finally:
-    app.stop()
+if "--plugin" not in sys.argv:
+    sys.argv[1:1] = ["--plugin", PLUGIN]
+runpy.run_module("scilog_viewer", run_name="__main__", alter_sys=True)

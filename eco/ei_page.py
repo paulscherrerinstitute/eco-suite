@@ -42,8 +42,8 @@ def clean_html(text):
     """Untrusted HTML (a SciLog post, a model's answer) reduced to plain
     formatting: no scripts, event handlers or foreign URL schemes. Uses nh3,
     else bleach (the console environments have only bleach), else the text
-    alone -- see eco.scilog_app.content.sanitize."""
-    from eco.scilog_app.content import sanitize
+    alone -- see eco.html_sanitize."""
+    from eco.html_sanitize import sanitize
 
     return sanitize(text)
 

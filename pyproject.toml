@@ -133,6 +133,8 @@ web = ["tornado>=6.1"]
 psi = [
     "scilog",
 ]
+# the SciLog viewer (scilog.viewer(), eco.scilog_app): its own package, github.com/swissfel/scilog-viewer
+scilog = ["scilog", "scilog-viewer>=0.2.9"]
 docs = [
     "sphinx>=7,<9",
     "furo>=2024.1.29",
@@ -191,7 +193,6 @@ eco = ["voila_app.ipynb", "jupyterlab_app.ipynb", "ei_packs/*.md"]
 "eco.bernina" = ["beamline_interact.svg"]
 "eco.utilities" = ["diffractometer_3d.html"]
 "eco.web" = ["static/*"]
-"eco.scilog_app" = ["static/*"]
 
 # setuptools-scm's file-finder otherwise sweeps every git-tracked file under a
 # package dir into the wheel. Keep the stray vendored experiment and *bak

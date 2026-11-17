@@ -79,6 +79,18 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
   `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
+## 17 November 2026
+
+- **The SciLog viewer is a package of its own now, `scilog-viewer`**
+  ([github.com/swissfel/scilog-viewer](https://github.com/swissfel/scilog-viewer),
+  on PyPI). `scilog.viewer()` and `python -m eco.scilog_app` start it with
+  eco's parts (the beamline account, `~/.eco/scilog_token`,
+  `~/.eco/scilog_app.json`), so nothing changes in use; eco no longer has a
+  copy of its own. *Needs* `pip install scilog-viewer` (or the extra
+  `eco-suite[scilog]`); without it `scilog.viewer()` says so. Every
+  release of the viewer is usable from eco at once: `pip install -U
+  scilog-viewer`.
+
 ## 13 November 2026
 
 - `%ei` lets the model look things up while it answers by default (what
