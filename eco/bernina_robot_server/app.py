@@ -49,6 +49,9 @@ VERSION = "1.0.0"
 FORWARDED_EVENTS = ("polling", "motion", "reset_motion", "stop", "shell",
                     "robot_state", "tree")
 
+#: How long stop_all() waits for the arm to settle after stopMove() (s).
+STOP_SETTLE_TIMEOUT = 5.0
+
 
 class RingLogHandler(logging.Handler):
     """Keeps the last N log records for the ``/logs`` endpoint.
@@ -93,6 +96,7 @@ class RobotServerApp:
         self._state_lock = threading.Lock()
         self._fault_reason = None
         self._shutdown = threading.Event()
+        self._stop_lock = threading.Lock()
 
         self.robot = connect_bernina_robot(
             host=None if config.simulated else config.robot_host,
@@ -244,6 +248,61 @@ class RobotServerApp:
         finally:
             self.robot.start_polling()
         return "restarted"
+
+    def stop_all(self, reason="stop requested"):
+        """Stop every motion and leave the robot ready for new commands.
+
+        Behind ``/api/stop``, i.e. ``rob.stop()`` and Ctrl-C in eco. It never
+        queues behind a busy server and acts on every session's commands:
+
+        1. ``stopMove()`` -- halt the arm at once, before anything else;
+        2. stop the linear axis;
+        3. abort every running command, foreground and background;
+        4. ``resetMotion()`` -- discard the motion queue, including anything an
+           aborting command queued while unwinding, and re-seed the setpoints;
+        5. ``restartMove()`` -- so the next motion command runs.
+
+        Every step is attempted even if an earlier one fails; failures are
+        returned in ``errors``.
+        """
+        robot = self.robot
+        errors = []
+
+        def attempt(step, func):
+            try:
+                func()
+            except Exception as exc:
+                logger.exception("stop: %s failed", step)
+                errors.append(f"{step}: {type(exc).__name__}: {exc}")
+
+        with self._stop_lock:
+            logger.warning("stopping all motion: %s", reason)
+            # An abort elsewhere may have left the token set mid-flight; the
+            # stopMove() must not be refused for it. abort_all() below cancels
+            # any command that is still running.
+            robot.cancellation.reset()
+            attempt("stop arm", lambda: robot.stop(reason))
+            linear = robot.motors.get("z_lin")
+            if linear is not None:
+                attempt("stop linear axis", linear.stop)
+            aborted = self.executor.abort_all()
+            attempt("reset motion queue",
+                    lambda: robot.reset_motion(msg=reason))
+            attempt("restart motion", robot.resume)
+            # The arm decelerates after stopMove(); report READY only once it
+            # has settled, so the caller can move again straight away.
+            try:
+                robot.wait_ready(timeout=STOP_SETTLE_TIMEOUT)
+            except Exception as exc:
+                logger.warning("robot not ready after stop: %s", exc)
+        return {
+            "stopped": not errors,
+            "ready": robot.is_ready() and self.state == "Ready",
+            "aborted": aborted,
+            "errors": errors,
+            "server_state": self.state,
+            "robot_state": str(robot.state),
+        }
 
     # -------------------------------------------------------------- status
 

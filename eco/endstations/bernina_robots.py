@@ -18,6 +18,7 @@ from eco.utilities import user_input
 #os.sys.path.insert(0, "/sf/bernina/code/gac-bernina/robotics-toolbox-python/")
 os.sys.path.insert(0, "/sf/bernina/config/src/python/bernina_urdf/")
 
+import requests
 from requests import HTTPError
 
 
@@ -298,13 +299,27 @@ class StaeubliTx200(Assembly):
         self.get_eval_result("robot.reset_motion()")
 
     def stop(self):
+        """Stop all robot motion, whichever eco session started it.
+
+        Works while the server is busy with another session's move or
+        recording. The server halts the arm and the linear axis, aborts every
+        running command, discards all queued motions and leaves the robot
+        ready for new commands.
+        """
+        response = requests.post(self.pc.url + "api/stop", timeout=15)
         try:
-            self.cartesian.z_lin.stop()
-        except:
-            print("Failed to stop linear axis")
-        self.get_eval_result("robot.stop()")
-        self.reset_motion()
-        self.get_eval_result("robot.resume()")
+            result = response.json()
+        except ValueError:
+            response.raise_for_status()
+            raise
+        if result.get("aborted"):
+            print(f"Aborted server commands {result['aborted']}.")
+        if result.get("errors"):
+            raise RobotError("Stop incomplete:\n" + "\n".join(result["errors"]))
+        if not result.get("ready"):
+            print(f"Robot stopped, but not ready: server {result['server_state']}, "
+                  f"robot {result['robot_state']}.")
+        return result
 
     def move(
         self, check=True, wait=True, update_value_time=0.05, timeout=240, **kwargs
@@ -319,7 +334,7 @@ class StaeubliTx200(Assembly):
         """
         if self.info.server_status == "Busy":
             raise RobotError(
-                "The server is busy with a recording or general motion. To abort it, type: rob.abort_record()"
+                "The server is busy with a recording or general motion. To stop it, type: rob.stop()"
             )
         cart_kwargs = np.any(
             [s in kwargs.keys() for s in ["x", "y", "z", "rx", "ry", "rz"]]
@@ -482,7 +497,7 @@ class StaeubliTx200(Assembly):
         This function is used to record trajectories, which are considered safe for remote commands.
         The move has to be exectuted in manual mode and no other motion is allowed until the
         move is either finished or aborted by ctrl + c. To abort the command from a different
-        eco session, use the function abort_record().
+        eco session, use rob.stop().
         """
         if "t_det" in kwargs.keys():
             t = kwargs.pop("t_det")
@@ -499,9 +514,11 @@ class StaeubliTx200(Assembly):
         """
         This functions aborts any motion, which is blocking other commands
         such as a record_motion command executed in a different session.
+
+        Same as stop(): one server call that is neither refused while the
+        server is busy nor depends on the SSE state having caught up.
         """
-        self.pc.eval(":abort")
-        self.reset_motion()
+        return self.stop()
 
     def reset_recorded_motions(self, index=None, motion=None):
         """
@@ -789,7 +806,7 @@ class StaeubliTx200(Assembly):
         if "info" in self.__dict__.keys():
             if self.info.server_status == "Busy":
                 raise RobotError(
-                    "The server is busy with a recording motion. To abort it, type: rob.abort_record()"
+                    "The server is busy with a recording motion. To stop it, type: rob.stop()"
                 )
         if background:
             cmd = cmd + "&"
@@ -800,6 +817,8 @@ class StaeubliTx200(Assembly):
             res = self.pc.get_result(cid)
             if res["status"] == "failed":
                 raise RobotError(res["exception"])
+            elif res["status"] == "aborted":
+                raise RobotError(f"{cmd} was aborted")
             elif res["status"] == "completed":
                 val = res["return"]
                 break

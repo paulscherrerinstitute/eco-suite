@@ -868,6 +868,10 @@ class StaeubliRobot:
             started = time.time()
             try:
                 self.update()
+            except Cancelled:
+                # An abort is in flight (e.g. a stop); skip this poll, the
+                # cancellation is lifted again once the command has unwound.
+                logger.debug("poll iteration skipped: abort in progress")
             except Exception:
                 logger.exception("poll iteration failed")
             # Sleep the remainder of the period, so a slow round trip does not

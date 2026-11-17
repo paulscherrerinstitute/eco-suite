@@ -64,6 +64,11 @@ STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_ABORTED = "aborted"
 
+#: How long abort() waits for the cancelled command to unwind before it lifts
+#: the cancellation again. A command notices within one controller round trip
+#: (the link timeout, 1 s by default).
+ABORT_GRACE = 5.0
+
 
 class CommandResult:
     __slots__ = ("id", "statement", "background", "status", "value",
@@ -155,6 +160,10 @@ class CommandExecutor:
                     )
                     result.finished = time.time()
                     return result
+                # Clear a stale cancellation before the command becomes
+                # abortable, never after: an abort that arrives before the
+                # pool thread starts must still cancel it.
+                self.cancellation.reset()
                 self._set_foreground(result)
 
         self._pool.submit(self._run, result)
@@ -162,8 +171,6 @@ class CommandExecutor:
 
     def _run(self, result):
         try:
-            if not result.background:
-                self.cancellation.reset()
             result.value = self.evaluate(result.statement)
             result.status = STATUS_COMPLETED
         except Cancelled as exc:
@@ -212,11 +219,40 @@ class CommandExecutor:
             target = self._results.get(int(command_id))
         if target is None or target.status != STATUS_RUNNING:
             return False
-        logger.warning("aborting command %d: %s", target.id, target.statement)
+        self._cancel([target])
+        return True
+
+    def abort_all(self):
+        """Cancel every running command, foreground and background.
+
+        Returns the ids of the commands that were running.
+        """
+        with self._lock:
+            targets = [r for r in self._results.values()
+                       if r.status == STATUS_RUNNING]
+        if targets:
+            self._cancel(targets)
+        return [t.id for t in targets]
+
+    def _cancel(self, targets):
+        for target in targets:
+            logger.warning("aborting command %d: %s", target.id,
+                           target.statement)
         # There is one cancellation token, shared with the driver's link, so an
         # abort stops whichever command is currently touching the controller.
         self.cancellation.cancel()
-        return True
+        # Lift it again once the commands have unwound. Left set, it would fail
+        # every later link call -- the poller, background reads, and the very
+        # stopMove() a caller sends next to halt the arm.
+        deadline = time.time() + ABORT_GRACE
+        while (any(t.status == STATUS_RUNNING for t in targets)
+               and time.time() < deadline):
+            time.sleep(0.01)
+        for target in targets:
+            if target.status == STATUS_RUNNING:
+                logger.error("command %d still running %.0f s after abort",
+                             target.id, ABORT_GRACE)
+        self.cancellation.reset()
 
     def clear_cancellation(self):
         self.cancellation.reset()

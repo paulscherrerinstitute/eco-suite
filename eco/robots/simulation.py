@@ -64,6 +64,8 @@ class SimulatedController(BaseTransport):
 
         self.move_id = 0
         self._move_ends_at = 0.0
+        #: Motion time left when stopMove() paused a move; None if not paused.
+        self._paused_remaining = None
         self.tasks = {}                    # name -> (code, started)
         self.task_ret = 0
         self.pending_event = ""
@@ -111,12 +113,30 @@ class SimulatedController(BaseTransport):
 
     @property
     def empty(self) -> bool:
-        return self.settled
+        return self.settled and self._paused_remaining is None
 
     def _start_move(self):
         self.move_id += 1
         self._move_ends_at = time.time() + MOVE_DURATION
         return self.move_id
+
+    # As on the controller: stopMove() halts the arm but keeps the motion
+    # queued; restartMove() resumes it, resetMotion() discards it.
+
+    def _stop_move(self):
+        remaining = self._move_ends_at - time.time()
+        if remaining > 0:
+            self._paused_remaining = remaining
+        self._move_ends_at = 0.0
+
+    def _restart_move(self):
+        if self._paused_remaining is not None:
+            self._move_ends_at = time.time() + self._paused_remaining
+            self._paused_remaining = None
+
+    def _reset_motion(self):
+        self._move_ends_at = 0.0
+        self._paused_remaining = None
 
     def _finish_due_tasks(self):
         for name, (code, started) in list(self.tasks.items()):
@@ -249,9 +269,9 @@ class SimulatedController(BaseTransport):
         for prefix, action in (
             ("enablePower", lambda: setattr(self, "powered", True)),
             ("disablePower", lambda: setattr(self, "powered", False)),
-            ("stopMove", lambda: setattr(self, "_move_ends_at", 0.0)),
-            ("restartMove", lambda: None),
-            ("resetMotion", lambda: setattr(self, "_move_ends_at", 0.0)),
+            ("stopMove", self._stop_move),
+            ("restartMove", self._restart_move),
+            ("resetMotion", self._reset_motion),
         ):
             if statement.startswith(prefix):
                 action()

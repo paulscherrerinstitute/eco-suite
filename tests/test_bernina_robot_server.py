@@ -153,6 +153,76 @@ class TestBusyGating:
         assert time.time() - start < 2.0
         assert client.get("/state").get_json() == "Ready"
 
+    def test_abort_leaves_the_link_usable(self, client):
+        # The cancellation token is shared with the link. Left set after an
+        # abort, every later link call -- background reads, the poller, a
+        # stopMove() -- failed as "aborted" until the next foreground command.
+        int(client.get("/evalAsync/robot.cancellation.sleep(30)").data)
+        time.sleep(0.2)
+        client.get("/eval/:abort")
+        result = submit(client, "robot.is_powered()&")
+        assert result["status"] == "completed", result
+
+
+class TestStop:
+    """``POST /api/stop`` -- rob.stop() and Ctrl-C in eco.
+
+    It must stop everything, from any session, even while the server is busy,
+    and leave the robot ready for the next command.
+    """
+
+    def _start_move(self, app, client):
+        j1 = app.robot.get_joint_pos(return_dict=True)["j1"]
+        command_id = int(client.get(
+            f"/evalAsync/robot.general_motion(j1={j1 + 5})").data)
+        time.sleep(0.2)
+        assert client.get("/state").get_json() == "Busy"
+        return command_id
+
+    def test_stops_another_sessions_move_while_busy(self, app, client):
+        log = app.robot.link.transport.log
+        command_id = self._start_move(app, client)
+        log.clear()
+        response = client.post("/api/stop")
+        assert response.status_code == 200
+        body = response.get_json()
+        sent = [a[0] for c, a in list(log) if c == "eval"]
+        # The arm is halted first, before waiting for the command to unwind.
+        assert sent[0] == "stopMove()"
+        assert sent.index("resetMotion()") < sent.index("restartMove()")
+        assert command_id in body["aborted"]
+        assert client.get(f"/result/{command_id}").get_json()["status"] == "aborted"
+
+    def test_also_aborts_background_commands(self, client):
+        command_id = int(client.get(
+            "/evalAsync/robot.cancellation.sleep(30)&").data)
+        time.sleep(0.2)
+        body = client.post("/api/stop").get_json()
+        assert command_id in body["aborted"]
+        assert client.get(f"/result/{command_id}").get_json()["status"] == "aborted"
+
+    def test_stops_the_linear_axis(self, app, client):
+        log = app.robot.link.transport.log
+        log.clear()
+        client.post("/api/stop")
+        sent = [a[0] for c, a in list(log) if c == "eval"]
+        assert "setEcDo(ecdo_linMotStop,true)" in sent
+        assert "setEcDo(ecdo_linMotStop,false)" in sent
+
+    def test_leaves_the_robot_ready_for_the_next_move(self, app, client):
+        self._start_move(app, client)
+        body = client.post("/api/stop").get_json()
+        assert body["stopped"] and body["ready"], body
+        assert body["errors"] == []
+        assert client.get("/state").get_json() == "Ready"
+        j1 = app.robot.get_joint_pos(return_dict=True)["j1"]
+        assert submit(client, f"robot.general_motion(j1={j1 - 5})")["status"] \
+            == "completed"
+
+    def test_works_when_nothing_is_running(self, client):
+        body = client.post("/api/stop").get_json()
+        assert body["stopped"] and body["aborted"] == []
+
 
 class TestEvents:
     def test_polling_payload_has_what_eco_caches(self, app):

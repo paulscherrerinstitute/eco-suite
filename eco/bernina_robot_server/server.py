@@ -266,11 +266,8 @@ def create_app(server_app):
 
     @app.post("/api/stop")
     def api_stop():
-        executor.abort()
-        robot.stop("stop requested over /api/stop")
-        robot.reset_motion(msg="stop requested over /api/stop")
-        robot.resume()
-        return jsonify({"stopped": True})
+        result = server_app.stop_all("stop requested over /api/stop")
+        return jsonify(result), (200 if result["stopped"] else 500)
 
     @app.get("/api/subscribers")
     def api_subscribers():
