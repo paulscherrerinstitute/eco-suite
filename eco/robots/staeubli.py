@@ -136,6 +136,8 @@ class StaeubliRobot:
         self._listeners = []
         self._reset = True
         self._last_env_update = 0.0
+        #: time.time() of the last successful position poll; None before one.
+        self.last_poll_ok = None
         self._poll_thread = None
         self._poll_stop = threading.Event()
         self._state_lock = threading.Lock()
@@ -243,6 +245,17 @@ class StaeubliRobot:
 
     def _polling_active(self) -> bool:
         return self._poll_thread is not None and self._poll_thread.is_alive()
+
+    def poll_age(self):
+        """Seconds since the last successful position poll, None before one.
+
+        A poller that is alive but not completing polls (e.g. blocked on the
+        link lock) leaves every readback frozen while ``connected`` stays
+        True; this is how to tell.
+        """
+        if self.last_poll_ok is None:
+            return None
+        return time.time() - self.last_poll_ok
 
     # -------------------------------------------------------- working mode
 
@@ -885,6 +898,9 @@ class StaeubliRobot:
         try:
             self.update_fast()
             self.connected = True
+            self.last_poll_ok = time.time()
+            # Lets clients tell a fresh readback from a frozen one.
+            self.on_poll_status["timestamp"] = self.last_poll_ok
         except Cancelled:
             raise
         except Exception as exc:

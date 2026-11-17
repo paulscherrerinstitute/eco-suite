@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import collections
 import logging
+import sys
 import threading
 import time
+import traceback
 
 from ..robots import connect_bernina_robot
 from ..robots.protocol import Val3Link
@@ -51,6 +53,19 @@ FORWARDED_EVENTS = ("polling", "motion", "reset_motion", "stop", "shell",
 
 #: How long stop_all() waits for the arm to settle after stopMove() (s).
 STOP_SETTLE_TIMEOUT = 5.0
+
+#: A running poller with no successful poll for this long means every
+#: readback clients see is frozen (s).
+STALE_POLL_S = 5.0
+
+
+def _thread_stacks():
+    """Every thread's stack, named -- shows who holds the controller link."""
+    names = {t.ident: t.name for t in threading.enumerate()}
+    return "\n".join(
+        f"--- {names.get(ident, ident)}\n" + "".join(traceback.format_stack(frame))
+        for ident, frame in sys._current_frames().items()
+    )
 
 
 class RingLogHandler(logging.Handler):
@@ -97,6 +112,7 @@ class RobotServerApp:
         self._fault_reason = None
         self._shutdown = threading.Event()
         self._stop_lock = threading.Lock()
+        self._poll_stall_logged = False
 
         self.robot = connect_bernina_robot(
             host=None if config.simulated else config.robot_host,
@@ -195,6 +211,7 @@ class RobotServerApp:
         """
         was_offline = True
         while not self._shutdown.wait(2.0):
+            self._check_poll_stall()
             offline = self.robot.state == RobotState.OFFLINE or not self.robot.connected
             if offline:
                 was_offline = True
@@ -217,6 +234,30 @@ class RobotServerApp:
                     logger.error("setup after reconnect failed: %s",
                                  self._fault_reason)
                     was_offline = True
+
+    @property
+    def poll_stalled(self) -> bool:
+        """The poller is running but has not completed a poll recently.
+
+        Readbacks are then frozen while ``connected`` still says True -- the
+        failure seen when a command held the link across a whole move.
+        """
+        age = self.robot.poll_age()
+        return (self.robot._polling_active() and age is not None
+                and age > STALE_POLL_S)
+
+    def _check_poll_stall(self):
+        """Log a stall once, with every thread's stack, and its recovery."""
+        if self.poll_stalled:
+            if not self._poll_stall_logged:
+                self._poll_stall_logged = True
+                logger.error(
+                    "no successful poll for %.0f s: readbacks sent to clients "
+                    "are stale. Thread stacks:\n%s",
+                    self.robot.poll_age(), _thread_stacks())
+        elif self._poll_stall_logged:
+            self._poll_stall_logged = False
+            logger.warning("polling resumed after a stall")
 
     def stop(self):
         self._shutdown.set()
@@ -311,6 +352,7 @@ class RobotServerApp:
             "version": self.version,
             "state": self.state,
             "fault_reason": self._fault_reason,
+            "poll_stalled": self.poll_stalled,
             "uptime_s": round(time.time() - self.started, 1),
             "robot": {
                 "state": str(self.robot.state),

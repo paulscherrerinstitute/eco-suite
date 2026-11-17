@@ -224,6 +224,49 @@ class TestStop:
         assert body["stopped"] and body["aborted"] == []
 
 
+class TestPollStall:
+    """A poller blocked on the link froze every readback while the server
+    still looked healthy -- the production instability of 17 Nov 2026."""
+
+    def test_polling_payload_carries_an_advancing_timestamp(self, client):
+        first = client.get("/api/poll").get_json()["timestamp"]
+        time.sleep(0.3)
+        assert client.get("/api/poll").get_json()["timestamp"] > first
+
+    def test_a_held_link_is_reported_and_its_recovery_too(self, app, client,
+                                                          monkeypatch, caplog):
+        import eco.bernina_robot_server.app as app_module
+        monkeypatch.setattr(app_module, "STALE_POLL_S", 0.5)
+        held, release = threading.Event(), threading.Event()
+
+        def hold_the_link():
+            with app.robot.link.transaction():
+                held.set()
+                release.wait(10)
+
+        holder = threading.Thread(target=hold_the_link, daemon=True)
+        caplog.set_level("WARNING", logger="eco.bernina_robot_server.app")
+        holder.start()
+        try:
+            held.wait(2)
+            time.sleep(1.0)
+            health = client.get("/api/health")
+            assert health.status_code == 503
+            assert health.get_json()["poll_stalled"] is True
+            app._check_poll_stall()
+            assert "readbacks sent to clients are stale" in caplog.text
+            assert "hold_the_link" in caplog.text      # the stack dump
+        finally:
+            release.set()
+            holder.join(5)
+        deadline = time.time() + 3
+        while client.get("/api/health").status_code != 200:
+            assert time.time() < deadline, "health did not recover"
+            time.sleep(0.05)
+        app._check_poll_stall()
+        assert "polling resumed after a stall" in caplog.text
+
+
 class TestEvents:
     def test_polling_payload_has_what_eco_caches(self, app):
         subscriber = app.events.subscribe("test", ["polling"])

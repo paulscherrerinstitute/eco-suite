@@ -220,9 +220,15 @@ def create_app(server_app):
 
     @app.get("/api/health")
     def api_health():
-        healthy = server_app.state in ("Ready", "Busy") and robot.connected
+        stalled = server_app.poll_stalled
+        healthy = (server_app.state in ("Ready", "Busy") and robot.connected
+                   and not stalled)
+        age = robot.poll_age()
         return jsonify({"healthy": healthy, "state": server_app.state,
-                        "connected": robot.connected}), (200 if healthy else 503)
+                        "connected": robot.connected,
+                        "poll_stalled": stalled,
+                        "poll_age_s": None if age is None else round(age, 2)}), \
+            (200 if healthy else 503)
 
     @app.get("/api/positions")
     def api_positions():
