@@ -1305,7 +1305,7 @@ class Terahertz_In_Air(Assembly):
         }
 
         self.motor_configuration_thorlabs = {
-            "polarizer": {
+            "waveplate_800nm": {
                 "pvname": "SLAAR21-LMOT-ELL1",
             },
             "waveplate_ir": {
@@ -1322,6 +1322,9 @@ class Terahertz_In_Air(Assembly):
             },
             "waveplate_Thz": {
                 "pvname": "SLAAR21-LMOT-ELL5",
+            },
+            "polarizer_Thz": {
+                "pvname": "SLAAR21-LMOT-ELL6",
             },
         }
 
