@@ -228,6 +228,46 @@ class TestDriver:
         robot.on_change_status("joint", "hold")
         assert "reset_motion" in seen
 
+    def test_a_brief_jog_between_status_polls_is_caught(self, robot):
+        # The controller's jogGuard resets on its own; the server learns of it
+        # from the next *fast* poll, even if the operator has already left the
+        # jog mode again before any status poll could see it.
+        sim = robot.link.transport
+        seen = []
+        robot.add_listener(lambda k, v: seen.append(v) if k == "reset_motion"
+                           else None)
+        robot.move_joint(j1=robot.joint_pos["j1"] + 5)
+        sim.log.clear()
+        sim.status_code = 2          # joint jog ...
+        sim.status_code = 6          # ... and out again
+        robot.update_fast()
+        assert sim.empty, "the stored motion must be gone"
+        assert seen == ["Pendant switched to joint jog mode: the controller "
+                        "discarded all stored motions."]
+        assert not any(a[0].startswith("resetMotion") for c, a in sim.log
+                       if c == "eval")   # the controller did it, not the server
+
+    def test_every_entry_into_a_jog_mode_resets(self, robot):
+        sim = robot.link.transport
+        for status in (3, 6, 4, 5, 2):   # frame, none, tool, point, joint
+            robot.move_joint(j1=robot.joint_pos["j1"] + 1)
+            sim.status_code = status
+            assert sim.empty == (status != 6)
+            robot.update_fast()
+
+    def test_the_server_fallback_stands_down_after_a_controller_reset(self,
+                                                                     robot):
+        sim = robot.link.transport
+        seen = []
+        robot.add_listener(lambda k, v: seen.append(v) if k == "reset_motion"
+                           else None)
+        sim.status_code = 3
+        sim.log.clear()
+        robot.update_env()           # event and mode change in one reply
+        assert len(seen) == 1
+        assert not any(a[0].startswith("resetMotion") for c, a in sim.log
+                       if c == "eval")
+
     def test_setup_enables_all_motor_groups(self, robot):
         assert sorted(robot.motors) == sorted(
             ["x", "y", "z", "rx", "ry", "rz", "r", "gamma", "delta",

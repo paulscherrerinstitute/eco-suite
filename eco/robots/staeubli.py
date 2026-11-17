@@ -138,6 +138,9 @@ class StaeubliRobot:
         self._last_env_update = 0.0
         #: time.time() of the last successful position poll; None before one.
         self.last_poll_ok = None
+        #: Jog status whose reset the controller has reported (jog_reset) and
+        #: the slower status poll has not caught up with yet.
+        self._controller_jog_reset = None
         self._poll_thread = None
         self._poll_stop = threading.Event()
         self._state_lock = threading.Lock()
@@ -934,6 +937,12 @@ class StaeubliRobot:
         }
         self.linear_axis_pos = {"z_lin": float(sts[12].strip())}
         self.connected = True
+        # comTcp pops controller events into whichever status reply comes
+        # first -- at the fast rate, nearly always this one.
+        event = sts[13].strip() if len(sts) > 13 else ""
+        if event:
+            logger.info("controller event: %s", event)
+            self.on_event(event)
         self.on_positions_updated()
         self.on_poll_status["pos"] = self.positions()
         for motors in self.motor_groups.values():
@@ -952,6 +961,12 @@ class StaeubliRobot:
         """Modes, power, speed, task, frame/tool -- the slow poll."""
         current_task = self.current_task
         sts = self.link.execute("get_status_env", current_task)
+        # The event first: a jog_reset must be known before the mode change
+        # it caused, so the fallback in on_change_status stands down.
+        event = sts[22].strip() if len(sts) > 22 else ""
+        if event:
+            logger.info("controller event: %s", event)
+            self.on_event(event)
         self._update_working_mode(int(sts[0].strip()), int(sts[1].strip()))
         self.powered = sts[2].strip() == "1"
         self.speed = int(sts[3].strip())
@@ -977,11 +992,6 @@ class StaeubliRobot:
         self.frame_trsf = [float(sts[10 + i].strip()) for i in range(6)]
         self.tool_trsf = [float(sts[16 + i].strip()) for i in range(6)]
         self.on_environment_updated()
-
-        event = sts[22].strip() if len(sts) > 22 else ""
-        if event:
-            logger.info("controller event: %s", event)
-            self.on_event(event)
 
         self._update_state()
         self._reset = False
@@ -1026,7 +1036,21 @@ class StaeubliRobot:
         pass
 
     def on_event(self, event):
-        pass
+        """A ``tcp_events`` entry pushed by the VAL3 program."""
+        name, _, arg = event.partition(" ")
+        if name == "jog_reset":
+            # The controller's jogGuard task has already discarded every
+            # stored motion; only the setpoints still describe them.
+            status = WORKING_MODES[1][1].get(int(arg), arg) if arg.isdigit() \
+                else arg
+            msg = (f"Pendant switched to {status} jog mode: the controller "
+                   f"discarded all stored motions.")
+            logger.warning(msg)
+            self._controller_jog_reset = status
+            for motors in self.motor_groups.values():
+                for motor in motors.values():
+                    motor.initialize()
+            self.emit("reset_motion", msg)
 
     def on_reconnected(self):
         pass
@@ -1045,7 +1069,17 @@ class StaeubliRobot:
             self.set_profile("default")
 
     def on_change_status(self, status, previous):
-        """Drop queued motions as soon as the operator jogs from the pendant."""
+        """Drop queued motions as soon as the operator jogs from the pendant.
+
+        Only a fallback: the controller's own ``jogGuard`` task does this
+        within 10 ms of the mode change. This one only sees the mode at the
+        environment poll, so a jog mode left again within that period is
+        missed, and nothing at all is seen while the poller is down.
+        """
+        if status == self._controller_jog_reset:
+            # Already reset by the controller and reported.
+            self._controller_jog_reset = None
+            return
         if status in MANUAL_JOG_STATUSES:
             msg = f"Manual mode change to {status} mode detected"
             logger.warning(msg)

@@ -55,7 +55,7 @@ class SimulatedController(BaseTransport):
         self.tool_trsf = [51.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         self.mode = mode
-        self.status_code = status_code
+        self._status_code = status_code
         self.powered = powered
         self.speed = speed
         self.tool_open = False
@@ -68,7 +68,8 @@ class SimulatedController(BaseTransport):
         self._paused_remaining = None
         self.tasks = {}                    # name -> (code, started)
         self.task_ret = 0
-        self.pending_event = ""
+        #: The VAL3 ``tcp_events`` FIFO; both status replies pop one entry.
+        self.events = []
 
         #: VAL3 scratch variables, including the ``tcp_p_spherical[i]`` points.
         self.variables = {"n_actPosLinAx": self.z_lin, "n_moveAbsPos": self.z_lin}
@@ -161,19 +162,43 @@ class SimulatedController(BaseTransport):
 
     # --- status polls -------------------------------------------------
 
+    def _pop_event(self):
+        # comTcp appends the event after the last separator, without one of
+        # its own.
+        return self.events.pop(0) if self.events else ""
+
     def _cmd_get_status_fast(self, args):
-        return self._fmt(list(self.joints) + list(self.cartesian) + [self.z_lin])
+        return self._fmt(list(self.joints) + list(self.cartesian)
+                         + [self.z_lin]) + self._pop_event()
 
     def _cmd_get_status_env(self, args):
         task_name = args[0] if args else "None"
         code, _ = self.tasks.get(task_name, (-1, 0))
-        event, self.pending_event = self.pending_event, ""
         return self._fmt(
             [self.mode, self.status_code, int(self.powered), self.speed,
              int(self.empty), int(self.settled), code, self.task_ret,
              self.frame, self.tool]
-            + list(self.frame_trsf) + list(self.tool_trsf) + [event]
-        )
+            + list(self.frame_trsf) + list(self.tool_trsf)
+        ) + self._pop_event()
+
+    # --- pendant ------------------------------------------------------
+
+    @property
+    def status_code(self):
+        return self._status_code
+
+    @status_code.setter
+    def status_code(self, value):
+        """The operator changes the pendant mode.
+
+        Emulates the VAL3 ``jogGuard`` task: in manual mode, entering a jog
+        mode (2 joint, 3 frame, 4 tool, 5 point) discards the stored motions
+        and reports ``jog_reset <status>``.
+        """
+        previous, self._status_code = self._status_code, value
+        if self.mode == 1 and value in (2, 3, 4, 5) and value != previous:
+            self._reset_motion()
+            self.events.append(f"jog_reset {value}")
 
     # --- variables ----------------------------------------------------
 
