@@ -632,14 +632,39 @@ class NamespaceMonitorStore:
             "last_init_finished": self.last_init_finished,
         }
 
-    def failure_details(self):
+    def failure_details(self, traceback_lines=0):
+        """Why each failed component failed.
+
+        `traceback_lines > 0` adds the last N lines of the stored exception's
+        traceback. The repr alone names the exception but not the line that
+        raised it, which for a device whose __init__ builds a tree of
+        sub-components is rarely enough to act on - and the alternative,
+        reading the service log on the server's host, needs an account there.
+
+        The exception objects are the ones init_all recorded, so a traceback
+        is present for anything that actually raised. A component given up on
+        after N cycles never raised, and carries a GivenUpInitialisationError
+        with no traceback - that absence is itself the useful signal, since it
+        distinguishes "this device is broken" from "this device lost a race
+        with its own dependencies".
+        """
         ns = self.namespace
         if ns is None:
             return {}
         out = {}
         for name in sorted(self._target_names & set(ns.failed_names)):
             try:
-                out[name] = repr(ns.failed_items_excpetion.get(name))[:1000]
+                exc = ns.failed_items_excpetion.get(name)
+                entry = repr(exc)[:1000]
+                if traceback_lines and getattr(exc, "__traceback__", None):
+                    import traceback as _tb
+
+                    lines = _tb.format_tb(exc.__traceback__)
+                    entry = {
+                        "error": entry,
+                        "traceback": "".join(lines[-int(traceback_lines):]),
+                    }
+                out[name] = entry
             except Exception:
                 out[name] = "<no exception recorded>"
         return out

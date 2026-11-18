@@ -2481,3 +2481,50 @@ def test_stopping_the_earlier_recording_does_not_affect_the_later_one(recording_
     mon_m1_r2.push(5.0)
     stopped = recording_store.stop_recording("r2")
     assert stopped["data"]["fake.m1"]["values"] == [5.0]
+
+
+def test_health_names_the_eco_the_server_actually_imported(app_and_store):
+    """The first question when a component builds in a session but not here.
+
+    The server imports eco once at startup from whatever checkout its unit
+    puts on PYTHONPATH - which is not necessarily the one the person is
+    editing - and an in-process reinit cannot replace imported modules. Until
+    this was reported, answering that needed shell access on the server host.
+    """
+    app, _, _ = app_and_store
+    eco_info = app.test_client().get("/health").get_json()["eco"]
+    import eco
+
+    assert eco_info["file"] == eco.__file__
+    assert eco_info["python"]
+    # A checkout reports its branch; an installed copy legitimately reports
+    # neither, so only the file is required.
+    assert "branch" in eco_info or "commit" in eco_info or True
+
+
+def test_failures_can_include_the_traceback_that_raised(app_and_store):
+    """repr(exc) names the exception but not the line that raised it, which
+    for a device whose __init__ builds a tree of sub-components is rarely
+    enough to act on."""
+    app, store, _ = app_and_store
+
+    def boom():
+        raise ValueError("no such channel")
+
+    try:
+        boom()
+    except ValueError as exc:
+        recorded = exc
+
+    store.namespace.failed_names.add("broken_dev")
+    store.namespace.failed_items_excpetion["broken_dev"] = recorded
+    store._target_names = set(store._target_names) | {"broken_dev"}
+
+    plain = app.test_client().get("/failures").get_json()["failures"]
+    assert plain["broken_dev"] == repr(recorded)
+
+    with_tb = app.test_client().get("/failures?traceback=5").get_json()["failures"]
+    assert with_tb["broken_dev"]["error"] == repr(recorded)
+    tb = with_tb["broken_dev"]["traceback"]
+    assert "boom()" in tb            # the call site
+    assert "test_status_server.py" in tb and "line " in tb

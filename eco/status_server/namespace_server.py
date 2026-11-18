@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import uuid
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
@@ -171,6 +172,45 @@ def create_namespace_app(
         handoffs.clean_spool_dir()
     app.config["ECO_HANDOFF"] = handoffs
 
+    def _eco_provenance():
+        """Which eco this process is actually running.
+
+        The first question to ask when a component builds in an interactive
+        session but not here is whether the two are even running the same
+        code: the server imports eco once at startup, from whatever checkout
+        its unit puts on PYTHONPATH (the shared one by default, not anybody's
+        personal checkout), and an in-process reinit cannot replace already
+        imported modules. Without this, answering that needed shell access
+        on the server's host.
+
+        Read from .git directly rather than by running git: this is inside a
+        /health handler, and a subprocess per request is not acceptable there
+        (nor is a git binary guaranteed to exist in a service image).
+        """
+        import eco
+
+        out = {"file": getattr(eco, "__file__", None),
+               "python": sys.executable}
+        try:
+            root = Path(eco.__file__).resolve().parent.parent
+            head = (root / ".git" / "HEAD").read_text().strip()
+            if head.startswith("ref: "):
+                ref = head[5:]
+                out["branch"] = ref.rsplit("/", 1)[-1]
+                try:
+                    out["commit"] = (root / ".git" / ref).read_text().strip()[:12]
+                except OSError:
+                    # A packed ref; the branch name alone still answers
+                    # "which checkout", which is the point of this.
+                    out["commit"] = None
+            else:
+                out["branch"], out["commit"] = None, head[:12]
+        except Exception:
+            # Not a checkout (installed package), unreadable, whatever - this
+            # is diagnostics and must never be the reason /health fails.
+            pass
+        return out
+
     def _health_body():
         report = store.connection_report()
         return {
@@ -185,6 +225,7 @@ def create_namespace_app(
             **_process_stats(),
             **{k: v for k, v in report.items() if k not in ("state", "ready")},
             "handoff": handoffs.stats(),
+            "eco": _eco_provenance(),
         }
 
     @app.get("/health")
@@ -230,7 +271,15 @@ def create_namespace_app(
 
     @app.get("/failures")
     def failures():
-        return jsonify({"failures": store.failure_details()})
+        """Why each failed component failed. ?traceback=<n> adds the last n
+        traceback frames, which is what tells a broken device apart from one
+        that only lost a race with its dependencies."""
+        return jsonify({
+            "failures": store.failure_details(
+                traceback_lines=request.args.get("traceback", default=0, type=int)
+            ),
+            "eco": _eco_provenance(),
+        })
 
     @app.get("/monitor_policy")
     def monitor_policy():
