@@ -152,8 +152,8 @@ class DoubleCrystalMono(Assembly):
         )
         self._append(
             AdjustablePv,
-            pvname + ":PIEZO1_VOLTAGE_SP",
-            pvreadbackname=pvname + ":PIEZO1_VOLTAGE",
+            pvname + ":PIEZO1-V_SP",
+            pvreadbackname=pvname + ":PIEZO1-V_RB",
             name="roll1_piezo",
             is_setting=True,
         )
@@ -174,8 +174,8 @@ class DoubleCrystalMono(Assembly):
         )
         self._append(
             AdjustablePv,
-            pvname + ":PIEZO2_VOLTAGE_SP",
-            pvreadbackname=pvname + ":PIEZO2_VOLTAGE",
+            pvname + ":PIEZO2-V_SP",
+            pvreadbackname=pvname + ":PIEZO2-V_RB",
             name="pitch2_piezo",
             is_setting=True,
         )
