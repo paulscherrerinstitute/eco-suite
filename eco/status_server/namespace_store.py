@@ -119,6 +119,62 @@ def _ca_thread(target, *args, name=None, **kwargs):
     return t
 
 
+# Modules that install a signal handler while being *imported*, which
+# CPython allows only on the main thread. Importing one of these first from
+# a worker thread raises
+#
+#     ValueError: signal only works in main thread of the main interpreter
+#
+# and leaves the partially-imported module out of sys.modules, so every
+# later attempt fails again identically.
+#
+# That is not hypothetical: `rob` and `xrd` failed to initialize on this
+# server for exactly this reason while building perfectly in an interactive
+# session. Both lazily import escape.swissfel inside __init__, which pulls
+# in dask_jobqueue, whose runner module runs
+# `signal.signal(signal.SIGINT, ...)` at import time. In a session the first
+# such import happens on the main thread and is fine; here init_all() runs
+# on a background thread (so the port can bind and /health answer while the
+# namespace builds) and farms components out to a thread pool, so no
+# component is ever initialized on the main thread and the import never had
+# a chance. Lowering init_workers would not have helped, and neither does
+# any reinit, since those run on a background thread too.
+#
+# Importing them once here, on the main thread, costs the import (~2.6 s for
+# escape.swissfel) and turns every later import from any thread into a
+# sys.modules cache hit. Extend the tuple when another such module turns up;
+# a name that is not installed is skipped, since this is a convenience and
+# must not be able to stop the server from starting.
+MAIN_THREAD_IMPORTS = ("escape.swissfel",)
+
+
+def preimport_main_thread_modules(names=MAIN_THREAD_IMPORTS):
+    """Import `names` here and now, so later imports from worker threads are
+    cache hits. Returns {name: None | "<error>"}; never raises."""
+    if threading.current_thread() is not threading.main_thread():
+        # Pointless from anywhere else - and the warning is the useful part,
+        # since it means the caller moved and the protection is now absent.
+        logger.warning(
+            "preimport_main_thread_modules() called from %s, not the main "
+            "thread: modules that install signal handlers at import time "
+            "will still fail for every component that imports them",
+            threading.current_thread().name,
+        )
+    out = {}
+    for name in names:
+        t0 = time.time()
+        try:
+            importlib.import_module(name)
+            out[name] = None
+            logger.info("pre-imported %s on the main thread in %.1f s",
+                        name, time.time() - t0)
+        except Exception as exc:  # noqa: BLE001 - see the comment above
+            out[name] = f"{type(exc).__name__}: {exc}"
+            logger.info("could not pre-import %s (%s); components importing "
+                        "it from a worker thread may fail", name, out[name])
+    return out
+
+
 class NamespaceMonitorStore:
     def __init__(
         self,
@@ -215,7 +271,19 @@ class NamespaceMonitorStore:
     # -- setup -------------------------------------------------------------
 
     def start(self):
-        """Kick off the (slow) import+init on a background thread."""
+        """Kick off the (slow) import+init on a background thread.
+
+        Call this from the main thread: it first pre-imports the modules in
+        MAIN_THREAD_IMPORTS, which only works there - see
+        preimport_main_thread_modules() for why that matters.
+        """
+        # Kept for /health: a module that could not be pre-imported is the
+        # explanation for every component that then fails to import it.
+        self.preimport_errors = {
+            name: why
+            for name, why in preimport_main_thread_modules().items()
+            if why
+        }
         with self._lock:
             if self._worker is not None and self._worker.is_alive():
                 raise NotReady(self.state, "an initialization is already running")
@@ -624,6 +692,7 @@ class NamespaceMonitorStore:
             "n_target_names": len(self._target_names),
             "n_initialized": n_init,
             "n_failed": n_failed,
+            "preimport_errors": getattr(self, "preimport_errors", {}),
             "failed_names": failed,
             "failed_required": failed_required,
             "n_failed_required": len(failed_required),

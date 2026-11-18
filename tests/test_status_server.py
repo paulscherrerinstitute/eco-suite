@@ -2528,3 +2528,72 @@ def test_failures_can_include_the_traceback_that_raised(app_and_store):
     tb = with_tb["broken_dev"]["traceback"]
     assert "boom()" in tb            # the call site
     assert "test_status_server.py" in tb and "line " in tb
+
+
+def test_modules_installing_signal_handlers_are_imported_on_the_main_thread():
+    """rob and xrd failed on the server for exactly this reason.
+
+    Both lazily import escape.swissfel inside __init__, which pulls in
+    dask_jobqueue, whose runner module calls signal.signal() at import time -
+    allowed only on the main thread. The server initializes every component
+    on a worker thread, so that import could never succeed there, and no
+    reinit could help because reinit runs on a worker thread too.
+    """
+    from eco.status_server import namespace_store as ns
+
+    # The real list must stay non-empty and name the module that caused this.
+    assert "escape.swissfel" in ns.MAIN_THREAD_IMPORTS
+
+    # An importable module is reported as fine...
+    report = ns.preimport_main_thread_modules(["eco.status_server.handoff"])
+    assert report == {"eco.status_server.handoff": None}
+
+    # ...and one that is absent is reported, not raised: this is a
+    # convenience and must never stop the server from starting.
+    report = ns.preimport_main_thread_modules(["eco_no_such_module_xyz"])
+    assert list(report) == ["eco_no_such_module_xyz"]
+    assert "ModuleNotFoundError" in report["eco_no_such_module_xyz"]
+
+
+def test_a_signal_installing_import_fails_only_off_the_main_thread():
+    """The mechanism itself, on a module built for the test rather than on
+    dask_jobqueue, so this keeps testing the rule if that package changes."""
+    import importlib
+    import tempfile
+    import textwrap
+    from pathlib import Path
+
+    mod_dir = tempfile.mkdtemp()
+    Path(mod_dir, "eco_signal_at_import.py").write_text(textwrap.dedent("""
+        import signal
+        signal.signal(signal.SIGINT, lambda *_: None)
+        imported = True
+    """))
+    sys.path.insert(0, mod_dir)
+    try:
+        failures = []
+
+        def imp():
+            try:
+                importlib.import_module("eco_signal_at_import")
+            except Exception as exc:
+                failures.append(exc)
+
+        t = threading.Thread(target=imp)
+        t.start()
+        t.join()
+        assert failures and isinstance(failures[0], ValueError)
+        assert "main thread" in str(failures[0])
+        # The failed import is not cached, so the main thread can still do it
+        # - which is what the pre-import relies on.
+        assert "eco_signal_at_import" not in sys.modules
+        assert importlib.import_module("eco_signal_at_import").imported is True
+        # ...and now a worker thread gets a cache hit instead of the error.
+        failures.clear()
+        t = threading.Thread(target=imp)
+        t.start()
+        t.join()
+        assert not failures
+    finally:
+        sys.path.remove(mod_dir)
+        sys.modules.pop("eco_signal_at_import", None)
