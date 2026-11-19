@@ -172,20 +172,13 @@ def create_namespace_app(
         handoffs.clean_spool_dir()
     app.config["ECO_HANDOFF"] = handoffs
 
-    def _eco_provenance():
-        """Which eco this process is actually running.
+    def _read_eco_checkout():
+        """What the eco checkout on disk says right now.
 
-        The first question to ask when a component builds in an interactive
-        session but not here is whether the two are even running the same
-        code: the server imports eco once at startup, from whatever checkout
-        its unit puts on PYTHONPATH (the shared one by default, not anybody's
-        personal checkout), and an in-process reinit cannot replace already
-        imported modules. Without this, answering that needed shell access
-        on the server's host.
-
-        Read from .git directly rather than by running git: this is inside a
-        /health handler, and a subprocess per request is not acceptable there
-        (nor is a git binary guaranteed to exist in a service image).
+        Read from .git directly rather than by running git: this is called
+        from a /health handler, and a subprocess per request is not
+        acceptable there (nor is a git binary guaranteed to exist in a
+        service image).
         """
         import eco
 
@@ -209,6 +202,40 @@ def create_namespace_app(
             # Not a checkout (installed package), unreadable, whatever - this
             # is diagnostics and must never be the reason /health fails.
             pass
+        return out
+
+    # Captured once, here, at startup - *before* init_all() imports any
+    # device module. This is the version the process is actually running.
+    #
+    # Reading .git per request, which is what this did first, answers a
+    # different and much less useful question: a checkout that has been
+    # pulled since the server started then reports the *new* commit while
+    # the process is still running the old code, which is precisely the
+    # confusion the field was added to end. Both are reported now, and
+    # "stale" says whether a restart would change anything.
+    eco_at_start = _read_eco_checkout()
+
+    def _eco_provenance():
+        """Which eco this process is running, and whether the checkout has
+        moved under it since.
+
+        The server imports eco once at startup, from whatever checkout its
+        unit puts on PYTHONPATH, and an in-process reinit cannot replace
+        already imported modules - only a restart (POST /admin/restart,
+        which re-execs) picks up new code. So "what is on disk" and "what is
+        running" are different questions whenever somebody has pulled, and
+        this answers both.
+        """
+        out = dict(eco_at_start)
+        now = _read_eco_checkout()
+        on_disk = now.get("commit")
+        if on_disk != out.get("commit"):
+            out["commit_on_disk"] = on_disk
+            out["stale"] = True
+            out["hint"] = ("the checkout has moved since this process "
+                           "started; POST /admin/restart to run it")
+        else:
+            out["stale"] = False
         return out
 
     def _health_body():

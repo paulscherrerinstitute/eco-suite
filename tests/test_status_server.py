@@ -2597,3 +2597,52 @@ def test_a_signal_installing_import_fails_only_off_the_main_thread():
     finally:
         sys.path.remove(mod_dir)
         sys.modules.pop("eco_signal_at_import", None)
+
+
+def test_health_distinguishes_running_code_from_the_checkout_on_disk(app_and_store):
+    """"Which version is running?" must not be answered by reading .git now.
+
+    The first version of this read .git per request, so a checkout pulled
+    after the server started reported the *new* commit while the process was
+    still running the old code - the exact confusion the field exists to
+    end. The provenance is captured at startup; the on-disk commit is
+    reported alongside it only when the two differ.
+    """
+    app, _, _ = app_and_store
+    client = app.test_client()
+
+    eco_info = client.get("/health").get_json()["eco"]
+    assert eco_info["stale"] is False
+    assert "commit_on_disk" not in eco_info
+    at_start = eco_info.get("commit")
+
+    # Simulate somebody pulling the checkout under the running process.
+    import eco.status_server.namespace_server as ns
+
+    original = ns.Path
+    class _MovedCheckout:
+        """Path() whose .git/<ref> now reads as a different commit."""
+        def __init__(self, *a, **kw):
+            self._p = original(*a, **kw)
+        def __truediv__(self, other):
+            return _MovedCheckout(self._p / other)
+        def resolve(self):
+            return _MovedCheckout(self._p.resolve())
+        @property
+        def parent(self):
+            return _MovedCheckout(self._p.parent)
+        def read_text(self, *a, **kw):
+            text = self._p.read_text(*a, **kw)
+            return "deadbeefcafe0000" if not text.startswith("ref: ") else text
+
+    ns.Path = _MovedCheckout
+    try:
+        moved = client.get("/health").get_json()["eco"]
+    finally:
+        ns.Path = original
+
+    if at_start is not None:          # only meaningful inside a real checkout
+        assert moved["stale"] is True
+        assert moved["commit"] == at_start          # what is RUNNING
+        assert moved["commit_on_disk"] != at_start  # what is on disk
+        assert "restart" in moved["hint"]
