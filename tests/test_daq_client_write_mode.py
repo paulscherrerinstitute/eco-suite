@@ -18,6 +18,7 @@ import types
 
 import pytest
 
+from eco.acquisition import daq_client
 from eco.acquisition.daq_client import Daq, resolve_write_mode
 
 
@@ -305,3 +306,39 @@ def test_server_mode_still_pushes_rather_than_merging_locally():
     daq._push_acquiring_scan_status(scan, {"name": "n", "steps": 1}, 3)
     assert daq._status_server_client.pushed
     assert daq._status_server_client.pushed[0][3] == "status_run_start"
+
+
+# -- ECO_SCAN_MONITORING: the namespace-wide recording, off for every session
+
+
+def test_scan_monitoring_defaults_to_on(monkeypatch):
+    monkeypatch.delenv(daq_client.SCAN_MONITORING_ENV, raising=False)
+    assert daq_client.resolve_scan_monitoring() is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "False", "NO", "off", " off "])
+def test_scan_monitoring_env_can_turn_it_off(monkeypatch, value):
+    """`bernina.daq.scan_monitoring = False` only lasts one session; this is
+    the knob a site can set once for all of them."""
+    monkeypatch.setenv(daq_client.SCAN_MONITORING_ENV, value)
+    assert daq_client.resolve_scan_monitoring() is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", "on"])
+def test_scan_monitoring_env_can_turn_it_on(monkeypatch, value):
+    monkeypatch.setenv(daq_client.SCAN_MONITORING_ENV, value)
+    assert daq_client.resolve_scan_monitoring() is True
+
+
+def test_an_explicit_argument_beats_the_env(monkeypatch):
+    monkeypatch.setenv(daq_client.SCAN_MONITORING_ENV, "0")
+    assert daq_client.resolve_scan_monitoring(True) is True
+    monkeypatch.setenv(daq_client.SCAN_MONITORING_ENV, "1")
+    assert daq_client.resolve_scan_monitoring(False) is False
+
+
+def test_an_unrecognised_value_keeps_recording_and_says_so(monkeypatch, capsys):
+    """A typo must not silently disable a recording somebody expects."""
+    monkeypatch.setenv(daq_client.SCAN_MONITORING_ENV, "maybe")
+    assert daq_client.resolve_scan_monitoring() is True
+    assert daq_client.SCAN_MONITORING_ENV in capsys.readouterr().out

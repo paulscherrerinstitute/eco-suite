@@ -46,6 +46,62 @@ _SOUND_CHECKER_RESUMED = _SOUNDS_DIR / "posthorn.wav"
 WRITE_MODES = ("server", "client")
 
 
+SCAN_MONITORING_ENV = "ECO_SCAN_MONITORING"
+_FALSEY = ("0", "false", "no", "off")
+_TRUTHY = ("1", "true", "yes", "on")
+
+
+def resolve_scan_monitoring(explicit=None):
+    """Whether a scan records the whole namespace on the status server: the
+    constructor argument if given, else ``ECO_SCAN_MONITORING``, else True
+    (today's behaviour).
+
+    `self.scan_monitoring` has always been live-toggleable
+    (``bernina.daq.scan_monitoring = False``), but that only lasts for the
+    one session that typed it. The env var is the way to turn the
+    namespace-wide recording off for *every* session without editing
+    eco/bernina/bernina_daq.py - put it wherever the site sets up a shell
+    (the facility env script, a systemd unit, an .ecorc) and every session
+    started from there inherits it:
+
+        ECO_SCAN_MONITORING=0
+
+    Note what this does and does not switch off. The per-run status blocks
+    (status.json, i.e. append_start_status_to_scan /
+    append_status_to_scan_and_store) and aliases.json are unaffected - they
+    are two snapshots, not a recording. This is only
+    start_scan_monitoring/end_scan_monitoring, the namespace-wide
+    `namespace_monitor.ixp.h5`, which attaches a CA monitor to every
+    monitorable channel for the length of the scan (measured on bernina:
+    ~10 400 channels, 3.7 s to attach, ~100 k updates in 15 s) and has the
+    server encode thousands of escape datasets afterwards. That is the
+    expensive half and the one worth being able to disable facility-wide.
+
+    An explicit argument still wins, so Daq(scan_monitoring=True) overrides
+    the env var for a particular instance. An unrecognised value is a typo,
+    not a third option - say so and keep today's behaviour rather than
+    silently disabling a recording somebody expects.
+    """
+    if explicit is not None:
+        return bool(explicit)
+    raw = os.environ.get(SCAN_MONITORING_ENV)
+    if raw is None:
+        return True
+    value = str(raw).strip().lower()
+    if value in _FALSEY:
+        return False
+    if value in _TRUTHY:
+        return True
+    print(
+        f"\x1b[33mdaq: unrecognised {SCAN_MONITORING_ENV}={raw!r}; "
+        f"expected one of {_FALSEY + _TRUTHY} - keeping scan monitoring "
+        f"on\x1b[0m"
+    )
+    return True
+
+
+
+
 def resolve_write_mode(explicit=None):
     """Which side writes a run's status files: the constructor argument, else
     ``ECO_STATUS_SERVER_WRITE_MODE``, else "server" (today's behaviour).
@@ -227,7 +283,7 @@ class Daq(Assembly):
         status_server_async=True,
         status_server_write_mode=None,
         status_server_relay_mode="process",
-        scan_monitoring=True,
+        scan_monitoring=None,
         use_running_status_server=True,
         speak_run_number=False,
         sound_alerts=False,
@@ -458,7 +514,9 @@ class Daq(Assembly):
         # recording at all (start_scan_monitoring/end_scan_monitoring) -
         # live-toggleable (bernina.daq.scan_monitoring = False), not just a
         # constructor default, since this is exactly the kind of thing you
-        # want to switch off mid-session without restarting the namespace.
+        # want to switch off mid-session without restarting the namespace -
+        # and, for every session rather than one, ECO_SCAN_MONITORING=0 (see
+        # resolve_scan_monitoring).
         # Currently a plain, synchronous, per-channel attach loop server-side
         # (RecordingSession.start(), no thread pool) against only a 10 s
         # client timeout (status_server_timeout, not the more generous
@@ -469,7 +527,7 @@ class Daq(Assembly):
         # /status/capture already is) rather than spamming "start monitoring
         # failed ... falling back to the local namespace mechanism" every
         # single scan.
-        self.scan_monitoring = scan_monitoring
+        self.scan_monitoring = resolve_scan_monitoring(scan_monitoring)
         if not rate_multiplicator == "auto":
             print(
                 "warning: rate multiplicator automatically determined from event_master!"

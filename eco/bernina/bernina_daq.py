@@ -134,6 +134,20 @@ namespace.append_obj(
     event_master=NamespaceComponent(namespace, "event_master"),
     detectors_event_code=50,
     rate_multiplicator="auto",
+    # The namespace-wide recording (start_scan_monitoring/end_scan_monitoring
+    # -> aux/namespace_monitor.ixp.h5) is off for now. It attaches a CA
+    # monitor to every monitorable channel for the length of the scan
+    # (~10 400 channels, 3.7 s to attach, ~100 k updates in 15 s measured
+    # here) and then has the status server encode thousands of escape
+    # datasets, and that cost is not currently worth carrying on every run.
+    # status.json and aliases.json are unaffected - those are snapshots, not
+    # a recording, and still happen.
+    #
+    # To record again: `bernina.daq.scan_monitoring = True` for one session,
+    # or remove this line. Note that this explicit value deliberately beats
+    # ECO_SCAN_MONITORING (see resolve_scan_monitoring), so the env var
+    # cannot silently switch it back on for bernina.
+    scan_monitoring=False,
     name="daq",
     namespace=namespace,
     checker=NamespaceComponent(namespace, "checker"),
