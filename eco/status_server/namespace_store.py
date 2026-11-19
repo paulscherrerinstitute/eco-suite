@@ -145,6 +145,12 @@ def _ca_thread(target, *args, name=None, **kwargs):
 # sys.modules cache hit. Extend the tuple when another such module turns up;
 # a name that is not installed is skipped, since this is a convenience and
 # must not be able to stop the server from starting.
+# How long /health waits for the recordings lock before answering without
+# the recording list. Long enough that a normal, uncontended read wins;
+# short enough that a liveness probe never times out because a recording is
+# being attached or stopped.
+HEALTH_LOCK_TIMEOUT = 0.5
+
 MAIN_THREAD_IMPORTS = ("escape.swissfel",)
 
 
@@ -688,7 +694,14 @@ class NamespaceMonitorStore:
             "n_monitored": len(self._monitors),
             "n_direct_read": len(self._direct),
             "n_monitorable": len(self._monitorable),
-            "recordings": self.list_recordings(),
+            # Bounded, never blocking: /health is what liveness probes
+            # call, and start_recording/stop_recording hold this lock across
+            # the whole per-channel attach (measured: 3.7 s for 10 400
+            # channels) and the stop. A probe that blocks there concludes the
+            # server is dead and kills it - which is exactly what happened,
+            # repeatedly, a few seconds after each capture. Reporting
+            # "recordings_busy" is strictly better than not answering.
+            "recordings": self._recordings_or_busy(),
             "n_target_names": len(self._target_names),
             "n_initialized": n_init,
             "n_failed": n_failed,
@@ -904,9 +917,26 @@ class NamespaceMonitorStore:
             rep["size_per_channel"] = session.size_report(top_n=size_top_n)
         return rep
 
-    def list_recordings(self):
-        with self._recordings_lock:
+    def list_recordings(self, timeout=None):
+        """Report every recording. `timeout` bounds the wait for the lock and
+        raises TimeoutError instead of blocking - see connection_report().
+        """
+        if timeout is None:
+            with self._recordings_lock:
+                return [s.report() for s in self._recordings.values()]
+        if not self._recordings_lock.acquire(timeout=timeout):
+            raise TimeoutError("recordings lock busy")
+        try:
             return [s.report() for s in self._recordings.values()]
+        finally:
+            self._recordings_lock.release()
+
+    def _recordings_or_busy(self):
+        """list_recordings() for /health: a short wait, then give up."""
+        try:
+            return self.list_recordings(timeout=HEALTH_LOCK_TIMEOUT)
+        except TimeoutError:
+            return "busy"
 
     def drop_recording(self, recording_id):
         """Forget a finished recording, freeing its buffers."""

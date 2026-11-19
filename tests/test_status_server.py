@@ -2646,3 +2646,45 @@ def test_health_distinguishes_running_code_from_the_checkout_on_disk(app_and_sto
         assert moved["commit"] == at_start          # what is RUNNING
         assert moved["commit_on_disk"] != at_start  # what is on disk
         assert "restart" in moved["hint"]
+
+
+def test_health_answers_while_a_recording_holds_its_lock(app_and_store):
+    """/health is what liveness probes call, so it must never block on a
+    work lock.
+
+    start_recording/stop_recording hold _recordings_lock across the whole
+    per-channel attach - 3.7 s for 10 400 channels, measured - and
+    /recording/capture holds it across the stop. A probe that blocks there
+    concludes the server is dead; on a real beamline server that killed it
+    seven times in one night, each kill a few seconds after a capture and
+    each costing a 114 s namespace rebuild.
+    """
+    app, store, _ = app_and_store
+    client = app.test_client()
+
+    holder_in = threading.Event()
+    release = threading.Event()
+
+    def hold():
+        with store._recordings_lock:
+            holder_in.set()
+            release.wait(10)
+
+    t = threading.Thread(target=hold, daemon=True)
+    t.start()
+    assert holder_in.wait(5)
+    try:
+        t0 = time.time()
+        body = client.get("/health").get_json()
+        elapsed = time.time() - t0
+    finally:
+        release.set()
+        t.join(5)
+
+    # Answered, and promptly - not after whatever the holder was doing.
+    assert body["state"] == "ready"
+    assert elapsed < 5
+    assert body["recordings"] == "busy"
+
+    # Uncontended, the real list comes back as before.
+    assert isinstance(client.get("/health").get_json()["recordings"], list)
