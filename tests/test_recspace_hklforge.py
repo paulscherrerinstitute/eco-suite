@@ -557,3 +557,64 @@ def test_space_group_stored_and_sent_to_the_view(rs, tmp_path):
     assert c._space_group is None
     with pytest.raises(ValueError):
         c.set_space_group("not a group")
+
+
+# --- the energy as a constraint --------------------------------------------------------------
+
+_FREE_ENERGY = hasattr(pytest.importorskip("hklforge.solve"), "_energy_limits") and \
+    hasattr(rc, "energy_limits")             # hklforge >= 0.2.2, escape-fel >= 0.3.5
+
+
+def test_energy_constraint_default_is_the_beamline_energy(rs):
+    assert rs.constraints._base_dict()["energy"] is None
+    with contextlib.redirect_stdout(io.StringIO()):
+        held = rs.set_constraints(mu=0, gamma=0, chi=90)
+    assert "energy" not in held and rs.constraints._base_dict()["energy"] is None
+    with pytest.raises(ValueError, match="lo, hi"):
+        rs.set_constraints(mu=0, gamma=0, chi=90, energy=9000)
+
+
+@pytest.mark.skipif(not _FREE_ENERGY, reason="needs hklforge >= 0.2.2 and escape-fel >= 0.3.5")
+def test_energy_free_solutions_and_no_moves(rs):
+    c = _si(rs)
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints(mu=0, chi=30, phi=45)
+    fixed = c.calc_angles(1, 1, 1)
+    assert len(fixed) and "energy" not in fixed.columns
+    eta = float(fixed.iloc[0]["eta"])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        held = rs.set_constraints(mu=0, chi=30, phi=45, eta=eta, energy=(5000, 20000))
+    assert held["energy"] == [5000.0, 20000.0] and "energy free" in out.getvalue() and "Note" not in out.getvalue()
+    df = c.calc_angles(1, 1, 1)
+    assert list(df.columns[6:7]) == ["energy"] and np.min(abs(df["energy"] - ENERGY)) < 1e-6
+    for _, row in df.iterrows():
+        angles = {n: row[n] for n in rc.POSITION_ORDER}
+        assert np.allclose(c.calc_hkl(energy=row["energy"], **angles), [1, 1, 1], atol=1e-8)
+    with pytest.raises(ValueError, match="never do"):           # a move would need another energy
+        c.hkl.set_target_value([1, 1, 1]).wait()
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints(mu=0, gamma=0, chi=90)                 # back to the beamline energy
+    assert rs.constraints._base_dict()["energy"] is None
+
+
+@pytest.mark.skipif(not _FREE_ENERGY, reason="needs hklforge >= 0.2.2 and escape-fel >= 0.3.5")
+def test_widget_energy_row(rs):
+    pytest.importorskip("ipywidgets")
+    from eco.widgets.recspace_widget import ReflectionsApp
+    c = _si(rs)
+    with contextlib.redirect_stdout(io.StringIO()):
+        rs.set_constraints(mu=0, chi=30, phi=45, eta=0.0)       # crystal fixed: too many at a fixed energy
+    app = ReflectionsApp(c, hkl=[1, 1, 1])
+    assert app.energy_fix.value and app.constraint_dict()["energy"] is None and not app.sols
+    app.cons["eta"][0].value = float(c.calc_angles(1, 1, 1, constraints_update={"eta": None}).iloc[0]["eta"])
+    app.energy.value = 7000.0
+    app.filters["energy"][0].value, app.filters["energy"][1].value = "5000", "20000"
+    app.energy_fix.value = False                                # free: the 9 keV solution comes back
+    assert app.constraint_dict()["energy"] == [5000.0, 20000.0] and app.sols
+    app.select(0)
+    assert abs(app.energy.value - ENERGY) < 1e-3 and "<td" in app.table.value and ">energy<" in app.table.value
+    app._store()
+    assert rs.constraints._base_dict()["energy"] == [5000.0, 20000.0]
+    app._load_preset(next(iter(app.presets)))                   # a setup holds the energy again
+    assert app.energy_fix.value

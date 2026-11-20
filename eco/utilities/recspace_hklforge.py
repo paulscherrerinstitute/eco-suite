@@ -17,6 +17,12 @@ What is new over diffcalc:
   the same without touching the stored constraints, and ``spots()`` tells
   how far apart the two spots are and the largest detector distance that
   keeps both on the detector.
+- **The energy as a constraint**: ``constraints.energy`` is normally None,
+  the mono/machine energy (``get_energy``). ``constraints.energy([lo, hi])``
+  (eV, either may be None) lets it vary instead (escape-fel >= 0.3.5,
+  hklforge >= 0.2.2): one more angle has to be held, and every solution of
+  ``calc_angles`` has its own energy. Moves (``hkl``, ``h``, ``k``, ``l``)
+  refuse while it is free - they never change the photon energy.
 - Every branch, exactly (hklforge), also for modes diffcalc lacks
   (naz with two sample circles) or gets wrong (bisect/omega).
 - The surface normal is a property of the crystal of its own
@@ -75,9 +81,28 @@ DEFAULT_CONSTRAINTS = {
     "bisect": None,
     "psi": None,
     "omega": None,
+    "energy": None,          # None: held at the mono/machine energy; [lo, hi] eV: free within these
     "h2": None,
     "h2_detector": "h1",
 }
+
+
+def _energy_limits(val):
+    """The energy constraint as stored: None (held) or [lo, hi] eV (either None)."""
+    if val is None:
+        return None
+    try:
+        lo, hi = val
+    except (TypeError, ValueError):
+        raise ValueError(f"energy: None (held at the beamline energy) or [lo, hi] in eV to let it vary, "
+                         f"not {val!r}") from None
+    return [None if lo is None else float(lo), None if hi is None else float(hi)]
+
+
+def _held_and_energy(cons):
+    """(held constraints without the energy, the energy limits or None)."""
+    held = {k: v for k, v in cons.items() if v is not None and k not in ("h2_detector", "energy")}
+    return held, _energy_limits(cons.get("energy"))
 # Bernina setups, from bernina-scripts' apps/bernina_parameters (the presets
 # of the diffraction reflections app; "gam" there is "gamma" here). "ranges"
 # narrow the solutions a move may choose from, on top of the motor limits;
@@ -600,7 +625,9 @@ class RecSpace(Assembly):
 
         Three are needed for a finite set of solutions: sample circles,
         detector circles or virtual angles (qaz, naz, alpha, beta, psi,
-        betain, betaout, ...), see ``constraints``. ``constraint_presets()``
+        betain, betaout, ...), see ``constraints``. The energy is held at the
+        beamline energy unless ``energy=[lo, hi]`` (eV) lets it vary; then
+        four are needed (and moves are refused, see ``constraints.energy``). ``constraint_presets()``
         lists the setups, ``store_constraint_preset`` adds one.
 
         ``ranges`` restricts which solution a move (``hkl.mv``,
@@ -637,16 +664,20 @@ class RecSpace(Assembly):
         cons = {k: None for k in DEFAULT_CONSTRAINTS}
         cons["h2_detector"] = self._constraints().get("h2_detector") or "h1"
         cons.update(fixed)
+        cons["energy"] = _energy_limits(cons.get("energy"))
         self._constraints.set_target_value(cons).wait()
         self.solution_ranges.set_target_value({k: [float(lo), float(hi)] for k, (lo, hi) in ranges.items()}).wait()
-        held = {k: v for k, v in cons.items() if v is not None and k != "h2_detector"}
+        held, free = _held_and_energy(cons)
         print(f"constraints: {', '.join(f'{k}={v}' for k, v in held.items())}"
+              + (f", energy free in {free[0]}..{free[1]} eV" if free else "")
               + (f" (setup {preset})" if preset else ""))
         if self.solution_ranges():
             print("solution ranges: " + ", ".join(f"{k} {lo:g}..{hi:g}" for k, (lo, hi) in self.solution_ranges().items()))
-        if len(held) != 3:
-            print(f"Note: {len(held)} constraints held; the solver needs 3 (a second reflection h2 counts as one).")
-        return held
+        need = 3 + (free is not None)
+        if len(held) != need:
+            print(f"Note: {len(held)} constraints held; the solver needs {need} (a second reflection h2 "
+                  "counts as one" + ("; one more because the energy is free" if free else "") + ").")
+        return {**held, "energy": free} if free else held
 
     def store_constraint_preset(self, name, description=""):
         """Store the current constraints and solution ranges as a setup for
@@ -837,6 +868,12 @@ class RecSpaceCrystal(Assembly):
         return rc.position_to_angles(angles)
 
     def _calc_angles_unique_diffractometer(self, hkl):
+        free = _energy_limits(self._constraint_dict().get("energy"))
+        if free is not None:
+            raise ValueError(f"The energy is a free constraint (constraints.energy = {free}): a move would "
+                             "need the photon energy changed too, which hkl moves never do. See the "
+                             "solutions' energies with calc_angles(); set the energy, then hold it again "
+                             "with constraints.energy(None).")
         _, targets = self._unique_solution(*hkl)
         return [targets[tk] for tk in self._diff_adjs.keys()]
 
@@ -1228,7 +1265,9 @@ class RecSpaceCrystal(Assembly):
 
     def calc_angles(self, h=None, k=None, l=None, energy=None, constraints_update={}, h2=None, detector=None):
         """All diffractometer solutions for (h, k, l) at ``energy`` (eV),
-        ignoring motor limits, as a DataFrame (one row per solution).
+        ignoring motor limits, as a DataFrame (one row per solution). With
+        the energy free (``constraints.energy([lo, hi])``) ``energy`` is not
+        used and each solution has its own (column "energy").
 
         h, k, l not given are the current values, energy the mono/machine
         energy. ``constraints_update`` overrides stored constraints for this
@@ -1246,7 +1285,8 @@ class RecSpaceCrystal(Assembly):
                 raise ValueError(f"The constraint {used[0]} needs the surface normal of {self.name}: "
                                  f"{self.name}.set_surface_normal([h, k, l])")
         sols = rc.solve(self._ub(), energy, (h, k, l), cons, self._reference, self._surface)
-        cols = list(rc.POSITION_ORDER) + [v for v in rc.VIRTUAL_ORDER if any(v in s for s in sols)]
+        cols = (list(rc.POSITION_ORDER) + (["energy"] if any("energy" in s for s in sols) else [])
+                + [v for v in rc.VIRTUAL_ORDER if any(v in s for s in sols)])
         return pd.DataFrame([[s.get(c, np.nan) for c in cols] for s in sols], columns=cols,
                             index=[f"sol. {n}" for n in range(len(sols))])
 
@@ -1263,7 +1303,8 @@ class RecSpaceCrystal(Assembly):
         if energy is None:
             energy = self.get_energy()
         df = self.calc_angles(*hkl1, energy=energy, constraints_update=constraints_update, h2=hkl2, detector=detector)
-        sp = [self.spots([hkl1, hkl2], energy=energy, **{n: row[n] for n in rc.POSITION_ORDER}) for _, row in df.iterrows()]
+        sp = [self.spots([hkl1, hkl2], energy=row.get("energy", energy), **{n: row[n] for n in rc.POSITION_ORDER})
+              for _, row in df.iterrows()]
         df["separation"] = [s["separation"] for s in sp]
         df["tdet_max"] = [s["tdet_max"] for s in sp]
         return df

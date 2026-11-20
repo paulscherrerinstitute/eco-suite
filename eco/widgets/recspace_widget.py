@@ -47,7 +47,7 @@ def viewer_html() -> str:
 CIRCLES = ("gamma", "delta", "mu", "eta", "chi", "phi")
 VIRTUAL_CONSTRAINTS = ("qaz", "naz", "alpha", "beta", "betain", "betaout", "psi", "omega")
 BOOL_CONSTRAINTS = ("a_eq_b", "bin_eq_bout", "bisect")
-TABLE_ROWS = CIRCLES + ("theta", "ttheta", "qaz", "naz", "alpha", "beta", "psi", "tau", "betain",
+TABLE_ROWS = ("energy",) + CIRCLES + ("theta", "ttheta", "qaz", "naz", "alpha", "beta", "psi", "tau", "betain",
                         "betaout", "omega")
 
 
@@ -171,11 +171,12 @@ def geom_entries(crystal, hkl=None, energy=None, h2=None, detector=None):
         for idx, row in df.iterrows():
             sol = row.to_dict()
             extra = {k: v for k, v in sol.items() if k not in CIRCLES}
+            en = float(sol.get("energy", energy))
             if h2 is not None:
-                sp = rc.spots(crystal._ub(), energy, sol, [hkl, h2])
+                sp = rc.spots(crystal._ub(), en, sol, [hkl, h2])
                 extra.update(separation=sp["separation"], tdet_max_mm=sp["tdet_max"])
             ok = _limits_ok(crystal, sol)
-            add(title, str(idx) + ("" if ok is not False else "  (outside limits)"), sol, energy,
+            add(title, str(idx) + ("" if ok is not False else "  (outside limits)"), sol, en,
                 targets=targets, extra=extra, ok=ok)
     return entries
 
@@ -332,6 +333,8 @@ class ReflectionsApp:
                                   w.Text(value=_num_text(hi), placeholder="max", layout=L(width="52px")))
             self.cons[name] = (fld, box)
             rows.append(w.HBox([w.Label(name, layout=L(width="62px")), fld, *self.filters[name], box]))
+            if name == CIRCLES[-1]:
+                rows.append(self._energy_row(stored.get("energy")))
         for name in BOOL_CONSTRAINTS:
             box = w.Checkbox(value=bool(stored.get(name)), description=name, indent=False, layout=L(width="150px"))
             self.cons[name] = (None, box)
@@ -362,7 +365,7 @@ class ReflectionsApp:
             w.HTML(f"<b>{html.escape(crystal.name)}</b> &mdash; target reflection"),
             w.HBox(self.hkl), w.HBox([self.energy, self.energy_btn]),
             w.HTML("<b>constraints</b> <span style='font-size:11px;color:#888'>(3 of them: circles "
-                   "and/or virtual angles; min/max filter the solutions)</span>"),
+                   "and/or virtual angles; 4 with the energy free; min/max filter the solutions)</span>"),
             self.preset, w.VBox(rows),
             w.HTML("<b>two reflections</b>"), self.two, w.HBox(self.h2), self.detector,
             self.only_limits, w.HBox([store, reload_]), self.msg,
@@ -410,7 +413,7 @@ class ReflectionsApp:
 
         self.widget = w.HBox([controls, table_panel, view_panel],
                              layout=L(flex_flow="row wrap", width="100%", align_items="flex-start"))
-        watched = [*self.hkl, self.energy, self.two, *self.h2, self.detector, self.only_limits]
+        watched = [*self.hkl, self.energy, self.two, *self.h2, self.detector, self.only_limits, self.energy_fix]
         for fld, box in self.cons.values():
             watched += [box] + ([fld] if fld is not None else [])
         for lo, hi in self.filters.values():
@@ -418,6 +421,25 @@ class ReflectionsApp:
         for x in watched:
             x.observe(self.recompute, names="value")
         self.recompute()
+
+    def _energy_row(self, stored):
+        """The energy as a constraint: held (fix) at the energy above, or free
+        within min/max; then the energy above follows the selected solution."""
+        w, L = self.w, self.w.Layout
+        value = w.FloatText(layout=L(width="76px"))
+        w.link((self.energy, "value"), (value, "value"))
+        lo, hi = stored if stored else ("", "")
+        self.filters["energy"] = (w.Text(value=_num_text(lo), placeholder="min", layout=L(width="52px")),
+                                  w.Text(value=_num_text(hi), placeholder="max", layout=L(width="52px")))
+        self.energy_fix = w.Checkbox(value=not stored, description="fix", indent=False, layout=L(width="44px"),
+                                     tooltip="held at the energy above; unticked: free within min/max "
+                                             "(one more angle has to be held)")
+        return w.HBox([w.Label("energy", layout=L(width="62px")), value, *self.filters["energy"], self.energy_fix])
+
+    def _set_energy_constraint(self, stored):
+        lo, hi = stored if stored else ("", "")
+        self.energy_fix.value = not stored
+        self.filters["energy"][0].value, self.filters["energy"][1].value = _num_text(lo), _num_text(hi)
 
     # --- inputs ---------------------------------------------------------------
 
@@ -430,6 +452,8 @@ class ReflectionsApp:
                 cons[name] = float(fld.value) if box.value else None
         cons["h2"] = [float(x.value) for x in self.h2] if self.two.value else None
         cons["h2_detector"] = self.detector.value
+        cons["energy"] = (None if self.energy_fix.value
+                          else [_parse_num(t.value) for t in self.filters["energy"]])
         return cons
 
     def _read_energy(self, _b=None):
@@ -469,7 +493,7 @@ class ReflectionsApp:
                       if n in CIRCLES and a is not None and b is not None}
             self.c._solution_ranges.set_target_value(ranges).wait()
             text += ", circle min/max as solution ranges" if ranges else ", no solution ranges"
-            skipped = [n for n, (a, b) in self.filter_ranges().items() if n not in ranges]
+            skipped = [n for n, (a, b) in self.filter_ranges().items() if n not in ranges and n != "energy"]
             if skipped:
                 text += f" (only used here: {', '.join(skipped)})"
         self.msg.value = f"<span style='color:#282;font-size:11px'>{html.escape(text)}</span>"
@@ -489,6 +513,7 @@ class ReflectionsApp:
             for n, (lo, hi) in self.filters.items():
                 lo.value, hi.value = (_num_text(v) for v in ranges.get(n, ("", "")))
             self.two.value = False
+            self._set_energy_constraint(None)
             self.preset.value = ""
         finally:
             self._suspend = False
@@ -513,6 +538,7 @@ class ReflectionsApp:
                 for x, v in zip(self.h2, stored["h2"]):
                     x.value = float(v)
             self.detector.value = stored.get("h2_detector") or "h1"
+            self._set_energy_constraint(stored.get("energy"))
         finally:
             self._suspend = False
         self.recompute()
@@ -532,7 +558,7 @@ class ReflectionsApp:
             for s in sols:
                 s["in limits"] = _limits_ok(self.c, s)
                 if two:
-                    sp = rc.spots(self.c._ub(), energy, s, [hkl, cons["h2"]])
+                    sp = rc.spots(self.c._ub(), s.get("energy", energy), s, [hkl, cons["h2"]])
                     s["separation"], s["tdet max [mm]"] = sp["separation"], sp["tdet_max"]
             n_all = len(sols)
             if self.only_limits.value:
@@ -630,6 +656,12 @@ class ReflectionsApp:
 
     def select(self, sel):
         self.selected = sel
+        if isinstance(sel, int) and sel < len(self.sols) and "energy" in self.sols[sel]:
+            was, self._suspend = self._suspend, True
+            try:
+                self.energy.value = round(float(self.sols[sel]["energy"]), 3)
+            finally:
+                self._suspend = was
         for b in self.buttons.children:
             if hasattr(b, "_sel"):
                 b.button_style = "info" if b._sel == sel else ""
@@ -645,7 +677,7 @@ class ReflectionsApp:
         hkl = [float(x.value) for x in self.hkl]
         targets = [hkl, [float(x.value) for x in self.h2]] if self.two.value else [hkl]
         if isinstance(sel, int):
-            return self.sols[sel], f"sol. {sel}", energy, targets
+            return self.sols[sel], f"sol. {sel}", float(self.sols[sel].get("energy", energy)), targets
         if sel == self.SEL_ZERO:
             return {}, "zero", energy, targets
         if sel == self.SEL_SIM:
