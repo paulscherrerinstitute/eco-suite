@@ -1919,7 +1919,10 @@ class Assembly:
                 return
             except Exception as e:
                 print(f"Could not build widget for {self.alias.get_full_name()}: {e}")
-        print(self)
+        # repr, not str: subclasses may define a short __str__ (e.g.
+        # DoubleCrystalMono's "mono @ ... eV") while relying on
+        # Assembly.__repr__ for the full status display.
+        print(repr(self))
 
     def show(self, exclude_group_ids=None, live=False, dock_in=None,
              sidecar_anchor=None, backend=None):
