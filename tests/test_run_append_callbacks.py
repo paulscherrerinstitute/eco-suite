@@ -139,56 +139,80 @@ def _fresh_load_counter(monkeypatch):
     return calls
 
 
-def test_example_run_in_func_means_the_run_it_is_applied_to(runs, tmp_path, monkeypatch):
+def _shell(runs):
     from IPython.terminal.interactiveshell import TerminalInteractiveShell
 
     ip = TerminalInteractiveShell.instance()
+    ip.user_ns["runs"] = runs
+    return ip
+
+
+def _run(ip, cell):
+    result = ip.run_cell(cell, store_history=True)
+    result.raise_error()
+    return result
+
+
+def test_run_patch_from_an_object_computed_on_an_example_run(runs, tmp_path, monkeypatch):
+    from IPython.terminal.interactiveshell import TerminalInteractiveShell
+
+    ip = _shell(runs)
     try:
-        ip.user_ns["runs"] = runs
-        ip.run_cell("ds = runs[3]", store_history=True)
-        ip.run_cell("def first(d):\n    return ds.a", store_history=True)
-        ip.run_cell("runs.add_append_callback('first', first, add_patch=True)", store_history=True)
-        assert ip.user_ns["ds"].first == 3.0
-        assert runs[6].first == 6.0  # not the example's 3
+        _run(ip, "import math")
+        _run(ip, "scale = 4")
+        _run(ip, "d = runs[3]\nprint('looking at', d)")
+        _run(ip, "unrelated = d.b * 100")
+        _run(ip, "def helper(x):\n    return math.sqrt(x)")
+        _run(ip, "i0 = helper(d.a * scale) / d.b\nprint(i0)")
+        _run(ip, "runs.append_run_patch(i0, name='i0')")
+        assert ip.user_ns["d"].i0 == pytest.approx(math_sqrt(12) / 3)  # applied to d
         text = (tmp_path / "p00000" / "run_patches.py").read_text()
-        assert "dataset_names=('ds',)" in text
-        assert "runs[3]" not in text
+        body = text[text.index("def _run_patch_i0(dataset):"):]
+        assert "    import math\n" in body
+        assert "    d = dataset\n" in body
+        assert body.index("scale = 4") < body.index("def helper") < body.index("i0 = helper")
+        assert "runs[3]" not in text and "unrelated" not in text and "print" not in text
+        assert "runs.add_append_callback('i0', _run_patch_i0)" in text
     finally:
         TerminalInteractiveShell.clear_instance()
     calls = _fresh_load_counter(monkeypatch)
     fresh = RunData(_Pgroup(), patch_path=runs.patch_path)
-    assert fresh[8].first == 8.0
-    assert calls == [8]  # replay did not load the example run
+    assert fresh[12].i0 == pytest.approx(math_sqrt(48) / 3)
+    assert calls == [12]  # the example run is never loaded again
 
 
-def test_inline_lambda_on_example_run_in_the_same_cell(runs, tmp_path, monkeypatch):
+def math_sqrt(x):
+    import math
+
+    return math.sqrt(x)
+
+
+def test_run_patch_from_an_inline_expression_and_a_reassigned_name(runs, tmp_path):
     from IPython.terminal.interactiveshell import TerminalInteractiveShell
 
-    ip = TerminalInteractiveShell.instance()
+    ip = _shell(runs)
     try:
-        ip.user_ns["runs"] = runs
-        ip.run_cell(
-            "ex = runs[4]\nruns.add_append_callback('twice', lambda d: 2 * ex.a, add_patch=True)",
-            store_history=True,
-        )
+        _run(ip, "ex = runs[5]\nk = 1\nk += 1")
+        _run(ip, "runs.append_run_patch(ex.a * k, name='a2')")
+        assert ip.user_ns["ex"].a2 == 10.0
+        assert runs[7].a2 == 14.0
         text = (tmp_path / "p00000" / "run_patches.py").read_text()
-        assert "# (not replayed: ex = runs[4]" in text
+        assert "k = 1\n    k += 1\n    return ex.a * k" in text
     finally:
         TerminalInteractiveShell.clear_instance()
-    calls = _fresh_load_counter(monkeypatch)
-    fresh = RunData(_Pgroup(), patch_path=runs.patch_path)
-    assert fresh[5].twice == 10.0
-    assert calls == [5]
 
 
-def test_drop_assignments_keeps_the_rest():
-    from eco.utilities.patchfile import drop_assignments, names_used_outside_functions
+def test_run_patch_refuses_what_it_cannot_reconstruct(runs):
+    from IPython.terminal.interactiveshell import TerminalInteractiveShell
 
-    src = "import x\nds = runs[3]  # example\ndef f(d):\n    return ds.a\n"
-    out = drop_assignments(src, {"ds"})
-    assert "runs[3]" in out and out.splitlines()[1].lstrip().startswith("# (not replayed")
-    assert "def f(d):" in out and "import x" in out
-    assert drop_assignments("ds = runs[3]; y = 1", {"ds"}) == "y = 1"
-    assert drop_assignments("ds, y = 1, 2", {"ds"}) == "ds, y = 1, 2"  # not only ds
-    assert names_used_outside_functions(out) == set()
-    assert names_used_outside_functions("roi = ds.a.mean()") == {"ds"}
+    ip = _shell(runs)
+    try:
+        _run(ip, "c = 3")
+        with pytest.raises(ValueError, match="does not depend on a loaded run"):
+            _run(ip, "runs.append_run_patch(c * 2, name='x')")
+        ip.user_ns["ghost"] = 5  # exists, but no statement made it
+        _run(ip, "d = runs[1]")
+        with pytest.raises(ValueError, match="no statement in the session binds ghost"):
+            _run(ip, "runs.append_run_patch(d.a * ghost, name='y')")
+    finally:
+        TerminalInteractiveShell.clear_instance()

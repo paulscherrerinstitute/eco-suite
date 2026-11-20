@@ -1,6 +1,5 @@
 from numbers import Number
 import os
-import types
 from pathlib import Path
 
 # from eco.elements.assembly import Assembly
@@ -29,7 +28,6 @@ class RunData:
         # add_append_callback; persisted in the pgroup's `patch_path`
         self.patch_path = patch_path
         self._append_callbacks = []  # [(name, callback as applied)]
-        self._callback_sources = {}  # name -> (func as given, dataset_names)
         self._patch_state = None  # (patch file, mtime) last replayed
 
     def get_available_run_numbers(self):
@@ -82,15 +80,16 @@ class RunData:
         self.__setattr__(f"run{run_number:04d}", trun)
         return trun
 
-    # --- append callbacks -------------------------------------------------
+    # --- append callbacks / run patches -----------------------------------
     # Recipes for derived items (`dataset.append(func(dataset), name=name)`)
-    # that every run gets when it is loaded. Defined interactively with
-    # `add_append_callback(..., add_patch=True)` they are also written to the
-    # pgroup's run patch file (in res/, next to the run data), which is
-    # replayed before the next run is loaded -- in this session if another
-    # session changed it, and in every later one. Same file format and
-    # recording as Assembly._append(..., add_patch=True), see
-    # eco.utilities.patchfile.
+    # that every run gets when it is loaded. `append_run_patch(obj, name)`
+    # builds the recipe from how `obj` was computed in the session on an
+    # example run; `add_append_callback(name, func)` takes a function. Saved
+    # recipes go to the pgroup's run patch file (res/eco/run_patches.py,
+    # next to the namespace's patches.py), which is replayed before the next
+    # run is loaded -- in this session if another session changed it, and in
+    # every later one. Same entry format as Assembly._append(...,
+    # add_patch=True), see eco.utilities.patchfile.
 
     def get_patch_file(self):
         return Path(self.patch_path.format(pgroup=self.pgroup.get_current_value()))
@@ -98,7 +97,7 @@ class RunData:
     def load_append_callbacks(self, force=False):
         """Replay the run patch file if it changed (or the pgroup did) since
         it was last replayed, rebuilding the callback list from it. A
-        callback added with `add_patch=False` is kept only until then."""
+        callback that was not saved is kept only until then."""
         from eco.utilities.patchfile import is_replaying, run_patch_file
 
         if is_replaying():
@@ -110,12 +109,11 @@ class RunData:
             state = (path, None)
         if not force and state == self._patch_state:
             return
-        # set first: a replayed cell may load a run itself (`ds = runs[3]`)
+        # set first: a replayed entry may load a run itself
         self._patch_state = state
         if state[1] is None:
             return
         self._append_callbacks = []
-        self._callback_sources = {}
         run_patch_file(path, globals={"runs": self})
 
     @property
@@ -124,93 +122,124 @@ class RunData:
         self.load_append_callbacks()
         return list(self._append_callbacks)
 
+    def append_run_patch(self, obj, name, save=True, apply_to_loaded=True):
+        """Give every run the item `name`, computed the way `obj` was
+        computed in this session from an example run::
+
+            d = runs[3]
+            i0 = d.bernina.mon_mono.intensity / 4
+            runs.append_run_patch(i0, name="i0")
+
+        becomes the append callback ::
+
+            def _run_patch_i0(dataset):
+                d = dataset
+                i0 = d.bernina.mon_mono.intensity / 4
+                return i0
+
+        Only the statements `obj` depends on are taken from the session
+        history (not whole cells, so a plot in the same cell is not
+        repeated), back to the names bound to a loaded run (`d`), which
+        become the run the callback is applied to. Session functions and
+        values it uses are taken along, modules become imports. `obj` can
+        also be an expression: ``runs.append_run_patch(d.x / 4, name="x4")``.
+
+        The callback is applied to the runs already loaded (so a wrong
+        reconstruction shows now, not on replay) and, with `save`, written to
+        the run patch file. Returns the generated source.
+        """
+        from eco.utilities.patchfile import (
+            function_source_from_history,
+            record_interactive_patch,
+        )
+        from eco.elements.assembly import _capture_current_input
+        from IPython import get_ipython
+
+        ip = get_ipython()
+        if ip is None:
+            raise RuntimeError("append_run_patch needs an IPython session")
+        transform = ip.input_transformer_manager.transform_cell
+        history = [transform(c) for c in ip.history_manager.input_hist_raw[1:-1]]
+        expr = None
+        cell = _capture_current_input()
+        if cell:
+            found = _find_call_argument(transform(cell), "append_run_patch", name)
+            if found:
+                expr, before = found
+                history.append(before)
+        if expr is None:
+            expr = _session_name_of(obj)
+            if expr is None:
+                raise ValueError(
+                    "append_run_patch: cannot tell how this object was computed "
+                    "-- pass the variable it is bound to, or the expression."
+                )
+        fname = "_run_patch_" + "".join(c if c.isalnum() else "_" for c in name)
+        source = function_source_from_history(
+            expr, history, ip.user_ns, is_parameter=_is_dataset, func_name=fname
+        )
+        namespace = {"__name__": "run_patches"}
+        exec(compile(source, f"<run patch {name}>", "exec"), namespace)
+        self.add_append_callback(name, namespace[fname], apply_to_loaded=apply_to_loaded)
+        print(source)
+        if save:
+            path = self.get_patch_file()
+            if record_interactive_patch(
+                path,
+                f"runs.append_callbacks.{name}",
+                code=f"{source}\nruns.add_append_callback({name!r}, {fname})",
+                known_names={"runs"},
+                replay=False,
+                preamble=_RUN_PATCH_PREAMBLE,
+            ):
+                self._patch_state = (path, path.stat().st_mtime)
+                print(f"eco: saved to {path}")
+        return source
+
     def add_append_callback(
-        self,
-        name,
-        func,
-        add_patch=False,
-        apply_to_loaded=True,
-        replay_origin=True,
-        dataset_names=None,
+        self, name, func, add_patch=False, apply_to_loaded=True, replay_origin=True
     ):
         """Have every run loaded from now on get `dataset.append(func(dataset),
         name=name)`; with `apply_to_loaded` also the runs already loaded.
 
-        `func` may be written against an example run of the session instead
-        of (or as well as) its argument: global names in it that refer to a
-        loaded `DataSet` (``ds = runs[3]; def norm(d): return d.signal /
-        ds.i0``) are found automatically and, on every call, mean the run the
-        callback is applied to. `dataset_names` gives them explicitly
-        (``()`` to switch the detection off).
-
-        `add_patch=True` writes this to the pgroup's run patch file
-        (`get_patch_file()`), so it is restored in later sessions: if `func`
-        is a name in the session, the patch is `runs.add_append_callback(name,
-        <that name>)` preceded by the cell(s) that defined it (with
-        `replay_origin`, see `Assembly._append`'s `patch_replay_origin`),
-        otherwise (an inline lambda) the whole cell being executed. Example
-        runs are never loaded again on replay: their assignments
-        (``ds = runs[3]``) are left out of the recorded code.
+        `add_patch=True` writes this to the run patch file
+        (`get_patch_file()`): if `func` is a name in the session, as
+        `runs.add_append_callback(name, <that name>)` preceded by the cell(s)
+        that defined it (with `replay_origin`, see `Assembly._append`'s
+        `patch_replay_origin`), otherwise (an inline lambda) as the whole
+        cell being executed. See also `append_run_patch`.
         """
         from eco.utilities.patchfile import is_replaying, record_interactive_patch
 
         if not callable(func):
             raise TypeError(f"append callback for {name!r} is not callable: {func!r}")
-        if dataset_names is None:
-            dataset_names = _example_dataset_names(func)
-        dataset_names = tuple(dataset_names)
-        callback = _rebind_to_dataset(func, dataset_names)
         self.load_append_callbacks()
-        self._callback_sources[name] = (func, dataset_names)
         cbs = self._append_callbacks
         for i, (n, _) in enumerate(cbs):
             if n == name:
-                cbs[i] = (name, callback)
+                cbs[i] = (name, func)
                 break
         else:
-            cbs.append((name, callback))
-        if dataset_names and not is_replaying():
-            print(
-                f"eco: append callback {name!r}: {', '.join(dataset_names)} "
-                "will be the run it is applied to."
-            )
+            cbs.append((name, func))
         if apply_to_loaded and not is_replaying():
             for run_number, entry in self.loaded_runs.items():
                 ds = entry["dataset"]
                 if hasattr(ds, "add_append_callback"):
-                    ds.add_append_callback(name, callback, run=True)
+                    ds.add_append_callback(name, func, run=True)
         if add_patch and not is_replaying():
-            code, epilogue = None, []
-            names_arg = f", dataset_names={dataset_names!r}" if dataset_names else ""
             varname = _session_name_of(func)
-            if varname:
-                code = f"runs.add_append_callback({name!r}, {varname}{names_arg})"
-            elif dataset_names:
-                # the cell's own call cannot detect them on replay (the
-                # example run does not exist there): say it afterwards
-                epilogue = [
-                    f"runs.add_append_callback({name!r}, "
-                    f"runs.get_append_callback({name!r}){names_arg})"
-                ]
+            code = f"runs.add_append_callback({name!r}, {varname})" if varname else None
             path = self.get_patch_file()
-            written = record_interactive_patch(
+            if record_interactive_patch(
                 path,
                 f"runs.append_callbacks.{name}",
                 code=code,
                 known_names={"runs"},
                 replay=replay_origin,
                 preamble=_RUN_PATCH_PREAMBLE,
-                drop_bindings=dataset_names,
-                epilogue=epilogue,
-            )
-            if written:
+            ):
                 # our own write is not a reason to replay the file
                 self._patch_state = (path, path.stat().st_mtime)
-
-    def get_append_callback(self, name):
-        """The function registered as `name`, as it was given."""
-        self.load_append_callbacks()
-        return self._callback_sources[name][0]
 
     def remove_append_callback(self, name, add_patch=False):
         """Stop applying `name` to runs loaded from now on (items already
@@ -220,7 +249,6 @@ class RunData:
 
         self.load_append_callbacks()
         self._append_callbacks = [(n, f) for n, f in self._append_callbacks if n != name]
-        self._callback_sources.pop(name, None)
         if add_patch and not is_replaying():
             path = self.get_patch_file()
             if record_interactive_patch(
@@ -241,7 +269,7 @@ class RunData:
         if not hasattr(dataset, "run_append_callbacks"):
             print(
                 "eco: runs has append callbacks but this escape version's "
-                "DataSet cannot run them -- update escape-fel."
+                "DataSet cannot run them -- update escape-fel (>= 0.3.6)."
             )
             return [], [n for n, _ in callbacks]
         for n, f in callbacks:
@@ -319,42 +347,40 @@ def _is_dataset(obj):
     )
 
 
-def _example_dataset_names(func):
-    """Global names `func` (and functions/lambdas defined in it) reads that
-    are bound to an escape DataSet in its globals: an example run it was
-    written against."""
-    if not isinstance(func, types.FunctionType):
-        return ()
-    names, stack = set(), [func.__code__]
-    while stack:
-        code = stack.pop()
-        names.update(code.co_names)
-        stack.extend(c for c in code.co_consts if isinstance(c, types.CodeType))
-    g = func.__globals__
-    return tuple(sorted(n for n in names if n in g and _is_dataset(g[n])))
+def _find_call_argument(cell, method, name):
+    """(source of the first argument, source of the statements before it) of
+    the `.<method>(...)` call in `cell` whose `name=` is `name` (or the only
+    such call), or None."""
+    import ast
 
-
-def _rebind_to_dataset(func, dataset_names):
-    """`func` with the global `dataset_names` meaning its dataset argument."""
-    if not dataset_names:
-        return func
-    if not isinstance(func, types.FunctionType):
-        raise TypeError(
-            f"dataset_names={dataset_names!r} needs a plain function, got {func!r}"
-        )
-
-    def callback(dataset):
-        g = dict(func.__globals__)
-        g.update({n: dataset for n in dataset_names})
-        f = types.FunctionType(
-            func.__code__, g, func.__name__, func.__defaults__, func.__closure__
-        )
-        f.__kwdefaults__ = func.__kwdefaults__
-        return f(dataset)
-
-    callback.__wrapped__ = func
-    callback.__name__ = getattr(func, "__name__", "callback")
-    return callback
+    try:
+        tree = ast.parse(cell)
+    except SyntaxError:
+        return None
+    hits = []
+    for k, st in enumerate(tree.body):
+        for node in ast.walk(st):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, (ast.Attribute, ast.Name))
+                and getattr(node.func, "attr", getattr(node.func, "id", None)) == method
+            ):
+                continue
+            arg = node.args[0] if node.args else next(
+                (kw.value for kw in node.keywords if kw.arg == "obj"), None
+            )
+            if arg is None:
+                continue
+            kwname = next((kw.value for kw in node.keywords if kw.arg == "name"), None)
+            if kwname is None and len(node.args) > 1:
+                kwname = node.args[1]
+            literal = kwname.value if isinstance(kwname, ast.Constant) else None
+            before = "\n".join(ast.get_source_segment(cell, s) for s in tree.body[:k])
+            hits.append((literal, ast.get_source_segment(cell, arg), before))
+    matching = [h for h in hits if h[0] == name] or (hits if len(hits) == 1 else [])
+    if not matching:
+        return None
+    return matching[0][1], matching[0][2]
 
 
 def _session_name_of(obj):

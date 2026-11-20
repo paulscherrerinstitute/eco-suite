@@ -122,8 +122,6 @@ def record_interactive_patch(
     known_names=(),
     replay=True,
     preamble=None,
-    drop_bindings=(),
-    epilogue=(),
 ):
     """Append an entry for `target` to `patch_file`: the IPython input that
     created it plus what that input needs to run again in a fresh session
@@ -141,12 +139,6 @@ def record_interactive_patch(
     ``from <root_module> import *`` and that module's names count as known.
     `preamble` is a comment written at the top of a new file.
 
-    `drop_bindings`: names that must *not* be re-created on replay (e.g. an
-    example run, `ds = runs[3]`, whose role the replayed code gives to
-    another object). Top-level plain assignments to them are removed from the
-    recorded code and replayed cells; a replayed cell that still uses them
-    outside a function body is reported, since it will fail on replay.
-    `epilogue` lines are written after the code.
 
     Best effort: returns True if written; a failure only logs a warning.
     Does nothing while a patch file is being replayed (`replaying`).
@@ -187,7 +179,7 @@ def record_interactive_patch(
             code,
             ip.user_ns,
             history,
-            known | set(drop_bindings),
+            known,
             replay=replay,
             transform=transform,
         )
@@ -197,18 +189,6 @@ def record_interactive_patch(
             imports.append("from IPython import get_ipython")
     except Exception:
         logger.debug("patch import analysis failed", exc_info=True)
-    if drop_bindings:
-        drop = set(drop_bindings)
-        code = drop_assignments(code, drop)
-        cells = [(i, drop_assignments(c, drop)) for i, c in cells]
-        for i, c in cells:
-            used = sorted(names_used_outside_functions(c) & drop)
-            if used:
-                logger.warning(
-                    "patch for '%s': In[%d] uses %s outside a function; it "
-                    "will fail when the patch is replayed.",
-                    target, i, ", ".join(used),
-                )
     for i, c in cells:
         logger.warning(
             "patch for '%s': also recording In[%d] (%s), which it was built "
@@ -243,8 +223,6 @@ def record_interactive_patch(
                 f.write(f"# --- In[{i}], replayed: origin of an object used below ---\n")
                 f.write(c + "\n")
             f.write(code.rstrip("\n") + "\n")
-            for line in epilogue:
-                f.write(line + "\n")
         ensure_group_writable(patch_file)
     except Exception:
         logger.warning(
@@ -254,67 +232,101 @@ def record_interactive_patch(
     return True
 
 
-def drop_assignments(source, names):
-    """`source` without its top-level statements that only assign to `names`
-    (``ds = runs[3]``, ``a = b = ...`` with all targets in `names`). Each is
-    replaced by a comment, keeping the rest of the text as typed; if such a
-    statement shares a line with another one, the code is re-generated
-    (`ast.unparse`, comments lost)."""
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return source
-    drop = []
-    for st in tree.body:
-        if isinstance(st, ast.Assign):
-            targets = st.targets
-        elif isinstance(st, ast.AnnAssign) and st.value is not None:
-            targets = [st.target]
-        else:
-            continue
-        if all(isinstance(t, ast.Name) and t.id in names for t in targets):
-            drop.append(st)
-    if not drop:
-        return source
-    dropped_lines = set()
-    for st in drop:
-        dropped_lines.update(range(st.lineno, st.end_lineno + 1))
-    shared = any(
-        st not in drop
-        and dropped_lines & set(range(st.lineno, st.end_lineno + 1))
-        for st in tree.body
-    )
-    if shared:
-        tree.body = [st for st in tree.body if st not in drop] or [ast.Pass()]
-        return ast.unparse(tree)
-    lines = source.splitlines()
-    out = []
-    for n, line in enumerate(lines, start=1):
-        if n not in dropped_lines:
-            out.append(line)
-        elif any(st.lineno == n for st in drop):
-            indent = line[: len(line) - len(line.lstrip())]
-            out.append(f"{indent}# (not replayed: {line.strip()} -- see drop_bindings)")
-    return "\n".join(out)
 
+def function_source_from_history(
+    expr, history, user_ns, is_parameter, func_name="foo", parameter="dataset"
+):
+    """Source of ``def <func_name>(<parameter>): ... return <expr>`` that
+    computes `expr` the way the session did, for another `parameter`.
 
-def names_used_outside_functions(source):
-    """Names read by `source` outside function/lambda bodies, i.e. when it is
-    executed rather than when something it defines is called."""
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return set()
-    used = set()
-    stack = list(tree.body)
-    while stack:
-        node = stack.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            # defaults and decorators are evaluated at definition time
-            stack.extend(d for d in node.args.defaults + node.args.kw_defaults if d is not None)
-            stack.extend(getattr(node, "decorator_list", []))
+    `history` is the session's code, oldest first (cells or any chunks of
+    statements). Going backwards through its top-level statements, the ones
+    binding a name `expr` still needs are taken, with the names they need in
+    turn, until every name is accounted for:
+
+    * a name whose value in `user_ns` satisfies `is_parameter` (the example
+      run, ``d = runs[3]``) is not traced further: it becomes the function's
+      argument (``d = dataset``);
+    * an importable module/class/function becomes an import inside the
+      function; builtins are left alone;
+    * anything else must be bound by an earlier statement, else ValueError.
+
+    Statements are taken whole and in their original order, so a session
+    function (``def helper``) or loop is carried along as written.
+    """
+    import builtins
+    import textwrap
+
+    from ..elements.assembly import _bound_and_loaded_names, _import_line_for
+
+    statements = []  # (source, loaded, bound)
+    for chunk in history:
+        try:
+            tree = ast.parse(chunk)
+        except SyntaxError:
             continue
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-            used.add(node.id)
-        stack.extend(n for n in ast.iter_child_nodes(node) if n is not None)
-    return used
+        for st in tree.body:
+            loaded, bound = _bound_and_loaded_names(st)
+            statements.append((ast.get_source_segment(chunk, st), loaded, bound))
+    try:
+        loaded, bound = _bound_and_loaded_names(ast.parse(expr, mode="eval"))
+    except SyntaxError as e:
+        raise ValueError(f"not an expression: {expr!r}") from e
+
+    parameters, imports, chosen = [], [], []
+
+    def open_names(names):
+        out = set()
+        for n in names:
+            if hasattr(builtins, n) and n not in user_ns:
+                continue
+            if n in user_ns:
+                v = user_ns[n]
+                if is_parameter(v):
+                    if n not in parameters:
+                        parameters.append(n)
+                    continue
+                line = _import_line_for(n, v)
+                if line:
+                    if line not in imports:
+                        imports.append(line)
+                    continue
+            out.add(n)
+        return out
+
+    need = open_names(loaded - bound)
+    used_names = set(loaded)
+    for source, loaded_s, bound_s in reversed(statements):
+        if not need:
+            break
+        hit = bound_s & need
+        if not hit:
+            continue
+        chosen.append(source)
+        used_names.update(loaded_s | bound_s)
+        # `x += 1` / `x = x + 1` still need the earlier x
+        need = (need - hit) | open_names((loaded_s - bound_s) | (hit & loaded_s))
+    if need:
+        raise ValueError(
+            f"cannot reconstruct {expr!r}: no statement in the session binds "
+            f"{', '.join(sorted(need))}"
+        )
+    if not parameters:
+        raise ValueError(
+            f"{expr!r} does not depend on a loaded run -- nothing to compute per run"
+        )
+    while parameter in parameters or parameter in used_names:
+        parameter = "_" + parameter
+    body = list(imports)
+    if any("get_ipython" in c for c in chosen):
+        body.append("from IPython import get_ipython")
+    body += [f"{p} = {parameter}" for p in parameters]
+    body += list(reversed(chosen))
+    body.append(f"return {expr}")
+    text = "\n".join(body)
+    if len(parameters) > 1:
+        text = (
+            f"# NOTE: {', '.join(parameters)} were different example runs; "
+            f"all of them are now the run being loaded\n" + text
+        )
+    return f"def {func_name}({parameter}):\n" + textwrap.indent(text, "    ") + "\n"
