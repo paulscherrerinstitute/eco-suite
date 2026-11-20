@@ -835,105 +835,34 @@ class Assembly:
         take that append down.
         """
         patch_file, root_module = self._resolve_patch_target()
+        full_name = self.alias.get_full_name()
         if patch_file is None:
             logger.warning(
                 "add_patch=True on '%s.%s' but no ancestor namespace has a "
                 "'patch_file' set -- nothing saved. Set "
                 "<namespace>.patch_file = <path> to enable capturing "
                 "patches for it.",
-                self.alias.get_full_name(),
+                full_name,
                 name,
             )
             return
-        code = _capture_current_input()
-        imports, cells, notes = [], [], []
-        if code:
-            try:
-                from IPython import get_ipython
+        from ..utilities.patchfile import record_interactive_patch
 
-                ip = get_ipython()
-                transform = ip.input_transformer_manager.transform_cell
-                known = ()
-                if root_module and root_module in sys.modules:
-                    known = vars(sys.modules[root_module]).keys()
-                imports, cells, notes = _patch_prelude(
-                    code,
-                    ip.user_ns,
-                    ip.history_manager.input_hist_raw,
-                    known,
-                    replay=replay,
-                    transform=transform,
-                )
-                # magics come out as `get_ipython().run_line_magic(...)`
-                code = transform(code)
-                if "get_ipython" in code + "".join(c for _, c in cells):
-                    imports.append("from IPython import get_ipython")
-            except Exception:
-                logger.debug("patch import analysis failed", exc_info=True)
-            for i, c in cells:
-                logger.warning(
-                    "add_patch: also recording In[%d] (%s), which the "
-                    "appended object was built from; it re-runs when the "
-                    "patch is replayed.",
-                    i,
-                    c.splitlines()[0][:60] if c else "",
-                )
-            for n in notes:
-                logger.warning("add_patch: %s", n.lstrip("# "))
-        if not code:
-            logger.warning(
-                "add_patch=True on '%s.%s' but could not capture the "
-                "generating IPython input (not running interactively?) -- "
-                "nothing saved.",
-                self.alias.get_full_name(),
-                name,
-            )
-            return
-        try:
-            from ..utilities.datafiles import ensure_dir, ensure_group_writable
-            from ..utilities.patchfile import format_entry_header
-
-            ensure_dir(patch_file.parent)
-            is_new = not patch_file.exists()
-            with open(patch_file, "a") as f:
-                if is_new:
-                    f.write(
-                        "# Auto-generated patch file -- appended to by "
-                        "Assembly._append(..., add_patch=True) calls made "
-                        "in interactive sessions, then re-run (imported) "
-                        "the next time this namespace is built, to "
-                        "recreate them. Safe to hand-edit (e.g. to drop a "
-                        "patch that turned out to be wrong) as long as the "
-                        "file stays valid Python.\n"
-                    )
-                    if root_module:
-                        f.write(f"from {root_module} import *\n")
-                full_name = self.alias.get_full_name()
-                target = f"{full_name}.{name}" if full_name else name
-                f.write(
-                    "\n"
-                    + format_entry_header(
-                        target,
-                        datetime.now().isoformat(timespec="seconds"),
-                        getpass.getuser(),
-                    )
-                    + "\n"
-                )
-                for line in imports + notes:
-                    f.write(line + "\n")
-                for i, c in cells:
-                    f.write(f"# --- In[{i}], replayed: origin of an object used below ---\n")
-                    f.write(c + "\n")
-                f.write(code.rstrip("\n") + "\n")
-            ensure_group_writable(patch_file)
-        except Exception:
-            logger.warning(
-                "add_patch=True on '%s.%s': failed to write patch to %s",
-                self.alias.get_full_name(),
-                name,
-                patch_file,
-                exc_info=True,
-            )
+        record_interactive_patch(
+            patch_file,
+            f"{full_name}.{name}" if full_name else name,
+            root_module=root_module,
+            replay=replay,
+            preamble=(
+                "# Auto-generated patch file -- appended to by "
+                "Assembly._append(..., add_patch=True) calls made "
+                "in interactive sessions, then re-run (imported) "
+                "the next time this namespace is built, to "
+                "recreate them. Safe to hand-edit (e.g. to drop a "
+                "patch that turned out to be wrong) as long as the "
+                "file stays valid Python."
+            ),
+        )
 
     def get_status(
         self,
