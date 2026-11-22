@@ -891,9 +891,19 @@ class CameraBasler(Assembly):
         auto_start=True,
         separate_process=False,
         dockable=True,
+        show_profile=False,
+        show_fit=False,
+        fit_source="auto",
+        process=None,
     ):
         """Open the live cam_server viewer for this camera's own default
         processing pipeline (resolved automatically from self.pvname).
+
+        show_profile/show_fit: start with pshell's "Profile"/"Fit"
+        overlays on; fit_source: "auto", "pipeline", "local" or "local_gr"
+        (see CamServerStreamQt). process: do the per-frame image work in a
+        helper process (default; ECO_CAMERA_PROCESS=0 or process=False to
+        do it in this one, see eco.widgets.camera_frames).
 
         separate_process=False (the default): builds the viewer in this
         process -- starts instantly, docks natively into the eco desktop,
@@ -955,6 +965,10 @@ class CameraBasler(Assembly):
             auto_start=auto_start,
             cam=self,
             eco_name=name,
+            show_profile=show_profile,
+            show_fit=show_fit,
+            fit_source=fit_source,
+            process=process,
         )
 
     def elog(
@@ -1174,6 +1188,10 @@ class CameraPCO(Assembly):
         auto_start=True,
         separate_process=False,
         dockable=True,
+        show_profile=False,
+        show_fit=False,
+        fit_source="auto",
+        process=None,
     ):
         """Open the live cam_server "screen panel" viewer for this camera's
         own default processing pipeline -- see CameraBasler._widget_viewer(),
@@ -1203,6 +1221,10 @@ class CameraPCO(Assembly):
             auto_start=auto_start,
             cam=self,
             eco_name=name,
+            show_profile=show_profile,
+            show_fit=show_fit,
+            fit_source=fit_source,
+            process=process,
         )
 
     def elog(

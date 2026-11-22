@@ -8,16 +8,23 @@ REST resolution (already used elsewhere in eco, e.g.
 eco.devices_general.pipelines_swissfel) and `bsread.Source` for the zmq
 image stream (same wire protocol pshell's ch.psi.bsread.Receiver reads).
 
-Architecture mirrors eco.widgets.camera_stream_qt (AxisPTZStreamQt): a
-background thread owns the network connection, decodes each frame, and
-hands it to the GUI thread via a Qt signal -- so a stalled/slow stream
-never blocks the window. The GUI thread never processes a frame directly
-off that signal: it just stores the latest one, and a QTimer (the
-"frequency throttle" control) periodically pulls whatever is latest and
-runs it through the numpy render pipeline. This decouples render rate
-from network receive rate and mirrors pshell's own CamServerViewer, which
-(per its decompiled fields) drives redraws from a `javax.swing.Timer`
-rather than straight off the stream callback.
+Architecture: by default (process=True) a separate *frame process*
+(eco/widgets/camera_frames.py, run as a plain script: no Qt, no eco
+import) owns the stream connection and does all per-frame work --
+decoding, averaging, background, ROI, contrast, colormap, block-mean
+downscaling to what fits on screen, histogram, projections, Gaussian and
+good-region fits -- and sends the finished uint8 image with the results
+over a private zmq socket. The GUI thread only turns that into a pixmap
+and paints the overlays: measured on a 2048x2048 frame, the in-process
+render tick took 86-147 ms of main-thread time (most of the main thread at
+10 Hz, and in the eco desktop app the console runs on that thread). Frames
+are dropped, not queued, when the GUI falls behind. process=False (or
+ECO_CAMERA_PROCESS=0, and automatically if the frame process can't start
+or dies) uses the original path instead: a background thread receives and
+decodes, and a QTimer (the "frequency throttle") runs the latest frame
+through the same FrameProcessor on the GUI thread -- which decouples render
+rate from receive rate, mirroring pshell's own CamServerViewer (a
+`javax.swing.Timer` drives its redraws).
 
 Feature set (one instance = one camera/pipeline):
   - frequency throttle (render-rate spinbox, decoupled from stream rate)
@@ -42,13 +49,21 @@ Feature set (one instance = one camera/pipeline):
     pipeline); a built-in --kind demo source with --demo-color can
     generate a synthetic color test stream on demand with no cam_server
     dependency, for exercising this path without a real color camera
+  - "Profile" and "Fit" overlays like pshell's screen panel: the two
+    projections along the image edges, the fitted Gaussians and a fit
+    center/sigma cross with the numbers. The fit is the pipeline's own
+    (a "_sp" processing pipeline fits every frame on the server, which is
+    what pshell shows) or a local one of what is shown here (after
+    averaging/background/ROI), optionally restricted to pshell's/
+    cam_server's "good region" -- see the "Fit:" setting
   - state readable from the session: cursor/marker/ROI in raw-frame
     pixels, the pipeline's own scalar outputs (center of mass, FWHM, fit
-    parameters, ... -- whatever arrives with the image), and center of
-    mass/FWHM of what is shown inside the ROI; as state() or as
-    Detector-protocol readout(key)s for scans and strip plots. An
-    in-process viewer keeps all of it current while the session is busy
-    (see eco.utilities.mainthread)
+    parameters, ... -- whatever arrives with the image), center of
+    mass/FWHM of what is shown inside the ROI, and the fit shown; as
+    state() or as Detector-protocol readout(key)s for scans and strip
+    plots, or as escape Streams (streams()) stamped with each frame's
+    pulse id. An in-process viewer keeps all of it current while the
+    session is busy (see eco.utilities.mainthread)
 
 The render-pipeline core (FrameProcessor, normalize_to_uint8,
 array_to_qimage, compute_roi_from_drag) is plain numpy, Qt- and
@@ -79,6 +94,10 @@ a normal standalone window.
 """
 import argparse
 import logging
+import os
+import pickle
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -87,6 +106,23 @@ from collections import deque
 
 import numpy as np
 from qtpy import QtCore, QtGui, QtWidgets
+
+# The frame processing itself is plain numpy and lives in camera_frames,
+# which also runs as the viewer's frame process; re-exported here.
+from .camera_frames import (  # noqa: F401
+    COLORMAP_NAMES,
+    DIVERGING_CENTERS,
+    FrameProcessor,
+    _full_range,
+    _fwhm,
+    analyse,
+    apply_colormap,
+    compute_log_histogram,
+    get_colormap_lut,
+    normalize_to_uint8,
+    projection_stats,
+    scalar_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -289,43 +325,6 @@ def capture_camera_snapshot(
     return path, stats
 
 
-def _full_range(dtype):
-    """Display range for contrast_mode="full": the dtype's own min/max for
-    integer types; (None, None) -- meaning "fall back to auto" -- for
-    float dtypes, which have no natural fixed range."""
-    dtype = np.dtype(dtype)
-    if np.issubdtype(dtype, np.integer):
-        info = np.iinfo(dtype)
-        return float(info.min), float(info.max)
-    return None, None
-
-
-def normalize_to_uint8(array, vmin=None, vmax=None, log_scale=False):
-    """Pure-numpy, Qt-free: map a 2D image array to 8-bit grayscale for
-    display. vmin/vmax fix the display range (in the data's own units --
-    same meaning whether or not log_scale is set); if omitted, uses the
-    frame's own min/max (auto-contrast). log_scale=True makes the tone
-    curve between vmin and vmax logarithmic rather than linear (useful
-    for high-dynamic-range data with a bright, narrow peak) without
-    changing what vmin/vmax mean, so switching it on/off doesn't require
-    re-entering different numbers. Kept separate from Qt so the render
-    path's core logic is unit-testable without a display or event loop."""
-    arr = np.asarray(array)
-    if arr.ndim != 2:
-        raise ValueError(f"expected a 2D image array, got shape {arr.shape}")
-    arr = arr.astype(np.float32, copy=False)
-    lo = float(arr.min()) if vmin is None else float(vmin)
-    hi = float(arr.max()) if vmax is None else float(vmax)
-    if hi <= lo:
-        return np.zeros(arr.shape, dtype=np.uint8)
-    if log_scale:
-        span = np.log1p(max(hi - lo, 1e-6))
-        scaled = np.log1p(np.clip(arr - lo, 0, None)) * (255.0 / span)
-    else:
-        scaled = (arr - lo) * (255.0 / (hi - lo))
-    return np.clip(scaled, 0, 255).astype(np.uint8)
-
-
 def array_to_qimage(array):
     """uint8 numpy array -> QImage. 2D -> grayscale; (H, W, 3) -> RGB888;
     (H, W, 4) -> RGBA8888."""
@@ -359,53 +358,6 @@ def _display_array_to_pil(array):
     raise ValueError(f"unsupported array shape for display: {array.shape}")
 
 
-# Colormap names offered in the UI. "gray"/"gray_inverted" are pure numpy
-# (no matplotlib needed); "viridis" and the two diverging maps are built
-# from matplotlib's exact colormap data the first time they're used (see
-# get_colormap_lut) -- matplotlib is already an eco dependency (used e.g.
-# by eco.dbase.archiver's strip plots), so this reuses it rather than
-# hand-approximating viridis's colors. DIVERGING_CENTERS gives the data
-# value each diverging colormap's midpoint (white/neutral) is centered on
-# -- FrameProcessor.process widens vmin/vmax symmetrically around that
-# value so the reference always lands exactly at the midpoint regardless
-# of contrast mode (see its _resolve_contrast_range/process).
-COLORMAP_NAMES = ("gray", "gray_inverted", "viridis", "diverging_zero", "diverging_one")
-DIVERGING_CENTERS = {"diverging_zero": 0.0, "diverging_one": 1.0}
-_MPL_COLORMAP_SOURCE = {"viridis": "viridis", "diverging_zero": "RdBu_r", "diverging_one": "RdBu_r"}
-
-_colormap_lut_cache = {}
-
-
-def get_colormap_lut(name):
-    """256x3 uint8 RGB lookup table for a colormap name. Cached after
-    first build (the matplotlib-backed ones involve an import + a bit of
-    array work, not worth repeating every frame)."""
-    if name in _colormap_lut_cache:
-        return _colormap_lut_cache[name]
-
-    if name == "gray":
-        lut = np.repeat(np.arange(256, dtype=np.uint8)[:, None], 3, axis=1)
-    elif name == "gray_inverted":
-        lut = np.repeat(np.arange(255, -1, -1, dtype=np.uint8)[:, None], 3, axis=1)
-    elif name in _MPL_COLORMAP_SOURCE:
-        import matplotlib
-
-        cmap = matplotlib.colormaps[_MPL_COLORMAP_SOURCE[name]]
-        lut = (np.asarray(cmap(np.linspace(0.0, 1.0, 256)))[:, :3] * 255).astype(np.uint8)
-    else:
-        raise ValueError(f"unknown colormap {name!r}")
-
-    _colormap_lut_cache[name] = lut
-    return lut
-
-
-def apply_colormap(gray_uint8, name):
-    """(H, W) uint8 grayscale -> (H, W, 3) uint8 RGB via get_colormap_lut's
-    table (vectorized fancy indexing)."""
-    lut = get_colormap_lut(name)
-    return lut[gray_uint8]
-
-
 def colormap_gradient_stops(name, n=16):
     """n evenly-spaced (fraction, QColor) stops sampling a colormap's LUT
     -- for painting a QLinearGradient that matches what's actually on
@@ -435,163 +387,6 @@ def compute_fit_scale(viewport_w, viewport_h, raw_w, raw_h):
     if raw_w <= 0 or raw_h <= 0 or viewport_w <= 0 or viewport_h <= 0:
         return 1.0
     return max(min(viewport_w / raw_w, viewport_h / raw_h), 0.02)
-
-
-class FrameProcessor:
-    """Pure numpy per-viewer processing pipeline: averaging -> background
-    subtract -> ROI crop -> contrast mapping -> a uint8 (grayscale) or
-    uint8 RGB(A) array ready for array_to_qimage. No Qt, no network -- the
-    unit-tested core of the viewer's render path (see
-    tests/test_camserver_stream_qt.py)."""
-
-    def __init__(self, average_n=1, average_mode="running"):
-        self.average_n = max(1, int(average_n))
-        # "running" | "single" -- mirrors pshell's own CamServerViewer
-        # averaging (see ImageIntegrator, decompiled from pshell-workbench):
-        # "running" recomputes the mean over the last average_n frames on
-        # every new frame (a continuously-updating sliding window -- what
-        # this class already did before average_mode existed, and pshell's
-        # own behavior for a *negative* integration count); "single"
-        # accumulates average_n frames, emits their mean once, then starts
-        # a fresh batch -- the display only refreshes every average_n raw
-        # frames instead of every frame (pshell's behavior for a
-        # *non-negative* integration count).
-        self.average_mode = average_mode
-        self._ring = deque(maxlen=self.average_n)
-        self._single_average_result = None  # frozen output, "single" mode only
-        self.background = None
-        self.subtract_background = False
-        self.roi = None  # (x, y, w, h) in raw-frame pixel coords, or None
-        self.contrast_mode = "auto"  # "auto" | "manual" | "full"
-        self.vmin = None
-        self.vmax = None
-        self.log_scale = False
-        self.colormap = "gray"  # one of COLORMAP_NAMES
-
-    def set_average_n(self, n):
-        n = max(1, int(n))
-        if n != self.average_n:
-            self.average_n = n
-            self._ring = deque(self._ring, maxlen=n)
-            self._single_average_result = None
-
-    def set_average_mode(self, mode):
-        if mode not in ("running", "single"):
-            raise ValueError(f"average_mode must be 'running' or 'single', got {mode!r}")
-        if mode != self.average_mode:
-            self.average_mode = mode
-            self._ring.clear()
-            self._single_average_result = None
-
-    @staticmethod
-    def is_color(array):
-        return array.ndim == 3 and array.shape[-1] in (3, 4)
-
-    def grab_background(self):
-        """Capture the current (possibly averaged) frame as background.
-        No-op if no frame has been processed yet."""
-        if self._ring:
-            self.background = np.mean(np.stack(self._ring, axis=0), axis=0)
-
-    def clear_background(self):
-        self.background = None
-
-    def set_roi(self, roi):
-        self.roi = roi
-
-    @staticmethod
-    def compose_roi(base_roi, drag_rect):
-        """A new drag-selected rectangle is in the currently-displayed
-        (already-cropped) view's pixel space; offset it by any existing
-        ROI's origin so nested ROI selections stay anchored to the raw
-        frame instead of compounding drift."""
-        x, y, w, h = drag_rect
-        if base_roi is None:
-            return (x, y, w, h)
-        bx, by, _, _ = base_roi
-        return (bx + x, by + y, w, h)
-
-    def _averaged(self, array):
-        array = np.asarray(array).astype(np.float32, copy=False)
-        if self.average_mode == "single" and self.average_n > 1:
-            self._ring.append(array)
-            if len(self._ring) >= self.average_n:
-                self._single_average_result = np.mean(np.stack(self._ring, axis=0), axis=0)
-                self._ring.clear()
-            # hold the last completed batch's average until the next batch
-            # finishes; before the very first batch completes, there is
-            # nothing to hold yet, so show the raw frame in the meantime
-            return self._single_average_result if self._single_average_result is not None else array
-        self._ring.append(array)
-        if len(self._ring) == 1:
-            return self._ring[-1]
-        return np.mean(np.stack(self._ring, axis=0), axis=0)
-
-    def _crop_roi(self, array):
-        if self.roi is None:
-            return array
-        x, y, w, h = self.roi
-        h_max, w_max = array.shape[0], array.shape[1]
-        x0, y0 = max(0, x), max(0, y)
-        x1, y1 = min(w_max, x + w), min(h_max, y + h)
-        if x1 <= x0 or y1 <= y0:
-            return array
-        return array[y0:y1, x0:x1, ...]
-
-    def process(self, raw_array):
-        """raw 2D or (H,W,3/4) array -> (display uint8 array, stats dict)."""
-        raw_array = np.asarray(raw_array)
-        orig_dtype = raw_array.dtype
-        color = self.is_color(raw_array)
-
-        arr = self._averaged(raw_array)
-        if self.subtract_background and self.background is not None and self.background.shape == arr.shape:
-            arr = np.clip(arr - self.background, 0, None)
-        arr = self._crop_roi(arr)
-
-        vmin_used, vmax_used = None, None
-        if color:
-            display = np.clip(arr, 0, 255).astype(np.uint8)
-        else:
-            if self.contrast_mode == "manual" and self.vmin is not None and self.vmax is not None:
-                vmin, vmax = self.vmin, self.vmax
-            elif self.contrast_mode == "full":
-                vmin, vmax = _full_range(orig_dtype)
-            else:
-                vmin, vmax = None, None
-
-            center = DIVERGING_CENTERS.get(self.colormap)
-            if center is not None:
-                # widen to a range symmetric around the reference value so
-                # it always lands exactly at the diverging colormap's
-                # midpoint, regardless of contrast mode
-                lo = float(arr.min()) if vmin is None else float(vmin)
-                hi = float(arr.max()) if vmax is None else float(vmax)
-                half = max(abs(lo - center), abs(hi - center), 1e-6)
-                vmin, vmax = center - half, center + half
-
-            gray = normalize_to_uint8(arr, vmin, vmax, log_scale=self.log_scale)
-            # "gray" stays plain 2D (cheaper, and the historical/expected
-            # shape for the default colormap); every other colormap -> RGB
-            display = gray if self.colormap == "gray" else apply_colormap(gray, self.colormap)
-            vmin_used = float(arr.min()) if vmin is None else float(vmin)
-            vmax_used = float(arr.max()) if vmax is None else float(vmax)
-
-        stats = {
-            "min": float(arr.min()),
-            "max": float(arr.max()),
-            "shape": tuple(arr.shape),
-            "color": color,
-            # resolved contrast bounds actually applied (None for color
-            # images, which bypass the contrast pipeline) and the
-            # pre-contrast array itself, both for the histogram/colorscale
-            # sidebar (_HistogramColorbar) -- avoids that widget having to
-            # re-derive contrast-mode logic that already lives here
-            "vmin": vmin_used,
-            "vmax": vmax_used,
-            "values": arr,
-        }
-        return display, stats
 
 
 class LivePipelineFields:
@@ -740,18 +535,17 @@ class ScreenpanelAnalysis:
     panel, which shows the same kind of pipeline-computed analysis
     readouts.
 
-    CAVEAT: what fields (if any) exist entirely depends on the *pipeline's
-    own server-side configuration*. The plain default pipeline eco's own
-    resolve_camera_pipeline auto-creates for a camera (cam_server's own
-    default pipeline_type) does no analysis at all and publishes nothing
-    beyond "image" -- accessing e.g. .intensity on such a camera will time
-    out waiting for a field that will never arrive. The camera's own
-    pipeline needs to be configured (via its config_cs.config, or the
-    cam_server web UI/API directly) to a pipeline_type that actually
-    computes what you want (e.g. center-of-mass/background/good-region
-    analysis) before there is anything here to read -- this class only
-    reads whatever the pipeline already happens to publish, it does not
-    request or configure any analysis itself.
+    What fields exist depends on the *pipeline's own server-side
+    configuration*. The "<camera>_sp" pipeline pshell and
+    resolve_camera_pipeline use has cam_server's default pipeline_type,
+    "processing", which publishes with every frame: x/y_profile,
+    x/y_center_of_mass, x/y_rms, x/y_fwhm, intensity, the Gaussian fit
+    x/y_fit_mean, x/y_fit_standard_deviation, x/y_fit_amplitude,
+    x/y_fit_offset, x/y_fit_gauss_function, and gr_* with a good region
+    or slice_* with slices configured (checked on Bernina's _sp pipelines,
+    2026-11-22). A pipeline of another type may publish nothing beyond
+    "image"; then reading a field times out. This class only reads what
+    the pipeline publishes, it does not request or configure any analysis.
 
     A background thread is started lazily on first attribute access (one
     per ScreenpanelAnalysis instance, i.e. shared across every field of
@@ -778,59 +572,6 @@ class ScreenpanelAnalysis:
 
     def stop(self):
         self._live.stop()
-
-
-def scalar_fields(data, image_channel="image"):
-    """{name: value} for every scalar (0-d) channel of one bsread message's
-    data dict besides the image -- for a "_sp"/processing pipeline that is
-    its analysis output (x/y_center_of_mass, x/y_fwhm, x/y_fit_*, x/y_rms,
-    intensity, ...), sent on the same message as the image."""
-    fields = {}
-    for name, value in data.items():
-        if name == image_channel or value is None or value.value is None:
-            continue
-        if np.ndim(value.value) == 0:
-            fields[name] = value.value
-    return fields
-
-
-def projection_stats(values):
-    """Center of mass and FWHM of the two projections of a 2-D array, in its
-    own pixel coordinates: {"x_com", "y_com", "x_fwhm", "y_fwhm", "sum"}.
-    Each projection's minimum is taken as its background. The FWHM is the
-    distance between the outermost half-maximum crossings, linearly
-    interpolated; None where it is undefined (flat or empty projection)."""
-    values = np.asarray(values, dtype=np.float64)
-    if values.ndim != 2 or values.size == 0:
-        return {"x_com": None, "y_com": None, "x_fwhm": None, "y_fwhm": None, "sum": None}
-    stats = {"sum": float(values.sum())}
-    for axis, key in ((0, "x"), (1, "y")):
-        profile = values.sum(axis=axis)
-        profile = profile - profile.min()
-        total = profile.sum()
-        if total <= 0:
-            stats[f"{key}_com"] = stats[f"{key}_fwhm"] = None
-            continue
-        stats[f"{key}_com"] = float((profile * np.arange(profile.size)).sum() / total)
-        stats[f"{key}_fwhm"] = _fwhm(profile)
-    return stats
-
-
-def _fwhm(profile):
-    half = profile.max() / 2.0
-    above = np.nonzero(profile >= half)[0]
-    if above.size == 0 or profile.max() <= 0:
-        return None
-    first, last = above[0], above[-1]
-
-    def crossing(i_out, i_in):
-        # linear interpolation between an index below and one at/above half max
-        y_out, y_in = profile[i_out], profile[i_in]
-        return i_in + (i_out - i_in) * (y_in - half) / (y_in - y_out) if y_in != y_out else float(i_in)
-
-    left = crossing(first - 1, first) if first > 0 else float(first)
-    right = crossing(last + 1, last) if last < profile.size - 1 else float(last)
-    return float(right - left)
 
 
 class _StreamBridge(QtCore.QObject):
@@ -908,6 +649,148 @@ class _StreamWorker(threading.Thread):
         except Exception as exc:
             if not self._stop_event.is_set():
                 self.bridge.error.emit(str(exc))
+
+
+class _FrameProcess:
+    """The viewer's frame process (eco/widgets/camera_frames.py run as a
+    script, see its docstring for the protocol) and the socket to it --
+    same start/pause/stop interface as _StreamWorker/_DemoWorker.
+
+    The zmq socket is only ever used from the GUI thread, in pump() (which
+    the render tick calls): messages produced elsewhere, e.g. the stream
+    address resolved on a background thread, wait in an outbox. Nothing
+    here blocks: stop() leaves waiting for the process to a thread."""
+
+    def __init__(self, viewer):
+        self.name = viewer.name
+        self.kind = viewer.kind
+        self.pipeline_url = viewer.pipeline_url
+        self.camera_url = viewer.camera_url
+        self.demo_color = viewer.demo_color
+        self.bridge = viewer._bridge
+        self.frame = None  # (meta, image buffer) of the newest frame not shown yet
+        self.probes = {}  # latest {probe name: value}, see CamServerStreamQt._cursor_value
+        self.published = None  # result-stream address, see CamServerStreamQt.streams
+        self.exit_code = None
+        self._outbox = deque()
+        self._sent_settings = None
+        self._sent_probes = None
+        self._socket = self._context = self._proc = self._dir = None
+
+    def start(self):
+        import zmq
+
+        from . import camera_frames
+
+        self._zmq = zmq
+        self._dir = camera_frames.private_runtime_dir()
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.PAIR)
+        self._socket.setsockopt(zmq.LINGER, 0)
+        endpoint = f"ipc://{self._dir}/frames"
+        self._socket.bind(endpoint)
+        self._proc = subprocess.Popen(
+            [sys.executable, camera_frames.__file__, endpoint, str(os.getpid())],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+        )
+        if self.kind == "demo":
+            self.send({"type": "demo", "color": self.demo_color, "rate": 10.0})
+        else:
+            threading.Thread(target=self._resolve, daemon=True).start()
+
+    def _resolve(self):
+        try:
+            address = resolve_stream(
+                self.name, kind=self.kind, pipeline_url=self.pipeline_url, camera_url=self.camera_url
+            )
+        except Exception as exc:
+            self.bridge.error.emit(f"could not resolve stream for {self.name!r}: {exc}")
+            return
+        self.send({"type": "connect", "address": address})
+
+    def send(self, message):
+        """Queue a control message (any thread; sent by the next pump())."""
+        self._outbox.append(message)
+
+    def settings(self, settings, probes):
+        """Send the viewer's settings/probe positions if they changed."""
+        if settings != self._sent_settings:
+            self._sent_settings = settings
+            self.send({"type": "settings", **settings})
+        if probes != self._sent_probes:
+            self._sent_probes = probes
+            self.send({"type": "probe", "probes": probes})
+
+    def pump(self):
+        """Send what is queued, take in what has arrived. GUI thread only.
+        False once the frame process has ended."""
+        socket = self._socket
+        if socket is None:
+            return False
+        zmq = self._zmq
+        while self._outbox:
+            message = self._outbox.popleft()
+            try:
+                socket.send(pickle.dumps(message), flags=zmq.NOBLOCK)
+            except zmq.Again:
+                self._outbox.appendleft(message)
+                break
+        while socket.poll(0):
+            parts = socket.recv_multipart(copy=False)
+            message = pickle.loads(parts[0].bytes)
+            kind = message.get("type")
+            if kind == "hello":
+                self._remove_dir()  # connected: the socket file is not needed any more
+            elif kind == "frame":
+                self.frame = (message, parts[1].buffer if len(parts) > 1 else None)
+                self.probes = message.get("probes", {})
+            elif kind == "probes":
+                self.probes = message["probes"]
+            elif kind == "published":
+                self.published = message["address"]
+            elif kind == "error":
+                self.bridge.error.emit(message["message"])
+            elif kind == "status":
+                self.bridge.status.emit(message["message"])
+        if self._proc.poll() is not None:
+            self.exit_code = self._proc.returncode
+            return False
+        return True
+
+    def take_frame(self):
+        frame, self.frame = self.frame, None
+        return frame
+
+    def _remove_dir(self):
+        directory, self._dir = self._dir, None
+        if directory is not None:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    def pause(self, value=True):
+        self.send({"type": "pause", "value": bool(value)})
+
+    def stop(self):
+        socket, self._socket = self._socket, None
+        if socket is None:
+            return
+        try:
+            socket.send(pickle.dumps({"type": "stop"}), flags=self._zmq.NOBLOCK)
+        except Exception:
+            pass
+        socket.close(0)
+        self._context.term()
+        self._remove_dir()
+        proc = self._proc
+
+        def reap():
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+        threading.Thread(target=reap, daemon=True).start()
 
 
 class _DemoWorker(threading.Thread):
@@ -1060,19 +943,6 @@ def y_to_value(y, height, data_min, data_max):
     return data_min + frac * span
 
 
-def compute_log_histogram(array, bins=128):
-    """Pure numpy: (log1p-compressed counts, bin edges) over array's own
-    min/max. The log compression matches what pyqtgraph's ImageView
-    histogram does -- without it a strong background/saturation peak
-    flattens the rest of the histogram to invisibility."""
-    flat = np.asarray(array).ravel()
-    data_min, data_max = float(flat.min()), float(flat.max())
-    if data_max <= data_min:
-        data_max = data_min + 1.0
-    counts, edges = np.histogram(flat, bins=bins, range=(data_min, data_max))
-    return np.log1p(counts.astype(np.float32)), edges
-
-
 class _HistogramColorbar(QtWidgets.QWidget):
     """A side panel resembling pyqtgraph's ImageView histogram/colorscale:
     a vertical intensity histogram of the current frame next to a
@@ -1122,7 +992,13 @@ class _HistogramColorbar(QtWidgets.QWidget):
         vmin/vmax: the currently active display range (handle positions);
         colormap: name from COLORMAP_NAMES, so the colorbar strip matches
         what's actually on screen."""
-        self._hist_counts, self._hist_edges = compute_log_histogram(array)
+        counts, edges = compute_log_histogram(array)
+        self.set_histogram(counts, edges, vmin, vmax, colormap)
+
+    def set_histogram(self, counts, edges, vmin, vmax, colormap="gray"):
+        """Same as set_data, with the histogram already computed (by the
+        frame process, see compute_log_histogram)."""
+        self._hist_counts, self._hist_edges = np.asarray(counts), np.asarray(edges)
         self._data_min = float(self._hist_edges[0])
         self._data_max = float(self._hist_edges[-1])
         self._vmin = self._data_min if vmin is None else float(vmin)
@@ -1370,6 +1246,9 @@ class _CalibrationDialog(QtWidgets.QDialog):
         self.accept()
 
 
+FIT_SOURCES = ("auto", "pipeline", "local", "local_gr")
+
+
 class CamServerStreamQt:
     """Live-video Qt window for one cam_server camera/pipeline (or a local
     demo source). See the module docstring for the full feature list."""
@@ -1387,9 +1266,34 @@ class CamServerStreamQt:
         auto_start=True,
         cam=None,
         eco_name=None,
+        process=None,
+        show_profile=False,
+        show_fit=False,
+        fit_source="auto",
     ):
+        """process: do the per-frame work in a separate frame process (see
+        the module docstring); default True unless ECO_CAMERA_PROCESS=0.
+        show_profile/show_fit: start with the "Profile"/"Fit" overlays on.
+        fit_source: "auto" (the pipeline's own fit when the stream has one
+        and nothing is averaged/subtracted/cropped here, else a local fit),
+        "pipeline", "local" or "local_gr" (local, good region only)."""
         self.name = name
         self.kind = kind
+        if process is None:
+            process = os.environ.get("ECO_CAMERA_PROCESS", "1") != "0"
+        self.process = process
+        self._using_process = False  # True while a _FrameProcess is the worker
+        self._show_profile = show_profile
+        self._show_fit = show_fit
+        if fit_source not in FIT_SOURCES:
+            raise ValueError(f"fit_source must be one of {FIT_SOURCES}, not {fit_source!r}")
+        self._fit_source = fit_source
+        self._good_region = (0.3, 1.8)  # cam_server's DEFAULT_IMAGE_GOOD_REGION (threshold, gfscale)
+        self._frame_meta = None  # the last frame message of the frame process
+        self._pipeline_arrays = {}  # the stream's own profiles/fit curves (frame process only)
+        self._analysis = None  # projections/local fits of the frame shown last
+        self._fit = None  # the fit shown last: see the `fit` property
+        self._frame_offset = (0, 0)  # ROI origin of the frame shown last
         self.pipeline_url = pipeline_url
         self.camera_url = camera_url
         self.embed = embed
@@ -1535,17 +1439,17 @@ class CamServerStreamQt:
         self._bridge.error.connect(self._apply_error)
         self._bridge.status.connect(self._apply_status)
 
-        if self.kind == "demo":
-            self._worker = _DemoWorker(self._bridge, color=self.demo_color)
-        else:
-            self._worker = _StreamWorker(
-                self.name,
-                self.kind,
-                self._bridge,
-                pipeline_url=self.pipeline_url,
-                camera_url=self.camera_url,
-            )
-        self._worker.start()
+        self._worker = None
+        if self.process:
+            try:
+                self._worker = _FrameProcess(self)
+                self._worker.start()
+                self._using_process = True
+            except Exception as exc:
+                logger.warning("no frame process (%s): processing frames in this process", exc)
+                self._worker = None
+        if self._worker is None:
+            self._start_thread_worker()
         self._load_camera_calibration()
 
         self._render_timer = QtCore.QTimer(self.window)
@@ -1582,6 +1486,21 @@ class CamServerStreamQt:
 
         if self.embed:
             print(f"WINID {int(self.window.winId())}", flush=True)
+
+    def _start_thread_worker(self):
+        """The in-process path (process=False, or the frame process failed)."""
+        if self.kind == "demo":
+            self._worker = _DemoWorker(self._bridge, color=self.demo_color)
+        else:
+            self._worker = _StreamWorker(
+                self.name,
+                self.kind,
+                self._bridge,
+                pipeline_url=self.pipeline_url,
+                camera_url=self.camera_url,
+            )
+        self._using_process = False
+        self._worker.start()
 
     def _add_toolbars(self):
         """The always-visible, one-click/glance controls -- everything
@@ -1691,6 +1610,22 @@ class CamServerStreamQt:
         clear_measure_action = QtWidgets.QAction("Clear measurement", self.window)
         clear_measure_action.triggered.connect(self._on_clear_measurement)
         annotate_bar.addAction(clear_measure_action)
+        annotate_bar.addSeparator()
+
+        # pshell's screen panel has the same two toggles (buttonProfile/
+        # buttonFit); what is fitted is chosen in the settings dock
+        self._profile_btn = QtWidgets.QAction("Profile", self.window)
+        self._profile_btn.setCheckable(True)
+        self._profile_btn.setChecked(self._show_profile)
+        self._profile_btn.setToolTip("Show the two projections along the image edges")
+        self._profile_btn.toggled.connect(self._on_profile_toggled)
+        annotate_bar.addAction(self._profile_btn)
+        self._fit_btn = QtWidgets.QAction("Fit", self.window)
+        self._fit_btn.setCheckable(True)
+        self._fit_btn.setChecked(self._show_fit)
+        self._fit_btn.setToolTip("Show the Gaussian fits of the projections (see Settings > Fit)")
+        self._fit_btn.toggled.connect(self._on_fit_toggled)
+        annotate_bar.addAction(self._fit_btn)
 
         # "Calibrate" as one dropdown rather than 3 more toolbar buttons --
         # everything here writes/reads the camera's own server-side
@@ -1781,6 +1716,7 @@ class CamServerStreamQt:
         layout.addLayout(self._build_contrast_row())
         layout.addLayout(self._build_colormap_row())
         layout.addLayout(self._build_averaging_row())
+        layout.addLayout(self._build_fit_row())
         layout.addStretch(1)
         dock.setWidget(panel)
         return dock
@@ -1915,11 +1851,82 @@ class CamServerStreamQt:
 
         return container
 
+    _FIT_SOURCE_LABELS = (
+        ("Auto", "auto"),
+        ("Pipeline", "pipeline"),
+        ("Local", "local"),
+        ("Local, good region", "local_gr"),
+    )
+
+    def _build_fit_row(self):
+        container = QtWidgets.QVBoxLayout()
+        container.setSpacing(4)
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Fit:"))
+        self._fit_source_combo = QtWidgets.QComboBox()
+        self._fit_source_combo.addItems([label for label, _ in self._FIT_SOURCE_LABELS])
+        self._fit_source_combo.setCurrentIndex(
+            [name for _, name in self._FIT_SOURCE_LABELS].index(self._fit_source)
+        )
+        self._fit_source_combo.setToolTip(
+            "Pipeline: the fit the camera server computes for every frame (what pshell's "
+            "screen panel shows). Local: a fit of what is shown here, after averaging, "
+            "background subtraction and ROI. Good region: as cam_server's image_good_region, "
+            "the fit of the region around the peak. Auto: the pipeline's fit while nothing "
+            "is changed here, else the local one."
+        )
+        self._fit_source_combo.currentIndexChanged.connect(self._on_fit_source_changed)
+        row.addWidget(self._fit_source_combo)
+        row.addStretch(1)
+        container.addLayout(row)
+
+        gr_row = QtWidgets.QHBoxLayout()
+        gr_row.addWidget(QtWidgets.QLabel("threshold:"))
+        self._gr_threshold_spin = QtWidgets.QDoubleSpinBox()
+        self._gr_threshold_spin.setRange(0.01, 0.99)
+        self._gr_threshold_spin.setSingleStep(0.05)
+        self._gr_threshold_spin.setValue(self._good_region[0])
+        self._gr_threshold_spin.setToolTip("Good region: from the peak out to this fraction of its height")
+        gr_row.addWidget(self._gr_threshold_spin)
+        gr_row.addWidget(QtWidgets.QLabel("scale:"))
+        self._gr_scale_spin = QtWidgets.QDoubleSpinBox()
+        self._gr_scale_spin.setRange(1.0, 10.0)
+        self._gr_scale_spin.setSingleStep(0.1)
+        self._gr_scale_spin.setValue(self._good_region[1])
+        self._gr_scale_spin.setToolTip("Good region: widened by this factor")
+        gr_row.addWidget(self._gr_scale_spin)
+        for spin in (self._gr_threshold_spin, self._gr_scale_spin):
+            spin.setMaximumWidth(70)
+            spin.valueChanged.connect(self._on_good_region_changed)
+            spin.setEnabled(self._fit_source == "local_gr")
+        gr_row.addStretch(1)
+        container.addLayout(gr_row)
+        return container
+
     # -- control handlers ------------------------------------------------
 
     def _set_rate(self, hz):
         self._rate_hz = hz
-        self._render_timer.setInterval(max(1, int(1000 / max(hz, 0.1))))
+        interval = max(1, int(1000 / max(hz, 0.1)))
+        if self._using_process:
+            # the frame process keeps to the rate itself; poll often so a
+            # frame is shown as soon as it arrives
+            interval = min(interval, 25)
+        self._render_timer.setInterval(interval)
+
+    def _on_profile_toggled(self, checked):
+        self._show_profile = checked
+
+    def _on_fit_toggled(self, checked):
+        self._show_fit = checked
+
+    def _on_fit_source_changed(self, index):
+        self._fit_source = self._FIT_SOURCE_LABELS[index][1]
+        for spin in (self._gr_threshold_spin, self._gr_scale_spin):
+            spin.setEnabled(self._fit_source == "local_gr")
+
+    def _on_good_region_changed(self, _value):
+        self._good_region = (self._gr_threshold_spin.value(), self._gr_scale_spin.value())
 
     def _on_pause_toggled(self, checked):
         if self._worker is not None:
@@ -1986,6 +1993,11 @@ class CamServerStreamQt:
         last displayed frame (or (0, 0) if no frame has been shown yet)."""
         if self._reticle_center is not None:
             return self._reticle_center
+        # the frame's own shape: with the frame process the image that
+        # arrives may be downscaled
+        if self._last_stats is not None:
+            h, w = self._last_stats["shape"][:2]
+            return w / 2.0, h / 2.0
         if self._last_display_array is not None:
             h, w = self._last_display_array.shape[:2]
             return w / 2.0, h / 2.0
@@ -2331,13 +2343,19 @@ class CamServerStreamQt:
         self._processor.set_average_mode(mode)
 
     def _on_grab_background(self):
-        self._processor.grab_background()
+        if self._using_process:
+            self._worker.send({"type": "grab_background"})
+        else:
+            self._processor.grab_background()
 
     def _on_subtract_toggled(self, checked):
         self._processor.subtract_background = checked
 
     def _on_clear_background(self):
-        self._processor.clear_background()
+        if self._using_process:
+            self._worker.send({"type": "clear_background"})
+        else:
+            self._processor.clear_background()
         self._subtract_cb.setChecked(False)
 
     def _on_hover(self, x, y):
@@ -2382,12 +2400,46 @@ class CamServerStreamQt:
         pipeline, see ScreenpanelAnalysis's CAVEAT)."""
         return dict(self._pipeline_fields)
 
+    @property
+    def fit(self):
+        """The fit shown last (with "Fit" on), or None: {"source":
+        "pipeline" | "local" | "local_gr", "unit": "px" or the pipeline's
+        axis unit, "x": {"mean", "sigma", "amplitude", "offset"}, "y": {...},
+        "region": (x0, y0, x1, y1) for the good region}. Local fits are in
+        raw-frame pixels; a pipeline fit is in the pipeline's own x/y_axis
+        units (calibrated if the camera is). Readouts: "fit_x_mean",
+        "fit_x_sigma", ..., e.g. readout("fit_x_mean")."""
+        fit = self._fit
+        if fit is None:
+            return None
+        return {
+            "source": fit["source"],
+            "unit": fit["unit"],
+            "region": fit.get("region"),
+            **{
+                axis: {k: fit[axis][k] for k in ("mean", "sigma", "amplitude", "offset")}
+                for axis in ("x", "y")
+                if fit.get(axis)
+            },
+        }
+
+    def _fit_fields(self):
+        fit = self.fit
+        fields = {}
+        for axis in ("x", "y"):
+            for key, value in ((fit or {}).get(axis) or {}).items():
+                fields[f"fit_{axis}_{key}"] = value
+        return fields
+
     def roi_stats(self):
         """Center of mass and FWHM of what the viewer currently shows (inside
         the ROI, after averaging/background subtraction), computed here from
         the displayed values rather than by the pipeline: {"x_com", "y_com",
         "x_fwhm", "y_fwhm", "sum"}, com in raw-frame pixels. None for color
         frames or before the first frame."""
+        if self._frame_meta is not None:
+            roi_stats = self._frame_meta.get("roi_stats")
+            return None if roi_stats is None else dict(roi_stats)
         stats = self._last_stats
         values = self._last_values_array
         if stats is None or values is None or stats.get("color"):
@@ -2407,12 +2459,7 @@ class CamServerStreamQt:
         roi_stats=False skips computing roi_stats() (a few ms on a large
         ROI)."""
         stats = self._last_stats or {}
-        cursor_value = None
-        if self._hover_pos is not None and self._last_values_array is not None:
-            hx, hy = self._hover_pos
-            arr = self._last_values_array
-            if 0 <= hy < arr.shape[0] and 0 <= hx < arr.shape[1] and arr.ndim == 2:
-                cursor_value = float(arr[hy, hx])
+        cursor_value = self._cursor_value()
         return {
             "pulse_id": self._pulse_id,
             "fps": self._last_fps,
@@ -2426,7 +2473,64 @@ class CamServerStreamQt:
             "roi_stats": self.roi_stats() if roi_stats else None,
             "calibration": (self._cal_scale_x, self._cal_scale_y, self._cal_unit),
             "pipeline_fields": self.pipeline_fields,
+            "fit": self.fit,
         }
+
+    def _cursor_value(self):
+        """The shown value under the mouse pointer, or None. With the frame
+        process it arrives with the frame (or, while paused, as an answer to
+        the moved pointer) -- usually within one frame."""
+        if self._hover_pos is None:
+            return None
+        if self._using_process:
+            return self._worker.probes.get("cursor")
+        arr = self._last_values_array
+        if arr is None or arr.ndim != 2:
+            return None
+        hx, hy = self._hover_pos
+        if 0 <= hy < arr.shape[0] and 0 <= hx < arr.shape[1]:
+            return float(arr[hy, hx])
+        return None
+
+    def result_stream_address(self, timeout=5.0):
+        """"tcp://127.0.0.1:port" of this viewer's result stream: the frame
+        process publishes the results of every frame it sends (see
+        camera_frames.FrameWorker.result_scalars: x_com, y_com, x_fwhm,
+        y_fwhm, sum and, with a local fit, fit_x_mean, fit_x_sigma, ...,
+        gr_fit_* for the good region; positions in raw-frame px) as a
+        bsread stream, each message stamped with the frame's pulse id.
+        Opened on the first call. Needs the frame process (process=True).
+        Call from the session's main thread."""
+        if not self._using_process:
+            raise RuntimeError("the result stream needs the frame process (process=True)")
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("call result_stream_address()/streams() from the main thread")
+        worker = self._worker
+        if worker.published is None:
+            worker.send({"type": "publish"})
+            deadline = time.monotonic() + timeout
+            while worker.published is None and time.monotonic() < deadline:
+                if not worker.pump():
+                    break
+                time.sleep(0.02)
+        if worker.published is None:
+            raise TimeoutError("the frame process did not open its result stream")
+        return worker.published
+
+    def streams(self, *keys):
+        """escape Streams of this viewer's results ({key: Stream}), sharing
+        one connection to the result stream (see result_stream_address for
+        the keys). Each value carries the pulse id of its camera frame, so
+        it lines up with other beam-synchronous data, e.g.
+        ``s = viewer.streams("fit_x_mean", "fit_x_sigma"); s["fit_x_mean"].plot()``.
+        The keys need "Fit" on (fit_*) or the "Local, good region" fit
+        (gr_fit_*) to have data."""
+        from escape.stream.es_wrappers import DirectStreamEventHandler
+        from escape.stream.escape_stream import EventWorker, Stream
+
+        host, port = self.result_stream_address().split("//")[-1].rsplit(":", 1)
+        worker = EventWorker(DirectStreamEventHandler(host, port), make_default=False)
+        return {key: Stream(key, worker) for key in keys}
 
     def readout(self, key):
         """A Detector (get_current_value()) for one value of this viewer, for
@@ -2442,46 +2546,156 @@ class CamServerStreamQt:
         self._latest_payload = payload
 
     def _render_tick(self):
-        if self.window is None or self._latest_payload is None:
+        if self.window is None:
+            return
+        if self._using_process:
+            self._render_from_process()
+            return
+        if self._latest_payload is None:
             return
         array, pulse_id, fields = self._latest_payload
         self._pulse_id = pulse_id
         self._pipeline_fields = fields
         try:
             display, stats = self._processor.process(array)
-            qimage = array_to_qimage(display).copy()
-            painter = QtGui.QPainter(qimage)
-            self._paint_overlays(painter, display.shape[:2])
-            painter.end()
-            pixmap = QtGui.QPixmap.fromImage(qimage)
-
-            raw_h, raw_w = display.shape[0], display.shape[1]
-            scale = self._compute_scale(raw_h, raw_w)
-            self._label.zoom_scale = scale
-            scaled_w, scaled_h = max(1, round(raw_w * scale)), max(1, round(raw_h * scale))
-            if (scaled_w, scaled_h) != (raw_w, raw_h):
-                pixmap = pixmap.scaled(
-                    scaled_w, scaled_h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
-                )
-
-            self._label.setPixmap(pixmap)
-            self._label.setFixedSize(pixmap.size())
-            if self._pending_zoom_center is not None:
-                self._apply_pending_zoom_center(scale)
+            values = stats["values"]
             self._last_display_array = display
-            self._last_values_array = stats["values"]
-            self._last_stats = stats
-            self._histogram.setVisible(not stats["color"])
-            if not stats["color"]:
-                self._histogram.set_data(
-                    stats["values"], stats["vmin"], stats["vmax"], colormap=self._processor.colormap
+            self._last_values_array = values
+            self._frame_offset = self._roi_origin(values.shape, np.shape(array))
+            self._analysis = None
+            settings = self._analysis_settings()
+            if not stats["color"] and settings["profile"]:
+                self._analysis = analyse(
+                    values,
+                    fit=settings["fit"],
+                    good_region=settings["good_region"],
+                    offset=self._frame_offset,
                 )
+            histogram = None if stats["color"] else compute_log_histogram(values)
+            self._show_frame(display, stats, histogram)
         except RuntimeError:
             return
         except Exception:
             logger.exception("frame processing failed")
             return
+        self._count_frame(pulse_id, stats)
 
+    def _render_from_process(self):
+        worker = self._worker
+        worker.settings(self._frame_settings(), {"cursor": self.cursor, "marker": self.marker})
+        if not worker.pump():
+            logger.warning(
+                "the frame process of %r ended (exit code %s): processing frames in this process",
+                self.name, worker.exit_code,
+            )
+            self._apply_error(
+                f"the frame process ended (exit code {worker.exit_code}) -- "
+                "processing frames in this process from now on"
+            )
+            worker.stop()
+            self._frame_meta = None
+            self._start_thread_worker()
+            self._set_rate(self._rate_hz)
+            return
+        frame = worker.take_frame()
+        if frame is None:
+            return
+        meta, image = frame
+        stats = meta["stats"]
+        try:
+            display = np.frombuffer(image, dtype=np.uint8).reshape(meta["display_shape"])
+            self._frame_meta = meta
+            self._pulse_id = meta["pulse_id"]
+            self._pipeline_fields = meta["fields"]
+            self._pipeline_arrays = meta.get("pipeline_arrays") or {}
+            self._frame_offset = tuple(meta["offset"])
+            self._analysis = meta.get("analysis")
+            self._show_frame(display, stats, meta.get("histogram"))
+        except RuntimeError:
+            return
+        except Exception:
+            logger.exception("showing a frame failed")
+            return
+        self._count_frame(meta["pulse_id"], stats)
+
+    def _roi_origin(self, values_shape, raw_shape):
+        roi = self._processor.roi
+        if roi is None or tuple(values_shape[:2]) == tuple(raw_shape[:2]):
+            return (0, 0)
+        return (max(0, roi[0]), max(0, roi[1]))  # as FrameProcessor._crop_roi clips
+
+    def _analysis_settings(self):
+        fit = self._show_fit
+        return {
+            "profile": self._show_profile or fit,
+            "fit": fit and self._fit_source in ("auto", "local"),
+            "good_region": self._good_region if fit and self._fit_source == "local_gr" else None,
+            "pipeline_arrays": fit and self._fit_source in ("auto", "pipeline"),
+        }
+
+    def _frame_settings(self):
+        """What the frame process needs to know; sent whenever it changes."""
+        p = self._processor
+        return {
+            "average_n": p.average_n,
+            "average_mode": p.average_mode,
+            "subtract_background": p.subtract_background,
+            "roi": p.roi,
+            "contrast_mode": p.contrast_mode,
+            "vmin": p.vmin,
+            "vmax": p.vmax,
+            "log_scale": p.log_scale,
+            "colormap": p.colormap,
+            "rate": self._rate_hz,
+            "downsample": self._downsample_factor(),
+            **self._analysis_settings(),
+        }
+
+    def _downsample_factor(self):
+        """How much smaller than the frame the image may come, for the zoom:
+        never more than what still leaves at least one sent pixel per pixel
+        on screen."""
+        if not self._last_stats:
+            return 1
+        h, w = self._last_stats["shape"][:2]
+        scale = self._compute_scale(h, w)
+        return max(1, int(1.0 / scale)) if scale < 1 else 1
+
+    def _show_frame(self, display, stats, histogram):
+        raw_h, raw_w = stats["shape"][:2]
+        pixmap = QtGui.QPixmap.fromImage(array_to_qimage(display).copy())
+        scale = self._compute_scale(raw_h, raw_w)
+        self._label.zoom_scale = scale
+        size = (max(1, round(raw_w * scale)), max(1, round(raw_h * scale)))
+        if size != (pixmap.width(), pixmap.height()):
+            # smooth when shrinking; when enlarging, keep the pixels sharp
+            mode = (
+                QtCore.Qt.FastTransformation
+                if size[0] > pixmap.width()
+                else QtCore.Qt.SmoothTransformation
+            )
+            pixmap = pixmap.scaled(size[0], size[1], QtCore.Qt.IgnoreAspectRatio, mode)
+        self._last_stats = stats
+        # overlays go onto the scaled pixmap, in screen pixels: lines stay one
+        # pixel wide at any zoom (drawn at full resolution and then shrunk,
+        # they faded away on a large frame)
+        painter = QtGui.QPainter(pixmap)
+        try:
+            self._paint_overlays(painter, (raw_h, raw_w), scale)
+        finally:
+            painter.end()
+        self._label.setPixmap(pixmap)
+        self._label.setFixedSize(pixmap.size())
+        if self._pending_zoom_center is not None:
+            self._apply_pending_zoom_center(scale)
+        self._histogram.setVisible(not stats["color"])
+        if not stats["color"] and histogram is not None:
+            counts, edges = histogram
+            self._histogram.set_histogram(
+                counts, edges, stats["vmin"], stats["vmax"], colormap=self._processor.colormap
+            )
+
+    def _count_frame(self, pulse_id, stats):
         self._frame_count += 1
         now = time.time()
         if now - self._fps_t0 >= 1.0:
@@ -2490,11 +2704,23 @@ class CamServerStreamQt:
             self._fps_t0 = now
         self._update_status(pulse_id, stats)
 
-    def _paint_overlays(self, painter, shape):
+    def _paint_overlays(self, painter, shape, scale):
+        """shape: (h, w) of the shown frame in its own pixels; scale: screen
+        pixels per frame pixel. Positions are frame pixels, drawn at the
+        pixel centers."""
         h, w = shape
+        s = scale
+        width, height = w * s, h * s
+
+        def at(v):
+            return (v + 0.5) * s
+
+        if self._show_profile or self._show_fit:
+            self._paint_analysis(painter, shape, s)
+        else:
+            self._fit = None
         if self._show_reticle:
-            pen = QtGui.QPen(QtGui.QColor(0, 255, 0))
-            painter.setPen(pen)
+            painter.setPen(QtGui.QPen(QtGui.QColor(0, 255, 0)))
             # calibrated position if set (see "Set center position only..."/
             # "2-line..." in the Calibrate menu, or a calibration loaded
             # from the camera's own server-side config on open -- see
@@ -2505,37 +2731,236 @@ class CamServerStreamQt:
                 cx, cy = int(round(cx)), int(round(cy))
             else:
                 cx, cy = w // 2, h // 2
-            painter.drawLine(0, cy, w, cy)
-            painter.drawLine(cx, 0, cx, h)
+            sx, sy = at(cx), at(cy)
+            painter.drawLine(QtCore.QLineF(0, sy, width, sy))
+            painter.drawLine(QtCore.QLineF(sx, 0, sx, height))
             tick = max(1, min(h, w) // 20)
             for i in range(-4, 5):
                 if i == 0:
                     continue
-                x = cx + i * tick
+                x, y = cx + i * tick, cy + i * tick
                 if 0 <= x < w:
-                    painter.drawLine(x, cy - 4, x, cy + 4)
-                y = cy + i * tick
+                    painter.drawLine(QtCore.QLineF(at(x), sy - 4, at(x), sy + 4))
                 if 0 <= y < h:
-                    painter.drawLine(cx - 4, y, cx + 4, y)
+                    painter.drawLine(QtCore.QLineF(sx - 4, at(y), sx + 4, at(y)))
         if self._marker_pos is not None:
             mx, my = self._marker_pos
             if 0 <= mx < w and 0 <= my < h:
-                pen = QtGui.QPen(QtGui.QColor(255, 0, 0))
-                painter.setPen(pen)
-                painter.drawLine(0, my, w, my)
-                painter.drawLine(mx, 0, mx, h)
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 0, 0)))
+                painter.drawLine(QtCore.QLineF(0, at(my), width, at(my)))
+                painter.drawLine(QtCore.QLineF(at(mx), 0, at(mx), height))
         if self._measurement is not None:
             x0, y0, x1, y1 = self._measurement
             pen = QtGui.QPen(QtGui.QColor(230, 170, 40))
             pen.setWidth(2)
             painter.setPen(pen)
-            painter.drawLine(x0, y0, x1, y1)
+            painter.drawLine(QtCore.QLineF(at(x0), at(y0), at(x1), at(y1)))
             for x, y in ((x0, y0), (x1, y1)):
-                painter.drawLine(x - 4, y, x + 4, y)
-                painter.drawLine(x, y - 4, x, y + 4)
+                painter.drawLine(QtCore.QLineF(at(x) - 4, at(y), at(x) + 4, at(y)))
+                painter.drawLine(QtCore.QLineF(at(x), at(y) - 4, at(x), at(y) + 4))
             painter.drawText(
-                (x0 + x1) // 2 + 6, (y0 + y1) // 2 - 6, self._measurement_label()
+                QtCore.QPointF((at(x0) + at(x1)) / 2 + 6, (at(y0) + at(y1)) / 2 - 6),
+                self._measurement_label(),
             )
+
+    # -- profiles and fits -------------------------------------------------
+
+    PROFILE_BAND = 0.25  # height (x) / width (y) of the profile curves, as a fraction of the image
+
+    def _paint_analysis(self, painter, shape, s):
+        """The "Profile"/"Fit" overlays, like pshell's screen panel: the x
+        projection along the bottom edge, the y projection along the left
+        edge, the fitted Gaussians on top, a cross at the fit center with
+        +-sigma arms, and the numbers."""
+        h, w = shape
+        width, height = w * s, h * s
+        self._fit = fit = self._resolve_fit(shape) if self._show_fit else None
+        analysis = self._analysis or {}
+        band_x, band_y = self.PROFILE_BAND * height, self.PROFILE_BAND * width
+
+        def curve(values, start, norm, axis):
+            values = np.asarray(values, dtype=np.float64)
+            if values.size < 2:
+                return None
+            lo, hi = norm
+            span = (hi - lo) or 1.0
+            index = np.arange(values.size, dtype=np.float64)
+            screen_len = width if axis == "x" else height
+            step = max(1, int(values.size / max(screen_len, 1)))  # ~1 point per screen pixel
+            index, values = index[::step], values[::step]
+            along = (start + index + 0.5) * s
+            across = (values - lo) / span
+            if axis == "x":
+                points = zip(along, height - across * band_x)
+            else:
+                points = zip(across * band_y, along)
+            return QtGui.QPolygonF([QtCore.QPointF(float(a), float(b)) for a, b in points])
+
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        profiles = {}
+        for axis in ("x", "y"):
+            source = (fit or {}).get(axis) or {}
+            profile = source.get("profile")
+            if profile is None:
+                profile = analysis.get(f"{axis}_profile")
+            if profile is not None and np.size(profile) > 1:
+                profiles[axis] = (np.asarray(profile, dtype=np.float64), source.get("profile_start", 0))
+
+        if self._show_profile:
+            pen = QtGui.QPen(QtGui.QColor(80, 200, 255, 220))
+            pen.setWidthF(1.2)
+            painter.setPen(pen)
+            for axis, (profile, start) in profiles.items():
+                polygon = curve(profile, start, (profile.min(), profile.max()), axis)
+                if polygon is not None:
+                    painter.drawPolyline(polygon)
+        if fit is None:
+            return
+
+        pen = QtGui.QPen(QtGui.QColor(255, 140, 30))
+        pen.setWidthF(1.5)
+        painter.setPen(pen)
+        for axis in ("x", "y"):
+            part = fit.get(axis)
+            if not part or part.get("curve") is None:
+                continue
+            norm = part.get("norm")
+            if norm is None and axis in profiles:
+                profile = profiles[axis][0]
+                norm = (profile.min(), profile.max())
+            if norm is None:
+                values = np.asarray(part["curve"])
+                norm = (values.min(), values.max())
+            polygon = curve(part["curve"], part["start"], norm, axis)
+            if polygon is not None:
+                painter.drawPolyline(polygon)
+
+        x, y = fit.get("x"), fit.get("y")
+        if x and y:
+            cx, cy = (x["mean_px"] + 0.5) * s, (y["mean_px"] + 0.5) * s
+            painter.drawLine(QtCore.QLineF(cx - x["sigma_px"] * s, cy, cx + x["sigma_px"] * s, cy))
+            painter.drawLine(QtCore.QLineF(cx, cy - y["sigma_px"] * s, cx, cy + y["sigma_px"] * s))
+        region = fit.get("region")
+        if region is not None:
+            ox, oy = self._frame_offset
+            x0, y0, x1, y1 = region
+            dashed = QtGui.QPen(QtGui.QColor(255, 140, 30), 1, QtCore.Qt.DashLine)
+            painter.setPen(dashed)
+            painter.drawRect(QtCore.QRectF((x0 - ox) * s, (y0 - oy) * s, (x1 - x0) * s, (y1 - y0) * s))
+        self._paint_fit_text(painter, fit)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+
+    _FIT_SOURCE_NAMES = {"pipeline": "pipeline", "local": "local", "local_gr": "local, good region"}
+
+    def _paint_fit_text(self, painter, fit):
+        unit = fit["unit"]
+        calibrated = fit["source"] != "pipeline" and self._cal_unit != "px"
+        lines = [f"fit ({self._FIT_SOURCE_NAMES[fit['source']]})"]
+        for axis, cal in (("x", self._cal_scale_x), ("y", self._cal_scale_y)):
+            part = fit.get(axis)
+            if not part:
+                continue
+            mean, sigma = part["mean"], part["sigma"]
+            if calibrated:
+                mean, sigma, shown_unit = mean * cal, sigma * cal, self._cal_unit
+            else:
+                shown_unit = unit
+            note = "" if part.get("converged", True) else "  (no fit)"
+            lines.append(f"{axis}: mean {mean:.5g}  sigma {sigma:.4g} {shown_unit}{note}")
+        font = QtGui.QFont("Monospace")
+        font.setStyleHint(QtGui.QFont.TypeWriter)
+        font.setPointSize(9)
+        painter.setFont(font)
+        metrics = QtGui.QFontMetrics(font)
+        line_h = metrics.height()
+        box_w = max(metrics.horizontalAdvance(line) for line in lines) + 10
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(QtGui.QColor(0, 0, 0, 150))
+        painter.drawRect(QtCore.QRectF(4, 4, box_w, line_h * len(lines) + 6))
+        painter.setPen(QtGui.QColor(255, 200, 140))
+        for i, line in enumerate(lines):
+            painter.drawText(QtCore.QPointF(9, 4 + line_h * (i + 1)), line)
+
+    def _resolve_fit(self, shape):
+        """The fit to show for the frame shown last, or None. "auto" takes
+        the pipeline's own fit only while the viewer shows the pipeline's
+        image unchanged -- with an ROI, averaging or background subtraction
+        here, the pipeline fitted something else than what is shown."""
+        source = self._fit_source
+        p = self._processor
+        changed_here = p.roi is not None or p.average_n > 1 or p.subtract_background
+        if source == "pipeline" or (source == "auto" and not changed_here):
+            fit = self._pipeline_fit(shape)
+            if fit is not None or source == "pipeline":
+                return fit
+        analysis = self._analysis
+        if not analysis:
+            return None
+        if source == "local_gr":
+            region = analysis.get("good_region")
+            return self._local_fit(region, "local_gr", region["region"]) if region else None
+        return self._local_fit(analysis, "local")
+
+    def _local_fit(self, analysis, source, region=None):
+        ox, oy = self._frame_offset
+        fit = {"source": source, "unit": "px", "region": region}
+        for axis, origin, start in (
+            ("x", ox, (region[0] - ox) if region else 0),
+            ("y", oy, (region[1] - oy) if region else 0),
+        ):
+            result = analysis.get(f"{axis}_fit")
+            if not result:
+                continue
+            profile = np.asarray(analysis[f"{axis}_profile"])
+            fit[axis] = {
+                **{k: result[k] for k in ("mean", "sigma", "amplitude", "offset")},
+                "converged": result.get("converged", True),
+                "mean_px": result["mean"] - origin,
+                "sigma_px": result["sigma"],
+                "curve": result["curve"],
+                "start": start,
+                "norm": (profile.min(), profile.max()),
+            }
+        return fit if ("x" in fit or "y" in fit) else None
+
+    def _pipeline_fit(self, shape):
+        """The pipeline's own fit (x/y_fit_* fields, in its x/y_axis units)
+        mapped onto the shown frame, or None if the stream has none."""
+        fields, arrays = self._pipeline_fields, self._pipeline_arrays
+        h, w = shape
+        ox, oy = self._frame_offset
+        fit = {"source": "pipeline", "unit": "px", "region": None}
+        for axis, origin, n in (("x", ox, w), ("y", oy, h)):
+            mean = fields.get(f"{axis}_fit_mean")
+            sigma = fields.get(f"{axis}_fit_standard_deviation")
+            axis_values = arrays.get(f"{axis}_axis")
+            if mean is None or sigma is None or axis_values is None or len(axis_values) < 2:
+                continue
+            axis_values = np.asarray(axis_values, dtype=np.float64)
+            if not np.allclose(np.abs(np.diff(axis_values)), 1.0):
+                # a calibrated axis: the camera's calibration, in its unit
+                # when this viewer knows it
+                fit["unit"] = self._cal_unit if self._cal_unit != "px" else "calibrated units"
+            order = np.argsort(axis_values)
+            mean_px = float(np.interp(mean, axis_values[order], np.arange(axis_values.size)[order]))
+            step = abs(float(np.median(np.diff(axis_values)))) or 1.0
+            curve = arrays.get(f"{axis}_fit_gauss_function")
+            profile = arrays.get(f"{axis}_profile")
+            fit[axis] = {
+                "mean": float(mean),
+                "sigma": float(sigma),
+                "converged": 0 <= mean_px - origin < n,
+                "amplitude": fields.get(f"{axis}_fit_amplitude"),
+                "offset": fields.get(f"{axis}_fit_offset"),
+                "mean_px": mean_px - origin,
+                "sigma_px": float(sigma) / step,
+                # the pipeline's curves cover its whole image; cut to what is shown
+                "curve": None if curve is None else np.asarray(curve)[origin : origin + n],
+                "profile": None if profile is None else np.asarray(profile)[origin : origin + n],
+                "start": 0,
+                "norm": None,
+            }
+        return fit if ("x" in fit or "y" in fit) else None
 
     def _measurement_label(self):
         """Distance for the current self._measurement -- physical units
@@ -2574,15 +2999,12 @@ class CamServerStreamQt:
             txt += f"  marker=({mx},{my}){self._calibrated(mx, my)}"
         if self._measurement is not None:
             txt += f"  measured={self._measurement_label()}"
-        # the cursor readout reads _last_values_array (the pre-colormap,
-        # physically meaningful values) rather than _last_display_array,
-        # which is uint8 and, with a colormap active, RGB -- not a single
-        # scalar to show
-        if self._hover_pos is not None and self._last_values_array is not None:
+        # the cursor readout shows the pre-colormap, physically meaningful
+        # value (see _cursor_value), not the uint8/RGB display pixel
+        value = self._cursor_value()
+        if value is not None:
             hx, hy = self._hover_pos
-            arr = self._last_values_array
-            if 0 <= hy < arr.shape[0] and 0 <= hx < arr.shape[1]:
-                txt += f"  cursor=({hx},{hy}){self._calibrated(hx, hy)} val={arr[hy, hx]:.3g}"
+            txt += f"  cursor=({hx},{hy}){self._calibrated(hx, hy)} val={value:.3g}"
         try:
             self._status_label.setText(txt)
         except RuntimeError:
@@ -2676,6 +3098,8 @@ class _ViewerReadout:
         viewer = self._viewer
         if self.key in viewer._pipeline_fields:
             return viewer._pipeline_fields[self.key]
+        if self.key.startswith("fit_"):
+            return viewer._fit_fields().get(self.key)
         if self.key in ("x_com", "y_com", "x_fwhm", "y_fwhm", "sum"):
             stats = viewer.roi_stats()
             return None if stats is None else stats[self.key]
@@ -2695,12 +3119,17 @@ def make_camserver_stream_qt(
     auto_start=True,
     cam=None,
     eco_name=None,
+    process=None,
+    show_profile=False,
+    show_fit=False,
+    fit_source="auto",
 ):
     """Convenience factory, mirrors make_axisptz_qt_window's signature.
     theme: "dark" | "light" | None (native) -- see eco.widgets.qt_theme.
     cam: the eco camera Assembly this viewer belongs to, if any -- adds a
     "Camera Settings" button (see CamServerStreamQt._open_settings).
-    eco_name: that same Assembly's own alias name, for the window title."""
+    eco_name: that same Assembly's own alias name, for the window title.
+    process/show_profile/show_fit/fit_source: see CamServerStreamQt."""
     return CamServerStreamQt(
         name,
         kind=kind,
@@ -2711,6 +3140,10 @@ def make_camserver_stream_qt(
         auto_start=auto_start,
         cam=cam,
         eco_name=eco_name,
+        process=process,
+        show_profile=show_profile,
+        show_fit=show_fit,
+        fit_source=fit_source,
     )
 
 

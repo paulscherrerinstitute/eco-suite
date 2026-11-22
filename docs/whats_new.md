@@ -79,6 +79,21 @@ pip install -e . --no-deps     # only for a pip-installed checkout; see the new 
   `"check_code": false` in `~/.eco/ei.json` switches it off.
 ```
 
+## 22 November 2026
+
+- **Camera viewers do their image work in a helper process.** Averaging,
+  background, contrast, colormap and histogram ran on the session's main
+  thread before, 30–150 ms per frame for the larger Bernina cameras; now
+  the viewer only draws a finished picture (5–7 ms). Nothing changes in
+  use; `cam.widget(process=False)` or `ECO_CAMERA_PROCESS=0` keep the old
+  way, and the viewer falls back to it by itself if the helper can't run
+  ({doc}`live_gui`).
+- **Profile and Fit in the camera viewer**, as in pshell's screen panel:
+  the projections, the Gaussian fits (the camera server's own, a local one
+  of what is shown, or pshell's "good region" fit), and the numbers, also
+  as `viewer.fit`, `viewer.readout("fit_x_mean")` and escape Streams
+  (`viewer.streams("fit_x_mean")`) ({doc}`live_gui`).
+
 ## 17 November 2026
 
 - **The SciLog viewer is a package of its own now, `scilog-viewer`**

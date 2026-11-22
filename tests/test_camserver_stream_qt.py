@@ -7,6 +7,7 @@ pytest.importorskip("qtpy")
 from qtpy import QtCore, QtWidgets
 
 from eco.widgets.camserver_stream_qt import (
+    FIT_SOURCES,
     CamServerStreamQt,
     FrameProcessor,
     LivePipelineFields,
@@ -15,7 +16,9 @@ from eco.widgets.camserver_stream_qt import (
     _StreamWorker,
     _build_cam_from_argv,
     _main,
+    analyse,
     capture_camera_snapshot,
+    compute_log_histogram,
     default_pipeline_name,
     normalize_to_uint8,
     resolve_camera_pipeline,
@@ -1430,3 +1433,156 @@ def test_viewer_state_reports_raw_frame_coordinates_and_readouts():
     assert gui.readout("x_fwhm").get_current_value() == pytest.approx(20.0, abs=1.0)
     assert gui.readout("marker").get_current_value() == (120, 40)
     assert gui.readout("not_there").get_current_value() is None
+
+
+# -- the frame process, profiles and fits ---------------------------------------
+
+
+def pump_until(condition, seconds=10.0):
+    app = QtWidgets.QApplication.instance()
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
+
+
+def test_frame_process_viewer_shows_fits_and_readouts():
+    pytest.importorskip("zmq")
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False, process=True, show_fit=True)
+    try:
+        gui._build_window()
+        assert gui._using_process
+        assert pump_until(lambda: gui.fit is not None and gui._frame_meta is not None)
+        # the demo has no pipeline fit, so "auto" falls back to the local one
+        assert gui.fit["source"] == "local"
+        fields = gui.pipeline_fields
+        assert gui.fit["x"]["mean"] == pytest.approx(fields["x_center_of_mass"], abs=3)
+        assert gui.readout("fit_y_mean").get_current_value() == pytest.approx(
+            fields["y_center_of_mass"], abs=3
+        )
+        assert gui.roi_stats()["x_com"] == pytest.approx(gui.fit["x"]["mean"], abs=3)
+        # the cursor value comes from the frame process
+        gui._hover_pos = (int(gui.fit["x"]["mean"]), int(gui.fit["y"]["mean"]))
+        assert pump_until(lambda: (gui.state()["cursor_value"] or 0) > 2000)
+        # the image arrives screen-sized, and is shown at the frame's own scale
+        h, w = gui._last_stats["shape"][:2]
+        assert gui._label.pixmap().width() == max(1, round(w * gui._label.zoom_scale))
+    finally:
+        gui.stop()
+
+
+def test_viewer_falls_back_to_in_process_frames_when_the_frame_process_dies():
+    pytest.importorskip("zmq")
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False, process=True)
+    try:
+        gui._build_window()
+        assert pump_until(lambda: gui._frame_meta is not None)
+        gui._worker._proc.kill()
+        assert pump_until(lambda: not gui._using_process)
+        count = gui._frame_count
+        assert pump_until(lambda: gui._frame_count > count + 2)  # still showing frames
+    finally:
+        gui.stop()
+
+
+def test_in_process_viewer_fits_too():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt(
+        "demo", kind="demo", auto_start=False, process=False, show_fit=True, fit_source="local_gr"
+    )
+    try:
+        gui._build_window()
+        assert not gui._using_process
+        assert pump_until(lambda: gui.fit is not None)
+        assert gui.fit["source"] == "local_gr"
+        x0, y0, x1, y1 = gui.fit["region"]
+        assert x0 < gui.fit["x"]["mean"] < x1 and y0 < gui.fit["y"]["mean"] < y1
+    finally:
+        gui.stop()
+
+
+def test_auto_fit_uses_the_pipeline_fit_only_for_an_unchanged_image():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False, show_fit=True)
+    w = 200
+    axis = np.linspace(-1000.0, 990.0, w)  # a calibrated, 10 units per pixel axis
+    gui._pipeline_fields = {
+        "x_fit_mean": 300.0, "x_fit_standard_deviation": 50.0,
+        "y_fit_mean": 100.0, "y_fit_standard_deviation": 20.0,
+    }
+    gui._pipeline_arrays = {
+        "x_axis": axis, "y_axis": np.linspace(-500.0, 490.0, 100),
+        "x_fit_gauss_function": np.ones(w), "x_profile": np.arange(w, dtype=float),
+    }
+    gui._analysis = {
+        "x_profile": np.ones(w), "y_profile": np.ones(100),
+        "x_fit": {"mean": 12.0, "sigma": 3.0, "amplitude": 1.0, "offset": 0.0, "curve": np.ones(w)},
+        "y_fit": None,
+        "good_region": None,
+    }
+    fit = gui._resolve_fit((100, w))
+    assert fit["source"] == "pipeline"
+    assert fit["unit"] == "calibrated units"  # not px: the axis is not pixel indices
+    assert fit["x"]["mean_px"] == pytest.approx(130.0)  # -1000 + 10 * 130 = 300
+    assert fit["x"]["sigma_px"] == pytest.approx(5.0)
+    assert fit["y"]["mean_px"] == pytest.approx(60.0)
+    # with an ROI here the pipeline fitted a different image: the local fit
+    gui._processor.set_roi((10, 0, 150, 100))
+    assert gui._resolve_fit((100, 150))["source"] == "local"
+    # unless asked for explicitly, then mapped onto the cropped frame
+    gui._fit_source = "pipeline"
+    gui._frame_offset = (10, 0)
+    fit = gui._resolve_fit((100, 150))
+    assert fit["x"]["mean_px"] == pytest.approx(120.0)
+    assert len(fit["x"]["curve"]) == 150
+
+
+def test_overlays_paint_at_any_zoom():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False, show_profile=True, show_fit=True)
+    try:
+        gui._build_window()
+        gui._worker.stop()
+        gui._render_timer.stop()
+        image = np.zeros((120, 200))
+        image[40:60, 120:150] = 100.0
+        gui._analysis = analyse(image, fit=True, good_region=(0.3, 1.8))
+        gui._show_reticle, gui._marker_pos, gui._measurement = True, (20, 30), (5, 5, 50, 60)
+        for zoom in ("fit", 0.25, 1.0, 2.0):
+            gui._zoom_mode = zoom
+            for source in FIT_SOURCES:
+                gui._fit_source = source
+                gui._show_frame(
+                    normalize_to_uint8(image),
+                    {"shape": image.shape, "color": False, "vmin": 0.0, "vmax": 100.0, "min": 0.0, "max": 100.0},
+                    compute_log_histogram(image),
+                )
+        assert gui.fit["source"] == "local_gr"
+    finally:
+        gui.stop()
+
+
+def test_result_stream_as_escape_streams():
+    pytest.importorskip("zmq")
+    pytest.importorskip("escape.stream.es_wrappers")
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    gui = CamServerStreamQt("demo", kind="demo", auto_start=False, process=True, show_fit=True)
+    try:
+        gui._build_window()
+        assert gui.result_stream_address().startswith("tcp://127.0.0.1:")
+        streams = gui.streams("fit_x_mean", "x_com")
+        for stream in streams.values():
+            stream.accumulate(True)
+        assert pump_until(lambda: len(streams["fit_x_mean"]) >= 5)
+        values = [v for block in streams["fit_x_mean"].data for v in block]
+        assert 0 < values[-1] < 400
+        for stream in streams.values():
+            stream.accumulate(False)
+        streams["x_com"]._source.eventWorker.stopEventLoop()
+    finally:
+        gui.stop()
