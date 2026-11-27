@@ -25,7 +25,7 @@ eco box-server -s bernina     # serve the handheld control box, see below
 | Subcommand | What you get |
 |------------|--------------|
 | `console` | The traditional session: IPython with the scope's devices in the namespace. |
-| `desktop` | A Spyder/MATLAB-like Qt window: an embedded IPython console plus, with `-s`, a dockable **Namespace** panel. Lazy names are greyed out; click one to initialize it and open its widget. `--no-console`, `--no-namespace-panel` and `--theme dark\|light\|none` adjust it. |
+| `desktop` | A Spyder/MATLAB-like Qt window: an embedded IPython console plus, with `-s`, a dockable **Namespace** panel. Lazy names are greyed out; click one to initialize it and open its widget. `--no-console`, `--no-namespace-panel` and `--theme auto\|dark\|light\|none` adjust it (default: what was last chosen under *Help → Appearance*, else following the desktop's light/dark setting). The *Help* menu also has Ask eco, the documentation, tips and About. |
 | `jupyterlab` | JupyterLab whose Namespace panel and each opened device are real Sidecar dock panels. With `-s` it also registers an `eco-<scope>` kernel and makes it the default, and opens a `jupyter console` on that kernel in your terminal (`--no-console` to skip). |
 | `webapp` | The packaged notebook served as a Voila dashboard: widgets only, no code editing. |
 | `web` | The console session, plus eco's **web app** served from inside it: phones, tablets and laptops get the session's devices with live values, moves (`--writes`), tweak and jog, pinned strip charts and SVG panels. `--no-console` serves without a prompt. See {doc}`web_app`. |

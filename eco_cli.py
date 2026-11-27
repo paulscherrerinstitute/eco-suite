@@ -787,8 +787,10 @@ def main(argv=None):
     )
     _add_namespace_panel_flag(p_desktop)
     p_desktop.add_argument(
-        "--theme", choices=["dark", "light", "none"], default=None,
-        help="modern skin, or 'none' for native OS style (default: dark)",
+        "--theme", choices=["auto", "dark", "light", "none"], default=None,
+        help="'auto' follows the desktop's light/dark setting, 'none' is the "
+             "native OS style (default: the choice saved from the desktop's "
+             "Help -> Appearance menu, else auto)",
     )
     p_desktop.add_argument(
         "--touch", action="store_true", default=None,

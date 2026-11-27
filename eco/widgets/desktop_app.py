@@ -101,6 +101,48 @@ _app_ref = None
 # by _build_window()/_on_window_closing() below.
 _live_desktop_apps = []
 
+# per-account desktop preferences (Help -> Appearance); on a shared console
+# account that means shared by everyone using it
+DESKTOP_SETTINGS_PATH = Path.home() / ".eco" / "desktop_settings.json"
+
+
+def _load_desktop_settings():
+    try:
+        data = json.loads(DESKTOP_SETTINGS_PATH.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_desktop_settings(**values):
+    try:
+        data = _load_desktop_settings()
+        data.update(values)
+        DESKTOP_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DESKTOP_SETTINGS_PATH.write_text(json.dumps(data, indent=1))
+    except Exception:
+        logger.warning("could not save desktop settings to %s", DESKTOP_SETTINGS_PATH, exc_info=True)
+
+
+def _git_head(repo):
+    """Short commit of a checkout, read from .git directly (no git call:
+    cheap, and harmless on a checkout owned by another account)."""
+    try:
+        git = Path(repo) / ".git"
+        head = (git / "HEAD").read_text().strip()
+        if not head.startswith("ref:"):
+            return head[:9]
+        ref = head.split(None, 1)[1]
+        ref_file = git / ref
+        if ref_file.exists():
+            return ref_file.read_text().strip()[:9]
+        for line in (git / "packed-refs").read_text().splitlines():
+            if line.endswith(" " + ref):
+                return line.split()[0][:9]
+    except Exception:
+        pass
+    return None
+
 # classic terminal "spinner" glyphs -- rotated through while a lazy
 # namespace entry is initializing (see _NamespaceLauncher)
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -788,6 +830,15 @@ class EcoDesktopApp:
         # garbage-collected and closed out from under the user; stopped
         # alongside everything else in _on_window_closing.
         self._log_viewer = None
+        # Help -> Appearance: the mode in effect ("auto" | "light" | "dark" |
+        # "none"), its menu actions, and the system light/dark watcher
+        # (only while "auto") -- see _apply_theme_mode
+        self._theme_mode = None
+        self._resolved_theme = None
+        self._initial_scheme = None
+        self._theme_actions = {}
+        self._touch_action = None
+        self._scheme_watcher = None
         # the Ask panel (eco.ei) and its dock, once opened -- see _open_ei_panel
         self._ei_panel = None
         self._ei_dock = None
@@ -842,9 +893,7 @@ class EcoDesktopApp:
         global _app_ref
         if QtWidgets.QApplication.instance() is None:
             _app_ref = QtWidgets.QApplication([])
-        from eco.widgets.qt_theme import apply_modern_theme
-
-        apply_modern_theme(self.theme, self.touch)
+        self._init_appearance()
 
         # keeps this whole window (console output, docked viewers, the
         # Namespace panel) alive while a cell or the calling session's main
@@ -907,6 +956,10 @@ class EcoDesktopApp:
 
         if ei.enabled():  # ECO_NO_EI=1: no Ask menu
             self._build_ask_menu()
+        self._build_help_menu()
+        if self._console is not None:
+            self._style_console(self._resolved_theme)
+        self._sync_scheme_watcher(self._initial_scheme)
 
         # not a lambda: see _WindowDestroyedWatch
         self._window_watch = _WindowDestroyedWatch(self)
@@ -1041,6 +1094,233 @@ class EcoDesktopApp:
         menu.addAction("Update Search Index").triggered.connect(lambda: self._ei_background("index"))
         menu.addAction("Update SciLog Posts").triggered.connect(lambda: self._ei_background("scilog"))
         menu.addAction("Index Notes Folder...").triggered.connect(self._on_ei_index_notes)
+
+    # -- appearance (Help -> Appearance) --------------------------------------
+
+    def _init_appearance(self):
+        """Pick the Appearance mode: an explicit `theme` argument / --theme
+        wins, else the choice saved from the Help menu, else "auto"
+        (follow the desktop's light/dark preference). Same for touch."""
+        from eco.widgets import qt_theme
+
+        saved = _load_desktop_settings()
+        theme = "none" if self.theme == "native" else self.theme
+        if theme not in qt_theme.MODES:
+            theme = saved.get("theme")
+        self._theme_mode = theme if theme in qt_theme.MODES else qt_theme.AUTO
+        if self.touch is None and "touch" in saved:
+            self.touch = bool(saved["touch"])
+        scheme = qt_theme.detect_system_scheme(timeout=0.5) if self._theme_mode == qt_theme.AUTO else None
+        self._initial_scheme = scheme
+        self._apply_theme_mode(self._theme_mode, scheme=scheme)
+
+    def _apply_theme_mode(self, mode, scheme=None, save=False):
+        """Apply an Appearance mode now: the application skin, the console's
+        colors, the menu check marks, and the system watcher (running only
+        in "auto"). `save` stores it as this account's default."""
+        from eco.widgets import qt_theme
+
+        if mode == qt_theme.AUTO and scheme is None and self._scheme_watcher is not None:
+            scheme = self._scheme_watcher.scheme
+        self._theme_mode = mode
+        resolved = qt_theme.resolve_mode(mode, scheme)
+        qt_theme.apply_modern_theme(resolved or qt_theme.NATIVE, self.touch)
+        self._resolved_theme = resolved
+        self._style_console(resolved)
+        for name, action in self._theme_actions.items():
+            action.setChecked(name == mode)
+        self._sync_scheme_watcher(scheme)
+        if save:
+            _save_desktop_settings(theme=mode)
+
+    def _sync_scheme_watcher(self, scheme=None):
+        """The system light/dark watcher runs exactly while "auto" is in
+        effect (and there is a window to parent it to)."""
+        from eco.widgets import qt_theme
+
+        if self._theme_mode == qt_theme.AUTO:
+            if self._scheme_watcher is None and self.window is not None:
+                watcher = qt_theme.SystemSchemeWatcher(parent=self.window, initial=scheme)
+                watcher.changed.connect(self._on_system_scheme_changed)
+                watcher.start()
+                self._scheme_watcher = watcher
+        elif self._scheme_watcher is not None:
+            self._scheme_watcher.stop()
+            self._scheme_watcher.deleteLater()
+            self._scheme_watcher = None
+
+    def _on_system_scheme_changed(self, scheme):
+        # a Qt slot: nothing may escape
+        try:
+            if self._theme_mode == "auto":
+                self._apply_theme_mode("auto", scheme=scheme or None)
+        except Exception:
+            logger.exception("following the system light/dark setting failed")
+
+    def _on_theme_mode_chosen(self, mode):
+        try:
+            self._apply_theme_mode(mode, save=True)
+        except Exception:
+            logger.exception("switching the desktop appearance failed")
+
+    def _on_touch_toggled(self, checked):
+        try:
+            self.touch = bool(checked)
+            self._apply_theme_mode(self._theme_mode)
+            _save_desktop_settings(touch=self.touch)
+        except Exception:
+            logger.exception("switching touch mode failed")
+
+    def _style_console(self, resolved):
+        """qtconsole paints its own text area (style_sheet / syntax_style),
+        so the application skin alone leaves it white-on-dark or worse."""
+        console = self._console
+        if console is None:
+            return
+        try:
+            from qtconsole import styles
+
+            if resolved == "dark":
+                console.style_sheet = styles.default_dark_style_sheet
+                console.syntax_style = styles.default_dark_syntax_style
+            else:
+                console.style_sheet = styles.default_light_style_sheet
+                console.syntax_style = styles.default_light_syntax_style
+            console._style_sheet_changed()
+            console._syntax_style_changed()
+        except Exception:
+            logger.debug("styling the console failed", exc_info=True)
+
+    # -- Help menu ---------------------------------------------------------------
+
+    def _build_help_menu(self):
+        """The usual Help pulldown: Ask eco, the documentation, tips, the
+        Appearance choice (follow system / light / dark / native, touch
+        mode) and About."""
+        from eco import ei
+        from eco.widgets import qt_theme
+
+        menu = self.window.menuBar().addMenu("&Help")
+        if ei.enabled():
+            ask_action = menu.addAction("Ask eco...")
+            ask_action.setToolTip("Questions about eco answered from its docs and API (eco.ei, %ei) -- also under Ask")
+            ask_action.triggered.connect(self._open_ei_panel)
+            menu.addSeparator()
+
+        docs_action = menu.addAction("eco Documentation")
+        docs_action.setShortcut(QtGui.QKeySequence.HelpContents)
+        docs_action.setToolTip("Open the eco documentation in the web browser")
+        docs_action.triggered.connect(lambda: self._open_docs(None))
+        guide_action = menu.addAction("Desktop Guide")
+        guide_action.setToolTip("Building panels and startup scripts with eco desktop")
+        guide_action.triggered.connect(lambda: self._open_docs("simple_gui"))
+        tip_action = menu.addAction("Tip of the Day")
+        tip_action.triggered.connect(self._show_tip)
+
+        menu.addSeparator()
+        appearance = menu.addMenu("Appearance")
+        group = QtWidgets.QActionGroup(appearance)
+        group.setExclusive(True)
+        self._theme_actions = {}
+        for mode in qt_theme.MODES:
+            action = appearance.addAction(qt_theme.MODE_LABELS[mode])
+            action.setCheckable(True)
+            action.setChecked(mode == self._theme_mode)
+            group.addAction(action)
+            action.triggered.connect(lambda _=False, m=mode: self._on_theme_mode_chosen(m))
+            self._theme_actions[mode] = action
+        self._theme_actions[qt_theme.AUTO].setToolTip(
+            "Light or dark as the desktop prefers (freedesktop portal / GNOME settings), "
+            "switching when it changes"
+        )
+        appearance.addSeparator()
+        touch_action = appearance.addAction("Touch Mode")
+        touch_action.setCheckable(True)
+        touch_action.setChecked(bool(qt_theme.resolve_touch(self.touch)))
+        touch_action.setToolTip("Bigger grab handles, buttons and scrollbars")
+        touch_action.toggled.connect(self._on_touch_toggled)
+        self._touch_action = touch_action
+
+        menu.addSeparator()
+        about_action = menu.addAction("About eco desktop")
+        about_action.triggered.connect(self._show_about)
+
+    def _open_docs(self, page):
+        try:
+            from eco.utilities import tips
+
+            tips.docs(page)
+        except Exception:
+            logger.exception("opening the documentation failed")
+
+    def _show_tip(self):
+        try:
+            from eco.utilities import tips
+
+            tips.tip(window=True)
+        except Exception:
+            logger.exception("showing a tip failed")
+
+    def about_text(self):
+        """The About box's content (HTML) -- which eco this is, from where,
+        on which Python/Qt: the first thing to check when a fixed bug
+        seems back."""
+        import getpass
+        import html
+        import platform
+        import socket
+        import sys
+
+        import eco
+        from eco.utilities import tips
+        from eco.widgets import qt_theme
+
+        try:
+            from importlib.metadata import version
+
+            eco_version = version("eco")
+        except Exception:
+            eco_version = "unknown"
+        eco_dir = Path(eco.__file__).resolve().parent
+        commit = _git_head(eco_dir.parent)
+        try:
+            import qtpy
+
+            binding = f"{qtpy.API_NAME} {QtCore.qVersion()}"
+        except Exception:
+            binding = QtCore.qVersion()
+        try:
+            import qtconsole
+
+            binding += f", qtconsole {qtconsole.__version__}"
+        except Exception:
+            pass
+        rows = [
+            ("eco", eco_version + (f" ({commit})" if commit else "")),
+            ("Loaded from", str(eco_dir)),
+            ("Scope", self.scope if self.namespace is not None else "none"),
+            ("Python", f"{platform.python_version()} ({sys.executable})"),
+            ("Qt", binding),
+            ("Host / user", f"{socket.gethostname()} / {getpass.getuser()}"),
+            ("Appearance", qt_theme.MODE_LABELS.get(self._theme_mode, str(self._theme_mode))
+             + (f" -> {self._resolved_theme or 'native'}" if self._theme_mode == "auto" else "")),
+            ("Documentation", f'<a href="{html.escape(tips.DOCS_URL)}">{html.escape(tips.DOCS_URL)}</a>'),
+        ]
+        body = "".join(
+            f"<tr><td><b>{html.escape(k)}</b>&nbsp;&nbsp;</td><td>{v if k == 'Documentation' else html.escape(v)}</td></tr>"
+            for k, v in rows
+        )
+        return (
+            "<h3>eco desktop</h3>"
+            "<p>SwissFEL experiment control -- the Qt workbench.</p>"
+            f"<table>{body}</table>"
+        )
+
+    def _show_about(self):
+        try:
+            QtWidgets.QMessageBox.about(self.window, "About eco desktop", self.about_text())
+        except Exception:
+            logger.exception("showing About failed")
 
     def _ei_assistant(self):
         from eco import ei
@@ -2077,7 +2357,11 @@ class EcoDesktopApp:
             if self.namespace is not None and self._launcher_dock is None
             else ""
         )
-        theme_flag = " --theme {}".format(self.theme) if self.theme in ("dark", "light") else ""
+        theme_flag = (
+            " --theme {}".format(self._theme_mode)
+            if self._theme_mode in ("dark", "light", "none")  # "auto" is the default
+            else ""
+        )
         script = (
             "#!/bin/bash\n"
             "# Auto-generated by eco desktop's Workspace menu (Save Startup\n"
@@ -2310,10 +2594,11 @@ def _main(argv=None):
     )
     parser.add_argument(
         "--theme",
-        choices=["dark", "light", "none"],
-        default="none",
-        help="modern skin, or 'none' for native OS style (default: %(default)s) "
-             "-- see eco.widgets.qt_theme",
+        choices=["auto", "dark", "light", "none"],
+        default=None,
+        help="'auto' follows the desktop's light/dark setting, 'none' is the "
+             "native OS style (default: the choice saved from Help -> "
+             "Appearance, else auto) -- see eco.widgets.qt_theme",
     )
     parser.add_argument(
         "--touch",
@@ -2347,7 +2632,7 @@ def _main(argv=None):
              "workspace file next to it",
     )
     args = parser.parse_args(argv)
-    theme = None if args.theme == "none" else args.theme
+    theme = args.theme
 
     namespace = build_namespace(scope=args.scope, lazy=args.lazy) if args.scope else None
     # a fresh top-level process (no calling terminal to link to --

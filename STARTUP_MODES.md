@@ -71,6 +71,16 @@ go-ahead rather than happening as a side effect of this work.
   on the `Assembly` subclass (see `eco.elements.assembly.Assembly.widget`).
   `AxisPTZ` already does this — `_default_widget = "viewer"` opens its
   live-video viewer instead of a plain slider grid.
+- **Help menu**: Ask eco (the `%ei` panel), eco Documentation (F1),
+  Desktop Guide, Tip of the Day, **Appearance** and About (eco version and
+  commit, where it was loaded from, Python/Qt). Appearance offers *Follow
+  System* (the default: light or dark as the desktop's freedesktop
+  portal / GNOME settings say, switching live when they change; falls
+  back to the native palette's lightness when nothing says — over
+  `ssh -X` that is the console's settings, not the laptop's), *Light*,
+  *Dark*, *Native* and *Touch Mode*. The choice is saved per account in
+  `~/.eco/desktop_settings.json`; `--theme auto|dark|light|none` (or
+  `theme=`) overrides it for one window.
 - A modern theme is available: pass `theme="dark"`/`"light"` — uses the
   real `qt-material` package (now installed) if present, else a
   hand-built approximation of its default teal-on-charcoal look; see

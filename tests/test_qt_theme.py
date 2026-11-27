@@ -111,3 +111,72 @@ def test_apply_modern_theme_records_touch_choice_in_env():
         assert os.environ[TOUCH_ENV_VAR] == "1"
     finally:
         apply_modern_theme(theme=None, touch=False)
+
+
+# -- "auto": following the desktop's light/dark preference -----------------
+
+from eco.widgets import qt_theme
+
+
+def test_resolve_theme_none_string_is_native_even_with_env_set():
+    os.environ[ENV_VAR] = "dark"
+    assert resolve_theme("none") is None
+
+
+def test_resolve_mode_explicit_and_auto(monkeypatch):
+    assert qt_theme.resolve_mode("dark") == "dark"
+    assert qt_theme.resolve_mode("light", system_scheme="dark") == "light"
+    assert qt_theme.resolve_mode("none", system_scheme="dark") is None
+    assert qt_theme.resolve_mode("auto", system_scheme="dark") == "dark"
+    assert qt_theme.resolve_mode("auto", system_scheme="light") == "light"
+    # nothing says: the native palette decides
+    monkeypatch.setattr(qt_theme, "native_palette_is_dark", lambda: True)
+    assert qt_theme.resolve_mode("auto", system_scheme=None) == "dark"
+    monkeypatch.setattr(qt_theme, "native_palette_is_dark", lambda: False)
+    assert qt_theme.resolve_mode("auto", system_scheme=None) == "light"
+
+
+def _fake_commands(monkeypatch, answers):
+    """answers: {first distinguishing word of the command: stdout or None}"""
+
+    def run_quiet(cmd, timeout):
+        key = "portal" if cmd[0] == "gdbus" else cmd[-1]
+        return answers.get(key)
+
+    monkeypatch.setattr(qt_theme, "_run_quiet", run_quiet)
+    monkeypatch.setattr(qt_theme, "_scheme_from_qt", lambda: None)
+    monkeypatch.delenv("GTK_THEME", raising=False)
+
+
+def test_detect_portal_dark_and_light(monkeypatch):
+    _fake_commands(monkeypatch, {"portal": "(<<uint32 1>>,)"})
+    assert qt_theme.detect_system_scheme() == "dark"
+    _fake_commands(monkeypatch, {"portal": "(<<uint32 2>>,)"})
+    assert qt_theme.detect_system_scheme() == "light"
+
+
+def test_detect_portal_no_preference_falls_through_to_gsettings(monkeypatch):
+    _fake_commands(
+        monkeypatch,
+        {"portal": "(<<uint32 0>>,)", "color-scheme": "'prefer-dark'"},
+    )
+    assert qt_theme.detect_system_scheme() == "dark"
+    _fake_commands(
+        monkeypatch,
+        {"portal": "(<<uint32 0>>,)", "color-scheme": "'default'", "gtk-theme": "'Yaru-dark'"},
+    )
+    assert qt_theme.detect_system_scheme() == "dark"
+
+
+def test_detect_nothing_says(monkeypatch):
+    _fake_commands(
+        monkeypatch,
+        {"portal": "(<<uint32 0>>,)", "color-scheme": "'default'", "gtk-theme": "'Yaru'"},
+    )
+    assert qt_theme.detect_system_scheme() is None
+    monkeypatch.setenv("GTK_THEME", "Adwaita:dark")
+    assert qt_theme.detect_system_scheme() == "dark"
+
+
+def test_detect_real_system_does_not_raise():
+    assert qt_theme.detect_system_scheme(timeout=2) in ("dark", "light", None)

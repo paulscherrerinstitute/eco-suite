@@ -27,6 +27,12 @@ def _no_real_home_writes(tmp_path, monkeypatch):
     # redirect that for every test in this file so nothing here ever
     # touches the real account's home directory
     monkeypatch.setattr(desktop_app, "DEFAULT_WORKSPACE_FILE", tmp_path / "desktop_workspace.json")
+    # Help -> Appearance preferences likewise, and no asking the real
+    # desktop for its light/dark setting (deterministic "nothing says")
+    monkeypatch.setattr(desktop_app, "DESKTOP_SETTINGS_PATH", tmp_path / "desktop_settings.json")
+    from eco.widgets import qt_theme
+
+    monkeypatch.setattr(qt_theme, "detect_system_scheme", lambda timeout=1.0: None)
 
 
 @pytest.fixture(autouse=True)
@@ -1552,19 +1558,18 @@ def test_save_startup_script_returns_none_with_no_window():
     assert gui.save_startup_script("/tmp/whatever.sh") is None
 
 
-# -- dark theme default ---------------------------------------------------
+# -- theme default / Help -> Appearance -----------------------------------
 
 
-def test_desktop_app_defaults_to_native_theme():
+def test_desktop_app_theme_default_is_none_meaning_saved_or_auto():
     import inspect
 
     assert inspect.signature(EcoDesktopApp.__init__).parameters["theme"].default is None
 
 
-def test_main_theme_defaults_to_native(monkeypatch):
-    """--theme's argparse default (native OS style), and that 'none' maps
-    back to Python None too -- see _main()'s `theme = None if args.theme
-    == 'none' else args.theme` translation."""
+def test_main_theme_passes_choice_through(monkeypatch):
+    """No --theme: None (= the saved Help -> Appearance choice, else
+    follow the system); explicit choices are passed as given."""
 
     class _StubApp:
         def run(self, workspace=None, workspace_data=None):
@@ -1580,15 +1585,95 @@ def test_main_theme_defaults_to_native(monkeypatch):
     monkeypatch.setattr(desktop_app, "build_namespace", lambda **kw: None)
     desktop_app._main([])
     assert captured["theme"] is None
+    for choice in ("none", "auto", "dark", "light"):
+        desktop_app._main(["--theme", choice])
+        assert captured["theme"] == choice
 
-    desktop_app._main(["--theme", "none"])
-    assert captured["theme"] is None
 
-    desktop_app._main(["--theme", "dark"])
-    assert captured["theme"] == "dark"
+def _menu(app, title):
+    for action in app.window.menuBar().actions():
+        if action.text().replace("&", "") == title:
+            return action.menu()
+    raise AssertionError(f"no {title} menu")
 
-    desktop_app._main(["--theme", "light"])
-    assert captured["theme"] == "light"
+
+def _action(menu, text):
+    for action in menu.actions():
+        if action.text() == text:
+            return action
+    raise AssertionError(f"no {text!r} in {[a.text() for a in menu.actions()]}")
+
+
+def test_help_menu_has_docs_tips_appearance_and_about():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    app = EcoDesktopApp(namespace=None, with_console=False, auto_start=False)
+    app._build_window()
+    try:
+        help_menu = _menu(app, "Help")
+        texts = [a.text() for a in help_menu.actions()]
+        for text in ("eco Documentation", "Desktop Guide", "Tip of the Day", "Appearance", "About eco desktop"):
+            assert text in texts
+        appearance = _action(help_menu, "Appearance").menu()
+        labels = [a.text() for a in appearance.actions() if a.isCheckable()]
+        assert labels == ["Follow System", "Light", "Dark", "Native (No Skin)", "Touch Mode"]
+        # nothing saved, no --theme: follow the system
+        assert app._theme_mode == "auto"
+        assert _action(appearance, "Follow System").isChecked()
+        assert "eco desktop" in app.about_text() and "Loaded from" in app.about_text()
+    finally:
+        app.stop()
+
+
+def test_choosing_an_appearance_applies_and_saves_it():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    import os
+
+    from eco.widgets import qt_theme
+
+    app = EcoDesktopApp(namespace=None, with_console=False, auto_start=False)
+    app._build_window()
+    try:
+        appearance = _action(_menu(app, "Help"), "Appearance").menu()
+        _action(appearance, "Dark").trigger()
+        assert app._theme_mode == "dark"
+        assert os.environ[qt_theme.ENV_VAR] == "dark"
+        assert app._scheme_watcher is None  # only watched while following the system
+        assert json.loads(desktop_app.DESKTOP_SETTINGS_PATH.read_text())["theme"] == "dark"
+        _action(appearance, "Native (No Skin)").trigger()
+        assert os.environ[qt_theme.ENV_VAR] == ""
+    finally:
+        app.stop()
+    # the next window starts with the saved choice, an explicit theme still wins
+    again = EcoDesktopApp(namespace=None, with_console=False, auto_start=False)
+    again._build_window()
+    try:
+        assert again._theme_mode == "none"
+    finally:
+        again.stop()
+    explicit = EcoDesktopApp(namespace=None, theme="light", with_console=False, auto_start=False)
+    explicit._build_window()
+    try:
+        assert explicit._theme_mode == "light"
+    finally:
+        explicit.stop()
+
+
+def test_follow_system_switches_when_the_system_does():
+    QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    import os
+
+    from eco.widgets import qt_theme
+
+    app = EcoDesktopApp(namespace=None, with_console=False, auto_start=False)
+    app._build_window()
+    try:
+        assert app._scheme_watcher is not None
+        app._scheme_watcher.changed.emit("dark")
+        assert app._resolved_theme == "dark" and os.environ[qt_theme.ENV_VAR] == "dark"
+        app._scheme_watcher.changed.emit("light")
+        assert app._resolved_theme == "light"
+    finally:
+        app.stop()
 
 
 # -- console dock + "Combine Panels into Tabs..." --

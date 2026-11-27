@@ -35,8 +35,11 @@ explicit --theme falls back to reading it. ECO_QT_TOUCH does the same for
 touch=True.
 """
 import os
+import re
+import subprocess
+import threading
 
-from qtpy import QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 
 ENV_VAR = "ECO_QT_THEME"
 TOUCH_ENV_VAR = "ECO_QT_TOUCH"
@@ -142,12 +145,165 @@ QAbstractItemView::item { padding: 6px; }
 """
 
 
+AUTO = "auto"
+NATIVE = "none"
+# the choices offered in eco desktop's Help -> Appearance menu, in order
+MODES = (AUTO, "light", "dark", NATIVE)
+MODE_LABELS = {
+    AUTO: "Follow System",
+    "light": "Light",
+    "dark": "Dark",
+    NATIVE: "Native (No Skin)",
+}
+
+
+def _run_quiet(cmd, timeout):
+    try:
+        out = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _scheme_from_qt():
+    """Qt >= 6.5 knows the platform's color scheme itself (Qt 5 does not)."""
+    app = QtWidgets.QApplication.instance()
+    scheme_enum = getattr(QtCore.Qt, "ColorScheme", None)
+    if app is None or scheme_enum is None:
+        return None
+    try:
+        scheme = app.styleHints().colorScheme()
+    except Exception:
+        return None
+    if scheme == scheme_enum.Dark:
+        return "dark"
+    if scheme == scheme_enum.Light:
+        return "light"
+    return None
+
+
+def _scheme_from_portal(timeout):
+    """freedesktop settings portal (GNOME, KDE, ... on Wayland and X11):
+    org.freedesktop.appearance color-scheme, 0 = no preference, 1 = dark,
+    2 = light."""
+    out = _run_quiet(
+        [
+            "gdbus", "call", "--session",
+            "--timeout", str(max(1, int(round(timeout)))),
+            "--dest", "org.freedesktop.portal.Desktop",
+            "--object-path", "/org/freedesktop/portal/desktop",
+            "--method", "org.freedesktop.portal.Settings.Read",
+            "org.freedesktop.appearance", "color-scheme",
+        ],
+        timeout,
+    )
+    if not out:
+        return None
+    match = re.search(r"uint32\s+(\d+)", out)
+    if not match:
+        return None
+    return {1: "dark", 2: "light"}.get(int(match.group(1)))
+
+
+def _scheme_from_gsettings(timeout):
+    """GNOME without a portal: color-scheme ('prefer-dark'), else a GTK
+    theme whose name says dark (Adwaita-dark, Yaru-dark, ...)."""
+    scheme = _run_quiet(
+        ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"], timeout
+    )
+    if scheme:
+        if "prefer-dark" in scheme:
+            return "dark"
+        if "prefer-light" in scheme:
+            return "light"
+    gtk = _run_quiet(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"], timeout)
+    if gtk and "dark" in gtk.lower():
+        return "dark"
+    return None
+
+
+def _scheme_from_env():
+    gtk = os.environ.get("GTK_THEME", "")
+    if gtk:
+        return "dark" if "dark" in gtk.lower() else "light"
+    return None
+
+
+def detect_system_scheme(timeout=1.0):
+    """The desktop's light/dark preference: "dark", "light", or None if
+    nothing says. Asks, in order: Qt itself (Qt >= 6.5 only), the
+    freedesktop settings portal, gsettings, $GTK_THEME. Runs small
+    subprocesses (each bounded by `timeout`), so don't call it from a Qt
+    slot -- SystemSchemeWatcher does it on a worker thread.
+
+    "System" means the machine this process runs on: over ssh -X the
+    console's own desktop settings are asked (usually: none, so None), not
+    the laptop showing the window."""
+    for probe in (
+        _scheme_from_qt,
+        lambda: _scheme_from_portal(timeout),
+        lambda: _scheme_from_gsettings(timeout),
+        _scheme_from_env,
+    ):
+        try:
+            scheme = probe()
+        except Exception:
+            scheme = None
+        if scheme in ("dark", "light"):
+            return scheme
+    return None
+
+
+# the application's own style and palette before eco first skinned it --
+# what "Native" goes back to when switched to at runtime
+_native = {}
+
+
+def _remember_native(app):
+    if "style" not in _native:
+        _native["style"] = app.style().objectName()
+        _native["palette"] = QtGui.QPalette(app.palette())
+
+
+def native_palette_is_dark():
+    """Whether the unskinned palette (the platform theme's, e.g. KDE's) is
+    dark -- the last resort for "Follow System" when nothing else says."""
+    app = QtWidgets.QApplication.instance()
+    palette = _native.get("palette")
+    if palette is None:
+        if app is None:
+            return False
+        palette = app.palette()
+    return palette.color(QtGui.QPalette.Window).lightness() < 128
+
+
+def resolve_mode(mode, system_scheme=None):
+    """A desktop Appearance mode ("auto" | "light" | "dark" | "none") ->
+    the theme to apply ("dark" | "light" | None for native). "auto" takes
+    `system_scheme` (from detect_system_scheme), and if that's None the
+    lightness of the native palette. Pure apart from that palette read."""
+    if mode in ("dark", "light"):
+        return mode
+    if mode == AUTO:
+        if system_scheme in ("dark", "light"):
+            return system_scheme
+        return "dark" if native_palette_is_dark() else "light"
+    return None
+
+
 def resolve_theme(theme=None):
-    """theme: "dark" | "light" | None -> effective theme name. None means
+    """theme: "dark" | "light" | "auto" | None -> effective theme name. None means
     "defer to ECO_QT_THEME in the environment" (so a viewer subprocess
     picks up the panel's choice automatically without needing an explicit
     --theme of its own), falling back to no theme (native OS style) if
-    that's unset too. Pure function, unit tested independently of Qt."""
+    that's unset too; "none" is native explicitly. "auto" follows the desktop's light/dark preference
+    (detect_system_scheme). Unit tested independently of Qt."""
+    if theme == AUTO:
+        return resolve_mode(AUTO, detect_system_scheme())
+    if theme == NATIVE:
+        return None
     if theme not in ("dark", "light"):
         theme = os.environ.get(ENV_VAR)
     return theme if theme in ("dark", "light") else None
@@ -200,8 +356,13 @@ def apply_modern_theme(theme=None, touch=None):
     app = QtWidgets.QApplication.instance()
     if app is None:
         return resolved
+    _remember_native(app)
     if resolved is None:
         app.setStyleSheet(_TOUCH_QSS if resolved_touch else "")
+        # back from a skin switched on earlier in this process
+        if _native.get("style") and app.style().objectName() != _native["style"]:
+            app.setStyle(_native["style"])
+        app.setPalette(_native["palette"])
         return resolved
     if _apply_qt_material(app, resolved):
         if resolved_touch:
@@ -210,3 +371,48 @@ def apply_modern_theme(theme=None, touch=None):
     app.setStyle("Fusion")
     app.setStyleSheet(_QSS[resolved] + (_TOUCH_QSS if resolved_touch else ""))
     return resolved
+
+
+class SystemSchemeWatcher(QtCore.QObject):
+    """Polls detect_system_scheme on a worker thread every `interval` s
+    and emits `changed("dark"|"light"|"")` (on the GUI thread) when the
+    answer differs from the last one -- "" for "nothing says". Polling,
+    not D-Bus signals: it covers gsettings and $GTK_THEME too, and costs a
+    few ms of subprocess every few seconds, off the GUI thread."""
+
+    changed = QtCore.Signal(str)
+
+    def __init__(self, interval=5.0, parent=None, initial=None):
+        super().__init__(parent)
+        self.scheme = initial
+        self._result = None
+        self._busy = False
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(int(interval * 1000))
+        self._timer.timeout.connect(self._tick)
+
+    def start(self):
+        self._timer.start()
+        self._tick()
+
+    def stop(self):
+        self._timer.stop()
+
+    def _probe(self):
+        try:
+            self._result = detect_system_scheme() or ""
+        finally:
+            self._busy = False
+
+    def _tick(self):
+        # a Qt slot: nothing may escape
+        try:
+            result, self._result = self._result, None
+            if result is not None and result != (self.scheme or ""):
+                self.scheme = result or None
+                self.changed.emit(result)
+            if not self._busy:
+                self._busy = True
+                threading.Thread(target=self._probe, name="eco-scheme-probe", daemon=True).start()
+        except RuntimeError:  # deleted while a probe ran
+            pass
