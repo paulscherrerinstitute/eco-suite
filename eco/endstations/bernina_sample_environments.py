@@ -1285,6 +1285,15 @@ class Terahertz_In_Air(Assembly):
                 "speed": 250,
                 "home_direction": "back",
             },
+            "power_check_opa": {
+                # "id": "-USR:MOT_4",
+                "id": "SARES20-MCS2:MOT_3",
+                "pv_descr": "power_check_opa",
+                "sensor": 1,
+                "direction": 0,
+                "speed": 250,
+                "home_direction": "back",
+            },
             # "crystal": {
             #    "id": "-USR:MOT_2",
             #    "pv_descr": "Motor3:2 crystal rotation",
@@ -1305,7 +1314,7 @@ class Terahertz_In_Air(Assembly):
         }
 
         self.motor_configuration_thorlabs = {
-            "waveplate_800nm": {
+            "block_800nm": {
                 "pvname": "SLAAR21-LMOT-ELL1",
             },
             "waveplate_ir": {
