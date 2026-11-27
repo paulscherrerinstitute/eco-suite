@@ -28,9 +28,14 @@ of item was right-clicked.
 
 vmin/vmax for the range-based gadgets (BarGauge/AnalogGauge/Dial/Slider)
 are guessed from a handful of common limit-attribute names (see
-_guess_range) when created via the menu, falling back to 0..100 -- a
-reasonable default, not a promise; pass explicit vmin/vmax when creating
-one directly in code for anything that matters.
+_guess_range) when created via the menu -- skipping "unset" limits such
+as a motor's +-1e10 -- then the current value +-10 %, then 0..100: a
+reasonable default, not a promise. Right-click such a gadget to change
+it live: "Set range..." (Min/Max, scientific notation accepted), "Range
+around current value" (+-10 %) or "Reset to item limits". The new range
+is kept in export_kwargs, so it survives Save Workspace, autosave and
+Save Startup Script. Pass explicit vmin/vmax when creating one directly
+in code. (Enum-mode Dials have no range and no such menu.)
 
 WHY `parent` COMES FIRST AND `item` IS OPTIONAL: every gadget class here
 is directly usable as a Qt Designer "promoted widget" (Designer's real
@@ -68,25 +73,116 @@ def _format_value(value):
         return str(value)
 
 
-def _guess_range(item):
-    """Best-effort (vmin, vmax) from a handful of common limit-attribute
-    names; (0.0, 100.0) if none are found or usable. A heuristic, not a
-    guarantee -- pass explicit vmin/vmax to any gadget's constructor to
-    override."""
+#: limits at or beyond this magnitude mean "not set" (a motor record's
+#: soft limits are often +-1e10), not a range anyone wants a gauge over
+UNSET_LIMIT = 1e9
+
+_UNREAD = object()
+
+
+def _usable_range(lo, hi):
+    """(float lo, float hi) if they make a sensible display range, else None."""
+    try:
+        lo, hi = float(lo), float(hi)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
+        return None
+    if abs(lo) >= UNSET_LIMIT or abs(hi) >= UNSET_LIMIT:
+        return None
+    return lo, hi
+
+
+def range_around(value, fraction=0.1):
+    """value +- fraction*|value| as (lo, hi); None if value isn't a
+    nonzero number (a zero-width range is no range)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    half = abs(v) * fraction
+    if not math.isfinite(v) or half <= 0:
+        return None
+    return v - half, v + half
+
+
+def _guess_range(item, current=_UNREAD):
+    """Best-effort (vmin, vmax): the first usable pair of a handful of
+    common limit-attribute names (skipping inverted, equal or "unset"
+    ones, see UNSET_LIMIT), else the current value +-10 % (`current`, or
+    read from the item), else (0.0, 100.0). A heuristic, not a guarantee
+    -- pass explicit vmin/vmax to any gadget's constructor, or use its
+    right-click "Set range...", to override."""
     for lo_attr, hi_attr in (("low_limit", "high_limit"), ("llm", "hlm"), ("lolim", "hilim")):
         try:
-            lo, hi = getattr(item, lo_attr, None), getattr(item, hi_attr, None)
-            if lo is not None and hi is not None and float(hi) > float(lo):
-                return float(lo), float(hi)
+            usable = _usable_range(getattr(item, lo_attr, None), getattr(item, hi_attr, None))
         except Exception:
-            pass
+            usable = None
+        if usable:
+            return usable
     try:
         limits = getattr(item, "limits", None)
-        if limits and len(limits) == 2 and float(limits[1]) > float(limits[0]):
-            return float(limits[0]), float(limits[1])
+        if limits and len(limits) == 2:
+            usable = _usable_range(limits[0], limits[1])
+            if usable:
+                return usable
     except Exception:
         pass
+    if current is _UNREAD:
+        try:
+            current = item.get_current_value()
+        except Exception:
+            current = None
+    around = range_around(current)
+    if around:
+        return around
     return 0.0, 100.0
+
+
+class RangeDialog(QtWidgets.QDialog):
+    """Min / Max for a gadget's display range. Plain line edits with a
+    scientific-notation validator (a QDoubleSpinBox's fixed decimals can't
+    hold 1e-6 or 3.2e4 alike); OK only while both parse and Max > Min."""
+
+    def __init__(self, vmin, vmax, parent=None, title="Set range"):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        form = QtWidgets.QFormLayout(self)
+        validator = QtGui.QDoubleValidator(self)
+        validator.setNotation(QtGui.QDoubleValidator.ScientificNotation)
+        # "." always, whatever the desktop's locale says
+        validator.setLocale(QtCore.QLocale.c())
+        self.min_edit = QtWidgets.QLineEdit(f"{vmin:.6g}")
+        self.max_edit = QtWidgets.QLineEdit(f"{vmax:.6g}")
+        for edit in (self.min_edit, self.max_edit):
+            edit.setValidator(validator)
+            edit.textChanged.connect(self._check)
+        form.addRow("Min", self.min_edit)
+        form.addRow("Max", self.max_edit)
+        self.message = QtWidgets.QLabel("")
+        form.addRow(self.message)
+        self.buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        form.addRow(self.buttons)
+        self._check()
+
+    def values(self):
+        """(vmin, vmax) as floats, or None while the input isn't a valid range."""
+        try:
+            lo, hi = float(self.min_edit.text()), float(self.max_edit.text())
+        except ValueError:
+            return None
+        if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
+            return None
+        return lo, hi
+
+    def _check(self, *_):
+        ok = self.values() is not None
+        self.buttons.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(ok)
+        self.message.setText("" if ok else "Max must be a number greater than Min")
 
 
 def item_path(item, fallback=None):
@@ -158,11 +254,19 @@ class _IndicatorBase(QtWidgets.QWidget):
     #: (a wide strip chart, a roughly-square dial) override this.
     MAX_SIZE = (200, 130)
 
+    #: gadgets drawn against a [vmin, vmax] range: these get the
+    #: right-click "Set range..." menu and set_range()
+    SUPPORTS_RANGE = False
+
     def __init__(self, parent=None, item=None, title=None, poll_interval=0.5):
         super().__init__(parent)
         self.item = None
         self.poll_interval = poll_interval
         self.export_kwargs = {}  # extra constructor kwargs, for script export
+        self._last_value = None  # the latest polled reading, for re-rendering
+        if self.SUPPORTS_RANGE:
+            self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            self.customContextMenuRequested.connect(self._show_range_menu)
         self._stop_event = threading.Event()
         self._thread = None
         self._bridge = _IndicatorPollBridge()
@@ -236,10 +340,95 @@ class _IndicatorBase(QtWidgets.QWidget):
             stop_event.wait(self.poll_interval)
 
     def _on_value(self, value):
+        self._last_value = value
         try:
             self._render(value)
         except Exception:
             logger.exception("rendering %r failed", self.windowTitle())
+
+    # -- display range (SUPPORTS_RANGE gadgets) ------------------------------
+
+    def has_range(self):
+        """Whether this gadget currently shows a numeric range -- False for
+        the range-less kinds and for an enum-mode Dial."""
+        return self.SUPPORTS_RANGE and not getattr(self, "enum_strs", None)
+
+    def set_range(self, vmin, vmax):
+        """Show [vmin, vmax] from now on, live: no rebuild, no write to the
+        item. Also recorded in export_kwargs, so saved workspaces and
+        startup scripts keep it. Raises ValueError for Max <= Min."""
+        if not self.SUPPORTS_RANGE:
+            raise TypeError(f"{type(self).__name__} has no range")
+        vmin, vmax = float(vmin), float(vmax)
+        if not (math.isfinite(vmin) and math.isfinite(vmax)) or vmax <= vmin:
+            raise ValueError(f"invalid range {vmin!r}..{vmax!r}: max must be greater than min")
+        self.vmin, self.vmax = vmin, vmax
+        self.export_kwargs["vmin"] = vmin
+        self.export_kwargs["vmax"] = vmax
+        self._apply_range()
+        if self._last_value is not None:
+            try:
+                self._render(self._last_value)
+            except Exception:
+                logger.exception("rendering %r failed", self.windowTitle())
+        self.update()
+
+    def _apply_range(self):
+        """Subclass hook: adapt to a new self.vmin/self.vmax (before the
+        last value is re-rendered)."""
+
+    def range_around_current(self, fraction=0.1):
+        """Range the gadget to the last polled value +-10 %; False if there
+        is no usable (nonzero numeric) value yet."""
+        around = range_around(self._last_value, fraction)
+        if around is None:
+            return False
+        self.set_range(*around)
+        return True
+
+    def reset_range(self):
+        """Back to what the item's limits suggest (_guess_range), using the
+        last polled value instead of reading the item again."""
+        current = self._last_value if self._last_value is not None else None
+        self.set_range(*_guess_range(self.item, current=current))
+
+    def _ask_range(self):
+        dialog = RangeDialog(self.vmin, self.vmax, parent=self, title=f"Range of {self.windowTitle()}")
+        if dialog.exec_() == QtWidgets.QDialog.Accepted and dialog.values():
+            self.set_range(*dialog.values())
+
+    def range_menu(self):
+        """The right-click menu (built fresh each time); None when this
+        gadget has no range to set."""
+        if not self.has_range():
+            return None
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Set range...").triggered.connect(lambda: self._guarded(self._ask_range))
+        around = menu.addAction("Range around current value")
+        around.setToolTip("current value +-10 %")
+        around.setEnabled(range_around(self._last_value) is not None)
+        around.triggered.connect(lambda: self._guarded(self.range_around_current))
+        reset = menu.addAction("Reset to item limits")
+        reset.setEnabled(self.item is not None)
+        reset.triggered.connect(lambda: self._guarded(self.reset_range))
+        return menu
+
+    def _show_range_menu(self, pos):
+        # a Qt slot: nothing may escape (an exception here aborts PyQt)
+        try:
+            menu = self.range_menu()
+            if menu is not None:
+                menu.exec_(self.mapToGlobal(pos))
+        except Exception:
+            logger.exception("range menu of %r failed", self.windowTitle())
+
+    def _guarded(self, func):
+        try:
+            func()
+        except RuntimeError:  # gadget deleted meanwhile
+            pass
+        except Exception:
+            logger.exception("changing the range of %r failed", self.windowTitle())
 
     def _on_error(self, message):
         self.setToolTip(f"error reading value: {message}")
@@ -314,6 +503,8 @@ class BarGauge(_IndicatorBase):
     [vmin, vmax] range -- read-only (use Slider for a settable bar-like
     control)."""
 
+    SUPPORTS_RANGE = True
+
     def __init__(
         self, parent=None, item=None, title=None, vmin=0.0, vmax=100.0,
         orientation="vertical", poll_interval=0.5,
@@ -358,6 +549,7 @@ class AnalogGauge(_IndicatorBase):
     interactive rotary control)."""
 
     MAX_SIZE = (190, 130)
+    SUPPORTS_RANGE = True
 
     def __init__(self, parent=None, item=None, title=None, vmin=0.0, vmax=100.0, poll_interval=0.5):
         self.vmin = vmin
@@ -377,6 +569,9 @@ class AnalogGauge(_IndicatorBase):
             self._value = float(value)
         except (TypeError, ValueError):
             self._value = None
+        self._canvas.update()
+
+    def _apply_range(self):
         self._canvas.update()
 
     def _paint(self, event):
@@ -685,11 +880,14 @@ class Dial(_IndicatorBase):
     indicator" menu entry works either way, for either flavour."""
 
     MAX_SIZE = (210, 220)
+    SUPPORTS_RANGE = True
 
     def __init__(self, parent=None, item=None, title=None, vmin=0.0, vmax=100.0, step=None, poll_interval=0.5):
         self.vmin = vmin
         self.vmax = vmax
-        self.step = step or max((vmax - vmin) / 200.0, 1e-9)
+        # a step derived from the range is re-derived when the range changes
+        self._auto_step = not step
+        self.step = step or self._step_for_range()
         self.settable = False
         self.enum_strs = None  # set in _on_item_attached when the item is enum-like
         super().__init__(parent, item=item, title=title, poll_interval=poll_interval)
@@ -706,8 +904,7 @@ class Dial(_IndicatorBase):
         numeric_lay.setContentsMargins(0, 0, 0, 0)
         self._dial = QtWidgets.QDial()
         self._dial.setNotchesVisible(True)
-        n_steps = max(1, int(round((self.vmax - self.vmin) / self.step)))
-        self._dial.setRange(0, n_steps)
+        self._dial.setRange(0, self._n_steps())
         self._dial.setEnabled(False)
         numeric_lay.addWidget(self._dial)
         self._stack.addWidget(self._numeric_page)
@@ -741,6 +938,23 @@ class Dial(_IndicatorBase):
             self._dial.setEnabled(self.settable)
             if self.settable:
                 self._dial.sliderReleased.connect(self._on_release)
+
+    def _step_for_range(self):
+        return max((self.vmax - self.vmin) / 200.0, 1e-9)
+
+    def _n_steps(self):
+        return max(1, int(round((self.vmax - self.vmin) / self.step)))
+
+    def _apply_range(self):
+        if self._auto_step:
+            self.step = self._step_for_range()
+        # the user may be holding the knob: leave the position alone then,
+        # and never let the re-range itself look like a move (no write)
+        self._dial.blockSignals(True)
+        try:
+            self._dial.setRange(0, self._n_steps())
+        finally:
+            self._dial.blockSignals(False)
 
     def _pos_to_value(self, pos):
         return self.vmin + pos * self.step
@@ -782,11 +996,13 @@ class Slider(_IndicatorBase):
     settable; otherwise read-only/disabled."""
 
     MAX_SIZE = (280, 80)
+    SUPPORTS_RANGE = True
 
     def __init__(self, parent=None, item=None, title=None, vmin=0.0, vmax=100.0, step=None, poll_interval=0.5):
         self.vmin = vmin
         self.vmax = vmax
-        self.step = step or max((vmax - vmin) / 200.0, 1e-9)
+        self._auto_step = not step
+        self.step = step or self._step_for_range()
         self.settable = False
         super().__init__(parent, item=item, title=title, poll_interval=poll_interval)
 
@@ -794,8 +1010,7 @@ class Slider(_IndicatorBase):
         wrap = QtWidgets.QWidget()
         lay = QtWidgets.QHBoxLayout(wrap)
         self._slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        n_steps = max(1, int(round((self.vmax - self.vmin) / self.step)))
-        self._slider.setRange(0, n_steps)
+        self._slider.setRange(0, self._n_steps())
         self._slider.setEnabled(False)
         self._value_label = QtWidgets.QLabel("--")
         self._value_label.setFixedWidth(56)
@@ -812,6 +1027,23 @@ class Slider(_IndicatorBase):
             pass
         if self.settable:
             self._slider.sliderReleased.connect(self._on_release)
+
+    def _step_for_range(self):
+        return max((self.vmax - self.vmin) / 200.0, 1e-9)
+
+    def _n_steps(self):
+        return max(1, int(round((self.vmax - self.vmin) / self.step)))
+
+    def _apply_range(self):
+        if self._auto_step:
+            self.step = self._step_for_range()
+        # the user may be holding the knob: leave the position alone then,
+        # and never let the re-range itself look like a move (no write)
+        self._slider.blockSignals(True)
+        try:
+            self._slider.setRange(0, self._n_steps())
+        finally:
+            self._slider.blockSignals(False)
 
     def _pos_to_value(self, pos):
         return self.vmin + pos * self.step

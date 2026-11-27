@@ -21,6 +21,8 @@ from eco.widgets.indicator_widgets import (
     _format_value,
     _guess_range,
     _sanitize_object_name,
+    RangeDialog,
+    range_around,
     attach_indicator_menu,
     create_indicator,
     item_path,
@@ -652,3 +654,178 @@ def test_create_and_add_sets_object_and_accessible_name():
         assert widget.indicator_kind == "LED"
     finally:
         widget.stop()
+
+
+
+# -- display range: right-click "Set range..." ------------------------------
+
+
+def test_guess_range_skips_unset_motor_limits():
+    # a motor record's +-1e10 soft limits: the gauge would sit at the
+    # middle forever -- fall through to the current value +-10 %
+    item = _FakeAdjustable("hgap", value=2.0, low_limit=-1e10, high_limit=1e10)
+    assert _guess_range(item) == pytest.approx((1.8, 2.2))
+
+
+def test_guess_range_skips_unset_pair_and_takes_the_next_candidate():
+    item = _FakeAdjustable("m", value=5.0, low_limit=-1e10, high_limit=1e10)
+    item.llm, item.hlm = -3.0, 7.0
+    assert _guess_range(item) == (-3.0, 7.0)
+
+
+def test_guess_range_equal_limits_and_zero_value_fall_back_to_default():
+    item = _FakeAdjustable("m", value=0.0, low_limit=1.0, high_limit=1.0)
+    assert _guess_range(item) == (0.0, 100.0)
+
+
+def test_guess_range_uses_given_current_value_without_reading():
+    class Unreadable(_FakeDetector):
+        def get_current_value(self):
+            raise AssertionError("must not read")
+
+    assert _guess_range(Unreadable("d"), current=-10.0) == pytest.approx((-11.0, -9.0))
+
+
+def test_range_around():
+    assert range_around(10.0) == pytest.approx((9.0, 11.0))
+    assert range_around(0.0) is None
+    assert range_around("abc") is None
+
+
+def test_range_dialog_accepts_scientific_notation_and_rejects_max_below_min():
+    app = _app()  # keep a reference, or it is collected at once
+    dialog = RangeDialog(0.0, 1.0)
+    ok = dialog.buttons.button(QtWidgets.QDialogButtonBox.Ok)
+    assert dialog.min_edit.text() == "0" and dialog.max_edit.text() == "1"
+    dialog.min_edit.setText("1e-6")
+    dialog.max_edit.setText("3.2e4")
+    assert dialog.values() == (1e-6, 3.2e4) and ok.isEnabled()
+    dialog.max_edit.setText("-5")
+    assert dialog.values() is None and not ok.isEnabled()
+    dialog.max_edit.setText("1e-6")  # equal is not a range either
+    assert dialog.values() is None and not ok.isEnabled()
+
+
+def test_bar_gauge_set_range_rerenders_and_updates_export_kwargs():
+    app = _app()
+    item = _FakeDetector("d1", value=25.0)
+    w = BarGauge(item=item, title="D1", vmin=0.0, vmax=50.0, poll_interval=0.02)
+    w.export_kwargs = {"vmin": 0.0, "vmax": 50.0}
+    try:
+        assert _pump(app, lambda: w._bar.value() == 500)
+        w.stop()  # no new polls: the change below must come from set_range itself
+        app.processEvents()
+        w.set_range(20.0, 30.0)
+        assert (w.vmin, w.vmax) == (20.0, 30.0)
+        assert w.export_kwargs == {"vmin": 20.0, "vmax": 30.0}
+        assert w._bar.value() == 500  # 25 in 20..30
+        w.set_range(0.0, 100.0)
+        assert w._bar.value() == 250
+        with pytest.raises(ValueError):
+            w.set_range(5.0, 5.0)
+        assert (w.vmin, w.vmax) == (0.0, 100.0)
+    finally:
+        w.stop()
+
+
+def test_analog_gauge_range_around_current_and_reset():
+    app = _app()
+    item = _FakeAdjustable("m1", value=50.0, low_limit=0, high_limit=200)
+    w = AnalogGauge(item=item, title="M1", vmin=0.0, vmax=200.0, poll_interval=0.02)
+    try:
+        assert _pump(app, lambda: w._value == 50.0)
+        assert w.range_around_current() is True
+        assert (w.vmin, w.vmax) == pytest.approx((45.0, 55.0))
+        assert w.export_kwargs["vmin"] == pytest.approx(45.0)
+        w.reset_range()
+        assert (w.vmin, w.vmax) == (0.0, 200.0)
+    finally:
+        w.stop()
+
+
+def _menu_texts(w):
+    menu = w.range_menu()
+    return None if menu is None else [a.text() for a in menu.actions()]
+
+
+def test_range_menu_only_on_range_gadgets():
+    app = _app()  # keep a reference, or it is collected at once
+    item = _FakeDetector("d1", value=1.0)
+    with_menu = [
+        BarGauge(item=item, title="b", poll_interval=10),
+        AnalogGauge(item=item, title="a", poll_interval=10),
+        Dial(item=item, title="d", poll_interval=10),
+        Slider(item=item, title="s", poll_interval=10),
+    ]
+    without = [
+        LEDIndicator(item=item, title="l", poll_interval=10),
+        StripChart(item=item, title="c", poll_interval=10),
+        NumericTile(item=item, title="n", poll_interval=10),
+    ]
+    enum_dial = Dial(item=_FakeEnumAdjustable("mode", ["A", "B"]), title="e", poll_interval=10)
+    try:
+        for w in with_menu:
+            assert w.contextMenuPolicy() == QtCore.Qt.CustomContextMenu
+            assert _menu_texts(w) == [
+                "Set range...",
+                "Range around current value",
+                "Reset to item limits",
+            ]
+        for w in without:
+            assert _menu_texts(w) is None
+            assert w.contextMenuPolicy() != QtCore.Qt.CustomContextMenu
+        assert _menu_texts(enum_dial) is None
+    finally:
+        for w in with_menu + without + [enum_dial]:
+            w.stop()
+
+
+@pytest.mark.parametrize("cls, attr", [(Dial, "_dial"), (Slider, "_slider")])
+def test_dial_and_slider_rerange_without_writing(cls, attr):
+    app = _app()
+    item = _FakeAdjustable("m1", value=5.0)
+    w = cls(item=item, title="M1", vmin=0.0, vmax=10.0, poll_interval=0.02)
+    control = getattr(w, attr)
+    try:
+        assert w.settable
+        assert _pump(app, lambda: control.value() == 100)  # 5 of 0..10 in 200 steps
+        w.stop()
+        app.processEvents()
+        w.set_range(4.0, 6.0)
+        assert w.step == pytest.approx(0.01)  # re-derived: (6-4)/200
+        assert control.maximum() == 200
+        assert control.value() == 100  # 5 in 4..6
+        assert w.export_kwargs == {"vmin": 4.0, "vmax": 6.0}
+        w.range_around_current()
+        w.reset_range()
+        app.processEvents()
+        assert item.set_calls == []
+    finally:
+        w.stop()
+
+
+def test_explicit_step_is_kept_on_rerange():
+    app = _app()  # keep a reference, or it is collected at once
+    item = _FakeAdjustable("m1", value=5.0)
+    w = Slider(item=item, title="M1", vmin=0.0, vmax=10.0, step=0.5, poll_interval=10)
+    try:
+        w.set_range(0.0, 20.0)
+        assert w.step == 0.5 and w._slider.maximum() == 40
+    finally:
+        w.stop()
+
+
+def test_create_indicator_range_survives_in_export_kwargs():
+    app = _app()  # keep a reference, or it is collected at once
+    item = _FakeAdjustable("hgap", value=2.0, low_limit=-1e10, high_limit=1e10)
+    w = create_indicator("Bar gauge", item, title="hgap")
+    try:
+        assert w.export_kwargs == pytest.approx({"vmin": 1.8, "vmax": 2.2})
+        w.set_range(0.0, 10.0)
+        rebuilt = create_indicator("Bar gauge", item, title="hgap", **w.export_kwargs)
+        try:
+            assert (rebuilt.vmin, rebuilt.vmax) == (0.0, 10.0)
+        finally:
+            rebuilt.stop()
+    finally:
+        w.stop()

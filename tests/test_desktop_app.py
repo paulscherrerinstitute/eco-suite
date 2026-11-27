@@ -1540,6 +1540,41 @@ def test_save_startup_script_omits_scope_flag_when_no_scope(tmp_path):
         gui.stop()
 
 
+def test_gadget_range_changed_after_add_is_saved_and_in_the_startup_script(tmp_path):
+    """add_gadget copies the gadget's options once; a range changed later
+    from the gadget's right-click menu must still be what gets saved."""
+    from eco.widgets.indicator_widgets import create_indicator
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    class _Alias:
+        def get_full_name(self):
+            return "bernina.slit_und.hgap"
+
+    class _Gap:
+        name = "hgap"
+        alias = _Alias()
+        low_limit, high_limit = -1e10, 1e10
+
+        def get_current_value(self):
+            return 2.0
+
+    gui = EcoDesktopApp(namespace=None, scope=None, with_console=False, auto_start=False)
+    gui._build_window()
+    try:
+        gadget = create_indicator("Bar gauge", _Gap(), title="hgap")
+        gui.add_gadget(gadget)
+        gadget.set_range(0.5, 4.5)
+        (entry,) = gui._workspace_data()["gadgets"]
+        assert entry["item_path"] == "bernina.slit_und.hgap"
+        assert entry["kwargs"] == {"vmin": 0.5, "vmax": 4.5}
+        sh_path = gui.save_startup_script(tmp_path / "gap.sh")
+        script = sh_path.read_text()
+        assert '"vmin": 0.5' in script and '"vmax": 4.5' in script
+    finally:
+        gui.stop()
+
+
 def test_save_startup_script_respects_no_lazy(tmp_path):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     gui = EcoDesktopApp(namespace=None, scope="bernina", lazy=False, auto_start=False)

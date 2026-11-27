@@ -2051,6 +2051,21 @@ class EcoDesktopApp:
         record["dock"] = dock
         return dock
 
+    @staticmethod
+    def _gadget_entry(record):
+        """A gadget's saved entry with its options as they are *now* -- a
+        range changed from the gadget's right-click menu lives in the
+        widget's export_kwargs, not in the copy taken by add_gadget."""
+        entry = dict(record["entry"])
+        widget = record.get("widget")
+        try:
+            kwargs = getattr(widget, "export_kwargs", None)
+        except RuntimeError:  # widget already deleted
+            kwargs = None
+        if kwargs is not None:
+            entry["kwargs"] = dict(kwargs)
+        return entry
+
     def _split_item_path(self, path):
         """(top-level namespace name, [attribute, ...]) for an alias path
         like "prepump.line1.pressure" (a leading scope segment, e.g.
@@ -2145,7 +2160,7 @@ class EcoDesktopApp:
         for record in self._gadgets:
             if not record["entry"]["item_path"]:
                 continue
-            entry = dict(record["entry"])
+            entry = self._gadget_entry(record)
             try:
                 entry["size"] = (record["widget"].width(), record["widget"].height())
             except RuntimeError:
@@ -2219,7 +2234,7 @@ class EcoDesktopApp:
             "state": _qbytearray_to_str(self.window.saveState()),
             "opened_names": list(self._opened_names),
             "views": [dict(r["entry"]) for r in self._views],
-            "gadgets": [dict(r["entry"]) for r in self._gadgets if r["entry"]["item_path"]],
+            "gadgets": [self._gadget_entry(r) for r in self._gadgets if r["entry"]["item_path"]],
             "ui_panels": [r["entry"]["path"] for r in self._ui_panels],
         }
 
