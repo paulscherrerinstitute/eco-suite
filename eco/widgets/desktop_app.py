@@ -1104,7 +1104,8 @@ class EcoDesktopApp:
         from eco.widgets import qt_theme
 
         saved = _load_desktop_settings()
-        theme = "none" if self.theme == "native" else self.theme
+        # "none"/"native" (the old CLI's no-skin choice) is plain Light now
+        theme = "light" if self.theme in ("none", "native") else self.theme
         if theme not in qt_theme.MODES:
             theme = saved.get("theme")
         self._theme_mode = theme if theme in qt_theme.MODES else qt_theme.AUTO
@@ -1177,10 +1178,12 @@ class EcoDesktopApp:
         console = self._console
         if console is None:
             return
+        from eco.widgets import qt_theme
+
         try:
             from qtconsole import styles
 
-            if resolved == "dark":
+            if qt_theme.is_dark(resolved):
                 console.style_sheet = styles.default_dark_style_sheet
                 console.syntax_style = styles.default_dark_syntax_style
             else:
@@ -2374,7 +2377,7 @@ class EcoDesktopApp:
         )
         theme_flag = (
             " --theme {}".format(self._theme_mode)
-            if self._theme_mode in ("dark", "light", "none")  # "auto" is the default
+            if self._theme_mode not in (None, "auto")  # "auto" is the default
             else ""
         )
         script = (
@@ -2609,11 +2612,12 @@ def _main(argv=None):
     )
     parser.add_argument(
         "--theme",
-        choices=["auto", "dark", "light", "none"],
+        choices=["auto", "light", "dark", "material-light", "material-dark", "none"],
         default=None,
-        help="'auto' follows the desktop's light/dark setting, 'none' is the "
-             "native OS style (default: the choice saved from Help -> "
-             "Appearance, else auto) -- see eco.widgets.qt_theme",
+        help="'auto' follows the desktop's light/dark setting; light/dark are "
+             "the native style, material-* the Material skin; 'none' = light "
+             "(default: the choice saved from Help -> Appearance, else auto) "
+             "-- see eco.widgets.qt_theme",
     )
     parser.add_argument(
         "--touch",

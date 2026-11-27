@@ -1620,7 +1620,7 @@ def test_main_theme_passes_choice_through(monkeypatch):
     monkeypatch.setattr(desktop_app, "build_namespace", lambda **kw: None)
     desktop_app._main([])
     assert captured["theme"] is None
-    for choice in ("none", "auto", "dark", "light"):
+    for choice in ("none", "auto", "dark", "light", "material-light", "material-dark"):
         desktop_app._main(["--theme", choice])
         assert captured["theme"] == choice
 
@@ -1650,7 +1650,7 @@ def test_help_menu_has_docs_tips_appearance_and_about():
             assert text in texts
         appearance = _action(help_menu, "Appearance").menu()
         labels = [a.text() for a in appearance.actions() if a.isCheckable()]
-        assert labels == ["Follow System", "Light", "Dark", "Native (No Skin)", "Touch Mode"]
+        assert labels == ["Follow System", "Light", "Dark", "Material Light", "Material Dark", "Touch Mode"]
         # nothing saved, no --theme: follow the system
         assert app._theme_mode == "auto"
         assert _action(appearance, "Follow System").isChecked()
@@ -1674,15 +1674,15 @@ def test_choosing_an_appearance_applies_and_saves_it():
         assert os.environ[qt_theme.ENV_VAR] == "dark"
         assert app._scheme_watcher is None  # only watched while following the system
         assert json.loads(desktop_app.DESKTOP_SETTINGS_PATH.read_text())["theme"] == "dark"
-        _action(appearance, "Native (No Skin)").trigger()
-        assert os.environ[qt_theme.ENV_VAR] == ""
+        _action(appearance, "Material Light").trigger()
+        assert os.environ[qt_theme.ENV_VAR] == "material-light"
     finally:
         app.stop()
     # the next window starts with the saved choice, an explicit theme still wins
     again = EcoDesktopApp(namespace=None, with_console=False, auto_start=False)
     again._build_window()
     try:
-        assert again._theme_mode == "none"
+        assert again._theme_mode == "material-light"
     finally:
         again.stop()
     explicit = EcoDesktopApp(namespace=None, theme="light", with_console=False, auto_start=False)

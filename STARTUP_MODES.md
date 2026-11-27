@@ -78,10 +78,13 @@ go-ahead rather than happening as a side effect of this work.
   portal / GNOME settings say, switching live when they change; falls
   back to the native palette's lightness when nothing says — over
   `ssh -X` that is the console's settings, not the laptop's), *Light*,
-  *Dark*, *Native* and *Touch Mode*. The choice is saved per account in
-  `~/.eco/desktop_settings.json`; `--theme auto|dark|light|none` (or
-  `theme=`) overrides it for one window.
-- A modern theme is available: pass `theme="dark"`/`"light"` — uses the
+  *Dark*, *Material Light*, *Material Dark* and *Touch Mode*. Light and
+  Dark are the native style (Dark: Qt's Fusion style with a dark
+  palette, no stylesheet); Material is opt-in. The choice is saved per
+  account in `~/.eco/desktop_settings.json`; `--theme
+  auto|light|dark|material-light|material-dark` (or `theme=`) overrides
+  it for one window.
+- The Material skin (`theme="material-dark"`/`"material-light"`) uses the
   real `qt-material` package (now installed) if present, else a
   hand-built approximation of its default teal-on-charcoal look; see
   `eco.widgets.qt_theme`. Same switch used by

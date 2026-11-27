@@ -3202,10 +3202,10 @@ def _main(argv=None):
     parser.add_argument("--rate", type=float, default=10.0, help="initial render rate limit (Hz)")
     parser.add_argument(
         "--theme",
-        choices=["dark", "light"],
+        choices=["light", "dark", "material-light", "material-dark", "auto"],
         default=None,
-        help="modern flat skin (default: none/native, or whatever ECO_QT_THEME is set to -- "
-        "see eco.widgets.qt_theme)",
+        help="light/dark (native style) or material-light/material-dark (default: "
+        "native, or whatever ECO_QT_THEME is set to -- see eco.widgets.qt_theme)",
     )
     parser.add_argument(
         "--eco-name",

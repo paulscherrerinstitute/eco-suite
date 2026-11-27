@@ -180,3 +180,57 @@ def test_detect_nothing_says(monkeypatch):
 
 def test_detect_real_system_does_not_raise():
     assert qt_theme.detect_system_scheme(timeout=2) in ("dark", "light", None)
+
+
+# -- native light/dark vs. the opt-in Material skin -------------------------
+
+
+def _qapp():
+    from qtpy import QtWidgets
+
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+def test_resolve_theme_knows_material_names():
+    assert resolve_theme("material-dark") == "material-dark"
+    os.environ[ENV_VAR] = "material-light"
+    assert resolve_theme(None) == "material-light"
+
+
+def test_dark_is_native_fusion_with_a_dark_palette_light_goes_back(monkeypatch):
+    from qtpy import QtGui
+
+    app = _qapp()
+    try:
+        qt_theme.apply_modern_theme("light")
+        native_style = app.style().objectName()
+        if qt_theme.native_palette_is_dark():
+            pytest.skip("platform palette is dark here")
+        qt_theme.apply_modern_theme("dark")
+        assert app.styleSheet() == ""  # no skin, just the palette
+        assert app.style().objectName().lower() == "fusion"
+        assert app.palette().color(QtGui.QPalette.Window).lightness() < 128
+        assert os.environ[ENV_VAR] == "dark"
+        qt_theme.apply_modern_theme("light")
+        assert app.style().objectName() == native_style
+        assert app.palette().color(QtGui.QPalette.Window).lightness() >= 128
+    finally:
+        qt_theme.apply_modern_theme("none")
+
+
+def test_material_sets_a_stylesheet_and_leaving_it_clears_it():
+    app = _qapp()
+    try:
+        qt_theme.apply_modern_theme("material-dark")
+        assert app.styleSheet() != ""
+        qt_theme.apply_modern_theme("dark")
+        assert app.styleSheet() == ""
+    finally:
+        qt_theme.apply_modern_theme("none")
+
+
+def test_auto_resolves_to_native_light_or_dark():
+    assert qt_theme.resolve_mode("auto", "dark") == "dark"
+    assert qt_theme.resolve_mode("material-dark") == "material-dark"
+    assert qt_theme.is_dark("dark") and qt_theme.is_dark("material-dark")
+    assert not qt_theme.is_dark("light") and not qt_theme.is_dark(None)

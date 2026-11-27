@@ -1,37 +1,39 @@
 """
-Optional modern theme for eco's Qt widgets, applied globally via a single
-switch. Off by default (native OS style), so nothing changes unless
-explicitly opted in.
+Light/dark appearance for eco's Qt widgets, applied globally via a single
+switch. Nothing changes unless a theme is asked for.
 
-"dark"/"light" use the real `qt-material` package (Material-Design-style
-Qt stylesheets -- teal-on-charcoal by default) when it's installed
-(``pip install qt-material`` in the env eco runs in); otherwise this falls
-back to a from-scratch QSS approximating the same look, so the theme
-switch still works with no new dependency, just closer to qt-material's
-exact look once that package is actually present.
+Themes (the names apply_modern_theme, --theme and ECO_QT_THEME use):
+
+- "light" -- the native style and palette (what Qt gives without eco); if
+  the platform palette is dark, Qt's Fusion style with its light palette.
+- "dark"  -- native-looking dark: Qt's Fusion style with a dark palette
+  (no stylesheet), or the native palette as is if that is dark already.
+- "material-light" / "material-dark" -- the `qt-material` package's
+  Material-Design stylesheets (teal accent), or a hand-built QSS
+  approximating them when that package isn't installed. Opt-in only.
+- "auto"  -- "light" or "dark" as the desktop prefers
+  (detect_system_scheme); "none" -- native, same as "light" without the
+  dark-platform fallback.
 
 Usage::
 
     from eco.widgets.qt_theme import apply_modern_theme
-    apply_modern_theme("dark")   # or "light", or None to clear
+    apply_modern_theme("dark")   # or "light", "material-dark", "auto", None
     apply_modern_theme(touch=True)   # bigger grab handles/buttons/scrollbars,
-                                      # layered on top of any theme (incl. "none")
+                                      # layered on top of any theme
 
-touch=True is a separate, additive switch, not a fourth theme choice: it
-only widens dock/splitter separators and grows touch-target sizes
-(buttons, checkboxes, scrollbars, form fields), it never changes colors --
-so it composes with "none" (native colors, just bigger hit targets) the
-same way it does with "dark"/"light". See eco.widgets.desktop_app's
---touch CLI flag / EcoDesktopApp(touch=...).
+touch=True is a separate, additive switch, not a theme: it only widens
+dock/splitter separators and grows touch-target sizes (buttons,
+checkboxes, scrollbars, form fields), it never changes colors. See
+eco.widgets.desktop_app's --touch CLI flag / EcoDesktopApp(touch=...).
 
-For eco.widgets.camserver_panel_qt / camserver_stream_qt: pass
-theme="dark"/"light" to make_camserver_panel_qt(...)/make_camserver_stream_qt(...).
-Since each viewer is a separate OS process (see camserver_panel_qt's
-module docstring), the panel's choice is propagated to every spawned
-viewer subprocess via the ECO_QT_THEME environment variable so the whole
-panel-plus-viewers picture stays visually consistent -- apply_modern_theme
-records its resolved choice there, and a subprocess that doesn't get an
-explicit --theme falls back to reading it. ECO_QT_TOUCH does the same for
+For eco.widgets.camserver_panel_qt / camserver_stream_qt: pass theme=...
+to make_camserver_panel_qt(...)/make_camserver_stream_qt(...). Since each
+viewer is a separate OS process (see camserver_panel_qt's module
+docstring), the choice is propagated to every spawned viewer subprocess
+via the ECO_QT_THEME environment variable -- apply_modern_theme records
+its resolved choice there, and a subprocess that doesn't get an explicit
+--theme falls back to reading it. ECO_QT_TOUCH does the same for
 touch=True.
 """
 import os
@@ -44,7 +46,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 ENV_VAR = "ECO_QT_THEME"
 TOUCH_ENV_VAR = "ECO_QT_TOUCH"
 
-# qt-material's default dark/light themes are teal-accented -- these
+# Fallback for "material-*" only. qt-material's default themes are teal-accented -- these
 # approximate that exact palette so the fallback (no qt-material
 # installed) still reads as "the same theme", not a different one.
 _DARK_QSS = """
@@ -118,7 +120,10 @@ QScrollBar::handle { background: #c7cbd1; border-radius: 4px; min-height: 20px; 
 QScrollBar::handle:hover { background: #00897b; }
 """
 
-_QSS = {"dark": _DARK_QSS, "light": _LIGHT_QSS}
+_QSS = {"material-dark": _DARK_QSS, "material-light": _LIGHT_QSS}
+
+#: every concrete theme apply_modern_theme can apply
+THEMES = ("light", "dark", "material-light", "material-dark")
 
 # Additive on top of whatever theme (including "none"/no stylesheet at
 # all) -- structural sizing only, no colors changed except the grab-handle
@@ -148,13 +153,60 @@ QAbstractItemView::item { padding: 6px; }
 AUTO = "auto"
 NATIVE = "none"
 # the choices offered in eco desktop's Help -> Appearance menu, in order
-MODES = (AUTO, "light", "dark", NATIVE)
+MODES = (AUTO, "light", "dark", "material-light", "material-dark")
 MODE_LABELS = {
     AUTO: "Follow System",
     "light": "Light",
     "dark": "Dark",
-    NATIVE: "Native (No Skin)",
+    "material-light": "Material Light",
+    "material-dark": "Material Dark",
+    NATIVE: "Native",
 }
+
+
+def is_dark(theme):
+    """Whether a resolved theme has a dark background."""
+    return theme in ("dark", "material-dark")
+
+
+def dark_palette():
+    """A dark QPalette for the Fusion style: neutral greys, blue
+    selection, readable disabled text."""
+    P = QtGui.QPalette
+    C = QtGui.QColor
+    text = C(222, 222, 222)
+    window = C(46, 47, 50)
+    p = QtGui.QPalette()
+    for role, color in (
+        (P.Window, window),
+        (P.WindowText, text),
+        (P.Base, C(30, 31, 33)),
+        (P.AlternateBase, C(40, 41, 44)),
+        (P.ToolTipBase, C(60, 62, 66)),
+        (P.ToolTipText, text),
+        (P.Text, text),
+        (P.Button, C(53, 54, 58)),
+        (P.ButtonText, text),
+        (P.BrightText, C(255, 90, 90)),
+        (P.Link, C(100, 170, 255)),
+        (P.LinkVisited, C(170, 140, 255)),
+        (P.Highlight, C(45, 120, 205)),
+        (P.HighlightedText, C(255, 255, 255)),
+        (P.Light, C(75, 76, 80)),
+        (P.Midlight, C(62, 63, 67)),
+        (P.Mid, C(38, 39, 41)),
+        (P.Dark, C(25, 26, 28)),
+        (P.Shadow, C(10, 10, 10)),
+    ):
+        p.setColor(role, color)
+    if hasattr(P, "PlaceholderText"):
+        p.setColor(P.PlaceholderText, C(140, 140, 140))
+    disabled = C(128, 128, 128)
+    for role in (P.WindowText, P.Text, P.ButtonText):
+        p.setColor(P.Disabled, role, disabled)
+    p.setColor(P.Disabled, P.Highlight, C(80, 80, 80))
+    p.setColor(P.Disabled, P.HighlightedText, disabled)
+    return p
 
 
 def _run_quiet(cmd, timeout):
@@ -280,11 +332,11 @@ def native_palette_is_dark():
 
 
 def resolve_mode(mode, system_scheme=None):
-    """A desktop Appearance mode ("auto" | "light" | "dark" | "none") ->
-    the theme to apply ("dark" | "light" | None for native). "auto" takes
-    `system_scheme` (from detect_system_scheme), and if that's None the
-    lightness of the native palette. Pure apart from that palette read."""
-    if mode in ("dark", "light"):
+    """A desktop Appearance mode (MODES, or "none") -> the theme to apply
+    (one of THEMES, or None for native). "auto" takes `system_scheme`
+    (from detect_system_scheme), and if that's None the lightness of the
+    native palette. Pure apart from that palette read."""
+    if mode in THEMES:
         return mode
     if mode == AUTO:
         if system_scheme in ("dark", "light"):
@@ -294,7 +346,7 @@ def resolve_mode(mode, system_scheme=None):
 
 
 def resolve_theme(theme=None):
-    """theme: "dark" | "light" | "auto" | None -> effective theme name. None means
+    """theme: one of THEMES | "auto" | "none" | None -> effective theme name. None means
     "defer to ECO_QT_THEME in the environment" (so a viewer subprocess
     picks up the panel's choice automatically without needing an explicit
     --theme of its own), falling back to no theme (native OS style) if
@@ -304,9 +356,9 @@ def resolve_theme(theme=None):
         return resolve_mode(AUTO, detect_system_scheme())
     if theme == NATIVE:
         return None
-    if theme not in ("dark", "light"):
+    if theme not in THEMES:
         theme = os.environ.get(ENV_VAR)
-    return theme if theme in ("dark", "light") else None
+    return theme if theme in THEMES else None
 
 
 def resolve_touch(touch=None):
@@ -326,7 +378,9 @@ def _apply_qt_material(app, theme):
         import qt_material
     except ImportError:
         return False
-    qt_material.apply_stylesheet(app, theme="dark_teal.xml" if theme == "dark" else "light_teal.xml")
+    qt_material.apply_stylesheet(
+        app, theme="dark_teal.xml" if theme == "material-dark" else "light_teal.xml"
+    )
     return True
 
 
@@ -336,9 +390,10 @@ def apply_modern_theme(theme=None, touch=None):
     QApplication instance -- a no-op if there isn't one yet. Also records
     the resolved choices in os.environ[ECO_QT_THEME]/[ECO_QT_TOUCH] so any
     subprocess this process later spawns inherits the same look by
-    default. Uses the real qt-material package for theme if installed,
-    else a close hand-built approximation of its default teal theme (see
-    module docstring).
+    default. "light"/"dark" are native (Fusion with a dark palette where
+    the platform's is light); "material-*" use the qt-material package if
+    installed, else a close hand-built approximation (see module
+    docstring).
 
     touch=True (or ECO_QT_TOUCH=1 in the environment) layers _TOUCH_QSS
     (bigger dock/splitter grab handles, buttons, checkboxes, scrollbars --
@@ -357,13 +412,24 @@ def apply_modern_theme(theme=None, touch=None):
     if app is None:
         return resolved
     _remember_native(app)
-    if resolved is None:
-        app.setStyleSheet(_TOUCH_QSS if resolved_touch else "")
-        # back from a skin switched on earlier in this process
+    touch_qss = _TOUCH_QSS if resolved_touch else ""
+    native_dark = native_palette_is_dark()
+    if resolved is None or (resolved == "light" and not native_dark) or (resolved == "dark" and native_dark):
+        # the native look -- also the way back from anything applied
+        # earlier in this process
+        app.setStyleSheet(touch_qss)
         if _native.get("style") and app.style().objectName() != _native["style"]:
             app.setStyle(_native["style"])
         app.setPalette(_native["palette"])
         return resolved
+    if resolved in ("light", "dark"):
+        # Fusion is the Qt style that follows a palette completely
+        app.setStyleSheet(touch_qss)
+        app.setStyle("Fusion")
+        app.setPalette(dark_palette() if resolved == "dark" else app.style().standardPalette())
+        return resolved
+    if _native.get("palette") is not None:
+        app.setPalette(_native["palette"])
     if _apply_qt_material(app, resolved):
         if resolved_touch:
             app.setStyleSheet(app.styleSheet() + _TOUCH_QSS)
