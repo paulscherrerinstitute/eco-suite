@@ -218,34 +218,87 @@ def _diff_rows(memory, mem_dict, selection=None):
     return rows
 
 
-def _group_rows(rows):
-    """Group `_diff_rows` output by top-level sub-component (same key
-    `Assembly.get_display_str()`/`section_row_styles` use), preserving
-    first-seen order -- the "unfold sub-components" grouping."""
-    groups = {}
-    for row in rows:
-        groups.setdefault(row["group"], []).append(row)
-    return groups
+def _search_matches(text, *fields):
+    """True when every whitespace-separated word of `text` occurs
+    (case-insensitively) in at least one of `fields` -- "mono energy"
+    finds "mono.energy" as well as a message mentioning both. An empty
+    `text` matches everything."""
+    words = (text or "").lower().split()
+    if not words:
+        return True
+    hay = " ".join(str(f) for f in fields if f is not None).lower()
+    return all(w in hay for w in words)
 
 
-def _foldable_sections(rows):
-    """Group `_diff_rows` output for rendering: a group with more than one
-    row becomes a real foldable section; a group with exactly one row is
-    reported as a bare row instead -- spending a whole extra fold/unfold
-    header row on a single value is pure overhead for no benefit (same
-    "singleton groups don't get special treatment" rule
-    `eco.utilities.tables.section_row_styles` already applies to the
-    terminal table, just never carried over here until now). Returns an
-    ordered list of `("section", group_name, rows)` / `("row", None, row)`
-    tuples, in first-seen order."""
-    grouped = _group_rows(rows)
-    out = []
-    for name, group_rows in grouped.items():
-        if len(group_rows) > 1:
-            out.append(("section", name, group_rows))
-        else:
-            out.append(("row", None, group_rows[0]))
+def _overview_row_matches(row, text):
+    """Search over everything an overview row shows: message, preset name,
+    groups, date, key and (for a parent's memory) the ancestor's name."""
+    date_str = row["date"].strftime("%Y-%m-%d %H:%M") if row.get("date") else ""
+    return _search_matches(
+        text, row.get("message"), row.get("presetname"), " ".join(row.get("groups", [])),
+        date_str, row.get("key"), row.get("ancestor_name"),
+    )
+
+
+def _name_tree(items, name=lambda item: item["name"]):
+    """Hierarchy of `items` by their dot-separated names (the same split as
+    escape's `utilities.unflatten_dictionary`), for rendering as a foldable
+    tree. Returns the root node; every node is
+    ``{"label", "path", "item", "children": [node, ...]}`` -- `item` is the
+    row whose name is exactly `path` (or None for a pure grouping level),
+    `children` keep first-seen order.
+
+    A grouping level with a single child and no row of its own is merged
+    into that child ("a" > "b" > "c" becomes one "a.b.c" node), so a lone
+    deep row costs one line, not one fold level per name segment -- the
+    same "single rows get no group of their own" rule
+    `eco.utilities.tables.section_row_styles` applies to the terminal table. A name can
+    be both a row and a prefix of other rows (an Assembly that is itself an
+    Adjustable); such a node has an `item` *and* `children`."""
+    root = {"label": "", "path": "", "item": None, "children": {}}
+    for it in items:
+        parts = str(name(it)).split(".")
+        node = root
+        for i, seg in enumerate(parts):
+            node = node["children"].setdefault(
+                seg,
+                {"label": seg, "path": ".".join(parts[: i + 1]), "item": None, "children": {}},
+            )
+        if node["item"] is None:
+            node["item"] = it
+
+    def _finish(node):
+        kids = []
+        for child in node["children"].values():
+            while child["item"] is None and len(child["children"]) == 1:
+                (only,) = child["children"].values()
+                child = dict(only, label=f"{child['label']}.{only['label']}")
+            kids.append(_finish(child))
+        return dict(node, children=kids)
+
+    return _finish(root)
+
+
+def _tree_items(node):
+    """Every row in `node`'s subtree (its own first), depth-first."""
+    out = [node["item"]] if node["item"] is not None else []
+    for child in node["children"]:
+        out.extend(_tree_items(child))
     return out
+
+
+def _visible_detail_rows(rows, changed_only=False, search=""):
+    """The `_diff_rows` rows a detail view currently shows -- what "select
+    all/none" and Recall act on, so a search never recalls rows it hides."""
+    return [
+        r for r in rows
+        if (r["changed"] or not changed_only) and _search_matches(search, r["name"])
+    ]
+
+
+def _visible_pick_items(pairs, search=""):
+    """`Memory.get_memorize_candidates` pairs a save picker currently shows."""
+    return [p for p in pairs if _search_matches(search, p[1], p[0])]
 
 
 def _default_export_name(memory, label):
@@ -313,26 +366,108 @@ def _recall_error_status(recall_error):
 # ---------------------------------------------------------------------------
 
 
+_EMPTY_STATE = {
+    "key": None, "path": None, "mem": None, "rows": [], "checked": {},
+    "source_ancestor_name": None, "visible": [],
+}
+
+# Above this many shown rows a check tree opens with its groups folded
+# (unless a search is active, which always unfolds what it found).
+_AUTO_EXPAND_MAX_ROWS = 50
+
+# Smallest size a section gets when it is detached into its own window --
+# the docked size is often just a strip of the main window.
+_FLOAT_MIN_SIZE = {
+    "overview": (820, 420), "detail": (900, 600), "save": (700, 160), "pick": (800, 600),
+}
+
+
 class MemoryBrowserQt:
+    """Qt memory browser. `window` is a QMainWindow whose four sections --
+    stored memories, details of the loaded memory (recall), save, and the
+    optional items-to-save picker -- are dock widgets: resizable against
+    each other, movable, and each detachable into its own window (its
+    "detach" button, or double-click on its title bar; double-click again
+    or "attach" to put it back). When the whole browser is docked into the
+    eco desktop (`item_menu_qt.host`) the sections still detach.
+
+    Both checklists (recall, items to save) are trees over the dotted item
+    names (`_name_tree`): a group's checkbox (de)selects everything below
+    it, a partly selected group shows a partial check. Recall and Save act
+    on the checked rows that are currently *shown* -- a search or "changed
+    only" never sends anything it hides."""
+
     def __init__(self, assembly, parent=None):
         self.assembly = assembly
         self.memory = assembly.memory
         self.parent = parent
         self.window = None
-        self._state = {
-            "key": None, "path": None, "mem": None, "rows": [], "checked": {},
-            "source_ancestor_name": None,
-        }
+        self._state = dict(_EMPTY_STATE, checked={})
         self._group_checks = {}
+        self._overview_all = []
+        self._overview = []
+        self._detail_expanded = {}
+        self._pick_pairs = []
+        self._pick_checked = {}
+        self._pick_expanded = {}
+        self._pick_visible = []
+        self._suppress_item_changed = False
+        self.docks = {}
+        self._detach_buttons = {}
         self._build()
+
+    # --- construction ---------------------------------------------------
+
+    def _detach_button(self, key):
+        from qtpy import QtWidgets
+
+        btn = QtWidgets.QToolButton()
+        btn.setText("detach")
+        btn.setToolTip("show this section in its own window (or double-click its title bar)")
+        btn.clicked.connect(lambda _c=False, k=key: self._toggle_floating(k))
+        self._detach_buttons[key] = btn
+        return btn
+
+    def _make_dock(self, key, title, widget):
+        from qtpy import QtWidgets
+
+        dock = QtWidgets.QDockWidget(title, self.window)
+        dock.setObjectName(f"memory_browser_{key}")
+        dock.setWidget(widget)
+        dock.setFeatures(
+            QtWidgets.QDockWidget.DockWidgetMovable | QtWidgets.QDockWidget.DockWidgetFloatable
+        )
+        dock.topLevelChanged.connect(lambda floating, k=key: self._on_floating_changed(k, floating))
+        self.docks[key] = dock
+        return dock
+
+    def _toggle_floating(self, key):
+        dock = self.docks[key]
+        dock.setFloating(not dock.isFloating())
+
+    def _on_floating_changed(self, key, floating):
+        try:
+            btn = self._detach_buttons.get(key)
+            if btn is not None:
+                btn.setText("attach" if floating else "detach")
+                btn.setToolTip(
+                    "put this section back into the memory browser window"
+                    if floating
+                    else "show this section in its own window (or double-click its title bar)"
+                )
+            if floating:
+                dock = self.docks[key]
+                min_w, min_h = _FLOAT_MIN_SIZE.get(key, (600, 400))
+                dock.resize(max(dock.width(), min_w), max(dock.height(), min_h))
+        except RuntimeError:
+            pass  # widget already deleted
 
     def _build(self):
         from qtpy import QtWidgets, QtCore
 
-        self.window = QtWidgets.QWidget(self.parent)
-        self.window.setWindowTitle(
-            f"Memories - {self.assembly.alias.get_full_name()}"
-        )
+        full_name = self.assembly.alias.get_full_name()
+        self.window = QtWidgets.QMainWindow(self.parent)
+        self.window.setWindowTitle(f"Memories - {full_name}")
         if self.parent is None:
             self.window.setAttribute(QtCore.Qt.WA_QuitOnClose, False)
         # so this.window really is destroyed (not just hidden) when closed
@@ -341,30 +476,95 @@ class MemoryBrowserQt:
         # just raise it" check (see AxisPTZStreamQt._open_memories) keeps
         # seeing a stale, non-None .window that's actually closed
         self.window.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-        outer = QtWidgets.QVBoxLayout(self.window)
+        self.window.setDockNestingEnabled(True)
+        # QMainWindow needs a central widget; a hidden one lets the docks
+        # take all of the space, so every section can be detached.
+        placeholder = QtWidgets.QWidget()
+        placeholder.hide()
+        self.window.setCentralWidget(placeholder)
 
-        # --- overview list -------------------------------------------------
-        outer.addWidget(QtWidgets.QLabel("<b>Stored memories</b>"))
+        overview_dock = self._make_dock("overview", "Stored memories", self._build_overview())
+        detail_dock = self._make_dock(
+            "detail", "Loaded memory - recall (checkbox selects)", self._build_detail()
+        )
+        save_dock = self._make_dock("save", "Save current state as a new memory", self._build_save())
+        pick_dock = self._make_dock("pick", "Items to save", self._build_pick())
 
-        overview_filter_row = QtWidgets.QHBoxLayout()
-        overview_filter_row.addWidget(QtWidgets.QLabel("Selection:"))
+        top = QtCore.Qt.TopDockWidgetArea
+        self.window.addDockWidget(top, overview_dock)
+        self.window.addDockWidget(top, detail_dock)
+        self.window.splitDockWidget(overview_dock, detail_dock, QtCore.Qt.Vertical)
+        self.window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, save_dock)
+        # the two big checklists share the space as tabs (recall vs. save
+        # are used at different times); either can be detached to see both
+        self.window.tabifyDockWidget(detail_dock, pick_dock)
+        pick_dock.hide()
+
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setWordWrap(True)
+        status_bar = self.window.statusBar()
+        status_bar.addWidget(self.status_label, 1)
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.window.close)
+        status_bar.addPermanentWidget(close_btn)
+
+        self._refresh_overview()
+        self.window.resize(1000, 900)
+        self.window.resizeDocks([overview_dock, detail_dock], [260, 480], QtCore.Qt.Vertical)
+        # so a stale, already-deleted window can't be mistaken for a still-
+        # open one (e.g. by a caller's "already open, just raise it" check
+        # -- see eco.widgets.camera_stream_qt.AxisPTZStreamQt._open_memories)
+        # when the user closes this via the window's own native close (X)
+        # button rather than through this class's own Close button/API
+        self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
+        self.window.show()
+
+    def _build_overview(self):
+        from qtpy import QtWidgets
+
+        w = QtWidgets.QWidget()
+        outer = QtWidgets.QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.addWidget(QtWidgets.QLabel("Selection:"))
         self.overview_selection_combo = QtWidgets.QComboBox()
         self.overview_selection_combo.setEditable(True)
-        self.overview_selection_combo.currentTextChanged.connect(self._refresh_overview)
-        overview_filter_row.addWidget(self.overview_selection_combo)
+        self.overview_selection_combo.currentTextChanged.connect(self._render_overview)
+        filter_row.addWidget(self.overview_selection_combo)
         self.show_parents_cb = QtWidgets.QCheckBox("show parent memories too")
         self.show_parents_cb.stateChanged.connect(self._refresh_overview)
-        overview_filter_row.addWidget(self.show_parents_cb)
-        overview_filter_row.addStretch(1)
-        outer.addLayout(overview_filter_row)
+        filter_row.addWidget(self.show_parents_cb)
+        self.presets_only_cb = QtWidgets.QCheckBox("presets only")
+        self.presets_only_cb.stateChanged.connect(self._render_overview)
+        filter_row.addWidget(self.presets_only_cb)
+        filter_row.addStretch(1)
+        filter_row.addWidget(self._detach_button("overview"))
+        outer.addLayout(filter_row)
+
+        search_row = QtWidgets.QHBoxLayout()
+        self.overview_search = QtWidgets.QLineEdit()
+        self.overview_search.setPlaceholderText(
+            "search message, preset name, group, date… (all words must match)"
+        )
+        self.overview_search.setClearButtonEnabled(True)
+        self.overview_search.textChanged.connect(self._render_overview)
+        search_row.addWidget(self.overview_search, 1)
+        self.overview_count_label = QtWidgets.QLabel("")
+        search_row.addWidget(self.overview_count_label)
+        outer.addLayout(search_row)
 
         self.list = QtWidgets.QTreeWidget()
-        self.list.setMaximumHeight(160)
-        self.list.setHeaderLabels(["Date", "Message", "Groups", "Preset"])
+        self.list.setHeaderLabels(["Date", "Preset", "Message", "Groups"])
         self.list.setRootIsDecorated(False)
         self.list.setAlternatingRowColors(True)
+        self.list.setUniformRowHeights(True)
+        self.list.setSortingEnabled(True)
+        self.list.sortByColumn(0, _descending())
         self.list.itemClicked.connect(self._on_pick_stored)
-        outer.addWidget(self.list)
+        self.list.itemActivated.connect(self._on_pick_stored)
+        self.list.setMinimumHeight(150)
+        outer.addWidget(self.list, 1)
 
         self.legend_label = QtWidgets.QLabel("")
         self.legend_label.setWordWrap(True)
@@ -377,6 +577,18 @@ class MemoryBrowserQt:
         refresh_btn.clicked.connect(self._refresh_overview)
         load_row.addWidget(load_file_btn)
         load_row.addWidget(refresh_btn)
+        load_row.addSpacing(16)
+        load_row.addWidget(QtWidgets.QLabel("Preset tag (loaded entry):"))
+        self.preset_tag_edit = QtWidgets.QLineEdit()
+        self.preset_tag_edit.setPlaceholderText("empty clears the tag")
+        load_row.addWidget(self.preset_tag_edit)
+        apply_preset_btn = QtWidgets.QPushButton("Apply")
+        apply_preset_btn.setToolTip(
+            "set/change/clear just the preset name tag on the loaded entry "
+            "-- does not touch its captured values or delete it"
+        )
+        apply_preset_btn.clicked.connect(self._on_apply_preset_name)
+        load_row.addWidget(apply_preset_btn)
         load_row.addStretch(1)
         delete_entry_btn = QtWidgets.QPushButton("Delete this memory entry…")
         delete_entry_btn.setStyleSheet("color: #c62828;")
@@ -387,64 +599,86 @@ class MemoryBrowserQt:
         delete_entry_btn.clicked.connect(self._on_delete_entry)
         load_row.addWidget(delete_entry_btn)
         outer.addLayout(load_row)
+        return w
 
-        preset_tag_row = QtWidgets.QHBoxLayout()
-        preset_tag_row.addWidget(QtWidgets.QLabel("Preset tag (for loaded entry):"))
-        self.preset_tag_edit = QtWidgets.QLineEdit()
-        self.preset_tag_edit.setPlaceholderText("empty clears the tag")
-        preset_tag_row.addWidget(self.preset_tag_edit)
-        apply_preset_btn = QtWidgets.QPushButton("Apply")
-        apply_preset_btn.setToolTip(
-            "set/change/clear just the preset name tag on the loaded entry "
-            "-- does not touch its captured values or delete it"
-        )
-        apply_preset_btn.clicked.connect(self._on_apply_preset_name)
-        preset_tag_row.addWidget(apply_preset_btn)
-        preset_tag_row.addStretch(1)
-        outer.addLayout(preset_tag_row)
+    def _build_detail(self):
+        from qtpy import QtWidgets
 
-        # --- filters ---------------------------------------------------
-        self.filter_box = QtWidgets.QGroupBox("Filters (within an opened memory)")
-        filter_layout = QtWidgets.QVBoxLayout(self.filter_box)
+        w = QtWidgets.QWidget()
+        outer = QtWidgets.QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+
+        head = QtWidgets.QHBoxLayout()
+        self.loaded_label = QtWidgets.QLabel("<i>no memory loaded -- pick one from the list</i>")
+        head.addWidget(self.loaded_label, 1)
+        head.addWidget(self._detach_button("detail"))
+        outer.addLayout(head)
+
         self.group_row = QtWidgets.QHBoxLayout()
         self.group_row.addWidget(QtWidgets.QLabel("Keyword groups:"))
-        filter_layout.addLayout(self.group_row)
+        group_wrap = QtWidgets.QHBoxLayout()
+        group_wrap.addLayout(self.group_row)
+        group_wrap.addStretch(1)
+        outer.addLayout(group_wrap)
+
+        filter_row = QtWidgets.QHBoxLayout()
         self.changed_only_cb = QtWidgets.QCheckBox("show changed only")
         self.changed_only_cb.setChecked(True)
-        self.changed_only_cb.stateChanged.connect(self._refresh_detail)
-        filter_layout.addWidget(self.changed_only_cb)
-        outer.addWidget(self.filter_box)
+        self.changed_only_cb.stateChanged.connect(self._render_detail)
+        filter_row.addWidget(self.changed_only_cb)
+        self.detail_search = QtWidgets.QLineEdit()
+        self.detail_search.setPlaceholderText("search item names… (e.g. \"mono energy\")")
+        self.detail_search.setClearButtonEnabled(True)
+        self.detail_search.textChanged.connect(self._render_detail)
+        filter_row.addWidget(self.detail_search, 1)
+        expand_btn = QtWidgets.QPushButton("unfold all")
+        expand_btn.clicked.connect(lambda: self._set_tree_expanded(self.tree, self._detail_expanded, True))
+        collapse_btn = QtWidgets.QPushButton("fold all")
+        collapse_btn.clicked.connect(lambda: self._set_tree_expanded(self.tree, self._detail_expanded, False))
+        filter_row.addWidget(expand_btn)
+        filter_row.addWidget(collapse_btn)
+        outer.addLayout(filter_row)
 
-        # --- detail tree -----------------------------------------------
-        outer.addWidget(QtWidgets.QLabel("<b>Details</b> (checkbox selects for recall)"))
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setHeaderLabels(["name", "present", "memory", "diff", "status"])
+        self.tree.setUniformRowHeights(True)
+        self.tree.setAlternatingRowColors(True)
         self.tree.itemChanged.connect(self._on_tree_item_changed)
-        outer.addWidget(self.tree)
+        self.tree.itemExpanded.connect(lambda it: self._remember_expanded(self._detail_expanded, it, True))
+        self.tree.itemCollapsed.connect(lambda it: self._remember_expanded(self._detail_expanded, it, False))
+        outer.addWidget(self.tree, 1)
 
         select_row = QtWidgets.QHBoxLayout()
-        select_all_btn = QtWidgets.QPushButton("select all")
+        select_all_btn = QtWidgets.QPushButton("select shown")
+        select_all_btn.setToolTip("check every row currently shown (search / changed-only apply)")
         select_all_btn.clicked.connect(lambda: self._set_all_checked(True))
-        select_none_btn = QtWidgets.QPushButton("select none")
+        select_none_btn = QtWidgets.QPushButton("unselect shown")
         select_none_btn.clicked.connect(lambda: self._set_all_checked(False))
+        select_row.addWidget(select_all_btn)
+        select_row.addWidget(select_none_btn)
+        self.detail_count_label = QtWidgets.QLabel("")
+        select_row.addWidget(self.detail_count_label)
+        select_row.addStretch(1)
         recall_btn = QtWidgets.QPushButton("Recall selected values")
+        recall_btn.setToolTip("recall the checked rows that are currently shown")
         recall_btn.clicked.connect(self._on_recall)
         export_btn = QtWidgets.QPushButton("Export to file…")
         export_btn.clicked.connect(self._on_export)
-        select_row.addWidget(select_all_btn)
-        select_row.addWidget(select_none_btn)
         select_row.addWidget(recall_btn)
         select_row.addWidget(export_btn)
-        select_row.addStretch(1)
         outer.addLayout(select_row)
+        return w
 
-        # --- save new memory ---------------------------------------------
-        save_box = QtWidgets.QGroupBox("Save current state as a new memory")
-        save_vbox = QtWidgets.QVBoxLayout(save_box)
+    def _build_save(self):
+        from qtpy import QtWidgets
+
+        w = QtWidgets.QWidget()
+        save_vbox = QtWidgets.QVBoxLayout(w)
+        save_vbox.setContentsMargins(4, 4, 4, 4)
         save_layout = QtWidgets.QHBoxLayout()
         self.message_edit = QtWidgets.QLineEdit()
         self.message_edit.setPlaceholderText("message for this memory…")
-        save_layout.addWidget(self.message_edit)
+        save_layout.addWidget(self.message_edit, 1)
         save_layout.addWidget(QtWidgets.QLabel("selection:"))
         self.save_selection_combo = QtWidgets.QComboBox()
         self.save_selection_combo.setEditable(True)
@@ -462,6 +696,7 @@ class MemoryBrowserQt:
         save_btn.clicked.connect(self._on_save)
         save_layout.addWidget(self.elog_cb)
         save_layout.addWidget(save_btn)
+        save_layout.addWidget(self._detach_button("save"))
         save_vbox.addLayout(save_layout)
 
         preset_layout = QtWidgets.QHBoxLayout()
@@ -474,54 +709,160 @@ class MemoryBrowserQt:
             "redirects that preset to this new entry; the old entry stays "
             "around as a plain memory."
         )
-        preset_layout.addWidget(self.save_preset_edit)
-        save_vbox.addLayout(preset_layout)
-
-        # opt-in, non-default item picker: unchecked, this row/list stays
+        preset_layout.addWidget(self.save_preset_edit, 1)
+        # opt-in, non-default item picker: unchecked, its section stays
         # hidden and Save captures everything the selection resolves to,
         # exactly as before this existed.
-        pick_row = QtWidgets.QHBoxLayout()
         self.pick_items_cb = QtWidgets.QCheckBox("choose items…")
         self.pick_items_cb.setToolTip(
             "narrow this save down to hand-picked items instead of "
-            "capturing everything the selection above resolves to"
+            "capturing everything the selection above resolves to "
+            "(opens the \"Items to save\" section)"
         )
         self.pick_items_cb.stateChanged.connect(self._on_toggle_pick_items)
-        pick_row.addWidget(self.pick_items_cb)
+        preset_layout.addWidget(self.pick_items_cb)
+        save_vbox.addLayout(preset_layout)
+        return w
+
+    def _build_pick(self):
+        from qtpy import QtWidgets
+
+        w = QtWidgets.QWidget()
+        outer = QtWidgets.QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        row = QtWidgets.QHBoxLayout()
+        self.pick_search = QtWidgets.QLineEdit()
+        self.pick_search.setPlaceholderText("search item names…")
+        self.pick_search.setClearButtonEnabled(True)
+        self.pick_search.textChanged.connect(self._render_pick_items)
+        row.addWidget(self.pick_search, 1)
         refresh_items_btn = QtWidgets.QPushButton("Refresh items")
         refresh_items_btn.clicked.connect(self._refresh_pick_items)
-        pick_row.addWidget(refresh_items_btn)
-        pick_all_btn = QtWidgets.QPushButton("all")
+        row.addWidget(refresh_items_btn)
+        pick_all_btn = QtWidgets.QPushButton("all shown")
         pick_all_btn.clicked.connect(lambda: self._set_all_pick_items(True))
-        pick_row.addWidget(pick_all_btn)
-        pick_none_btn = QtWidgets.QPushButton("none")
+        row.addWidget(pick_all_btn)
+        pick_none_btn = QtWidgets.QPushButton("none shown")
         pick_none_btn.clicked.connect(lambda: self._set_all_pick_items(False))
-        pick_row.addWidget(pick_none_btn)
-        pick_row.addStretch(1)
-        save_vbox.addLayout(pick_row)
+        row.addWidget(pick_none_btn)
+        expand_btn = QtWidgets.QPushButton("unfold all")
+        expand_btn.clicked.connect(
+            lambda: self._set_tree_expanded(self.pick_items_list, self._pick_expanded, True)
+        )
+        collapse_btn = QtWidgets.QPushButton("fold all")
+        collapse_btn.clicked.connect(
+            lambda: self._set_tree_expanded(self.pick_items_list, self._pick_expanded, False)
+        )
+        row.addWidget(expand_btn)
+        row.addWidget(collapse_btn)
+        row.addWidget(self._detach_button("pick"))
+        outer.addLayout(row)
 
-        self.pick_items_list = QtWidgets.QListWidget()
-        self.pick_items_list.setMaximumHeight(140)
-        self.pick_items_list.setVisible(False)
-        save_vbox.addWidget(self.pick_items_list)
-        outer.addWidget(save_box)
+        self.pick_items_list = QtWidgets.QTreeWidget()
+        self.pick_items_list.setHeaderLabels(["name", "value", "group"])
+        self.pick_items_list.setUniformRowHeights(True)
+        self.pick_items_list.setAlternatingRowColors(True)
+        self.pick_items_list.itemChanged.connect(self._on_pick_item_changed)
+        self.pick_items_list.itemExpanded.connect(
+            lambda it: self._remember_expanded(self._pick_expanded, it, True)
+        )
+        self.pick_items_list.itemCollapsed.connect(
+            lambda it: self._remember_expanded(self._pick_expanded, it, False)
+        )
+        outer.addWidget(self.pick_items_list, 1)
+        self.pick_count_label = QtWidgets.QLabel("")
+        outer.addWidget(self.pick_count_label)
+        return w
 
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(self.window.close)
-        outer.addWidget(close_btn)
+    # --- generic check tree -----------------------------------------------
 
-        self.status_label = QtWidgets.QLabel("")
-        outer.addWidget(self.status_label)
+    def _fill_check_tree(self, tree, root, key, make_leaf, summary, checked, expanded, auto_expand):
+        """(Re)build `tree` from a `_name_tree` root. `key(item)` is the
+        row's full name (what `checked` is keyed by), `make_leaf(item,
+        label)` returns the leaf's QTreeWidgetItem, `summary(items)` the
+        non-name columns of a group row. Group checkboxes are Qt's
+        auto-tristate ones: derived from, and propagating to, their
+        children. Fold state is kept per group path in `expanded`; groups
+        without a remembered state open when `auto_expand`."""
+        from qtpy import QtCore, QtGui, QtWidgets
 
-        self._refresh_overview()
-        self.window.resize(780, 760)
-        # so a stale, already-deleted window can't be mistaken for a still-
-        # open one (e.g. by a caller's "already open, just raise it" check
-        # -- see eco.widgets.camera_stream_qt.AxisPTZStreamQt._open_memories)
-        # when the user closes this via the window's own native close (X)
-        # button rather than through this class's own Close button/API
-        self.window.destroyed.connect(lambda *a: setattr(self, "window", None))
-        self.window.show()
+        Qt = QtCore.Qt
+        bold = QtGui.QFont()
+        bold.setBold(True)
+
+        def attach(parent, item):
+            if parent is None:
+                tree.addTopLevelItem(item)
+            else:
+                parent.addChild(item)
+
+        def add_leaf(parent, item, label):
+            name = key(item)
+            w = make_leaf(item, label)
+            w.setFlags(w.flags() | Qt.ItemIsUserCheckable)
+            w.setData(0, Qt.UserRole, name)
+            w.setToolTip(0, name)
+            attach(parent, w)
+            w.setCheckState(0, Qt.Checked if checked.get(name, True) else Qt.Unchecked)
+
+        def add(parent, node):
+            if not node["children"]:
+                add_leaf(parent, node["item"], node["label"])
+                return
+            items = _tree_items(node)
+            g = QtWidgets.QTreeWidgetItem([node["label"]] + list(summary(items)))
+            g.setFlags(g.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
+            g.setData(0, Qt.UserRole + 1, node["path"])
+            g.setToolTip(
+                0, f"{node['path']} -- {len(items)} item(s); its checkbox (de)selects all of them"
+            )
+            g.setFont(0, bold)
+            attach(parent, g)
+            g.setCheckState(0, Qt.Checked)  # before children: Qt derives it from them afterwards
+            if node["item"] is not None:
+                add_leaf(g, node["item"], f"{node['label']} (own value)")
+            for child in node["children"]:
+                add(g, child)
+            g.setExpanded(expanded.get(node["path"], auto_expand))
+
+        self._suppress_item_changed = True
+        tree.setUpdatesEnabled(False)
+        try:
+            tree.clear()
+            for child in root["children"]:
+                add(None, child)
+            for col in range(tree.columnCount()):
+                tree.resizeColumnToContents(col)
+        finally:
+            tree.setUpdatesEnabled(True)
+            self._suppress_item_changed = False
+
+    def _remember_expanded(self, expanded, item, value):
+        from qtpy import QtCore
+
+        if self._suppress_item_changed:
+            return
+        path = item.data(0, QtCore.Qt.UserRole + 1)
+        if path is not None:
+            expanded[path] = value
+
+    def _set_tree_expanded(self, tree, expanded, value):
+        from qtpy import QtCore, QtWidgets
+
+        self._suppress_item_changed = True
+        try:
+            it = QtWidgets.QTreeWidgetItemIterator(tree)
+            while it.value():
+                item = it.value()
+                path = item.data(0, QtCore.Qt.UserRole + 1)
+                if path is not None:
+                    item.setExpanded(value)
+                    expanded[path] = value
+                it += 1
+        finally:
+            self._suppress_item_changed = False
+
+    # --- overview ---------------------------------------------------------
 
     def _set_status(self, text, error=False):
         color = "#c62828" if error else "#2e7d32"
@@ -529,14 +870,14 @@ class MemoryBrowserQt:
 
     def _refresh_overview(self, *_a):
         # *_a swallows whatever positional arg the triggering Qt signal
-        # passes (a bool from a button, a str from the selection combo) --
-        # neither is used, both re-read live state.
-        from qtpy import QtWidgets, QtGui
-
+        # passes (a bool from a button, an int from a checkbox) -- neither
+        # is used, both re-read live state. Reads the stores from disk;
+        # filtering/searching only re-renders (`_render_overview`).
         own_rows = _overview_rows(self.memory)
         all_rows = list(own_rows)
         if self.show_parents_cb.isChecked():
             all_rows += _ancestor_overview_rows(self.memory)
+        self._overview_all = all_rows
         tags = _known_selection_tags(all_rows)
         combo = self.overview_selection_combo
         current = combo.currentText() or "settings"
@@ -549,12 +890,24 @@ class MemoryBrowserQt:
         else:
             combo.setEditText(current)
         combo.blockSignals(False)
+        self._render_overview()
 
-        self._overview = _filter_overview_rows(all_rows, current)
-        ancestor_names = [r["ancestor_name"] for r in self._overview if "ancestor_name" in r]
+    def _render_overview(self, *_a):
+        from qtpy import QtWidgets, QtGui, QtCore
+
+        tag = self.overview_selection_combo.currentText() or "settings"
+        rows = _filter_overview_rows(self._overview_all, tag)
+        if self.presets_only_cb.isChecked():
+            rows = [r for r in rows if r.get("presetname")]
+        search = self.overview_search.text()
+        rows = [r for r in rows if _overview_row_matches(r, search)]
+        self._overview = rows
+
+        ancestor_names = [r["ancestor_name"] for r in rows if "ancestor_name" in r]
         color_map = _ancestor_color_map(ancestor_names)
+        self.list.setSortingEnabled(False)
         self.list.clear()
-        for row in self._overview:
+        for idx, row in enumerate(rows):
             date_str = row["date"].strftime("%Y-%m-%d %H:%M") if row["date"] else "?"
             groups = ",".join(row["groups"])
             message = row["message"]
@@ -562,14 +915,18 @@ class MemoryBrowserQt:
             if ancestor_name:
                 message = f"[{ancestor_name}] {message}"
             item = QtWidgets.QTreeWidgetItem(
-                [date_str, message, groups, row.get("presetname") or ""]
+                [date_str, row.get("presetname") or "", message, groups]
             )
+            item.setData(0, QtCore.Qt.UserRole, idx)
+            item.setToolTip(2, message)
             if ancestor_name:
                 for col in range(4):
                     item.setBackground(col, QtGui.QColor(color_map[ancestor_name]))
             self.list.addTopLevelItem(item)
+        self.list.setSortingEnabled(True)
         for col in range(4):
             self.list.resizeColumnToContents(col)
+        self.overview_count_label.setText(f"{len(rows)} of {len(self._overview_all)} shown")
 
         if color_map:
             self.legend_label.setText(
@@ -582,9 +939,17 @@ class MemoryBrowserQt:
             self.legend_label.setText("")
 
     def _on_pick_stored(self, item, column=0):
-        idx = self.list.indexOfTopLevelItem(item)
+        from qtpy import QtCore
+
+        idx = item.data(0, QtCore.Qt.UserRole)
+        if idx is None or idx >= len(self._overview):
+            return
         row = self._overview[idx]
         ancestor = row.get("ancestor")
+        date_str = row["date"].strftime("%Y-%m-%d %H:%M") if row["date"] else row["key"]
+        description = f"{date_str}  {row['message']}"
+        if row.get("presetname"):
+            description += f"  ★ {row['presetname']}"
         try:
             if ancestor is not None:
                 entry = ancestor.memory.get_memory(key=row["key"])
@@ -594,11 +959,12 @@ class MemoryBrowserQt:
                 self._load_mem(
                     {"settings": sliced}, key=None, path=None,
                     source_ancestor_name=row["ancestor_name"],
+                    description=f"[{row['ancestor_name']}] {description}",
                 )
                 self.preset_tag_edit.setText("")
             else:
                 mem = self.memory.get_memory(key=row["key"])
-                self._load_mem(mem, key=row["key"], path=None)
+                self._load_mem(mem, key=row["key"], path=None, description=description)
                 self.preset_tag_edit.setText(row.get("presetname") or "")
         except Exception as e:
             self._set_status(f"could not load memory: {e}", error=True)
@@ -616,7 +982,7 @@ class MemoryBrowserQt:
         except Exception as e:
             self._set_status(f"could not load {path}: {e}", error=True)
             return
-        self._load_mem(mem, key=None, path=path)
+        self._load_mem(mem, key=None, path=path, description=f"file {path}")
         self.preset_tag_edit.setText("")
 
     def _on_apply_preset_name(self):
@@ -634,6 +1000,13 @@ class MemoryBrowserQt:
             self._refresh_overview()
         except Exception as e:
             self._set_status(f"could not update preset tag: {e}", error=True)
+
+    def _clear_group_checks(self):
+        while self.group_row.count() > 1:
+            child = self.group_row.takeAt(1)
+            if child.widget():
+                child.widget().deleteLater()
+        self._group_checks = {}
 
     def _on_delete_entry(self):
         from qtpy import QtWidgets
@@ -659,40 +1032,38 @@ class MemoryBrowserQt:
         except Exception as e:
             self._set_status(f"delete failed: {e}", error=True)
             return
-        self._state = {
-            "key": None, "path": None, "mem": None, "rows": [], "checked": {},
-            "source_ancestor_name": None,
-        }
+        self._state = dict(_EMPTY_STATE, checked={})
         self.tree.clear()
-        while self.group_row.count() > 1:
-            child = self.group_row.takeAt(1)
-            if child.widget():
-                child.widget().deleteLater()
-        self._group_checks = {}
+        self._clear_group_checks()
+        self.loaded_label.setText("<i>no memory loaded -- pick one from the list</i>")
+        self.detail_count_label.setText("")
         self.preset_tag_edit.setText("")
         self._set_status(f"deleted stored memory {key}")
         self._refresh_overview()
 
-    def _load_mem(self, mem, key, path, source_ancestor_name=None):
-        self._state = {
-            "key": key, "path": path, "mem": mem, "rows": [], "checked": {},
-            "source_ancestor_name": source_ancestor_name,
-        }
+    # --- detail / recall --------------------------------------------------
+
+    def _load_mem(self, mem, key, path, source_ancestor_name=None, description=None):
+        from qtpy import QtWidgets
+        import html
+
+        self._state = dict(
+            _EMPTY_STATE, key=key, path=path, mem=mem, checked={},
+            source_ancestor_name=source_ancestor_name,
+        )
         groups = _available_recall_groups(self.memory, mem)
         # rebuild the group-filter checkboxes for this memory's own groups
-        while self.group_row.count() > 1:
-            child = self.group_row.takeAt(1)
-            if child.widget():
-                child.widget().deleteLater()
-        self._group_checks = {}
-        from qtpy import QtWidgets
-
+        self._clear_group_checks()
         for g in groups:
             cb = QtWidgets.QCheckBox(g)
             cb.setChecked(True)
             cb.stateChanged.connect(self._refresh_detail)
             self.group_row.addWidget(cb)
             self._group_checks[g] = cb
+        if description is None:
+            description = f"file {path}" if path else f"memory {key}"
+        self.loaded_label.setText(f"<b>loaded:</b> {html.escape(description)}")
+        self.docks["detail"].raise_()  # in front of "Items to save" when tabbed
         if source_ancestor_name:
             self._set_status(
                 f"loaded memory from parent '{source_ancestor_name}' "
@@ -711,12 +1082,13 @@ class MemoryBrowserQt:
         return checked
 
     def _set_all_checked(self, value):
-        for r in self._state.get("rows", []):
-            self._state["checked"][r["name"]] = value
-        self._refresh_detail()
+        """(Un)check every row currently shown -- hidden rows keep theirs."""
+        for name in self._state.get("visible", []):
+            self._state["checked"][name] = value
+        self._render_detail()
 
     def _on_tree_item_changed(self, item, column):
-        if getattr(self, "_suppress_item_changed", False) or column != 0:
+        if self._suppress_item_changed or column != 0:
             return
         from qtpy import QtCore
 
@@ -724,58 +1096,76 @@ class MemoryBrowserQt:
         if name is None:
             return
         self._state["checked"][name] = item.checkState(0) == QtCore.Qt.Checked
+        self._update_detail_count()
 
-    def _add_leaf_item(self, container, r, top_level=False):
-        from qtpy import QtWidgets, QtCore
+    def _make_detail_leaf(self, r, label):
+        from qtpy import QtWidgets
 
         status = "not found" if not r["available"] else ("CHANGED" if r["changed"] else "==")
         present = _format_value(r["present"]) if r["available"] else "?"
         item = QtWidgets.QTreeWidgetItem(
-            [r["name"], present, _format_value(r["memory"]), r["diff"], status]
+            [label, present, _format_value(r["memory"]), r["diff"], status]
         )
-        item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        item.setCheckState(
-            0, QtCore.Qt.Checked if self._state["checked"].get(r["name"], True) else QtCore.Qt.Unchecked
-        )
-        item.setData(0, QtCore.Qt.UserRole, r["name"])
         if r["changed"]:
             for col in range(5):
                 item.setForeground(col, QtWidgets.QApplication.palette().link())
-        if top_level:
-            self.tree.addTopLevelItem(item)
-        else:
-            container.addChild(item)
+        return item
+
+    @staticmethod
+    def _detail_summary(rows):
+        n_changed = sum(1 for r in rows if r["changed"])
+        n_missing = sum(1 for r in rows if not r["available"])
+        status = f"{n_changed} changed / {len(rows)}"
+        if n_missing:
+            status += f", {n_missing} not found"
+        return ["", "", "", status]
 
     def _refresh_detail(self, *_a):
+        """Re-read present values (hardware) for the loaded memory, then
+        re-render. Filtering/searching only re-renders (`_render_detail`)."""
         mem = self._state.get("mem")
-        self.tree.clear()
         if mem is None:
+            self.tree.clear()
             return
         rows = _diff_rows(self.memory, mem, selection=self._selected_selection())
         self._state["rows"] = rows
         for r in rows:
             self._state["checked"].setdefault(r["name"], True)
-        show_changed_only = self.changed_only_cb.isChecked()
-        from qtpy import QtWidgets
+        self._render_detail()
 
-        self._suppress_item_changed = True
-        for kind, group_name, payload in _foldable_sections(rows):
-            if kind == "section":
-                visible_rows = [r for r in payload if (r["changed"] or not show_changed_only)]
-                if not visible_rows:
-                    continue
-                parent_item = QtWidgets.QTreeWidgetItem([group_name, "", "", "", ""])
-                self.tree.addTopLevelItem(parent_item)
-                for r in visible_rows:
-                    self._add_leaf_item(parent_item, r)
-                parent_item.setExpanded(True)
-            else:
-                r = payload
-                if r["changed"] or not show_changed_only:
-                    self._add_leaf_item(self.tree, r, top_level=True)
-        self._suppress_item_changed = False
-        for col in range(5):
-            self.tree.resizeColumnToContents(col)
+    def _render_detail(self, *_a):
+        if self._state.get("mem") is None:
+            self.tree.clear()
+            return
+        search = self.detail_search.text()
+        visible = _visible_detail_rows(
+            self._state.get("rows", []), changed_only=self.changed_only_cb.isChecked(), search=search,
+        )
+        self._state["visible"] = [r["name"] for r in visible]
+        self._fill_check_tree(
+            self.tree, _name_tree(visible), key=lambda r: r["name"],
+            make_leaf=self._make_detail_leaf, summary=self._detail_summary,
+            checked=self._state["checked"], expanded=self._detail_expanded,
+            auto_expand=bool(search.strip()) or len(visible) <= _AUTO_EXPAND_MAX_ROWS,
+        )
+        self._update_detail_count()
+
+    def _selected_detail_rows(self):
+        visible = set(self._state.get("visible", []))
+        checked = self._state["checked"]
+        return [
+            r for r in self._state.get("rows", [])
+            if r["name"] in visible and checked.get(r["name"], True)
+        ]
+
+    def _update_detail_count(self):
+        n_rows = len(self._state.get("rows", []))
+        n_visible = len(self._state.get("visible", []))
+        n_selected = len(self._selected_detail_rows())
+        text = f"{n_selected} of {n_visible} shown selected"
+        if n_rows > n_visible:
+            text += f" ({n_rows - n_visible} hidden by filters, not recalled)"
+        self.detail_count_label.setText(text)
 
     def _on_recall(self):
         from qtpy import QtWidgets
@@ -783,10 +1173,9 @@ class MemoryBrowserQt:
         if self._state.get("mem") is None:
             self._set_status("load a memory first", error=True)
             return
-        checked = self._state["checked"]
-        selected_rows = [r for r in self._state["rows"] if checked.get(r["name"], True)]
+        selected_rows = self._selected_detail_rows()
         if not selected_rows:
-            self._set_status("no rows selected to recall", error=True)
+            self._set_status("no shown rows selected to recall", error=True)
             return
         n_changed = sum(1 for r in selected_rows if r["changed"])
         reply = QtWidgets.QMessageBox.question(
@@ -831,16 +1220,23 @@ class MemoryBrowserQt:
         except Exception as e:
             self._set_status(f"export failed: {e}", error=True)
 
+    # --- save / items to save --------------------------------------------
+
     def _on_toggle_pick_items(self, _state):
-        self.pick_items_list.setVisible(self.pick_items_cb.isChecked())
-        if self.pick_items_cb.isChecked():
+        on = self.pick_items_cb.isChecked()
+        self.docks["pick"].setVisible(on)
+        if on:
+            self.docks["pick"].raise_()
             self._refresh_pick_items()
         else:
+            self._pick_pairs = []
+            self._pick_visible = []
             self.pick_items_list.clear()
+            self.pick_count_label.setText("")
 
-    def _refresh_pick_items(self):
-        from qtpy import QtWidgets, QtCore
-
+    def _refresh_pick_items(self, *_a):
+        """Re-read the candidates (a `get_status` over the selection), keeping
+        the check state of names seen before; new names start checked."""
         if not self.pick_items_cb.isChecked():
             return
         selection = self.save_selection_combo.currentText().strip() or "settings"
@@ -849,26 +1245,72 @@ class MemoryBrowserQt:
         except Exception as e:
             self._set_status(f"could not list items: {e}", error=True)
             return
-        multi_group = len({p[0] for p in pairs}) > 1
-        self.pick_items_list.clear()
-        for group, name, value in pairs:
-            text = f"[{group}] {name}  =  {value}" if multi_group else f"{name}  =  {value}"
-            item = QtWidgets.QListWidgetItem(text)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Checked)
-            item.setData(QtCore.Qt.UserRole, name)
-            self.pick_items_list.addItem(item)
+        self._pick_pairs = pairs
+        for _group, name, _value in pairs:
+            self._pick_checked.setdefault(name, True)
+        self._render_pick_items()
+
+    def _render_pick_items(self, *_a):
+        from qtpy import QtWidgets
+
+        search = self.pick_search.text()
+        visible = _visible_pick_items(self._pick_pairs, search)
+        self._pick_visible = visible
+        groups = []
+        for p in visible:
+            if p[0] not in groups:
+                groups.append(p[0])
+        name_of = lambda p: p[1]
+        multi_group = len({p[0] for p in self._pick_pairs}) > 1
+        self.pick_items_list.setColumnHidden(2, not multi_group)
+        if multi_group:
+            # several selection groups: one top-level fold per group
+            root = {"label": "", "path": "", "item": None, "children": [
+                {
+                    "label": f"[{g}]", "path": f"[{g}]", "item": None,
+                    "children": _name_tree([p for p in visible if p[0] == g], name=name_of)["children"],
+                }
+                for g in groups
+            ]}
+        else:
+            root = _name_tree(visible, name=name_of)
+        self._fill_check_tree(
+            self.pick_items_list, root, key=name_of,
+            make_leaf=lambda p, label: QtWidgets.QTreeWidgetItem([label, _format_value(p[2]), p[0]]),
+            summary=lambda items: [f"{len(items)} items", ""],
+            checked=self._pick_checked, expanded=self._pick_expanded,
+            auto_expand=bool(search.strip()) or len(visible) <= _AUTO_EXPAND_MAX_ROWS,
+        )
+        self._update_pick_count()
+
+    def _picked_names(self):
+        return [p[1] for p in self._pick_visible if self._pick_checked.get(p[1], True)]
+
+    def _update_pick_count(self):
+        n_all = len(self._pick_pairs)
+        n_visible = len(self._pick_visible)
+        text = f"{len(self._picked_names())} of {n_visible} shown selected for saving"
+        if n_all > n_visible:
+            text += f" ({n_all - n_visible} hidden by the search, not saved)"
+        self.pick_count_label.setText(text)
+
+    def _on_pick_item_changed(self, item, column):
+        if self._suppress_item_changed or column != 0:
+            return
+        from qtpy import QtCore
+
+        name = item.data(0, QtCore.Qt.UserRole)
+        if name is None:
+            return
+        self._pick_checked[name] = item.checkState(0) == QtCore.Qt.Checked
+        self._update_pick_count()
 
     def _set_all_pick_items(self, value):
-        from qtpy import QtCore
-
-        state = QtCore.Qt.Checked if value else QtCore.Qt.Unchecked
-        for i in range(self.pick_items_list.count()):
-            self.pick_items_list.item(i).setCheckState(state)
+        for p in self._pick_visible:
+            self._pick_checked[p[1]] = value
+        self._render_pick_items()
 
     def _on_save(self):
-        from qtpy import QtCore
-
         message = self.message_edit.text().strip()
         if not message:
             self._set_status("enter a message before saving", error=True)
@@ -876,11 +1318,7 @@ class MemoryBrowserQt:
         selection = self.save_selection_combo.currentText().strip() or "settings"
         kwargs = {}
         if self.pick_items_cb.isChecked():
-            names = [
-                self.pick_items_list.item(i).data(QtCore.Qt.UserRole)
-                for i in range(self.pick_items_list.count())
-                if self.pick_items_list.item(i).checkState() == QtCore.Qt.Checked
-            ]
+            names = self._picked_names()
             if not names:
                 self._set_status("no items selected -- uncheck 'choose items' to save everything, or check at least one", error=True)
                 return
@@ -899,6 +1337,12 @@ class MemoryBrowserQt:
             self._set_status(f"save failed: {e}\n{traceback.format_exc(limit=2)}", error=True)
 
 
+def _descending():
+    from qtpy import QtCore
+
+    return QtCore.Qt.DescendingOrder
+
+
 def make_memory_browser_qt(assembly, parent=None):
     return MemoryBrowserQt(assembly, parent=parent)
 
@@ -906,6 +1350,87 @@ def make_memory_browser_qt(assembly, parent=None):
 # ---------------------------------------------------------------------------
 # ipywidgets backend
 # ---------------------------------------------------------------------------
+
+
+def _ipy_check_tree(root, key, make_leaf, checked, expanded, auto_expand, on_change=None):
+    """ipywidgets rendering of a `_name_tree`: a leaf is a checkbox row
+    (`make_leaf(item, label)` gives the widget beside the checkbox), a group
+    an Accordion whose body starts with "all"/"none" buttons for everything
+    below it. Check state lives in `checked` (name -> bool), fold state in
+    `expanded` (group path -> bool). Returns a list of widgets."""
+    import ipywidgets as widgets
+
+    boxes = {}
+
+    def _leaf(item, label):
+        name = key(item)
+        cb = widgets.Checkbox(
+            value=checked.get(name, True), indent=False, layout=widgets.Layout(width="30px"),
+        )
+
+        def _on(change, name=name):
+            checked[name] = change["new"]
+            if on_change is not None:
+                on_change()
+
+        cb.observe(_on, names="value")
+        boxes[name] = cb
+        return widgets.HBox([cb, make_leaf(item, label)])
+
+    def _set(names, value):
+        for n in names:
+            checked[n] = value
+            if n in boxes:
+                boxes[n].value = value
+
+    def _node(node):
+        if not node["children"]:
+            return _leaf(node["item"], node["label"])
+        names = [key(i) for i in _tree_items(node)]
+        all_btn = widgets.Button(description="all", layout=widgets.Layout(width="50px"))
+        none_btn = widgets.Button(description="none", layout=widgets.Layout(width="60px"))
+        all_btn.on_click(lambda _b, ns=names: _set(ns, True))
+        none_btn.on_click(lambda _b, ns=names: _set(ns, False))
+        body = [widgets.HBox([all_btn, none_btn])]
+        if node["item"] is not None:
+            body.append(_leaf(node["item"], f"{node['label']} (own value)"))
+        body += [_node(c) for c in node["children"]]
+        acc = widgets.Accordion(children=[widgets.VBox(body)])
+        acc.set_title(0, f"{node['label']} ({len(names)})")
+        acc.selected_index = 0 if expanded.get(node["path"], auto_expand) else None
+
+        def _on_fold(change, path=node["path"]):
+            expanded[path] = change["new"] is not None
+
+        acc.observe(_on_fold, names="selected_index")
+        return acc
+
+    return [_node(c) for c in root["children"]]
+
+
+def _ipy_pop_out_button(section, title, status):
+    """A "pop out" button showing `section` in a JupyterLab Sidecar panel
+    (see `eco.widgets.jupyter_sidecar`) -- a second, live view of the same
+    widgets; closing the panel leaves the one in the notebook untouched."""
+    import ipywidgets as widgets
+
+    btn = widgets.Button(description="pop out", tooltip="show this section in its own JupyterLab panel")
+    panels = []
+
+    def _pop(_b):
+        try:
+            from sidecar import Sidecar
+            from IPython.display import display
+
+            sc = Sidecar(title=title, anchor="split-right")
+            with sc:
+                display(section)
+            panels.append(sc)  # garbage-collected Sidecars close themselves
+        except Exception as e:
+            status(f"pop out needs JupyterLab with the 'sidecar' package: {e}", error=True)
+
+    btn.on_click(_pop)
+    return btn
 
 
 def make_memory_browser_ipywidgets(assembly):
@@ -930,10 +1455,19 @@ def make_memory_browser_ipywidgets(assembly):
         layout=widgets.Layout(width="220px"),
     )
     show_parents_cb = widgets.Checkbox(value=False, description="show parent memories too")
-    overview_style_html = widgets.HTML("")  # injected <style> for ancestor row colours
+    presets_only_cb = widgets.Checkbox(value=False, description="presets only", indent=False)
+    overview_search = widgets.Text(
+        placeholder="search message, preset name, group, date… (all words must match)",
+        continuous_update=True, layout=widgets.Layout(width="60%"),
+    )
+    overview_count = widgets.Label("")
+    # injected <style>: ancestor row colours, plus a user-resizable list
+    overview_style_html = widgets.HTML("")
     overview_box = widgets.VBox([], layout=widgets.Layout(
-        max_height="180px", overflow_y="auto", border="1px solid #ccc",
+        height="320px", overflow="auto", border="1px solid #ccc",
     ))
+    overview_box.add_class("eco-mem-resizable")
+    overview_rows = {"all": []}
     legend_html = widgets.HTML("")
 
     refresh_btn = widgets.Button(description="Refresh list")
@@ -959,10 +1493,20 @@ def make_memory_browser_ipywidgets(assembly):
 
     group_filter_box = widgets.HBox([widgets.Label("Keyword groups:")])
     changed_only_cb = widgets.Checkbox(value=True, description="show changed only")
+    detail_search = widgets.Text(
+        placeholder="search item names… (e.g. \"mono energy\")", continuous_update=True,
+        layout=widgets.Layout(width="50%"),
+    )
+    loaded_html = widgets.HTML("<i>no memory loaded -- pick one from the list</i>")
+    detail_count = widgets.Label("")
+    detail_expanded = {}
 
-    detail_box = widgets.VBox([])
-    select_all_btn = widgets.Button(description="select all")
-    select_none_btn = widgets.Button(description="select none")
+    detail_box = widgets.VBox([], layout=widgets.Layout(
+        height="420px", overflow="auto", border="1px solid #ccc",
+    ))
+    detail_box.add_class("eco-mem-resizable")
+    select_all_btn = widgets.Button(description="select shown")
+    select_none_btn = widgets.Button(description="unselect shown")
     status_html = widgets.HTML("")
 
     recall_btn = widgets.Button(description="Recall selected values", button_style="warning")
@@ -1014,8 +1558,14 @@ def make_memory_browser_ipywidgets(assembly):
     refresh_items_btn = widgets.Button(description="Refresh items")
     pick_all_items_btn = widgets.Button(description="all", layout=widgets.Layout(width="50px"))
     pick_none_items_btn = widgets.Button(description="none", layout=widgets.Layout(width="60px"))
-    items_pick_box = widgets.VBox([])
-    pick_item_checks = {}
+    items_pick_box = widgets.VBox([], layout=widgets.Layout(overflow="auto"))
+    items_pick_box.add_class("eco-mem-resizable")
+    pick_search = widgets.Text(
+        placeholder="search item names…", continuous_update=True,
+        layout=widgets.Layout(width="40%"),
+    )
+    pick_count = widgets.Label("")
+    pick_state = {"pairs": [], "visible": [], "checked": {}, "expanded": {}}
 
     group_checks = {}
 
@@ -1028,7 +1578,16 @@ def make_memory_browser_ipywidgets(assembly):
         delete_entry_btn.description = "Delete entry"
 
     def _load_row(row):
+        import html
+
         ancestor = row.get("ancestor")
+        date_str = row["date"].strftime("%Y-%m-%d %H:%M") if row["date"] else row["key"]
+        desc = f"{date_str}  {row['message']}"
+        if row.get("presetname"):
+            desc += f"  ★ {row['presetname']}"
+        if ancestor is not None:
+            desc = f"[{row['ancestor_name']}] {desc}"
+        loaded_html.value = f"<b>loaded:</b> {html.escape(desc)}"
         try:
             if ancestor is not None:
                 entry = ancestor.memory.get_memory(key=row["key"])
@@ -1084,7 +1643,11 @@ def make_memory_browser_ipywidgets(assembly):
             "key": None, "path": None, "mem": None, "checked": {},
             "source_ancestor_name": None,
         })
+        state["rows"] = []
+        state["visible"] = []
         detail_box.children = ()
+        detail_count.value = ""
+        loaded_html.value = "<i>no memory loaded -- pick one from the list</i>"
         group_filter_box.children = (widgets.Label("Keyword groups:"),)
         group_checks.clear()
         preset_tag_text.value = ""
@@ -1097,9 +1660,18 @@ def make_memory_browser_ipywidgets(assembly):
         all_rows = list(own_rows)
         if show_parents_cb.value:
             all_rows += _ancestor_overview_rows(memory)
+        overview_rows["all"] = all_rows
         overview_selection_combo.options = ["all"] + _known_selection_tags(all_rows)
+        _render_overview()
+
+    def _render_overview(_change=None):
+        all_rows = overview_rows["all"]
         tag = overview_selection_combo.value or "settings"
         rows = _filter_overview_rows(all_rows, tag)
+        if presets_only_cb.value:
+            rows = [r for r in rows if r.get("presetname")]
+        rows = [r for r in rows if _overview_row_matches(r, overview_search.value)]
+        overview_count.value = f"{len(rows)} of {len(all_rows)} shown"
 
         ancestor_names = [r["ancestor_name"] for r in rows if "ancestor_name" in r]
         color_map = _ancestor_color_map(ancestor_names)
@@ -1129,6 +1701,7 @@ def make_memory_browser_ipywidgets(assembly):
         overview_box.children = tuple(row_widgets) if row_widgets else (
             widgets.Label("(no stored memories)"),
         )
+        style_rules.append(".eco-mem-resizable { resize: vertical; }")
         overview_style_html.value = "<style>" + "".join(style_rules) + "</style>"
         if color_map:
             legend_html.value = "Parent memory colours: " + "; ".join(
@@ -1138,17 +1711,7 @@ def make_memory_browser_ipywidgets(assembly):
         else:
             legend_html.value = ""
 
-    def _make_row_widget(r):
-        cb = widgets.Checkbox(
-            value=state["checked"].get(r["name"], True), indent=False,
-            layout=widgets.Layout(width="30px"),
-        )
-
-        def _on_cb_change(change, name=r["name"]):
-            if change.get("name") == "value":
-                state["checked"][name] = change["new"]
-
-        cb.observe(_on_cb_change, names="value")
+    def _detail_label(r, label):
         if not r["available"]:
             status = "not found"
         elif r["changed"]:
@@ -1156,12 +1719,25 @@ def make_memory_browser_ipywidgets(assembly):
         else:
             status = "=="
         present = _format_value(r["present"]) if r["available"] else "?"
-        label = widgets.HTML(
-            f"<span>{r['name']}</span> &nbsp; present: <b>{present}</b> &nbsp; "
+        return widgets.HTML(
+            f"<span title='{r['name']}'>{label}</span> &nbsp; present: <b>{present}</b> &nbsp; "
             f"memory: <b>{_format_value(r['memory'])}</b> &nbsp; diff: {r['diff']} "
             f"&nbsp; {status}"
         )
-        return widgets.HBox([cb, label])
+
+    def _selected_detail_rows():
+        visible = set(state.get("visible", []))
+        return [
+            r for r in state.get("rows", [])
+            if r["name"] in visible and state["checked"].get(r["name"], True)
+        ]
+
+    def _update_detail_count():
+        n_rows, n_vis = len(state.get("rows", [])), len(state.get("visible", []))
+        text = f"{len(_selected_detail_rows())} of {n_vis} shown selected"
+        if n_rows > n_vis:
+            text += f" ({n_rows - n_vis} hidden by filters, not recalled)"
+        detail_count.value = text
 
     def _refresh_detail(_change=None):
         mem = state.get("mem")
@@ -1178,24 +1754,25 @@ def make_memory_browser_ipywidgets(assembly):
         state["rows"] = rows
         for r in rows:
             state["checked"].setdefault(r["name"], True)
-        show_changed_only = changed_only_cb.value
+        _render_detail()
 
-        sections = []
-        for kind, group_name, payload in _foldable_sections(rows):
-            if kind == "section":
-                visible = [r for r in payload if (r["changed"] or not show_changed_only)]
-                if not visible:
-                    continue
-                body = widgets.VBox([_make_row_widget(r) for r in visible])
-                acc = widgets.Accordion(children=[body])
-                acc.set_title(0, f"{group_name} ({len(visible)})")
-                acc.selected_index = 0
-                sections.append(acc)
-            else:
-                r = payload
-                if r["changed"] or not show_changed_only:
-                    sections.append(_make_row_widget(r))
+    def _render_detail(_change=None):
+        if state.get("mem") is None:
+            detail_box.children = ()
+            return
+        search = detail_search.value
+        visible = _visible_detail_rows(
+            state.get("rows", []), changed_only=changed_only_cb.value, search=search,
+        )
+        state["visible"] = [r["name"] for r in visible]
+        sections = _ipy_check_tree(
+            _name_tree(visible), key=lambda r: r["name"], make_leaf=_detail_label,
+            checked=state["checked"], expanded=detail_expanded,
+            auto_expand=bool(search.strip()) or len(visible) <= _AUTO_EXPAND_MAX_ROWS,
+            on_change=_update_detail_count,
+        )
         detail_box.children = tuple(sections) if sections else (widgets.HTML("(no rows)"),)
+        _update_detail_count()
 
     def _load_mem(mem, key, path, source_ancestor_name=None):
         state.update({
@@ -1232,27 +1809,27 @@ def make_memory_browser_ipywidgets(assembly):
             _set_status(f"could not load {path}: {e}", error=True)
             return
         _load_mem(mem, key=None, path=path)
+        loaded_html.value = f"<b>loaded:</b> file {path}"
         preset_tag_text.value = ""
         _reset_delete_arm()
 
     def _select_all(_b):
-        for r in state.get("rows", []):
-            state["checked"][r["name"]] = True
-        _refresh_detail()
+        for name in state.get("visible", []):
+            state["checked"][name] = True
+        _render_detail()
 
     def _select_none(_b):
-        for r in state.get("rows", []):
-            state["checked"][r["name"]] = False
-        _refresh_detail()
+        for name in state.get("visible", []):
+            state["checked"][name] = False
+        _render_detail()
 
     def _on_recall(_b):
         if state.get("mem") is None:
             _set_status("load a memory first", error=True)
             return
-        checked = state["checked"]
-        selected_rows = [r for r in state["rows"] if checked.get(r["name"], True)]
+        selected_rows = _selected_detail_rows()
         if not selected_rows:
-            _set_status("no rows selected to recall", error=True)
+            _set_status("no shown rows selected to recall", error=True)
             return
         filtered = {r["name"]: r["memory"] for r in selected_rows}
         try:
@@ -1281,12 +1858,15 @@ def make_memory_browser_ipywidgets(assembly):
         except Exception as e:
             _set_status(f"export failed: {e}", error=True)
 
-    def _make_pick_item_row(group, name, value, multi_group):
-        cb = widgets.Checkbox(value=True, indent=False, layout=widgets.Layout(width="30px"))
-        pick_item_checks[name] = cb
-        prefix = f"[{group}] " if multi_group else ""
-        label = widgets.HTML(f"<span>{prefix}{name}</span> &nbsp; = &nbsp; {_format_value(value)}")
-        return widgets.HBox([cb, label])
+    def _picked_names():
+        return [p[1] for p in pick_state["visible"] if pick_state["checked"].get(p[1], True)]
+
+    def _update_pick_count():
+        n_all, n_vis = len(pick_state["pairs"]), len(pick_state["visible"])
+        text = f"{len(_picked_names())} of {n_vis} shown selected for saving"
+        if n_all > n_vis:
+            text += f" ({n_all - n_vis} hidden by the search, not saved)"
+        pick_count.value = text
 
     def _refresh_pick_items(_b=None):
         if not pick_items_cb.value:
@@ -1297,11 +1877,44 @@ def make_memory_browser_ipywidgets(assembly):
         except Exception as e:
             _set_status(f"could not list items: {e}", error=True)
             return
-        multi_group = len({p[0] for p in pairs}) > 1
-        pick_item_checks.clear()
-        items_pick_box.children = tuple(
-            _make_pick_item_row(g, n, v, multi_group) for g, n, v in pairs
-        ) or (widgets.Label("(no items)"),)
+        pick_state["pairs"] = pairs
+        for _g, n, _v in pairs:
+            pick_state["checked"].setdefault(n, True)
+        _render_pick_items()
+
+    def _render_pick_items(_change=None):
+        if not pick_items_cb.value:
+            return
+        pairs = pick_state["pairs"]
+        visible = _visible_pick_items(pairs, pick_search.value)
+        pick_state["visible"] = visible
+        name_of = lambda p: p[1]
+        groups = []
+        for p in visible:
+            if p[0] not in groups:
+                groups.append(p[0])
+        if len({p[0] for p in pairs}) > 1:
+            root = {"label": "", "path": "", "item": None, "children": [
+                {
+                    "label": f"[{g}]", "path": f"[{g}]", "item": None,
+                    "children": _name_tree([p for p in visible if p[0] == g], name=name_of)["children"],
+                }
+                for g in groups
+            ]}
+        else:
+            root = _name_tree(visible, name=name_of)
+        children = _ipy_check_tree(
+            root, key=name_of,
+            make_leaf=lambda p, label: widgets.HTML(
+                f"<span title='{p[1]}'>{label}</span> &nbsp; = &nbsp; {_format_value(p[2])}"
+            ),
+            checked=pick_state["checked"], expanded=pick_state["expanded"],
+            auto_expand=bool(pick_search.value.strip()) or len(visible) <= _AUTO_EXPAND_MAX_ROWS,
+            on_change=_update_pick_count,
+        )
+        items_pick_box.children = tuple(children) or (widgets.Label("(no items)"),)
+        items_pick_box.layout.height = "360px"
+        _update_pick_count()
 
     def _on_toggle_pick_items(change):
         if change.get("name") != "value":
@@ -1309,12 +1922,16 @@ def make_memory_browser_ipywidgets(assembly):
         if change["new"]:
             _refresh_pick_items()
         else:
-            pick_item_checks.clear()
+            pick_state["pairs"] = []
+            pick_state["visible"] = []
             items_pick_box.children = ()
+            items_pick_box.layout.height = None
+            pick_count.value = ""
 
     def _set_all_pick_items(value):
-        for cb in pick_item_checks.values():
-            cb.value = value
+        for p in pick_state["visible"]:
+            pick_state["checked"][p[1]] = value
+        _render_pick_items()
 
     def _on_save(_b):
         message = message_text.value.strip()
@@ -1324,7 +1941,7 @@ def make_memory_browser_ipywidgets(assembly):
         selection = save_selection_combo.value.strip() or "settings"
         kwargs = {}
         if pick_items_cb.value:
-            names = [name for name, cb in pick_item_checks.items() if cb.value]
+            names = _picked_names()
             if not names:
                 _set_status(
                     "no items selected -- uncheck 'choose items' to save "
@@ -1345,13 +1962,17 @@ def make_memory_browser_ipywidgets(assembly):
         except Exception as e:
             _set_status(f"save failed: {e}", error=True)
 
-    overview_selection_combo.observe(_refresh_overview, names="value")
+    overview_selection_combo.observe(_render_overview, names="value")
+    presets_only_cb.observe(_render_overview, names="value")
+    overview_search.observe(_render_overview, names="value")
+    detail_search.observe(_render_detail, names="value")
+    pick_search.observe(_render_pick_items, names="value")
     show_parents_cb.observe(_refresh_overview, names="value")
     refresh_btn.on_click(_refresh_overview)
     load_file_btn.on_click(_on_load_file)
     apply_preset_btn.on_click(_on_apply_preset_name)
     delete_entry_btn.on_click(_on_delete_entry)
-    changed_only_cb.observe(_refresh_detail, names="value")
+    changed_only_cb.observe(_render_detail, names="value")
     select_all_btn.on_click(_select_all)
     select_none_btn.on_click(_select_none)
     recall_btn.on_click(_on_recall)
@@ -1364,29 +1985,52 @@ def make_memory_browser_ipywidgets(assembly):
 
     _refresh_overview()
 
+    pick_all_items_btn.description = "all shown"
+    pick_all_items_btn.layout.width = "90px"
+    pick_none_items_btn.description = "none shown"
+    pick_none_items_btn.layout.width = "100px"
+
+    overview_section = widgets.VBox([
+        widgets.HTML("<b>Stored memories</b>"),
+        widgets.HBox([overview_selection_combo, show_parents_cb, presets_only_cb]),
+        widgets.HBox([overview_search, overview_count]),
+        overview_style_html,
+        overview_box,
+        legend_html,
+        widgets.HBox([refresh_btn, load_path_text, load_file_btn]),
+        widgets.HBox([preset_tag_text, apply_preset_btn, delete_entry_btn]),
+    ])
+    detail_section = widgets.VBox([
+        widgets.HTML("<b>Loaded memory - recall</b> (checkbox selects)"),
+        loaded_html,
+        group_filter_box,
+        widgets.HBox([changed_only_cb, detail_search]),
+        detail_box,
+        widgets.HBox([select_all_btn, select_none_btn, detail_count]),
+        widgets.HBox([recall_btn, export_path_text, export_btn]),
+    ])
+    save_section = widgets.VBox([
+        widgets.HTML("<b>Save current state as a new memory</b>"),
+        widgets.HBox([message_text, save_selection_combo, elog_cb, save_btn]),
+        widgets.HBox([save_preset_text]),
+        widgets.HBox([
+            pick_items_cb, pick_search, refresh_items_btn, pick_all_items_btn, pick_none_items_btn,
+        ]),
+        items_pick_box,
+        pick_count,
+    ])
+    name = assembly.alias.get_full_name()
     box = widgets.VBox(
         [
             title,
-            widgets.HTML("<b>Stored memories</b>"),
-            widgets.HBox([overview_selection_combo, show_parents_cb]),
-            overview_style_html,
-            overview_box,
-            legend_html,
-            widgets.HBox([refresh_btn, load_path_text, load_file_btn]),
-            widgets.HBox([preset_tag_text, apply_preset_btn, delete_entry_btn]),
-            group_filter_box,
-            changed_only_cb,
-            widgets.HTML("<b>Details</b> (checkbox selects for recall)"),
-            detail_box,
-            widgets.HBox([select_all_btn, select_none_btn]),
-            widgets.HBox([recall_btn, export_path_text, export_btn]),
-            widgets.HTML("<b>Save current state as a new memory</b>"),
-            widgets.HBox([message_text, save_selection_combo, elog_cb, save_btn]),
-            widgets.HBox([save_preset_text]),
             widgets.HBox([
-                pick_items_cb, refresh_items_btn, pick_all_items_btn, pick_none_items_btn,
+                _ipy_pop_out_button(overview_section, f"memories: {name}", _set_status),
             ]),
-            items_pick_box,
+            overview_section,
+            _ipy_pop_out_button(detail_section, f"recall: {name}", _set_status),
+            detail_section,
+            _ipy_pop_out_button(save_section, f"save: {name}", _set_status),
+            save_section,
             status_html,
         ]
     )
@@ -1431,20 +2075,26 @@ class MemoryBrowserTk:
         )
         self.overview_selection_combo.pack(side="left", padx=(4, 0))
         self.overview_selection_combo.bind(
-            "<<ComboboxSelected>>", lambda _evt: self._refresh_overview()
+            "<<ComboboxSelected>>", lambda _evt: self._render_overview()
         )
         self.overview_selection_combo.bind(
-            "<Return>", lambda _evt: self._refresh_overview()
+            "<Return>", lambda _evt: self._render_overview()
         )
         self.show_parents_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             overview_filter_row, text="show parent memories too",
             variable=self.show_parents_var, command=self._refresh_overview,
         ).pack(side="left", padx=(8, 0))
+        ttk.Label(overview_filter_row, text="search:").pack(side="left", padx=(12, 0))
+        self.overview_search_var = tk.StringVar()
+        self.overview_search_var.trace_add("write", lambda *_a: self._render_overview())
+        ttk.Entry(overview_filter_row, textvariable=self.overview_search_var, width=30).pack(
+            side="left", padx=(4, 0), fill="x", expand=True
+        )
 
         list_frame = ttk.Frame(self.top)
         list_frame.pack(fill="x", padx=4)
-        self.overview_list = tk.Listbox(list_frame, height=7)
+        self.overview_list = tk.Listbox(list_frame, height=14)
         self.overview_list.pack(side="left", fill="x", expand=True)
         self.overview_list.bind("<<ListboxSelect>>", self._on_pick_stored)
         vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.overview_list.yview)
@@ -1483,10 +2133,18 @@ class MemoryBrowserTk:
         self.group_row.pack(fill="x", padx=4, pady=2)
         ttk.Label(self.group_row, text="Keyword groups:").pack(side="left")
         self.changed_only_var = tk.BooleanVar(value=True)
+        changed_row = ttk.Frame(filter_box)
+        changed_row.pack(fill="x", padx=4)
         ttk.Checkbutton(
-            filter_box, text="show changed only", variable=self.changed_only_var,
-            command=self._refresh_detail,
-        ).pack(anchor="w", padx=4)
+            changed_row, text="show changed only", variable=self.changed_only_var,
+            command=self._render_detail,
+        ).pack(side="left")
+        ttk.Label(changed_row, text="search names:").pack(side="left", padx=(12, 0))
+        self.detail_search_var = tk.StringVar()
+        self.detail_search_var.trace_add("write", lambda *_a: self._render_detail())
+        ttk.Entry(changed_row, textvariable=self.detail_search_var, width=30).pack(
+            side="left", padx=(4, 0), fill="x", expand=True
+        )
 
         ttk.Label(
             self.top, text="Details (checkbox selects for recall)",
@@ -1514,12 +2172,14 @@ class MemoryBrowserTk:
 
         select_row = ttk.Frame(self.top)
         select_row.pack(fill="x", padx=4, pady=(4, 0))
-        ttk.Button(select_row, text="select all", command=lambda: self._set_all_checked(True)).pack(
+        ttk.Button(select_row, text="select shown", command=lambda: self._set_all_checked(True)).pack(
             side="left"
         )
         ttk.Button(
-            select_row, text="select none", command=lambda: self._set_all_checked(False)
+            select_row, text="unselect shown", command=lambda: self._set_all_checked(False)
         ).pack(side="left", padx=(4, 0))
+        self.detail_count_label = ttk.Label(select_row, text="")
+        self.detail_count_label.pack(side="left", padx=(8, 0))
 
         action_row = ttk.Frame(self.top)
         action_row.pack(fill="x", padx=4, pady=4)
@@ -1567,9 +2227,17 @@ class MemoryBrowserTk:
         all_rows = list(own_rows)
         if self.show_parents_var.get():
             all_rows += _ancestor_overview_rows(self.memory)
+        self._overview_all = all_rows
         self.overview_selection_combo["values"] = ["all"] + _known_selection_tags(all_rows)
+        self._render_overview()
+
+    def _render_overview(self):
         tag = self.overview_selection_var.get() or "settings"
-        self._overview = _filter_overview_rows(all_rows, tag)
+        search = self.overview_search_var.get()
+        self._overview = [
+            r for r in _filter_overview_rows(getattr(self, "_overview_all", []), tag)
+            if _overview_row_matches(r, search)
+        ]
         ancestor_names = [r["ancestor_name"] for r in self._overview if "ancestor_name" in r]
         color_map = _ancestor_color_map(ancestor_names)
         self.overview_list.delete(0, "end")
@@ -1721,26 +2389,41 @@ class MemoryBrowserTk:
         return checked
 
     def _set_all_checked(self, value):
-        for r in self._state.get("rows", []):
-            self._state["checked"][r["name"]] = value
-        self._refresh_detail()
+        for name in self._state.get("visible", []):
+            self._state["checked"][name] = value
+        self._render_detail()
 
-    def _add_detail_row(self, r):
+    def _selected_detail_rows(self):
+        visible = set(self._state.get("visible", []))
+        return [
+            r for r in self._state.get("rows", [])
+            if r["name"] in visible and self._state["checked"].get(r["name"], True)
+        ]
+
+    def _update_detail_count(self):
+        n_rows, n_vis = len(self._state.get("rows", [])), len(self._state.get("visible", []))
+        text = f"{len(self._selected_detail_rows())} of {n_vis} shown selected"
+        if n_rows > n_vis:
+            text += f" ({n_rows - n_vis} hidden by filters, not recalled)"
+        self.detail_count_label.config(text=text)
+
+    def _add_detail_row(self, r, label=None, depth=0):
         import tkinter as tk
         from tkinter import ttk
 
         row_frame = ttk.Frame(self.detail_inner)
-        row_frame.pack(fill="x", anchor="w")
+        row_frame.pack(fill="x", anchor="w", padx=(16 * depth, 0))
         var = tk.BooleanVar(value=self._state["checked"].get(r["name"], True))
 
         def _on_toggle(name=r["name"], v=var):
             self._state["checked"][name] = v.get()
+            self._update_detail_count()
 
         ttk.Checkbutton(row_frame, variable=var, command=_on_toggle).pack(side="left")
         status = "not found" if not r["available"] else ("CHANGED" if r["changed"] else "==")
         present = _format_value(r["present"]) if r["available"] else "?"
         text = (
-            f"{r['name']}   present: {present}   memory: {_format_value(r['memory'])}   "
+            f"{label or r['name']}   present: {present}   memory: {_format_value(r['memory'])}   "
             f"diff: {r['diff']}   {status}"
         )
         lbl = ttk.Label(row_frame, text=text)
@@ -1749,33 +2432,48 @@ class MemoryBrowserTk:
         lbl.pack(side="left")
 
     def _refresh_detail(self):
-        from tkinter import ttk
-
-        for child in self.detail_inner.winfo_children():
-            child.destroy()
         mem = self._state.get("mem")
         if mem is None:
+            for child in self.detail_inner.winfo_children():
+                child.destroy()
             return
         rows = _diff_rows(self.memory, mem, selection=self._selected_selection())
         self._state["rows"] = rows
         for r in rows:
             self._state["checked"].setdefault(r["name"], True)
-        show_changed_only = self.changed_only_var.get()
+        self._render_detail()
 
-        for kind, group_name, payload in _foldable_sections(rows):
-            if kind == "section":
-                visible = [r for r in payload if (r["changed"] or not show_changed_only)]
-                if not visible:
-                    continue
-                ttk.Label(
-                    self.detail_inner, text=group_name, font=("TkDefaultFont", 9, "bold"),
-                ).pack(anchor="w", pady=(6, 0))
-                for r in visible:
-                    self._add_detail_row(r)
-            else:
-                r = payload
-                if r["changed"] or not show_changed_only:
-                    self._add_detail_row(r)
+    def _render_detail(self):
+        """Indented hierarchy of the shown rows (`_name_tree`); unlike Qt
+        and ipywidgets, Tk groups are headers only -- not foldable."""
+        from tkinter import ttk
+
+        for child in self.detail_inner.winfo_children():
+            child.destroy()
+        if self._state.get("mem") is None:
+            return
+        visible = _visible_detail_rows(
+            self._state.get("rows", []), changed_only=self.changed_only_var.get(),
+            search=self.detail_search_var.get(),
+        )
+        self._state["visible"] = [r["name"] for r in visible]
+
+        def _add(node, depth):
+            if not node["children"]:
+                self._add_detail_row(node["item"], label=node["label"], depth=depth)
+                return
+            n = len(_tree_items(node))
+            ttk.Label(
+                self.detail_inner, text=f"{node['label']} ({n})", font=("TkDefaultFont", 9, "bold"),
+            ).pack(anchor="w", pady=(4, 0), padx=(16 * depth, 0))
+            if node["item"] is not None:
+                self._add_detail_row(node["item"], label=f"{node['label']} (own value)", depth=depth + 1)
+            for c in node["children"]:
+                _add(c, depth + 1)
+
+        for c in _name_tree(visible)["children"]:
+            _add(c, 0)
+        self._update_detail_count()
 
     def _on_recall(self):
         from tkinter import messagebox
@@ -1783,10 +2481,9 @@ class MemoryBrowserTk:
         if self._state.get("mem") is None:
             self._set_status("load a memory first", error=True)
             return
-        checked = self._state["checked"]
-        selected_rows = [r for r in self._state["rows"] if checked.get(r["name"], True)]
+        selected_rows = self._selected_detail_rows()
         if not selected_rows:
-            self._set_status("no rows selected to recall", error=True)
+            self._set_status("no shown rows selected to recall", error=True)
             return
         n_changed = sum(1 for r in selected_rows if r["changed"])
         if not messagebox.askyesno(
