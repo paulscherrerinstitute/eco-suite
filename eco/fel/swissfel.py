@@ -9,6 +9,7 @@ from datetime import datetime
 from time import sleep
 import numpy as np
 from ..detector.detectors_psi import DetectorBsStream
+from .beamline_config import BeamlineConfig
 
 
 class SwissFel(Assembly):
@@ -81,6 +82,15 @@ class SwissFel(Assembly):
             name="bernina_beamline_mode",
             is_display=True,
             is_setting=True,
+        )
+        # client-side switching as /sf/controls/bin/BeamLineConfig does it
+        # (beta, hence _tmp); the two IOC records above are the older path
+        # ("will be obsolete" in the OBLL IOC module), left as they are
+        self._append(
+            BeamlineConfig,
+            name="beamline_config_tmp",
+            is_display="recursive",
+            is_setting=False,
         )
         self._append(
             AdjustablePvEnum,
