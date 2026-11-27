@@ -36,9 +36,12 @@ import contextlib
 import os
 import socket
 import getpass
+import threading
 import time
+from pathlib import Path
 
 from eco import Assembly
+from eco.elements.adjustable import AdjustableFS, AdjustableMemory
 from eco.elements.detector import DetectorVirtual
 
 from .gauges import VacuumGauge
@@ -49,6 +52,52 @@ from .valves import Valve, PrePump, ValveState
 #: counts as "pumped", at/above `P_VENT_TARGET` as "vented".
 P_TARGET = 0.5
 P_VENT_TARGET = 1000.0
+
+#: Default sequence timings [s] -- like the thresholds, only the seeds of the
+#: settings files when a `settings_dir` is configured (see `_append_setting`).
+PUMP_DOWN_TIMEOUT = 700.0
+VENT_TIMEOUT = 700.0
+VENT_SETTLE_TIME = 60.0
+
+
+def _append_setting(assembly, settings_dir, name, default, file_stem=None):
+    """Append the tunable parameter `name` to `assembly` as a settings child.
+
+    With a `settings_dir` it is an :class:`AdjustableFS` (one json file per
+    parameter, ``<settings_dir>/<file_stem or name>.json``), so a value set
+    in one session -- or in the property grid -- is what every other session
+    and the caQtDM panel's buttons (:mod:`.prepump_cli`) use too. `default`
+    only seeds a missing file; afterwards the file wins over the value in the
+    config dict. Without a `settings_dir` it is an in-memory adjustable
+    (tests, ad-hoc systems)."""
+    if settings_dir:
+        path = Path(settings_dir) / f"{file_stem or name}.json"
+        assembly._append(AdjustableFS, path, name=name, default_value=default,
+                         is_setting=True, is_display=True, is_status=True)
+    else:
+        assembly._append(AdjustableMemory, default, name=name,
+                         is_setting=True, is_display=True, is_status=True)
+
+
+def _setting_value(assembly, name, fallback):
+    """Current value of the settings child `name` -- read from it (its file,
+    for an AdjustableFS) on every call, so a value changed anywhere is used
+    by the next check of a running sequence -- or `fallback` if the child
+    does not exist or can't be read (e.g. an unreadable settings file): a
+    sequence must never fail over one of its parameters."""
+    try:
+        value = getattr(assembly, name)._value
+    except Exception:
+        return fallback
+    return fallback if value is None else value
+
+
+class PrepumpAborted(KeyboardInterrupt):
+    """Raised inside a running :meth:`PrepumpSystem.pump_down`/``vent`` when
+    :meth:`PrepumpSystem.abort` was called (in this session, another one, or
+    the panel's Abort button). A ``KeyboardInterrupt``, so it takes the same
+    abort path as Ctrl-C and existing ``except KeyboardInterrupt`` clauses
+    (e.g. the CLI's) keep their meaning."""
 
 
 class PrepumpLine(Assembly):
@@ -67,14 +116,24 @@ class PrepumpLine(Assembly):
     the system's string-keyed form (``prepump.pump_down('line1_usd')``,
     still there and equivalent -- the cross-channel interlock logic lives on
     the system either way, since it must coordinate all channels).
+
+    ``p_target`` / ``p_vent_target`` are settings children holding this
+    channel's *override* of the system's thresholds; ``None`` (the default)
+    means "use the system's". With a ``settings_dir`` they are file-backed
+    (``<settings_dir>/<name>_p_target.json``, ...), see
+    :func:`_append_setting`. The thresholds actually applied are
+    :meth:`effective_p_target` / :meth:`effective_p_vent_target`.
     """
 
     def __init__(self, name=None, gauge=None, valve_prevac=None, valve_vent=None,
-                 prepump_system=None, p_target=None, p_vent_target=None):
+                 prepump_system=None, p_target=None, p_vent_target=None,
+                 settings_dir=None):
         super().__init__(name=name)
         self.prepump_system = prepump_system
-        self._p_target = p_target
-        self._p_vent_target = p_vent_target
+        _append_setting(self, settings_dir, "p_target", p_target,
+                        file_stem=f"{name}_p_target")
+        _append_setting(self, settings_dir, "p_vent_target", p_vent_target,
+                        file_stem=f"{name}_p_vent_target")
         if gauge is not None:
             self._append(VacuumGauge, gauge, name="gauge",
                          is_display=True, is_status=True)
@@ -95,17 +154,19 @@ class PrepumpLine(Assembly):
     # system's, else the module default. Per-line overrides are meaningful --
     # channels have different gauges (a Pirani tops out well below ambient,
     # so "vented" isn't the same number everywhere) and different chambers.
-    @property
-    def p_target(self):
-        if self._p_target is not None:
-            return self._p_target
-        return getattr(self.prepump_system, "p_target", P_TARGET)
+    def effective_p_target(self):
+        """The "pumped" threshold [mbar] applied to this channel: its own
+        `p_target` override, else the system's, else :data:`P_TARGET`."""
+        system_value = (self.prepump_system.effective_p_target()
+                        if self.prepump_system is not None else P_TARGET)
+        return _setting_value(self, "p_target", system_value)
 
-    @property
-    def p_vent_target(self):
-        if self._p_vent_target is not None:
-            return self._p_vent_target
-        return getattr(self.prepump_system, "p_vent_target", P_VENT_TARGET)
+    def effective_p_vent_target(self):
+        """The "vented" threshold [mbar] applied to this channel, resolved
+        like :meth:`effective_p_target`."""
+        system_value = (self.prepump_system.effective_p_vent_target()
+                        if self.prepump_system is not None else P_VENT_TARGET)
+        return _setting_value(self, "p_vent_target", system_value)
 
     def pressure(self):
         """This channel's gauge pressure, or None if no gauge/reading/the
@@ -119,14 +180,16 @@ class PrepumpLine(Assembly):
             return None
 
     def is_pumped(self):
-        """True if this channel's own gauge is at/below its `p_target`."""
+        """True if this channel's own gauge is at/below its threshold
+        (:meth:`effective_p_target`)."""
         p = self.pressure()
-        return p is not None and p <= self.p_target
+        return p is not None and p <= self.effective_p_target()
 
     def is_vented(self):
-        """True if this channel's own gauge is at/above its `p_vent_target`."""
+        """True if this channel's own gauge is at/above its threshold
+        (:meth:`effective_p_vent_target`)."""
         p = self.pressure()
-        return p is not None and p >= self.p_vent_target
+        return p is not None and p >= self.effective_p_vent_target()
 
     def state(self):
         """Classify this channel from its *own* valve positions and gauge
@@ -175,7 +238,7 @@ class PrepumpLine(Assembly):
             )
         return self.prepump_system
 
-    def pump_down(self, timeout=300.0, poll=1.0):
+    def pump_down(self, timeout=None, poll=1.0):
         """Pump this channel down -- convenience wrapper for
         ``self.prepump_system.pump_down(self, ...)``, see there for what it
         actually does (isolating the other channels etc.)."""
@@ -183,7 +246,7 @@ class PrepumpLine(Assembly):
             self, timeout=timeout, poll=poll
         )
 
-    def vent(self, timeout=300.0, poll=1.0):
+    def vent(self, timeout=None, poll=1.0):
         """Vent this channel -- convenience wrapper for
         ``self.prepump_system.vent(self, ...)``."""
         return self._require_prepump_system("vent").vent(
@@ -249,6 +312,20 @@ class PrepumpSystem(Assembly):
         Pressure [mbar] at/above which a channel counts as "vented" (close
         enough to atmosphere -- tune to what the channel's own gauge can
         actually read up to).
+    pump_down_timeout, vent_timeout : float
+        Default timeouts [s] of :meth:`pump_down` / :meth:`vent`.
+    vent_settle_time : float
+        How long [s] :meth:`vent` keeps the vent valve open after the gauge
+        reached ``p_vent_target``, before closing it.
+    settings_dir : str or None
+        Directory holding the parameters above (and the channels'
+        threshold overrides) as file-backed adjustables, one json file each
+        -- see :func:`_append_setting`. They are then settings children
+        (``prepump.p_target``, ``prepump.line3.p_target``, ...): change
+        them with ``prepump.p_target.set_target_value(0.3)`` /
+        ``prepump.p_target.mv(0.3)`` or in the property grid, and every
+        session and the panel's buttons pick the new value up. The values
+        passed here only seed missing files. ``None``: in-memory values.
     lock_file : str or None
         Shared file locked (``flock``) for the whole duration of
         :meth:`pump_down`/:meth:`vent`, so that two sequences never run at
@@ -260,16 +337,26 @@ class PrepumpSystem(Assembly):
 
     def __init__(self, name=None, gp=None, roots_pump=None, lines=None,
                  p_target=P_TARGET, p_vent_target=P_VENT_TARGET, vent_line_name="GN2",
-                 lock_file=None):
+                 lock_file=None, settings_dir=None, pump_down_timeout=PUMP_DOWN_TIMEOUT,
+                 vent_timeout=VENT_TIMEOUT, vent_settle_time=VENT_SETTLE_TIME):
         super().__init__(name=name)
         self.lock_file = lock_file
-        self.p_target = p_target
-        self.p_vent_target = p_vent_target
+        self.settings_dir = settings_dir
         self.vent_line_name = vent_line_name
+        for sname, default in (("p_target", p_target), ("p_vent_target", p_vent_target),
+                               ("pump_down_timeout", pump_down_timeout),
+                               ("vent_timeout", vent_timeout),
+                               ("vent_settle_time", vent_settle_time)):
+            _append_setting(self, settings_dir, sname, default)
         #: one-line human-readable status of whatever pump_down()/vent() is
         #: (or was last) doing -- shown at the top of the SVG panel, see
         #: build_prepump_svg. None means nothing has run yet this session.
         self._activity = None
+        #: set by abort() for a sequence running in *this* process; other
+        #: processes are reached through the abort file (see abort_file)
+        self._abort_event = threading.Event()
+        #: name of the sequence running in this process, or None
+        self._running_here = None
         if roots_pump is not None:
             self._append(PrePump, roots_pump, name="roots_pump", is_status=True)
         if gp is not None:
@@ -279,7 +366,8 @@ class PrepumpSystem(Assembly):
             if isinstance(line, dict):
                 # build a PrepumpLine from a plain kwargs dict (config form);
                 # the dict's own "name" (if any) is overridden by the key.
-                line = PrepumpLine(**{**line, "name": lname, "prepump_system": self})
+                line = PrepumpLine(**{"settings_dir": settings_dir, **line,
+                                      "name": lname, "prepump_system": self})
             else:
                 # a ready-made PrepumpLine passed directly -- wire it up too,
                 # so line1_usd.pump_down() works regardless of which form
@@ -292,6 +380,14 @@ class PrepumpSystem(Assembly):
     @property
     def lines(self):
         return [getattr(self, n) for n in self._line_names]
+
+    def effective_p_target(self):
+        """The system-wide "pumped" threshold [mbar] (``self.p_target``)."""
+        return _setting_value(self, "p_target", P_TARGET)
+
+    def effective_p_vent_target(self):
+        """The system-wide "vented" threshold [mbar] (``self.p_vent_target``)."""
+        return _setting_value(self, "p_vent_target", P_VENT_TARGET)
 
     def _get_line(self, line):
         if isinstance(line, PrepumpLine):
@@ -316,7 +412,7 @@ class PrepumpSystem(Assembly):
         """Only used for the *common* line's ``Gp`` now -- a channel's own
         gauge is judged by `PrepumpLine.is_pumped`/`is_vented` against that
         channel's (possibly overridden) thresholds."""
-        return pressure is not None and pressure <= self.p_target
+        return pressure is not None and pressure <= self.effective_p_target()
 
     def line_state(self, line):
         """One channel's current state -- thin delegate to
@@ -398,7 +494,95 @@ class PrepumpSystem(Assembly):
         finally:
             os.close(fd)
 
-    def pump_down(self, line, timeout=700.0, poll=1.0):
+    @property
+    def abort_file(self):
+        """File whose existence asks a running sequence to stop, from any
+        process (``<lock_file>.abort``; ``None`` without a lock file). The
+        caQtDM panel's Abort button (``prepump_cli abort``) creates it too."""
+        return f"{self.lock_file}.abort" if self.lock_file else None
+
+    def abort(self, wait=10.0):
+        """Stop the running pump-down/vent, wherever it runs: this session
+        (also one started from the panel, which Ctrl-C at the prompt does
+        not reach), another session, or the caQtDM panel's buttons.
+
+        The sequence takes its normal abort path (a pump-down closes the
+        line's pump valve and restores the other lines, a vent closes the
+        vent valve). Waits up to `wait` seconds for it to finish; returns
+        True if nothing is running (any more)."""
+        running = self._running_here or self.running()
+        if not running:
+            print("[prepump] nothing is running")
+            return True
+        print(f"[prepump] abort requested for: {running}")
+        path = self.abort_file
+        if path:
+            try:
+                from eco.utilities.datafiles import open_group_writable
+
+                with open_group_writable(path, "w") as f:
+                    f.write(f"abort requested by {getpass.getuser()}@{socket.gethostname()}"
+                            f" {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            except Exception as e:
+                print(f"[prepump] could not write {path} ({e}) -- a sequence in another"
+                      f" process will not see this abort")
+        # after the file: a sequence here may stop on the event at once, and
+        # must not find a request written only after its clean-up
+        self._abort_event.set()
+        t0 = time.time()
+        while time.time() - t0 < wait:
+            if not (self._running_here or self.running()):
+                self._clear_abort()
+                print("[prepump] stopped")
+                return True
+            time.sleep(0.1)
+        print(f"[prepump] still running after {wait:.0f}s -- check the valves")
+        return False
+
+    def _abort_requested(self):
+        if self._abort_event.is_set():
+            return True
+        path = self.abort_file
+        return bool(path) and os.path.exists(path)
+
+    def _clear_abort(self):
+        self._abort_event.clear()
+        path = self.abort_file
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def _check_abort(self):
+        if self._abort_requested():
+            self._clear_abort()
+            raise PrepumpAborted("prepump sequence aborted (abort())")
+
+    def _sleep(self, seconds):
+        """`time.sleep` that notices :meth:`abort` within ~0.25 s."""
+        end = time.time() + seconds
+        while True:
+            self._check_abort()
+            remaining = end - time.time()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.25, remaining))
+
+    @contextlib.contextmanager
+    def _sequence(self, what):
+        """Lock (see :meth:`_exclusive`), clear a stale abort request, and
+        record `what` as running in this process."""
+        with self._exclusive(what):
+            self._clear_abort()
+            self._running_here = what
+            try:
+                yield
+            finally:
+                self._running_here = None
+                self._abort_event.clear()
+
+    def pump_down(self, line, timeout=None, poll=1.0):
         """Pump down one channel.
 
         Close its vent valve, isolate every *other* channel (close their
@@ -411,15 +595,17 @@ class PrepumpSystem(Assembly):
         already ``"isolated"`` stays exactly that way (its pump valve stays
         closed), only one that was ``"pumped"``/``"pumping"`` gets its pump
         valve reopened. Returns ``True`` on success, ``False`` if `timeout`
-        elapses first.
+        elapses first (``None``: the ``pump_down_timeout`` setting).
 
-        Interrupted (Ctrl-C, or the panel's process window closed), it closes
-        this channel's pump valve again and restores the others, as on a
-        timeout, then re-raises.
+        Interrupted (Ctrl-C, :meth:`abort`, or the panel's process window
+        closed), it closes this channel's pump valve again and restores the
+        others, as on a timeout, then re-raises.
         """
         line = self._get_line(line)
         self._require_valves(line, "pump_down")
-        with self._exclusive(f"pump_down('{line.name}')"):
+        if timeout is None:
+            timeout = _setting_value(self, "pump_down_timeout", PUMP_DOWN_TIMEOUT)
+        with self._sequence(f"pump_down('{line.name}')"):
             return self._pump_down(line, timeout, poll)
 
     def _pump_down(self, line, timeout, poll):
@@ -442,7 +628,7 @@ class PrepumpSystem(Assembly):
                 _close_if_present(other, "valve_prevac")
 
             line.valve_vent.close()
-            time.sleep(1)  # let the vent valve actually close before opening the pump valve
+            self._sleep(1)  # let the vent valve actually close before opening the pump valve
             line.valve_prevac.open()
 
             t0 = time.time()
@@ -459,7 +645,7 @@ class PrepumpSystem(Assembly):
                     return False
                 self._activity = (f"pump_down('{line.name}') running: "
                                    f"Gp={_fmt_pressure(self.gp_pressure())}, G={_fmt_pressure(line.pressure())}")
-                time.sleep(poll)
+                self._sleep(poll)
         except BaseException:
             self._activity = f"pump_down('{line.name}') ABORTED"
             print(f"[prepump] '{line.name}' pump down ABORTED -- closing its pump valve")
@@ -473,26 +659,30 @@ class PrepumpSystem(Assembly):
         restore_others()
         return True
 
-    def vent(self, line, timeout=700.0, poll=1.0):
+    def vent(self, line, timeout=None, poll=1.0):
         """Vent one channel to atmosphere through the GN2 vent line.
 
         Make sure every *other* channel's vent valve is closed (only one
         channel should ever be feeding atmosphere into the shared vent line
         at a time), then close this channel's pump valve, open its vent
-        valve, and wait for its own gauge to reach ``p_vent_target``, then
-        close the vent valve again. Returns ``True`` on success, ``False``
-        if `timeout` elapses first.
+        valve, and wait for its own gauge to reach ``p_vent_target``, keep
+        it open for another ``vent_settle_time``, then close the vent valve
+        again. Returns ``True`` on success, ``False`` if `timeout` elapses
+        first (``None``: the ``vent_timeout`` setting).
 
         # planned, once the vent line's flow meter Fv exists: open at full
         # flow first, then throttle down as the channel nears atmosphere
         # (see the spec's "low overpressure, limited flow" GN2 vent line);
         # for now the vent valve is simply open, then closed.
 
-        Interrupted, it closes the vent valve again, then re-raises.
+        Interrupted (Ctrl-C, :meth:`abort`), it closes the vent valve again,
+        then re-raises.
         """
         line = self._get_line(line)
         self._require_valves(line, "vent")
-        with self._exclusive(f"vent('{line.name}')"):
+        if timeout is None:
+            timeout = _setting_value(self, "vent_timeout", VENT_TIMEOUT)
+        with self._sequence(f"vent('{line.name}')"):
             return self._vent(line, timeout, poll)
 
     def _vent(self, line, timeout, poll):
@@ -506,7 +696,7 @@ class PrepumpSystem(Assembly):
 
         try:
             line.valve_prevac.close()
-            time.sleep(1)  # let the pump valve actually close before opening the vent valve
+            self._sleep(1)  # let the pump valve actually close before opening the vent valve
             line.valve_vent.open()
 
             t0 = time.time()
@@ -517,9 +707,11 @@ class PrepumpSystem(Assembly):
                     line.valve_vent.close()
                     return False
                 self._activity = f"vent('{line.name}') running: G={_fmt_pressure(line.pressure())}"
-                time.sleep(poll)
-            print(f"[prepump] '{line.name}' vented (G={line.pressure()}) -- waiting 60s for the channel to stabilize")
-            time.sleep(60)
+                self._sleep(poll)
+            settle = _setting_value(self, "vent_settle_time", VENT_SETTLE_TIME)
+            self._activity = f"vent('{line.name}'): vented, settling for {settle:.0f}s"
+            print(f"[prepump] '{line.name}' vented (G={line.pressure()}) -- waiting {settle:.0f}s for the channel to stabilize")
+            self._sleep(settle)
         except BaseException:
             self._activity = f"vent('{line.name}') ABORTED"
             print(f"[prepump] '{line.name}' venting ABORTED -- closing its vent valve")
@@ -546,6 +738,11 @@ class PrepumpSystem(Assembly):
                 line.isolate()
             except Exception as e:
                 print(f"  (could not isolate {line.name}: {e})")
+
+    #: clicked in the SVG panel, these run one at a time and a second click
+    #: while one runs is ignored (see eco.utilities.svg_interactor); every
+    #: other click -- valves, inspecting, abort() -- runs at once
+    _svg_long_commands = ("pump_down", "vent")
 
     # caQtDM vacuum panel of the experimental station with this prepump
     # system at the bottom; its prepump buttons run prepump_cli.py.
@@ -641,17 +838,22 @@ class PrepumpSystem(Assembly):
         return path
 
     def show(self, exclude_group_ids=None, live=True,
-             dock_in=None, sidecar_anchor=None, backend=None):
+             dock_in=None, sidecar_anchor=None, backend=None, queue_clicks=False):
         """Same as `Assembly.show`, but defaults to `live=True` here (see
         `_widget_svg_panel`'s docstring for why this system's live reads
         are cheap enough to default on). `backend` defaults to "auto" --
         native Qt window in a terminal, inline in a notebook; see
-        `Assembly.show` for the full list (and `dock_in`/`sidecar_anchor`)."""
+        `Assembly.show` for the full list (and `dock_in`/`sidecar_anchor`).
+
+        A click while a clicked command (e.g. a ``pump_down``) still runs is
+        ignored with a message; ``queue_clicks=True`` queues it instead, to
+        run after the running one."""
         return super().show(exclude_group_ids=exclude_group_ids, live=live,
-                             dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend)
+                             dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend,
+                             queue_clicks=queue_clicks)
 
     def svg_panel(self, live=True, exclude_group_ids=None,
-                  dock_in=None, sidecar_anchor=None, backend=None):
+                  dock_in=None, sidecar_anchor=None, backend=None, queue_clicks=False):
         """Open the clickable prepump schematic in the interactive viewer.
         `backend` defaults to "auto" (native Qt window in a terminal
         session, inline in a notebook); force one with
@@ -663,7 +865,8 @@ class PrepumpSystem(Assembly):
         (touches EPICS); this is just a clearly-named alias for `show(...)`
         -- see `Assembly.show` (also for `dock_in`/`sidecar_anchor`)."""
         return self.show(live=live, exclude_group_ids=exclude_group_ids,
-                          dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend)
+                          dock_in=dock_in, sidecar_anchor=sidecar_anchor, backend=backend,
+                          queue_clicks=queue_clicks)
 
 
 # --------------------------------------------------------------------------
@@ -787,6 +990,14 @@ def build_prepump_svg(system, live=False):
         f'<tspan font-size="12" font-weight="normal" fill="#6b7280">(click a device to inspect; '
         f'click pump/vent, or a valve\'s small green/red dot, to run)</tspan></text>'
     )
+    # abort button, top right: stops a running pump_down/vent (any process)
+    ax, ay = width - margin - 56, margin - 16
+    P.append('<g style="cursor:pointer" onclick="// eco: abort()"><desc>abort()</desc>'
+             '<title>abort() -- stop the running pump_down/vent</title>')
+    P.append(f'<rect x="{ax}" y="{ay}" width="56" height="22" rx="3" fill="#c62828"/>')
+    P.append(f'<text x="{ax+28}" y="{ay+15}" text-anchor="middle" font-size="11" '
+             f'font-weight="bold" fill="white">ABORT</text>')
+    P.append('</g>')
     # activity line: what pump_down()/vent() is (or was last) doing --
     # only meaningful next to live valve/gauge state, so live-gated too
     activity = getattr(system, "_activity", None) if live else None
@@ -894,6 +1105,12 @@ def make_prepump_system(config, name="prepump"):
           "roots_pump": "<roots pump PV>",
           "p_target": 0.5,                 # optional, mbar (default P_TARGET)
           "p_vent_target": 1000.0,         # optional, mbar (default P_VENT_TARGET)
+          "pump_down_timeout": 700.0,      # optional, s
+          "vent_timeout": 700.0,           # optional, s
+          "vent_settle_time": 60.0,        # optional, s
+          "settings_dir": "<dir>",         # optional: the values above become
+                                           # file-backed settings there (the
+                                           # values here then only seed them)
           "lines": {
             "<channel name>": {
               "gauge": "<G PV>",           # this channel's gauge
@@ -922,6 +1139,10 @@ def make_prepump_system(config, name="prepump"):
         p_target=cfg.get("p_target", P_TARGET),
         p_vent_target=cfg.get("p_vent_target", P_VENT_TARGET),
         lock_file=cfg.get("lock_file"),
+        settings_dir=cfg.get("settings_dir"),
+        pump_down_timeout=cfg.get("pump_down_timeout", PUMP_DOWN_TIMEOUT),
+        vent_timeout=cfg.get("vent_timeout", VENT_TIMEOUT),
+        vent_settle_time=cfg.get("vent_settle_time", VENT_SETTLE_TIME),
     )
 
 
@@ -939,6 +1160,9 @@ BERNINA_PREPUMP_CONFIG = {
     "p_vent_target": P_VENT_TARGET,  # "vented" threshold [mbar]
     # one sequence at a time, across eco sessions, panel buttons and consoles
     "lock_file": "/sf/bernina/code/gac-bernina/eco_cnf_bernina/prepump.lock",
+    # thresholds/timeouts as file-backed settings, shared by every session
+    # and the panel's buttons; the values above only seed missing files
+    "settings_dir": "/sf/bernina/code/gac-bernina/eco_cnf_bernina/configuration/prepump",
     "lines": {
         "line1_usd": {
             "gauge": "SARES21-VMCP140-600",  # G1 gauge base

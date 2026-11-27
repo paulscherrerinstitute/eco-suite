@@ -1854,7 +1854,7 @@ class Assembly:
         print(repr(self))
 
     def show(self, exclude_group_ids=None, live=False, dock_in=None,
-             sidecar_anchor=None, backend=None):
+             sidecar_anchor=None, backend=None, queue_clicks=False):
         """Opens the interactive SVG viewer for this assembly.
 
         `backend` -- **where it opens. Defaults to "auto"**, i.e. decided
@@ -1915,6 +1915,12 @@ class Assembly:
         alias name as namespace prefix, e.g. clicking a device labelled
         "slit_att" inside an assembly aliased "bernina.optics" runs
         "bernina.optics.slit_att" in the IPython session.
+        They run in the background. Methods named in the assembly's
+        `_svg_long_commands` (e.g. `PrepumpSystem`'s pump_down/vent) are
+        long sequences: they run one at a time, and one clicked while
+        another still runs is ignored (with a message) unless
+        `queue_clicks=True`, which queues it instead. Every other click
+        runs at once.
 
         Examples: `namespace.prepump.show()`, `namespace.prepump.show(live=True)`
         for green/red valve+gauge state, `namespace.beamline.svg_panel(live=True,
@@ -1970,6 +1976,8 @@ class Assembly:
             sidecar_anchor=sidecar_anchor,
             backend=backend,
             assembly=self,
+            queue_clicks=queue_clicks,
+            long_commands=tuple(getattr(self, "_svg_long_commands", ()) or ()),
         )
 
 

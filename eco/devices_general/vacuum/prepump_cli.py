@@ -22,8 +22,9 @@ Stopping a running ``pump_down``/``vent``:
 * Ctrl-C, SIGTERM or SIGHUP -- closing caQtDM's process window sends SIGTERM
   (and kills 500 ms later);
 * ``abort`` from anywhere (another console, another account, the panel's
-  Abort button): it creates ``<lock_file>.abort``, which the running sequence
-  polls.
+  Abort button, ``prepump.abort()`` in an eco session): it creates
+  ``<lock_file>.abort``, which the running sequence polls itself
+  (``PrepumpSystem._sleep``).
 
 Either way the sequence's own abort handling runs: a pump-down closes the
 line's pump valve again and restores the other lines, a vent closes the vent
@@ -111,37 +112,17 @@ def _remove(path):
 
 
 def request_abort(system):
-    running = system.running()
-    path = _abort_file(system)
-    if not running or not path:
-        _say("nothing is running")
-        return 0
-    with open(path, "w") as f:
-        f.write(f"abort requested {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    try:
-        os.chmod(path, 0o664)
-    except OSError:
-        pass
-    _say(f"abort requested for: {running}")
-    for _ in range(40):
-        time.sleep(0.25)
-        if not system.running():
-            _say("stopped")
-            return 0
-    _say("still running after 10 s -- check its window / the valves")
-    return 1
+    """`PrepumpSystem.abort` -- writes the abort file the running sequence
+    (in whatever process) polls, and waits for it to stop."""
+    return 0 if system.abort() else 1
 
 
 def _watch(system, done, every=5.0):
-    """Poll the abort file and print the sequence's progress line."""
-    path = _abort_file(system)
+    """Print the sequence's progress line. (Aborting is not done here: the
+    sequence polls the abort file itself, so its clean-up can't be hit by a
+    second interrupt from this thread.)"""
     last, t_print = None, 0.0
     while not done.wait(0.25):
-        if path and os.path.exists(path):
-            _remove(path)
-            _say("abort requested")
-            os.kill(os.getpid(), signal.SIGINT)  # interrupts the sleep, too
-            return
         activity = system._activity
         if activity and (activity != last or time.time() - t_print > 30) and time.time() - t_print > every:
             _say(activity)
@@ -186,7 +167,8 @@ def main(argv=None):
     ap.add_argument("line", nargs="?", help="line name, part of it, or number")
     ap.add_argument("--delay", type=float, default=5.0,
                     help="seconds to wait (and allow cancelling) before pump_down/vent starts [5]")
-    ap.add_argument("--timeout", type=float, default=700.0, help="pump_down/vent timeout [s, 700]")
+    ap.add_argument("--timeout", type=float, default=None,
+                    help="pump_down/vent timeout [s]; default: the system's pump_down_timeout / vent_timeout setting")
     # caQtDM's script buttons pass their whole parameter as ONE argument
     # with a trailing space ("pump_down 1 "): split into words again.
     argv = " ".join(sys.argv[1:] if argv is None else argv).split()

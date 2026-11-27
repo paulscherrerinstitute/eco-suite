@@ -1,6 +1,7 @@
 import os
 import json
 import queue
+import re
 import threading
 import traceback
 from dash import Dash, html, dcc
@@ -193,58 +194,122 @@ def resolve_backend(backend=None, sidecar_anchor=None, ip=None):
 # A command clicked in a panel can run for a long time (e.g. clicking "pump"
 # starts a `PrepumpSystem.pump_down()` that polls for minutes). Running it
 # inline in the HTTP request that delivered the click would hold that request
-# open for its whole duration -- so it is handed to a dedicated background
-# worker instead and the request returns immediately.
+# open for its whole duration -- so it is run on a background thread instead
+# and the request returns immediately.
 #
-# ONE worker, fed by a queue, deliberately: clicked commands then serialise
-# against each other rather than running concurrently, which matters because
-# they drive shared hardware (two vacuum macros interleaving valve writes on
-# the same shared pump/vent line would be a real hazard, not just untidy).
+# Two kinds of clicks:
+#
+# * **Long commands** -- the ones a panel declares in `long_commands` (method
+#   names, e.g. ("pump_down", "vent") for the prepump; `Assembly.show` takes
+#   them from the assembly's `_svg_long_commands`). They go to ONE shared
+#   worker, so two of them never run at the same time, from any panel. A long
+#   command clicked while another one still runs is IGNORED (with a message),
+#   not queued: queued clicks used to pile up behind a minutes-long
+#   `pump_down()` and then all run one after the other, long after the
+#   operator had stopped expecting them. `show(queue_clicks=True)` queues
+#   them instead.
+# * **Everything else** -- inspecting a device, opening/closing one valve,
+#   `abort()` -- runs at once on its own short-lived thread, also while a
+#   long command runs. Otherwise e.g. a pump-down could not be aborted from
+#   the panel that started it.
 _command_queue = None
 _command_worker = None
 _command_worker_lock = threading.Lock()
+#: long commands put into the queue and not finished yet (running one
+#: first); only changed under `_command_worker_lock`
+_command_pending = []
+
+#: a call of a name: `name(` or `.name(`
+_CALL_NAME_RE = re.compile(r"([A-Za-z_]\w*)\s*\(")
+
+
+def is_long_command(command_str, long_commands):
+    """True if `command_str` calls one of the method/function names in
+    `long_commands` (``"prepump.pump_down('line3')"`` with
+    ``("pump_down", "vent")``)."""
+    if not long_commands:
+        return False
+    return any(name in long_commands for name in _CALL_NAME_RE.findall(command_str))
+
+
+def _run_clicked(ip_instance, command_str):
+    # pyepics binds its channel-access context per *thread*; a thread that
+    # never attaches to the process' initial context sees no connections at
+    # all (reads return None / hang), so a command run here would silently
+    # misbehave without this.
+    try:
+        import epics
+
+        epics.ca.use_initial_context()
+    except Exception:
+        pass
+    try:
+        print(f"\nExecuting from SVG: {command_str}")
+        ip_instance.run_cell(command_str)
+    except Exception:
+        traceback.print_exc()
 
 
 def _command_worker_loop():
     while True:
         ip_instance, command_str = _command_queue.get()
         try:
-            # pyepics binds its channel-access context per *thread*; a thread
-            # that never attaches to the process' initial context sees no
-            # connections at all (reads return None / hang), so a macro run
-            # here would silently misbehave without this.
-            try:
-                import epics
-
-                epics.ca.use_initial_context()
-            except Exception:
-                pass
-            print(f"\nExecuting from SVG: {command_str}")
-            ip_instance.run_cell(command_str)
-        except Exception:
-            traceback.print_exc()
+            _run_clicked(ip_instance, command_str)
         finally:
+            with _command_worker_lock:
+                if _command_pending:
+                    _command_pending.pop(0)
             _command_queue.task_done()
 
 
-def _dispatch_command(ip_instance, command_str):
-    """Queue `command_str` to run on the shared background worker (started
-    lazily on first use, and restarted if it ever died), and return at once."""
+def running_commands():
+    """Long clicked commands not finished yet: the running one first, then
+    any queued behind it (only with ``queue_clicks=True``)."""
+    with _command_worker_lock:
+        return list(_command_pending)
+
+
+def _dispatch_command(ip_instance, command_str, queue_clicks=False, long_commands=()):
+    """Run a clicked `command_str` in the background and return at once.
+
+    A long command (see `is_long_command`) goes to the shared worker (started
+    lazily, restarted if it ever died); if another long command is still
+    running it is dropped with a message, unless `queue_clicks` is true, in
+    which case it waits for its turn. Any other command runs immediately on
+    its own thread. Returns True if the command was accepted."""
     global _command_queue, _command_worker
+
+    if not is_long_command(command_str, long_commands):
+        threading.Thread(target=_run_clicked, args=(ip_instance, command_str),
+                         daemon=True, name="eco-svg-click").start()
+        return True
 
     with _command_worker_lock:
         if _command_queue is None:
             _command_queue = queue.Queue()
         if _command_worker is None or not _command_worker.is_alive():
+            # a dead worker leaves its entries behind -- they will never run
+            _command_pending.clear()
             _command_worker = threading.Thread(
                 target=_command_worker_loop, daemon=True, name="eco-svg-commands"
             )
             _command_worker.start()
-    _command_queue.put((ip_instance, command_str))
+        if _command_pending and not queue_clicks:
+            busy = _command_pending[0]
+            print(f"\n[SVG] still running: {busy} -- ignored click: {command_str}"
+                  f"\n      (wait for it to finish or abort it, or open the panel with"
+                  f" show(queue_clicks=True) to queue such clicks)", flush=True)
+            return False
+        _command_pending.append(command_str)
+        if len(_command_pending) > 1:
+            print(f"\n[SVG] queued ({len(_command_pending) - 1} ahead): {command_str}", flush=True)
+        _command_queue.put((ip_instance, command_str))
+    return True
 
 
 def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
-                      refresh=None, refresh_interval_ms=2000, port_holder=None):
+                      refresh=None, refresh_interval_ms=2000, port_holder=None,
+                      queue_clicks=False, long_commands=()):
     """Launches a local webserver hosting the interactive Inkscape SVG.
 
     refresh (see `launch_svg_viewer`): optional no-arg callable returning the
@@ -489,7 +554,8 @@ def _run_dash_server(svg_path, ip_instance, namespace_prefix=None, exclude_group
                 ip_instance.set_next_input(command_str, replace=False)
             else:
                 # Never run it inline here -- see _dispatch_command.
-                _dispatch_command(ip_instance, command_str)
+                _dispatch_command(ip_instance, command_str, queue_clicks=queue_clicks,
+                                  long_commands=long_commands)
         except Exception as err:
             print(f"\nError processing event layout channel: {err}")
 
@@ -568,7 +634,8 @@ def _shutdown_dash_server(view):
 
 def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group_ids=None,
                       blocking=False, refresh=None, refresh_interval_ms=2000,
-                      dock_in=None, dock_name=None, assembly=None):
+                      dock_in=None, dock_name=None, assembly=None, queue_clicks=False,
+                      long_commands=()):
     """Opens a native, resizable window rendering the SVG via Qt's QWebEngineView.
 
     dock_in (see `launch_svg_viewer`): an EcoDesktopApp instance (or
@@ -710,7 +777,8 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
             target=_run_dash_server,
             args=(svg_path, ip_instance, namespace_prefix, exclude_group_ids),
             kwargs=dict(refresh=refresh, refresh_interval_ms=refresh_interval_ms,
-                        port_holder=port_holder),
+                        port_holder=port_holder, queue_clicks=queue_clicks,
+                        long_commands=long_commands),
             daemon=True,
         ).start()
         # One-time, bounded startup wait (binding a local port is normally
@@ -808,8 +876,18 @@ def _build_qt_window(svg_path, ip_instance, namespace_prefix=None, exclude_group
 
 def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
                        refresh=None, refresh_interval_ms=2000, dock_in=None, dock_name=None,
-                       sidecar_anchor=None, backend=None, assembly=None):
+                       sidecar_anchor=None, backend=None, assembly=None, queue_clicks=False,
+                       long_commands=()):
     """Spawns an isolated background service for the SVG interface.
+
+    long_commands: method/function names whose clicked calls are long
+    sequences (e.g. ``("pump_down", "vent")``). Those run one at a time on a
+    shared worker; every other click runs at once on its own thread. See
+    the "Clicked-command execution" notes above `is_long_command`.
+
+    queue_clicks: what happens to a long command clicked while another one
+    still runs. False (default): it is ignored, with a message naming the
+    running one. True: it is queued and runs once the earlier ones are done.
 
     assembly: the Assembly this panel belongs to, if any -- forwarded to
     `_build_qt_window` (native window backend only), which adds a
@@ -962,7 +1040,8 @@ def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
 
         _build_qt_window(svg_path, ip, namespace_prefix, exclude_group_ids, blocking=blocking,
                           refresh=refresh, refresh_interval_ms=refresh_interval_ms,
-                          dock_in=dock_in, dock_name=dock_name, assembly=assembly)
+                          dock_in=dock_in, dock_name=dock_name, assembly=assembly,
+                          queue_clicks=queue_clicks, long_commands=long_commands)
         if not blocking and dock_in is None:
             print("Interactive SVG window launched.")
         return
@@ -971,7 +1050,8 @@ def launch_svg_viewer(svg_path, namespace_prefix=None, exclude_group_ids=None,
     threading.Thread(
         target=_run_dash_server,
         args=(svg_path, ip, namespace_prefix, exclude_group_ids),
-        kwargs=dict(refresh=refresh, refresh_interval_ms=refresh_interval_ms, port_holder=port_holder),
+        kwargs=dict(refresh=refresh, refresh_interval_ms=refresh_interval_ms, port_holder=port_holder,
+                    queue_clicks=queue_clicks, long_commands=long_commands),
         daemon=True,
     ).start()
     if not port_holder["ready"].wait(timeout=5.0) or port_holder["port"] is None:

@@ -116,7 +116,8 @@ def test_launch_svg_viewer_docks_into_desktop_app_instead_of_opening_standalone(
 
     def fake_build_qt_window(svg_path, ip_instance, namespace_prefix, exclude_group_ids,
                               blocking=False, refresh=None, refresh_interval_ms=2000,
-                              dock_in=None, dock_name=None, assembly=None):
+                              dock_in=None, dock_name=None, assembly=None, queue_clicks=False,
+                              long_commands=()):
         calls.update(
             svg_path=svg_path, blocking=blocking, dock_in=dock_in, dock_name=dock_name,
             assembly=assembly,
@@ -522,3 +523,95 @@ def test_launch_svg_viewer_without_sidecar_anchor_displays_inline_as_before(monk
     assert result is None
     assert len(displayed) == 1
     assert _FakeSidecar.instances == []
+
+
+def _fresh_dispatcher(monkeypatch):
+    import eco.utilities.svg_interactor as si
+
+    monkeypatch.setattr(si, "_command_queue", None)
+    monkeypatch.setattr(si, "_command_worker", None)
+    monkeypatch.setattr(si, "_command_pending", [])
+    return si
+
+
+class _BlockingShell:
+    def __init__(self):
+        import threading
+
+        self.ran = []
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run_cell(self, cmd):
+        self.ran.append(cmd)
+        self.started.set()
+        self.release.wait(5)
+
+
+def _wait_idle(si, timeout=5):
+    import time
+
+    t0 = time.time()
+    while si.running_commands() and time.time() - t0 < timeout:
+        time.sleep(0.01)
+    assert si.running_commands() == []
+
+
+LONG = ("pump_down", "vent")
+
+
+def test_long_click_while_one_runs_is_ignored_by_default(monkeypatch, capsys):
+    si = _fresh_dispatcher(monkeypatch)
+    shell = _BlockingShell()
+    assert si._dispatch_command(shell, "pp.pump_down('a')", long_commands=LONG) is True
+    assert shell.started.wait(5)
+    assert si._dispatch_command(shell, "pp.pump_down('a')", long_commands=LONG) is False
+    assert si._dispatch_command(shell, "pp.vent('b')", long_commands=LONG) is False
+    assert "ignored click: pp.vent('b')" in capsys.readouterr().out
+    shell.release.set()
+    _wait_idle(si)
+    assert shell.ran == ["pp.pump_down('a')"]
+    # idle again: the next one is accepted
+    assert si._dispatch_command(shell, "pp.vent('b')", long_commands=LONG) is True
+    _wait_idle(si)
+    assert shell.ran == ["pp.pump_down('a')", "pp.vent('b')"]
+
+
+def test_other_clicks_run_at_once_while_a_long_one_runs(monkeypatch):
+    """Inspecting, single valves and abort() must not wait for (or be
+    dropped because of) a running pump-down."""
+    import threading
+
+    si = _fresh_dispatcher(monkeypatch)
+    shell = _BlockingShell()
+    quick_done = threading.Event()
+    real_run_cell = shell.run_cell
+
+    def run_cell(cmd):
+        if "pump_down" in cmd:
+            return real_run_cell(cmd)
+        shell.ran.append(cmd)
+        quick_done.set()
+
+    shell.run_cell = run_cell
+    try:
+        assert si._dispatch_command(shell, "pp.pump_down('a')", long_commands=LONG)
+        assert shell.started.wait(5)
+        assert si._dispatch_command(shell, "pp.abort()", long_commands=LONG) is True
+        assert quick_done.wait(5)
+        assert shell.ran == ["pp.pump_down('a')", "pp.abort()"]
+    finally:
+        shell.release.set()
+    _wait_idle(si)
+
+
+def test_queue_clicks_runs_long_ones_one_after_the_other(monkeypatch):
+    si = _fresh_dispatcher(monkeypatch)
+    shell = _BlockingShell()
+    assert si._dispatch_command(shell, "pump_down(1)", queue_clicks=True, long_commands=LONG)
+    assert shell.started.wait(5)
+    assert si._dispatch_command(shell, "vent(2)", queue_clicks=True, long_commands=LONG)
+    assert si.running_commands() == ["pump_down(1)", "vent(2)"]
+    shell.release.set()
+    _wait_idle(si)
+    assert shell.ran == ["pump_down(1)", "vent(2)"]

@@ -13,7 +13,14 @@ beamline.svg_panel(live=True)  # X-ray beamline layout
 Where the panel appears is chosen automatically: a native Qt window in a
 terminal session, inline in a notebook, docked in the desktop. Force it with
 `backend="window"|"inline"|"sidecar"`. Clicking a symbol acts on that
-component in your live session (e.g. toggling a valve).
+component in your live session (e.g. toggling a valve). Clicked commands run
+in the background. Long sequences (on the prepump panel: *pump* and *vent*)
+run one at a time: clicking another one while one is still running is
+ignored, with a message naming the running one. To have them queued and run
+one after the other instead, open the panel with
+`prepump.show(queue_clicks=True)`. All other clicks (inspecting a device,
+opening or closing a single valve, *ABORT*) run at once, also while a
+sequence runs.
 
 ## Prepump system
 
@@ -32,8 +39,26 @@ prepump.check()                  # lists missing or failed components at every d
 they are not pumped against a rising `gp`). It then opens the line's pump
 valve and waits until both `gp` and the line's own gauge reach the target
 pressure. Afterwards each other line is restored to what it was doing before.
-It returns `True` on success and `False` on timeout (`timeout=700` s by
-default).
+It returns `True` on success and `False` on timeout.
+
+To stop a running pump-down or vent, use the panel's red *ABORT* button or
+`prepump.abort()`. This works wherever the sequence runs: started from the
+panel (where Ctrl-C at the prompt does not reach it), in another session, or
+from the caQtDM panel's buttons. The sequence then closes the valve it opened
+and restores the other lines, as on a timeout.
+
+Thresholds and timings are settings stored as files (in
+`eco_cnf_bernina/configuration/prepump/`), so a change is used by every
+session and by the caQtDM panel's buttons. They show up in
+`prepump.widget()` and `prepump.settings()`:
+
+```python
+prepump.p_target.mv(0.3)            # "pumped" below this [mbar]
+prepump.p_vent_target.mv(900)       # "vented" above this [mbar]
+prepump.pump_down_timeout.mv(900)   # [s], also vent_timeout
+prepump.vent_settle_time.mv(30)     # vent valve stays open this long after "vented" [s]
+prepump.line3.p_target.mv(0.1)      # one line only; None = use prepump.p_target
+```
 
 The building blocks (`VacuumGauge`, `Valve`, `TurboPump`, `IonPump`, ...)
 are described in `eco/devices_general/vacuum/README.md` in the repository.
